@@ -9,13 +9,27 @@
 	import MessageReasoning from '../message-reasoning.svelte';
 	import RawPromptDebug from './raw-prompt-debug.svelte';
 	import { fly } from 'svelte/transition';
-	import type { ScribeChatMessage } from '$lib/types';
+	import type { ScribeChatMessage, User, ScribeCharacter } from '$lib/types'; // Import User and ScribeCharacter
+	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
 
 	let {
 		message,
 		readonly,
-		loading
-	}: { message: ScribeChatMessage; readonly: boolean; loading: boolean } = $props();
+		loading,
+		user, // Add user prop
+		character // Add character prop
+	}: {
+		message: ScribeChatMessage;
+		readonly: boolean;
+		loading: boolean;
+		user: User | undefined; // Define type for user
+		character: ScribeCharacter | null | undefined; // Define type for character
+	} = $props();
+
+	// Function to get initials for fallback avatar
+	function getInitials(name: string | undefined | null): string {
+		return name ? name.charAt(0).toUpperCase() : '?';
+	}
 
 	// Function to detect if a message is the first message from a character
 	function isFirstMessage(message: ScribeChatMessage): boolean {
@@ -61,6 +75,26 @@
 		)}
 	>
 		{#if message.message_type === 'Assistant'}
+			<Avatar class="size-8 shrink-0">
+				{#if character?.avatar}
+					<AvatarImage src={character.avatar} alt={character.name} />
+				{/if}
+				<AvatarFallback>
+					{getInitials(character?.name)}
+				</AvatarFallback>
+			</Avatar>
+		{:else if message.message_type === 'User'}
+			<Avatar class="size-8 shrink-0">
+				{#if user?.avatar}
+					<!-- Assuming user.avatar will be a URL -->
+					<AvatarImage src={user.avatar} alt={user.username} />
+				{/if}
+				<AvatarFallback>
+					{getInitials(user?.username)}
+				</AvatarFallback>
+			</Avatar>
+		{:else}
+			<!-- Default icon for System messages or other types -->
 			<div
 				class="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border"
 			>

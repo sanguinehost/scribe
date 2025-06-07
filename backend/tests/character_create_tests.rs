@@ -1,7 +1,7 @@
 #![cfg(test)]
 #![allow(clippy::too_many_lines)]
 
-use super::helpers::{get_text_body, insert_test_user_with_password, run_db_op};
+// Remove helpers import - we'll define locally
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
@@ -12,6 +12,97 @@ use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized}; /
 use serde_json::{Value as JsonValue, json}; // Added JsonValue
 use tower::ServiceExt; // For oneshot
 use uuid::Uuid;
+
+// Local helper functions
+use anyhow::Context;
+use deadpool_diesel::postgres::Pool;
+use diesel::{PgConnection, RunQueryDsl, prelude::*};
+use scribe_backend::auth::session_dek::SessionDek;
+use scribe_backend::{
+    crypto,
+    models::{
+        users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
+    },
+    schema::users,
+};
+use secrecy::{ExposeSecret, SecretString};
+use axum::http::Response as AxumResponse;
+use http_body_util::BodyExt;
+use bcrypt;
+
+/// Helper to hash a password for tests
+fn hash_test_password(password: &str) -> String {
+    bcrypt::hash(password, bcrypt::DEFAULT_COST).expect("Failed to hash test password with bcrypt")
+}
+
+/// Helper to insert a unique test user with a known password hash
+fn insert_test_user_with_password(
+    conn: &mut PgConnection,
+    username: &str,
+    password: &str,
+) -> Result<(User, SessionDek), diesel::result::Error> {
+    let hashed_password = hash_test_password(password);
+    let email = format!("{username}@example.com");
+
+    let kek_salt = crypto::generate_salt().expect("Failed to generate KEK salt for test user");
+    let dek = crypto::generate_dek().expect("Failed to generate DEK for test user");
+
+    let secret_password = SecretString::new(password.to_string().into());
+    let kek = crypto::derive_kek(&secret_password, &kek_salt)
+        .expect("Failed to derive KEK for test user");
+
+    let (encrypted_dek, dek_nonce) = crypto::encrypt_gcm(dek.expose_secret(), &kek)
+        .expect("Failed to encrypt DEK for test user");
+
+    let new_user = NewUser {
+        username: username.to_string(),
+        password_hash: hashed_password,
+        email,
+        kek_salt,
+        encrypted_dek,
+        encrypted_dek_by_recovery: None,
+        role: UserRole::User,
+        recovery_kek_salt: None,
+        dek_nonce,
+        recovery_dek_nonce: None,
+        account_status: AccountStatus::Active,
+    };
+    diesel::insert_into(users::table)
+        .values(&new_user)
+        .returning(UserDbQuery::as_returning())
+        .get_result::<UserDbQuery>(conn)
+        .map(|user_db| (User::from(user_db), SessionDek(dek)))
+}
+
+/// Helper function to run DB operations via pool interact
+async fn run_db_op<F, T>(pool: &Pool, op: F) -> Result<T, anyhow::Error>
+where
+    F: FnOnce(&mut PgConnection) -> Result<T, diesel::result::Error> + Send + 'static,
+    T: Send + 'static,
+{
+    let obj = pool
+        .get()
+        .await
+        .context("Failed to get DB conn from pool")?;
+    match obj.interact(op).await {
+        Ok(Ok(data)) => Ok(data),
+        Ok(Err(db_err)) => Err(anyhow::Error::new(db_err).context("DB interact error")),
+        Err(interact_err) => Err(anyhow::anyhow!(
+            "Deadpool interact error: {:?}",
+            interact_err
+        )),
+    }
+}
+
+/// Helper to extract plain text body
+async fn get_text_body(
+    response: AxumResponse<Body>,
+) -> Result<(StatusCode, String), anyhow::Error> {
+    let status = response.status();
+    let body_bytes = response.into_body().collect().await?.to_bytes();
+    let body_text = String::from_utf8(body_bytes.to_vec())?;
+    Ok((status, body_text))
+}
 
 #[tokio::test]
 async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
@@ -74,7 +165,7 @@ async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
 
     let create_response = test_app.router.clone().oneshot(create_request).await?;
 
-    let (status, body_text) = get_text_body(create_response).await?;
+    let (status, body_text): (StatusCode, String) = get_text_body(create_response).await?;
     tracing::info!(
         "Minimal Fields - Response status: {}, body: {}",
         status,
@@ -277,7 +368,7 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
 
     let create_response = test_app.router.clone().oneshot(create_request).await?;
 
-    let (status, body_text) = get_text_body(create_response).await?;
+    let (status, body_text): (StatusCode, String) = get_text_body(create_response).await?;
     tracing::info!(
         "All Fields - Response status: {}, body: {}",
         status,
@@ -475,7 +566,7 @@ async fn test_create_character_missing_required_fields() -> Result<(), anyhow::E
 
         let create_response = test_app.router.clone().oneshot(create_request).await?;
 
-        let (status, body_text) = get_text_body(create_response).await?;
+        let (status, body_text): (StatusCode, String) = get_text_body(create_response).await?;
         tracing::info!(
             "Missing Fields Test Case {}: Response status: {}, body: {}",
             i,

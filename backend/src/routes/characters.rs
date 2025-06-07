@@ -18,17 +18,17 @@ use axum::{
     Router,
     body::Body,
     debug_handler,
-    extract::{Path, State, multipart::Multipart}, // Removed unused Extension
+    extract::{Path, State, multipart::Multipart, Query}, // Added Query
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::{delete, get, post, put}, // ADDED delete here
+    routing::{delete, get, post, put},
 };
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
     SelectableHelper, result::Error as DieselError,
 }; // Needed for .filter(), .load(), .first(), etc.
 use std::sync::Arc;
-use tracing::{error, info, instrument, trace, warn}; // Use needed tracing macros
+use tracing::{debug, error, info, instrument, trace, warn}; // Use needed tracing macros
 use uuid::Uuid;
 // use anyhow::anyhow; // Unused import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
@@ -40,7 +40,17 @@ use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
 // DieselError moved to main diesel imports
 use secrecy::ExposeSecret; // Added for DEK expose
-use serde::Deserialize; // Add serde import // Added for querying chat_sessions table // Added DTO imports
+use serde::Deserialize; // Add serde import
+use image::ImageFormat; // Added for image processing
+use image::ImageReader; // Use the new name for clarity
+use std::io::Cursor; // Added for image processing
+
+// Define input structure for image query parameters
+#[derive(Deserialize, Debug)]
+pub struct ImageQueryParams {
+    width: Option<u32>,
+    height: Option<u32>,
+}
 
 // Define the type alias for the auth session specific to our AuthBackend
 // type CurrentAuthSession = AuthSession<AppState>;
@@ -71,7 +81,7 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
         .route("/:id", put(update_character_handler)) // Added PUT for update on /:id
         .route("/remove/:id", delete(delete_character_handler))
         .route("/generate", post(generate_character_handler))
-        .route("/:id/image", get(get_character_image)) // This might also need a more distinct path later
+        .route("/:character_id/assets/:asset_id", get(get_character_asset_handler))
         // Apply LoginRequired middleware to all routes in this router
         // It checks auth_session.user and returns 401 if None.
         .with_state(state)
@@ -94,20 +104,52 @@ pub async fn upload_character_handler(
     let local_user_id = user.id;
 
     let mut file_data: Option<Bytes> = None;
+    let mut content_type: Option<String> = None; // Added to store content type
 
+    info!("Starting character card upload process. Searching for 'character_card' field.");
     while let Some(field) = multipart.next_field().await? {
-        let local_field_name = field.name().unwrap_or("").to_string(); // Renamed variable
-        if local_field_name == "character_card" {
-            // Get filename *before* consuming the field with .bytes()
-            let _filename = field.file_name().map(std::string::ToString::to_string); // Corrected method name: file_name
-            let data = field.bytes().await?; // Consumes the field
-            file_data = Some(data); // Assign Bytes directly
+        let field_name = field.name().unwrap_or("unknown_field").to_string();
+        let file_name = field.file_name().map(|s| s.to_string());
+        let ct = field.content_type().map(|s| s.to_string());
+        info!(field_name = %field_name, file_name = ?file_name, content_type = ?ct, "Processing multipart field");
+
+        if field_name == "character_card" {
+            content_type = ct;
+            let data = field.bytes().await?;
+            info!("Found 'character_card' field with {} bytes.", data.len());
+            file_data = Some(data);
             break;
         }
     }
     let png_data = file_data.ok_or_else(|| {
         AppError::BadRequest("Missing 'character_card' field in upload".to_string())
     })?;
+
+    // Validate image data using the 'image' crate
+    if let Some(ct) = &content_type {
+        if ct.starts_with("image/") {
+            let format = match ct.as_str() {
+                "image/png" => Some(image::ImageFormat::Png),
+                "image/jpeg" => Some(image::ImageFormat::Jpeg),
+                _ => None,
+            };
+
+            if let Some(fmt) = format {
+                match image::load_from_memory_with_format(&png_data, fmt) {
+                    Ok(_) => info!("Image data validated successfully as {}", ct),
+                    Err(e) => {
+                        error!("Failed to decode image data as {}: {}", ct, e);
+                        return Err(AppError::BadRequest(format!("Invalid image data: {}", e)));
+                    }
+                }
+            } else {
+                warn!("Unsupported image content type: {}", ct);
+                // Allow upload but log warning, or return error if strict
+            }
+        }
+    } else {
+        warn!("No content type provided for character_card upload.");
+    }
 
     let parsed_card = character_parser::parse_character_card_png(&png_data)?;
     let mut new_character_for_db = NewCharacter::from_parsed_card(&parsed_card, local_user_id);
@@ -251,47 +293,39 @@ pub async fn upload_character_handler(
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
 
-    // --- Save the character avatar image ---
-    match state.file_storage_service.save_character_avatar(inserted_character.id, &png_data).await {
-        Ok(avatar_path) => {
-            info!(character_id = %inserted_character.id, avatar_path = %avatar_path, "Avatar image saved successfully");
+    // --- Save the character avatar image to database ---
+    // Create character asset record with binary data
+    let new_asset = NewCharacterAsset::new_avatar(
+        inserted_character.id,
+        &format!("{}_avatar", inserted_character.name),
+        png_data.to_vec(),
+        content_type // Pass the extracted content_type
+    );
+    
+    // Save asset record to database
+    let conn_asset_op = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        
+    let asset_result: Result<CharacterAsset, diesel::result::Error> = conn_asset_op
+        .interact(move |conn_asset_block| {
+            diesel::insert_into(character_assets)
+                .values(new_asset)
+                .returning(CharacterAsset::as_returning())
+                .get_result::<CharacterAsset>(conn_asset_block)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}")))?;
+        
+    match asset_result {
+        Ok(asset) => {
+            info!(character_id = %inserted_character.id, asset_id = asset.id, "Character avatar stored in database successfully");
             
-            // Create character asset record
-            let new_asset = NewCharacterAsset::new_avatar(
-                inserted_character.id,
-                &avatar_path,
-                &format!("{}_avatar", inserted_character.name)
-            );
-            
-            // Save asset record to database
-            let conn_asset_op = state
-                .pool
-                .get()
-                .await
-                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                
-            let _asset_result: Result<CharacterAsset, diesel::result::Error> = conn_asset_op
-                .interact(move |conn_asset_block| {
-                    diesel::insert_into(character_assets)
-                        .values(new_asset)
-                        .returning(CharacterAsset::as_returning())
-                        .get_result::<CharacterAsset>(conn_asset_block)
-                })
-                .await
-                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}")))?;
-                
-            match _asset_result {
-                Ok(_asset) => {
-                    info!(character_id = %inserted_character.id, "Character asset record created successfully");
-                }
-                Err(e) => {
-                    warn!(character_id = %inserted_character.id, error = %e, "Failed to create character asset record, avatar file saved but not tracked in database");
-                }
-            }
-            
-            // Update character record with avatar path
+            // Update character record with asset reference (asset ID as string)
             let character_id_for_update = inserted_character.id;
-            let avatar_path_for_update = avatar_path.clone();
+            let asset_id_for_update = asset.id.to_string();
             let conn_update_op = state
                 .pool
                 .get()
@@ -301,7 +335,7 @@ pub async fn upload_character_handler(
             let update_result = conn_update_op
                 .interact(move |conn_update_block| {
                     diesel::update(characters.find(character_id_for_update))
-                        .set(crate::schema::characters::avatar.eq(Some(avatar_path_for_update)))
+                        .set(crate::schema::characters::avatar.eq(Some(asset_id_for_update)))
                         .execute(conn_update_block)
                 })
                 .await
@@ -309,7 +343,7 @@ pub async fn upload_character_handler(
                 
             match update_result {
                 Ok(_) => {
-                    info!(character_id = %inserted_character.id, "Character avatar field updated successfully");
+                    info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
                 }
                 Err(e) => {
                     warn!(character_id = %inserted_character.id, error = %e, "Failed to update character avatar field");
@@ -317,7 +351,7 @@ pub async fn upload_character_handler(
             }
         }
         Err(e) => {
-            warn!(character_id = %inserted_character.id, error = %e, "Failed to save avatar image, continuing without avatar");
+            warn!(character_id = %inserted_character.id, error = %e, "Failed to save avatar image to database, continuing without avatar");
         }
     }
 
@@ -358,11 +392,9 @@ pub async fn upload_character_handler(
                                     .or_else(|| entry.id.map(|i| i.to_string()))
                                     .unwrap_or_else(|| idx.to_string());
                                 tracing::info!(
-                                    "Successfully parsed array entry {}: keys={:?}, content length={}, comment={:?}",
+                                    "Successfully parsed array entry {}: content length={}",
                                     uid,
-                                    entry.key,
-                                    entry.content.len(),
-                                    entry.comment
+                                    entry.content.len()
                                 );
                                 entries_map.insert(uid, entry);
                             }
@@ -385,11 +417,9 @@ pub async fn upload_character_handler(
                         {
                             Ok(entry) => {
                                 tracing::info!(
-                                    "Successfully parsed object entry {}: keys={:?}, content length={}, comment={:?}",
+                                    "Successfully parsed object entry {}: content length={}",
                                     uid,
-                                    entry.key,
-                                    entry.content.len(),
-                                    entry.comment
+                                    entry.content.len()
                                 );
                                 entries_map.insert(uid.clone(), entry);
                             }
@@ -1000,20 +1030,21 @@ pub async fn update_character_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session), err)] // Add instrument macro
-pub async fn get_character_image(
-    Path(character_id): Path<Uuid>,
+#[instrument(skip(state, auth_session), err)]
+pub async fn get_character_asset_handler(
+    Path((character_id, asset_id)): Path<(Uuid, i32)>,
+    Query(params): Query<ImageQueryParams>, // Extract query parameters
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession, // Use AuthSession
+    auth_session: CurrentAuthSession,
 ) -> Result<Response<Body>, AppError> {
-    trace!(target: "auth_debug", ">>> ENTERING get_character_image for character_id: {}", character_id); // ADDED TRACE
-    // Get the user from the session
+    trace!(target: "auth_debug", ">>> ENTERING get_character_asset_handler for character_id: {}, asset_id: {}, params: {:?}", character_id, asset_id, params);
+
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
-    let local_user_id = user.id; // Get ID from the user struct
+    let local_user_id = user.id;
 
-    tracing::info!(%character_id, %local_user_id, "Fetching character image for user"); // Update log
+    tracing::info!(%character_id, %asset_id, %local_user_id, "Fetching character asset for user");
 
     // First, verify that the character belongs to the user
     let conn = state
@@ -1035,33 +1066,72 @@ pub async fn get_character_image(
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Character lookup interaction error: {e}")))?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}")))?;
 
-    let character = character.ok_or_else(|| {
+    let _character = character.ok_or_else(|| {
         AppError::NotFound("Character not found or not accessible".to_string())
     })?;
 
-    // Check if character has an avatar path
-    let avatar_path = character.avatar.ok_or_else(|| {
-        AppError::NotFound("Character has no avatar image".to_string())
+    // Load the asset from database
+    let conn_asset = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let asset = conn_asset
+        .interact(move |conn_asset_block| {
+            character_assets
+                .find(asset_id)
+                .filter(crate::schema::character_assets::character_id.eq(character_id))
+                .select(CharacterAsset::as_select())
+                .first::<CharacterAsset>(conn_asset_block)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup interaction error: {e}")))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))?;
+
+    let asset = asset.ok_or_else(|| {
+        AppError::NotFound("Character asset not found".to_string())
     })?;
 
-    // Load the image from file storage
-    let image_data = state
-        .file_storage_service
-        .load_character_avatar(&avatar_path)
-        .await
-        .map_err(|e| {
-            warn!(character_id = %character_id, avatar_path = %avatar_path, error = %e, "Failed to load character avatar");
-            AppError::NotFound("Avatar image file not found".to_string())
-        })?;
+    // Get the image data from the asset
+    let image_data = asset.data.ok_or_else(|| {
+        AppError::NotFound("Character asset has no image data".to_string())
+    })?;
+
+    // Get content type, default to image/png
+    let mut content_type = asset.content_type.unwrap_or_else(|| "image/png".to_string());
+    let mut final_image_data = image_data;
+
+    // Resize image if width or height parameters are provided
+    if let (Some(width), Some(height)) = (params.width, params.height) {
+        info!(%character_id, %asset_id, %width, %height, "Resizing image asset");
+        let format = ImageFormat::from_extension(content_type.split('/').last().unwrap_or("png"))
+            .unwrap_or(ImageFormat::Png);
+
+        let decoded_image = ImageReader::with_format(Cursor::new(&final_image_data), format)
+            .decode()
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to decode image for resizing: {e}")))?;
+
+        let resized_image = decoded_image.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
+
+        let mut buffer = Cursor::new(Vec::new());
+        resized_image.write_to(&mut buffer, format)
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to encode resized image: {e}")))?;
+        
+        final_image_data = buffer.into_inner();
+        // Ensure content type is still correct after re-encoding
+        content_type = format!("image/{}", format.extensions_str().iter().next().unwrap_or(&"png"));
+    }
 
     // Return the image with appropriate headers
     let response = Response::builder()
         .status(StatusCode::OK)
-        .header("Content-Type", "image/png")
+        .header("Content-Type", &content_type)
         .header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
-        .body(Body::from(image_data))
+        .body(Body::from(final_image_data.clone()))
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}")))?;
 
-    info!(character_id = %character_id, "Character avatar served successfully");
+    debug!(character_id = %character_id, asset_id = %asset_id, content_type = %content_type, image_data_len = final_image_data.len(), "Character asset served successfully");
     Ok(response)
 }

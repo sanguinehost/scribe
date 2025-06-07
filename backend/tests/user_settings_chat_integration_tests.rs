@@ -180,6 +180,10 @@ async fn test_chat_session_uses_user_default_model() {
         encryption_service.clone(),
         qdrant_service.clone(),
     ));
+    let file_storage_service = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let app_services = AppStateServices {
         ai_client,
@@ -192,6 +196,7 @@ async fn test_chat_session_uses_user_default_model() {
         encryption_service,
         lorebook_service,
         auth_backend,
+        file_storage_service,
     };
 
     let app_state_for_session = Arc::new(AppState::new(db_pool, config, app_services));

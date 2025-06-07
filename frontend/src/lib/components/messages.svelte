@@ -9,7 +9,7 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import PreviewMessage from './messages/preview-message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
-	import type { ScribeChatMessage } from '$lib/types';
+	import type { ScribeChatMessage, User } from '$lib/types';
 	import { getLock } from '$lib/hooks/lock';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
@@ -19,17 +19,19 @@
 	let endRef = $state<HTMLDivElement | null>(null);
 
 	let {
-		readonly,
-		loading,
-		messages,
-		selectedCharacterId = null,
-		character = null
+	 	readonly,
+	 	loading,
+	 	messages,
+	 	selectedCharacterId = null,
+	 	character = null,
+	 	user = undefined // Add user prop here
 	}: {
-		readonly: boolean;
-		loading: boolean;
-		messages: ScribeChatMessage[];
-		selectedCharacterId?: string | null;
-		character?: any | null; // Will be properly typed
+	 	readonly: boolean;
+	 	loading: boolean;
+	 	messages: ScribeChatMessage[];
+	 	selectedCharacterId?: string | null;
+	 	character?: any | null; // Will be properly typed
+	 	user?: User | undefined; // Type for user prop
 	} = $props();
 
 	const dispatch = createEventDispatcher();
@@ -139,9 +141,11 @@
 					alternateGreetings={character.alternate_greetings}
 					{currentGreetingIndex}
 					on:greetingChanged={handleGreetingChanged}
+					{character}
+					{user}
 				/>
 			{:else}
-				<PreviewMessage {message} {readonly} {loading} />
+				<PreviewMessage {message} {readonly} {loading} {user} {character} />
 			{/if}
 		{/each}
 

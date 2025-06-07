@@ -1244,6 +1244,11 @@ mod tests {
         ));
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 
+        let file_storage_service = Arc::new(
+            crate::services::file_storage_service::FileStorageService::new("./test_uploads")
+                .expect("Failed to create test file storage service")
+        );
+
         let services = AppStateServices {
             ai_client,
             embedding_client: mock_embed_client.clone(),
@@ -1255,6 +1260,7 @@ mod tests {
             encryption_service,
             lorebook_service,
             auth_backend,
+            file_storage_service,
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));

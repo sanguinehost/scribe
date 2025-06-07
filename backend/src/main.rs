@@ -23,6 +23,7 @@ use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
 use scribe_backend::routes::health::health_check;
 use scribe_backend::routes::{
+    avatars::avatar_routes, // Added for avatar routes
     characters::characters_router, // Use the router function import
     chat::chat_routes,
     chats,
@@ -337,6 +338,8 @@ fn build_router(
         .nest("/user-settings", user_settings_routes(app_state.clone()))
         .nest("/", lorebook_routes())
         .nest("/admin", admin_routes())
+        .merge(avatar_routes()
+            .layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
         .route_layer(login_required!(AuthBackend));
 
     let public_api_routes = Router::new()

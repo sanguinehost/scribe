@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod auth;
+pub mod avatars;
 pub mod characters;
 pub mod chat;
 pub mod chats;

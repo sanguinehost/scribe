@@ -469,6 +469,10 @@ async fn test_first_mes_included_in_history() {
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
+    let file_storage_service = Arc::new(
+        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
+            .expect("Failed to create test file storage service")
+    );
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -481,6 +485,7 @@ async fn test_first_mes_included_in_history() {
         encryption_service: encryption_service.clone(),
         lorebook_service,
         auth_backend,
+        file_storage_service,
     };
 
     let state_for_service =

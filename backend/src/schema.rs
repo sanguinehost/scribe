@@ -23,13 +23,16 @@ diesel::table! {
         character_id -> Uuid,
         #[max_length = 50]
         asset_type -> Varchar,
-        uri -> Text,
+        uri -> Nullable<Text>,
         #[max_length = 255]
         name -> Varchar,
         #[max_length = 50]
         ext -> Varchar,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        data -> Nullable<Bytea>,
+        #[max_length = 100]
+        content_type -> Nullable<Varchar>,
     }
 }
 
@@ -365,6 +368,29 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    user_assets (id) {
+        id -> Int4,
+        user_id -> Uuid,
+        persona_id -> Nullable<Uuid>,
+        #[max_length = 50]
+        asset_type -> Varchar,
+        uri -> Nullable<Text>,
+        #[max_length = 255]
+        name -> Varchar,
+        #[max_length = 50]
+        ext -> Varchar,
+        data -> Nullable<Bytea>,
+        #[max_length = 100]
+        content_type -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     user_personas (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -473,6 +499,8 @@ diesel::joinable!(old_documents -> users (user_id));
 diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
 diesel::joinable!(old_votes -> chat_sessions (chat_id));
+diesel::joinable!(user_assets -> user_personas (persona_id));
+diesel::joinable!(user_assets -> users (user_id));
 diesel::joinable!(user_settings -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -490,6 +518,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     old_suggestions,
     old_votes,
     sessions,
+    user_assets,
     user_personas,
     user_settings,
     users,

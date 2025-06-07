@@ -199,9 +199,10 @@ pub async fn generate_simple_response(
 mod tests {
     use super::*;
     use futures::stream;
-    use genai::chat::ChatStreamEvent; // Removed unused ChatMessage
-    use genai::{ModelIden, adapter};
+    use genai::chat::ChatStreamEvent;
+    use genai::{adapter, ModelIden};
     use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::time::sleep;
 
     // --- Existing Integration Tests (Keep them) ---
     #[tokio::test]
@@ -273,15 +274,52 @@ mod tests {
             "gemini-2.5-pro-preview-06-05",
             "gemini-2.5-flash-preview-05-20",
         ];
+        let max_retries = 3; // Define a maximum number of retries
+
         for model_name in models_to_test {
-            let user_message = format!("Test Model [{model_name}]: Say hello!");
-            let result = generate_simple_response(&*client_wrapper, user_message, model_name).await;
-            match result {
-                Ok(response) => assert!(
-                    !response.is_empty(),
-                    "Gemini model {model_name} returned an empty response"
-                ),
-                Err(e) => panic!("Gemini API call for model {model_name} failed: {e:?}"),
+            let mut attempts = 0;
+            loop {
+                attempts += 1;
+                let user_message = format!("Test Model [{model_name}]: Say hello!");
+                let result =
+                    generate_simple_response(&*client_wrapper, user_message.clone(), model_name)
+                        .await;
+
+                match result {
+                    Ok(response) => {
+                        assert!(
+                            !response.is_empty(),
+                            "Gemini model {model_name} returned an empty response"
+                        );
+                        tracing::info!("Successfully received response for model: {}", model_name);
+                        break; // Test passed for this model, move to the next
+                    }
+                    Err(AppError::RateLimited(Some(delay))) => {
+                        tracing::warn!(
+                            "Model {}: Rate limited. Retrying in {} seconds (attempt {}/{})",
+                            model_name,
+                            delay.as_secs(),
+                            attempts,
+                            max_retries
+                        );
+                        if attempts >= max_retries {
+                            panic!(
+                                "Model {}: Failed after {} retries due to rate limiting.",
+                                model_name, max_retries
+                            );
+                        }
+                        sleep(delay).await;
+                    }
+                    Err(AppError::RateLimited(None)) => {
+                        panic!(
+                            "Model {}: Rate limited, but no retry delay provided. Failing.",
+                            model_name
+                        );
+                    }
+                    Err(e) => {
+                        panic!("Gemini API call for model {model_name} failed: {e:?}");
+                    }
+                }
             }
         }
     }
