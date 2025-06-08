@@ -43,8 +43,14 @@
 		}
 	}
 
+	// Only fetch on mount, not on every re-render
+	let hasFetched = false;
+	
 	onMount(async () => {
-		await fetchCharacters(); // Call fetch function on mount
+		if (!hasFetched) {
+			await fetchCharacters(); // Call fetch function on mount
+			hasFetched = true;
+		}
 	}); // Correctly closed onMount
 
 	// Expose a refresh function for the parent component

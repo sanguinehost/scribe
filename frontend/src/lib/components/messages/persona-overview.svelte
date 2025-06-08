@@ -4,7 +4,8 @@
 	import type { UserPersona } from '$lib/types';
 	import { toast } from 'svelte-sonner';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
-	import { scale } from 'svelte/transition';
+	import { fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 	import { Button } from '$lib/components/ui/button';
 	import {
 	 	Card,
@@ -282,7 +283,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-6xl px-4" transition:scale={{ opacity: 0, start: 0.98 }}>
+<div class="mx-auto max-w-6xl px-4">
 	<div class="space-y-6">
 		<!-- Persona Header Card -->
 		{#if isLoading}

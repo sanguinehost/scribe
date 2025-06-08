@@ -2,7 +2,8 @@
 	import { createEventDispatcher } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { scale } from 'svelte/transition';
+	import { fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 	import type { CreateUserPersonaRequest } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
@@ -102,7 +103,7 @@
 	}
 </script>
 
-<div class="w-full md:mt-8" transition:scale={{ opacity: 0, start: 0.98 }}>
+<div class="w-full md:mt-8" transition:fly={{ y: 20, duration: 400, easing: quintOut }}>
 	<Card class="mx-auto max-w-5xl">
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2">

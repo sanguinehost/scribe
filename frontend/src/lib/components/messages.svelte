@@ -13,6 +13,9 @@
 	import { getLock } from '$lib/hooks/lock';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
+	import { slideAndFade } from '$lib/utils/transitions';
+	import { fly, fade } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 	import * as Tooltip from '$lib/components/ui/tooltip'; // Import Tooltip components
 
 	let containerRef = $state<HTMLDivElement | null>(null);
@@ -94,7 +97,11 @@
 
 		const observer = new MutationObserver(() => {
 			if (!endRef || scrollLock.locked) return;
-			endRef.scrollIntoView({ behavior: 'instant', block: 'end' });
+			// Only auto-scroll if we have actual chat messages
+			// Don't scroll for character overviews, settings, or empty states
+			if (messages.length > 0) {
+				endRef.scrollIntoView({ behavior: 'instant', block: 'end' });
+			}
 		});
 
 		observer.observe(containerRef, {
@@ -106,30 +113,99 @@
 
 		return () => observer.disconnect();
 	});
+
+	// Scroll to top when showing character overview, settings, or other empty states
+	$effect(() => {
+		if (!containerRef || !mounted) return;
+		
+		// If we're showing empty state content (no messages), scroll to top
+		// This triggers when view changes (character selection, settings, etc.)
+		if (messages.length === 0) {
+			// Use a small timeout to ensure the content has rendered first
+			setTimeout(() => {
+				if (containerRef) {
+					containerRef.scrollTo({ top: 0, behavior: 'smooth' });
+				}
+			}, 100);
+		}
+	});
+
+	// Also scroll to top when starting fresh chats (with only initial message)
+	$effect(() => {
+		if (!containerRef || !mounted) return;
+		
+		// For new chats with just a greeting message, scroll to top
+		// instead of bottom to show the character info and start of conversation
+		if (messages.length === 1 && messages[0]?.message_type === 'Assistant') {
+			setTimeout(() => {
+				if (containerRef) {
+					containerRef.scrollTo({ top: 0, behavior: 'smooth' });
+				}
+			}, 100);
+		}
+	});
 </script>
 
 <Tooltip.Provider>
 	<div bind:this={containerRef} class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll pt-4">
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
 		{#if settingsStore.isVisible}
-			{#if settingsStore.viewMode === 'overview'}
-				<SettingsOverview />
-			{:else if settingsStore.viewMode === 'consolidated'}
-				<ConsolidatedSettings />
-			{/if}
+			<div class="relative">
+				{#key settingsStore.viewMode}
+					{#if settingsStore.viewMode === 'overview'}
+						<div in:fly={{ y: 30, duration: 400, easing: quintOut }} out:fade={{ duration: 200 }}>
+							<SettingsOverview />
+						</div>
+					{:else if settingsStore.viewMode === 'consolidated'}
+						<div in:fly={{ y: 30, duration: 400, easing: quintOut }} out:fade={{ duration: 200 }}>
+							<ConsolidatedSettings />
+						</div>
+					{/if}
+				{/key}
+			</div>
 		{/if}
 
 		<!-- Empty Chat Placeholders (only if chat is empty AND settings are NOT visible) -->
 		{#if mounted && messages.length === 0 && !settingsStore.isVisible}
-			{#if selectedCharacterId}
-				<CharacterOverview characterId={selectedCharacterId} />
-			{:else if selectedPersonaStore.viewMode === 'creating'}
-				<PersonaEditor on:personaCreated={handlePersonaCreated} />
-			{:else if selectedPersonaStore.personaId}
-				<PersonaOverview personaId={selectedPersonaStore.personaId} />
-			{:else}
-				<Overview />
-			{/if}
+			<div class="relative">
+				<!-- Apply same smooth transition approach as sidebar -->
+				<div 
+					class="main-content-view" 
+					class:active={selectedCharacterId}
+					class:inactive={!selectedCharacterId}
+				>
+					{#if selectedCharacterId}
+						<CharacterOverview characterId={selectedCharacterId} />
+					{/if}
+				</div>
+				<div 
+					class="main-content-view" 
+					class:active={selectedPersonaStore.viewMode === 'creating'}
+					class:inactive={selectedPersonaStore.viewMode !== 'creating'}
+				>
+					{#if selectedPersonaStore.viewMode === 'creating'}
+						<PersonaEditor on:personaCreated={handlePersonaCreated} />
+					{/if}
+				</div>
+				<div 
+					class="main-content-view" 
+					class:active={selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					class:inactive={!selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating'}
+				>
+					{#if selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+						<PersonaOverview personaId={selectedPersonaStore.personaId} />
+					{/if}
+				</div>
+				<div 
+					class="main-content-view" 
+					class:active={!selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					class:inactive={selectedCharacterId || selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating'}
+				>
+					{#if !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+						<Overview />
+					{/if}
+				</div>
+			</div>
 		{/if}
 
 		{#each messages as message, index (message.id)}
@@ -156,3 +232,26 @@
 		<div bind:this={endRef} class="min-h-[24px] min-w-[24px] shrink-0"></div>
 	</div>
 </Tooltip.Provider>
+
+<style>
+	.main-content-view {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		transition: opacity 200ms ease-in-out;
+		pointer-events: none;
+		opacity: 0;
+	}
+
+	.main-content-view.active {
+		pointer-events: auto;
+		opacity: 1;
+	}
+
+	.main-content-view.inactive {
+		pointer-events: none;
+		opacity: 0;
+	}
+</style>

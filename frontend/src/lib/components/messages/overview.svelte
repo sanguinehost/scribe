@@ -1,10 +1,11 @@
 <script lang="ts">
 	// Removed VercelIcon and MessageIcon imports
 	// Removed Button and SettingsStore imports
-	import { scale } from 'svelte/transition';
+	import { fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 </script>
 
-<div class="mx-auto max-w-3xl md:mt-20" transition:scale={{ opacity: 0, start: 0.98 }}>
+<div class="mx-auto max-w-3xl md:mt-20">
 	<div class="flex max-w-xl flex-col gap-8 rounded-xl p-6 text-center leading-relaxed">
 		<p class="flex flex-row items-center justify-center gap-4">
 			<!-- Using a generic Pen Tool icon as a placeholder -->

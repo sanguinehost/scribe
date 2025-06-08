@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { scale } from 'svelte/transition';
+	import { fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 	import { Button } from '../ui/button';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 
@@ -14,7 +15,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-3xl md:mt-20" transition:scale={{ opacity: 0, start: 0.98 }}>
+<div class="mx-auto max-w-3xl md:mt-20" transition:fly={{ y: 20, duration: 400, easing: quintOut }}>
 	<div class="flex max-w-xl flex-col gap-8 rounded-xl p-6 text-center leading-relaxed">
 		<p class="flex flex-row items-center justify-center gap-4">
 			<!-- Settings icon -->

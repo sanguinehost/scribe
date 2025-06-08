@@ -5,7 +5,7 @@
 	import type { Character, ScribeChatSession, UserPersona } from '$lib/types';
 	import { getCurrentUser } from '$lib/auth.svelte';
 	import { toast } from 'svelte-sonner';
-	import { scale } from 'svelte/transition';
+	// Removed transitions - handled at container level in messages.svelte
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -414,12 +414,19 @@
 		popoutContent = '';
 	}
 
-	onMount(() => {
-		loadCharacterData();
+	// Track the last loaded character ID to prevent unnecessary reloads
+	let lastLoadedCharacterId = $state<string | null>(null);
+
+	// Only reload data when characterId actually changes
+	$effect(() => {
+		if (characterId && characterId !== lastLoadedCharacterId) {
+			loadCharacterData();
+			lastLoadedCharacterId = characterId;
+		}
 	});
 </script>
 
-<div class="mx-auto max-w-4xl px-4" transition:scale={{ opacity: 0, start: 0.98 }}>
+<div class="mx-auto max-w-4xl px-4">
 	<div class="space-y-6">
 		<!-- Character Header Card -->
 		{#if isLoadingCharacter}
