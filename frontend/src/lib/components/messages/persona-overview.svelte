@@ -15,6 +15,9 @@
 	} from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		AlertDialog,
 		AlertDialogAction,
@@ -28,6 +31,8 @@
 	import PlusIcon from '../icons/plus.svelte';
 	import TrashIcon from '../icons/trash.svelte';
 	import PencilEditIcon from '../icons/pencil-edit.svelte';
+	import CheckCircleFill from '../icons/check-circle-fill.svelte';
+	import MarkdownRenderer from '../markdown/renderer.svelte';
 
 	let {
 		personaId,
@@ -44,6 +49,18 @@
 	let deleteDialogOpen = $state(false);
 	let isDeletingPersona = $state(false);
 	let isSettingDefault = $state(false);
+	
+	// Edit mode state
+	let isEditMode = $state(false);
+	let isSaving = $state(false);
+	let editedName = $state('');
+	let editedDescription = $state('');
+	let editedPersonality = $state('');
+	let editedScenario = $state('');
+	let editedFirstMes = $state('');
+	let editedSystemPrompt = $state('');
+	let editedMesExample = $state('');
+	let editedPostHistoryInstructions = $state('');
 
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 
@@ -85,6 +102,15 @@
 			const result = await apiClient.getUserPersona(personaId);
 			if (result.isOk()) {
 				persona = result.value;
+				// Initialize edit values
+				editedName = persona.name || '';
+				editedDescription = persona.description || '';
+				editedPersonality = persona.personality || '';
+				editedScenario = persona.scenario || '';
+				editedFirstMes = persona.first_mes || '';
+				editedSystemPrompt = persona.system_prompt || '';
+				editedMesExample = persona.mes_example || '';
+				editedPostHistoryInstructions = persona.post_history_instructions || '';
 			} else {
 				toast.error('Failed to load persona', {
 					description: result.error.message
@@ -99,8 +125,98 @@
 	}
 
 	function handleEdit() {
-		if (persona && onEdit) {
-			onEdit(persona);
+		if (!persona) return;
+		
+		// Reset edit values to current persona data
+		editedName = persona.name || '';
+		editedDescription = persona.description || '';
+		editedPersonality = persona.personality || '';
+		editedScenario = persona.scenario || '';
+		editedFirstMes = persona.first_mes || '';
+		editedSystemPrompt = persona.system_prompt || '';
+		editedMesExample = persona.mes_example || '';
+		editedPostHistoryInstructions = persona.post_history_instructions || '';
+		
+		isEditMode = true;
+	}
+
+	function handleCancelEdit() {
+		isEditMode = false;
+		// Reset values back to original
+		if (persona) {
+			editedName = persona.name || '';
+			editedDescription = persona.description || '';
+			editedPersonality = persona.personality || '';
+			editedScenario = persona.scenario || '';
+			editedFirstMes = persona.first_mes || '';
+			editedSystemPrompt = persona.system_prompt || '';
+			editedMesExample = persona.mes_example || '';
+			editedPostHistoryInstructions = persona.post_history_instructions || '';
+		}
+	}
+
+	async function handleSave() {
+		if (!persona) return;
+
+		isSaving = true;
+
+		try {
+			const updateData: any = {};
+
+			// Only include changed fields
+			if (editedName !== (persona.name || '') && editedName.trim()) {
+				updateData.name = editedName.trim();
+			}
+			if (editedDescription !== (persona.description || '')) {
+				updateData.description = editedDescription.trim();
+			}
+			if (editedPersonality !== (persona.personality || '')) {
+				updateData.personality = editedPersonality.trim();
+			}
+			if (editedScenario !== (persona.scenario || '')) {
+				updateData.scenario = editedScenario.trim();
+			}
+			if (editedFirstMes !== (persona.first_mes || '')) {
+				updateData.first_mes = editedFirstMes.trim();
+			}
+			if (editedSystemPrompt !== (persona.system_prompt || '')) {
+				updateData.system_prompt = editedSystemPrompt.trim();
+			}
+			if (editedMesExample !== (persona.mes_example || '')) {
+				updateData.mes_example = editedMesExample.trim();
+			}
+			if (editedPostHistoryInstructions !== (persona.post_history_instructions || '')) {
+				updateData.post_history_instructions = editedPostHistoryInstructions.trim();
+			}
+
+			// Only make API call if there are changes
+			if (Object.keys(updateData).length > 0) {
+				const result = await apiClient.updateUserPersona(persona.id, updateData);
+				if (result.isOk()) {
+					// Update local persona data
+					persona.name = editedName.trim();
+					persona.description = editedDescription.trim() || null;
+					persona.personality = editedPersonality.trim() || null;
+					persona.scenario = editedScenario.trim() || null;
+					persona.first_mes = editedFirstMes.trim() || null;
+					persona.system_prompt = editedSystemPrompt.trim() || null;
+					persona.mes_example = editedMesExample.trim() || null;
+					persona.post_history_instructions = editedPostHistoryInstructions.trim() || null;
+
+					toast.success('Persona updated successfully');
+					isEditMode = false;
+				} else {
+					toast.error('Failed to update persona: ' + result.error.message);
+				}
+			} else {
+				// No changes, just exit edit mode
+				isEditMode = false;
+			}
+		} catch (error) {
+			toast.error('Error updating persona');
+			console.error('Error updating persona:', error);
+		} finally {
+			isSaving = false;
 		}
 	}
 
@@ -166,7 +282,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-4xl px-4" transition:scale={{ opacity: 0, start: 0.98 }}>
+<div class="mx-auto max-w-6xl px-4" transition:scale={{ opacity: 0, start: 0.98 }}>
 	<div class="space-y-6">
 		<!-- Persona Header Card -->
 		{#if isLoading}
@@ -195,30 +311,71 @@
 							</AvatarFallback>
 						</Avatar>
 						<div class="flex-1 space-y-4">
-							<div>
-								<h2 class="text-3xl font-bold">{persona.name}</h2>
-								{#if persona.description}
-									<p class="mt-2 text-muted-foreground">
-										{persona.description}
-									</p>
+							<div class="relative">
+								{#if !isEditMode}
+									<div>
+										<h2 class="text-3xl font-bold">{persona.name}</h2>
+										{#if persona.description}
+											<div class="mt-2 text-muted-foreground prose prose-sm dark:prose-invert max-w-none [&_*]:!text-muted-foreground">
+												<MarkdownRenderer md={persona.description} />
+											</div>
+										{/if}
+									</div>
+								{:else}
+									<div class="space-y-3">
+										<div>
+											<Label for="edit-name" class="text-sm font-medium">Name</Label>
+											<Input
+												id="edit-name"
+												bind:value={editedName}
+												class="mt-1"
+												placeholder="Persona name"
+											/>
+										</div>
+										<div>
+											<Label for="edit-description" class="text-sm font-medium">Description</Label>
+											<Textarea
+												id="edit-description"
+												bind:value={editedDescription}
+												class="mt-1"
+												placeholder="Persona description"
+												rows={3}
+											/>
+										</div>
+									</div>
 								{/if}
 							</div>
 							<div class="flex gap-2">
-								<Button onclick={handleEdit} size="lg" class="gap-2">
-									<PencilEditIcon class="h-4 w-4" />
-									Edit Persona
-								</Button>
-								<Button
-									onclick={handleSetDefault}
-									variant="outline"
-									size="lg"
-									disabled={isSettingDefault}
-								>
-									{isSettingDefault ? 'Setting...' : 'Set as Default'}
-								</Button>
-								<Button onclick={handleDeleteClick} variant="destructive" size="lg">
-									<TrashIcon class="h-4 w-4" />
-								</Button>
+								{#if !isEditMode}
+									<Button onclick={handleEdit} size="lg" class="gap-2">
+										<PencilEditIcon class="h-4 w-4" />
+										Edit Persona
+									</Button>
+									<Button
+										onclick={handleSetDefault}
+										variant="outline"
+										size="lg"
+										disabled={isSettingDefault}
+									>
+										{isSettingDefault ? 'Setting...' : 'Set as Default'}
+									</Button>
+									<Button onclick={handleDeleteClick} variant="destructive" size="lg">
+										<TrashIcon class="h-4 w-4" />
+									</Button>
+								{:else}
+									<Button onclick={handleSave} disabled={isSaving} size="lg" class="gap-2">
+										{#if isSaving}
+											<div
+												class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+											></div>
+											Saving...
+										{:else}
+											<CheckCircleFill class="h-4 w-4" />
+											Save Changes
+										{/if}
+									</Button>
+									<Button onclick={handleCancelEdit} variant="outline" size="lg">Cancel</Button>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -232,7 +389,7 @@
 								<div
 									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 								>
-									{@html sanitizeHtml(persona.scenario)}
+									<MarkdownRenderer md={persona.scenario} />
 								</div>
 							</div>
 						{/if}
@@ -242,7 +399,7 @@
 								<div
 									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 								>
-									{@html sanitizeHtml(persona.personality)}
+									<MarkdownRenderer md={persona.personality} />
 								</div>
 							</div>
 						{/if}
@@ -252,7 +409,7 @@
 								<div
 									class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 								>
-									{@html sanitizeHtml(persona.first_mes)}
+									<MarkdownRenderer md={persona.first_mes} />
 								</div>
 							</div>
 						{/if}
@@ -262,7 +419,7 @@
 								<div
 									class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 								>
-									{@html sanitizeHtml(persona.system_prompt)}
+									<MarkdownRenderer md={persona.system_prompt} />
 								</div>
 							</div>
 						{/if}
@@ -272,7 +429,7 @@
 								<div
 									class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 								>
-									{@html sanitizeHtml(persona.mes_example)}
+									<MarkdownRenderer md={persona.mes_example} />
 								</div>
 							</div>
 						{/if}
@@ -284,7 +441,7 @@
 								<div
 									class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 								>
-									{@html sanitizeHtml(persona.post_history_instructions)}
+									<MarkdownRenderer md={persona.post_history_instructions} />
 								</div>
 							</div>
 						{/if}

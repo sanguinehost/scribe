@@ -10,6 +10,8 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
+	import ChevronDown from '../icons/chevron-down.svelte';
+	import ChevronUp from '../icons/chevron-up.svelte';
 
 	let {
 		onCancel,
@@ -23,6 +25,7 @@
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 
 	let isCreating = $state(false);
+	let showAdvancedOptions = $state(false);
 	let formData = $state<CreateUserPersonaRequest>({
 		name: '',
 		description: '',
@@ -99,8 +102,8 @@
 	}
 </script>
 
-<div class="mx-auto max-w-3xl md:mt-8" transition:scale={{ opacity: 0, start: 0.98 }}>
-	<Card class="mx-4">
+<div class="w-full md:mt-8" transition:scale={{ opacity: 0, start: 0.98 }}>
+	<Card class="mx-auto max-w-5xl">
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2">
 				<svg
@@ -126,18 +129,14 @@
 			<form onsubmit={handleSubmit} class="space-y-6">
 				<!-- Basic Information -->
 				<div class="space-y-4">
-					<h3 class="text-lg font-medium">Basic Information</h3>
-
-					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-						<div class="space-y-2">
-							<Label for="name">Name *</Label>
-							<Input
-								id="name"
-								bind:value={formData.name}
-								placeholder="Enter persona name..."
-								required
-							/>
-						</div>
+					<div class="space-y-2">
+						<Label for="name">Name *</Label>
+						<Input
+							id="name"
+							bind:value={formData.name}
+							placeholder="Enter persona name..."
+							required
+						/>
 					</div>
 
 					<div class="space-y-2">
@@ -152,74 +151,95 @@
 					</div>
 				</div>
 
-				<!-- Personality & Behavior -->
+				<!-- Advanced Options -->
 				<div class="space-y-4">
-					<h3 class="text-lg font-medium">Personality & Behavior</h3>
+					<Button
+						type="button"
+						variant="ghost"
+						class="flex w-full items-center justify-between p-3 text-left hover:bg-muted/50"
+						onclick={() => (showAdvancedOptions = !showAdvancedOptions)}
+					>
+						<span class="text-lg font-medium">Advanced Options</span>
+						{#if showAdvancedOptions}
+							<ChevronUp class="h-5 w-5" />
+						{:else}
+							<ChevronDown class="h-5 w-5" />
+						{/if}
+					</Button>
 
-					<div class="space-y-2">
-						<Label for="personality">Personality</Label>
-						<Textarea
-							id="personality"
-							bind:value={formData.personality}
-							placeholder="Describe the personality traits, speaking style, and character..."
-							rows={3}
-						/>
-					</div>
+					{#if showAdvancedOptions}
+						<div class="space-y-6 rounded-lg border bg-muted/20 p-4">
+							<!-- Personality & Behavior -->
+							<div class="space-y-4">
+								<h4 class="text-base font-medium text-muted-foreground">Personality & Behavior</h4>
 
-					<div class="space-y-2">
-						<Label for="scenario">Scenario</Label>
-						<Textarea
-							id="scenario"
-							bind:value={formData.scenario}
-							placeholder="Describe the context or situation this persona operates in..."
-							rows={3}
-						/>
-					</div>
-				</div>
+								<div class="space-y-2">
+									<Label for="personality">Personality</Label>
+									<Textarea
+										id="personality"
+										bind:value={formData.personality}
+										placeholder="Describe the personality traits, speaking style, and character..."
+										rows={3}
+									/>
+								</div>
 
-				<!-- Messages & Prompts -->
-				<div class="space-y-4">
-					<h3 class="text-lg font-medium">Messages & Prompts</h3>
+								<div class="space-y-2">
+									<Label for="scenario">Scenario</Label>
+									<Textarea
+										id="scenario"
+										bind:value={formData.scenario}
+										placeholder="Describe the context or situation this persona operates in..."
+										rows={3}
+									/>
+								</div>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="first_mes">First Message</Label>
-						<Textarea
-							id="first_mes"
-							bind:value={formData.first_mes}
-							placeholder="The first message this persona will send..."
-							rows={2}
-						/>
-					</div>
+							<!-- Messages & Prompts -->
+							<div class="space-y-4">
+								<h4 class="text-base font-medium text-muted-foreground">Messages & Prompts</h4>
 
-					<div class="space-y-2">
-						<Label for="system_prompt">System Prompt</Label>
-						<Textarea
-							id="system_prompt"
-							bind:value={formData.system_prompt}
-							placeholder="System-level instructions for how this persona should behave..."
-							rows={3}
-						/>
-					</div>
+								<div class="space-y-2">
+									<Label for="first_mes">First Message</Label>
+									<Textarea
+										id="first_mes"
+										bind:value={formData.first_mes}
+										placeholder="The first message this persona will send..."
+										rows={2}
+									/>
+								</div>
 
-					<div class="space-y-2">
-						<Label for="mes_example">Message Examples</Label>
-						<Textarea
-							id="mes_example"
-							bind:value={formData.mes_example}
-							placeholder="Example messages to help train the persona's style..."
-							rows={3}
-						/>
-					</div>
+								<div class="space-y-2">
+									<Label for="system_prompt">System Prompt</Label>
+									<Textarea
+										id="system_prompt"
+										bind:value={formData.system_prompt}
+										placeholder="System-level instructions for how this persona should behave..."
+										rows={3}
+									/>
+								</div>
 
-					<div class="space-y-2">
-						<Label for="post_history_instructions">Post-History Instructions</Label>
-						<Textarea
-							id="post_history_instructions"
-							bind:value={formData.post_history_instructions}
-							placeholder="Instructions to apply after the conversation history..."
-							rows={2}
-						/>
-					</div>
+								<div class="space-y-2">
+									<Label for="mes_example">Message Examples</Label>
+									<Textarea
+										id="mes_example"
+										bind:value={formData.mes_example}
+										placeholder="Example messages to help train the persona's style..."
+										rows={3}
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="post_history_instructions">Post-History Instructions</Label>
+									<Textarea
+										id="post_history_instructions"
+										bind:value={formData.post_history_instructions}
+										placeholder="Instructions to apply after the conversation history..."
+										rows={2}
+									/>
+								</div>
+							</div>
+						</div>
+					{/if}
 				</div>
 
 				<!-- Action Buttons -->
