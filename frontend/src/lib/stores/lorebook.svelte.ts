@@ -13,6 +13,7 @@ interface LorebookStore {
 	selectedLorebook: Lorebook | null;
 	entries: LorebookEntry[];
 	isLoading: boolean;
+	isLoadingEntries: boolean;
 	error: string | null;
 }
 
@@ -22,6 +23,7 @@ function createLorebookStore() {
 		selectedLorebook: null,
 		entries: [],
 		isLoading: false,
+		isLoadingEntries: false,
 		error: null
 	});
 
@@ -37,6 +39,9 @@ function createLorebookStore() {
 		},
 		get isLoading() {
 			return state.isLoading;
+		},
+		get isLoadingEntries() {
+			return state.isLoadingEntries;
 		},
 		get error() {
 			return state.error;
@@ -125,7 +130,7 @@ function createLorebookStore() {
 		},
 
 		async loadEntries(lorebookId: string) {
-			state.isLoading = true;
+			state.isLoadingEntries = true;
 			state.error = null;
 			const result = await apiClient.getLorebookEntries(lorebookId);
 			if (result.isOk()) {
@@ -133,24 +138,24 @@ function createLorebookStore() {
 			} else {
 				state.error = result.error.message;
 			}
-			state.isLoading = false;
+			state.isLoadingEntries = false;
 		},
 
 		async createEntry(
 			lorebookId: string,
 			payload: CreateLorebookEntryPayload
 		): Promise<LorebookEntry | null> {
-			state.isLoading = true;
+			state.isLoadingEntries = true;
 			state.error = null;
 			const result = await apiClient.createLorebookEntry(lorebookId, payload);
 			if (result.isOk()) {
 				const newEntry = result.value;
 				state.entries.push(newEntry);
-				state.isLoading = false;
+				state.isLoadingEntries = false;
 				return newEntry;
 			} else {
 				state.error = result.error.message;
-				state.isLoading = false;
+				state.isLoadingEntries = false;
 				return null;
 			}
 		},
@@ -160,7 +165,7 @@ function createLorebookStore() {
 			entryId: string,
 			payload: UpdateLorebookEntryPayload
 		): Promise<boolean> {
-			state.isLoading = true;
+			state.isLoadingEntries = true;
 			state.error = null;
 			const result = await apiClient.updateLorebookEntry(lorebookId, entryId, payload);
 			if (result.isOk()) {
@@ -170,26 +175,26 @@ function createLorebookStore() {
 				if (index !== -1) {
 					state.entries[index] = updatedEntry;
 				}
-				state.isLoading = false;
+				state.isLoadingEntries = false;
 				return true;
 			} else {
 				state.error = result.error.message;
-				state.isLoading = false;
+				state.isLoadingEntries = false;
 				return false;
 			}
 		},
 
 		async deleteEntry(lorebookId: string, entryId: string): Promise<boolean> {
-			state.isLoading = true;
+			state.isLoadingEntries = true;
 			state.error = null;
 			const result = await apiClient.deleteLorebookEntry(lorebookId, entryId);
 			if (result.isOk()) {
 				state.entries = state.entries.filter((e) => e.id !== entryId);
-				state.isLoading = false;
+				state.isLoadingEntries = false;
 				return true;
 			} else {
 				state.error = result.error.message;
-				state.isLoading = false;
+				state.isLoadingEntries = false;
 				return false;
 			}
 		},

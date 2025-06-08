@@ -9,9 +9,20 @@
 		viewAllLorebooks: void;
 	}>();
 
-	onMount(() => {
-		lorebookStore.loadLorebooks();
+	// Only fetch on mount, not on every re-render
+	let hasFetched = false;
+	
+	onMount(async () => {
+		if (!hasFetched) {
+			await lorebookStore.loadLorebooks();
+			hasFetched = true;
+		}
 	});
+
+	// Expose a refresh function for the parent component
+	export async function refresh() {
+		await lorebookStore.loadLorebooks();
+	}
 
 	function handleSelectLorebook(lorebookId: string) {
 		dispatch('selectLorebook', { lorebookId });

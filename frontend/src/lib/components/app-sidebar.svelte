@@ -8,10 +8,8 @@
 		SidebarHeader,
 		SidebarMenu
 	} from './ui/sidebar';
-	import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from './ui/tooltip';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import PlusIcon from './icons/plus.svelte';
 	import SidebarUserNav from './sidebar-user-nav.svelte';
 	// import { SidebarHistory } from './sidebar-history'; // Remove SidebarHistory import
 	import CharacterList from './CharacterList.svelte'; // Import the new CharacterList component
@@ -22,6 +20,7 @@
 	import { SettingsStore } from '$lib/stores/settings.svelte'; // Import SettingsStore
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
+	import { SelectedLorebookStore } from '$lib/stores/selected-lorebook.svelte';
 	import { SidebarStore } from '$lib/stores/sidebar.svelte';
 	import { getCurrentUser, getIsAuthenticated } from '$lib/auth.svelte';
 
@@ -29,18 +28,21 @@
 	const settingsStore = SettingsStore.fromContext(); // Initialize SettingsStore
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
+	const selectedLorebookStore = SelectedLorebookStore.fromContext();
 	const sidebarStore = SidebarStore.fromContext();
 	let isUploaderOpen = $state(false); // State for dialog visibility (Changed to $state)
 	let characterListComp = $state<CharacterList | undefined>(undefined); // Reference to CharacterList component instance
 	let personaListComp = $state<PersonaList | undefined>(undefined); // Reference to PersonaList component instance
+	let lorebookListComp = $state<LorebooksSidebarList | undefined>(undefined); // Reference to LorebooksSidebarList component instance
 
 	// Character handlers
 	async function handleSelectCharacter(event: CustomEvent<{ characterId: string }>) {
 		const characterId = event.detail.characterId;
 		console.log('Character selected:', characterId);
 
-		// Clear any selected persona and set the selected character
+		// Clear any selected persona, lorebook and set the selected character
 		selectedPersonaStore.clear();
+		selectedLorebookStore.clear();
 		selectedCharacterStore.select(characterId);
 
 		// Hide settings if visible to show character overview immediately
@@ -81,8 +83,9 @@
 		const personaId = event.detail.personaId;
 		console.log('Persona selected:', personaId);
 
-		// Clear any selected character and set the selected persona
+		// Clear any selected character, lorebook and set the selected persona
 		selectedCharacterStore.clear();
+		selectedLorebookStore.clear();
 		selectedPersonaStore.selectPersona(personaId);
 
 		// Hide settings if visible to show persona overview immediately
@@ -101,8 +104,9 @@
 	function handleCreatePersona() {
 		console.log('Create persona triggered');
 
-		// Clear any selected character and set the persona store to creating mode
+		// Clear any selected character, lorebook and set the persona store to creating mode
 		selectedCharacterStore.clear();
+		selectedLorebookStore.clear();
 		selectedPersonaStore.showCreating();
 
 		// Only navigate if we're not on the home page already
@@ -121,6 +125,10 @@
 	}
 
 	function openSettings() {
+		// Clear all selections when opening settings
+		selectedCharacterStore.clear();
+		selectedPersonaStore.clear();
+		selectedLorebookStore.clear();
 		settingsStore.show();
 		context.setOpenMobile(false); // Close mobile sidebar if open
 	}
@@ -130,13 +138,32 @@
 		const lorebookId = event.detail.lorebookId;
 		console.log('Lorebook selected:', lorebookId);
 
-		// Navigate to the specific lorebook
-		goto(`/lorebooks/${lorebookId}`);
+		// Clear any selected character and persona, then set selected lorebook
+		selectedCharacterStore.clear();
+		selectedPersonaStore.clear();
+		selectedLorebookStore.selectLorebook(lorebookId);
+
+		// Hide settings if visible to show lorebook detail immediately
+		if (settingsStore.isVisible) {
+			settingsStore.hide();
+		}
+
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 	}
 
 	function handleViewAllLorebooks() {
-		goto('/lorebooks');
+		console.log('View all lorebooks triggered');
+
+		// Clear any selected character and persona, then show lorebook list
+		selectedCharacterStore.clear();
+		selectedPersonaStore.clear();
+		selectedLorebookStore.showList();
+
+		// Hide settings if visible to show lorebook list immediately
+		if (settingsStore.isVisible) {
+			settingsStore.hide();
+		}
+
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
 </script>
@@ -151,6 +178,7 @@
 						context.setOpenMobile(false);
 						selectedCharacterStore.clear(); // Clear any selected character
 						selectedPersonaStore.clear(); // Clear any selected persona
+						selectedLorebookStore.clear(); // Clear any selected lorebook
 					}}
 					class="flex flex-row items-center gap-3"
 				>
@@ -158,25 +186,6 @@
 						Scribe
 					</span>
 				</a>
-				<TooltipProvider>
-					<Tooltip>
-						<TooltipTrigger
-							class="inline-flex h-fit items-center justify-center whitespace-nowrap rounded-md p-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
-							onclick={() => {
-								context.setOpenMobile(false);
-								selectedCharacterStore.clear(); // Clear any selected character
-								selectedPersonaStore.clear(); // Clear any selected persona
-								// Only navigate if we're not on the home page already
-								if ($page.url.pathname !== '/') {
-									goto('/', { replaceState: true });
-								}
-							}}
-						>
-							<PlusIcon />
-						</TooltipTrigger>
-						<TooltipContent align="end">New Chat</TooltipContent>
-					</Tooltip>
-				</TooltipProvider>
 			</div>
 		</SidebarMenu>
 	</SidebarHeader>
@@ -239,6 +248,7 @@
 				class:inactive={sidebarStore.activeTab !== 'lorebooks'}
 			>
 				<LorebooksSidebarList
+					bind:this={lorebookListComp}
 					on:selectLorebook={handleSelectLorebook}
 					on:viewAllLorebooks={handleViewAllLorebooks}
 				/>

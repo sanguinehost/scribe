@@ -4,6 +4,7 @@
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte.js';
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
+	import { SelectedLorebookStore } from '$lib/stores/selected-lorebook.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { SidebarStore } from '$lib/stores/sidebar.svelte';
 	import { toast } from 'svelte-sonner';
@@ -20,6 +21,9 @@
 
 	const selectedPersonaStore = new SelectedPersonaStore();
 	selectedPersonaStore.setContext();
+
+	const selectedLorebookStore = new SelectedLorebookStore();
+	selectedLorebookStore.setContext();
 
 	const settingsStore = SettingsStore.toContext(new SettingsStore());
 	
