@@ -10,6 +10,7 @@
 	} from './ui/sidebar';
 	import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from './ui/tooltip';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import PlusIcon from './icons/plus.svelte';
 	import SidebarUserNav from './sidebar-user-nav.svelte';
 	// import { SidebarHistory } from './sidebar-history'; // Remove SidebarHistory import
@@ -21,14 +22,15 @@
 	import { SettingsStore } from '$lib/stores/settings.svelte'; // Import SettingsStore
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
+	import { SidebarStore } from '$lib/stores/sidebar.svelte';
 	import { getCurrentUser, getIsAuthenticated } from '$lib/auth.svelte';
 
 	const context = useSidebar();
 	const settingsStore = SettingsStore.fromContext(); // Initialize SettingsStore
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
+	const sidebarStore = SidebarStore.fromContext();
 	let isUploaderOpen = $state(false); // State for dialog visibility (Changed to $state)
-	let activeTab = $state<'characters' | 'personas' | 'lorebooks'>('characters'); // Track active tab
 	let characterListComp = $state<CharacterList | undefined>(undefined); // Reference to CharacterList component instance
 	let personaListComp = $state<PersonaList | undefined>(undefined); // Reference to PersonaList component instance
 
@@ -41,8 +43,16 @@
 		selectedPersonaStore.clear();
 		selectedCharacterStore.select(characterId);
 
-		// Navigate to home to show the character overview
-		goto('/', { invalidateAll: true });
+		// Hide settings if visible to show character overview immediately
+		if (settingsStore.isVisible) {
+			settingsStore.hide();
+		}
+
+		// Only navigate if we're not on the home page already
+		// This prevents unnecessary page reloads that break transitions
+		if ($page.url.pathname !== '/') {
+			goto('/', { replaceState: true });
+		}
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 	}
 
@@ -75,8 +85,16 @@
 		selectedCharacterStore.clear();
 		selectedPersonaStore.selectPersona(personaId);
 
-		// Navigate to home to show the persona overview
-		goto('/', { invalidateAll: true });
+		// Hide settings if visible to show persona overview immediately
+		if (settingsStore.isVisible) {
+			settingsStore.hide();
+		}
+
+		// Only navigate if we're not on the home page already
+		// This prevents unnecessary page reloads that break transitions
+		if ($page.url.pathname !== '/') {
+			goto('/', { replaceState: true });
+		}
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 	}
 
@@ -87,19 +105,19 @@
 		selectedCharacterStore.clear();
 		selectedPersonaStore.showCreating();
 
-		// Navigate to home to show the persona editor
-		goto('/', { invalidateAll: true });
+		// Only navigate if we're not on the home page already
+		// This prevents unnecessary page reloads that break transitions
+		if ($page.url.pathname !== '/') {
+			goto('/', { replaceState: true });
+		}
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
 
-	function switchTab(tab: 'characters' | 'personas') {
-		activeTab = tab;
-		// Clear any selections when switching tabs
-		if (tab === 'characters') {
-			selectedPersonaStore.clear();
-		} else {
-			selectedCharacterStore.clear();
-		}
+	function switchTab(tab: 'characters' | 'personas' | 'lorebooks') {
+		sidebarStore.setActiveTab(tab);
+		// Don't clear selections when switching tabs - let users browse sidebar
+		// while maintaining their current view (character overview, chat, etc.)
+		// This prevents unnecessary navigation and content flickering
 	}
 
 	function openSettings() {
@@ -148,7 +166,10 @@
 								context.setOpenMobile(false);
 								selectedCharacterStore.clear(); // Clear any selected character
 								selectedPersonaStore.clear(); // Clear any selected persona
-								goto('/', { invalidateAll: true });
+								// Only navigate if we're not on the home page already
+								if ($page.url.pathname !== '/') {
+									goto('/', { replaceState: true });
+								}
 							}}
 						>
 							<PlusIcon />
@@ -163,7 +184,7 @@
 		<!-- Tab Navigation -->
 		<div class="flex border-b">
 			<button
-				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {activeTab === 'characters'
+				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab === 'characters'
 					? 'border-b-2 border-primary bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('characters')}
@@ -171,7 +192,7 @@
 				Characters
 			</button>
 			<button
-				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {activeTab === 'personas'
+				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab === 'personas'
 					? 'border-b-2 border-primary bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('personas')}
@@ -179,7 +200,7 @@
 				Personas
 			</button>
 			<button
-				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {activeTab === 'lorebooks'
+				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab === 'lorebooks'
 					? 'border-b-2 border-primary bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('lorebooks')}
@@ -188,25 +209,41 @@
 			</button>
 		</div>
 
-		<!-- Tab Content -->
-		{#if activeTab === 'characters'}
-			<CharacterList
-				bind:this={characterListComp}
-				on:selectCharacter={handleSelectCharacter}
-				on:uploadCharacter={handleUploadCharacter}
-			/>
-		{:else if activeTab === 'personas'}
-			<PersonaList
-				bind:this={personaListComp}
-				on:selectPersona={handleSelectPersona}
-				on:createPersona={handleCreatePersona}
-			/>
-		{:else if activeTab === 'lorebooks'}
-			<LorebooksSidebarList
-				on:selectLorebook={handleSelectLorebook}
-				on:viewAllLorebooks={handleViewAllLorebooks}
-			/>
-		{/if}
+		<!-- Tab Content - Keep all components mounted but show/hide them to prevent re-initialization -->
+		<div class="relative h-full">
+			<div 
+				class="tab-content" 
+				class:active={sidebarStore.activeTab === 'characters'}
+				class:inactive={sidebarStore.activeTab !== 'characters'}
+			>
+				<CharacterList
+					bind:this={characterListComp}
+					on:selectCharacter={handleSelectCharacter}
+					on:uploadCharacter={handleUploadCharacter}
+				/>
+			</div>
+			<div 
+				class="tab-content" 
+				class:active={sidebarStore.activeTab === 'personas'}
+				class:inactive={sidebarStore.activeTab !== 'personas'}
+			>
+				<PersonaList
+					bind:this={personaListComp}
+					on:selectPersona={handleSelectPersona}
+					on:createPersona={handleCreatePersona}
+				/>
+			</div>
+			<div 
+				class="tab-content" 
+				class:active={sidebarStore.activeTab === 'lorebooks'}
+				class:inactive={sidebarStore.activeTab !== 'lorebooks'}
+			>
+				<LorebooksSidebarList
+					on:selectLorebook={handleSelectLorebook}
+					on:viewAllLorebooks={handleViewAllLorebooks}
+				/>
+			</div>
+		</div>
 	</SidebarContent>
 	<SidebarFooter class="flex flex-col gap-2">
 		<Button variant="ghost" class="w-full justify-start" onclick={openSettings}>
@@ -227,3 +264,26 @@
 	}}
 	on:uploadSuccess={handleUploadSuccess}
 />
+
+<style>
+	.tab-content {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		transition: opacity 200ms ease-in-out;
+		pointer-events: none;
+		opacity: 0;
+	}
+
+	.tab-content.active {
+		pointer-events: auto;
+		opacity: 1;
+	}
+
+	.tab-content.inactive {
+		pointer-events: none;
+		opacity: 0;
+	}
+</style>

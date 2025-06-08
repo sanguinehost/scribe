@@ -5,6 +5,7 @@
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
+	import { SidebarStore } from '$lib/stores/sidebar.svelte';
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
 
@@ -21,6 +22,8 @@
 	selectedPersonaStore.setContext();
 
 	const settingsStore = SettingsStore.toContext(new SettingsStore());
+	
+	const sidebarStore = SidebarStore.toContext(new SidebarStore());
 
 	// Show toast notification if chat loading failed during SSR/initial load
 	onMount(() => {

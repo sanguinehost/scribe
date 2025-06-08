@@ -50,8 +50,14 @@
 		}
 	}
 
+	// Only fetch on mount, not on every re-render
+	let hasFetched = $state(false);
+	
 	onMount(async () => {
-		await fetchPersonas();
+		if (!hasFetched) {
+			await fetchPersonas();
+			hasFetched = true;
+		}
 	});
 
 	// Watch for refresh triggers from the store

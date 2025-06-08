@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { scale } from 'svelte/transition';
+	import { fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 	import { Button } from '../ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 	import { Input } from '../ui/input';
@@ -186,7 +187,7 @@
 	];
 </script>
 
-<div class="mx-auto max-w-4xl md:mt-8" transition:scale={{ opacity: 0, start: 0.98 }}>
+<div class="mx-auto max-w-4xl md:mt-8" transition:fly={{ y: 20, duration: 400, easing: quintOut }}>
 	<div class="flex flex-col gap-6">
 		<!-- Header -->
 		<div class="flex items-center gap-4">
