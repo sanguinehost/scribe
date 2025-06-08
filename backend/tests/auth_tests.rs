@@ -1456,3 +1456,61 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
     guard.cleanup().await?;
     Ok(())
 }
+
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_login_prevents_session_fixation() -> AnyhowResult<()> {
+    let test_app = test_helpers::spawn_app(true, false, false).await;
+    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    // Ensure encryption columns exist
+    ensure_encryption_columns_exist(&test_app.db_pool).await?;
+
+    let username = format!("session_fixation_{}", Uuid::new_v4());
+    let password = "password123";
+
+    // 1. Create a user
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
+    guard.add_user(user.id);
+
+    // 2. Generate a session token *before* logging in
+    let initial_session_token = Uuid::new_v4().to_string();
+    let initial_session_id = format!("id={}", initial_session_token);
+
+    // 3. Login with the pre-set session cookie
+    let login_payload = json!({
+        "identifier": username,
+        "password": password
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, initial_session_id.clone()) // Set the pre-set cookie
+        .body(Body::from(login_payload.to_string()))?;
+
+    let login_response = test_app.router.clone().oneshot(request).await?;
+
+    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
+
+    let body = login_response.into_body().collect().await?.to_bytes();
+    let login_response_data: TestLoginSuccessResponse = serde_json::from_slice(&body)?;
+
+    // 4. Verify that the session ID in the response is *different* from the initial session ID
+    assert_ne!(
+        login_response_data.session_id, initial_session_token,
+        "Session fixation vulnerability: Session ID should have changed after login"
+    );
+
+    // Explicitly call cleanup before the end of the test
+    guard.cleanup().await?;
+
+    Ok(())
+}
