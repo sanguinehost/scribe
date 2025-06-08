@@ -5,6 +5,8 @@
 	import PersonaOverview from './messages/persona-overview.svelte';
 	import PersonaEditor from './messages/persona-editor.svelte';
 	import SettingsOverview from './messages/settings-overview.svelte';
+	import LorebookOverview from './messages/lorebook-overview.svelte';
+	import LorebookDetailOverview from './messages/lorebook-detail-overview.svelte';
 	import ConsolidatedSettings from './settings/ConsolidatedSettings.svelte';
 	import { createEventDispatcher, onMount } from 'svelte';
 	import PreviewMessage from './messages/preview-message.svelte';
@@ -12,6 +14,7 @@
 	import type { ScribeChatMessage, User } from '$lib/types';
 	import { getLock } from '$lib/hooks/lock';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
+	import { SelectedLorebookStore } from '$lib/stores/selected-lorebook.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { slideAndFade } from '$lib/utils/transitions';
 	import { fly, fade } from 'svelte/transition';
@@ -39,6 +42,7 @@
 
 	const dispatch = createEventDispatcher();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
+	const selectedLorebookStore = SelectedLorebookStore.fromContext();
 	const settingsStore = SettingsStore.fromContext();
 
 	// State for managing alternate greetings
@@ -88,6 +92,29 @@
 	let mounted = $state(false);
 	onMount(() => {
 		mounted = true;
+
+		// Listen for lorebook events from the overview components
+		const handleSelectLorebook = (event: CustomEvent) => {
+			selectedLorebookStore.selectLorebook(event.detail.lorebookId);
+		};
+
+		const handleEditLorebook = (event: CustomEvent) => {
+			selectedLorebookStore.selectLorebook(event.detail.lorebookId);
+		};
+
+		const handleBackToLorebookList = () => {
+			selectedLorebookStore.showList();
+		};
+
+		document.addEventListener('selectLorebook', handleSelectLorebook as EventListener);
+		document.addEventListener('editLorebook', handleEditLorebook as EventListener);
+		document.addEventListener('backToLorebookList', handleBackToLorebookList);
+
+		return () => {
+			document.removeEventListener('selectLorebook', handleSelectLorebook as EventListener);
+			document.removeEventListener('editLorebook', handleEditLorebook as EventListener);
+			document.removeEventListener('backToLorebookList', handleBackToLorebookList);
+		};
 	});
 
 	const scrollLock = getLock('messages-scroll');
@@ -198,10 +225,28 @@
 				</div>
 				<div 
 					class="main-content-view" 
-					class:active={!selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
-					class:inactive={selectedCharacterId || selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating'}
+					class:active={selectedLorebookStore.viewMode === 'detail' && selectedLorebookStore.lorebookId && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					class:inactive={selectedLorebookStore.viewMode !== 'detail' || !selectedLorebookStore.lorebookId || selectedCharacterId || selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating'}
 				>
-					{#if !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					{#if selectedLorebookStore.viewMode === 'detail' && selectedLorebookStore.lorebookId && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+						<LorebookDetailOverview lorebookId={selectedLorebookStore.lorebookId} />
+					{/if}
+				</div>
+				<div 
+					class="main-content-view" 
+					class:active={selectedLorebookStore.viewMode === 'list' && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					class:inactive={selectedLorebookStore.viewMode !== 'list' || selectedCharacterId || selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating'}
+				>
+					{#if selectedLorebookStore.viewMode === 'list' && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+						<LorebookOverview />
+					{/if}
+				</div>
+				<div 
+					class="main-content-view" 
+					class:active={!selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && selectedLorebookStore.viewMode === 'none'}
+					class:inactive={selectedCharacterId || selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating' || selectedLorebookStore.viewMode !== 'none'}
+				>
+					{#if !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && selectedLorebookStore.viewMode === 'none'}
 						<Overview />
 					{/if}
 				</div>
