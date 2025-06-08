@@ -1514,3 +1514,77 @@ async fn test_login_prevents_session_fixation() -> AnyhowResult<()> {
 
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_session_rotation_after_login() -> AnyhowResult<()> {
+    let test_app = test_helpers::spawn_app(true, false, false).await;
+    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    // Ensure encryption columns exist
+    ensure_encryption_columns_exist(&test_app.db_pool).await?;
+
+    let username = format!("session_rotation_{}", Uuid::new_v4());
+    let password = "password123";
+
+    // 1. Create a user
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
+    guard.add_user(user.id);
+
+    // 2. Login without any pre-existing session
+    let login_payload = json!({
+        "identifier": username,
+        "password": password
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(login_payload.to_string()))?;
+
+    let login_response = test_app.router.clone().oneshot(request).await?;
+
+    assert_eq!(login_response.status(), StatusCode::OK, "Initial login failed");
+
+    let body = login_response.into_body().collect().await?.to_bytes();
+    let login_response_data: TestLoginSuccessResponse = serde_json::from_slice(&body)?;
+    let first_session_id = login_response_data.session_id.clone();
+
+    // 3. Make a second login request with the session cookie from the first login
+    let session_cookie = format!("session={}", first_session_id);
+
+    let second_login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, session_cookie)
+        .body(Body::from(login_payload.to_string()))?;
+
+    let second_login_response = test_app.router.clone().oneshot(second_login_request).await?;
+
+    assert_eq!(second_login_response.status(), StatusCode::OK, "Second login failed");
+
+    let second_body = second_login_response.into_body().collect().await?.to_bytes();
+    let second_login_response_data: TestLoginSuccessResponse = serde_json::from_slice(&second_body)?;
+
+    // 4. Verify that the session ID was rotated after the second login
+    assert_ne!(
+        first_session_id, second_login_response_data.session_id,
+        "Session rotation failed: Session ID should have changed after second login"
+    );
+
+    // 5. Verify that both session IDs are valid UUIDs or valid session format
+    assert!(!first_session_id.is_empty(), "First session ID should not be empty");
+    assert!(!second_login_response_data.session_id.is_empty(), "Second session ID should not be empty");
+
+    // Explicitly call cleanup before the end of the test
+    guard.cleanup().await?;
+
+    Ok(())
+}

@@ -243,6 +243,15 @@ pub async fn login_handler(
             // Log the session ID AFTER auth_session.login
             debug!(session_id = ?session.id(), user_id = %user_id, "Session ID AFTER axum-login.login() call");
 
+            // Rotate session ID to prevent session fixation attacks
+            if let Err(e) = session.cycle_id().await {
+                error!(%user_id, error = ?e, "Failed to rotate session ID after login: {:?}", e);
+                return Err(AppError::InternalServerErrorGeneric(format!(
+                    "Failed to rotate session ID after login: {e}"
+                )));
+            }
+            debug!(session_id = ?session.id(), user_id = %user_id, "Session ID rotated successfully after login");
+
             // Try to explicitly save the session (this might be redundant, but useful for debugging)
             match session.save().await {
                 Ok(()) => {
