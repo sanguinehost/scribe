@@ -33,6 +33,7 @@
 	import TrashIcon from '../icons/trash.svelte';
 	import PencilEdit from '../icons/pencil-edit.svelte';
 	import CheckCircleFill from '../icons/check-circle-fill.svelte';
+	import MarkdownRenderer from '../markdown/renderer.svelte';
 
 	let {
 		characterId,
@@ -404,9 +405,9 @@
 									</div>
 									{#if character.description}
 										<div class="group relative mt-2">
-											<p class="text-muted-foreground">
-												{substituteTemplateVariables(character.description, character.name)}
-											</p>
+											<div class="text-muted-foreground prose prose-sm dark:prose-invert max-w-none [&_*]:!text-muted-foreground">
+												<MarkdownRenderer md={substituteTemplateVariables(character.description, character.name)} />
+											</div>
 											<Button
 												variant="ghost"
 												size="sm"
@@ -570,9 +571,7 @@
 							<div
 								class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 							>
-								{@html sanitizeHtml(
-									substituteTemplateVariables(character.scenario, character.name)
-								)}
+								<MarkdownRenderer md={substituteTemplateVariables(character.scenario, character.name)} />
 							</div>
 							<Button
 								variant="ghost"
@@ -591,9 +590,7 @@
 							<div
 								class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 							>
-								{@html sanitizeHtml(
-									substituteTemplateVariables(character.personality, character.name)
-								)}
+								<MarkdownRenderer md={substituteTemplateVariables(character.personality, character.name)} />
 							</div>
 							<Button
 								variant="ghost"
@@ -612,9 +609,7 @@
 							<div
 								class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 							>
-								{@html sanitizeHtml(
-									substituteTemplateVariables(character.greeting, character.name)
-								)}
+								<MarkdownRenderer md={substituteTemplateVariables(character.greeting, character.name)} />
 							</div>
 							<Button
 								variant="ghost"
