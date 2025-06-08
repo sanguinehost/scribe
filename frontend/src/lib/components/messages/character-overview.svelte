@@ -403,6 +403,23 @@
 											<PencilEdit class="h-3 w-3" />
 										</Button>
 									</div>
+									<div class="flex gap-3 mt-4">
+										<Button onclick={handleStartNewChat} size="lg" class="gap-2">
+											<PlusIcon class="h-4 w-4" />
+											Start New Chat
+										</Button>
+										{#if getMostRecentChat()}
+											<Button
+												variant="outline"
+												size="lg"
+												class="gap-2"
+												onclick={() => handleSelectChat(getMostRecentChat()!.id)}
+											>
+												<MessageIcon class="h-4 w-4" />
+												Continue Last Chat
+											</Button>
+										{/if}
+									</div>
 									{#if character.description}
 										<div class="group relative mt-2">
 											<div class="text-muted-foreground prose prose-sm dark:prose-invert max-w-none [&_*]:!text-muted-foreground">
@@ -455,23 +472,6 @@
 											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
 										</div>
 									</div>
-								{/if}
-							</div>
-							<div class="flex gap-3">
-								<Button onclick={handleStartNewChat} size="lg" class="gap-2">
-									<PlusIcon class="h-4 w-4" />
-									Start New Chat
-								</Button>
-								{#if getMostRecentChat()}
-									<Button
-										variant="outline"
-										size="lg"
-										class="gap-2"
-										onclick={() => handleSelectChat(getMostRecentChat()!.id)}
-									>
-										<MessageIcon class="h-4 w-4" />
-										Continue Recent
-									</Button>
 								{/if}
 							</div>
 						</div>
