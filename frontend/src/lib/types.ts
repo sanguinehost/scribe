@@ -295,7 +295,7 @@ export interface UserPersona {
 	id: string;
 	user_id: string;
 	name: string;
-	description: string;
+	description: string | null;
 	spec?: string | null;
 	spec_version?: string | null;
 	personality?: string | null;
@@ -327,7 +327,7 @@ export interface CreateUserPersonaRequest {
 
 export interface UpdateUserPersonaRequest {
 	name?: string;
-	description?: string;
+	description?: string | null;
 	spec?: string | null;
 	spec_version?: string | null;
 	personality?: string | null;

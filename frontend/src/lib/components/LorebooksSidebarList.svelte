@@ -3,6 +3,7 @@
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import { Button } from './ui/button';
 	import { BookOpen, Plus } from 'lucide-svelte';
+	import { slideAndFade } from '$lib/utils/transitions';
 
 	const dispatch = createEventDispatcher<{
 		selectLorebook: { lorebookId: string };
@@ -68,20 +69,27 @@
 		<div class="flex-1 overflow-auto">
 			<div class="space-y-1 p-2">
 				{#each lorebookStore.lorebooks.slice(0, 10) as lorebook (lorebook.id)}
-					<button
-						class="group w-full rounded-md p-2 text-left transition-colors hover:bg-muted"
-						onclick={() => handleSelectLorebook(lorebook.id)}
-					>
-						<div class="flex items-center gap-2">
-							<BookOpen class="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
-							<div class="min-w-0 flex-1">
-								<div class="truncate text-sm font-medium">{lorebook.name}</div>
-								{#if lorebook.description}
-									<div class="truncate text-xs text-muted-foreground">{lorebook.description}</div>
-								{/if}
-							</div>
+					{#key lorebook.id}
+						<div
+							in:slideAndFade={{ y: 20, duration: 300 }}
+							out:slideAndFade={{ y: -20, duration: 200 }}
+						>
+							<button
+								class="group w-full rounded-md p-2 text-left transition-colors hover:bg-muted"
+								onclick={() => handleSelectLorebook(lorebook.id)}
+							>
+								<div class="flex items-center gap-2">
+									<BookOpen class="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+									<div class="min-w-0 flex-1">
+										<div class="truncate text-sm font-medium">{lorebook.name}</div>
+										{#if lorebook.description}
+											<div class="truncate text-xs text-muted-foreground">{lorebook.description}</div>
+										{/if}
+									</div>
+								</div>
+							</button>
 						</div>
-					</button>
+					{/key}
 				{/each}
 
 				{#if lorebookStore.lorebooks.length > 10}

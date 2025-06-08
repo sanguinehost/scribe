@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Plus, Upload } from 'lucide-svelte';
 	import LorebookCard from './LorebookCard.svelte';
+	import { slideAndFade } from '$lib/utils/transitions';
 
 	interface Props {
 		lorebooks: Lorebook[];
@@ -91,13 +92,20 @@
 		<!-- Lorebook grid -->
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
 			{#each lorebooks as lorebook (lorebook.id)}
-				<LorebookCard
-					{lorebook}
-					onSelect={onSelectLorebook}
-					onEdit={onEditLorebook}
-					onDelete={onDeleteLorebook}
-					onExport={onExportLorebook}
-				/>
+				{#key lorebook.id}
+					<div
+						in:slideAndFade={{ y: 20, duration: 300 }}
+						out:slideAndFade={{ y: -20, duration: 200 }}
+					>
+						<LorebookCard
+							{lorebook}
+							onSelect={onSelectLorebook}
+							onEdit={onEditLorebook}
+							onDelete={onDeleteLorebook}
+							onExport={onExportLorebook}
+						/>
+					</div>
+				{/key}
 			{/each}
 		</div>
 	{/if}

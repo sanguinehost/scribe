@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import { LorebookDetailView, ExportDialog } from '$lib/components/lorebooks';
 	import { toast } from 'svelte-sonner';
@@ -22,10 +21,27 @@
 	let error = $state<string | null>(null);
 	let showExportDialog = $state(false);
 
+	// Track previous lorebook ID for transition detection
+	let previousLorebookId = $state<string | null>(null);
+	let isTransitioning = $state(false);
+
 	// Load lorebook and entries on mount or when lorebookId changes
 	$effect(() => {
-		if (lorebookId) {
-			loadLorebookData();
+		if (lorebookId && lorebookId !== previousLorebookId) {
+			if (previousLorebookId !== null) {
+				// This is a lorebook change, trigger transition
+				isTransitioning = true;
+				setTimeout(() => {
+					loadLorebookData();
+					setTimeout(() => {
+						isTransitioning = false;
+					}, 100);
+				}, 200);
+			} else {
+				// Initial load
+				loadLorebookData();
+			}
+			previousLorebookId = lorebookId;
 		}
 	});
 
@@ -155,7 +171,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-6xl px-4 relative">
+<div class="mx-auto max-w-6xl px-4 relative" style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;">
 	<!-- Show error state or not found state immediately -->
 	{#if error}
 		<div class="py-12 text-center">

@@ -16,7 +16,6 @@
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SelectedLorebookStore } from '$lib/stores/selected-lorebook.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
-	import { slideAndFade } from '$lib/utils/transitions';
 	import { fly, fade } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import * as Tooltip from '$lib/components/ui/tooltip'; // Import Tooltip components
@@ -285,7 +284,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		transition: opacity 200ms ease-in-out;
+		transition: opacity 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 		pointer-events: none;
 		opacity: 0;
 	}

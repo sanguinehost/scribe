@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { apiClient } from '$lib/api';
 	import type { UserPersona } from '$lib/types';
 	import { toast } from 'svelte-sonner';
@@ -7,6 +6,7 @@
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import { Button } from '$lib/components/ui/button';
+	import { slideAndFade } from '$lib/utils/transitions';
 	import {
 	 	Card,
 	 	CardHeader,
@@ -278,13 +278,35 @@
 		}
 	}
 
-	onMount(() => {
-		loadPersonaData();
+	// Note: loadPersonaData is now called in $effect below to handle prop changes
+
+	// Track previous persona ID for transition detection
+	let previousPersonaId = $state<string | null>(null);
+	let isTransitioning = $state(false);
+
+	// Reactively load persona data when personaId changes
+	$effect(() => {
+		if (personaId && personaId !== previousPersonaId) {
+			if (previousPersonaId !== null) {
+				// This is a persona change, not initial load - trigger transition
+				isTransitioning = true;
+				setTimeout(() => {
+					loadPersonaData();
+					setTimeout(() => {
+						isTransitioning = false;
+					}, 100);
+				}, 200);
+			} else {
+				// Initial load
+				loadPersonaData();
+			}
+			previousPersonaId = personaId;
+		}
 	});
 </script>
 
-<div class="mx-auto max-w-6xl px-4">
-	<div class="space-y-6">
+<div class="mx-auto max-w-6xl px-4" in:slideAndFade={{ y: 20, duration: 300 }} out:slideAndFade={{ y: -20, duration: 200 }}>
+	<div class="space-y-6" style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;">
 		<!-- Persona Header Card -->
 		{#if isLoading}
 			<Card class="border-0 shadow-none">

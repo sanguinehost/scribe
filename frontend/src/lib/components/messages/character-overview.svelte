@@ -416,18 +416,31 @@
 
 	// Track the last loaded character ID to prevent unnecessary reloads
 	let lastLoadedCharacterId = $state<string | null>(null);
+	let isTransitioning = $state(false);
 
 	// Only reload data when characterId actually changes
 	$effect(() => {
 		if (characterId && characterId !== lastLoadedCharacterId) {
-			loadCharacterData();
+			if (lastLoadedCharacterId !== null) {
+				// This is a character change, trigger transition
+				isTransitioning = true;
+				setTimeout(() => {
+					loadCharacterData();
+					setTimeout(() => {
+						isTransitioning = false;
+					}, 100);
+				}, 200);
+			} else {
+				// Initial load
+				loadCharacterData();
+			}
 			lastLoadedCharacterId = characterId;
 		}
 	});
 </script>
 
 <div class="mx-auto max-w-4xl px-4">
-	<div class="space-y-6">
+	<div class="space-y-6" style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;">
 		<!-- Character Header Card -->
 		{#if isLoadingCharacter}
 			<Card class="border-0 shadow-none">

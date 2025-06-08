@@ -282,7 +282,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		transition: opacity 200ms ease-in-out;
+		transition: opacity 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 		pointer-events: none;
 		opacity: 0;
 	}
