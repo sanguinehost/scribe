@@ -381,10 +381,12 @@ pub fn verify_credentials(
 }
 
 pub mod session_dek;
+pub mod session_rotation;
 pub mod session_store;
 pub mod user_store;
 
 pub use session_dek::SessionDek;
+pub use session_rotation::session_rotation_middleware;
 pub use session_store::DieselSessionStore;
 pub use user_store::{Backend as AuthBackend, UserCryptoFields};
 
