@@ -13,6 +13,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
+	import { Expand, X } from 'lucide-svelte';
 	import type { Character } from '$lib/types';
 
 	export let characterId: string | null = null;
@@ -21,6 +22,13 @@
 	let loading = false;
 	let saving = false;
 	let character: Character | null = null;
+
+	// Pop-out editor state
+	let popoutEditorOpen = false;
+	let popoutFieldName = '';
+	let popoutFieldLabel = '';
+	let popoutContent = '';
+	let popoutFieldKey = '';
 
 	// Form data with proper types
 	let formData = {
@@ -136,10 +144,50 @@
 		};
 		character = null;
 	}
+
+	function openPopoutEditor(fieldKey: string, fieldLabel: string, greetingIndex?: number) {
+		popoutFieldKey = fieldKey;
+		popoutFieldName = fieldKey;
+		popoutFieldLabel = fieldLabel;
+		
+		if (fieldKey === 'alternate_greeting' && greetingIndex !== undefined) {
+			// Handle alternate greeting specifically
+			popoutContent = formData.alternate_greetings[greetingIndex] || '';
+			popoutFieldKey = `alternate_greeting_${greetingIndex}`;
+		} else {
+			popoutContent = formData[fieldKey as keyof typeof formData] as string || '';
+		}
+		popoutEditorOpen = true;
+	}
+
+	function savePopoutEditor() {
+		if (popoutFieldKey) {
+			if (popoutFieldKey.startsWith('alternate_greeting_')) {
+				// Handle alternate greeting specifically
+				const index = parseInt(popoutFieldKey.split('_')[2]);
+				formData.alternate_greetings[index] = popoutContent;
+			} else {
+				(formData as any)[popoutFieldKey] = popoutContent;
+			}
+			popoutEditorOpen = false;
+			popoutFieldKey = '';
+			popoutFieldName = '';
+			popoutFieldLabel = '';
+			popoutContent = '';
+		}
+	}
+
+	function cancelPopoutEditor() {
+		popoutEditorOpen = false;
+		popoutFieldKey = '';
+		popoutFieldName = '';
+		popoutFieldLabel = '';
+		popoutContent = '';
+	}
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-[725px]">
+	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
 		<DialogHeader>
 			<DialogTitle>Edit Character</DialogTitle>
 			<DialogDescription>
@@ -163,22 +211,44 @@
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="description">Description</Label>
+						<div class="flex items-center justify-between">
+							<Label for="description">Description</Label>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onclick={() => openPopoutEditor('description', 'Description')}
+								class="h-6 px-2 text-xs"
+							>
+								Expand
+							</Button>
+						</div>
 						<Textarea
 							id="description"
 							bind:value={formData.description}
 							placeholder={character.description ?? 'Character description...'}
-							rows={3}
+							rows={6}
 						/>
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="first_mes">First Message</Label>
+						<div class="flex items-center justify-between">
+							<Label for="first_mes">First Message</Label>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onclick={() => openPopoutEditor('first_mes', 'First Message')}
+								class="h-6 px-2 text-xs"
+							>
+								Expand
+							</Button>
+						</div>
 						<Textarea
 							id="first_mes"
 							bind:value={formData.first_mes}
 							placeholder={character.first_mes ?? 'Initial greeting or first message...'}
-							rows={3}
+							rows={5}
 						/>
 					</div>
 
@@ -204,28 +274,33 @@
 										<Textarea
 											bind:value={formData.alternate_greetings[index]}
 											placeholder={`Alternate greeting ${index + 1}...`}
-											rows={2}
+											rows={4}
 											class="flex-1"
 										/>
-										<Button
-											type="button"
-											variant="outline"
-											size="icon"
-											onclick={() => {
-												formData.alternate_greetings = formData.alternate_greetings.filter(
-													(_, i) => i !== index
-												);
-											}}
-										>
-											<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M6 18L18 6M6 6l12 12"
-												/>
-											</svg>
-										</Button>
+										<div class="flex flex-col gap-1">
+											<Button
+												type="button"
+												variant="outline"
+												size="icon"
+												onclick={() => {
+													formData.alternate_greetings = formData.alternate_greetings.filter(
+														(_, i) => i !== index
+													);
+												}}
+												class="h-8 w-8"
+											>
+												<X class="h-4 w-4" />
+											</Button>
+											<Button
+												type="button"
+												variant="outline"
+												size="icon"
+												onclick={() => openPopoutEditor('alternate_greeting', `Alternate Greeting ${index + 1}`, index)}
+												class="h-8 w-8"
+											>
+												<Expand class="h-4 w-4" />
+											</Button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -242,22 +317,44 @@
 					<h3 class="text-lg font-semibold">Personality & Behavior</h3>
 
 					<div class="grid gap-2">
-						<Label for="personality">Personality</Label>
+						<div class="flex items-center justify-between">
+							<Label for="personality">Personality</Label>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onclick={() => openPopoutEditor('personality', 'Personality')}
+								class="h-6 px-2 text-xs"
+							>
+								Expand
+							</Button>
+						</div>
 						<Textarea
 							id="personality"
 							bind:value={formData.personality}
 							placeholder={character.personality ?? 'Character personality traits...'}
-							rows={3}
+							rows={6}
 						/>
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="scenario">Scenario</Label>
+						<div class="flex items-center justify-between">
+							<Label for="scenario">Scenario</Label>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onclick={() => openPopoutEditor('scenario', 'Scenario')}
+								class="h-6 px-2 text-xs"
+							>
+								Expand
+							</Button>
+						</div>
 						<Textarea
 							id="scenario"
 							bind:value={formData.scenario}
 							placeholder={character.scenario ?? 'Roleplay scenario...'}
-							rows={3}
+							rows={6}
 						/>
 					</div>
 				</div>
@@ -272,37 +369,70 @@
 							id="system_prompt"
 							bind:value={formData.system_prompt}
 							placeholder={character.system_prompt ?? 'System instructions...'}
-							rows={3}
+							rows={5}
 						/>
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="mes_example">Message Example</Label>
+						<div class="flex items-center justify-between">
+							<Label for="mes_example">Message Example</Label>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onclick={() => openPopoutEditor('mes_example', 'Message Example')}
+								class="h-6 px-2 text-xs"
+							>
+								Expand
+							</Button>
+						</div>
 						<Textarea
 							id="mes_example"
 							bind:value={formData.mes_example}
 							placeholder={character.mes_example ?? 'Example messages...'}
-							rows={3}
+							rows={6}
 						/>
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="definition">Definition</Label>
+						<div class="flex items-center justify-between">
+							<Label for="definition">Definition</Label>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onclick={() => openPopoutEditor('definition', 'Definition')}
+								class="h-6 px-2 text-xs"
+							>
+								Expand
+							</Button>
+						</div>
 						<Textarea
 							id="definition"
 							bind:value={formData.definition}
 							placeholder={character.definition ?? 'Character definition...'}
-							rows={3}
+							rows={8}
 						/>
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="example_dialogue">Example Dialogue</Label>
+						<div class="flex items-center justify-between">
+							<Label for="example_dialogue">Example Dialogue</Label>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onclick={() => openPopoutEditor('example_dialogue', 'Example Dialogue')}
+								class="h-6 px-2 text-xs"
+							>
+								Expand
+							</Button>
+						</div>
 						<Textarea
 							id="example_dialogue"
 							bind:value={formData.example_dialogue}
 							placeholder={character.example_dialogue ?? 'Example conversations...'}
-							rows={4}
+							rows={10}
 						/>
 					</div>
 
@@ -312,7 +442,7 @@
 							id="model_prompt"
 							bind:value={formData.model_prompt}
 							placeholder={character.model_prompt ?? 'Model-specific prompts...'}
-							rows={3}
+							rows={5}
 						/>
 					</div>
 
@@ -323,7 +453,7 @@
 							bind:value={formData.post_history_instructions}
 							placeholder={character.post_history_instructions ??
 								'Instructions after chat history...'}
-							rows={3}
+							rows={5}
 						/>
 					</div>
 
@@ -333,7 +463,7 @@
 							id="user_persona"
 							bind:value={formData.user_persona}
 							placeholder={character.user_persona ?? 'Default user persona...'}
-							rows={3}
+							rows={5}
 						/>
 					</div>
 
@@ -343,7 +473,7 @@
 							id="creator_notes"
 							bind:value={formData.creator_notes}
 							placeholder={character.creator_notes ?? 'Notes from the creator...'}
-							rows={3}
+							rows={4}
 						/>
 					</div>
 				</details>
@@ -359,6 +489,32 @@
 					Save Changes
 				{/if}
 			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Pop-out Editor Dialog -->
+<Dialog bind:open={popoutEditorOpen}>
+	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-6xl">
+		<DialogHeader>
+			<DialogTitle>Edit {popoutFieldLabel}</DialogTitle>
+			<DialogDescription>
+				Edit the {popoutFieldLabel.toLowerCase()} content in a larger editor for better readability.
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="py-4">
+			<Textarea
+				bind:value={popoutContent}
+				placeholder={`Enter ${popoutFieldLabel.toLowerCase()} content...`}
+				rows={20}
+				class="min-h-[400px] resize-none font-mono text-sm"
+			/>
+		</div>
+
+		<DialogFooter>
+			<Button variant="outline" onclick={cancelPopoutEditor}>Cancel</Button>
+			<Button onclick={savePopoutEditor}>Save Changes</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
