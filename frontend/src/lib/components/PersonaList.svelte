@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { UserPersona } from '$lib/api';
+	import type { UserPersona } from '$lib/types';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import PlusIcon from './icons/plus.svelte';
+	import { slideAndFade } from '$lib/utils/transitions';
 
 	let personas = $state<UserPersona[]>([]);
 	let isLoading = $state(true);
@@ -121,18 +122,23 @@
 			</p>
 		{:else}
 			{#each personas as persona (persona.id)}
-				<Card
-					class="cursor-pointer transition-all hover:border-primary hover:shadow-md {selectedPersonaId ===
-					persona.id
-						? 'border-primary ring-2 ring-primary'
-						: ''}"
-					onclick={() => handleSelect(persona.id)}
-					onkeydown={(e) => e.key === 'Enter' && handleSelect(persona.id)}
-					tabindex={0}
-					role="button"
-					aria-pressed={selectedPersonaId === persona.id}
-					aria-label={`Select persona ${persona.name}`}
-				>
+				{#key persona.id}
+					<div
+						in:slideAndFade={{ y: 20, duration: 300 }}
+						out:slideAndFade={{ y: -20, duration: 200 }}
+					>
+						<Card
+							class="cursor-pointer transition-all hover:border-primary hover:shadow-md {selectedPersonaId ===
+							persona.id
+								? 'border-primary ring-2 ring-primary'
+								: ''}"
+							onclick={() => handleSelect(persona.id)}
+							onkeydown={(e) => e.key === 'Enter' && handleSelect(persona.id)}
+							tabindex={0}
+							role="button"
+							aria-pressed={selectedPersonaId === persona.id}
+							aria-label={`Select persona ${persona.name}`}
+						>
 					<CardHeader class="flex flex-row items-center gap-4 p-4">
 						<Avatar class="h-10 w-10">
 							<AvatarFallback>{getInitials(persona.name)}</AvatarFallback>
@@ -152,6 +158,8 @@
 						</div>
 					</CardHeader>
 				</Card>
+					</div>
+				{/key}
 			{/each}
 		{/if}
 	</div>

@@ -1,4 +1,5 @@
 import { quintOut, cubicOut } from 'svelte/easing';
+import { crossfade } from 'svelte/transition';
 
 /**
  * Visible slide and fade transition for view changes
@@ -94,3 +95,14 @@ export function slideSmooth(node: Element, params: {
 		`
 	};
 }
+
+/**
+ * Create a crossfade transition for smooth switching between items
+ */
+export const [crossfadeItems, crossfadeItemsReceive] = crossfade({
+	duration: 400,
+	easing: cubicOut,
+	fallback(node) {
+		return slideAndFade(node, { duration: 400, y: 30 });
+	}
+});

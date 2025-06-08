@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { apiClient } from '$lib/api';
-	import type { Character } from '$lib/types';
+	import type { ScribeCharacter as Character } from '$lib/types';
 	import CharacterCard from './CharacterCard.svelte';
 	import CharacterEditor from './CharacterEditor.svelte';
 	import CharacterCreator from './CharacterCreator.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import PlusIcon from './icons/plus.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { slideAndFade } from '$lib/utils/transitions';
 
 	let characters: Character[] = [];
 	let isLoading = true;
@@ -147,13 +148,20 @@
 			</p>
 		{:else}
 			{#each characters as character (character.id)}
-				<CharacterCard
-					{character}
-					isSelected={selectedCharacterId === character.id}
-					on:select={handleSelect}
-					on:edit={handleEdit}
-					on:delete={handleDelete}
-				/>
+				{#key character.id}
+					<div
+						in:slideAndFade={{ y: 20, duration: 300 }}
+						out:slideAndFade={{ y: -20, duration: 200 }}
+					>
+						<CharacterCard
+							{character}
+							isSelected={selectedCharacterId === character.id}
+							on:select={handleSelect}
+							on:edit={handleEdit}
+							on:delete={handleDelete}
+						/>
+					</div>
+				{/key}
 			{/each}
 		{/if}
 	</div>
