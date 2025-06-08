@@ -64,8 +64,8 @@
 			hasFirstMessageId,
 			isFirstAssistantMessage,
 			contentMatchesFirstMes,
-			characterFirstMes: character?.first_mes?.substring(0, 50) + '...',
-			messageContent: message.content.substring(0, 50) + '...',
+			characterFirstMes: character?.first_mes ? character.first_mes.substring(0, 50) + '...' : 'N/A',
+			messageContent: message.content ? message.content.substring(0, 50) + '...' : 'N/A',
 			result:
 				message.message_type === 'Assistant' &&
 				(hasFirstMessageId || isFirstAssistantMessage || contentMatchesFirstMes)

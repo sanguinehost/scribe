@@ -471,6 +471,35 @@
 			if (shouldRefetch) {
 				// Use untrack to prevent refetch from triggering reactivity loops if history affects messages
 				untrack(() => chatHistory.refetch());
+				
+				// Also fetch complete message data to get raw_prompt and other backend-only fields
+				// This ensures the "Show raw prompt debug info" button works immediately
+				try {
+					const messagesResponse = await fetch(`/api/chats/${chat.id}/messages`);
+					if (messagesResponse.ok) {
+						const updatedMessages = await messagesResponse.json();
+						console.log('Fetched updated messages with raw_prompt:', updatedMessages);
+						
+						// Transform the backend MessageResponse format to our ScribeChatMessage format
+						const transformedMessages: ScribeChatMessage[] = updatedMessages.map((msg: any) => ({
+							id: msg.id,
+							content: msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '',
+							message_type: msg.message_type,
+							session_id: msg.session_id,
+							created_at: msg.created_at,
+							user_id: '', // Not available in MessageResponse
+							loading: false,
+							raw_prompt: msg.raw_prompt
+						}));
+						
+						// Update local messages state with complete data from backend
+						messages = transformedMessages;
+						console.log('Updated local messages with raw_prompt data:', transformedMessages);
+					}
+				} catch (err) {
+					// Non-critical error - raw prompt debug just won't be available immediately
+					console.warn('Failed to fetch complete message data after streaming:', err);
+				}
 			}
 		}
 	}
