@@ -28,12 +28,22 @@
 		AlertDialogHeader,
 		AlertDialogTitle
 	} from '$lib/components/ui/alert-dialog';
+	import {
+		Dialog,
+		DialogContent,
+		DialogDescription,
+		DialogHeader,
+		DialogTitle,
+		DialogFooter
+	} from '$lib/components/ui/dialog';
 	import PlusIcon from '../icons/plus.svelte';
 	import MessageIcon from '../icons/message.svelte';
 	import TrashIcon from '../icons/trash.svelte';
 	import PencilEdit from '../icons/pencil-edit.svelte';
 	import CheckCircleFill from '../icons/check-circle-fill.svelte';
+	import SettingsIcon from '../icons/settings.svelte';
 	import MarkdownRenderer from '../markdown/renderer.svelte';
+	import CharacterEditor from '../CharacterEditor.svelte';
 
 	let {
 		characterId,
@@ -53,14 +63,19 @@
 	let chatToDelete = $state<ScribeChatSession | null>(null);
 	let isDeletingChat = $state(false);
 
-	// Edit mode state
-	let isEditMode = $state(false);
+	// Individual field editing states
+	let editingField = $state<string | null>(null);
 	let isSaving = $state(false);
-	let editedName = $state('');
-	let editedDescription = $state('');
-	let editedScenario = $state('');
-	let editedPersonality = $state('');
-	let editedGreeting = $state('');
+	let editValue = $state('');
+
+	// Character editor dialog state
+	let characterEditorOpen = $state(false);
+
+	// Pop-out editor state for inline editing
+	let popoutEditorOpen = $state(false);
+	let popoutFieldName = $state('');
+	let popoutFieldLabel = $state('');
+	let popoutContent = $state('');
 
 	// User persona for template substitution
 	let currentUserPersona = $state<UserPersona | null>(null);
@@ -68,6 +83,23 @@
 
 	function getInitials(name: string): string {
 		return name ? name.charAt(0).toUpperCase() : '?';
+	}
+
+	// Calculate appropriate textarea rows based on content
+	function calculateTextareaRows(content: string | null | undefined, minRows = 3): number {
+		if (!content) return minRows;
+		
+		// Count actual line breaks in the content
+		const lineBreaks = (content.match(/\n/g) || []).length + 1;
+		
+		// Estimate additional lines based on text length (assuming ~80 characters per line)
+		const estimatedWrappedLines = Math.ceil(content.length / 80);
+		
+		// Use the larger of actual lines or estimated wrapped lines, with a minimum
+		const calculatedRows = Math.max(lineBreaks, estimatedWrappedLines, minRows);
+		
+		// Cap at a reasonable maximum to prevent huge textareas
+		return Math.min(calculatedRows, 15);
 	}
 
 	// Template substitution for frontend preview
@@ -165,12 +197,7 @@
 		const characterResult = await apiClient.getCharacter(characterId);
 		if (characterResult.isOk()) {
 			character = characterResult.value;
-			// Initialize edit values
-			editedName = character.name || '';
-			editedDescription = character.description || '';
-			editedScenario = character.scenario || '';
-			editedPersonality = character.personality || '';
-			editedGreeting = character.greeting || '';
+			// Character loaded successfully
 		} else {
 			toast.error('Failed to load character', {
 				description: characterResult.error.message
@@ -192,54 +219,53 @@
 		isLoadingChats = false;
 	}
 
-	function handleEdit() {
+	function handleEditField(fieldName: string, currentValue: string) {
 		if (!character) return;
-
-		// Reset edit values to current character data
-		editedName = character.name || '';
-		editedDescription = character.description || '';
-		editedScenario = character.scenario || '';
-		editedPersonality = character.personality || '';
-		editedGreeting = character.greeting || '';
-
-		isEditMode = true;
+		editingField = fieldName;
+		editValue = currentValue || '';
 	}
 
 	function handleCancelEdit() {
-		isEditMode = false;
-		// Reset values back to original
-		if (character) {
-			editedName = character.name || '';
-			editedDescription = character.description || '';
-			editedScenario = character.scenario || '';
-			editedPersonality = character.personality || '';
-			editedGreeting = character.greeting || '';
-		}
+		editingField = null;
+		editValue = '';
 	}
 
-	async function handleSave() {
-		if (!character) return;
+	async function handleSaveField() {
+		if (!character || !editingField) return;
 
 		isSaving = true;
 
 		try {
 			const updateData: any = {};
+			const trimmedValue = editValue.trim();
+			let currentValue: string | null = null;
 
-			// Only include changed fields
-			if (editedName !== (character.name || '') && editedName.trim()) {
-				updateData.name = editedName.trim();
-			}
-			if (editedDescription !== (character.description || '')) {
-				updateData.description = editedDescription.trim();
-			}
-			if (editedScenario !== (character.scenario || '')) {
-				updateData.scenario = editedScenario.trim();
-			}
-			if (editedPersonality !== (character.personality || '')) {
-				updateData.personality = editedPersonality.trim();
-			}
-			if (editedGreeting !== (character.greeting || '')) {
-				updateData.first_mes = editedGreeting.trim(); // Backend uses first_mes
+			// Get current value and set update data based on field
+			switch (editingField) {
+				case 'name':
+					currentValue = character.name || '';
+					if (trimmedValue !== currentValue && trimmedValue) {
+						updateData.name = trimmedValue;
+					}
+					break;
+				case 'description':
+					currentValue = character.description || '';
+					if (trimmedValue !== currentValue) {
+						updateData.description = trimmedValue;
+					}
+					break;
+				case 'scenario':
+					currentValue = character.scenario || '';
+					if (trimmedValue !== currentValue) {
+						updateData.scenario = trimmedValue;
+					}
+					break;
+				case 'personality':
+					currentValue = character.personality || '';
+					if (trimmedValue !== currentValue) {
+						updateData.personality = trimmedValue;
+					}
+					break;
 			}
 
 			// Only make API call if there are changes
@@ -247,20 +273,31 @@
 				const result = await apiClient.updateCharacter(character.id, updateData);
 				if (result.isOk()) {
 					// Update local character data
-					character.name = editedName.trim();
-					character.description = editedDescription.trim() || null;
-					character.scenario = editedScenario.trim() || null;
-					character.personality = editedPersonality.trim() || null;
-					character.greeting = editedGreeting.trim() || null;
+					switch (editingField) {
+						case 'name':
+							character.name = trimmedValue;
+							break;
+						case 'description':
+							character.description = trimmedValue || null;
+							break;
+						case 'scenario':
+							character.scenario = trimmedValue || null;
+							break;
+						case 'personality':
+							character.personality = trimmedValue || null;
+							break;
+					}
 
 					toast.success('Character updated successfully');
-					isEditMode = false;
+					editingField = null;
+					editValue = '';
 				} else {
 					toast.error('Failed to update character: ' + result.error.message);
 				}
 			} else {
 				// No changes, just exit edit mode
-				isEditMode = false;
+				editingField = null;
+				editValue = '';
 			}
 		} catch (error) {
 			toast.error('Error updating character');
@@ -355,6 +392,28 @@
 		return allChats[0]; // Assuming chats are sorted by creation date descending
 	}
 
+	function openPopoutEditor(fieldName: string, fieldLabel: string, currentValue: string) {
+		popoutFieldName = fieldName;
+		popoutFieldLabel = fieldLabel;
+		popoutContent = currentValue || '';
+		popoutEditorOpen = true;
+	}
+
+	function savePopoutEditor() {
+		editValue = popoutContent;
+		popoutEditorOpen = false;
+		popoutFieldName = '';
+		popoutFieldLabel = '';
+		popoutContent = '';
+	}
+
+	function cancelPopoutEditor() {
+		popoutEditorOpen = false;
+		popoutFieldName = '';
+		popoutFieldLabel = '';
+		popoutContent = '';
+	}
+
 	onMount(() => {
 		loadCharacterData();
 	});
@@ -390,19 +449,45 @@
 						</Avatar>
 						<div class="flex-1 space-y-4">
 							<div class="relative">
-								{#if !isEditMode}
+								{#if editingField !== 'name'}
 									<div class="group relative">
 										<h2 class="text-3xl font-bold">{character.name}</h2>
 										<Button
 											variant="ghost"
 											size="sm"
 											class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-											onclick={handleEdit}
+											onclick={() => handleEditField('name', character.name)}
 											aria-label="Edit character name"
 										>
 											<PencilEdit class="h-3 w-3" />
 										</Button>
 									</div>
+								{:else}
+									<div class="space-y-2">
+										<Input
+											bind:value={editValue}
+											class="text-3xl font-bold h-auto py-2"
+											placeholder="Character name"
+											onfocus={(e) => e.target.select()}
+											onkeydown={(e) => {
+												if (e.key === 'Enter') handleSaveField();
+												if (e.key === 'Escape') handleCancelEdit();
+											}}
+										/>
+										<div class="flex gap-2">
+											<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+												{#if isSaving}
+													<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+													Saving...
+												{:else}
+													<CheckCircleFill class="h-3 w-3" />
+													Save
+												{/if}
+											</Button>
+											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+										</div>
+									</div>
+								{/if}
 									<div class="flex gap-3 mt-4">
 										<Button onclick={handleStartNewChat} size="lg" class="gap-2">
 											<PlusIcon class="h-4 w-4" />
@@ -419,8 +504,17 @@
 												Continue Last Chat
 											</Button>
 										{/if}
+										<Button
+											variant="outline"
+											size="lg"
+											class="gap-2"
+											onclick={() => { characterEditorOpen = true; }}
+										>
+											<SettingsIcon class="h-4 w-4" />
+											Edit Character
+										</Button>
 									</div>
-									{#if character.description}
+									{#if character.description && editingField !== 'description'}
 										<div class="group relative mt-2">
 											<div class="text-muted-foreground prose prose-sm dark:prose-invert max-w-none [&_*]:!text-muted-foreground">
 												<MarkdownRenderer md={substituteTemplateVariables(character.description, character.name)} />
@@ -429,50 +523,62 @@
 												variant="ghost"
 												size="sm"
 												class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-												onclick={handleEdit}
+												onclick={() => handleEditField('description', character.description)}
 												aria-label="Edit character description"
 											>
 												<PencilEdit class="h-3 w-3" />
 											</Button>
 										</div>
-									{/if}
-								{:else}
-									<div class="space-y-3">
-										<div>
-											<label for="edit-name" class="text-sm font-medium">Name</label>
-											<Input
-												id="edit-name"
-												bind:value={editedName}
-												class="mt-1"
-												placeholder="Character name"
-											/>
-										</div>
-										<div>
-											<label for="edit-description" class="text-sm font-medium">Description</label>
-											<Textarea
-												id="edit-description"
-												bind:value={editedDescription}
-												class="mt-1"
-												placeholder="Character description"
-												rows={3}
-											/>
-										</div>
-										<div class="flex gap-2">
-											<Button onclick={handleSave} disabled={isSaving} size="sm" class="gap-2">
-												{#if isSaving}
-													<div
-														class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
-													></div>
-													Saving...
-												{:else}
-													<CheckCircleFill class="h-3 w-3" />
-													Save
-												{/if}
+									{:else if !character.description && editingField !== 'description'}
+										<div class="group relative mt-2">
+											<div class="text-muted-foreground italic text-sm">No description</div>
+											<Button
+												variant="ghost"
+												size="sm"
+												class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+												onclick={() => handleEditField('description', '')}
+												aria-label="Add character description"
+											>
+												<PencilEdit class="h-3 w-3" />
 											</Button>
-											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
 										</div>
-									</div>
-								{/if}
+									{:else if editingField === 'description'}
+										<div class="space-y-2 mt-2">
+											<div class="flex gap-2">
+												<Textarea
+													bind:value={editValue}
+													placeholder="Character description"
+													rows={calculateTextareaRows(character.description, 3)}
+													onfocus={(e) => e.target.select()}
+													onkeydown={(e) => {
+														if (e.key === 'Escape') handleCancelEdit();
+														if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
+													}}
+													class="flex-1"
+												/>
+												<Button
+													variant="outline"
+													size="sm"
+													onclick={() => openPopoutEditor('description', 'Description', editValue)}
+													class="self-start mt-1"
+												>
+													Expand
+												</Button>
+											</div>
+											<div class="flex gap-2">
+												<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+													{#if isSaving}
+														<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+														Saving...
+													{:else}
+														<CheckCircleFill class="h-3 w-3" />
+														Save
+													{/if}
+												</Button>
+												<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+											</div>
+										</div>
+									{/if}
 							</div>
 						</div>
 					</div>
@@ -561,11 +667,49 @@
 			{/if}
 		</div>
 
-		<!-- Character Details Section (moved below chats) -->
-		{#if character && !isEditMode && (character.scenario || character.personality || character.greeting)}
+		<!-- Character Details Section ---->
+		{#if character}
 			<Card class="border-0 shadow-none">
 				<CardContent class="space-y-4 px-0">
-					{#if character.scenario}
+					<!-- Scenario Field -->
+					{#if editingField === 'scenario'}
+						<div class="rounded-lg bg-muted/50 p-4 space-y-2">
+							<h4 class="text-sm font-semibold text-muted-foreground">Scenario</h4>
+							<div class="flex gap-2">
+								<Textarea
+									bind:value={editValue}
+									placeholder="Character scenario"
+									rows={calculateTextareaRows(character.scenario, 4)}
+									onfocus={(e) => e.target.select()}
+									onkeydown={(e) => {
+										if (e.key === 'Escape') handleCancelEdit();
+										if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
+									}}
+									class="flex-1"
+								/>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => openPopoutEditor('scenario', 'Scenario', editValue)}
+									class="self-start mt-1"
+								>
+									Expand
+								</Button>
+							</div>
+							<div class="flex gap-2">
+								<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+									{#if isSaving}
+										<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+										Saving...
+									{:else}
+										<CheckCircleFill class="h-3 w-3" />
+										Save
+									{/if}
+								</Button>
+								<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+							</div>
+						</div>
+					{:else if character.scenario}
 						<div class="group relative rounded-lg bg-muted/50 p-4">
 							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
 							<div
@@ -577,14 +721,67 @@
 								variant="ghost"
 								size="sm"
 								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-								onclick={handleEdit}
+								onclick={() => handleEditField('scenario', character.scenario)}
 								aria-label="Edit scenario"
 							>
 								<PencilEdit class="h-3 w-3" />
 							</Button>
 						</div>
+					{:else}
+						<div class="group relative rounded-lg bg-muted/50 p-4">
+							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
+							<div class="text-muted-foreground italic text-sm">No scenario defined</div>
+							<Button
+								variant="ghost"
+								size="sm"
+								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+								onclick={() => handleEditField('scenario', '')}
+								aria-label="Add scenario"
+							>
+								<PencilEdit class="h-3 w-3" />
+							</Button>
+						</div>
 					{/if}
-					{#if character.personality}
+
+					<!-- Personality Field -->
+					{#if editingField === 'personality'}
+						<div class="rounded-lg bg-muted/50 p-4 space-y-2">
+							<h4 class="text-sm font-semibold text-muted-foreground">Personality</h4>
+							<div class="flex gap-2">
+								<Textarea
+									bind:value={editValue}
+									placeholder="Character personality"
+									rows={calculateTextareaRows(character.personality, 4)}
+									onfocus={(e) => e.target.select()}
+									onkeydown={(e) => {
+										if (e.key === 'Escape') handleCancelEdit();
+										if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
+									}}
+									class="flex-1"
+								/>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => openPopoutEditor('personality', 'Personality', editValue)}
+									class="self-start mt-1"
+								>
+									Expand
+								</Button>
+							</div>
+							<div class="flex gap-2">
+								<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+									{#if isSaving}
+										<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+										Saving...
+									{:else}
+										<CheckCircleFill class="h-3 w-3" />
+										Save
+									{/if}
+								</Button>
+								<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+							</div>
+						</div>
+					{:else if character.personality}
 						<div class="group relative rounded-lg bg-muted/50 p-4">
 							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
 							<div
@@ -596,87 +793,64 @@
 								variant="ghost"
 								size="sm"
 								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-								onclick={handleEdit}
+								onclick={() => handleEditField('personality', character.personality)}
 								aria-label="Edit personality"
 							>
 								<PencilEdit class="h-3 w-3" />
 							</Button>
 						</div>
-					{/if}
-					{#if character.greeting}
+					{:else}
 						<div class="group relative rounded-lg bg-muted/50 p-4">
-							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Greeting</h4>
-							<div
-								class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-							>
-								<MarkdownRenderer md={substituteTemplateVariables(character.greeting, character.name)} />
-							</div>
+							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
+							<div class="text-muted-foreground italic text-sm">No personality defined</div>
 							<Button
 								variant="ghost"
 								size="sm"
 								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-								onclick={handleEdit}
-								aria-label="Edit greeting"
+								onclick={() => handleEditField('personality', '')}
+								aria-label="Add personality"
 							>
 								<PencilEdit class="h-3 w-3" />
 							</Button>
 						</div>
 					{/if}
-				</CardContent>
-			</Card>
-		{:else if character && isEditMode}
-			<!-- Edit mode for character details -->
-			<Card class="border-0 shadow-none">
-				<CardContent class="space-y-4 px-0">
-					<div>
-						<label for="edit-scenario" class="text-sm font-medium">Scenario</label>
-						<Textarea
-							id="edit-scenario"
-							bind:value={editedScenario}
-							class="mt-1"
-							placeholder="Character scenario"
-							rows={4}
-						/>
-					</div>
-					<div>
-						<label for="edit-personality" class="text-sm font-medium">Personality</label>
-						<Textarea
-							id="edit-personality"
-							bind:value={editedPersonality}
-							class="mt-1"
-							placeholder="Character personality"
-							rows={4}
-						/>
-					</div>
-					<div>
-						<label for="edit-greeting" class="text-sm font-medium">Greeting</label>
-						<Textarea
-							id="edit-greeting"
-							bind:value={editedGreeting}
-							class="mt-1"
-							placeholder="Character greeting message"
-							rows={3}
-						/>
-					</div>
-					<div class="flex gap-2">
-						<Button onclick={handleSave} disabled={isSaving} class="gap-2">
-							{#if isSaving}
-								<div
-									class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-								></div>
-								Saving...
-							{:else}
-								<CheckCircleFill class="h-4 w-4" />
-								Save Changes
-							{/if}
-						</Button>
-						<Button onclick={handleCancelEdit} variant="outline">Cancel</Button>
-					</div>
+
 				</CardContent>
 			</Card>
 		{/if}
 	</div>
 </div>
+
+<!-- Character Editor Dialog -->
+{#if character}
+	<CharacterEditor characterId={character.id} bind:open={characterEditorOpen} />
+{/if}
+
+<!-- Pop-out Editor Dialog for inline editing -->
+<Dialog bind:open={popoutEditorOpen}>
+	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-6xl">
+		<DialogHeader>
+			<DialogTitle>Edit {popoutFieldLabel}</DialogTitle>
+			<DialogDescription>
+				Edit the {popoutFieldLabel.toLowerCase()} content in a larger editor for better readability.
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="py-4">
+			<Textarea
+				bind:value={popoutContent}
+				placeholder={`Enter ${popoutFieldLabel.toLowerCase()} content...`}
+				rows={20}
+				class="min-h-[400px] resize-none font-mono text-sm"
+			/>
+		</div>
+
+		<DialogFooter>
+			<Button variant="outline" onclick={cancelPopoutEditor}>Cancel</Button>
+			<Button onclick={savePopoutEditor}>Save Changes</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
 
 <!-- Delete Confirmation Dialog -->
 <AlertDialog bind:open={deleteDialogOpen}>
