@@ -70,7 +70,11 @@
 					}
 				];
 			} else {
-				newInitialMessages = initialMessages;
+				// Ensure any existing initial messages don't have loading=true
+				newInitialMessages = initialMessages.map(msg => ({
+					...msg,
+					loading: false
+				}));
 			}
 			messages = newInitialMessages;
 			initialMessagesSet = true;
@@ -250,6 +254,9 @@
 
 		// Add placeholder for assistant message
 		const assistantMessageId = crypto.randomUUID();
+		console.log('Created assistant message with ID:', assistantMessageId);
+		console.log('Current messages before adding assistant message:', messages.map(m => ({ id: m.id, loading: m.loading })));
+		
 		let assistantMessage: ScribeChatMessage = {
 			id: assistantMessageId,
 			session_id: chat.id,
@@ -260,6 +267,8 @@
 			loading: true
 		};
 		messages = [...messages, assistantMessage];
+		
+		console.log('Current messages after adding assistant message:', messages.map(m => ({ id: m.id, loading: m.loading })));
 
 		let fetchError: any = null; // Variable to store error from fetch/parsing
 
@@ -365,9 +374,20 @@
 						throw new Error(error); // Stop processing
 					} else if (currentEvent === 'content') {
 						if (currentData) {
-							messages = messages.map((msg) =>
-								msg.id === assistantMessageId ? { ...msg, content: msg.content + currentData } : msg
-							);
+							messages = messages.map((msg) => {
+								if (msg.id === assistantMessageId) {
+									console.log('Updating content for assistant message:', msg.id, 'current loading:', msg.loading);
+									return { ...msg, content: msg.content + currentData };
+								}
+								// Ensure first messages never get loading state during streaming
+								if (msg.id.startsWith('first-message-')) {
+									if (msg.loading) {
+										console.error('FOUND FIRST MESSAGE WITH LOADING=TRUE, FIXING:', msg.id);
+									}
+									return { ...msg, loading: false };
+								}
+								return msg;
+							});
 						}
 					} else if (currentEvent === 'reasoning_chunk') {
 						if (currentData) {
@@ -418,9 +438,16 @@
 			// Handle any remaining data in the buffer after the loop (should be empty if stream ended cleanly)
 
 			// Finalize assistant message state only if no error occurred during fetch/parsing
-			messages = messages.map((msg) =>
-				msg.id === assistantMessageId ? { ...msg, loading: false } : msg
-			);
+			messages = messages.map((msg) => {
+				if (msg.id === assistantMessageId) {
+					return { ...msg, loading: false };
+				}
+				// Ensure first messages never have loading=true
+				if (msg.id.startsWith('first-message-')) {
+					return { ...msg, loading: false };
+				}
+				return msg;
+			});
 		} catch (err: any) {
 			fetchError = err; // Store the error
 			if (err.name === 'AbortError') {
@@ -477,11 +504,10 @@
 				try {
 					const messagesResponse = await fetch(`/api/chats/${chat.id}/messages`);
 					if (messagesResponse.ok) {
-						const updatedMessages = await messagesResponse.json();
-						console.log('Fetched updated messages with raw_prompt:', updatedMessages);
+						const backendMessages = await messagesResponse.json();
 						
 						// Transform the backend MessageResponse format to our ScribeChatMessage format
-						const transformedMessages: ScribeChatMessage[] = updatedMessages.map((msg: any) => ({
+						const transformedMessages: ScribeChatMessage[] = backendMessages.map((msg: any) => ({
 							id: msg.id,
 							content: msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '',
 							message_type: msg.message_type,
@@ -492,9 +518,14 @@
 							raw_prompt: msg.raw_prompt
 						}));
 						
-						// Update local messages state with complete data from backend
-						messages = transformedMessages;
-						console.log('Updated local messages with raw_prompt data:', transformedMessages);
+						// Update messages with backend data, but preserve any first messages that don't exist in backend
+						const backendMessageIds = new Set(transformedMessages.map(m => m.id));
+						const preservedFirstMessages = messages.filter(m => 
+							m.id.startsWith('first-message-') && !backendMessageIds.has(m.id)
+						);
+						
+						// Combine preserved first messages with backend messages, maintaining order
+						messages = [...preservedFirstMessages, ...transformedMessages];
 					}
 				} catch (err) {
 					// Non-critical error - raw prompt debug just won't be available immediately

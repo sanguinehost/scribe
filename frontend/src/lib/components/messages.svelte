@@ -257,7 +257,7 @@
 				<FirstMessage
 					{message}
 					{readonly}
-					{loading}
+					loading={false}
 					alternateGreetings={character.alternate_greetings}
 					{currentGreetingIndex}
 					on:greetingChanged={handleGreetingChanged}
