@@ -223,6 +223,14 @@ pub async fn login_handler(
                 debug!(%user_id, "User.dek is correctly None after authenticate (DEK is cached in AuthBackend)");
             }
 
+            // Invalidate the session before logging in to prevent session fixation
+            if let Err(e) = auth_session.logout().await {
+                error!(%user_id, error = ?e, "Failed to destroy existing session during login: {:?}", e);
+                return Err(AppError::InternalServerErrorGeneric(format!(
+                    "Failed to clear existing session during login: {e}"
+                )));
+            }
+
             // Now we need to explicitly log the user in
             if let Err(e) = auth_session.login(&user).await {
                 error!(%user_id, error = ?e, "Failed to log in user after successful authentication");
