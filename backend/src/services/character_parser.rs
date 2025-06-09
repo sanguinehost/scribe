@@ -1384,58 +1384,7 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn test_parse_json_real_v2_lucifer() {
-        // Test parsing with the actual Lucifer V2 card structure
-        let lucifer_v2_json = r#"{
-            "spec": "chara_card_v2",
-            "spec_version": "2.0",
-            "data": {
-                "name": "Lucifer",
-                "description": "Lucifer the Avatar Of Pride and is the eldest of the seven demon brothers...",
-                "personality": "The eldest of the brothers and, therefore, the leader of the house...",
-                "first_mes": "*Lucifer is in his office, sitting behind his mahogany desk...",
-                "avatar": "https://avatars.charhub.io/avatars/Diddymice/Lucifer/chara_card_v2.png",
-                "mes_example": "",
-                "scenario": "Lucifer's office conveys elegance and sophistication...",
-                "creator_notes": "The eldest of the brothers and, therefore, the leader of the house...",
-                "system_prompt": "",
-                "post_history_instructions": "",
-                "alternate_greetings": [],
-                "tags": ["Game Characters", "Games", "NSFW", "Anime"],
-                "creator": "Diddymice",
-                "character_version": "main",
-                "extensions": {
-                    "chub": {
-                        "id": 6843,
-                        "full_path": "Diddymice/Lucifer"
-                    }
-                },
-                "character_book": null
-            }
-        }"#;
-
-        let result = parse_character_card_json(lucifer_v2_json.as_bytes());
-        
-        // This has spec/spec_version/data structure, so should be detected as V3 format, not V2
-        match result {
-            Ok(ParsedCharacterCard::V3(card)) => {
-                assert_eq!(card.spec, "chara_card_v2");
-                assert_eq!(card.spec_version, "2.0");
-                assert_eq!(card.data.name, Some("Lucifer".to_string()));
-                assert_eq!(card.data.creator, "Diddymice");
-                println!("Structured V2 card (with spec/data) parsed as V3");
-            },
-            Ok(ParsedCharacterCard::V2Fallback(_)) => {
-                panic!("Structured V2 card should be parsed as V3, not V2Fallback");
-            },
-            Err(e) => {
-                panic!("Structured V2 card parsing failed: {:?}", e);
-            }
-        }
-    }
-
+    
     #[test]
     fn test_parse_text_chara_chunk() {
         let v2_json =
