@@ -288,7 +288,8 @@ export interface CharacterDataForClient {
 	// SillyTavern v3 fields
 	fav?: boolean | null;
 	world?: string | null;
-	lorebook_id?: string | null; // Backend returns lorebook_id, not world
+	lorebook_id?: string | null; // Deprecated - for backward compatibility
+	lorebook_ids: string[]; // Multiple lorebooks support - always present, may be empty
 	creator_comment?: string | null;
 	depth_prompt?: string | null;
 	depth_prompt_depth?: number | null;

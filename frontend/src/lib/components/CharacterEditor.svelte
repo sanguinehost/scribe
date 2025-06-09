@@ -19,6 +19,7 @@
 	import { Expand, X, Star, Heart, Globe, Plus, Trash2, HelpCircle } from 'lucide-svelte';
 	import {
 		Tooltip,
+		TooltipProvider,
 		TooltipTrigger,
 		TooltipContent
 	} from '$lib/components/ui/tooltip';
@@ -76,7 +77,8 @@
 
 		// SillyTavern v3 extensions
 		fav: false,
-		world: '', // Lorebook reference/name
+		world: '', // Backward compatibility - single lorebook
+		selectedLorebooks: [] as string[], // Multiple lorebooks support
 		depth_prompt: '', // Character's Note content
 		depth_prompt_depth: null as number | null, // Character's Note depth
 		depth_prompt_role: '', // Character's Note placement role
@@ -142,6 +144,9 @@
 					// SillyTavern v3 extensions (need backend integration)
 					fav: character.fav ?? false,
 					world: character.lorebook_id ?? character.world ?? '',
+					selectedLorebooks: character.lorebook_ids && character.lorebook_ids.length > 0 
+						? character.lorebook_ids 
+						: (character.lorebook_id ? [character.lorebook_id] : []),
 					depth_prompt: character.depth_prompt ?? '',
 					depth_prompt_depth: character.depth_prompt_depth ?? null,
 					depth_prompt_role: character.depth_prompt_role ?? '',
@@ -194,8 +199,8 @@
 
 			// SillyTavern extensions
 			updateData.fav = formData.fav; // Always send boolean
-			// Always send the world value to allow clearing it.
-			updateData.world = formData.world;
+			// For backward compatibility, send the first selected lorebook as 'world'
+			updateData.world = formData.selectedLorebooks.length > 0 ? formData.selectedLorebooks[0] : '';
 			if (formData.depth_prompt) updateData.depth_prompt = formData.depth_prompt;
 			if (formData.depth_prompt_depth !== null) updateData.depth_prompt_depth = formData.depth_prompt_depth;
 			if (formData.depth_prompt_role) updateData.depth_prompt_role = formData.depth_prompt_role;
@@ -324,6 +329,7 @@
 	}
 </script>
 
+<TooltipProvider>
 <Dialog bind:open>
 	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
 		<DialogHeader>
@@ -414,24 +420,36 @@
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="world" class="flex items-center gap-1">
+						<Label class="flex items-center gap-1">
 							<Globe class="h-4 w-4" />
-							World/Lorebook
+							Lorebooks
 						</Label>
-						<select
-							id="world"
-							bind:value={formData.world}
-							class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-						>
-							<option value="">None</option>
+						<div class="rounded-md border border-input bg-transparent p-3 space-y-2 max-h-48 overflow-y-auto">
 							{#if $lorebooks && $lorebooks.length > 0}
 								{#each $lorebooks as lorebook}
-									<option value={lorebook.id}>{lorebook.name ?? 'Unnamed Lorebook'}</option>
+									<div class="flex items-center space-x-2">
+										<Checkbox 
+											id={`lorebook-${lorebook.id}`}
+											checked={formData.selectedLorebooks.includes(lorebook.id)}
+											onclick={() => {
+												if (formData.selectedLorebooks.includes(lorebook.id)) {
+													formData.selectedLorebooks = formData.selectedLorebooks.filter(id => id !== lorebook.id);
+												} else {
+													formData.selectedLorebooks = [...formData.selectedLorebooks, lorebook.id];
+												}
+											}}
+										/>
+										<Label for={`lorebook-${lorebook.id}`} class="text-sm font-normal">
+											{lorebook.name ?? 'Unnamed Lorebook'}
+										</Label>
+									</div>
 								{/each}
+							{:else}
+								<p class="text-sm text-muted-foreground">No lorebooks available</p>
 							{/if}
-						</select>
+						</div>
 						<p class="text-sm text-muted-foreground">
-							Associate a lorebook to provide additional context for this character.
+							Select multiple lorebooks to provide additional context for this character.
 						</p>
 					</div>
 
@@ -702,6 +720,7 @@
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
+</TooltipProvider>
 
 <!-- Pop-out Editor Dialog -->
 <Dialog bind:open={popoutEditorOpen}>

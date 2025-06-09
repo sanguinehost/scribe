@@ -538,7 +538,7 @@ pub async fn upload_character_handler(
     }
 
     let client_character_data =
-        inserted_character.into_decrypted_for_client(Some(&dek.0), None)?;
+        inserted_character.into_decrypted_for_client(Some(&dek.0), vec![])?;
 
     // Debug: Log the alternate_greetings in the final client response
     tracing::info!(
@@ -614,7 +614,7 @@ pub async fn list_characters_handler(
 
     let mut characters_for_client = Vec::new();
     for char_db in characters_db {
-        characters_for_client.push(char_db.into_decrypted_for_client(Some(&dek.0), None)?);
+        characters_for_client.push(char_db.into_decrypted_for_client(Some(&dek.0), vec![])?);
     }
 
     Ok(Json(characters_for_client))
@@ -699,9 +699,9 @@ pub async fn get_character_handler(
             let lorebooks = lorebook_service
                 .list_character_lorebooks(&auth_session, character_id)
                 .await?;
-            let lorebook_id = lorebooks.first().map(|lb| lb.id);
+            let lorebook_ids: Vec<Uuid> = lorebooks.iter().map(|lb| lb.id).collect();
 
-            return match character.into_decrypted_for_client(Some(&dek.0), lorebook_id) {
+            return match character.into_decrypted_for_client(Some(&dek.0), lorebook_ids) {
                 Ok(character_for_client) => {
                     info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Decryption SUCCESSFUL (direct ownership)");
                     Ok(Json(character_for_client))
@@ -852,9 +852,9 @@ pub async fn get_character_handler(
         let lorebooks = lorebook_service
             .list_character_lorebooks(&auth_session, character_id)
             .await?;
-        let lorebook_id = lorebooks.first().map(|lb| lb.id);
+        let lorebook_ids: Vec<Uuid> = lorebooks.iter().map(|lb| lb.id).collect();
 
-        match character.into_decrypted_for_client(Some(&dek.0), lorebook_id) {
+        match character.into_decrypted_for_client(Some(&dek.0), lorebook_ids) {
             Ok(character_for_client) => {
                 info!(
                     target: "test_log",
@@ -1020,7 +1020,7 @@ pub async fn generate_character_handler(
     // In a real scenario, we would save dummy_char_for_db (as NewCharacter)
     // then fetch it, then convert to client data.
     // For this placeholder, we convert the in-memory (potentially encrypted) Character.
-    let client_data = dummy_char_for_db.into_decrypted_for_client(Some(&dek.0), None)?;
+    let client_data = dummy_char_for_db.into_decrypted_for_client(Some(&dek.0), vec![])?;
 
     // --- TODO: Save the character to DB if this route is meant to persist. ---
 
