@@ -125,22 +125,7 @@
 		return shouldShowChatInterface;
 	});
 
-	$effect(() => {
-		// Only run in development, not in test environment
-		if (process.env.NODE_ENV !== 'test') {
-			console.log('Chat interface state:', {
-				shouldShowChatInterface: shouldShowChatInterface,
-				canFetchSuggestions: canFetchSuggestions,
-				isLoadingSuggestions: isLoadingSuggestions,
-				isLoading: isLoading,
-				// Individual parts for detailed debugging:
-				hasCurrentChat: !!chat,
-				hasCurrentCharacter: !!character,
-				totalMessages: messages.length,
-				messageTypes: messages.map((m) => m.message_type)
-			});
-		}
-	});
+	// Chat interface state logging removed for production
 
 	// --- Load Available Personas ---
 	async function loadAvailablePersonas() {

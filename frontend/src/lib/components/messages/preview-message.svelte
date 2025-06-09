@@ -39,21 +39,7 @@
 		return message.message_type === 'Assistant' && message.id.startsWith('first-message-');
 	}
 
-	// Debug logging to see what's in the message
-	$effect(() => {
-		if (message.message_type === 'Assistant') {
-			console.log('Assistant message debug:', {
-				id: message.id,
-				message_type: message.message_type,
-				has_raw_prompt: !!message.raw_prompt,
-				raw_prompt_length: message.raw_prompt?.length,
-				loading: message.loading,
-				is_first_message: isFirstMessage(message),
-				id_starts_with_first: message.id.startsWith('first-message-'),
-				content_preview: message.content.substring(0, 50) + '...'
-			});
-		}
-	});
+	// Debug logging removed for production
 
 	// NOTE: Edit mode was removed as it depended on the Vercel SDK's message.parts structure.
 	// let mode = $state<'view' | 'edit'>('view');

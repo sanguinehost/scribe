@@ -57,19 +57,7 @@
 		const isFirstAssistantMessage = message.message_type === 'Assistant' && index === 0;
 		const contentMatchesFirstMes = character && message.content === character.first_mes;
 
-		console.log('First message detection:', {
-			messageId: message.id,
-			messageType: message.message_type,
-			index,
-			hasFirstMessageId,
-			isFirstAssistantMessage,
-			contentMatchesFirstMes,
-			characterFirstMes: character?.first_mes ? character.first_mes.substring(0, 50) + '...' : 'N/A',
-			messageContent: message.content ? message.content.substring(0, 50) + '...' : 'N/A',
-			result:
-				message.message_type === 'Assistant' &&
-				(hasFirstMessageId || isFirstAssistantMessage || contentMatchesFirstMes)
-		});
+		// Debug logging removed for production
 
 		return (
 			message.message_type === 'Assistant' &&

@@ -57,10 +57,7 @@ export function setAuthenticated(user: User): void {
 	hasShownConnectionError = false;
 	hasShownSessionInvalidated = false;
 
-	console.log(
-		`[${new Date().toISOString()}] auth.svelte.ts: User set and authenticated:`,
-		normalizedUser.username
-	);
+	// User authentication logging removed for production
 }
 
 export function setUnauthenticated(clearUser: boolean = true): void {
@@ -128,7 +125,7 @@ export function clearConnectionError(): void {
 
 export function setLoading(): void {
 	auth.isLoading = true;
-	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Auth state set to loading.`);
+	// Loading state logging removed for production
 }
 
 // Function to initialize auth state, typically called from a root layout load function
@@ -161,7 +158,7 @@ export async function initializeAuth(): Promise<void> {
 		return initializePromise;
 	}
 
-	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Initializing auth state...`);
+	// Auth initialization logging removed for production
 	setLoading();
 
 	initializePromise = (async () => {
@@ -223,4 +220,4 @@ export async function initializeAuth(): Promise<void> {
 // though using the exported functions (setAuthenticated, setUnauthenticated) is preferred.
 // export const _authStore = auth;
 
-console.log(`[${new Date().toISOString()}] auth.svelte.ts: Auth store initialized.`);
+// Auth store initialization logging removed for production
