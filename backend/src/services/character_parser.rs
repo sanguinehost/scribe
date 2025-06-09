@@ -1,6 +1,8 @@
 // backend/src/services/character_parser.rs
 
 use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use png::Decoder;
 use serde_json;
@@ -9,6 +11,14 @@ use thiserror::Error; // Import the derive macro
 use tracing::{info, warn}; // Import logging macros
 use zip::ZipArchive;
 use zip::result::ZipError; // Added for CHARX parsing // Added for CHARX parsing
+
+// Define proper V2 struct to handle the structured V2 format
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CharacterCardV2 {
+    pub spec: String,
+    pub spec_version: String,
+    pub data: CharacterCardDataV3,
+}
 
 /// Safely convert usize to u32 for PNG chunk lengths
 /// PNG chunk lengths are limited to `u32::MAX`, so this is appropriate
@@ -196,9 +206,26 @@ fn try_parse_chara_fallback(
 ) -> Result<Option<CharacterCardDataV3>, ParserError> {
     chara_data_base64.map_or(Ok(None), |base64_str| {
         let decoded_bytes = base64_standard.decode(base64_str)?;
+        
+        // Debug: Log the actual JSON being parsed
+        if let Ok(json_str) = String::from_utf8(decoded_bytes.clone()) {
+            info!("V2 chara chunk JSON: {}", json_str.chars().take(200).collect::<String>());
+        }
+        
+        // Try to parse as structured V2 format first (with spec/data fields)
+        if let Ok(v2_card) = serde_json::from_slice::<CharacterCardV2>(&decoded_bytes) {
+            info!("Parsed as structured V2 format with spec: {}", v2_card.spec);
+            let mut data_v2 = v2_card.data;
+            info!("V2 structured data after parsing: name={:?}, description_len={}", data_v2.name, data_v2.description.len());
+            apply_v2_fallback_note(&mut data_v2, ccv3_parse_failed);
+            return Ok(Some(data_v2));
+        }
+        
+        // Fallback to flat V2 format (direct CharacterCardDataV3)
         let mut data_v2 = serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes)?;
 
-        info!("Loaded character from V2 'chara' chunk. Applying V3 compatibility note.");
+        info!("Loaded character from V2 'chara' chunk (flat format). Applying V3 compatibility note.");
+        info!("V2 flat data after parsing: name={:?}, description_len={}", data_v2.name, data_v2.description.len());
         apply_v2_fallback_note(&mut data_v2, ccv3_parse_failed);
         Ok(Some(data_v2))
     })
@@ -269,14 +296,55 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
 /// - JSON format is invalid
 /// - Required fields are missing
 pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
-    let mut card = serde_json::from_slice::<CharacterCardV3>(json_data)
+    // First, try to detect if this is a V2 card by checking the structure
+    let json_value: serde_json::Value = serde_json::from_slice(json_data)
         .map_err(|e| ParserError::JsonError(e.to_string()))?;
+    
+    let is_v2_format = detect_v2_format(&json_value);
+    
+    if is_v2_format {
+        // Parse as V2 format and return as V2Fallback
+        let data_v2 = serde_json::from_slice::<CharacterCardDataV3>(json_data)
+            .map_err(|e| ParserError::JsonError(e.to_string()))?;
+        
+        info!("Loaded character from V2 JSON format. Treating as V2 fallback.");
+        Ok(ParsedCharacterCard::V2Fallback(data_v2))
+    } else {
+        // Parse as V3 format
+        let mut card = serde_json::from_slice::<CharacterCardV3>(json_data)
+            .map_err(|e| ParserError::JsonError(e.to_string()))?;
 
-    // Merge flattened fields (for SillyTavern compatibility)
-    card.merge_flattened_fields();
+        // Merge flattened fields (for SillyTavern compatibility)
+        card.merge_flattened_fields();
 
-    validate_v3_spec(&card, "JSON card");
-    Ok(ParsedCharacterCard::V3(card))
+        validate_v3_spec(&card, "JSON card");
+        Ok(ParsedCharacterCard::V3(card))
+    }
+}
+
+/// Detects if a JSON value represents a V2 character card format
+/// V2 cards have a flat structure without 'spec', 'spec_version', and 'data' fields
+fn detect_v2_format(json_value: &serde_json::Value) -> bool {
+    if let Some(obj) = json_value.as_object() {
+        // Check for V3 indicators first
+        let has_spec = obj.contains_key("spec");
+        let has_spec_version = obj.contains_key("spec_version");
+        let has_data = obj.contains_key("data");
+        
+        // If it has V3 structure markers, it's V3
+        if has_spec || has_spec_version || has_data {
+            return false;
+        }
+        
+        // Check for typical V2 fields at the root level
+        let has_v2_fields = obj.contains_key("name") 
+            && obj.contains_key("description") 
+            && obj.contains_key("personality");
+            
+        has_v2_fields
+    } else {
+        false
+    }
 }
 
 // --- CHARX (Zip) Parsing Function ---
@@ -1266,6 +1334,105 @@ mod tests {
             assert_eq!(card.data.name, Some("CHARX Alpha Spec".to_string()));
         } else {
             panic!("Expected V3 variant for non-numeric spec version");
+        }
+    }
+
+    #[test]
+    fn test_parse_json_v2_format() {
+        // Test parsing a true V2 format JSON (flat structure like the real Lucifer example)
+        let v2_json = r#"{
+            "name": "Lucifer V2",
+            "description": "A V2 character for testing",
+            "personality": "Prideful demon",
+            "first_mes": "Hello there.",
+            "avatar": "https://example.com/avatar.png",
+            "mes_example": "",
+            "scenario": "A test scenario",
+            "creator_notes": "Test notes",
+            "system_prompt": "",
+            "post_history_instructions": "",
+            "alternate_greetings": [],
+            "tags": ["test", "v2"],
+            "creator": "Tester",
+            "character_version": "main",
+            "extensions": {},
+            "character_book": null
+        }"#;
+
+        let result = parse_character_card_json(v2_json.as_bytes());
+        
+        // Should now succeed as V2Fallback
+        match result {
+            Ok(ParsedCharacterCard::V2Fallback(data)) => {
+                assert_eq!(data.name, Some("Lucifer V2".to_string()));
+                assert_eq!(data.description, "A V2 character for testing");
+                assert_eq!(data.personality, "Prideful demon");
+                assert_eq!(data.first_mes, "Hello there.");
+                assert_eq!(data.scenario, "A test scenario");
+                assert_eq!(data.creator_notes, "Test notes");
+                assert_eq!(data.tags, vec!["test".to_string(), "v2".to_string()]);
+                assert_eq!(data.creator, "Tester");
+                assert_eq!(data.character_version, "main");
+                println!("V2 JSON parsing succeeded after fix");
+            },
+            Ok(ParsedCharacterCard::V3(card)) => {
+                // Should not happen with true V2 format
+                panic!("Unexpected V3 parsing for flat V2 JSON: {:?}", card);
+            },
+            Err(e) => {
+                panic!("V2 JSON parsing failed unexpectedly: {:?}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_json_real_v2_lucifer() {
+        // Test parsing with the actual Lucifer V2 card structure
+        let lucifer_v2_json = r#"{
+            "spec": "chara_card_v2",
+            "spec_version": "2.0",
+            "data": {
+                "name": "Lucifer",
+                "description": "Lucifer the Avatar Of Pride and is the eldest of the seven demon brothers...",
+                "personality": "The eldest of the brothers and, therefore, the leader of the house...",
+                "first_mes": "*Lucifer is in his office, sitting behind his mahogany desk...",
+                "avatar": "https://avatars.charhub.io/avatars/Diddymice/Lucifer/chara_card_v2.png",
+                "mes_example": "",
+                "scenario": "Lucifer's office conveys elegance and sophistication...",
+                "creator_notes": "The eldest of the brothers and, therefore, the leader of the house...",
+                "system_prompt": "",
+                "post_history_instructions": "",
+                "alternate_greetings": [],
+                "tags": ["Game Characters", "Games", "NSFW", "Anime"],
+                "creator": "Diddymice",
+                "character_version": "main",
+                "extensions": {
+                    "chub": {
+                        "id": 6843,
+                        "full_path": "Diddymice/Lucifer"
+                    }
+                },
+                "character_book": null
+            }
+        }"#;
+
+        let result = parse_character_card_json(lucifer_v2_json.as_bytes());
+        
+        // This has spec/spec_version/data structure, so should be detected as V3 format, not V2
+        match result {
+            Ok(ParsedCharacterCard::V3(card)) => {
+                assert_eq!(card.spec, "chara_card_v2");
+                assert_eq!(card.spec_version, "2.0");
+                assert_eq!(card.data.name, Some("Lucifer".to_string()));
+                assert_eq!(card.data.creator, "Diddymice");
+                println!("Structured V2 card (with spec/data) parsed as V3");
+            },
+            Ok(ParsedCharacterCard::V2Fallback(_)) => {
+                panic!("Structured V2 card should be parsed as V3, not V2Fallback");
+            },
+            Err(e) => {
+                panic!("Structured V2 card parsing failed: {:?}", e);
+            }
         }
     }
 

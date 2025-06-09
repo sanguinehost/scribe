@@ -155,7 +155,22 @@ pub async fn upload_character_handler(
     }
 
     let parsed_card = character_parser::parse_character_card_png(&png_data)?;
+    
+    // Debug: Log the parsed card data
+    match &parsed_card {
+        character_parser::ParsedCharacterCard::V3(card) => {
+            info!("Parsed as V3: spec={}, spec_version={}, name={:?}", 
+                  card.spec, card.spec_version, card.data.name);
+        },
+        character_parser::ParsedCharacterCard::V2Fallback(data) => {
+            info!("Parsed as V2Fallback: name={:?}", data.name);
+        },
+    }
+    
     let mut new_character_for_db = NewCharacter::from_parsed_card(&parsed_card, local_user_id);
+    
+    // Debug: Log the converted character data
+    info!("Converted to NewCharacter: name={:?}", new_character_for_db.name);
 
     // --- Encrypt all designated fields before saving ---
     // Helper macro to reduce boilerplate for encrypting Option<Vec<u8>> fields
