@@ -1,6 +1,6 @@
 // Test script to verify alternate_greetings parsing
-use serde_json::json;
 use scribe_backend::models::character_card;
+use serde_json::json;
 
 fn main() {
     // Test data with alternate greetings
@@ -15,18 +15,20 @@ fn main() {
         }
     });
 
-    println!("Test JSON: {}", serde_json::to_string_pretty(&test_json).unwrap());
-    
+    println!(
+        "Test JSON: {}",
+        serde_json::to_string_pretty(&test_json).unwrap()
+    );
+
     // Test parsing with our character card structure
-    let card_result: Result<character_card::CharacterCardV3, _> =
-        serde_json::from_value(test_json);
-    
+    let card_result: Result<character_card::CharacterCardV3, _> = serde_json::from_value(test_json);
+
     match card_result {
         Ok(card) => {
             println!("Parsing successful!");
             println!("Character name: {:?}", card.data.name);
             println!("Alternate greetings: {:?}", card.data.alternate_greetings);
-        },
+        }
         Err(e) => {
             println!("Parsing failed: {}", e);
         }

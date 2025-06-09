@@ -3423,10 +3423,14 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         encryption_service.encrypt("A unique personality.", user_dek.expose_secret_bytes())?;
     let (scen_ct, scen_n) =
         encryption_service.encrypt("A specific scenario.", user_dek.expose_secret_bytes())?;
-    let (ex_ct, ex_n) = encryption_service
-        .encrypt("<START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>", user_dek.expose_secret_bytes())?;
-    let (sys_ct, sys_n) =
-        encryption_service.encrypt("An overriding system prompt.", user_dek.expose_secret_bytes())?;
+    let (ex_ct, ex_n) = encryption_service.encrypt(
+        "<START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>",
+        user_dek.expose_secret_bytes(),
+    )?;
+    let (sys_ct, sys_n) = encryption_service.encrypt(
+        "An overriding system prompt.",
+        user_dek.expose_secret_bytes(),
+    )?;
 
     let new_db_character = NewCharacter {
         user_id: user.id,
@@ -3508,8 +3512,14 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
                 completion_tokens_details: None,
                 total_tokens: None,
             },
-            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "gemini-2.0-flash-exp"),
-            provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "gemini-2.0-flash-exp"),
+            model_iden: genai::ModelIden::new(
+                genai::adapter::AdapterKind::Gemini,
+                "gemini-2.0-flash-exp",
+            ),
+            provider_model_iden: genai::ModelIden::new(
+                genai::adapter::AdapterKind::Gemini,
+                "gemini-2.0-flash-exp",
+            ),
             reasoning_content: None,
         };
         mock_client.set_response(Ok(successful_response));
@@ -3535,7 +3545,12 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
 
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 
-    let last_request = test_app.mock_ai_client.as_ref().unwrap().get_last_request().unwrap();
+    let last_request = test_app
+        .mock_ai_client
+        .as_ref()
+        .unwrap()
+        .get_last_request()
+        .unwrap();
     let system_prompt = last_request.system.unwrap();
 
     assert!(system_prompt.contains("<character_definition>"));
@@ -3547,7 +3562,10 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
     assert!(system_prompt.contains("Description: A detailed description."));
     assert!(system_prompt.contains("Personality: A unique personality."));
     assert!(system_prompt.contains("Scenario: A specific scenario."));
-    assert!(system_prompt.contains("Example Dialogue: <START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>"));
+    assert!(
+        system_prompt
+            .contains("Example Dialogue: <START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>")
+    );
 
     Ok(())
 }

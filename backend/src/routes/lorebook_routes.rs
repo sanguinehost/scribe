@@ -5,8 +5,10 @@ use crate::{
     auth::user_store::Backend as AuthBackend, // Import AuthBackend
     errors::AppError,
     models::lorebook_dtos::{
-        AssociateLorebookToChatPayload, CharacterLorebookOverrideResponse, ChatLorebookAssociationsResponse, CreateLorebookEntryPayload, CreateLorebookPayload,
-        ExportFormat, SetCharacterLorebookOverridePayload, UpdateLorebookEntryPayload, UpdateLorebookPayload,
+        AssociateLorebookToChatPayload, CharacterLorebookOverrideResponse,
+        ChatLorebookAssociationsResponse, CreateLorebookEntryPayload, CreateLorebookPayload,
+        ExportFormat, SetCharacterLorebookOverridePayload, UpdateLorebookEntryPayload,
+        UpdateLorebookPayload,
     },
     services::LorebookService,
 };
@@ -337,17 +339,25 @@ async fn list_chat_lorebook_associations_handler(
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     );
-    
+
     if params.include_source {
         let enhanced_associations = lorebook_service
             .list_enhanced_chat_lorebook_associations(&auth_session, chat_session_id)
             .await?;
-        Ok((StatusCode::OK, Json(ChatLorebookAssociationsResponse::Enhanced(enhanced_associations))))
+        Ok((
+            StatusCode::OK,
+            Json(ChatLorebookAssociationsResponse::Enhanced(
+                enhanced_associations,
+            )),
+        ))
     } else {
         let associations = lorebook_service
             .list_chat_lorebook_associations(&auth_session, chat_session_id)
             .await?;
-        Ok((StatusCode::OK, Json(ChatLorebookAssociationsResponse::Basic(associations))))
+        Ok((
+            StatusCode::OK,
+            Json(ChatLorebookAssociationsResponse::Basic(associations)),
+        ))
     }
 }
 
@@ -532,7 +542,12 @@ async fn import_lorebook_handler(
                     lorebook_upload_payload.validate()?; // Validate the constructed payload
 
                     let imported_lorebook = lorebook_service
-                        .import_lorebook(&auth_session, Some(&dek.0), lorebook_upload_payload, Arc::new(state.clone()))
+                        .import_lorebook(
+                            &auth_session,
+                            Some(&dek.0),
+                            lorebook_upload_payload,
+                            Arc::new(state.clone()),
+                        )
                         .await?;
                     Ok((StatusCode::CREATED, Json(imported_lorebook)).into_response())
                 } else {
@@ -566,11 +581,16 @@ async fn set_character_lorebook_override_handler(
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     );
-    
+
     lorebook_service
-        .set_character_lorebook_override(&auth_session, chat_session_id, lorebook_id, payload.action)
+        .set_character_lorebook_override(
+            &auth_session,
+            chat_session_id,
+            lorebook_id,
+            payload.action,
+        )
         .await?;
-    
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -586,11 +606,11 @@ async fn remove_character_lorebook_override_handler(
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     );
-    
+
     lorebook_service
         .remove_character_lorebook_override(&auth_session, chat_session_id, lorebook_id)
         .await?;
-    
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -606,11 +626,11 @@ async fn get_character_lorebook_overrides_handler(
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     );
-    
+
     let overrides = lorebook_service
         .get_character_lorebook_overrides(&auth_session, chat_session_id)
         .await?;
-    
+
     // Convert model to response DTO
     let response: Vec<CharacterLorebookOverrideResponse> = overrides
         .into_iter()
@@ -624,6 +644,6 @@ async fn get_character_lorebook_overrides_handler(
             updated_at: override_model.updated_at,
         })
         .collect();
-    
+
     Ok((StatusCode::OK, Json(response)))
 }

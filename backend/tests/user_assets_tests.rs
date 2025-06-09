@@ -24,12 +24,12 @@ fn create_test_image_data() -> Vec<u8> {
         122, 221, 46, 34, // CRC
         0, 0, 0, 0, // IEND length
         73, 69, 78, 68, // IEND
-        174, 66, 96, 130 // CRC
+        174, 66, 96, 130, // CRC
     ]
 }
 
 // Test that the user assets model can be created for user avatars
-#[tokio::test] 
+#[tokio::test]
 async fn test_user_asset_model_creation() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
@@ -37,7 +37,7 @@ async fn test_user_asset_model_creation() -> Result<()> {
 
     let user_id = Uuid::new_v4();
     let image_data = create_test_image_data();
-    
+
     // Test creating user avatar asset
     let new_user_avatar = NewUserAsset::new_user_avatar(
         user_id,
@@ -69,7 +69,10 @@ async fn test_user_asset_model_creation() -> Result<()> {
     assert_eq!(new_persona_avatar.persona_id, Some(persona_id));
     assert_eq!(new_persona_avatar.asset_type, "avatar");
     assert_eq!(new_persona_avatar.ext, "png");
-    assert_eq!(new_persona_avatar.content_type, Some("image/png".to_string()));
+    assert_eq!(
+        new_persona_avatar.content_type,
+        Some("image/png".to_string())
+    );
     assert_eq!(new_persona_avatar.data, Some(image_data));
 
     tracing::info!("User asset model creation tests completed successfully");
@@ -84,7 +87,7 @@ async fn test_user_asset_helper_methods() -> Result<()> {
 
     let user_id = Uuid::new_v4();
     let persona_id = Uuid::new_v4();
-    
+
     // Create mock UserAsset for user avatar
     let user_avatar = UserAsset {
         id: 1,
@@ -118,7 +121,7 @@ async fn test_user_asset_helper_methods() -> Result<()> {
     // Test helper methods
     assert!(user_avatar.is_user_avatar());
     assert!(!user_avatar.is_persona_avatar());
-    
+
     assert!(!persona_avatar.is_user_avatar());
     assert!(persona_avatar.is_persona_avatar());
 
@@ -134,7 +137,7 @@ async fn test_different_asset_types() -> Result<()> {
 
     let user_id = Uuid::new_v4();
     let persona_id = Uuid::new_v4();
-    
+
     // Create mock UserAsset for non-avatar asset
     let other_asset = UserAsset {
         id: 3,

@@ -3,11 +3,13 @@
 // Local helper functions
 use anyhow::Context;
 use axum::{
+    Router,
     body::{Body, to_bytes},
     http::{Method, Request, StatusCode, header},
-    Router,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
+use bcrypt;
+use crc32fast;
 use deadpool_diesel::postgres::Pool;
 use diesel::{PgConnection, RunQueryDsl, prelude::*};
 use http_body_util::BodyExt;
@@ -15,22 +17,18 @@ use mime;
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
 use scribe_backend::auth::session_dek::SessionDek;
+use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
 use scribe_backend::{
     crypto,
-    models::{
-        users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
-    },
+    models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
     schema::users,
 };
-use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tower::ServiceExt; // For oneshot
 use uuid::Uuid;
-use bcrypt;
-use crc32fast;
 
 /// Helper to hash a password for tests
 fn hash_test_password(password: &str) -> String {
@@ -161,7 +159,7 @@ pub fn create_multipart_request(
 /// Helper to create a test PNG with a valid character card chunk
 #[must_use]
 pub fn create_test_character_png(version: &str) -> Vec<u8> {
-    use image::{RgbaImage, ImageFormat};
+    use image::{ImageFormat, RgbaImage};
     use std::io::Cursor;
 
     let (chunk_keyword, json_payload) = match version {
@@ -213,25 +211,26 @@ pub fn create_test_character_png(version: &str) -> Vec<u8> {
     let mut png_buffer = Vec::new();
     {
         let mut cursor = Cursor::new(&mut png_buffer);
-        img.write_to(&mut cursor, ImageFormat::Png).expect("Failed to write PNG");
+        img.write_to(&mut cursor, ImageFormat::Png)
+            .expect("Failed to write PNG");
     }
 
     // Now we need to insert the character data tEXt chunk before the IEND chunk
     // Find the IEND chunk position (should be at the end: 4 bytes length + "IEND" + 4 bytes CRC = 12 bytes from end)
     let iend_pos = png_buffer.len() - 12;
-    
+
     // Create the character data tEXt chunk
     let base64_payload = base64_standard.encode(json_payload);
     let text_chunk_data = [chunk_keyword.as_bytes(), &[0u8], base64_payload.as_bytes()].concat();
     let text_chunk_len = u32::try_from(text_chunk_data.len())
         .expect("Text chunk too large")
         .to_be_bytes();
-    
+
     let mut text_chunk = Vec::new();
     text_chunk.extend_from_slice(&text_chunk_len);
     text_chunk.extend_from_slice(b"tEXt");
     text_chunk.extend_from_slice(&text_chunk_data);
-    
+
     // Calculate CRC for tEXt
     let mut crc_text_data = Vec::new();
     crc_text_data.extend_from_slice(b"tEXt");
@@ -574,14 +573,15 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
         .to_string();
 
     // Create a valid PNG *without* the character data chunk using the image crate
-    use image::{RgbaImage, ImageFormat};
+    use image::{ImageFormat, RgbaImage};
     use std::io::Cursor;
-    
+
     let img = RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
     let mut png_bytes = Vec::new();
     {
         let mut cursor = Cursor::new(&mut png_bytes);
-        img.write_to(&mut cursor, ImageFormat::Png).expect("Failed to write PNG");
+        img.write_to(&mut cursor, ImageFormat::Png)
+            .expect("Failed to write PNG");
     }
 
     let upload_request = create_multipart_request(
@@ -598,10 +598,15 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
 
     tracing::error!(target: "test_debug", "test_upload_png_no_data_chunk: Actual response body: {}", body_text);
 
-    assert_eq!(status, StatusCode::BAD_REQUEST, "Status should be BAD_REQUEST");
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "Status should be BAD_REQUEST"
+    );
     assert!(
         body_text.contains("Failed to parse character data"),
-        "Expected character parsing error, got: {}", body_text
+        "Expected character parsing error, got: {}",
+        body_text
     );
 
     guard.cleanup().await?;
@@ -710,33 +715,34 @@ async fn test_upload_invalid_json_in_png() -> Result<(), anyhow::Error> {
 
     // Create PNG with invalid JSON payload using the helper function
     let invalid_json_payload = "this is not valid json";
-    
+
     // Create a valid 1x1 white PNG using the image crate
-    use image::{RgbaImage, ImageFormat};
+    use image::{ImageFormat, RgbaImage};
     use std::io::Cursor;
-    
+
     let img = RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
     let mut png_buffer = Vec::new();
     {
         let mut cursor = Cursor::new(&mut png_buffer);
-        img.write_to(&mut cursor, ImageFormat::Png).expect("Failed to write PNG");
+        img.write_to(&mut cursor, ImageFormat::Png)
+            .expect("Failed to write PNG");
     }
 
     // Find the IEND chunk position and insert the invalid ccv3 chunk before it
     let iend_pos = png_buffer.len() - 12;
-    
+
     // Create the character data tEXt chunk with invalid JSON
     let base64_payload = base64_standard.encode(invalid_json_payload);
     let text_chunk_data = [b"ccv3".as_ref(), &[0u8], base64_payload.as_bytes()].concat();
     let text_chunk_len = u32::try_from(text_chunk_data.len())
         .expect("Text chunk too large")
         .to_be_bytes();
-    
+
     let mut text_chunk = Vec::new();
     text_chunk.extend_from_slice(&text_chunk_len);
     text_chunk.extend_from_slice(b"tEXt");
     text_chunk.extend_from_slice(&text_chunk_data);
-    
+
     // Calculate CRC for tEXt
     let mut crc_text_data = Vec::new();
     crc_text_data.extend_from_slice(b"tEXt");

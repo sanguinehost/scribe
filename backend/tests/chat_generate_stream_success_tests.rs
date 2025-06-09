@@ -471,7 +471,7 @@ async fn test_first_mes_included_in_history() {
     ));
     let file_storage_service = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
 
     let services = AppStateServices {

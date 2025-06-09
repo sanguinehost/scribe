@@ -200,7 +200,7 @@ mod tests {
     use super::*;
     use futures::stream;
     use genai::chat::ChatStreamEvent;
-    use genai::{adapter, ModelIden};
+    use genai::{ModelIden, adapter};
     use std::sync::atomic::{AtomicBool, Ordering};
     use tokio::time::sleep;
 

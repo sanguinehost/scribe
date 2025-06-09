@@ -15,20 +15,18 @@ use uuid::Uuid;
 
 // Local helper functions
 use anyhow::Context;
+use axum::http::Response as AxumResponse;
+use bcrypt;
 use deadpool_diesel::postgres::Pool;
 use diesel::{PgConnection, RunQueryDsl, prelude::*};
+use http_body_util::BodyExt;
 use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::{
     crypto,
-    models::{
-        users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
-    },
+    models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
     schema::users,
 };
 use secrecy::{ExposeSecret, SecretString};
-use axum::http::Response as AxumResponse;
-use http_body_util::BodyExt;
-use bcrypt;
 
 /// Helper to hash a password for tests
 fn hash_test_password(password: &str) -> String {

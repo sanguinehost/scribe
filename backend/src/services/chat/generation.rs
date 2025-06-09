@@ -8,8 +8,8 @@ use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-    ChatRequest as GenAiChatRequest, ChatStreamEvent as GeminiResponseChunkAlias, ReasoningEffort,
-    ChatRole,
+    ChatRequest as GenAiChatRequest, ChatRole, ChatStreamEvent as GeminiResponseChunkAlias,
+    ReasoningEffort,
 };
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
@@ -154,7 +154,7 @@ pub async fn get_session_data_for_generation(
                 Ok(client_persona_dto) => {
                     // Capture the persona name for template substitution
                     user_persona_name = Some(client_persona_dto.name.replace('\0', ""));
-                    
+
                     if let Some(ref sp_from_persona) = client_persona_dto.system_prompt {
                         if !sp_from_persona.trim().is_empty() {
                             effective_system_prompt = Some(sp_from_persona.replace('\0', ""));
@@ -368,9 +368,11 @@ pub async fn get_session_data_for_generation(
                 let depth_prompt_result = match (
                     character_db.depth_prompt_ciphertext.as_ref(),
                     character_db.depth_prompt_nonce.as_ref(),
-                    &dek_for_interact_cloned
+                    &dek_for_interact_cloned,
                 ) {
-                    (Some(ciphertext), Some(nonce), Some(dek)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                    (Some(ciphertext), Some(nonce), Some(dek))
+                        if !ciphertext.is_empty() && !nonce.is_empty() =>
+                    {
                         crate::crypto::decrypt_gcm(ciphertext, nonce, dek.as_ref())
                             .ok()
                             .and_then(|decrypted| {
@@ -379,14 +381,15 @@ pub async fn get_session_data_for_generation(
                             .map(|s| s.replace('\0', ""))
                             .filter(|s| !s.trim().is_empty())
                     }
-                    _ => None
+                    _ => None,
                 };
 
                 // If depth_prompt is available, use it; otherwise fall back to system_prompt
                 if depth_prompt_result.is_some() {
                     depth_prompt_result
                 } else {
-                    character_db.system_prompt
+                    character_db
+                        .system_prompt
                         .as_ref()
                         .and_then(|val| {
                             if val.is_empty() {
@@ -1170,8 +1173,8 @@ fn build_raw_prompt_debug(
     _chat_options: &GenAiChatOptions,
     tools: &[genai::chat::Tool],
 ) -> String {
+    use genai::chat::{ContentPart, MessageContent};
     use std::fmt::Write;
-    use genai::chat::{MessageContent, ContentPart};
 
     let mut debug_prompt = String::new();
 
@@ -1215,9 +1218,9 @@ fn build_raw_prompt_debug(
             ChatRole::Assistant => "Assistant",
             ChatRole::Tool => "Tool",
         };
-        
+
         writeln!(&mut debug_prompt, "Message {} [{}]:", i + 1, role_display).unwrap();
-        
+
         // Extract and format the actual text content
         match &message.content {
             MessageContent::Text(text) => {
@@ -1233,10 +1236,20 @@ fn build_raw_prompt_debug(
                 }
             }
             MessageContent::ToolCalls(tool_calls) => {
-                writeln!(&mut debug_prompt, "[Tool Calls: {} calls]", tool_calls.len()).unwrap();
+                writeln!(
+                    &mut debug_prompt,
+                    "[Tool Calls: {} calls]",
+                    tool_calls.len()
+                )
+                .unwrap();
             }
             MessageContent::ToolResponses(tool_responses) => {
-                writeln!(&mut debug_prompt, "[Tool Responses: {} responses]", tool_responses.len()).unwrap();
+                writeln!(
+                    &mut debug_prompt,
+                    "[Tool Responses: {} responses]",
+                    tool_responses.len()
+                )
+                .unwrap();
             }
         }
         writeln!(&mut debug_prompt, "---").unwrap();

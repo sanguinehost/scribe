@@ -15,9 +15,9 @@ use crate::models::chats::{
     SuggestedActionsRequest,
     SuggestedActionsResponse, // Corrected DbChatMessage to ChatMessage
 };
+use crate::prompt_builder;
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
-use crate::prompt_builder;
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
 use secrecy::ExposeSecret; // Added for ExposeSecret
@@ -63,7 +63,7 @@ type CurrentAuthSession = AuthSession<AuthBackend>;
 // struct PlaceholderResponse { message: String }
 
 #[derive(Deserialize, Debug)]
-struct ChatGenerateQueryParams {
+pub struct ChatGenerateQueryParams {
     #[serde(default)]
     request_thinking: bool,
 }
@@ -351,7 +351,7 @@ pub async fn generate_chat_response(
             current_user_message: current_user_genai_message,
             model_name: model_to_use.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
-            user_persona_name, // Pass user persona name for template substitution
+            user_persona_name,                 // Pass user persona name for template substitution
         })
         .await
         {
@@ -850,7 +850,7 @@ pub async fn generate_suggested_actions(
         _rag_context_items_from_service, // RAG not typically used for suggestions
         _hist_management_strategy,
         _hist_management_limit,
-        user_persona_name,        // NEW - for template substitution
+        user_persona_name, // NEW - for template substitution
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id,
@@ -998,7 +998,7 @@ pub async fn generate_suggested_actions(
             current_user_message: suggestion_request_genai_message, // Our special message asking for suggestions
             model_name: model_for_suggestions.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
-            user_persona_name, // Pass user persona name for template substitution
+            user_persona_name,                 // Pass user persona name for template substitution
         })
         .await
         {

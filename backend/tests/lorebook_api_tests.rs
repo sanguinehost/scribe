@@ -1761,18 +1761,22 @@ mod chat_session_lorebook_association_tests {
     use super::*;
     use scribe_backend::models::characters::Character; // For character creation helper
     // use scribe_backend::test_helpers::create_dummy_chat_session; // Assuming this helper exists or will be created
-    use diesel::prelude::*;
     use diesel::insert_into;
-    use scribe_backend::schema::{character_lorebooks, chat_session_lorebooks, chat_character_lorebook_overrides};
-    use scribe_backend::models::lorebooks::{ChatSessionLorebook, ChatCharacterLorebookOverride}; // Removed CharacterLorebook
-
+    use diesel::prelude::*;
+    use scribe_backend::models::lorebooks::{ChatCharacterLorebookOverride, ChatSessionLorebook};
+    use scribe_backend::schema::{
+        character_lorebooks, chat_character_lorebook_overrides, chat_session_lorebooks,
+    }; // Removed CharacterLorebook
 
     #[tokio::test]
     async fn test_new_chat_with_character_default_lorebooks_no_explicit_association() {
         let test_app = spawn_app(false, false, false).await;
         let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-        let conn = test_app.db_pool.get().await.expect("Failed to get DB connection for test");
-
+        let conn = test_app
+            .db_pool
+            .get()
+            .await
+            .expect("Failed to get DB connection for test");
 
         let user_credentials = ("user_ncdl@example.com", "password123");
         let user_data = scribe_backend::test_helpers::db::create_test_user(
@@ -1808,12 +1812,15 @@ mod chat_session_lorebook_association_tests {
             character_lorebooks::user_id.eq(user_data.id),
         );
 
-        conn.interact(move |actual_conn| { // Use actual_conn from interact
+        conn.interact(move |actual_conn| {
+            // Use actual_conn from interact
             insert_into(character_lorebooks::table)
                 .values(&new_char_lorebook)
                 .execute(actual_conn)
-        }).await.expect("Interact failed").expect("Failed to associate lorebook with character");
-
+        })
+        .await
+        .expect("Interact failed")
+        .expect("Failed to associate lorebook with character");
 
         // 4. Create a new chat session with this character
         let chat_payload = CreateChatRequest {
@@ -1829,7 +1836,12 @@ mod chat_session_lorebook_association_tests {
             .await
             .expect("Failed to create chat session");
 
-        assert_eq!(chat_response.status(), StatusCode::CREATED, "Chat creation failed: {:?}", chat_response.text().await);
+        assert_eq!(
+            chat_response.status(),
+            StatusCode::CREATED,
+            "Chat creation failed: {:?}",
+            chat_response.text().await
+        );
         let chat_session: scribe_backend::models::chats::Chat = chat_response
             .json()
             .await
@@ -1837,284 +1849,304 @@ mod chat_session_lorebook_association_tests {
         let chat_session_id = chat_session.id;
 
         // 5. Assert no explicit entry in chat_session_lorebooks
-        let csl_entry_result = conn.interact(move |actual_conn| { // Use actual_conn from interact
-            chat_session_lorebooks::table
-                .filter(chat_session_lorebooks::chat_session_id.eq(chat_session_id))
-                .filter(chat_session_lorebooks::lorebook_id.eq(lorebook_id_val))
-                .select(ChatSessionLorebook::as_select())
-                .first(actual_conn) // Use actual_conn
-                .optional()
-        }).await.expect("Interact failed").expect("DB query failed for chat_session_lorebooks");
+        let csl_entry_result = conn
+            .interact(move |actual_conn| {
+                // Use actual_conn from interact
+                chat_session_lorebooks::table
+                    .filter(chat_session_lorebooks::chat_session_id.eq(chat_session_id))
+                    .filter(chat_session_lorebooks::lorebook_id.eq(lorebook_id_val))
+                    .select(ChatSessionLorebook::as_select())
+                    .first(actual_conn) // Use actual_conn
+                    .optional()
+            })
+            .await
+            .expect("Interact failed")
+            .expect("DB query failed for chat_session_lorebooks");
 
-        assert!(csl_entry_result.is_none(), "Explicit entry found in chat_session_lorebooks for character-derived lorebook");
+        assert!(
+            csl_entry_result.is_none(),
+            "Explicit entry found in chat_session_lorebooks for character-derived lorebook"
+        );
 
         // 6. Assert no entry in chat_character_lorebook_overrides
         // Need to get a new connection object or ensure the previous one can be reused.
         // For simplicity in this step, let's get a new one.
-        let conn_for_override_check = test_app.db_pool.get().await.expect("Failed to get DB connection for override check");
-        let override_entry_result = conn_for_override_check.interact(move |actual_conn| { // Use actual_conn from interact
-            chat_character_lorebook_overrides::table
-                .filter(chat_character_lorebook_overrides::chat_session_id.eq(chat_session_id))
-                .filter(chat_character_lorebook_overrides::lorebook_id.eq(lorebook_id_val))
-                .select(ChatCharacterLorebookOverride::as_select())
-                .first(actual_conn) // Use actual_conn
-                .optional()
-        }).await.expect("Interact failed").expect("DB query failed for chat_character_lorebook_overrides");
-        
-        assert!(override_entry_result.is_none(), "Override entry found in chat_character_lorebook_overrides for new chat");
+        let conn_for_override_check = test_app
+            .db_pool
+            .get()
+            .await
+            .expect("Failed to get DB connection for override check");
+        let override_entry_result = conn_for_override_check
+            .interact(move |actual_conn| {
+                // Use actual_conn from interact
+                chat_character_lorebook_overrides::table
+                    .filter(chat_character_lorebook_overrides::chat_session_id.eq(chat_session_id))
+                    .filter(chat_character_lorebook_overrides::lorebook_id.eq(lorebook_id_val))
+                    .select(ChatCharacterLorebookOverride::as_select())
+                    .first(actual_conn) // Use actual_conn
+                    .optional()
+            })
+            .await
+            .expect("Interact failed")
+            .expect("DB query failed for chat_character_lorebook_overrides");
+
+        assert!(
+            override_entry_result.is_none(),
+            "Override entry found in chat_character_lorebook_overrides for new chat"
+        );
 
         // TODO: Add assertion for effective lorebooks once an endpoint/service method is available
         // that returns lorebooks with their derived status.
     }
 
-//     #[tokio::test]
-//     async fn test_associate_lorebook_with_chat_success() {
-//         let test_app = spawn_app(false, false, false).await;
-//         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-//         let http_client = reqwest::Client::new();
-//
-//         let user_credentials = ("user_talwcs@example.com", "password123");
-//         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
-//         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
-//
-//         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await; // User's lorebook
-//         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await; // User's chat session
-//         let chat_session_id = Uuid::new_v4(); // Placeholder for now
-//
-//         let payload = AssociateLorebookPayload { lorebook_id };
-//
-//         let response = http_client
-//             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
-//             .bearer_auth(&user_token)
-//             .json(&payload)
-//             .send()
-//             .await
-//             .expect("Request failed");
-//
-//         assert_eq!(response.status(), StatusCode::OK); // Or 201 CREATED if it returns the association
-//         // Potentially check response body if it returns something
-//     }
-//
-//     #[tokio::test]
-//     async fn test_associate_lorebook_unauthorized() {
-//         let test_app = spawn_app(false, false, false).await;
-//         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-//         let http_client = reqwest::Client::new();
-//
-//         let user_credentials = ("user_talua@example.com", "password123");
-//         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
-//         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
-//
-//         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await;
-//         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
-//         let chat_session_id = Uuid::new_v4(); // Placeholder
-//         let payload = AssociateLorebookPayload { lorebook_id };
-//
-//         let response = http_client
-//             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
-//             // No token
-//             .json(&payload)
-//             .send()
-//             .await
-//             .expect("Request failed");
-//         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-//     }
-//
-//     #[tokio::test]
-//     async fn test_associate_lorebook_forbidden_other_user_chat() {
-//         let test_app = spawn_app(false, false, false).await;
-//         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-//         let http_client = reqwest::Client::new();
-//
-//         let user1_credentials = ("user1_talfouc@example.com", "password123");
-//         let user1_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user1_credentials.0, user1_credentials.1, true, None, None).await.unwrap();
-//         let user1_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user1_credentials.0, user1_credentials.1).await.unwrap();
-//
-//         let user2_credentials = ("user2_talfouc@example.com", "password123");
-//         let user2_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user2_credentials.0, user2_credentials.1, true, None, None).await.unwrap();
-//         let user2_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user2_credentials.0, user2_credentials.1).await.unwrap();
-//
-//         let lorebook_id_user1 = create_dummy_lorebook(&test_app, user1_data.id, &user1_token).await; // User1's lorebook
-//         // let chat_session_id_user2 = create_dummy_chat_session(&test_app, user2_data.id, &user2_token, None).await; // User2's chat
-//         let chat_session_id_user2 = Uuid::new_v4(); // Placeholder
-//
-//         let payload = AssociateLorebookPayload { lorebook_id: lorebook_id_user1 };
-//
-//         // User1 tries to associate their lorebook with User2's chat (using user1_token)
-//         let response = http_client
-//             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id_user2))
-//             .bearer_auth(&user1_token)
-//             .json(&payload)
-//             .send()
-//             .await
-//             .expect("Request failed");
-//         assert!(response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND);
-//     }
-//
-//     #[tokio::test]
-//     async fn test_associate_lorebook_forbidden_other_user_lorebook() {
-//         let test_app = spawn_app(false, false, false).await;
-//         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-//         let http_client = reqwest::Client::new();
-//
-//         let user1_credentials = ("user1_talfoul@example.com", "password123");
-//         let user1_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user1_credentials.0, user1_credentials.1, true, None, None).await.unwrap();
-//         let user1_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user1_credentials.0, user1_credentials.1).await.unwrap();
-//
-//         let user2_credentials = ("user2_talfoul@example.com", "password123");
-//         let user2_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user2_credentials.0, user2_credentials.1, true, None, None).await.unwrap();
-//         let user2_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user2_credentials.0, user2_credentials.1).await.unwrap();
-//
-//         let lorebook_id_user2 = create_dummy_lorebook(&test_app, user2_data.id, &user2_token).await; // User2's lorebook
-//         // let chat_session_id_user1 = create_dummy_chat_session(&test_app, user1_data.id, &user1_token, None).await; // User1's chat
-//         let chat_session_id_user1 = Uuid::new_v4(); // Placeholder
-//
-//         let payload = AssociateLorebookPayload { lorebook_id: lorebook_id_user2 };
-//
-//         // User1 tries to associate User2's lorebook with User1's chat
-//         let response = http_client
-//             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id_user1))
-//             .bearer_auth(&user1_token)
-//             .json(&payload)
-//             .send()
-//             .await
-//             .expect("Request failed");
-//         assert!(response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND);
-//     }
-//
-//     #[tokio::test]
-//     async fn test_associate_lorebook_chat_not_found() {
-//         let test_app = spawn_app(false, false, false).await;
-//         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-//         let http_client = reqwest::Client::new();
-//
-//         let user_credentials = ("user_talcnf@example.com", "password123");
-//         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
-//         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
-//
-//         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await;
-//         let non_existent_chat_id = Uuid::new_v4();
-//         let payload = AssociateLorebookPayload { lorebook_id };
-//
-//         let response = http_client
-//             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, non_existent_chat_id))
-//             .bearer_auth(&user_token)
-//             .json(&payload)
-//             .send()
-//             .await
-//             .expect("Request failed");
-//         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-//     }
-//
-//     #[tokio::test]
-//     async fn test_associate_lorebook_lorebook_not_found() {
-//         let test_app = spawn_app(false, false, false).await;
-//         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-//         let http_client = reqwest::Client::new();
-//
-//         let user_credentials = ("user_tallnf@example.com", "password123");
-//         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
-//         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
-//
-//         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
-//         let chat_session_id = Uuid::new_v4(); // Placeholder
-//         let non_existent_lorebook_id = Uuid::new_v4();
-//         let payload = AssociateLorebookPayload { lorebook_id: non_existent_lorebook_id };
-//
-//         let response = http_client
-//             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
-//             .bearer_auth(&user_token)
-//             .json(&payload)
-//             .send()
-//             .await
-//             .expect("Request failed");
-//         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-//     }
-//
-//     #[tokio::test]
-//     async fn test_associate_lorebook_validation_error() {
-//         let test_app = spawn_app(false, false, false).await;
-//         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-//         let http_client = reqwest::Client::new();
-//
-//         let user_credentials = ("user_talve@example.com", "password123");
-//         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
-//         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
-//
-//         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
-//         let chat_session_id = Uuid::new_v4(); // Placeholder
-//
-//         // Invalid payload, e.g. missing lorebook_id
-//         let payload = serde_json::json!({});
-//
-//         let response = http_client
-//             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
-//             .bearer_auth(&user_token)
-//             .json(&payload)
-//             .send()
-//             .await
-//             .expect("Request failed");
-//         assert!(response.status() == StatusCode::BAD_REQUEST || response.status() == StatusCode::UNPROCESSABLE_ENTITY);
-//     }
-//
-//
-//     #[tokio::test]
-//     async fn test_list_associated_lorebooks_success() {
-//         let test_app = spawn_app(false, false, false).await;
-//         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-//         let http_client = reqwest::Client::new();
-//
-//         let user_credentials = ("user_tlals@example.com", "password123");
-//         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
-//         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
-//
-//         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
-//         let chat_session_id = Uuid::new_v4(); // Placeholder
-//         // TODO: Associate a lorebook first
-//         // let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await;
-//         // let payload = AssociateLorebookPayload { lorebook_id };
-//         // http_client.post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id)).bearer_auth(&user_token).json(&payload).send().await.expect("Assoc failed");
-//
-//
-//         let response = http_client
-//             .get(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
-//             .bearer_auth(&user_token)
-//             .send()
-//             .await
-//             .expect("Request failed");
-//         assert_eq!(response.status(), StatusCode::OK);
-//         // let associated_lorebooks: Vec<AssociatedLorebookResponse> = response.json().await.expect("Parse failed");
-//         // assert!(!associated_lorebooks.is_empty()); // If one was associated
-//     }
-//     // ... (Unauthorized, Forbidden for other user's chat, Chat Not Found for List) ...
-//
-//     #[tokio::test]
-//     async fn test_disassociate_lorebook_from_chat_success() {
-//         let test_app = spawn_app(false, false, false).await;
-//         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
-//         let http_client = reqwest::Client::new();
-//
-//         let user_credentials = ("user_tdlfcs@example.com", "password123");
-//         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
-//         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
-//
-//         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
-//         let chat_session_id = Uuid::new_v4(); // Placeholder
-//         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await;
-//         // TODO: Associate it first
-//         // let assoc_payload = AssociateLorebookPayload { lorebook_id };
-//         // http_client.post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id)).bearer_auth(&user_token).json(&assoc_payload).send().await.unwrap();
-//
-//
-//         let response = http_client
-//             .delete(&format!("{}/api/chats/{}/lorebooks/{}", test_app.address, chat_session_id, lorebook_id))
-//             .bearer_auth(&user_token)
-//             .send()
-//             .await
-//             .expect("Request failed");
-//         assert_eq!(response.status(), StatusCode::NO_CONTENT);
-//     }
-//     // ... (Unauthorized, Forbidden for other user's chat/lorebook, Chat/Lorebook Not Found for Delete Association) ...
+    //     #[tokio::test]
+    //     async fn test_associate_lorebook_with_chat_success() {
+    //         let test_app = spawn_app(false, false, false).await;
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let http_client = reqwest::Client::new();
+    //
+    //         let user_credentials = ("user_talwcs@example.com", "password123");
+    //         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
+    //         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
+    //
+    //         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await; // User's lorebook
+    //         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await; // User's chat session
+    //         let chat_session_id = Uuid::new_v4(); // Placeholder for now
+    //
+    //         let payload = AssociateLorebookPayload { lorebook_id };
+    //
+    //         let response = http_client
+    //             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
+    //             .bearer_auth(&user_token)
+    //             .json(&payload)
+    //             .send()
+    //             .await
+    //             .expect("Request failed");
+    //
+    //         assert_eq!(response.status(), StatusCode::OK); // Or 201 CREATED if it returns the association
+    //         // Potentially check response body if it returns something
+    //     }
+    //
+    //     #[tokio::test]
+    //     async fn test_associate_lorebook_unauthorized() {
+    //         let test_app = spawn_app(false, false, false).await;
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let http_client = reqwest::Client::new();
+    //
+    //         let user_credentials = ("user_talua@example.com", "password123");
+    //         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
+    //         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
+    //
+    //         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await;
+    //         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
+    //         let chat_session_id = Uuid::new_v4(); // Placeholder
+    //         let payload = AssociateLorebookPayload { lorebook_id };
+    //
+    //         let response = http_client
+    //             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
+    //             // No token
+    //             .json(&payload)
+    //             .send()
+    //             .await
+    //             .expect("Request failed");
+    //         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    //     }
+    //
+    //     #[tokio::test]
+    //     async fn test_associate_lorebook_forbidden_other_user_chat() {
+    //         let test_app = spawn_app(false, false, false).await;
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let http_client = reqwest::Client::new();
+    //
+    //         let user1_credentials = ("user1_talfouc@example.com", "password123");
+    //         let user1_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user1_credentials.0, user1_credentials.1, true, None, None).await.unwrap();
+    //         let user1_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user1_credentials.0, user1_credentials.1).await.unwrap();
+    //
+    //         let user2_credentials = ("user2_talfouc@example.com", "password123");
+    //         let user2_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user2_credentials.0, user2_credentials.1, true, None, None).await.unwrap();
+    //         let user2_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user2_credentials.0, user2_credentials.1).await.unwrap();
+    //
+    //         let lorebook_id_user1 = create_dummy_lorebook(&test_app, user1_data.id, &user1_token).await; // User1's lorebook
+    //         // let chat_session_id_user2 = create_dummy_chat_session(&test_app, user2_data.id, &user2_token, None).await; // User2's chat
+    //         let chat_session_id_user2 = Uuid::new_v4(); // Placeholder
+    //
+    //         let payload = AssociateLorebookPayload { lorebook_id: lorebook_id_user1 };
+    //
+    //         // User1 tries to associate their lorebook with User2's chat (using user1_token)
+    //         let response = http_client
+    //             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id_user2))
+    //             .bearer_auth(&user1_token)
+    //             .json(&payload)
+    //             .send()
+    //             .await
+    //             .expect("Request failed");
+    //         assert!(response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND);
+    //     }
+    //
+    //     #[tokio::test]
+    //     async fn test_associate_lorebook_forbidden_other_user_lorebook() {
+    //         let test_app = spawn_app(false, false, false).await;
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let http_client = reqwest::Client::new();
+    //
+    //         let user1_credentials = ("user1_talfoul@example.com", "password123");
+    //         let user1_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user1_credentials.0, user1_credentials.1, true, None, None).await.unwrap();
+    //         let user1_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user1_credentials.0, user1_credentials.1).await.unwrap();
+    //
+    //         let user2_credentials = ("user2_talfoul@example.com", "password123");
+    //         let user2_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user2_credentials.0, user2_credentials.1, true, None, None).await.unwrap();
+    //         let user2_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user2_credentials.0, user2_credentials.1).await.unwrap();
+    //
+    //         let lorebook_id_user2 = create_dummy_lorebook(&test_app, user2_data.id, &user2_token).await; // User2's lorebook
+    //         // let chat_session_id_user1 = create_dummy_chat_session(&test_app, user1_data.id, &user1_token, None).await; // User1's chat
+    //         let chat_session_id_user1 = Uuid::new_v4(); // Placeholder
+    //
+    //         let payload = AssociateLorebookPayload { lorebook_id: lorebook_id_user2 };
+    //
+    //         // User1 tries to associate User2's lorebook with User1's chat
+    //         let response = http_client
+    //             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id_user1))
+    //             .bearer_auth(&user1_token)
+    //             .json(&payload)
+    //             .send()
+    //             .await
+    //             .expect("Request failed");
+    //         assert!(response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND);
+    //     }
+    //
+    //     #[tokio::test]
+    //     async fn test_associate_lorebook_chat_not_found() {
+    //         let test_app = spawn_app(false, false, false).await;
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let http_client = reqwest::Client::new();
+    //
+    //         let user_credentials = ("user_talcnf@example.com", "password123");
+    //         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
+    //         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
+    //
+    //         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await;
+    //         let non_existent_chat_id = Uuid::new_v4();
+    //         let payload = AssociateLorebookPayload { lorebook_id };
+    //
+    //         let response = http_client
+    //             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, non_existent_chat_id))
+    //             .bearer_auth(&user_token)
+    //             .json(&payload)
+    //             .send()
+    //             .await
+    //             .expect("Request failed");
+    //         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    //     }
+    //
+    //     #[tokio::test]
+    //     async fn test_associate_lorebook_lorebook_not_found() {
+    //         let test_app = spawn_app(false, false, false).await;
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let http_client = reqwest::Client::new();
+    //
+    //         let user_credentials = ("user_tallnf@example.com", "password123");
+    //         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
+    //         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
+    //
+    //         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
+    //         let chat_session_id = Uuid::new_v4(); // Placeholder
+    //         let non_existent_lorebook_id = Uuid::new_v4();
+    //         let payload = AssociateLorebookPayload { lorebook_id: non_existent_lorebook_id };
+    //
+    //         let response = http_client
+    //             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
+    //             .bearer_auth(&user_token)
+    //             .json(&payload)
+    //             .send()
+    //             .await
+    //             .expect("Request failed");
+    //         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    //     }
+    //
+    //     #[tokio::test]
+    //     async fn test_associate_lorebook_validation_error() {
+    //         let test_app = spawn_app(false, false, false).await;
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let http_client = reqwest::Client::new();
+    //
+    //         let user_credentials = ("user_talve@example.com", "password123");
+    //         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
+    //         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
+    //
+    //         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
+    //         let chat_session_id = Uuid::new_v4(); // Placeholder
+    //
+    //         // Invalid payload, e.g. missing lorebook_id
+    //         let payload = serde_json::json!({});
+    //
+    //         let response = http_client
+    //             .post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
+    //             .bearer_auth(&user_token)
+    //             .json(&payload)
+    //             .send()
+    //             .await
+    //             .expect("Request failed");
+    //         assert!(response.status() == StatusCode::BAD_REQUEST || response.status() == StatusCode::UNPROCESSABLE_ENTITY);
+    //     }
+    //
+    //
+    //     #[tokio::test]
+    //     async fn test_list_associated_lorebooks_success() {
+    //         let test_app = spawn_app(false, false, false).await;
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let http_client = reqwest::Client::new();
+    //
+    //         let user_credentials = ("user_tlals@example.com", "password123");
+    //         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
+    //         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
+    //
+    //         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
+    //         let chat_session_id = Uuid::new_v4(); // Placeholder
+    //         // TODO: Associate a lorebook first
+    //         // let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await;
+    //         // let payload = AssociateLorebookPayload { lorebook_id };
+    //         // http_client.post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id)).bearer_auth(&user_token).json(&payload).send().await.expect("Assoc failed");
+    //
+    //
+    //         let response = http_client
+    //             .get(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id))
+    //             .bearer_auth(&user_token)
+    //             .send()
+    //             .await
+    //             .expect("Request failed");
+    //         assert_eq!(response.status(), StatusCode::OK);
+    //         // let associated_lorebooks: Vec<AssociatedLorebookResponse> = response.json().await.expect("Parse failed");
+    //         // assert!(!associated_lorebooks.is_empty()); // If one was associated
+    //     }
+    //     // ... (Unauthorized, Forbidden for other user's chat, Chat Not Found for List) ...
+    //
+    //     #[tokio::test]
+    //     async fn test_disassociate_lorebook_from_chat_success() {
+    //         let test_app = spawn_app(false, false, false).await;
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let http_client = reqwest::Client::new();
+    //
+    //         let user_credentials = ("user_tdlfcs@example.com", "password123");
+    //         let user_data = scribe_backend::test_helpers::db::create_test_user(&mut test_data_guard, user_credentials.0, user_credentials.1, true, None, None).await.unwrap();
+    //         let user_token = scribe_backend::test_helpers::login_user_via_api(&http_client, &test_app.address, user_credentials.0, user_credentials.1).await.unwrap();
+    //
+    //         // let chat_session_id = create_dummy_chat_session(&test_app, user_data.id, &user_token, None).await;
+    //         let chat_session_id = Uuid::new_v4(); // Placeholder
+    //         let lorebook_id = create_dummy_lorebook(&test_app, user_data.id, &user_token).await;
+    //         // TODO: Associate it first
+    //         // let assoc_payload = AssociateLorebookPayload { lorebook_id };
+    //         // http_client.post(&format!("{}/api/chats/{}/lorebooks", test_app.address, chat_session_id)).bearer_auth(&user_token).json(&assoc_payload).send().await.unwrap();
+    //
+    //
+    //         let response = http_client
+    //             .delete(&format!("{}/api/chats/{}/lorebooks/{}", test_app.address, chat_session_id, lorebook_id))
+    //             .bearer_auth(&user_token)
+    //             .send()
+    //             .await
+    //             .expect("Request failed");
+    //         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    //     }
+    //     // ... (Unauthorized, Forbidden for other user's chat/lorebook, Chat/Lorebook Not Found for Delete Association) ...
 }
 
 #[tokio::test]

@@ -37,8 +37,8 @@ pub type GenerationDataWithUnsavedUserMessage = (
     usize,               // 16: actual_recent_history_tokens (NEW) (was 19)
     Vec<RetrievedChunk>, // 17: rag_context_items (NEW) (was 20)
     // History Management Settings (still returned for potential future use/logging)
-    String, // 18: history_management_strategy (was 21)
-    i32,    // 19: history_management_limit (was 22)
+    String,         // 18: history_management_strategy (was 21)
+    i32,            // 19: history_management_limit (was 22)
     Option<String>, // 20: user_persona_name (NEW - for template substitution)
 );
 

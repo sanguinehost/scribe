@@ -26,21 +26,21 @@ fn escape_xml(text: &str) -> String {
 
 /// Replaces template variables {{char}} and {{user}} with actual names
 fn replace_template_variables(
-    text: &str, 
-    character_name: Option<&str>, 
-    user_persona_name: Option<&str>
+    text: &str,
+    character_name: Option<&str>,
+    user_persona_name: Option<&str>,
 ) -> String {
     let mut result = text.to_string();
-    
+
     // Replace {{char}} with character name
     if let Some(char_name) = character_name {
         result = result.replace("{{char}}", char_name);
     }
-    
+
     // Replace {{user}} with user persona name or default
     let user_name = user_persona_name.unwrap_or("User");
     result = result.replace("{{user}}", user_name);
-    
+
     result
 }
 
@@ -96,14 +96,14 @@ fn build_character_info_string(
     };
 
     let mut char_prompt_part = String::new();
-    let mut has_content = false;
+    let mut has_content;
 
     // Helper to decrypt a field and append it to the prompt string
     let append_decrypted_field = |field_name: &str,
-                                      ciphertext: &Option<Vec<u8>>,
-                                      nonce: &Option<Vec<u8>>,
-                                      char_prompt_part: &mut String,
-                                      has_content: &mut bool| {
+                                  ciphertext: &Option<Vec<u8>>,
+                                  nonce: &Option<Vec<u8>>,
+                                  char_prompt_part: &mut String,
+                                  has_content: &mut bool| {
         if let (Some(ct), Some(n)) = (ciphertext, nonce) {
             if !ct.is_empty() {
                 match crate::crypto::decrypt_gcm(ct, n, dek.unwrap()) {
@@ -121,7 +121,11 @@ fn build_character_info_string(
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Failed to decrypt character field \"{}\": {}", field_name, e);
+                        tracing::error!(
+                            "Failed to decrypt character field \"{}\": {}",
+                            field_name,
+                            e
+                        );
                     }
                 }
             }
@@ -132,13 +136,37 @@ fn build_character_info_string(
     writeln!(char_prompt_part, "**Character Name:** {}", char_data.name).unwrap();
     has_content = true;
 
-    append_decrypted_field("Description", &char_data.description, &char_data.description_nonce, &mut char_prompt_part, &mut has_content);
-    append_decrypted_field("Personality", &char_data.personality, &char_data.personality_nonce, &mut char_prompt_part, &mut has_content);
-    append_decrypted_field("Scenario", &char_data.scenario, &char_data.scenario_nonce, &mut char_prompt_part, &mut has_content);
-    append_decrypted_field("Example Dialogue", &char_data.mes_example, &char_data.mes_example_nonce, &mut char_prompt_part, &mut has_content);
-   
+    append_decrypted_field(
+        "Description",
+        &char_data.description,
+        &char_data.description_nonce,
+        &mut char_prompt_part,
+        &mut has_content,
+    );
+    append_decrypted_field(
+        "Personality",
+        &char_data.personality,
+        &char_data.personality_nonce,
+        &mut char_prompt_part,
+        &mut has_content,
+    );
+    append_decrypted_field(
+        "Scenario",
+        &char_data.scenario,
+        &char_data.scenario_nonce,
+        &mut char_prompt_part,
+        &mut has_content,
+    );
+    append_decrypted_field(
+        "Example Dialogue",
+        &char_data.mes_example,
+        &char_data.mes_example_nonce,
+        &mut char_prompt_part,
+        &mut has_content,
+    );
+
     if has_content {
-    	char_prompt_part
+        char_prompt_part
     } else {
         String::new()
     }
@@ -195,7 +223,7 @@ pub struct PromptBuildParams<'a> {
     pub current_user_message: GenAiChatMessage,
     pub model_name: String,
     pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>, // For decrypting character data
-    pub user_persona_name: Option<String>, // For {{user}} template substitution
+    pub user_persona_name: Option<String>,                 // For {{user}} template substitution
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -228,7 +256,10 @@ async fn build_meta_system_prompt(
     }
 
     if has_character_details {
-        sections_list.push(format!("{}. <character_profile>: Character background, personality, and details for \"{}\".", section_num, char_name_placeholder));
+        sections_list.push(format!(
+            "{}. <character_profile>: Character background, personality, and details for \"{}\".",
+            section_num, char_name_placeholder
+        ));
         section_num += 1;
     }
 
@@ -320,7 +351,8 @@ async fn calculate_component_tokens(
             .total
     };
 
-    let character_details_str = build_character_info_string(character_metadata, user_dek, user_persona_name);
+    let character_details_str =
+        build_character_info_string(character_metadata, user_dek, user_persona_name);
     let character_details_tokens = if character_details_str.is_empty() {
         0
     } else {
@@ -414,7 +446,8 @@ async fn perform_initial_token_calculation(
         *character_metadata,
         !rag_items.is_empty(),
         system_prompt_base.is_some() && !system_prompt_base.as_ref().unwrap().is_empty(),
-        raw_character_system_prompt.is_some() && !raw_character_system_prompt.as_ref().unwrap().is_empty(),
+        raw_character_system_prompt.is_some()
+            && !raw_character_system_prompt.as_ref().unwrap().is_empty(),
         character_metadata.is_some(),
         token_counter,
         model_name,
@@ -595,7 +628,7 @@ async fn build_final_prompt_strings(
     let has_persona_override = !calculation.persona_override_prompt_str.is_empty();
     let has_character_definition = !calculation.character_definition_str.is_empty();
     let has_character_details = !calculation.character_details_str.is_empty();
-    
+
     let (final_meta_system_prompt, _) = build_meta_system_prompt(
         character_metadata,
         has_final_rag_items,
@@ -647,7 +680,7 @@ async fn build_final_prompt_strings(
     if !calculation.rag_items_with_tokens.is_empty() {
         // Start with lorebook_entries XML tag as promised in system prompt
         rag_context_for_user_message.push_str("<lorebook_entries>\n");
-        
+
         for (rag_item, _) in &calculation.rag_items_with_tokens {
             match &rag_item.metadata {
                 crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) => {
@@ -661,18 +694,28 @@ async fn build_final_prompt_strings(
                 }
                 crate::services::embedding_pipeline::RetrievedMetadata::Lorebook(lorebook_meta) => {
                     write!(rag_context_for_user_message, "<lorebook_entry").unwrap();
-                    
+
                     if let Some(title) = &lorebook_meta.entry_title {
-                        write!(rag_context_for_user_message, " title=\"{}\"", escape_xml(title)).unwrap();
+                        write!(
+                            rag_context_for_user_message,
+                            " title=\"{}\"",
+                            escape_xml(title)
+                        )
+                        .unwrap();
                     }
-                    
+
                     if let Some(keywords) = &lorebook_meta.keywords {
                         if !keywords.is_empty() {
                             let keywords_str = keywords.join(", ");
-                            write!(rag_context_for_user_message, " keywords=\"{}\"", escape_xml(&keywords_str)).unwrap();
+                            write!(
+                                rag_context_for_user_message,
+                                " keywords=\"{}\"",
+                                escape_xml(&keywords_str)
+                            )
+                            .unwrap();
                         }
                     }
-                    
+
                     writeln!(
                         rag_context_for_user_message,
                         ">{}</lorebook_entry>",
@@ -682,7 +725,7 @@ async fn build_final_prompt_strings(
                 }
             }
         }
-        
+
         rag_context_for_user_message.push_str("</lorebook_entries>\n\n");
     }
 
@@ -690,7 +733,10 @@ async fn build_final_prompt_strings(
     let mut final_user_message = current_user_message.clone();
     if let MessageContent::Text(text_content) = final_user_message.content {
         let formatted_content = if !rag_context_for_user_message.is_empty() {
-            format!("{}**[User Input]**\n{}", rag_context_for_user_message, text_content)
+            format!(
+                "{}**[User Input]**\n{}",
+                rag_context_for_user_message, text_content
+            )
         } else {
             format!("**[User Input]**\n{}", text_content)
         };
@@ -757,11 +803,10 @@ pub async fn build_final_llm_prompt(
 // --- Unit Tests ---
 #[cfg(test)]
 mod tests {
-    
+
     use crate::models::characters::CharacterMetadata;
     use chrono::Utc;
     use uuid::Uuid;
-
 
     #[test]
     fn test_build_prompt_no_character() {
@@ -878,11 +923,8 @@ mod tests {
         assert_eq!(result, "Alice is talking to Bob about something");
 
         // Test with no character name
-        let result = super::replace_template_variables(
-            "{{char}} is talking to {{user}}",
-            None,
-            Some("Bob"),
-        );
+        let result =
+            super::replace_template_variables("{{char}} is talking to {{user}}", None, Some("Bob"));
         assert_eq!(result, "{{char}} is talking to Bob");
 
         // Test with no user name (should default to "User")
@@ -894,11 +936,8 @@ mod tests {
         assert_eq!(result, "Alice is talking to User");
 
         // Test with no template variables
-        let result = super::replace_template_variables(
-            "This is a normal text",
-            Some("Alice"),
-            Some("Bob"),
-        );
+        let result =
+            super::replace_template_variables("This is a normal text", Some("Alice"), Some("Bob"));
         assert_eq!(result, "This is a normal text");
 
         // Test with multiple occurrences
@@ -907,7 +946,10 @@ mod tests {
             Some("Alice"),
             Some("Bob"),
         );
-        assert_eq!(result, "Alice says hello to Bob. Alice is friendly and Bob responds.");
+        assert_eq!(
+            result,
+            "Alice says hello to Bob. Alice is friendly and Bob responds."
+        );
 
         // Test empty string
         let result = super::replace_template_variables("", Some("Alice"), Some("Bob"));

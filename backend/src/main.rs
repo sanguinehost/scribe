@@ -1,7 +1,7 @@
 use axum::{
     Router,
-    routing::get, // Remove post
     extract::DefaultBodyLimit,
+    routing::get, // Remove post
 };
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
@@ -23,7 +23,7 @@ use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
 use scribe_backend::routes::health::health_check;
 use scribe_backend::routes::{
-    avatars::avatar_routes, // Added for avatar routes
+    avatars::avatar_routes,        // Added for avatar routes
     characters::characters_router, // Use the router function import
     chat::chat_routes,
     chats,
@@ -175,11 +175,13 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     // --- Initialize File Storage Service ---
     let file_storage_service = Arc::new(
         FileStorageService::new(&config.upload_storage_path)
-            .context("Failed to initialize file storage service")?
+            .context("Failed to initialize file storage service")?,
     );
-    
+
     // Initialize storage directories
-    file_storage_service.init().await
+    file_storage_service
+        .init()
+        .await
         .context("Failed to initialize file storage directories")?;
 
     Ok(AppStateServices {
@@ -329,8 +331,10 @@ fn build_router(
     auth_layer: axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore>,
 ) -> Router {
     let protected_api_routes = Router::new()
-        .nest("/characters", characters_router(app_state.clone())
-            .layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for character uploads
+        .nest(
+            "/characters",
+            characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
+        ) // 10MB limit for character uploads
         .nest("/chat", chat_routes(app_state.clone()))
         .nest("/chats", chats::chat_routes())
         .nest("/documents", document_routes())
@@ -338,8 +342,7 @@ fn build_router(
         .nest("/user-settings", user_settings_routes(app_state.clone()))
         .nest("/", lorebook_routes())
         .nest("/admin", admin_routes())
-        .merge(avatar_routes()
-            .layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
+        .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
         .route_layer(login_required!(AuthBackend));
 
     let public_api_routes = Router::new()

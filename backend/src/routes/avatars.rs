@@ -1,9 +1,11 @@
 // backend/src/routes/avatars.rs
 
+use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
-use crate::models::user_assets::{UserAsset, NewUserAsset};
+use crate::models::user_assets::{NewUserAsset, UserAsset};
 use crate::schema::user_assets::dsl::user_assets;
 use crate::state::AppState;
+use axum::body::Bytes;
 use axum::{
     Router,
     body::Body,
@@ -11,18 +13,13 @@ use axum::{
     extract::{Path, State, multipart::Multipart},
     http::StatusCode,
     response::{Json, Response},
-    routing::{get, post, delete},
+    routing::{delete, get, post},
 };
-use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
-    SelectableHelper,
-};
+use axum_login::AuthSession;
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
+use image::ImageFormat;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
-use crate::auth::user_store::Backend as AuthBackend;
-use axum::body::Bytes;
-use axum_login::AuthSession;
-use image::ImageFormat;
 
 type CurrentAuthSession = AuthSession<AuthBackend>;
 
@@ -33,7 +30,10 @@ pub fn avatar_routes() -> Router<AppState> {
         .route("/users/:user_id/avatar", delete(delete_user_avatar))
         .route("/personas/:persona_id/avatar", get(get_persona_avatar))
         .route("/personas/:persona_id/avatar", post(upload_persona_avatar))
-        .route("/personas/:persona_id/avatar", delete(delete_persona_avatar))
+        .route(
+            "/personas/:persona_id/avatar",
+            delete(delete_persona_avatar),
+        )
 }
 
 // Get user avatar
@@ -72,20 +72,22 @@ pub async fn get_user_avatar(
                 .optional()
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup interaction error: {e}")))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Asset lookup interaction error: {e}"))
+        })?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))?;
 
-    let asset = asset.ok_or_else(|| {
-        AppError::NotFound("User avatar not found".to_string())
-    })?;
+    let asset = asset.ok_or_else(|| AppError::NotFound("User avatar not found".to_string()))?;
 
     // Get the image data from the asset
-    let image_data = asset.data.ok_or_else(|| {
-        AppError::NotFound("Avatar asset has no image data".to_string())
-    })?;
+    let image_data = asset
+        .data
+        .ok_or_else(|| AppError::NotFound("Avatar asset has no image data".to_string()))?;
 
     // Get content type, default to image/png
-    let content_type = asset.content_type.unwrap_or_else(|| "image/png".to_string());
+    let content_type = asset
+        .content_type
+        .unwrap_or_else(|| "image/png".to_string());
 
     // Return the image with appropriate headers
     let response = Response::builder()
@@ -93,7 +95,9 @@ pub async fn get_user_avatar(
         .header("Content-Type", &content_type)
         .header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
         .body(Body::from(image_data.clone()))
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}")))?;
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}"))
+        })?;
 
     debug!(user_id = %user_id, content_type = %content_type, image_data_len = image_data.len(), "User avatar served successfully");
     Ok(response)
@@ -131,9 +135,8 @@ pub async fn upload_user_avatar(
         }
     }
 
-    let image_bytes = image_data.ok_or_else(|| {
-        AppError::BadRequest("Missing 'avatar' field in upload".to_string())
-    })?;
+    let image_bytes = image_data
+        .ok_or_else(|| AppError::BadRequest("Missing 'avatar' field in upload".to_string()))?;
 
     // Validate image data using the 'image' crate
     if let Some(ct) = &content_type {
@@ -166,7 +169,7 @@ pub async fn upload_user_avatar(
         user_id,
         &format!("{}_avatar", current_user.username),
         image_bytes.to_vec(),
-        content_type // Pass the extracted content_type
+        content_type, // Pass the extracted content_type
     );
 
     let conn = state
@@ -183,8 +186,9 @@ pub async fn upload_user_avatar(
                 user_assets
                     .filter(crate::schema::user_assets::user_id.eq(user_id))
                     .filter(crate::schema::user_assets::persona_id.is_null())
-                    .filter(crate::schema::user_assets::asset_type.eq("avatar"))
-            ).execute(conn_block)?;
+                    .filter(crate::schema::user_assets::asset_type.eq("avatar")),
+            )
+            .execute(conn_block)?;
 
             // Then insert the new avatar
             diesel::insert_into(user_assets)
@@ -193,15 +197,20 @@ pub async fn upload_user_avatar(
                 .get_result::<UserAsset>(conn_block)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}")))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}"))
+        })?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}")))?;
 
     info!(user_id = %user_id, asset_id = asset_result.id, "User avatar uploaded successfully");
 
-    Ok((StatusCode::CREATED, Json(serde_json::json!({
-        "message": "Avatar uploaded successfully",
-        "asset_id": asset_result.id
-    }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "message": "Avatar uploaded successfully",
+            "asset_id": asset_result.id
+        })),
+    ))
 }
 
 // Delete user avatar
@@ -234,11 +243,14 @@ pub async fn delete_user_avatar(
                 user_assets
                     .filter(crate::schema::user_assets::user_id.eq(user_id))
                     .filter(crate::schema::user_assets::persona_id.is_null())
-                    .filter(crate::schema::user_assets::asset_type.eq("avatar"))
-            ).execute(conn_block)
+                    .filter(crate::schema::user_assets::asset_type.eq("avatar")),
+            )
+            .execute(conn_block)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset delete interaction error: {e}")))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Asset delete interaction error: {e}"))
+        })?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset delete DB error: {e}")))?;
 
     if deleted_count == 0 {
@@ -280,20 +292,22 @@ pub async fn get_persona_avatar(
                 .optional()
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup interaction error: {e}")))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Asset lookup interaction error: {e}"))
+        })?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))?;
 
-    let asset = asset.ok_or_else(|| {
-        AppError::NotFound("Persona avatar not found".to_string())
-    })?;
+    let asset = asset.ok_or_else(|| AppError::NotFound("Persona avatar not found".to_string()))?;
 
     // Get the image data from the asset
-    let image_data = asset.data.ok_or_else(|| {
-        AppError::NotFound("Avatar asset has no image data".to_string())
-    })?;
+    let image_data = asset
+        .data
+        .ok_or_else(|| AppError::NotFound("Avatar asset has no image data".to_string()))?;
 
     // Get content type, default to image/png
-    let content_type = asset.content_type.unwrap_or_else(|| "image/png".to_string());
+    let content_type = asset
+        .content_type
+        .unwrap_or_else(|| "image/png".to_string());
 
     // Return the image with appropriate headers
     let response = Response::builder()
@@ -301,7 +315,9 @@ pub async fn get_persona_avatar(
         .header("Content-Type", &content_type)
         .header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
         .body(Body::from(image_data.clone()))
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}")))?;
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}"))
+        })?;
 
     debug!(persona_id = %persona_id, content_type = %content_type, image_data_len = image_data.len(), "Persona avatar served successfully");
     Ok(response)
@@ -337,9 +353,8 @@ pub async fn upload_persona_avatar(
         }
     }
 
-    let image_bytes = image_data.ok_or_else(|| {
-        AppError::BadRequest("Missing 'avatar' field in upload".to_string())
-    })?;
+    let image_bytes = image_data
+        .ok_or_else(|| AppError::BadRequest("Missing 'avatar' field in upload".to_string()))?;
 
     // Validate image data using the 'image' crate
     if let Some(ct) = &content_type {
@@ -373,7 +388,7 @@ pub async fn upload_persona_avatar(
         persona_id,
         &format!("persona_{}_avatar", persona_id),
         image_bytes.to_vec(),
-        content_type // Pass the extracted content_type
+        content_type, // Pass the extracted content_type
     );
 
     let conn = state
@@ -390,8 +405,9 @@ pub async fn upload_persona_avatar(
                 user_assets
                     .filter(crate::schema::user_assets::user_id.eq(current_user.id))
                     .filter(crate::schema::user_assets::persona_id.eq(persona_id))
-                    .filter(crate::schema::user_assets::asset_type.eq("avatar"))
-            ).execute(conn_block)?;
+                    .filter(crate::schema::user_assets::asset_type.eq("avatar")),
+            )
+            .execute(conn_block)?;
 
             // Then insert the new avatar
             diesel::insert_into(user_assets)
@@ -400,15 +416,20 @@ pub async fn upload_persona_avatar(
                 .get_result::<UserAsset>(conn_block)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}")))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}"))
+        })?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}")))?;
 
     info!(persona_id = %persona_id, asset_id = asset_result.id, "Persona avatar uploaded successfully");
 
-    Ok((StatusCode::CREATED, Json(serde_json::json!({
-        "message": "Persona avatar uploaded successfully",
-        "asset_id": asset_result.id
-    }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "message": "Persona avatar uploaded successfully",
+            "asset_id": asset_result.id
+        })),
+    ))
 }
 
 // Delete persona avatar
@@ -436,11 +457,14 @@ pub async fn delete_persona_avatar(
                 user_assets
                     .filter(crate::schema::user_assets::user_id.eq(current_user.id))
                     .filter(crate::schema::user_assets::persona_id.eq(persona_id))
-                    .filter(crate::schema::user_assets::asset_type.eq("avatar"))
-            ).execute(conn_block)
+                    .filter(crate::schema::user_assets::asset_type.eq("avatar")),
+            )
+            .execute(conn_block)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset delete interaction error: {e}")))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Asset delete interaction error: {e}"))
+        })?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset delete DB error: {e}")))?;
 
     if deleted_count == 0 {

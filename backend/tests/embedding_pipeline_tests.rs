@@ -104,7 +104,7 @@ fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
     ));
     let file_storage_service = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
 
     let services = AppStateServices {
@@ -655,7 +655,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     ));
     let file_storage_service_5 = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
 
     let services = AppStateServices {
@@ -748,7 +748,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     ));
     let file_storage_service_6 = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
 
     let services = AppStateServices {
@@ -935,7 +935,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     ));
     let file_storage_service_7 = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
 
     let services_for_test_7 = AppStateServices {
@@ -1142,7 +1142,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
     let file_storage_service_8 = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
     let services_for_metadata_test_3 = AppStateServices {
         ai_client: test_app
@@ -1288,7 +1288,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
     let file_storage_service_9 = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
     // Use the app_state created within this test, not the one from the outer scope (app_state_arc)
     let services_for_metadata_test_4 = AppStateServices {
@@ -1441,7 +1441,7 @@ async fn test_rag_context_injection_with_qdrant() {
     ));
     let file_storage_service_10 = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
 
     let services_for_rag = AppStateServices {
@@ -1790,7 +1790,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
     ));
     let file_storage_service = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
 
     let services_for_isolation_test = AppStateServices {
@@ -2104,7 +2104,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     ));
     let file_storage_service = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
 
     let services_for_lorebook_isolation_test = AppStateServices {

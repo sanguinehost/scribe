@@ -379,18 +379,27 @@ impl Character {
             )
             .field(
                 "creator_comment_nonce",
-                &self.creator_comment_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+                &self
+                    .creator_comment_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
             )
             .field(
                 "depth_prompt",
                 &self.depth_prompt.as_ref().map(|_| "[REDACTED_BYTES]"),
             )
             .field("depth_prompt_depth", &self.depth_prompt_depth)
-            .field("depth_prompt_role", &self.depth_prompt_role.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "depth_prompt_role",
+                &self.depth_prompt_role.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("talkativeness", &self.talkativeness)
             .field(
                 "depth_prompt_ciphertext",
-                &self.depth_prompt_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"),
+                &self
+                    .depth_prompt_ciphertext
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
             )
             .field(
                 "depth_prompt_nonce",
@@ -759,7 +768,8 @@ impl Character {
             tags: self.tags.or_else(|| Some(Vec::new())),
             creator: default_empty_string_if_none(self.creator),
             character_version: default_empty_string_if_none(self.character_version),
-            alternate_greetings: self.alternate_greetings
+            alternate_greetings: self
+                .alternate_greetings
                 .map(|greetings| {
                     greetings
                         .into_iter()
@@ -781,9 +791,10 @@ impl Character {
             persona: decrypted_fields.persona,
             world_scenario: decrypted_fields.world_scenario,
             avatar: self.avatar.and_then(|asset_id_str| {
-                asset_id_str.parse::<i32>().ok().map(|asset_id| {
-                    format!("/api/characters/{}/assets/{}", self.id, asset_id)
-                })
+                asset_id_str
+                    .parse::<i32>()
+                    .ok()
+                    .map(|asset_id| format!("/api/characters/{}/assets/{}", self.id, asset_id))
             }),
             chat: default_empty_string_if_none(self.chat),
             greeting: decrypted_fields.greeting,
@@ -1148,8 +1159,8 @@ pub struct CharacterMetadata {
     pub creator_comment: Option<Vec<u8>>,
     pub creator_comment_nonce: Option<Vec<u8>>,
     pub first_mes: Option<Vec<u8>>,
-   pub created_at: DateTime<Utc>,
-   pub updated_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl std::fmt::Debug for CharacterMetadata {

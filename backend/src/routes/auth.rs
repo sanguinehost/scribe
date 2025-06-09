@@ -697,6 +697,7 @@ pub async fn delete_user_sessions_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[allow(dead_code)]
 #[instrument(skip(pool, auth_session), err)]
 async fn get_current_user_handler(
     State(pool): State<DbPool>,

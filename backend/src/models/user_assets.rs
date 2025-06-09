@@ -37,7 +37,12 @@ pub struct NewUserAsset {
 
 impl NewUserAsset {
     /// Create a new user avatar asset
-    pub fn new_user_avatar(user_id: Uuid, name: &str, image_data: Vec<u8>, content_type: Option<String>) -> Self {
+    pub fn new_user_avatar(
+        user_id: Uuid,
+        name: &str,
+        image_data: Vec<u8>,
+        content_type: Option<String>,
+    ) -> Self {
         let ext = content_type.as_ref().map_or("png".to_string(), |ct| {
             if ct.contains("png") {
                 "png".to_string()
@@ -60,7 +65,13 @@ impl NewUserAsset {
     }
 
     /// Create a new persona avatar asset
-    pub fn new_persona_avatar(user_id: Uuid, persona_id: Uuid, name: &str, image_data: Vec<u8>, content_type: Option<String>) -> Self {
+    pub fn new_persona_avatar(
+        user_id: Uuid,
+        persona_id: Uuid,
+        name: &str,
+        image_data: Vec<u8>,
+        content_type: Option<String>,
+    ) -> Self {
         let ext = content_type.as_ref().map_or("png".to_string(), |ct| {
             if ct.contains("png") {
                 "png".to_string()

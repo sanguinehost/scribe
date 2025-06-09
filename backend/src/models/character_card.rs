@@ -1,6 +1,6 @@
 use crate::models::characters::Character;
-use crate::models::lorebooks::Lorebook; // Import the new Lorebook
 use crate::models::lorebook_dtos::UploadedLorebookEntry; // For SillyTavern entries
+use crate::models::lorebooks::Lorebook; // Import the new Lorebook
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use diesel_json::Json;
@@ -19,7 +19,7 @@ pub struct CharacterCardV3 {
     pub spec_version: String,
     #[serde(default)] // Uses Default impl of CharacterCardDataV3
     pub data: CharacterCardDataV3,
-    
+
     // Optional fields to handle SillyTavern's flattened export format
     // These will be merged into the data field during parsing
     #[serde(default, skip_serializing)]
@@ -67,51 +67,54 @@ impl CharacterCardV3 {
         if self.data.name.is_none() && self.name.is_some() {
             self.data.name = self.name.take();
         }
-        
+
         if self.data.description.is_empty() && self.description.is_some() {
             self.data.description = self.description.take().unwrap_or_default();
         }
-        
+
         if self.data.personality.is_empty() && self.personality.is_some() {
             self.data.personality = self.personality.take().unwrap_or_default();
         }
-        
+
         if self.data.scenario.is_empty() && self.scenario.is_some() {
             self.data.scenario = self.scenario.take().unwrap_or_default();
         }
-        
+
         if self.data.first_mes.is_empty() && self.first_mes.is_some() {
             self.data.first_mes = self.first_mes.take().unwrap_or_default();
         }
-        
+
         if self.data.mes_example.is_empty() && self.mes_example.is_some() {
             self.data.mes_example = self.mes_example.take().unwrap_or_default();
         }
-        
+
         if self.data.creator_notes.is_empty() && self.creator_notes.is_some() {
             self.data.creator_notes = self.creator_notes.take().unwrap_or_default();
         }
-        
+
         if self.data.system_prompt.is_empty() && self.system_prompt.is_some() {
             self.data.system_prompt = self.system_prompt.take().unwrap_or_default();
         }
-        
-        if self.data.post_history_instructions.is_empty() && self.post_history_instructions.is_some() {
-            self.data.post_history_instructions = self.post_history_instructions.take().unwrap_or_default();
+
+        if self.data.post_history_instructions.is_empty()
+            && self.post_history_instructions.is_some()
+        {
+            self.data.post_history_instructions =
+                self.post_history_instructions.take().unwrap_or_default();
         }
-        
+
         if self.data.alternate_greetings.is_empty() && self.alternate_greetings.is_some() {
             self.data.alternate_greetings = self.alternate_greetings.take().unwrap_or_default();
         }
-        
+
         if self.data.tags.is_empty() && self.tags.is_some() {
             self.data.tags = self.tags.take().unwrap_or_default();
         }
-        
+
         if self.data.creator.is_empty() && self.creator.is_some() {
             self.data.creator = self.creator.take().unwrap_or_default();
         }
-        
+
         if self.data.character_version.is_empty() && self.character_version.is_some() {
             self.data.character_version = self.character_version.take().unwrap_or_default();
         }
@@ -686,30 +689,36 @@ impl NewCharacter {
         };
 
         // Extract SillyTavern v3 fields from extensions
-        let talkativeness = data.extensions.get("talkativeness")
+        let talkativeness = data
+            .extensions
+            .get("talkativeness")
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse::<f64>().ok())
             .and_then(|f| bigdecimal::BigDecimal::try_from(f).ok());
 
-        let fav = data.extensions.get("fav")
-            .and_then(|v| v.as_bool());
+        let fav = data.extensions.get("fav").and_then(|v| v.as_bool());
 
-        let world = data.extensions.get("world")
+        let world = data
+            .extensions
+            .get("world")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
 
         // Parse depth_prompt object from extensions
-        let (depth_prompt_data, depth_prompt_depth, depth_prompt_role) = 
+        let (depth_prompt_data, depth_prompt_depth, depth_prompt_role) =
             if let Some(depth_prompt_obj) = data.extensions.get("depth_prompt") {
-                let prompt = depth_prompt_obj.get("prompt")
+                let prompt = depth_prompt_obj
+                    .get("prompt")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                     .map(|s| s.as_bytes().to_vec());
-                let depth = depth_prompt_obj.get("depth")
+                let depth = depth_prompt_obj
+                    .get("depth")
                     .and_then(|v| v.as_i64())
                     .map(|i| i as i32);
-                let role = depth_prompt_obj.get("role")
+                let role = depth_prompt_obj
+                    .get("role")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string());
@@ -719,7 +728,9 @@ impl NewCharacter {
             };
 
         // Also store the full depth_prompt as encrypted JSON for compatibility
-        let depth_prompt_json = data.extensions.get("depth_prompt")
+        let depth_prompt_json = data
+            .extensions
+            .get("depth_prompt")
             .and_then(|v| serde_json::to_string(v).ok())
             .filter(|s| !s.is_empty())
             .map(|s| s.into_bytes());
@@ -835,8 +846,8 @@ impl NewCharacter {
             talkativeness,
             depth_prompt_ciphertext: depth_prompt_json,
             depth_prompt_nonce: None, // Will be set during encryption
-            world_ciphertext: None, // Will be encrypted from world field
-            world_nonce: None, // Will be set during encryption
+            world_ciphertext: None,   // Will be encrypted from world field
+            world_nonce: None,        // Will be set during encryption
             created_at: None,
             updated_at: None,
         }
@@ -970,7 +981,7 @@ impl NewCharacter {
             user_persona_visibility: None,
             visibility: None,
             world_scenario_visibility: None,
-            fav: None, // V2 doesn't have this
+            fav: None,   // V2 doesn't have this
             world: None, // V2 doesn't have this
             creator_comment: None,
             creator_comment_nonce: None,

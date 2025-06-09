@@ -929,7 +929,9 @@ async fn upload_lorebook_json_handler<C: HttpClient, H: IoHandler>(
         "Enter path to lorebook JSON file (e.g., test_data/global_lorebook_june_2025_sillytavern_lorebook.json, leave blank for default): ",
     )?;
 
-    let file_path = file_path_str.unwrap_or_else(|| "test_data/global_lorebook_june_2025_sillytavern_lorebook.json".to_string());
+    let file_path = file_path_str.unwrap_or_else(|| {
+        "test_data/global_lorebook_june_2025_sillytavern_lorebook.json".to_string()
+    });
 
     io_handler.write_line(&format!("Reading lorebook file: {file_path}..."))?;
 

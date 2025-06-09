@@ -34,7 +34,12 @@ pub struct NewCharacterAsset {
 }
 
 impl NewCharacterAsset {
-    pub fn new_avatar(character_id: Uuid, name: &str, image_data: Vec<u8>, content_type: Option<String>) -> Self {
+    pub fn new_avatar(
+        character_id: Uuid,
+        name: &str,
+        image_data: Vec<u8>,
+        content_type: Option<String>,
+    ) -> Self {
         // Determine extension based on content_type, default to "png"
         let ext = content_type.as_ref().map_or("png".to_string(), |ct| {
             if ct.contains("png") {

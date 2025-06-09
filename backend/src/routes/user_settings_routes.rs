@@ -17,13 +17,9 @@ use crate::{
     // models::{user_personas::UserPersona, users::User}, // UserPersona is unused
     auth::user_store::Backend as AuthBackend, // Import the backend
     errors::AppError,
-    models::{
-        users::User,
-        user_settings::{UpdateUserSettingsRequest},
-    },
+    models::{user_settings::UpdateUserSettingsRequest, users::User},
     services::{
-        user_persona_service::UserPersonaService,
-        user_settings_service::UserSettingsService,
+        user_persona_service::UserPersonaService, user_settings_service::UserSettingsService,
     },
     state::AppState,
 };
@@ -84,11 +80,12 @@ async fn get_user_settings_handler(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
-    
+
     debug!(user_id = %user.id, "Getting user settings");
-    
-    let settings = UserSettingsService::get_user_settings(&app_state.pool, user.id, &app_state.config).await?;
-    
+
+    let settings =
+        UserSettingsService::get_user_settings(&app_state.pool, user.id, &app_state.config).await?;
+
     Ok((StatusCode::OK, Json(settings)).into_response())
 }
 
@@ -101,16 +98,17 @@ async fn update_user_settings_handler(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
-    
+
     debug!(user_id = %user.id, "Updating user settings");
-    
+
     let updated_settings = UserSettingsService::update_user_settings(
         &app_state.pool,
         user.id,
         update_request,
         &app_state.config,
-    ).await?;
-    
+    )
+    .await?;
+
     Ok((StatusCode::OK, Json(updated_settings)).into_response())
 }
 
@@ -122,11 +120,11 @@ async fn delete_user_settings_handler(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
-    
+
     debug!(user_id = %user.id, "Deleting user settings (reset to defaults)");
-    
+
     UserSettingsService::delete_user_settings(&app_state.pool, user.id).await?;
-    
+
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 

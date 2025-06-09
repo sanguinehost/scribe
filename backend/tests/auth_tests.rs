@@ -1457,7 +1457,6 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
     Ok(())
 }
 
-
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_login_prevents_session_fixation() -> AnyhowResult<()> {
@@ -1550,7 +1549,11 @@ async fn test_session_rotation_after_login() -> AnyhowResult<()> {
 
     let login_response = test_app.router.clone().oneshot(request).await?;
 
-    assert_eq!(login_response.status(), StatusCode::OK, "Initial login failed");
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Initial login failed"
+    );
 
     let body = login_response.into_body().collect().await?.to_bytes();
     let login_response_data: TestLoginSuccessResponse = serde_json::from_slice(&body)?;
@@ -1566,12 +1569,25 @@ async fn test_session_rotation_after_login() -> AnyhowResult<()> {
         .header(header::COOKIE, session_cookie)
         .body(Body::from(login_payload.to_string()))?;
 
-    let second_login_response = test_app.router.clone().oneshot(second_login_request).await?;
+    let second_login_response = test_app
+        .router
+        .clone()
+        .oneshot(second_login_request)
+        .await?;
 
-    assert_eq!(second_login_response.status(), StatusCode::OK, "Second login failed");
+    assert_eq!(
+        second_login_response.status(),
+        StatusCode::OK,
+        "Second login failed"
+    );
 
-    let second_body = second_login_response.into_body().collect().await?.to_bytes();
-    let second_login_response_data: TestLoginSuccessResponse = serde_json::from_slice(&second_body)?;
+    let second_body = second_login_response
+        .into_body()
+        .collect()
+        .await?
+        .to_bytes();
+    let second_login_response_data: TestLoginSuccessResponse =
+        serde_json::from_slice(&second_body)?;
 
     // 4. Verify that the session ID was rotated after the second login
     assert_ne!(
@@ -1580,8 +1596,14 @@ async fn test_session_rotation_after_login() -> AnyhowResult<()> {
     );
 
     // 5. Verify that both session IDs are valid UUIDs or valid session format
-    assert!(!first_session_id.is_empty(), "First session ID should not be empty");
-    assert!(!second_login_response_data.session_id.is_empty(), "Second session ID should not be empty");
+    assert!(
+        !first_session_id.is_empty(),
+        "First session ID should not be empty"
+    );
+    assert!(
+        !second_login_response_data.session_id.is_empty(),
+        "Second session ID should not be empty"
+    );
 
     // Explicitly call cleanup before the end of the test
     guard.cleanup().await?;

@@ -155,18 +155,18 @@ pub struct LorebookEntrySummaryResponse {
 pub struct UploadedLorebookEntry {
     #[serde(alias = "keys")]
     pub key: Option<Vec<String>>, // Keywords/triggers, can be null in some ST exports
-    pub content: String,          // Entry content
-    pub comment: Option<String>,  // Optional comment
-    pub disable: Option<bool>,    // true means disabled (will invert to is_enabled)
-    pub enabled: Option<bool>,    // true means enabled (alternative to disable field)
-    pub constant: Option<bool>,   // Maps to is_constant
+    pub content: String,         // Entry content
+    pub comment: Option<String>, // Optional comment
+    pub disable: Option<bool>,   // true means disabled (will invert to is_enabled)
+    pub enabled: Option<bool>,   // true means enabled (alternative to disable field)
+    pub constant: Option<bool>,  // Maps to is_constant
     #[serde(alias = "insertion_order")]
-    pub order: Option<i32>,       // Maps to insertion_order
+    pub order: Option<i32>, // Maps to insertion_order
     #[serde(deserialize_with = "deserialize_position")]
-    pub position: Option<i32>,    // 0=before prompt, 1=after prompt
-    pub uid: Option<i32>,         // Original SillyTavern UID
+    pub position: Option<i32>, // 0=before prompt, 1=after prompt
+    pub uid: Option<i32>,        // Original SillyTavern UID
     #[serde(default, alias = "id")]
-    pub id: Option<i32>,          // Alternative to uid for some exports
+    pub id: Option<i32>, // Alternative to uid for some exports
     #[serde(default, alias = "displayName")] // Added alias for compatibility
     pub display_name: Option<String>, // Field for SillyTavern entry title
 
@@ -369,16 +369,19 @@ where
 {
     use serde::de::{Error, Unexpected};
     use serde_json::Value;
-    
+
     let value = Value::deserialize(deserializer)?;
-    
+
     match value {
         Value::Null => Ok(None),
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 Ok(Some(i as i32))
             } else {
-                Err(Error::invalid_type(Unexpected::Float(n.as_f64().unwrap_or(0.0)), &"integer"))
+                Err(Error::invalid_type(
+                    Unexpected::Float(n.as_f64().unwrap_or(0.0)),
+                    &"integer",
+                ))
             }
         }
         Value::String(s) => {
@@ -393,7 +396,10 @@ where
                 }
             }
         }
-        _ => Err(Error::invalid_type(Unexpected::Other(&value.to_string()), &"integer or string"))
+        _ => Err(Error::invalid_type(
+            Unexpected::Other(&value.to_string()),
+            &"integer or string",
+        )),
     }
 }
 
@@ -408,13 +414,13 @@ pub struct SetCharacterLorebookOverridePayload {
 impl SetCharacterLorebookOverridePayload {
     pub fn validate(&self) -> Result<(), validator::ValidationErrors> {
         let mut errors = validator::ValidationErrors::new();
-        
+
         if !matches!(self.action.as_str(), "disable" | "enable") {
             let mut error = validator::ValidationError::new("invalid_action");
             error.message = Some("Action must be 'disable' or 'enable'".into());
             errors.add("action", error);
         }
-        
+
         if errors.is_empty() {
             Ok(())
         } else {

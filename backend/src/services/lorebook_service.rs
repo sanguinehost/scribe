@@ -1698,7 +1698,10 @@ AppError::InternalServerErrorGeneric(format!(
             })
             .await
             .map_err(|e| {
-                error!("DB interaction failed while checking character lorebook association: {}", e);
+                error!(
+                    "DB interaction failed while checking character lorebook association: {}",
+                    e
+                );
                 AppError::DbInteractError(format!("DB interaction failed: {e}"))
             })?
             .map_err(|db_err| {
@@ -1712,7 +1715,7 @@ AppError::InternalServerErrorGeneric(format!(
             info!(
                 "Lorebook [REDACTED_UUID] is being explicitly associated with chat [REDACTED_UUID]. It's also a character lorebook. Removing any 'disable' override."
             );
-            
+
             let lorebook_id_clone_for_override = lorebook_id_to_associate;
             let chat_session_id_clone_for_override = chat_session_id;
             let user_id_clone_for_override = current_user_id;
@@ -1725,14 +1728,16 @@ AppError::InternalServerErrorGeneric(format!(
                         .filter(cclo_dsl::lorebook_id.eq(lorebook_id_clone_for_override))
                         .filter(cclo_dsl::user_id.eq(user_id_clone_for_override))
                         .filter(cclo_dsl::action.eq("disable"));
-                    
+
                     diesel::delete(target).execute(conn_sync)
                 })
                 .await;
 
             match override_removed_result {
                 Ok(Ok(rows_deleted)) if rows_deleted > 0 => {
-                    info!("Removed 'disable' override for character-linked lorebook [REDACTED_UUID] in chat [REDACTED_UUID] as it's being explicitly added.");
+                    info!(
+                        "Removed 'disable' override for character-linked lorebook [REDACTED_UUID] in chat [REDACTED_UUID] as it's being explicitly added."
+                    );
                 }
                 Ok(Ok(_)) => { /* No override was present or deleted, which is fine */ }
                 Ok(Err(db_err)) => {
@@ -1742,8 +1747,13 @@ AppError::InternalServerErrorGeneric(format!(
                     return Err(AppError::DatabaseQueryError(db_err.to_string()));
                 }
                 Err(e) => {
-                    error!("DB interaction failed while checking/removing lorebook override: {}", e);
-                    return Err(AppError::DbInteractError(format!("DB interaction failed: {e}")));
+                    error!(
+                        "DB interaction failed while checking/removing lorebook override: {}",
+                        e
+                    );
+                    return Err(AppError::DbInteractError(format!(
+                        "DB interaction failed: {e}"
+                    )));
                 }
             }
         }
@@ -1753,8 +1763,9 @@ AppError::InternalServerErrorGeneric(format!(
         let association_creation_time = Utc::now();
         let current_user_id_clone_for_insert = current_user_id; // Clone for interact closure
         let lorebook_id_to_associate_clone_for_insert = lorebook_id_to_associate; // Clone for interact closure
-        
-        let new_record_for_insert = NewChatSessionLorebook { // Renamed to avoid conflict if new_record was used above
+
+        let new_record_for_insert = NewChatSessionLorebook {
+            // Renamed to avoid conflict if new_record was used above
             chat_session_id,
             lorebook_id: lorebook_id_to_associate_clone_for_insert,
             user_id: current_user_id_clone_for_insert,
@@ -1764,7 +1775,6 @@ AppError::InternalServerErrorGeneric(format!(
 
         conn.interact(move |conn_sync| {
                 use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
-                
                 diesel::insert_into(csl_dsl::chat_session_lorebooks)
                     .values(&new_record_for_insert) // Use the renamed variable
                     .on_conflict((csl_dsl::chat_session_id, csl_dsl::lorebook_id))
@@ -2093,7 +2103,10 @@ AppError::InternalServerErrorGeneric(format!(
         &self,
         auth_session: &AuthSession<AuthBackend>,
         chat_session_id_param: Uuid,
-    ) -> Result<Vec<crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse>, AppError> {
+    ) -> Result<
+        Vec<crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse>,
+        AppError,
+    > {
         debug!(
             chat_session_id = "[REDACTED_UUID]",
             "Attempting to list enhanced chat lorebook associations"
@@ -2145,10 +2158,9 @@ AppError::InternalServerErrorGeneric(format!(
         let associations_data = conn
             .interact(move |conn_sync| {
                 use crate::schema::{
-                    chat_session_lorebooks::dsl as csl_dsl,
                     character_lorebooks::dsl as cl_dsl,
                     chat_character_lorebook_overrides::dsl as cclo_dsl,
-                    lorebooks::dsl as l_dsl,
+                    chat_session_lorebooks::dsl as csl_dsl, lorebooks::dsl as l_dsl,
                 };
 
                 // Get chat-linked associations
@@ -2156,11 +2168,7 @@ AppError::InternalServerErrorGeneric(format!(
                     .inner_join(l_dsl::lorebooks.on(csl_dsl::lorebook_id.eq(l_dsl::id)))
                     .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
                     .filter(csl_dsl::user_id.eq(current_user_id))
-                    .select((
-                        csl_dsl::lorebook_id,
-                        l_dsl::name,
-                        csl_dsl::created_at,
-                    ))
+                    .select((csl_dsl::lorebook_id, l_dsl::name, csl_dsl::created_at))
                     .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?;
 
                 // Get character-linked associations
@@ -2168,11 +2176,7 @@ AppError::InternalServerErrorGeneric(format!(
                     .inner_join(l_dsl::lorebooks.on(cl_dsl::lorebook_id.eq(l_dsl::id)))
                     .filter(cl_dsl::character_id.eq(character_id))
                     .filter(cl_dsl::user_id.eq(current_user_id))
-                    .select((
-                        cl_dsl::lorebook_id,
-                        l_dsl::name,
-                        cl_dsl::created_at,
-                    ))
+                    .select((cl_dsl::lorebook_id, l_dsl::name, cl_dsl::created_at))
                     .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?;
 
                 // Get all overrides for this chat session
@@ -2182,7 +2186,11 @@ AppError::InternalServerErrorGeneric(format!(
                     .select((cclo_dsl::lorebook_id, cclo_dsl::action))
                     .load::<(Uuid, String)>(conn_sync)?;
 
-                Ok::<_, diesel::result::Error>((chat_associations, character_associations, overrides))
+                Ok::<_, diesel::result::Error>((
+                    chat_associations,
+                    character_associations,
+                    overrides,
+                ))
             })
             .await
             .map_err(|e| {
@@ -2193,10 +2201,7 @@ AppError::InternalServerErrorGeneric(format!(
                 AppError::DbInteractError(format!("DB interaction failed: {e}"))
             })?
             .map_err(|db_err| {
-                error!(
-                    "Failed to query enhanced associations: {}",
-                    db_err
-                );
+                error!("Failed to query enhanced associations: {}", db_err);
                 AppError::DatabaseQueryError(db_err.to_string())
             })?;
 
@@ -2229,7 +2234,11 @@ AppError::InternalServerErrorGeneric(format!(
                 "Raw character association."
             );
             // Also log if this character association has an override
-            if let Some(action) = overrides.iter().find(|(ov_id, _)| ov_id == id).map(|(_, act)| act) {
+            if let Some(action) = overrides
+                .iter()
+                .find(|(ov_id, _)| ov_id == id)
+                .map(|(_, act)| act)
+            {
                 debug!(
                     chat_session_id = %chat_session_id_param,
                     lorebook_id = %id,
@@ -2253,7 +2262,10 @@ AppError::InternalServerErrorGeneric(format!(
         let override_map: std::collections::HashMap<Uuid, String> = overrides.into_iter().collect();
 
         // 4. Build a map to store unique lorebook associations, prioritizing chat-level
-        let mut unique_associations: std::collections::HashMap<Uuid, crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse> = std::collections::HashMap::new();
+        let mut unique_associations: std::collections::HashMap<
+            Uuid,
+            crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse,
+        > = std::collections::HashMap::new();
 
         // First, add chat-linked associations (these take precedence)
         for (lorebook_id, lorebook_name, created_at) in chat_associations {
@@ -2338,8 +2350,7 @@ AppError::InternalServerErrorGeneric(format!(
         let association_info = conn
             .interact(move |conn_sync| {
                 use crate::schema::{
-                    chat_session_lorebooks::dsl as csl_dsl,
-                    character_lorebooks::dsl as cl_dsl,
+                    character_lorebooks::dsl as cl_dsl, chat_session_lorebooks::dsl as csl_dsl,
                 };
 
                 // Check if it's a chat-level association
@@ -2360,7 +2371,10 @@ AppError::InternalServerErrorGeneric(format!(
                     .get_result::<i64>(conn_sync)?
                     > 0;
 
-                Ok::<_, diesel::result::Error>((chat_association_exists, character_association_exists))
+                Ok::<_, diesel::result::Error>((
+                    chat_association_exists,
+                    character_association_exists,
+                ))
             })
             .await
             .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
@@ -2374,7 +2388,7 @@ AppError::InternalServerErrorGeneric(format!(
             info!(
                 "Redundant associations detected for lorebook [REDACTED_UUID] in chat [REDACTED_UUID]. Removing chat association and disabling character association."
             );
-            
+
             let rows_deleted = conn
                 .interact(move |conn_sync| {
                     use crate::schema::chat_session_lorebooks::dsl as csl_dsl;
@@ -2393,19 +2407,21 @@ AppError::InternalServerErrorGeneric(format!(
             if rows_deleted > 0 {
                 // Also create a disable override for the character association
                 self.set_character_lorebook_override(
-                    auth_session, 
-                    chat_session_id_param, 
-                    lorebook_id_param, 
-                    "disable".to_string()
-                ).await?;
-                
+                    auth_session,
+                    chat_session_id_param,
+                    lorebook_id_param,
+                    "disable".to_string(),
+                )
+                .await?;
+
                 info!(
                     "Successfully cleaned up redundant associations for lorebook [REDACTED_UUID] in chat [REDACTED_UUID]"
                 );
                 Ok(())
             } else {
                 Err(AppError::NotFound(
-                    "Chat lorebook association not found for this chat session and user.".to_string(),
+                    "Chat lorebook association not found for this chat session and user."
+                        .to_string(),
                 ))
             }
         } else if is_chat_association {
@@ -2432,7 +2448,8 @@ AppError::InternalServerErrorGeneric(format!(
                 Ok(())
             } else {
                 Err(AppError::NotFound(
-                    "Chat lorebook association not found for this chat session and user.".to_string(),
+                    "Chat lorebook association not found for this chat session and user."
+                        .to_string(),
                 ))
             }
         } else if is_character_association {
@@ -2441,12 +2458,13 @@ AppError::InternalServerErrorGeneric(format!(
                 "Creating disable override for character lorebook [REDACTED_UUID] in chat [REDACTED_UUID]"
             );
             self.set_character_lorebook_override(
-                auth_session, 
-                chat_session_id_param, 
-                lorebook_id_param, 
-                "disable".to_string()
-            ).await?;
-            
+                auth_session,
+                chat_session_id_param,
+                lorebook_id_param,
+                "disable".to_string(),
+            )
+            .await?;
+
             info!(
                 "Successfully disabled character lorebook [REDACTED_UUID] for chat [REDACTED_UUID]"
             );
@@ -2823,7 +2841,10 @@ AppError::InternalServerErrorGeneric(format!(
                 keys_text,
                 content: entry.content.clone(),
                 comment: entry.comment.clone(),
-                is_enabled: entry.enabled.or_else(|| entry.disable.map(|d| !d)).or(Some(true)), // Use enabled if present, otherwise invert disable, default to true
+                is_enabled: entry
+                    .enabled
+                    .or_else(|| entry.disable.map(|d| !d))
+                    .or(Some(true)), // Use enabled if present, otherwise invert disable, default to true
                 is_constant: entry.constant,
                 insertion_order: entry.order,
                 placement_hint: Some(placement_hint),
@@ -2936,9 +2957,9 @@ AppError::InternalServerErrorGeneric(format!(
                 Ok(Ok(inserted_entry)) => {
                     // Generate embeddings for the newly created entry
                     info!("Generating embeddings for imported lorebook entry [REDACTED_UUID]");
-                    
+
                     let user_dek_bytes = user_dek.unwrap().expose_secret();
-                    
+
                     // Decrypt the content for embedding
                     let decrypted_title_result = self.encryption_service.decrypt(
                         &inserted_entry.entry_title_ciphertext,
@@ -2962,10 +2983,16 @@ AppError::InternalServerErrorGeneric(format!(
                             .map(Some)
                     };
 
-                    match (decrypted_title_result, decrypted_content_result, decrypted_keys_text_result) {
+                    match (
+                        decrypted_title_result,
+                        decrypted_content_result,
+                        decrypted_keys_text_result,
+                    ) {
                         (Ok(title_bytes), Ok(content_bytes), Ok(keys_bytes_opt)) => {
-                            let decrypted_title = String::from_utf8_lossy(&title_bytes).into_owned();
-                            let decrypted_content = String::from_utf8_lossy(&content_bytes).into_owned();
+                            let decrypted_title =
+                                String::from_utf8_lossy(&title_bytes).into_owned();
+                            let decrypted_content =
+                                String::from_utf8_lossy(&content_bytes).into_owned();
                             let decrypted_keywords = keys_bytes_opt
                                 .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
                                 .and_then(|keys_str| {
@@ -3004,12 +3031,17 @@ AppError::InternalServerErrorGeneric(format!(
                                     .process_and_embed_lorebook_entry(state_clone.clone(), params)
                                     .await
                                 {
-                                    error!("Failed to generate embeddings for imported lorebook entry: {:?}", e);
+                                    error!(
+                                        "Failed to generate embeddings for imported lorebook entry: {:?}",
+                                        e
+                                    );
                                 }
                             });
                         }
                         _ => {
-                            error!("Failed to decrypt lorebook entry fields for embedding generation. Skipping embeddings for this entry.");
+                            error!(
+                                "Failed to decrypt lorebook entry fields for embedding generation. Skipping embeddings for this entry."
+                            );
                         }
                     }
                 }
@@ -3277,14 +3309,16 @@ AppError::InternalServerErrorGeneric(format!(
 
             // Use upsert to insert or update the override
             diesel::insert_into(dsl::chat_character_lorebook_overrides)
-                .values(&crate::models::lorebooks::NewChatCharacterLorebookOverride {
-                    chat_session_id,
-                    lorebook_id,
-                    user_id,
-                    action: action_clone,
-                    created_at: None, // Use DB default
-                    updated_at: None, // Use DB default
-                })
+                .values(
+                    &crate::models::lorebooks::NewChatCharacterLorebookOverride {
+                        chat_session_id,
+                        lorebook_id,
+                        user_id,
+                        action: action_clone,
+                        created_at: None, // Use DB default
+                        updated_at: None, // Use DB default
+                    },
+                )
                 .on_conflict((dsl::chat_session_id, dsl::lorebook_id))
                 .do_update()
                 .set((

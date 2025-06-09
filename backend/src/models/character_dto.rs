@@ -47,7 +47,7 @@ pub struct CharacterCreateDto {
     pub modification_date: Option<i64>,
     #[serde(default)]
     pub extensions: Option<Json<JsonValue>>,
-    
+
     // SillyTavern v3 fields
     #[serde(default)]
     pub fav: Option<bool>,
@@ -87,7 +87,7 @@ pub struct CharacterUpdateDto {
     pub creation_date: Option<i64>,
     pub modification_date: Option<i64>,
     pub extensions: Option<Json<JsonValue>>,
-    
+
     // SillyTavern v3 fields
     pub fav: Option<bool>,
     pub world: Option<String>,
