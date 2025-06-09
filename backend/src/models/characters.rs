@@ -597,9 +597,10 @@ impl Character {
     pub fn into_decrypted_for_client(
         self,
         dek: Option<&SecretBox<Vec<u8>>>,
+        lorebook_id: Option<Uuid>,
     ) -> Result<CharacterDataForClient, AppError> {
         let decrypted_fields = self.decrypt_character_fields(dek)?;
-        Ok(self.build_client_character(decrypted_fields))
+        Ok(self.build_client_character(decrypted_fields, lorebook_id))
     }
 
     fn decrypt_character_fields(
@@ -747,6 +748,7 @@ impl Character {
     fn build_client_character(
         self,
         decrypted_fields: DecryptedCharacterFields,
+        lorebook_id: Option<Uuid>,
     ) -> CharacterDataForClient {
         let default_empty_string_if_none =
             |opt: Option<String>| -> Option<String> { opt.or_else(|| Some(String::new())) };
@@ -842,6 +844,7 @@ impl Character {
             depth_prompt_depth: self.depth_prompt_depth,
             depth_prompt_role: self.depth_prompt_role,
             talkativeness: self.talkativeness,
+            lorebook_id,
         }
     }
 }
@@ -918,6 +921,7 @@ pub struct CharacterDataForClient {
     pub depth_prompt_depth: Option<i32>,
     pub depth_prompt_role: Option<String>,
     pub talkativeness: Option<BigDecimal>,
+    pub lorebook_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for CharacterDataForClient {
@@ -991,6 +995,7 @@ impl std::fmt::Debug for CharacterDataForClient {
             .field("depth_prompt_depth", &self.depth_prompt_depth)
             .field("depth_prompt_role", &"[REDACTED]")
             .field("talkativeness", &self.talkativeness)
+            .field("lorebook_id", &self.lorebook_id)
             .finish()
     }
 }
@@ -1467,12 +1472,13 @@ mod tests {
         let char_no_desc = create_dummy_character(); // description and nonce are None by default
         let client_data_no_desc = char_no_desc
             .clone()
-            .into_decrypted_for_client(Some(&dek))
+            .into_decrypted_for_client(Some(&dek), None)
             .unwrap();
         // Print out the actual value for debugging
         println!("Description value: {:?}", client_data_no_desc.description);
         assert_eq!(client_data_no_desc.description, Some(String::new())); // Expect Some("") instead of None
-        let client_data_no_desc_no_dek = char_no_desc.into_decrypted_for_client(None).unwrap();
+        let client_data_no_desc_no_dek =
+            char_no_desc.into_decrypted_for_client(None, None).unwrap();
         assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
     }
 
@@ -1497,7 +1503,7 @@ mod tests {
         // With DEK
         let client_data_with_dek = character
             .clone()
-            .into_decrypted_for_client(Some(&dek))
+            .into_decrypted_for_client(Some(&dek), None)
             .unwrap();
         assert_eq!(
             client_data_with_dek.description.as_deref(),
@@ -1509,7 +1515,7 @@ mod tests {
         );
 
         // Without DEK
-        let client_data_without_dek = character.into_decrypted_for_client(None).unwrap();
+        let client_data_without_dek = character.into_decrypted_for_client(None, None).unwrap();
         assert_eq!(
             client_data_without_dek.description.as_deref(),
             Some("[Encrypted]")
@@ -1523,12 +1529,13 @@ mod tests {
         let char_no_desc = create_dummy_character(); // description and nonce are None by default
         let client_data_no_desc = char_no_desc
             .clone()
-            .into_decrypted_for_client(Some(&dek))
+            .into_decrypted_for_client(Some(&dek), None)
             .unwrap();
         // Print out the actual value for debugging
         println!("Description value: {:?}", client_data_no_desc.description);
         assert_eq!(client_data_no_desc.description, Some(String::new())); // Expect Some("") instead of None
-        let client_data_no_desc_no_dek = char_no_desc.into_decrypted_for_client(None).unwrap();
+        let client_data_no_desc_no_dek =
+            char_no_desc.into_decrypted_for_client(None, None).unwrap();
         assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
     }
 

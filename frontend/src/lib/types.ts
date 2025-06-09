@@ -288,6 +288,7 @@ export interface CharacterDataForClient {
 	// SillyTavern v3 fields
 	fav?: boolean | null;
 	world?: string | null;
+	lorebook_id?: string | null; // Backend returns lorebook_id, not world
 	creator_comment?: string | null;
 	depth_prompt?: string | null;
 	depth_prompt_depth?: number | null;
