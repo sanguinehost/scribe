@@ -3,13 +3,12 @@
 #![allow(clippy::cognitive_complexity)]
 #![allow(clippy::unused_async)]
 
-use crate::auth::session_dek::SessionDek; // Added SessionDek
+use crate::auth::session_dek::SessionDek;
 use crate::crypto;
 use crate::errors::AppError;
-use crate::models::character_assets::{CharacterAsset, NewCharacterAsset}; // Added for character assets
+use crate::models::character_assets::{CharacterAsset, NewCharacterAsset};
 use crate::models::character_card::NewCharacter;
-use crate::models::characters::{Character, CharacterDataForClient}; // Added CharacterDataForClient // Added crypto for encrypt_gcm
-// use crate::models::users::User; // Removed unused import
+use crate::models::characters::{Character, CharacterDataForClient};
 use crate::schema::character_assets::dsl::character_assets;
 use crate::schema::characters::dsl::{characters, id, user_id};
 use crate::services::character_parser::{self};
@@ -36,6 +35,7 @@ use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto};
 use crate::schema::chat_sessions;
 use crate::services::character_service::CharacterService;
 use crate::services::encryption_service::EncryptionService; // Added import
+use crate::services::lorebook_service::LorebookService;
 use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
 // DieselError moved to main diesel imports
@@ -537,7 +537,8 @@ pub async fn upload_character_handler(
         }
     }
 
-    let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0))?;
+    let client_character_data =
+        inserted_character.into_decrypted_for_client(Some(&dek.0), None)?;
 
     // Debug: Log the alternate_greetings in the final client response
     tracing::info!(
@@ -564,7 +565,13 @@ pub async fn create_character_handler(
 
     // Instantiate services
     let enc_service = Arc::new(EncryptionService::new());
-    let character_service = CharacterService::new(state.pool.clone(), enc_service);
+    let lorebook_service = Arc::new(LorebookService::new(
+        state.pool.clone(),
+        state.encryption_service.clone(),
+        state.qdrant_service.clone(),
+    ));
+    let character_service =
+        CharacterService::new(state.pool.clone(), enc_service, lorebook_service);
 
     // Call the service method
     let client_data = character_service
@@ -607,7 +614,7 @@ pub async fn list_characters_handler(
 
     let mut characters_for_client = Vec::new();
     for char_db in characters_db {
-        characters_for_client.push(char_db.into_decrypted_for_client(Some(&dek.0))?);
+        characters_for_client.push(char_db.into_decrypted_for_client(Some(&dek.0), None)?);
     }
 
     Ok(Json(characters_for_client))
@@ -626,6 +633,7 @@ pub async fn get_character_handler(
 
     let user = auth_session
         .user
+        .clone() // Clone the user to avoid partial move
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let user_id_val = user.id;
 
@@ -681,7 +689,19 @@ pub async fn get_character_handler(
     match directly_owned_character_result {
         Ok(Some(character)) => {
             info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Character directly owned, attempting decryption");
-            return match character.into_decrypted_for_client(Some(&dek.0)) {
+
+            // Fetch associated lorebook
+            let lorebook_service = LorebookService::new(
+                state.pool.clone(),
+                state.encryption_service.clone(),
+                state.qdrant_service.clone(),
+            );
+            let lorebooks = lorebook_service
+                .list_character_lorebooks(&auth_session, character_id)
+                .await?;
+            let lorebook_id = lorebooks.first().map(|lb| lb.id);
+
+            return match character.into_decrypted_for_client(Some(&dek.0), lorebook_id) {
                 Ok(character_for_client) => {
                     info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Decryption SUCCESSFUL (direct ownership)");
                     Ok(Json(character_for_client))
@@ -823,7 +843,18 @@ pub async fn get_character_handler(
             %user_id_val,
             "Character (via session auth) retrieved, attempting decryption"
         );
-        match character.into_decrypted_for_client(Some(&dek.0)) {
+        // Fetch associated lorebook
+        let lorebook_service = LorebookService::new(
+            state.pool.clone(),
+            state.encryption_service.clone(),
+            state.qdrant_service.clone(),
+        );
+        let lorebooks = lorebook_service
+            .list_character_lorebooks(&auth_session, character_id)
+            .await?;
+        let lorebook_id = lorebooks.first().map(|lb| lb.id);
+
+        match character.into_decrypted_for_client(Some(&dek.0), lorebook_id) {
             Ok(character_for_client) => {
                 info!(
                     target: "test_log",
@@ -989,7 +1020,7 @@ pub async fn generate_character_handler(
     // In a real scenario, we would save dummy_char_for_db (as NewCharacter)
     // then fetch it, then convert to client data.
     // For this placeholder, we convert the in-memory (potentially encrypted) Character.
-    let client_data = dummy_char_for_db.into_decrypted_for_client(Some(&dek.0))?;
+    let client_data = dummy_char_for_db.into_decrypted_for_client(Some(&dek.0), None)?;
 
     // --- TODO: Save the character to DB if this route is meant to persist. ---
 
@@ -1103,7 +1134,13 @@ pub async fn update_character_handler(
 
     // Instantiate services
     let enc_service = Arc::new(EncryptionService::new());
-    let character_service = CharacterService::new(state.pool.clone(), enc_service);
+    let lorebook_service = Arc::new(LorebookService::new(
+        state.pool.clone(),
+        state.encryption_service.clone(),
+        state.qdrant_service.clone(),
+    ));
+    let character_service =
+        CharacterService::new(state.pool.clone(), enc_service, lorebook_service);
 
     // Call the service method
     let client_data = character_service

@@ -12,19 +12,19 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Badge } from '$lib/components/ui/badge';
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import { Expand, X, Star, Heart, Globe, MessageSquare, Plus, Trash2 } from 'lucide-svelte';
+	import { Expand, X, Star, Heart, Globe, Plus, Trash2, HelpCircle } from 'lucide-svelte';
 	import {
 		Tooltip,
 		TooltipTrigger,
-		TooltipContent,
+		TooltipContent
 	} from '$lib/components/ui/tooltip';
 	import type { Character, Lorebook } from '$lib/types';
 	import { writable } from 'svelte/store';
+	import { tick } from 'svelte';
 
 	export let characterId: string | null = null;
 	export let open = false;
@@ -52,7 +52,8 @@
 	let popoutFieldName = '';
 	let popoutFieldLabel = '';
 	let popoutContent = '';
-	let popoutFieldKey = '';
+	let popoutFieldKey = ''; // Used to store the actual formData key
+	let popoutFieldType: 'text' | 'number' | 'select' = 'text'; // Added to handle different input types
 
 	// Form data with all SillyTavern v3 fields - these SHOULD be used in backend
 	let formData = {
@@ -76,14 +77,33 @@
 		// SillyTavern v3 extensions
 		fav: false,
 		world: '', // Lorebook reference/name
-		creator_comment: '', // OOC metadata for users
+		depth_prompt: '', // Character's Note content
+		depth_prompt_depth: null as number | null, // Character's Note depth
+		depth_prompt_role: '', // Character's Note placement role
 		talkativeness: 0.5
 	};
+
+	const insertionRoles = [
+		{
+			value: 'system',
+			label: 'System',
+			description: 'Inserts the note as a system message. Good for high-level instructions.'
+		},
+		{
+			value: 'user',
+			label: 'User',
+			description: 'Inserts the note as a user message. Good for simulating user replies or steering conversation.'
+		},
+		{
+			value: 'assistant',
+			label: 'Assistant',
+			description: "Inserts the note as an assistant message. Good for correcting or guiding AI's previous responses."
+		}
+	];
 
 	// Load character data when dialog opens or characterId changes
 	$: if (open && characterId) {
 		loadCharacter();
-		loadLorebooks();
 	}
 
 	async function loadCharacter() {
@@ -91,9 +111,15 @@
 
 		loading = true;
 		try {
+			// Ensure lorebooks are loaded before character data to populate the dropdown correctly.
+			await loadLorebooks();
+
 			const result = await apiClient.getCharacter(characterId);
 			if (result.isOk()) {
 				character = result.value;
+				// Wait for the DOM to update after lorebooks have been loaded.
+				await tick();
+
 				// Populate form with all character data including SillyTavern v3 fields
 				formData = {
 					// Core character data (encrypted & actively used)
@@ -115,8 +141,10 @@
 
 					// SillyTavern v3 extensions (need backend integration)
 					fav: character.fav ?? false,
-					world: character.world ?? '',
-					creator_comment: character.creator_notes ?? '',
+					world: character.lorebook_id ?? character.world ?? '',
+					depth_prompt: character.depth_prompt ?? '',
+					depth_prompt_depth: character.depth_prompt_depth ?? null,
+					depth_prompt_role: character.depth_prompt_role ?? '',
 					talkativeness: Number(character.talkativeness ?? 0.5)
 				};
 			} else {
@@ -136,33 +164,42 @@
 
 		saving = true;
 		try {
-			// Filter out empty strings and create update payload
-			const updateData: any = {};
-			Object.entries(formData).forEach(([key, value]) => {
-				if (key === 'alternate_greetings') {
-					// Handle array of alternate greetings
-					const greetings = (value as string[]).filter((g) => g.trim() !== '');
-					if (greetings.length > 0) {
-						updateData[key] = greetings;
-					}
-				} else if (key === 'tags') {
-					// Handle array of tags
-					const tags = (value as string[]).filter((t) => t.trim() !== '');
-					if (tags.length > 0) {
-						updateData[key] = tags;
-					}
-				} else if (key === 'fav') {
-					// Handle boolean favorite field
-					updateData[key] = value;
-				} else if (key === 'depth_prompt_depth' || key === 'talkativeness') {
-					// Handle numeric depth field
-					if (value && value !== 0) {
-						updateData[key] = Number(value);
-					}
-				} else if (value && typeof value === 'string' && value.trim() !== '') {
-					updateData[key] = value.trim();
-				}
-			});
+			// Following the pattern from CharacterCreator.svelte to build the payload explicitly.
+			const updateData: { [key: string]: any } = {};
+
+			// Core data - only add to payload if it has a value
+			if (formData.name) updateData.name = formData.name;
+			if (formData.description) updateData.description = formData.description;
+			if (formData.first_mes) updateData.first_mes = formData.first_mes;
+			if (formData.personality) updateData.personality = formData.personality;
+			if (formData.scenario) updateData.scenario = formData.scenario;
+			if (formData.mes_example) updateData.mes_example = formData.mes_example;
+			if (formData.system_prompt) updateData.system_prompt = formData.system_prompt;
+
+			// Metadata
+			if (formData.creator) updateData.creator = formData.creator;
+			if (formData.character_version) updateData.character_version = formData.character_version;
+			if (formData.nickname) updateData.nickname = formData.nickname;
+			if (formData.category) updateData.category = formData.category;
+
+			// Arrays - filter out empty strings
+			const validTags = formData.tags.filter((t) => t.trim() !== '');
+			if (validTags.length > 0) {
+				updateData.tags = validTags;
+			}
+			const validGreetings = formData.alternate_greetings.filter((g) => g.trim() !== '');
+			if (validGreetings.length > 0) {
+				updateData.alternate_greetings = validGreetings;
+			}
+
+			// SillyTavern extensions
+			updateData.fav = formData.fav; // Always send boolean
+			// Always send the world value to allow clearing it.
+			updateData.world = formData.world;
+			if (formData.depth_prompt) updateData.depth_prompt = formData.depth_prompt;
+			if (formData.depth_prompt_depth !== null) updateData.depth_prompt_depth = formData.depth_prompt_depth;
+			if (formData.depth_prompt_role) updateData.depth_prompt_role = formData.depth_prompt_role;
+			updateData.talkativeness = formData.talkativeness; // Always send number
 
 			const result = await apiClient.updateCharacter(characterId, updateData);
 			if (result.isOk()) {
@@ -202,7 +239,9 @@
 			// SillyTavern v3 extensions (need backend integration)
 			fav: false,
 			world: '',
-			creator_comment: '',
+			depth_prompt: '', // Character's Note
+			depth_prompt_depth: null,
+			depth_prompt_role: '',
 			talkativeness: 0.5
 		};
 		character = null;
@@ -212,12 +251,20 @@
 		popoutFieldKey = fieldKey;
 		popoutFieldName = fieldKey;
 		popoutFieldLabel = fieldLabel;
+		popoutFieldType = 'text'; // Default to text
 		
 		if (fieldKey === 'alternate_greeting' && greetingIndex !== undefined) {
 			// Handle alternate greeting specifically
 			popoutContent = formData.alternate_greetings[greetingIndex] || '';
 			popoutFieldKey = `alternate_greeting_${greetingIndex}`;
-		} else {
+		} else if (fieldKey === 'depth_prompt_depth') {
+			popoutContent = String(formData.depth_prompt_depth ?? '');
+			popoutFieldType = 'number';
+		} else if (fieldKey === 'depth_prompt_role') {
+			popoutContent = formData.depth_prompt_role ?? '';
+			popoutFieldType = 'text'; // Or 'select' if we define options
+		}
+		else {
 			popoutContent = formData[fieldKey as keyof typeof formData] as string || '';
 		}
 		popoutEditorOpen = true;
@@ -229,7 +276,12 @@
 				// Handle alternate greeting specifically
 				const index = parseInt(popoutFieldKey.split('_')[2]);
 				formData.alternate_greetings[index] = popoutContent;
-			} else {
+			} else if (popoutFieldKey === 'depth_prompt_depth') {
+				formData.depth_prompt_depth = popoutContent ? Number(popoutContent) : null;
+			} else if (popoutFieldKey === 'depth_prompt_role') {
+				formData.depth_prompt_role = popoutContent;
+			}
+			else {
 				(formData as any)[popoutFieldKey] = popoutContent;
 			}
 			popoutEditorOpen = false;
@@ -237,6 +289,7 @@
 			popoutFieldName = '';
 			popoutFieldLabel = '';
 			popoutContent = '';
+			popoutFieldType = 'text';
 		}
 	}
 
@@ -246,6 +299,7 @@
 		popoutFieldName = '';
 		popoutFieldLabel = '';
 		popoutContent = '';
+		popoutFieldType = 'text';
 	}
 
 	// Tag management functions
@@ -286,7 +340,7 @@
 		{:else if character}
 			<div class="grid gap-4 py-4">
 				<!-- Basic Information -->
-				<div class="space-y-4">
+				<div class="space-y-4 border-b pb-4">
 					<div class="flex items-center gap-2">
 						<h3 class="text-lg font-semibold">Basic Information</h3>
 						<div class="flex items-center gap-2 ml-auto">
@@ -294,67 +348,33 @@
 								<TooltipTrigger>
 									<Checkbox id="favorite" bind:checked={formData.fav} />
 								</TooltipTrigger>
-								<TooltipContent>
-									Toggle to add or remove from favorites
-								</TooltipContent>
+								<TooltipContent>Toggle to add or remove from favorites</TooltipContent>
 							</Tooltip>
 							<Label for="favorite" class="flex items-center gap-1 text-sm">
 								<Heart class="h-4 w-4" />
-									Favorite
+								Favorite
 							</Label>
 						</div>
 					</div>
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 						<div class="grid gap-2">
-							<Tooltip>
-								<TooltipTrigger>
-									<Label for="name">Name</Label>
-								</TooltipTrigger>
-								<TooltipContent>
-									The character's name.
-								</TooltipContent>
-							</Tooltip>
+							<Label for="name">Name</Label>
 							<Input id="name" bind:value={formData.name} placeholder={character.name} />
 						</div>
-
 						<div class="grid gap-2">
-							<Tooltip>
-								<TooltipTrigger>
-									<Label for="creator">Creator</Label>
-								</TooltipTrigger>
-								<TooltipContent>
-									The character's creator.
-								</TooltipContent>
-							</Tooltip>
+							<Label for="creator">Creator</Label>
 							<Input id="creator" bind:value={formData.creator} placeholder={character.creator ?? 'Anonymous'} />
 						</div>
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="character_version">Version</Label>
-						<Input id="character_version" bind:value={formData.character_version} placeholder={character.character_version ?? '1.0'} />
-					</div>
-
-					<!-- Tags Section -->
-					<div class="grid gap-2">
-						<Tooltip>
-							<TooltipTrigger>
-								<Label>Tags</Label>
-							</TooltipTrigger>
-							<TooltipContent>
-								Tags to categorize the character.
-							</TooltipContent>
-						</Tooltip>
+						<Label>Tags</Label>
 						<div class="flex flex-wrap gap-2 mb-2">
 							{#each formData.tags as tag}
 								<Badge variant="secondary" class="flex items-center gap-1">
 									{tag}
-									<button
-										type="button"
-										onclick={() => removeTag(tag)}
-										class="hover:text-destructive"
-									>
+									<button type="button" onclick={() => removeTag(tag)} class="hover:text-destructive">
 										<X class="h-3 w-3" />
 									</button>
 								</Badge>
@@ -374,72 +394,50 @@
 					</div>
 
 					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Tooltip>
-								<TooltipTrigger>
-									<Label for="description">Description</Label>
-								</TooltipTrigger>
-								<TooltipContent>
-									A brief description of the character.
-								</TooltipContent>
-							</Tooltip>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onclick={() => openPopoutEditor('description', 'Description')}
-								class="h-6 px-2 text-xs"
-							>
-								Expand
-							</Button>
-						</div>
+						<Label for="description">Description</Label>
 						<Textarea
 							id="description"
 							bind:value={formData.description}
 							placeholder={character.description ?? 'Character description...'}
-							rows={6}
+							rows={4}
 						/>
 					</div>
 
 					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Tooltip>
-								<TooltipTrigger>
-									<Label for="first_mes">First Message</Label>
-								</TooltipTrigger>
-								<TooltipContent>
-									The character's initial greeting or first message.
-								</TooltipContent>
-							</Tooltip>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onclick={() => openPopoutEditor('first_mes', 'First Message')}
-								class="h-6 px-2 text-xs"
-							>
-								Expand
-							</Button>
-						</div>
+						<Label for="first_mes">First Message</Label>
 						<Textarea
 							id="first_mes"
 							bind:value={formData.first_mes}
 							placeholder={character.first_mes ?? 'Initial greeting or first message...'}
-							rows={5}
+							rows={4}
 						/>
 					</div>
 
-					<!-- Alternate Greetings -->
+					<div class="grid gap-2">
+						<Label for="world" class="flex items-center gap-1">
+							<Globe class="h-4 w-4" />
+							World/Lorebook
+						</Label>
+						<select
+							id="world"
+							bind:value={formData.world}
+							class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							<option value="">None</option>
+							{#if $lorebooks && $lorebooks.length > 0}
+								{#each $lorebooks as lorebook}
+									<option value={lorebook.id}>{lorebook.name ?? 'Unnamed Lorebook'}</option>
+								{/each}
+							{/if}
+						</select>
+						<p class="text-sm text-muted-foreground">
+							Associate a lorebook to provide additional context for this character.
+						</p>
+					</div>
+
 					<div class="grid gap-2">
 						<div class="flex items-center justify-between">
-							<Tooltip>
-								<TooltipTrigger>
-									<Label>Alternate Greetings</Label>
-								</TooltipTrigger>
-								<TooltipContent>
-									Alternate greetings the character can use.
-								</TooltipContent>
-							</Tooltip>
+							<Label>Alternate Greetings</Label>
 							<Button
 								type="button"
 								variant="outline"
@@ -496,216 +494,199 @@
 					</div>
 				</div>
 
-				<!-- Personality & Behavior -->
-				<div class="space-y-4">
-					<h3 class="text-lg font-semibold">Personality & Behavior</h3>
-
-					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Tooltip>
-								<TooltipTrigger>
+				<!-- Collapsible Sections -->
+				<div class="space-y-2">
+					<details class="space-y-2 border-b py-2">
+						<summary class="cursor-pointer text-lg font-semibold">Definitions</summary>
+						<div class="grid gap-4 pt-2">
+							<div class="grid gap-2">
+								<div class="flex items-center justify-between">
 									<Label for="personality">Personality</Label>
-								</TooltipTrigger>
-								<TooltipContent>
-									The character's personality traits.
-								</TooltipContent>
-							</Tooltip>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onclick={() => openPopoutEditor('personality', 'Personality')}
-								class="h-6 px-2 text-xs"
-							>
-								Expand
-							</Button>
-						</div>
-						<Textarea
-							id="personality"
-							bind:value={formData.personality}
-							placeholder={character.personality ?? 'Character personality traits...'}
-							rows={6}
-						/>
-					</div>
-
-					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Tooltip>
-								<TooltipTrigger>
-									<Label for="scenario">Scenario</Label>
-								</TooltipTrigger>
-								<TooltipContent>
-									The roleplay scenario.
-								</TooltipContent>
-							</Tooltip>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onclick={() => openPopoutEditor('scenario', 'Scenario')}
-								class="h-6 px-2 text-xs"
-							>
-								Expand
-							</Button>
-						</div>
-						<Textarea
-							id="scenario"
-							bind:value={formData.scenario}
-							placeholder={character.scenario ?? 'Roleplay scenario...'}
-							rows={6}
-						/>
-					</div>
-				</div>
-
-				<!-- World & SillyTavern v3 Settings -->
-				<div class="space-y-4">
-					<h3 class="text-lg font-semibold">World & Context</h3>
-					
-					<!-- World -->
-					<div class="grid gap-2">
-						<Tooltip>
-							<TooltipTrigger>
-								<Label for="world" class="flex items-center gap-1">
-									<Globe class="h-4 w-4" />
-									World/Lorebook
-								</Label>
-							</TooltipTrigger>
-							<TooltipContent>
-								Reference to an associated lorebook for this character
-							</TooltipContent>
-						</Tooltip>
-						<Select.Root
-							onValueChange={(v) => {
-								if (v) {
-									formData.world = v;
-								}
-							}}
-							value={formData.world}
-						>
-							<Select.Trigger class="w-full">
-								<Select.Value placeholder="Select a lorebook" />
-							</Select.Trigger>
-							<Select.Content>
-								{#each $lorebooks as lorebook}
-									<Select.Item value={lorebook.id}
-										>{lorebook.name ?? 'Unnamed Lorebook'}</Select.Item
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onclick={() => openPopoutEditor('personality', 'Personality')}
+										class="h-6 px-2 text-xs"
 									>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-						<p class="text-sm text-muted-foreground">
-							Reference to an associated lorebook for this character
-						</p>
-					</div>
-
-					<!-- Creator Comment -->
-					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Tooltip>
-								<TooltipTrigger>
-									<Label for="creator_comment" class="flex items-center gap-1">
-										<MessageSquare class="h-4 w-4" />
-										Creator Comment
-									</Label>
-								</TooltipTrigger>
-								<TooltipContent>
-									Notes from the character creator.
-								</TooltipContent>
-							</Tooltip>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onclick={() => openPopoutEditor('creator_comment', 'Creator Comment')}
-								class="h-6 px-2 text-xs"
-							>
-								Expand
-							</Button>
+										Expand
+									</Button>
+								</div>
+								<Textarea
+									id="personality"
+									bind:value={formData.personality}
+									placeholder={character.personality ?? 'Character personality traits...'}
+									rows={6}
+								/>
+							</div>
+							<div class="grid gap-2">
+								<div class="flex items-center justify-between">
+									<Label for="scenario">Scenario</Label>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onclick={() => openPopoutEditor('scenario', 'Scenario')}
+										class="h-6 px-2 text-xs"
+									>
+										Expand
+									</Button>
+								</div>
+								<Textarea
+									id="scenario"
+									bind:value={formData.scenario}
+									placeholder={character.scenario ?? 'Roleplay scenario...'}
+									rows={6}
+								/>
+							</div>
+							<div class="grid gap-2">
+								<div class="flex items-center justify-between">
+									<Label for="mes_example">Message Examples</Label>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onclick={() => openPopoutEditor('mes_example', 'Message Example')}
+										class="h-6 px-2 text-xs"
+									>
+										Expand
+									</Button>
+								</div>
+								<Textarea
+									id="mes_example"
+									bind:value={formData.mes_example}
+									placeholder={character.mes_example ?? 'Example messages...'}
+									rows={6}
+								/>
+							</div>
 						</div>
-						<Textarea
-							id="creator_comment"
-							bind:value={formData.creator_comment}
-							placeholder={character.creator_comment ?? 'Notes from the character creator...'}
-							rows={3}
-						/>
-					</div>
+					</details>
 
-					<!-- Talkativeness -->
-					<div class="grid gap-2">
-						<Tooltip>
-							<TooltipTrigger>
-								<Label for="talkativeness">Talkativeness</Label>
-							</TooltipTrigger>
-							<TooltipContent>
-								Controls how talkative the character is. 0.0 is mute, 1.0 is very talkative.
-							</TooltipContent>
-						</Tooltip>
-						<Input
-							id="talkativeness"
-							type="number"
-							bind:value={formData.talkativeness}
-							placeholder={character.talkativeness ?? '0.5'}
-							step="0.05"
-							min="0"
-							max="1"
-						/>
-						<p class="text-sm text-muted-foreground">
-							Controls how talkative the character is. 0.0 is mute, 1.0 is very talkative.
-						</p>
-					</div>
+					<details class="space-y-2 border-b py-2">
+						<summary class="cursor-pointer text-lg font-semibold">Character's Note</summary>
+						<div class="space-y-4 pt-2">
+							<div class="rounded-md border border-l-4 border-yellow-500 bg-yellow-50 p-3 dark:bg-yellow-950">
+								<p class="text-sm font-semibold text-yellow-900 dark:text-yellow-100">
+									Feature Not Yet Active
+								</p>
+								<p class="text-sm text-yellow-800 dark:text-yellow-200">
+									The Character's Note is a permanent instruction for the character. The backend logic to apply it during chats is not yet implemented, but your settings will be saved for future use.
+								</p>
+							</div>
+							<p class="text-sm text-muted-foreground">
+								Define permanent, underlying instructions for the character that apply to all conversations.
+							</p>
+							<div class="grid gap-2">
+								<div class="flex items-center justify-between">
+									<Label for="depth_prompt">Content</Label>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onclick={() => openPopoutEditor('depth_prompt', 'Character\'s Note Content')}
+										class="h-6 px-2 text-xs"
+									>
+										Expand
+									</Button>
+								</div>
+								<Textarea
+									id="depth_prompt"
+									bind:value={formData.depth_prompt}
+									placeholder={character.depth_prompt ?? 'e.g., "The character is secretly a dragon."'}
+									rows={3}
+								/>
+							</div>
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div class="grid gap-2">
+									<div class="flex items-center gap-1">
+										<Label for="depth_prompt_depth">Insertion Depth</Label>
+										<Tooltip>
+											<TooltipTrigger class="cursor-help">
+												<HelpCircle class="h-4 w-4 text-muted-foreground" />
+											</TooltipTrigger>
+											<TooltipContent>
+												<div class="space-y-2 p-2 max-w-xs">
+													<p>
+														Insertion depth determines where the Character's Note is injected into the conversation history sent to the AI. It's counted from the end of the chat history.
+													</p>
+													<p class="font-semibold">Why use a deeper insertion?</p>
+													<p>
+														It makes the AI's change in behavior feel more natural. Instead of a sudden command, the instruction feels like an established fact or a thought the character has been having for a while.
+													</p>
+													<p class="font-semibold mt-2">Example:</p>
+													<ul class="list-disc pl-4 space-y-1">
+														<li>
+															<strong>Depth 0:</strong> Inserting "[Character is now angry]" can feel abrupt.
+														</li>
+														<li>
+															<strong>Depth 4:</strong> Inserting the same note 4 messages ago allows the AI to build up to the anger more organically over its next few responses.
+														</li>
+													</ul>
+												</div>
+											</TooltipContent>
+										</Tooltip>
+									</div>
+									<Input
+										id="depth_prompt_depth"
+										type="number"
+										bind:value={formData.depth_prompt_depth}
+										placeholder={String(character.depth_prompt_depth ?? '0')}
+										min="0"
+									/>
+									<p class="text-sm text-muted-foreground">
+										How many messages from the end to insert the note before.
+									</p>
+								</div>
+								<div class="grid gap-2">
+								<div class="grid gap-2">
+									<div class="flex items-center gap-1">
+										<Label for="depth_prompt_role">Insertion Role</Label>
+										<Tooltip>
+											<TooltipTrigger class="cursor-help">
+												<HelpCircle class="h-4 w-4 text-muted-foreground" />
+											</TooltipTrigger>
+											<TooltipContent>
+												<div class="space-y-2 p-2 max-w-xs">
+													{#each insertionRoles as role}
+														<p><strong>{role.label}:</strong> {role.description}</p>
+													{/each}
+												</div>
+											</TooltipContent>
+										</Tooltip>
+									</div>
+									<select
+										id="depth_prompt_role"
+										bind:value={formData.depth_prompt_role}
+										class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+									>
+										<option value="" disabled>Select a role...</option>
+										{#each insertionRoles as role}
+											<option value={role.value}>{role.label}</option>
+										{/each}
+									</select>
+									<p class="text-sm text-muted-foreground">
+										Controls how the note is injected into the prompt.
+									</p>
+								</div>
+							</div>
+						</div>
+					</details>
+
+					<details class="space-y-2 border-b py-2">
+						<summary class="cursor-pointer text-lg font-semibold">Advanced</summary>
+						<div class="space-y-4 pt-2">
+							<div class="grid gap-2">
+								<Label for="system_prompt">System Instructions</Label>
+								<Textarea
+									id="system_prompt"
+									bind:value={formData.system_prompt}
+									placeholder={character.system_prompt ?? 'System instructions...'}
+									rows={5}
+								/>
+							</div>
+						</div>
+					</details>
 				</div>
-
-				<!-- Advanced Settings -->
-				<details class="space-y-4">
-					<summary class="cursor-pointer text-lg font-semibold">Advanced Settings</summary>
-
-					<div class="mt-4 grid gap-2">
-						<Tooltip>
-							<TooltipTrigger>
-								<Label for="system_prompt">System Prompt</Label>
-							</TooltipTrigger>
-							<TooltipContent>
-								System instructions for the AI.
-							</TooltipContent>
-						</Tooltip>
-						<Textarea
-							id="system_prompt"
-							bind:value={formData.system_prompt}
-							placeholder={character.system_prompt ?? 'System instructions...'}
-							rows={5}
-						/>
-					</div>
-
-					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Tooltip>
-								<TooltipTrigger>
-									<Label for="mes_example">Message Example</Label>
-								</TooltipTrigger>
-								<TooltipContent>
-									Example messages the character can use.
-								</TooltipContent>
-							</Tooltip>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onclick={() => openPopoutEditor('mes_example', 'Message Example')}
-								class="h-6 px-2 text-xs"
-							>
-								Expand
-							</Button>
-						</div>
-						<Textarea
-							id="mes_example"
-							bind:value={formData.mes_example}
-							placeholder={character.mes_example ?? 'Example messages...'}
-							rows={6}
-						/>
-					</div>
-
-
-				</details>
 			</div>
 		{/if}
 
@@ -733,12 +714,21 @@
 		</DialogHeader>
 
 		<div class="py-4">
-			<Textarea
-				bind:value={popoutContent}
-				placeholder={`Enter ${popoutFieldLabel.toLowerCase()} content...`}
-				rows={20}
-				class="min-h-[400px] resize-none font-mono text-sm"
-			/>
+			{#if popoutFieldType === 'text'}
+				<Textarea
+					bind:value={popoutContent}
+					placeholder={`Enter ${popoutFieldLabel.toLowerCase()} content...`}
+					rows={20}
+					class="min-h-[400px] resize-none font-mono text-sm"
+				/>
+			{:else if popoutFieldType === 'number'}
+				<Input
+					type="number"
+					bind:value={popoutContent}
+					placeholder={`Enter ${popoutFieldLabel.toLowerCase()}...`}
+					class="font-mono text-sm"
+				/>
+			{/if}
 		</div>
 
 		<DialogFooter>
