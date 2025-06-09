@@ -47,6 +47,20 @@ pub struct CharacterCreateDto {
     pub modification_date: Option<i64>,
     #[serde(default)]
     pub extensions: Option<Json<JsonValue>>,
+    
+    // SillyTavern v3 fields
+    #[serde(default)]
+    pub fav: Option<bool>,
+    #[serde(default)]
+    pub world: Option<String>,
+    #[serde(default)]
+    pub creator_comment: Option<String>,
+    #[serde(default)]
+    pub depth_prompt: Option<String>,
+    #[serde(default)]
+    pub depth_prompt_depth: Option<i32>,
+    #[serde(default)]
+    pub depth_prompt_role: Option<String>,
 }
 
 /// DTO for character update requests
@@ -73,6 +87,14 @@ pub struct CharacterUpdateDto {
     pub creation_date: Option<i64>,
     pub modification_date: Option<i64>,
     pub extensions: Option<Json<JsonValue>>,
+    
+    // SillyTavern v3 fields
+    pub fav: Option<bool>,
+    pub world: Option<String>,
+    pub creator_comment: Option<String>,
+    pub depth_prompt: Option<String>,
+    pub depth_prompt_depth: Option<i32>,
+    pub depth_prompt_role: Option<String>,
 }
 
 impl CharacterCreateDto {

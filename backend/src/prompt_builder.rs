@@ -10,15 +10,16 @@ use crate::{
 use genai::chat::ChatMessage as GenAiChatMessage;
 use genai::chat::ContentPart as Part; // This is the Part type from the genai crate
 use genai::chat::MessageContent; // This is an enum from the genai crate
+use secrecy::ExposeSecret;
 use std::fmt::Write;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
 /// Escapes text for safe inclusion in XML
 fn escape_xml(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
+    text.replace('&', "&")
+        .replace('<', "<")
+        .replace('>', ">")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
 }
@@ -71,7 +72,7 @@ pub fn build_prompt_with_rag(
             .unwrap();
             prompt.push('\n');
             // Only add static instruction if there's a character description
-            prompt.push_str("---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n");
+            prompt.push_str("---\\nInstruction:\\nContinue the chat based on the conversation history. Stay in character.\\n---\\n\\n");
         } else {
             // No description, return empty string
             return Ok(String::new());
@@ -90,34 +91,57 @@ fn build_character_info_string(
     dek: Option<&secrecy::SecretBox<Vec<u8>>>,
     user_persona_name: Option<&str>,
 ) -> String {
-    if let Some(char_data) = character_metadata {
-        // Try to decrypt the description first
-        match char_data.decrypt_description(dek) {
-            Ok(Some(description_text)) => {
-                if !description_text.is_empty() {
-                    // Apply template substitution
-                    let substituted_description = replace_template_variables(
-                        &description_text,
-                        Some(&char_data.name),
-                        user_persona_name,
-                    );
-                    
-                    let mut char_prompt_part = String::new();
-                    writeln!(char_prompt_part, "Character Name: {}", char_data.name).unwrap();
-                    writeln!(char_prompt_part, "Description: {}", substituted_description).unwrap();
-                    return char_prompt_part;
+    let Some(char_data) = character_metadata else {
+        return String::new();
+    };
+
+    let mut char_prompt_part = String::new();
+    let mut has_content = false;
+
+    // Helper to decrypt a field and append it to the prompt string
+    let append_decrypted_field = |field_name: &str,
+                                      ciphertext: &Option<Vec<u8>>,
+                                      nonce: &Option<Vec<u8>>,
+                                      char_prompt_part: &mut String,
+                                      has_content: &mut bool| {
+        if let (Some(ct), Some(n)) = (ciphertext, nonce) {
+            if !ct.is_empty() {
+                match crate::crypto::decrypt_gcm(ct, n, dek.unwrap()) {
+                    Ok(plaintext_bytes) => {
+                        let plaintext = String::from_utf8_lossy(plaintext_bytes.expose_secret());
+                        if !plaintext.is_empty() {
+                            let substituted_text = replace_template_variables(
+                                &plaintext,
+                                Some(&char_data.name),
+                                user_persona_name,
+                            );
+                            writeln!(char_prompt_part, "**{}:** {}", field_name, substituted_text)
+                                .unwrap();
+                            *has_content = true;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to decrypt character field \"{}\": {}", field_name, e);
+                    }
                 }
             }
-            Ok(None) => {
-                // No description available
-            }
-            Err(e) => {
-                // Log the error but don't fail - just skip character info
-                tracing::error!("Failed to decrypt character description: {}", e);
-            }
         }
+    };
+
+    // Always add name if we have a character
+    writeln!(char_prompt_part, "**Character Name:** {}", char_data.name).unwrap();
+    has_content = true;
+
+    append_decrypted_field("Description", &char_data.description, &char_data.description_nonce, &mut char_prompt_part, &mut has_content);
+    append_decrypted_field("Personality", &char_data.personality, &char_data.personality_nonce, &mut char_prompt_part, &mut has_content);
+    append_decrypted_field("Scenario", &char_data.scenario, &char_data.scenario_nonce, &mut char_prompt_part, &mut has_content);
+    append_decrypted_field("Example Dialogue", &char_data.mes_example, &char_data.mes_example_nonce, &mut char_prompt_part, &mut has_content);
+   
+    if has_content {
+    	char_prompt_part
+    } else {
+        String::new()
     }
-    String::new()
 }
 
 /// Counts tokens for a single `GenAiChatMessage`.
@@ -199,12 +223,12 @@ async fn build_meta_system_prompt(
     }
 
     if has_character_definition {
-        sections_list.push(format!("{}. <character_definition>: The core definition and personality of the character '{}'.", section_num, char_name_placeholder));
+        sections_list.push(format!("{}. <system_instructions>: Narrative style and behavioral guidelines for the character \"{}\".", section_num, char_name_placeholder));
         section_num += 1;
     }
 
     if has_character_details {
-        sections_list.push(format!("{}. <character_details>: Additional descriptive information about '{}'.", section_num, char_name_placeholder));
+        sections_list.push(format!("{}. <character_profile>: Character background, personality, and details for \"{}\".", section_num, char_name_placeholder));
         section_num += 1;
     }
 
@@ -215,19 +239,20 @@ async fn build_meta_system_prompt(
 
     sections_list.push(format!("{}. The conversation history contains the story so far - the existing dialogue and narration.", section_num));
 
-    let sections_text = sections_list.join("\n");
+    let sections_text = sections_list.join("\\n");
 
     let meta_system_prompt_template = format!(
-        "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\n\n\
-        You will be provided with the following structured information to guide your responses:\n\
-        {sections_text}\n\n\
-        Key Writing Principles:\n\
-        - Focus on the direct consequences of the User's actions.\n\
-        - Describe newly encountered people, places, or significant objects only once. The Human will remember.\n\
-        - Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\n\
-        - End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\n\n\
-        [System Instructions End]\n\
-        Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        "You are the Narrator and supporting characters in a collaborative storytelling experience with a Human player. The Human controls a character (referred to as 'the User'). Your primary role is to describe the world, events, and the actions and dialogue of all characters *except* the User.\\n\\n\
+You will be provided with the following structured information to guide your responses:\\n\
+{}\\n\\n\
+Key Writing Principles:\\n\
+- Focus on the direct consequences of the User's actions.\\n\
+- Describe newly encountered people, places, or significant objects only once. The Human will remember.\\n\
+- Maintain character believability. Characters have their own motivations and will not always agree with the User. They should react realistically based on their personalities and the situation.\\n\
+- End your responses with action or dialogue to maintain active immersion. Avoid summarization or out-of-character commentary.\\n\\n\
+[System Instructions End]\\n\
+Based on all the above information and the conversation history, write the next part of the story as the narrator and any relevant non-player characters. Ensure your response is engaging and moves the story forward.",
+        sections_text
     );
 
     let meta_system_prompt_tokens = token_counter
@@ -592,22 +617,22 @@ async fn build_final_prompt_strings(
         final_system_prompt.push_str("\n</persona_override_prompt>");
     }
 
-    // Add character definition if present
+    // Add system instructions if present
     if !calculation.character_definition_str.is_empty() {
-        final_system_prompt.push_str("\n\n<character_definition>\n");
+        final_system_prompt.push_str("\n\n<system_instructions>\n");
         final_system_prompt.push_str(&calculation.character_definition_str);
-        final_system_prompt.push_str("\n</character_definition>");
+        final_system_prompt.push_str("\n</system_instructions>");
     }
 
-    // Add character details if present
+    // Add character profile if present
     if !calculation.character_details_str.is_empty() {
-        final_system_prompt.push_str("\n\n<character_details>\n");
+        final_system_prompt.push_str("\n\n<character_profile>\n");
         final_system_prompt.push_str(&calculation.character_details_str);
-        final_system_prompt.push_str("\n</character_details>");
+        final_system_prompt.push_str("\n</character_profile>");
     }
 
-    // Add the instruction section
-    final_system_prompt.push_str("\n\n---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n");
+    // End system prompt cleanly
+    final_system_prompt.push_str("\n");
 
     // Assemble the final message list
     let mut final_message_list = Vec::new();
@@ -663,9 +688,13 @@ async fn build_final_prompt_strings(
 
     // Combine RAG context with the current user message
     let mut final_user_message = current_user_message.clone();
-    if let MessageContent::Text(mut text_content) = final_user_message.content {
-        text_content = format!("{}{}", rag_context_for_user_message, text_content);
-        final_user_message.content = MessageContent::Text(text_content);
+    if let MessageContent::Text(text_content) = final_user_message.content {
+        let formatted_content = if !rag_context_for_user_message.is_empty() {
+            format!("{}**[User Input]**\n{}", rag_context_for_user_message, text_content)
+        } else {
+            format!("**[User Input]**\n{}", text_content)
+        };
+        final_user_message.content = MessageContent::Text(formatted_content);
     } else {
         // Handle other MessageContent variants if necessary, or log a warning
         warn!("User message is not plain text, RAG context not prepended.");
@@ -733,7 +762,6 @@ mod tests {
     use chrono::Utc;
     use uuid::Uuid;
 
-    const EXPECTED_STATIC_INSTRUCTION: &str = "---\nInstruction:\nContinue the chat based on the conversation history. Stay in character.\n---\n\n";
 
     #[test]
     fn test_build_prompt_no_character() {
@@ -755,6 +783,14 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             first_mes: Some(b"Bot greeting".to_vec()),
+            personality: None,
+            personality_nonce: None,
+            scenario: None,
+            scenario_nonce: None,
+            mes_example: None,
+            mes_example_nonce: None,
+            creator_comment: None,
+            creator_comment_nonce: None,
         };
 
         let prompt = build_prompt_with_rag(Some(&char_meta));
@@ -766,10 +802,7 @@ mod tests {
             prompt.contains("A friendly test bot."),
             "Expected prompt to contain character description, got: {prompt}"
         );
-        assert!(
-            prompt.contains(EXPECTED_STATIC_INSTRUCTION),
-            "Expected prompt to contain static instruction, got: {prompt}"
-        );
+        // Note: Static instruction section was removed as it was redundant
     }
 
     #[test]
@@ -783,6 +816,14 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             first_mes: None,
+            personality: None,
+            personality_nonce: None,
+            scenario: None,
+            scenario_nonce: None,
+            mes_example: None,
+            mes_example_nonce: None,
+            creator_comment: None,
+            creator_comment_nonce: None,
         };
 
         let prompt = build_prompt_with_rag(Some(&char_meta));
@@ -804,6 +845,14 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             first_mes: None,
+            personality: None,
+            personality_nonce: None,
+            scenario: None,
+            scenario_nonce: None,
+            mes_example: None,
+            mes_example_nonce: None,
+            creator_comment: None,
+            creator_comment_nonce: None,
         };
 
         let prompt = build_prompt_with_rag(Some(&char_meta));

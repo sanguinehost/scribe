@@ -11,10 +11,20 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import * as Select from '$lib/components/ui/select';
+	import { Separator } from '$lib/components/ui/separator';
+	import { Badge } from '$lib/components/ui/badge';
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import { Expand, X } from 'lucide-svelte';
-	import type { Character } from '$lib/types';
+	import { Expand, X, Star, Heart, Globe, MessageSquare, Plus, Trash2 } from 'lucide-svelte';
+	import {
+		Tooltip,
+		TooltipTrigger,
+		TooltipContent,
+	} from '$lib/components/ui/tooltip';
+	import type { Character, Lorebook } from '$lib/types';
+	import { writable } from 'svelte/store';
 
 	export let characterId: string | null = null;
 	export let open = false;
@@ -22,6 +32,20 @@
 	let loading = false;
 	let saving = false;
 	let character: Character | null = null;
+	let lorebooks = writable<Lorebook[]>([]);
+
+	async function loadLorebooks() {
+		try {
+			const result = await apiClient.getLorebooks();
+			if (result.isOk()) {
+				lorebooks.set(result.value);
+			} else {
+				toast.error('Failed to load lorebooks: ' + result.error.message);
+			}
+		} catch (error) {
+			toast.error('Failed to load lorebooks');
+		}
+	}
 
 	// Pop-out editor state
 	let popoutEditorOpen = false;
@@ -30,27 +54,36 @@
 	let popoutContent = '';
 	let popoutFieldKey = '';
 
-	// Form data with proper types
+	// Form data with all SillyTavern v3 fields - these SHOULD be used in backend
 	let formData = {
+		// Core character data (encrypted & actively used)
 		name: '',
 		description: '',
 		first_mes: '',
 		personality: '',
 		scenario: '',
 		mes_example: '',
-		creator_notes: '',
 		system_prompt: '',
-		post_history_instructions: '',
-		definition: '',
-		example_dialogue: '',
-		model_prompt: '',
-		user_persona: '',
-		alternate_greetings: [] as string[]
+
+		// Core metadata
+		creator: '',
+		character_version: '',
+		tags: [] as string[],
+		alternate_greetings: [] as string[],
+		nickname: '',
+		category: '',
+
+		// SillyTavern v3 extensions
+		fav: false,
+		world: '', // Lorebook reference/name
+		creator_comment: '', // OOC metadata for users
+		talkativeness: 0.5
 	};
 
 	// Load character data when dialog opens or characterId changes
 	$: if (open && characterId) {
 		loadCharacter();
+		loadLorebooks();
 	}
 
 	async function loadCharacter() {
@@ -61,22 +94,30 @@
 			const result = await apiClient.getCharacter(characterId);
 			if (result.isOk()) {
 				character = result.value;
-				// Populate form with character data
+				// Populate form with all character data including SillyTavern v3 fields
 				formData = {
+					// Core character data (encrypted & actively used)
 					name: character.name || '',
 					description: character.description ?? '',
 					first_mes: character.first_mes ?? '',
 					personality: character.personality ?? '',
 					scenario: character.scenario ?? '',
 					mes_example: character.mes_example ?? '',
-					creator_notes: character.creator_notes ?? '',
 					system_prompt: character.system_prompt ?? '',
-					post_history_instructions: character.post_history_instructions ?? '',
-					definition: character.definition ?? '',
-					example_dialogue: character.example_dialogue ?? '',
-					model_prompt: character.model_prompt ?? '',
-					user_persona: character.user_persona ?? '',
-					alternate_greetings: character.alternate_greetings || []
+
+					// Core metadata
+					creator: character.creator ?? '',
+					character_version: character.character_version ?? '',
+					tags: character.tags?.filter((tag) => tag !== null) as string[] | [],
+					alternate_greetings: character.alternate_greetings || [],
+					nickname: character.nickname ?? '',
+					category: character.category ?? '',
+
+					// SillyTavern v3 extensions (need backend integration)
+					fav: character.fav ?? false,
+					world: character.world ?? '',
+					creator_comment: character.creator_notes ?? '',
+					talkativeness: Number(character.talkativeness ?? 0.5)
 				};
 			} else {
 				toast.error('Failed to load character: ' + result.error.message);
@@ -104,6 +145,20 @@
 					if (greetings.length > 0) {
 						updateData[key] = greetings;
 					}
+				} else if (key === 'tags') {
+					// Handle array of tags
+					const tags = (value as string[]).filter((t) => t.trim() !== '');
+					if (tags.length > 0) {
+						updateData[key] = tags;
+					}
+				} else if (key === 'fav') {
+					// Handle boolean favorite field
+					updateData[key] = value;
+				} else if (key === 'depth_prompt_depth' || key === 'talkativeness') {
+					// Handle numeric depth field
+					if (value && value !== 0) {
+						updateData[key] = Number(value);
+					}
 				} else if (value && typeof value === 'string' && value.trim() !== '') {
 					updateData[key] = value.trim();
 				}
@@ -127,20 +182,28 @@
 		open = false;
 		// Reset form
 		formData = {
+			// Core character data (encrypted & actively used)
 			name: '',
 			description: '',
 			first_mes: '',
 			personality: '',
 			scenario: '',
 			mes_example: '',
-			creator_notes: '',
 			system_prompt: '',
-			post_history_instructions: '',
-			definition: '',
-			example_dialogue: '',
-			model_prompt: '',
-			user_persona: '',
-			alternate_greetings: []
+
+			// Core metadata
+			creator: '',
+			character_version: '',
+			tags: [],
+			alternate_greetings: [],
+			nickname: '',
+			category: '',
+
+			// SillyTavern v3 extensions (need backend integration)
+			fav: false,
+			world: '',
+			creator_comment: '',
+			talkativeness: 0.5
 		};
 		character = null;
 	}
@@ -184,6 +247,27 @@
 		popoutFieldLabel = '';
 		popoutContent = '';
 	}
+
+	// Tag management functions
+	let newTag = '';
+	
+	function addTag() {
+		if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
+			formData.tags = [...formData.tags, newTag.trim()];
+			newTag = '';
+		}
+	}
+	
+	function removeTag(tagToRemove: string) {
+		formData.tags = formData.tags.filter(tag => tag !== tagToRemove);
+	}
+	
+	function handleTagKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			addTag();
+		}
+	}
 </script>
 
 <Dialog bind:open>
@@ -203,16 +287,102 @@
 			<div class="grid gap-4 py-4">
 				<!-- Basic Information -->
 				<div class="space-y-4">
-					<h3 class="text-lg font-semibold">Basic Information</h3>
+					<div class="flex items-center gap-2">
+						<h3 class="text-lg font-semibold">Basic Information</h3>
+						<div class="flex items-center gap-2 ml-auto">
+							<Tooltip>
+								<TooltipTrigger>
+									<Checkbox id="favorite" bind:checked={formData.fav} />
+								</TooltipTrigger>
+								<TooltipContent>
+									Toggle to add or remove from favorites
+								</TooltipContent>
+							</Tooltip>
+							<Label for="favorite" class="flex items-center gap-1 text-sm">
+								<Heart class="h-4 w-4" />
+									Favorite
+							</Label>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div class="grid gap-2">
+							<Tooltip>
+								<TooltipTrigger>
+									<Label for="name">Name</Label>
+								</TooltipTrigger>
+								<TooltipContent>
+									The character's name.
+								</TooltipContent>
+							</Tooltip>
+							<Input id="name" bind:value={formData.name} placeholder={character.name} />
+						</div>
+
+						<div class="grid gap-2">
+							<Tooltip>
+								<TooltipTrigger>
+									<Label for="creator">Creator</Label>
+								</TooltipTrigger>
+								<TooltipContent>
+									The character's creator.
+								</TooltipContent>
+							</Tooltip>
+							<Input id="creator" bind:value={formData.creator} placeholder={character.creator ?? 'Anonymous'} />
+						</div>
+					</div>
 
 					<div class="grid gap-2">
-						<Label for="name">Name</Label>
-						<Input id="name" bind:value={formData.name} placeholder={character.name} />
+						<Label for="character_version">Version</Label>
+						<Input id="character_version" bind:value={formData.character_version} placeholder={character.character_version ?? '1.0'} />
+					</div>
+
+					<!-- Tags Section -->
+					<div class="grid gap-2">
+						<Tooltip>
+							<TooltipTrigger>
+								<Label>Tags</Label>
+							</TooltipTrigger>
+							<TooltipContent>
+								Tags to categorize the character.
+							</TooltipContent>
+						</Tooltip>
+						<div class="flex flex-wrap gap-2 mb-2">
+							{#each formData.tags as tag}
+								<Badge variant="secondary" class="flex items-center gap-1">
+									{tag}
+									<button
+										type="button"
+										onclick={() => removeTag(tag)}
+										class="hover:text-destructive"
+									>
+										<X class="h-3 w-3" />
+									</button>
+								</Badge>
+							{/each}
+						</div>
+						<div class="flex gap-2">
+							<Input
+								bind:value={newTag}
+								placeholder="Add a tag..."
+								onkeydown={handleTagKeydown}
+								class="flex-1"
+							/>
+							<Button type="button" onclick={addTag} size="sm" variant="outline">
+								<Plus class="h-4 w-4" />
+							</Button>
+						</div>
 					</div>
 
 					<div class="grid gap-2">
 						<div class="flex items-center justify-between">
-							<Label for="description">Description</Label>
+							<Tooltip>
+								<TooltipTrigger>
+									<Label for="description">Description</Label>
+								</TooltipTrigger>
+								<TooltipContent>
+									A brief description of the character.
+								</TooltipContent>
+							</Tooltip>
 							<Button
 								type="button"
 								variant="ghost"
@@ -233,7 +403,14 @@
 
 					<div class="grid gap-2">
 						<div class="flex items-center justify-between">
-							<Label for="first_mes">First Message</Label>
+							<Tooltip>
+								<TooltipTrigger>
+									<Label for="first_mes">First Message</Label>
+								</TooltipTrigger>
+								<TooltipContent>
+									The character's initial greeting or first message.
+								</TooltipContent>
+							</Tooltip>
 							<Button
 								type="button"
 								variant="ghost"
@@ -255,7 +432,14 @@
 					<!-- Alternate Greetings -->
 					<div class="grid gap-2">
 						<div class="flex items-center justify-between">
-							<Label>Alternate Greetings</Label>
+							<Tooltip>
+								<TooltipTrigger>
+									<Label>Alternate Greetings</Label>
+								</TooltipTrigger>
+								<TooltipContent>
+									Alternate greetings the character can use.
+								</TooltipContent>
+							</Tooltip>
 							<Button
 								type="button"
 								variant="outline"
@@ -318,7 +502,14 @@
 
 					<div class="grid gap-2">
 						<div class="flex items-center justify-between">
-							<Label for="personality">Personality</Label>
+							<Tooltip>
+								<TooltipTrigger>
+									<Label for="personality">Personality</Label>
+								</TooltipTrigger>
+								<TooltipContent>
+									The character's personality traits.
+								</TooltipContent>
+							</Tooltip>
 							<Button
 								type="button"
 								variant="ghost"
@@ -339,7 +530,14 @@
 
 					<div class="grid gap-2">
 						<div class="flex items-center justify-between">
-							<Label for="scenario">Scenario</Label>
+							<Tooltip>
+								<TooltipTrigger>
+									<Label for="scenario">Scenario</Label>
+								</TooltipTrigger>
+								<TooltipContent>
+									The roleplay scenario.
+								</TooltipContent>
+							</Tooltip>
 							<Button
 								type="button"
 								variant="ghost"
@@ -359,12 +557,117 @@
 					</div>
 				</div>
 
+				<!-- World & SillyTavern v3 Settings -->
+				<div class="space-y-4">
+					<h3 class="text-lg font-semibold">World & Context</h3>
+					
+					<!-- World -->
+					<div class="grid gap-2">
+						<Tooltip>
+							<TooltipTrigger>
+								<Label for="world" class="flex items-center gap-1">
+									<Globe class="h-4 w-4" />
+									World/Lorebook
+								</Label>
+							</TooltipTrigger>
+							<TooltipContent>
+								Reference to an associated lorebook for this character
+							</TooltipContent>
+						</Tooltip>
+						<Select.Root
+							onValueChange={(v) => {
+								if (v) {
+									formData.world = v;
+								}
+							}}
+							value={formData.world}
+						>
+							<Select.Trigger class="w-full">
+								<Select.Value placeholder="Select a lorebook" />
+							</Select.Trigger>
+							<Select.Content>
+								{#each $lorebooks as lorebook}
+									<Select.Item value={lorebook.id}
+										>{lorebook.name ?? 'Unnamed Lorebook'}</Select.Item
+									>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<p class="text-sm text-muted-foreground">
+							Reference to an associated lorebook for this character
+						</p>
+					</div>
+
+					<!-- Creator Comment -->
+					<div class="grid gap-2">
+						<div class="flex items-center justify-between">
+							<Tooltip>
+								<TooltipTrigger>
+									<Label for="creator_comment" class="flex items-center gap-1">
+										<MessageSquare class="h-4 w-4" />
+										Creator Comment
+									</Label>
+								</TooltipTrigger>
+								<TooltipContent>
+									Notes from the character creator.
+								</TooltipContent>
+							</Tooltip>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onclick={() => openPopoutEditor('creator_comment', 'Creator Comment')}
+								class="h-6 px-2 text-xs"
+							>
+								Expand
+							</Button>
+						</div>
+						<Textarea
+							id="creator_comment"
+							bind:value={formData.creator_comment}
+							placeholder={character.creator_comment ?? 'Notes from the character creator...'}
+							rows={3}
+						/>
+					</div>
+
+					<!-- Talkativeness -->
+					<div class="grid gap-2">
+						<Tooltip>
+							<TooltipTrigger>
+								<Label for="talkativeness">Talkativeness</Label>
+							</TooltipTrigger>
+							<TooltipContent>
+								Controls how talkative the character is. 0.0 is mute, 1.0 is very talkative.
+							</TooltipContent>
+						</Tooltip>
+						<Input
+							id="talkativeness"
+							type="number"
+							bind:value={formData.talkativeness}
+							placeholder={character.talkativeness ?? '0.5'}
+							step="0.05"
+							min="0"
+							max="1"
+						/>
+						<p class="text-sm text-muted-foreground">
+							Controls how talkative the character is. 0.0 is mute, 1.0 is very talkative.
+						</p>
+					</div>
+				</div>
+
 				<!-- Advanced Settings -->
 				<details class="space-y-4">
 					<summary class="cursor-pointer text-lg font-semibold">Advanced Settings</summary>
 
 					<div class="mt-4 grid gap-2">
-						<Label for="system_prompt">System Prompt</Label>
+						<Tooltip>
+							<TooltipTrigger>
+								<Label for="system_prompt">System Prompt</Label>
+							</TooltipTrigger>
+							<TooltipContent>
+								System instructions for the AI.
+							</TooltipContent>
+						</Tooltip>
 						<Textarea
 							id="system_prompt"
 							bind:value={formData.system_prompt}
@@ -375,7 +678,14 @@
 
 					<div class="grid gap-2">
 						<div class="flex items-center justify-between">
-							<Label for="mes_example">Message Example</Label>
+							<Tooltip>
+								<TooltipTrigger>
+									<Label for="mes_example">Message Example</Label>
+								</TooltipTrigger>
+								<TooltipContent>
+									Example messages the character can use.
+								</TooltipContent>
+							</Tooltip>
 							<Button
 								type="button"
 								variant="ghost"
@@ -394,88 +704,7 @@
 						/>
 					</div>
 
-					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Label for="definition">Definition</Label>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onclick={() => openPopoutEditor('definition', 'Definition')}
-								class="h-6 px-2 text-xs"
-							>
-								Expand
-							</Button>
-						</div>
-						<Textarea
-							id="definition"
-							bind:value={formData.definition}
-							placeholder={character.definition ?? 'Character definition...'}
-							rows={8}
-						/>
-					</div>
 
-					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Label for="example_dialogue">Example Dialogue</Label>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onclick={() => openPopoutEditor('example_dialogue', 'Example Dialogue')}
-								class="h-6 px-2 text-xs"
-							>
-								Expand
-							</Button>
-						</div>
-						<Textarea
-							id="example_dialogue"
-							bind:value={formData.example_dialogue}
-							placeholder={character.example_dialogue ?? 'Example conversations...'}
-							rows={10}
-						/>
-					</div>
-
-					<div class="grid gap-2">
-						<Label for="model_prompt">Model Prompt</Label>
-						<Textarea
-							id="model_prompt"
-							bind:value={formData.model_prompt}
-							placeholder={character.model_prompt ?? 'Model-specific prompts...'}
-							rows={5}
-						/>
-					</div>
-
-					<div class="grid gap-2">
-						<Label for="post_history_instructions">Post History Instructions</Label>
-						<Textarea
-							id="post_history_instructions"
-							bind:value={formData.post_history_instructions}
-							placeholder={character.post_history_instructions ??
-								'Instructions after chat history...'}
-							rows={5}
-						/>
-					</div>
-
-					<div class="grid gap-2">
-						<Label for="user_persona">User Persona</Label>
-						<Textarea
-							id="user_persona"
-							bind:value={formData.user_persona}
-							placeholder={character.user_persona ?? 'Default user persona...'}
-							rows={5}
-						/>
-					</div>
-
-					<div class="grid gap-2">
-						<Label for="creator_notes">Creator Notes</Label>
-						<Textarea
-							id="creator_notes"
-							bind:value={formData.creator_notes}
-							placeholder={character.creator_notes ?? 'Notes from the creator...'}
-							rows={4}
-						/>
-					</div>
 				</details>
 			</div>
 		{/if}

@@ -169,6 +169,18 @@ The chunking process also preserves metadata about the source document, position
                     modification_date: None,
                     persona: None,
                     world_scenario: None,
+                    fav: None,
+                    world: None,
+                    creator_comment: None,
+                    creator_comment_nonce: None,
+                    depth_prompt: None,
+                    depth_prompt_depth: None,
+                    depth_prompt_role: None,
+                    talkativeness: None,
+                    depth_prompt_ciphertext: None,
+                    depth_prompt_nonce: None,
+                    world_ciphertext: None,
+                    world_nonce: None,
                 })
                 .returning(DbCharacter::as_select())
                 .get_result::<DbCharacter>(conn)
@@ -676,6 +688,18 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 model_prompt_nonce: None,
                 user_persona_nonce: None,
                 post_history_instructions_nonce: None,
+                fav: None,
+                world: None,
+                creator_comment: None,
+                creator_comment_nonce: None,
+                depth_prompt: None,
+                depth_prompt_depth: None,
+                depth_prompt_role: None,
+                talkativeness: None,
+                depth_prompt_ciphertext: None,
+                depth_prompt_nonce: None,
+                world_ciphertext: None,
+                world_nonce: None,
             };
             diesel::insert_into(schema::characters::table)
                 .values(&new_character)
@@ -1043,6 +1067,18 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 model_prompt_nonce: None,
                 user_persona_nonce: None,
                 post_history_instructions_nonce: None,
+                fav: None,
+                world: None,
+                creator_comment: None,
+                creator_comment_nonce: None,
+                depth_prompt: None,
+                depth_prompt_depth: None,
+                depth_prompt_role: None,
+                talkativeness: None,
+                depth_prompt_ciphertext: None,
+                depth_prompt_nonce: None,
+                world_ciphertext: None,
+                world_nonce: None,
             };
             diesel::insert_into(schema::characters::table)
                 .values(&new_character)
@@ -1391,6 +1427,18 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 model_prompt_nonce: None,
                 user_persona_nonce: None,
                 post_history_instructions_nonce: None,
+                fav: None,
+                world: None,
+                creator_comment: None,
+                creator_comment_nonce: None,
+                depth_prompt: None,
+                depth_prompt_depth: None,
+                depth_prompt_role: None,
+                talkativeness: None,
+                depth_prompt_ciphertext: None,
+                depth_prompt_nonce: None,
+                world_ciphertext: None,
+                world_nonce: None,
             };
             diesel::insert_into(schema::characters::table)
                 .values(&new_character)

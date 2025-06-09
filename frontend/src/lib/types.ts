@@ -285,10 +285,19 @@ export interface CharacterDataForClient {
 	visibility?: string | null;
 	weight?: string | null;
 	world_scenario_visibility?: string | null;
+	// SillyTavern v3 fields
+	fav?: boolean | null;
+	world?: string | null;
+	creator_comment?: string | null;
+	depth_prompt?: string | null;
+	depth_prompt_depth?: number | null;
+	depth_prompt_role?: string | null;
+	talkativeness?: string | null;
 }
 
 // Scribe-specific character type alias for consistency
 export type ScribeCharacter = CharacterDataForClient;
+export type Character = CharacterDataForClient;
 
 // User Persona types
 export interface UserPersona {

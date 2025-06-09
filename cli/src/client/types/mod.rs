@@ -234,6 +234,20 @@ pub struct ClientCharacterDataForClient {
     pub weight: Option<BigDecimal>,
     #[serde(default)]
     pub world_scenario_visibility: Option<String>,
+    #[serde(default)]
+    pub fav: Option<bool>,
+    #[serde(default)]
+    pub world: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub creator_comment: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_bytes_to_string")]
+    pub depth_prompt: Option<String>,
+    #[serde(default)]
+    pub depth_prompt_depth: Option<i32>,
+    #[serde(default)]
+    pub depth_prompt_role: Option<String>,
+    #[serde(default)]
+    pub talkativeness: Option<BigDecimal>,
 }
 
 // NEW: Struct for deserializing chat message responses from the backend
@@ -408,6 +422,13 @@ impl From<ClientCharacterDataForClient> for CharacterDataForClient {
             visibility: client.visibility,
             weight: client.weight,
             world_scenario_visibility: client.world_scenario_visibility,
+            fav: client.fav,
+            world: client.world,
+            creator_comment: client.creator_comment,
+            depth_prompt: client.depth_prompt,
+            depth_prompt_depth: client.depth_prompt_depth,
+            depth_prompt_role: client.depth_prompt_role,
+            talkativeness: client.talkativeness,
         }
     }
 }
