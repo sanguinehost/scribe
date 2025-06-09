@@ -9,13 +9,13 @@ use thiserror::Error;
 use tracing::error;
 use validator::ValidationErrors;
 
-use std::time::Duration; // Add this import
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::services::character_parser::ParserError as CharacterParserError;
 use anyhow::Error as AnyhowError;
 use bcrypt; // Use bcrypt directly
 use deadpool_diesel::PoolError as DeadpoolDieselPoolError;
 use diesel::result::Error as DieselError;
+use std::time::Duration; // Add this import
 
 // AppError should automatically be Send + Sync if all its fields are.
 // Remove Send and Sync from derive list.
@@ -927,13 +927,18 @@ impl From<genai::Error> for AppError {
     fn from(err: genai::Error) -> Self {
         // First, try to extract retryDelay from StreamEventError body if applicable
         if let genai::Error::StreamEventError { body, .. } = &err {
-            if let Some(retry_info) = body["error"]["details"].as_array()
-                .and_then(|details| details.iter().find(|d| d["@type"] == "type.googleapis.com/google.rpc.RetryInfo"))
-            {
+            if let Some(retry_info) = body["error"]["details"].as_array().and_then(|details| {
+                details
+                    .iter()
+                    .find(|d| d["@type"] == "type.googleapis.com/google.rpc.RetryInfo")
+            }) {
                 if let Some(delay_str) = retry_info["retryDelay"].as_str() {
                     if let Some(seconds_str) = delay_str.strip_suffix('s') {
                         if let Ok(seconds) = seconds_str.parse::<u64>() {
-                            tracing::info!("Detected Gemini API rate limit from StreamEventError with retryDelay: {}s", seconds);
+                            tracing::info!(
+                                "Detected Gemini API rate limit from StreamEventError with retryDelay: {}s",
+                                seconds
+                            );
                             return AppError::RateLimited(Some(Duration::from_secs(seconds)));
                         }
                     }
@@ -950,14 +955,24 @@ impl From<genai::Error> for AppError {
                     let json_str = &json_part[..=end_idx];
 
                     if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(json_str) {
-                        if let Some(retry_info) = json_value["error"]["details"].as_array()
-                            .and_then(|details| details.iter().find(|d| d["@type"] == "type.googleapis.com/google.rpc.RetryInfo"))
+                        if let Some(retry_info) = json_value["error"]["details"]
+                            .as_array()
+                            .and_then(|details| {
+                                details.iter().find(|d| {
+                                    d["@type"] == "type.googleapis.com/google.rpc.RetryInfo"
+                                })
+                            })
                         {
                             if let Some(delay_str) = retry_info["retryDelay"].as_str() {
                                 if let Some(seconds_str) = delay_str.strip_suffix('s') {
                                     if let Ok(seconds) = seconds_str.parse::<u64>() {
-                                        tracing::info!("Detected Gemini API rate limit from error string with retryDelay: {}s", seconds);
-                                        return AppError::RateLimited(Some(Duration::from_secs(seconds)));
+                                        tracing::info!(
+                                            "Detected Gemini API rate limit from error string with retryDelay: {}s",
+                                            seconds
+                                        );
+                                        return AppError::RateLimited(Some(Duration::from_secs(
+                                            seconds,
+                                        )));
                                     }
                                 }
                             }

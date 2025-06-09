@@ -23,7 +23,7 @@ pub use chats::*;
 pub use documents::*;
 pub use lorebook_dtos::*;
 pub use lorebooks::*;
-pub use user_assets::{UserAsset, NewUserAsset};
+pub use user_assets::{NewUserAsset, UserAsset};
 pub use user_personas::*;
 pub use user_settings::*;
 pub use users::*;

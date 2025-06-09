@@ -6,11 +6,10 @@ use secrecy::SecretBox; // Removed SecretString
 use scribe_backend::{
     auth::user_store::Backend as AuthBackend, // Added
     llm::EmbeddingClient,                     // Removed AiClient, Added EmbeddingClient
-    models::{
-        user_settings::{NewUserSettings, UserSettings},
-    },
+    models::user_settings::{NewUserSettings, UserSettings},
     schema::user_settings,
     services::{
+        UserSettingsService,
         chat_override_service::ChatOverrideService, // Added
         embedding_pipeline::EmbeddingPipelineServiceTrait, // Added
         encryption_service::EncryptionService,      // Added
@@ -19,10 +18,9 @@ use scribe_backend::{
         lorebook_service::LorebookService,          // Added
         tokenizer_service::TokenizerService,        // Added
         user_persona_service::UserPersonaService,   // Added
-        UserSettingsService,
     },
     state::{AppState, AppStateServices}, // Added AppStateServices
-    test_helpers::{db, spawn_app, TestDataGuard}, // Removed QdrantClientServiceTrait from here
+    test_helpers::{TestDataGuard, db, spawn_app}, // Removed QdrantClientServiceTrait from here
 };
 
 /// Test that user settings service auto-creates defaults when none exist
@@ -40,9 +38,10 @@ async fn test_user_settings_auto_creation() {
     tdg.add_user(user_db.id);
 
     // Call get_user_settings - this should auto-create defaults
-    let user_settings = UserSettingsService::get_user_settings(&app.db_pool, user_db.id, &app.config)
-        .await
-        .expect("Failed to get/create user settings");
+    let user_settings =
+        UserSettingsService::get_user_settings(&app.db_pool, user_db.id, &app.config)
+            .await
+            .expect("Failed to get/create user settings");
 
     // Verify the settings were created with system defaults
     assert_eq!(
@@ -74,7 +73,7 @@ async fn test_user_settings_auto_creation() {
             &app.config.token_counter_default_model,
             "Database settings should match auto-created settings"
         );
-        
+
         Result::<(), diesel::result::Error>::Ok(())
     })
     .await
@@ -120,8 +119,11 @@ async fn test_chat_session_uses_user_default_model() {
         notifications_enabled: None,
     };
 
-    // Insert user settings in database using interact 
-    app.db_pool.get().await.unwrap()
+    // Insert user settings in database using interact
+    app.db_pool
+        .get()
+        .await
+        .unwrap()
         .interact(move |conn| {
             let _inserted_settings: UserSettings = diesel::insert_into(user_settings::table)
                 .values(&user_settings)
@@ -135,10 +137,12 @@ async fn test_chat_session_uses_user_default_model() {
 
     // Create a test character
     let character = scribe_backend::test_helpers::db::create_test_character(
-        &app.db_pool, 
-        user_db.id, 
-        "Test Character".to_string()
-    ).await.unwrap();
+        &app.db_pool,
+        user_db.id,
+        "Test Character".to_string(),
+    )
+    .await
+    .unwrap();
     tdg.add_character(character.id);
 
     // Create AppState for session creation
@@ -153,22 +157,23 @@ async fn test_chat_session_uses_user_default_model() {
 
     let encryption_service = Arc::new(EncryptionService::new());
     let auth_backend = Arc::new(AuthBackend::new(db_pool.clone()));
-    let chat_override_service =
-        Arc::new(ChatOverrideService::new(db_pool.clone(), encryption_service.clone()));
-    let user_persona_service =
-        Arc::new(UserPersonaService::new(db_pool.clone(), encryption_service.clone()));
-    
+    let chat_override_service = Arc::new(ChatOverrideService::new(
+        db_pool.clone(),
+        encryption_service.clone(),
+    ));
+    let user_persona_service = Arc::new(UserPersonaService::new(
+        db_pool.clone(),
+        encryption_service.clone(),
+    ));
+
     let tokenizer_service = TokenizerService::new(&config.tokenizer_model_path)
         .expect("Failed to load tokenizer for test AppState construction");
 
-    let gemini_token_client = config
-        .gemini_api_key
-        .as_ref()
-        .map(|api_key_secret_string| {
-            // Assuming api_key_secret_string is SecretString
-            // GeminiTokenClient::new expects SecretString
-            GeminiTokenClient::new(api_key_secret_string.clone())
-        });
+    let gemini_token_client = config.gemini_api_key.as_ref().map(|api_key_secret_string| {
+        // Assuming api_key_secret_string is SecretString
+        // GeminiTokenClient::new expects SecretString
+        GeminiTokenClient::new(api_key_secret_string.clone())
+    });
 
     let token_counter = Arc::new(HybridTokenCounter::new(
         tokenizer_service,
@@ -182,7 +187,7 @@ async fn test_chat_session_uses_user_default_model() {
     ));
     let file_storage_service = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service")
+            .expect("Failed to create test file storage service"),
     );
 
     let app_services = AppStateServices {
@@ -207,21 +212,23 @@ async fn test_chat_session_uses_user_default_model() {
     // We need to extract it and pass it.
     // user_db.dek is Option<SerializableSecretDek(SecretBox<Vec<u8>>)>
     // create_session_and_maybe_first_message expects Option<Arc<SessionDek>> which is Option<Arc<SecretBox<Vec<u8>>>>
-    
-    let user_dek_for_session: Option<Arc<SecretBox<Vec<u8>>>> = user_db.dek.map(|serializable_dek| Arc::new(serializable_dek.0));
 
+    let user_dek_for_session: Option<Arc<SecretBox<Vec<u8>>>> = user_db
+        .dek
+        .map(|serializable_dek| Arc::new(serializable_dek.0));
 
     // Create a chat session using the session management service
-    let chat_session = scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
-        app_state_for_session, // Use the correctly constructed AppState
-        user_db.id,
-        character.id,
-        None, // No custom persona
-        None, // No lorebooks
-        user_dek_for_session, // Use the DEK from the test user
-    )
-    .await
-    .expect("Failed to create chat session");
+    let chat_session =
+        scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
+            app_state_for_session, // Use the correctly constructed AppState
+            user_db.id,
+            character.id,
+            None,                 // No custom persona
+            None,                 // No lorebooks
+            user_dek_for_session, // Use the DEK from the test user
+        )
+        .await
+        .expect("Failed to create chat session");
 
     // Verify the chat session uses the user's default model
     assert_eq!(
@@ -232,4 +239,3 @@ async fn test_chat_session_uses_user_default_model() {
 
     // Cleanup handled by TestDataGuard
 }
-

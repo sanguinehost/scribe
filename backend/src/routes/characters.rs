@@ -18,7 +18,7 @@ use axum::{
     Router,
     body::Body,
     debug_handler,
-    extract::{Path, State, multipart::Multipart, Query}, // Added Query
+    extract::{Path, Query, State, multipart::Multipart}, // Added Query
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post, put},
@@ -39,10 +39,10 @@ use crate::services::encryption_service::EncryptionService; // Added import
 use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
 // DieselError moved to main diesel imports
-use secrecy::ExposeSecret; // Added for DEK expose
-use serde::Deserialize; // Add serde import
 use image::ImageFormat; // Added for image processing
 use image::ImageReader; // Use the new name for clarity
+use secrecy::ExposeSecret; // Added for DEK expose
+use serde::Deserialize; // Add serde import
 use std::io::Cursor; // Added for image processing
 
 // Define input structure for image query parameters
@@ -81,7 +81,10 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
         .route("/:id", put(update_character_handler)) // Added PUT for update on /:id
         .route("/remove/:id", delete(delete_character_handler))
         .route("/generate", post(generate_character_handler))
-        .route("/:character_id/assets/:asset_id", get(get_character_asset_handler))
+        .route(
+            "/:character_id/assets/:asset_id",
+            get(get_character_asset_handler),
+        )
         // Apply LoginRequired middleware to all routes in this router
         // It checks auth_session.user and returns 401 if None.
         .with_state(state)
@@ -249,7 +252,7 @@ pub async fn upload_character_handler(
         user_persona_nonce,
         &dek.0
     );
-    
+
     // Encrypt SillyTavern v3 fields that contain sensitive data
     encrypt_field!(
         new_character_for_db,
@@ -257,7 +260,7 @@ pub async fn upload_character_handler(
         creator_comment_nonce,
         &dek.0
     );
-    
+
     // For depth_prompt, we need to encrypt the text content into depth_prompt_ciphertext
     if let Some(depth_prompt_text_bytes) = new_character_for_db.depth_prompt.take() {
         if !depth_prompt_text_bytes.is_empty() {
@@ -285,7 +288,7 @@ pub async fn upload_character_handler(
             }
         }
     }
-    
+
     // For world field, encrypt from the world string into world_ciphertext
     if let Some(world_text) = new_character_for_db.world.as_ref() {
         if !world_text.is_empty() {
@@ -352,16 +355,16 @@ pub async fn upload_character_handler(
         inserted_character.id,
         &format!("{}_avatar", inserted_character.name),
         png_data.to_vec(),
-        content_type // Pass the extracted content_type
+        content_type, // Pass the extracted content_type
     );
-    
+
     // Save asset record to database
     let conn_asset_op = state
         .pool
         .get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-        
+
     let asset_result: Result<CharacterAsset, diesel::result::Error> = conn_asset_op
         .interact(move |conn_asset_block| {
             diesel::insert_into(character_assets)
@@ -370,12 +373,14 @@ pub async fn upload_character_handler(
                 .get_result::<CharacterAsset>(conn_asset_block)
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}")))?;
-        
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}"))
+        })?;
+
     match asset_result {
         Ok(asset) => {
             info!(character_id = %inserted_character.id, asset_id = asset.id, "Character avatar stored in database successfully");
-            
+
             // Update character record with asset reference (asset ID as string)
             let character_id_for_update = inserted_character.id;
             let asset_id_for_update = asset.id.to_string();
@@ -384,7 +389,7 @@ pub async fn upload_character_handler(
                 .get()
                 .await
                 .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                
+
             let update_result = conn_update_op
                 .interact(move |conn_update_block| {
                     diesel::update(characters.find(character_id_for_update))
@@ -392,8 +397,12 @@ pub async fn upload_character_handler(
                         .execute(conn_update_block)
                 })
                 .await
-                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Avatar update interaction error: {e}")))?;
-                
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!(
+                        "Avatar update interaction error: {e}"
+                    ))
+                })?;
+
             match update_result {
                 Ok(_) => {
                     info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
@@ -441,7 +450,9 @@ pub async fn upload_character_handler(
                         >(entry_value.clone())
                         {
                             Ok(entry) => {
-                                let uid = entry.uid.map(|u| u.to_string())
+                                let uid = entry
+                                    .uid
+                                    .map(|u| u.to_string())
                                     .or_else(|| entry.id.map(|i| i.to_string()))
                                     .unwrap_or_else(|| idx.to_string());
                                 tracing::info!(
@@ -499,7 +510,12 @@ pub async fn upload_character_handler(
 
         // Import the lorebook
         match lorebook_service
-            .import_lorebook(&auth_session, Some(&dek.0), lorebook_payload, Arc::new(state.clone()))
+            .import_lorebook(
+                &auth_session,
+                Some(&dek.0),
+                lorebook_payload,
+                Arc::new(state.clone()),
+            )
             .await
         {
             Ok(lorebook) => {
@@ -522,9 +538,12 @@ pub async fn upload_character_handler(
     }
 
     let client_character_data = inserted_character.into_decrypted_for_client(Some(&dek.0))?;
-    
+
     // Debug: Log the alternate_greetings in the final client response
-    tracing::info!("Final client character alternate_greetings: {:?}", client_character_data.alternate_greetings);
+    tracing::info!(
+        "Final client character alternate_greetings: {:?}",
+        client_character_data.alternate_greetings
+    );
 
     Ok((StatusCode::CREATED, Json(client_character_data)))
 }
@@ -1128,12 +1147,15 @@ pub async fn get_character_asset_handler(
                 .optional()
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Character lookup interaction error: {e}")))?
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}")))?;
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Character lookup interaction error: {e}"))
+        })?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}"))
+        })?;
 
-    let _character = character.ok_or_else(|| {
-        AppError::NotFound("Character not found or not accessible".to_string())
-    })?;
+    let _character = character
+        .ok_or_else(|| AppError::NotFound("Character not found or not accessible".to_string()))?;
 
     // Load the asset from database
     let conn_asset = state
@@ -1152,20 +1174,22 @@ pub async fn get_character_asset_handler(
                 .optional()
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup interaction error: {e}")))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Asset lookup interaction error: {e}"))
+        })?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))?;
 
-    let asset = asset.ok_or_else(|| {
-        AppError::NotFound("Character asset not found".to_string())
-    })?;
+    let asset = asset.ok_or_else(|| AppError::NotFound("Character asset not found".to_string()))?;
 
     // Get the image data from the asset
-    let image_data = asset.data.ok_or_else(|| {
-        AppError::NotFound("Character asset has no image data".to_string())
-    })?;
+    let image_data = asset
+        .data
+        .ok_or_else(|| AppError::NotFound("Character asset has no image data".to_string()))?;
 
     // Get content type, default to image/png
-    let mut content_type = asset.content_type.unwrap_or_else(|| "image/png".to_string());
+    let mut content_type = asset
+        .content_type
+        .unwrap_or_else(|| "image/png".to_string());
     let mut final_image_data = image_data;
 
     // Resize image if width or height parameters are provided
@@ -1176,17 +1200,26 @@ pub async fn get_character_asset_handler(
 
         let decoded_image = ImageReader::with_format(Cursor::new(&final_image_data), format)
             .decode()
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to decode image for resizing: {e}")))?;
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to decode image for resizing: {e}"
+                ))
+            })?;
 
-        let resized_image = decoded_image.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
+        let resized_image =
+            decoded_image.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
 
         let mut buffer = Cursor::new(Vec::new());
-        resized_image.write_to(&mut buffer, format)
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to encode resized image: {e}")))?;
-        
+        resized_image.write_to(&mut buffer, format).map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to encode resized image: {e}"))
+        })?;
+
         final_image_data = buffer.into_inner();
         // Ensure content type is still correct after re-encoding
-        content_type = format!("image/{}", format.extensions_str().iter().next().unwrap_or(&"png"));
+        content_type = format!(
+            "image/{}",
+            format.extensions_str().iter().next().unwrap_or(&"png")
+        );
     }
 
     // Return the image with appropriate headers
@@ -1195,7 +1228,9 @@ pub async fn get_character_asset_handler(
         .header("Content-Type", &content_type)
         .header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
         .body(Body::from(final_image_data.clone()))
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}")))?;
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}"))
+        })?;
 
     debug!(character_id = %character_id, asset_id = %asset_id, content_type = %content_type, image_data_len = final_image_data.len(), "Character asset served successfully");
     Ok(response)

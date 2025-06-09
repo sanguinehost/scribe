@@ -375,13 +375,17 @@ impl From<ClientCharacterDataForClient> for CharacterDataForClient {
             tags: client.tags.map(|tags| tags.into_iter().collect()),
             creator: client.creator,
             character_version: client.character_version,
-            alternate_greetings: client.alternate_greetings.map(|greetings| greetings.into_iter().collect()),
+            alternate_greetings: client
+                .alternate_greetings
+                .map(|greetings| greetings.into_iter().collect()),
             nickname: client.nickname,
             creator_notes_multilingual: client
                 .creator_notes_multilingual
                 .map(|json| DieselJson(json.0)),
             source: client.source.map(|source| source.into_iter().collect()),
-            group_only_greetings: client.group_only_greetings.map(|greetings| greetings.into_iter().collect()),
+            group_only_greetings: client
+                .group_only_greetings
+                .map(|greetings| greetings.into_iter().collect()),
             creation_date: client.creation_date,
             modification_date: client.modification_date,
             created_at: client.created_at,

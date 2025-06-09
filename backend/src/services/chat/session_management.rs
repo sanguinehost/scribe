@@ -380,7 +380,8 @@ fn insert_chat_session(
             chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
             chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
             chat_sessions::model_name.eq(params.default_model_name),
-            chat_sessions::history_management_strategy.eq(params.default_history_management_strategy),
+            chat_sessions::history_management_strategy
+                .eq(params.default_history_management_strategy),
             chat_sessions::history_management_limit.eq(params.default_history_management_limit),
         ))
         .returning(Chat::as_returning())
@@ -529,7 +530,13 @@ fn create_session_in_transaction(
         transaction_conn,
     )?;
 
-    associate_lorebooks(new_session_id, user_id, character_id, lorebook_ids, transaction_conn)?;
+    associate_lorebooks(
+        new_session_id,
+        user_id,
+        character_id,
+        lorebook_ids,
+        transaction_conn,
+    )?;
 
     let fully_created_session = fetch_created_session(new_session_id, transaction_conn)?;
 
@@ -642,7 +649,8 @@ pub async fn create_session_and_maybe_first_message(
     });
 
     // Extract defaults with fallbacks to system config
-    let default_model_name = user_settings.default_model_name
+    let default_model_name = user_settings
+        .default_model_name
         .unwrap_or_else(|| state.config.token_counter_default_model.clone());
     let default_history_management_strategy = "message_window".to_string(); // Not yet in user settings
     let default_history_management_limit = 20; // Not yet in user settings

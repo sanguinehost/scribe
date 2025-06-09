@@ -687,9 +687,7 @@ async fn handle_chat_management_menu<C: HttpClient, H: IoHandler>(
             }
             "5" => {
                 // Removed current_model argument from the call
-                if let Err(e) =
-                    handle_chat_config_action(http_client, io_handler).await
-                {
+                if let Err(e) = handle_chat_config_action(http_client, io_handler).await {
                     io_handler.write_line(&format!("Error configuring chat: {}", e))?;
                 }
             }

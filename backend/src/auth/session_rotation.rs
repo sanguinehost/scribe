@@ -1,8 +1,4 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use chrono::{DateTime, Utc};
 use tower_sessions::Session;
 use tracing::{debug, error, warn};
@@ -45,7 +41,7 @@ async fn should_rotate_session(session: &Session) -> bool {
         Ok(Some(last_rotation)) => {
             let now = Utc::now();
             let hours_since_rotation = (now - last_rotation).num_hours();
-            
+
             debug!(
                 session_id = ?session.id(),
                 hours_since_rotation = hours_since_rotation,
@@ -69,37 +65,42 @@ async fn should_rotate_session(session: &Session) -> bool {
 }
 
 /// Rotate the session ID and update the last rotation time
-async fn rotate_session_if_needed(session: &Session) -> Result<bool, tower_sessions::session::Error> {
+async fn rotate_session_if_needed(
+    session: &Session,
+) -> Result<bool, tower_sessions::session::Error> {
     // Cycle the session ID
     session.cycle_id().await?;
-    
+
     // Update the last rotation time
     set_last_rotation_time(session, Utc::now()).await?;
-    
+
     // Save the session to ensure changes are persisted
     session.save().await?;
-    
+
     Ok(true)
 }
 
 /// Get the last rotation time from the session
-async fn get_last_rotation_time(session: &Session) -> Result<Option<DateTime<Utc>>, tower_sessions::session::Error> {
+async fn get_last_rotation_time(
+    session: &Session,
+) -> Result<Option<DateTime<Utc>>, tower_sessions::session::Error> {
     match session.get::<String>(LAST_ROTATION_KEY).await? {
-        Some(time_str) => {
-            match DateTime::parse_from_rfc3339(&time_str) {
-                Ok(dt) => Ok(Some(dt.with_timezone(&Utc))),
-                Err(e) => {
-                    warn!(session_id = ?session.id(), error = ?e, "Failed to parse last rotation time");
-                    Ok(None)
-                }
+        Some(time_str) => match DateTime::parse_from_rfc3339(&time_str) {
+            Ok(dt) => Ok(Some(dt.with_timezone(&Utc))),
+            Err(e) => {
+                warn!(session_id = ?session.id(), error = ?e, "Failed to parse last rotation time");
+                Ok(None)
             }
-        }
+        },
         None => Ok(None),
     }
 }
 
 /// Set the last rotation time in the session
-async fn set_last_rotation_time(session: &Session, time: DateTime<Utc>) -> Result<(), tower_sessions::session::Error> {
+async fn set_last_rotation_time(
+    session: &Session,
+    time: DateTime<Utc>,
+) -> Result<(), tower_sessions::session::Error> {
     let time_str = time.to_rfc3339();
     session.insert(LAST_ROTATION_KEY, time_str).await
 }
@@ -114,7 +115,7 @@ mod tests {
     async fn test_should_rotate_session_no_last_rotation() {
         let store = Arc::new(MemoryStore::default());
         let session = Session::new(None, store, None);
-        
+
         // Should not rotate a session without last rotation time
         assert!(!should_rotate_session(&session).await);
     }
@@ -123,11 +124,11 @@ mod tests {
     async fn test_should_rotate_session_recent_rotation() {
         let store = Arc::new(MemoryStore::default());
         let session = Session::new(None, store, None);
-        
+
         // Set a recent rotation time (30 minutes ago)
         let recent_time = Utc::now() - chrono::Duration::minutes(30);
         set_last_rotation_time(&session, recent_time).await.unwrap();
-        
+
         // Should not rotate because it's too recent
         assert!(!should_rotate_session(&session).await);
     }
@@ -136,15 +137,15 @@ mod tests {
     async fn test_should_rotate_session_old_rotation() {
         let store = Arc::new(MemoryStore::default());
         let session = Session::new(None, store, None);
-        
+
         // Force a session ID to be created
         session.insert("test", "value").await.unwrap();
         session.save().await.unwrap(); // Ensure session is saved and gets an ID
-        
+
         // Set an old rotation time (2 hours ago)
         let old_time = Utc::now() - chrono::Duration::hours(2);
         set_last_rotation_time(&session, old_time).await.unwrap();
-        
+
         // Should rotate because it's been more than 1 hour
         assert!(should_rotate_session(&session).await);
     }
@@ -153,18 +154,18 @@ mod tests {
     async fn test_rotate_session_if_needed() {
         let store = Arc::new(MemoryStore::default());
         let session = Session::new(None, store, None);
-        
+
         // Force a session ID to be created
         session.insert("test", "value").await.unwrap();
         let original_id = session.id();
-        
+
         // Rotate the session
         let rotated = rotate_session_if_needed(&session).await.unwrap();
         assert!(rotated);
-        
+
         // Session ID should be different
         assert_ne!(original_id, session.id());
-        
+
         // Last rotation time should be set
         let last_rotation = get_last_rotation_time(&session).await.unwrap();
         assert!(last_rotation.is_some());

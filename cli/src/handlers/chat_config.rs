@@ -83,7 +83,10 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
         } else if let Some(val) = system_default_value {
             (val.to_string(), "[system default]".to_string())
         } else {
-            (default_text_if_all_none.to_string(), "[system default]".to_string())
+            (
+                default_text_if_all_none.to_string(),
+                "[system default]".to_string(),
+            )
         }
     }
 
@@ -104,13 +107,15 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
         history_management_limit: None,
         model_name: None,
     };
-    
+
     // 4. Configure model
     let (current_model_display, model_source) = get_current_value_display(
         Some(&session_settings.model_name), // model_name is not Option in ChatSettingsResponse
-        user_default_settings.as_ref().and_then(|uds| uds.default_model_name.as_ref()),
+        user_default_settings
+            .as_ref()
+            .and_then(|uds| uds.default_model_name.as_ref()),
         Some(&SYSTEM_DEFAULT_MODEL.to_string()),
-        SYSTEM_DEFAULT_MODEL
+        SYSTEM_DEFAULT_MODEL,
     );
     let model_choice_prompt = format!(
         "Set model (current: {} {}, press Enter to keep current):",
@@ -124,9 +129,11 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
     // 5. Configure thinking budget
     let (current_budget_display, budget_source) = get_current_value_display(
         session_settings.gemini_thinking_budget.as_ref(),
-        user_default_settings.as_ref().and_then(|uds| uds.default_gemini_thinking_budget.as_ref()),
+        user_default_settings
+            .as_ref()
+            .and_then(|uds| uds.default_gemini_thinking_budget.as_ref()),
         None::<&i32>,
-        "Not set"
+        "Not set",
     );
     let budget_prompt = format!(
         "Set thinking budget (optional, integer, e.g. 1024, current: {} {}, press Enter to skip):",
@@ -143,9 +150,11 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
     // 6. Configure code execution
     let (current_exec_display, exec_source) = get_current_value_display(
         session_settings.gemini_enable_code_execution.as_ref(),
-        user_default_settings.as_ref().and_then(|uds| uds.default_gemini_enable_code_execution.as_ref()),
+        user_default_settings
+            .as_ref()
+            .and_then(|uds| uds.default_gemini_enable_code_execution.as_ref()),
         None::<&bool>,
-        "Not set"
+        "Not set",
     );
     let exec_prompt = format!(
         "Enable code execution (optional, true/false, current: {} {}, press Enter to skip):",
@@ -159,7 +168,7 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
             _ => io_handler.write_line("Invalid input, skipping code execution setting.")?,
         }
     }
-    
+
     // 7. Configure system prompt
     // UserSettingsResponse does not have default_system_prompt.
     // So, we only consider session_settings or "Not set".
@@ -167,7 +176,7 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
         session_settings.system_prompt.as_ref(),
         None::<&String>, // No user default for system prompt
         None::<&String>,
-        "Not set"
+        "Not set",
     );
     let system_prompt_prompt = format!(
         "Set system prompt (optional, current: \"{}\" {}, press Enter to skip):",
@@ -182,7 +191,10 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
     let (current_temp_display, temp_source) =
         if let Some(val) = session_settings.temperature.as_ref() {
             (format!("{:.2}", val), "[session]".to_string())
-        } else if let Some(val) = user_default_settings.as_ref().and_then(|uds| uds.default_temperature.as_ref()) {
+        } else if let Some(val) = user_default_settings
+            .as_ref()
+            .and_then(|uds| uds.default_temperature.as_ref())
+        {
             (format!("{:.2}", val), "[user default]".to_string())
         } else {
             // Assuming a system default temperature if desired, e.g., 1.0

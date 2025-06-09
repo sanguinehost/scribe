@@ -4,11 +4,13 @@
 use anyhow::Context;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode as AxumStatusCode, header};
+use bcrypt;
 use deadpool_diesel::postgres::Pool;
 use diesel::{PgConnection, RunQueryDsl, prelude::*};
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
 use scribe_backend::auth::session_dek::SessionDek;
+use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
 use scribe_backend::{
     crypto,
     models::{
@@ -18,12 +20,10 @@ use scribe_backend::{
     schema, // For characters::table
     schema::users,
 };
-use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use tower::ServiceExt; // For oneshot
 use uuid::Uuid;
-use bcrypt;
 
 /// Helper to hash a password for tests
 fn hash_test_password(password: &str) -> String {

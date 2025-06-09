@@ -276,7 +276,8 @@ impl CharacterService {
         // Encrypt creator_comment if provided
         if let Some(creator_comment_text) = create_dto.creator_comment.as_ref() {
             if !creator_comment_text.is_empty() {
-                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(creator_comment_text, dek_key_bytes)?;
+                let (ciphertext, nonce) =
+                    self.encrypt_string_field_with_nonce(creator_comment_text, dek_key_bytes)?;
                 new_character_for_db.creator_comment = ciphertext;
                 new_character_for_db.creator_comment_nonce = nonce;
             }
@@ -285,7 +286,8 @@ impl CharacterService {
         // Encrypt depth_prompt if provided
         if let Some(depth_prompt_text) = create_dto.depth_prompt.as_ref() {
             if !depth_prompt_text.is_empty() {
-                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(depth_prompt_text, dek_key_bytes)?;
+                let (ciphertext, nonce) =
+                    self.encrypt_string_field_with_nonce(depth_prompt_text, dek_key_bytes)?;
                 new_character_for_db.depth_prompt_ciphertext = ciphertext;
                 new_character_for_db.depth_prompt_nonce = nonce;
             }
@@ -294,7 +296,8 @@ impl CharacterService {
         // Encrypt world field if provided
         if let Some(world_text) = create_dto.world.as_ref() {
             if !world_text.is_empty() {
-                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(world_text, dek_key_bytes)?;
+                let (ciphertext, nonce) =
+                    self.encrypt_string_field_with_nonce(world_text, dek_key_bytes)?;
                 new_character_for_db.world_ciphertext = ciphertext;
                 new_character_for_db.world_nonce = nonce;
             }
@@ -518,7 +521,8 @@ impl CharacterService {
             };
             // Also encrypt into world_ciphertext
             if !world_val.is_empty() {
-                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(&world_val, dek_key_bytes)?;
+                let (ciphertext, nonce) =
+                    self.encrypt_string_field_with_nonce(&world_val, dek_key_bytes)?;
                 existing_character.world_ciphertext = ciphertext;
                 existing_character.world_nonce = nonce;
             } else {
@@ -547,7 +551,8 @@ impl CharacterService {
                 existing_character.depth_prompt_ciphertext = None;
                 existing_character.depth_prompt_nonce = None;
             } else {
-                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(depth_prompt_val, dek_key_bytes)?;
+                let (ciphertext, nonce) =
+                    self.encrypt_string_field_with_nonce(depth_prompt_val, dek_key_bytes)?;
                 existing_character.depth_prompt_ciphertext = ciphertext;
                 existing_character.depth_prompt_nonce = nonce;
             }

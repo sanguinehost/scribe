@@ -172,7 +172,7 @@ fn try_parse_v3_from_base64(
 
     // Merge flattened fields (for SillyTavern compatibility)
     card.merge_flattened_fields();
-    
+
     validate_v3_spec(&card, source);
     Ok(card)
 }
@@ -274,7 +274,7 @@ pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard
 
     // Merge flattened fields (for SillyTavern compatibility)
     card.merge_flattened_fields();
-    
+
     validate_v3_spec(&card, "JSON card");
     Ok(ParsedCharacterCard::V3(card))
 }

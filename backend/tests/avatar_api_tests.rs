@@ -21,7 +21,7 @@ fn create_avatar_upload_request(
     // Add avatar file part
     body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(
-        b"Content-Disposition: form-data; name=\"avatar\"; filename=\"test_avatar.png\"\r\n"
+        b"Content-Disposition: form-data; name=\"avatar\"; filename=\"test_avatar.png\"\r\n",
     );
     body.extend_from_slice(b"Content-Type: image/png\r\n\r\n");
     body.extend_from_slice(image_data);
@@ -30,13 +30,10 @@ fn create_avatar_upload_request(
     // Final boundary
     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
 
-    let mut request_builder = Request::builder()
-        .method(Method::POST)
-        .uri(uri)
-        .header(
-            header::CONTENT_TYPE,
-            format!("multipart/form-data; boundary={boundary}"),
-        );
+    let mut request_builder = Request::builder().method(Method::POST).uri(uri).header(
+        header::CONTENT_TYPE,
+        format!("multipart/form-data; boundary={boundary}"),
+    );
 
     // Add cookie header if provided
     if let Some(cookie) = session_cookie {
@@ -63,7 +60,7 @@ fn create_simple_test_png() -> Vec<u8> {
         122, 221, 46, 34, // CRC
         0, 0, 0, 0, // IEND length
         73, 69, 78, 68, // IEND
-        174, 66, 96, 130 // CRC
+        174, 66, 96, 130, // CRC
     ]
 }
 
@@ -76,11 +73,8 @@ async fn test_upload_user_avatar_unauthorized() -> Result<()> {
     let user_id = Uuid::new_v4();
     let image_data = create_simple_test_png();
 
-    let request = create_avatar_upload_request(
-        &format!("/api/users/{}/avatar", user_id),
-        &image_data,
-        None
-    );
+    let request =
+        create_avatar_upload_request(&format!("/api/users/{}/avatar", user_id), &image_data, None);
 
     let response = test_app.router.clone().oneshot(request).await?;
     let status = response.status();
@@ -88,8 +82,8 @@ async fn test_upload_user_avatar_unauthorized() -> Result<()> {
     let body_text = String::from_utf8(body_bytes.to_vec())?;
 
     tracing::info!(
-        status = %status, 
-        body = %body_text, 
+        status = %status,
+        body = %body_text,
         "User avatar upload response without auth"
     );
 
@@ -156,7 +150,7 @@ async fn test_upload_persona_avatar_unauthorized() -> Result<()> {
     let request = create_avatar_upload_request(
         &format!("/api/personas/{}/avatar", persona_id),
         &image_data,
-        None
+        None,
     );
 
     let response = test_app.router.clone().oneshot(request).await?;
@@ -258,7 +252,7 @@ async fn test_invalid_persona_id_format() -> Result<()> {
 }
 
 // Test that the avatar routes are properly registered
-#[tokio::test] 
+#[tokio::test]
 async fn test_avatar_routes_registration() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
@@ -267,7 +261,7 @@ async fn test_avatar_routes_registration() -> Result<()> {
     // Test multiple avatar endpoints to ensure they're registered
     let user_id = Uuid::new_v4();
     let persona_id = Uuid::new_v4();
-    
+
     let test_cases = vec![
         ("GET", format!("/api/users/{}/avatar", user_id)),
         ("POST", format!("/api/users/{}/avatar", user_id)),
@@ -294,10 +288,11 @@ async fn test_avatar_routes_registration() -> Result<()> {
 
         // All routes should be registered and return UNAUTHORIZED or NOT_FOUND (not METHOD_NOT_ALLOWED)
         assert!(
-            status == StatusCode::UNAUTHORIZED ||
-            status == StatusCode::NOT_FOUND,
+            status == StatusCode::UNAUTHORIZED || status == StatusCode::NOT_FOUND,
             "Unexpected status for {} {}: {}",
-            method, uri, status
+            method,
+            uri,
+            status
         );
     }
 

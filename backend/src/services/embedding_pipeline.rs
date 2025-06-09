@@ -1006,6 +1006,7 @@ pub struct RetrievedChunk {
 
 // Standalone function for testing or specific use cases (if needed)
 // This is kept for potential direct testing of retrieval logic if the service wrapper is complex
+#[allow(dead_code)]
 #[instrument(skip(qdrant_service, embedding_client), err)]
 async fn retrieve_relevant_chunks_standalone(
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
@@ -1246,7 +1247,7 @@ mod tests {
 
         let file_storage_service = Arc::new(
             crate::services::file_storage_service::FileStorageService::new("./test_uploads")
-                .expect("Failed to create test file storage service")
+                .expect("Failed to create test file storage service"),
         );
 
         let services = AppStateServices {

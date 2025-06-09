@@ -11,7 +11,7 @@ use uuid::Uuid;
 pub struct UserSettings {
     pub id: Uuid,
     pub user_id: Uuid,
-    
+
     // Generation Settings (nullable - fall back to system defaults if not set)
     pub default_model_name: Option<String>,
     pub default_temperature: Option<BigDecimal>,
@@ -21,21 +21,21 @@ pub struct UserSettings {
     pub default_top_p: Option<BigDecimal>,
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
-    
+
     // Gemini-Specific Settings
     pub default_gemini_thinking_budget: Option<i32>,
     pub default_gemini_enable_code_execution: Option<bool>,
-    
+
     // Context Management Settings
     pub default_context_total_token_limit: Option<i32>,
     pub default_context_recent_history_budget: Option<i32>,
     pub default_context_rag_budget: Option<i32>,
-    
+
     // Application Preferences
     pub auto_save_chats: Option<bool>,
     pub theme: Option<String>,
     pub notifications_enabled: Option<bool>,
-    
+
     // Timestamps
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -45,7 +45,7 @@ pub struct UserSettings {
 #[diesel(table_name = user_settings)]
 pub struct NewUserSettings {
     pub user_id: Uuid,
-    
+
     // Generation Settings
     pub default_model_name: Option<String>,
     pub default_temperature: Option<BigDecimal>,
@@ -55,16 +55,16 @@ pub struct NewUserSettings {
     pub default_top_p: Option<BigDecimal>,
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
-    
+
     // Gemini-Specific Settings
     pub default_gemini_thinking_budget: Option<i32>,
     pub default_gemini_enable_code_execution: Option<bool>,
-    
+
     // Context Management Settings
     pub default_context_total_token_limit: Option<i32>,
     pub default_context_recent_history_budget: Option<i32>,
     pub default_context_rag_budget: Option<i32>,
-    
+
     // Application Preferences
     pub auto_save_chats: Option<bool>,
     pub theme: Option<String>,
@@ -82,16 +82,16 @@ pub struct UpdateUserSettingsRequest {
     pub default_top_p: Option<BigDecimal>,
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
-    
+
     // Gemini-Specific Settings
     pub default_gemini_thinking_budget: Option<i32>,
     pub default_gemini_enable_code_execution: Option<bool>,
-    
+
     // Context Management Settings
     pub default_context_total_token_limit: Option<i32>,
     pub default_context_recent_history_budget: Option<i32>,
     pub default_context_rag_budget: Option<i32>,
-    
+
     // Application Preferences
     pub auto_save_chats: Option<bool>,
     pub theme: Option<String>,
@@ -109,21 +109,21 @@ pub struct UserSettingsResponse {
     pub default_top_p: Option<BigDecimal>,
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
-    
+
     // Gemini-Specific Settings
     pub default_gemini_thinking_budget: Option<i32>,
     pub default_gemini_enable_code_execution: Option<bool>,
-    
+
     // Context Management Settings
     pub default_context_total_token_limit: Option<i32>,
     pub default_context_recent_history_budget: Option<i32>,
     pub default_context_rag_budget: Option<i32>,
-    
+
     // Application Preferences
     pub auto_save_chats: Option<bool>,
     pub theme: Option<String>,
     pub notifications_enabled: Option<bool>,
-    
+
     // Timestamps
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

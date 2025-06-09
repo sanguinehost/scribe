@@ -1,7 +1,10 @@
 use crate::models::characters::Character;
 use crate::models::chats::Chat;
 use crate::models::users::User;
-use crate::schema::{character_lorebooks, chat_character_lorebook_overrides, chat_session_lorebooks, lorebook_entries, lorebooks};
+use crate::schema::{
+    character_lorebooks, chat_character_lorebook_overrides, chat_session_lorebooks,
+    lorebook_entries, lorebooks,
+};
 use chrono::{DateTime, Utc};
 use diesel::{
     AsChangeset, Associations, ExpressionMethods, Identifiable, Insertable, JoinOnDsl,
@@ -222,9 +225,8 @@ impl ChatSessionLorebook {
                 character_id, character_lorebooks, lorebook_id as character_lorebook_id,
             },
             chat_character_lorebook_overrides::dsl::{
-                action, chat_character_lorebook_overrides, 
-                chat_session_id as override_chat_session_id,
-                lorebook_id as override_lorebook_id,
+                action, chat_character_lorebook_overrides,
+                chat_session_id as override_chat_session_id, lorebook_id as override_lorebook_id,
                 user_id as override_user_id,
             },
             chat_session_lorebooks::dsl::{

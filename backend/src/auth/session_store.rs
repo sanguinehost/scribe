@@ -91,6 +91,7 @@ impl DieselSessionStore {
     ///
     /// This method is useful for administrative purposes such as monitoring session counts
     /// or trimming expired sessions, while maintaining user privacy by not exposing session data.
+    #[allow(dead_code)]
     #[instrument(skip(self), err)]
     async fn get_session_metadata(&self) -> Result<Vec<SessionMetadata>, session_store::Error> {
         info!("DieselSessionStore::get_session_metadata ENTERED");
@@ -133,6 +134,7 @@ impl DieselSessionStore {
     /// Deletes sessions that have expired based on their expiration timestamp
     ///
     /// This method is useful for cleaning up old sessions without accessing their content
+    #[allow(dead_code)]
     #[instrument(skip(self), err)]
     async fn delete_expired_sessions(&self) -> Result<usize, session_store::Error> {
         info!("DieselSessionStore::delete_expired_sessions ENTERED");
