@@ -148,6 +148,19 @@ diesel::table! {
         model_prompt_nonce -> Nullable<Bytea>,
         user_persona_nonce -> Nullable<Bytea>,
         post_history_instructions_nonce -> Nullable<Bytea>,
+        fav -> Nullable<Bool>,
+        world -> Nullable<Text>,
+        creator_comment -> Nullable<Bytea>,
+        creator_comment_nonce -> Nullable<Bytea>,
+        depth_prompt -> Nullable<Bytea>,
+        depth_prompt_depth -> Nullable<Int4>,
+        #[max_length = 255]
+        depth_prompt_role -> Nullable<Varchar>,
+        talkativeness -> Nullable<Numeric>,
+        depth_prompt_ciphertext -> Nullable<Bytea>,
+        depth_prompt_nonce -> Nullable<Bytea>,
+        world_ciphertext -> Nullable<Bytea>,
+        world_nonce -> Nullable<Bytea>,
     }
 }
 

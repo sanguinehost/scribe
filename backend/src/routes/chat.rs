@@ -15,9 +15,9 @@ use crate::models::chats::{
     SuggestedActionsRequest,
     SuggestedActionsResponse, // Corrected DbChatMessage to ChatMessage
 };
-use crate::prompt_builder;
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
+use crate::prompt_builder;
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
 use secrecy::ExposeSecret; // Added for ExposeSecret
@@ -290,6 +290,14 @@ pub async fn generate_chat_response(
         name: character_db_model.name.clone(),
         description: character_db_model.description.clone(),
         description_nonce: character_db_model.description_nonce.clone(),
+        personality: character_db_model.personality.clone(),
+        personality_nonce: character_db_model.personality_nonce.clone(),
+        scenario: character_db_model.scenario.clone(),
+        scenario_nonce: character_db_model.scenario_nonce.clone(),
+        mes_example: character_db_model.mes_example.clone(),
+        mes_example_nonce: character_db_model.mes_example_nonce.clone(),
+        creator_comment: character_db_model.creator_comment.clone(),
+        creator_comment_nonce: character_db_model.creator_comment_nonce.clone(),
         first_mes: character_db_model.first_mes.clone(),
         created_at: character_db_model.created_at,
         updated_at: character_db_model.updated_at,
@@ -874,7 +882,15 @@ pub async fn generate_suggested_actions(
         name: character_db_model.name.clone(),
         description: character_db_model.description.clone(),
         description_nonce: character_db_model.description_nonce.clone(),
-        first_mes: character_db_model.first_mes.clone(), // Assuming first_mes is already decrypted or plaintext
+        personality: character_db_model.personality.clone(),
+        personality_nonce: character_db_model.personality_nonce.clone(),
+        scenario: character_db_model.scenario.clone(),
+        scenario_nonce: character_db_model.scenario_nonce.clone(),
+        mes_example: character_db_model.mes_example.clone(),
+        mes_example_nonce: character_db_model.mes_example_nonce.clone(),
+        creator_comment: character_db_model.creator_comment.clone(),
+        creator_comment_nonce: character_db_model.creator_comment_nonce.clone(),
+        first_mes: character_db_model.first_mes.clone(),
         created_at: character_db_model.created_at,
         updated_at: character_db_model.updated_at,
     };

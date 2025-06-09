@@ -29,10 +29,10 @@
 		personality: '',
 		scenario: '',
 		mes_example: '',
-		creator_notes: '',
+		creator_comment: '',
 		system_prompt: '',
-		post_history_instructions: '',
-		alternate_greetings: [] as string[]
+		alternate_greetings: [] as string[],
+		talkativeness: 0.5
 	};
 
 	async function handleCreate() {
@@ -71,15 +71,14 @@
 			if (formData.mes_example?.trim()) {
 				createData.mes_example = formData.mes_example.trim();
 			}
-			if (formData.creator_notes?.trim()) {
-				createData.creator_notes = formData.creator_notes.trim();
+			if (formData.creator_comment?.trim()) {
+				createData.creator_comment = formData.creator_comment.trim();
 			}
 			if (formData.system_prompt?.trim()) {
 				createData.system_prompt = formData.system_prompt.trim();
 			}
-			if (formData.post_history_instructions?.trim()) {
-				createData.post_history_instructions = formData.post_history_instructions.trim();
-			}
+			createData.talkativeness = formData.talkativeness;
+
 			// Add alternate greetings if they exist
 			const validAlternateGreetings = formData.alternate_greetings.filter((g) => g.trim() !== '');
 			if (validAlternateGreetings.length > 0) {
@@ -111,10 +110,10 @@
 			personality: '',
 			scenario: '',
 			mes_example: '',
-			creator_notes: '',
+			creator_comment: '',
 			system_prompt: '',
-			post_history_instructions: '',
-			alternate_greetings: []
+			alternate_greetings: [],
+			talkativeness: 0.5
 		};
 	}
 </script>
@@ -239,6 +238,22 @@
 						rows={3}
 					/>
 				</div>
+				<!-- Talkativeness -->
+				<div class="grid gap-2">
+					<Label for="talkativeness">Talkativeness</Label>
+					<Input
+						id="talkativeness"
+						type="number"
+						bind:value={formData.talkativeness}
+						placeholder="0.5"
+						step="0.05"
+						min="0"
+						max="1"
+					/>
+					<p class="text-sm text-muted-foreground">
+						Controls how talkative the character is. 0.0 is mute, 1.0 is very talkative.
+					</p>
+				</div>
 			</div>
 
 			<!-- Advanced Settings (Optional) -->
@@ -266,20 +281,10 @@
 				</div>
 
 				<div class="grid gap-2">
-					<Label for="post_history_instructions">Post History Instructions</Label>
+					<Label for="creator_comment">Creator Comment</Label>
 					<Textarea
-						id="post_history_instructions"
-						bind:value={formData.post_history_instructions}
-						placeholder="Instructions that come after the chat history..."
-						rows={3}
-					/>
-				</div>
-
-				<div class="grid gap-2">
-					<Label for="creator_notes">Creator Notes</Label>
-					<Textarea
-						id="creator_notes"
-						bind:value={formData.creator_notes}
+						id="creator_comment"
+						bind:value={formData.creator_comment}
 						placeholder="Notes about the character creation..."
 						rows={3}
 					/>

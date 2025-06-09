@@ -362,20 +362,44 @@ pub async fn get_session_data_for_generation(
             // current_effective_system_prompt (for prompt builder) should NOT fall back to character_db.system_prompt here.
             // That fallback is handled by the prompt_builder itself if this is None.
 
-            // Extract the raw character system prompt separately
-            let raw_character_system_prompt_from_db: Option<String> = character_db
-                .system_prompt
-                .as_ref()
-                .and_then(|val| {
-                    if val.is_empty() {
-                        None
-                    } else {
-                        String::from_utf8(val.clone())
+            // Extract the raw character system prompt separately - prioritize depth_prompt over system_prompt
+            let raw_character_system_prompt_from_db: Option<String> = {
+                // First, try to decrypt and use depth_prompt if it exists
+                let depth_prompt_result = match (
+                    character_db.depth_prompt_ciphertext.as_ref(),
+                    character_db.depth_prompt_nonce.as_ref(),
+                    &dek_for_interact_cloned
+                ) {
+                    (Some(ciphertext), Some(nonce), Some(dek)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                        crate::crypto::decrypt_gcm(ciphertext, nonce, dek.as_ref())
                             .ok()
+                            .and_then(|decrypted| {
+                                String::from_utf8(decrypted.expose_secret().clone()).ok()
+                            })
                             .map(|s| s.replace('\0', ""))
+                            .filter(|s| !s.trim().is_empty())
                     }
-                })
-                .filter(|s| !s.trim().is_empty());
+                    _ => None
+                };
+
+                // If depth_prompt is available, use it; otherwise fall back to system_prompt
+                if depth_prompt_result.is_some() {
+                    depth_prompt_result
+                } else {
+                    character_db.system_prompt
+                        .as_ref()
+                        .and_then(|val| {
+                            if val.is_empty() {
+                                None
+                            } else {
+                                String::from_utf8(val.clone())
+                                    .ok()
+                                    .map(|s| s.replace('\0', ""))
+                            }
+                        })
+                        .filter(|s| !s.trim().is_empty())
+                }
+            };
 
             Ok::<_, AppError>((
                 hist_strat,

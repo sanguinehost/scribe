@@ -10,9 +10,11 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { Badge } from '$lib/components/ui/badge';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
+	import { Plus, X } from 'lucide-svelte';
 
 	let {
 		onCancel,
@@ -38,8 +40,8 @@
 		post_history_instructions: '',
 		tags: [],
 		avatar: null,
-		spec: null,
-		spec_version: null
+		spec: 'chara_card_v3',
+		spec_version: '3.0'
 	});
 
 	async function handleSubmit(e: Event) {
@@ -101,6 +103,27 @@
 		selectedPersonaStore.clear();
 		onCancel?.();
 	}
+
+	// Tag management functions
+	let newTag = '';
+	
+	function addTag() {
+		if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
+			formData.tags = [...formData.tags, newTag.trim()];
+			newTag = '';
+		}
+	}
+	
+	function removeTag(tagToRemove: string) {
+		formData.tags = formData.tags.filter(tag => tag !== tagToRemove);
+	}
+	
+	function handleTagKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			addTag();
+		}
+	}
 </script>
 
 <div class="w-full md:mt-8" transition:fly={{ y: 20, duration: 400, easing: quintOut }}>
@@ -149,6 +172,35 @@
 							rows={3}
 							required
 						/>
+					</div>
+					<!-- Tags Section -->
+					<div class="space-y-2">
+						<Label>Tags</Label>
+						<div class="flex flex-wrap gap-2 mb-2">
+							{#each formData.tags as tag}
+								<Badge variant="secondary" class="flex items-center gap-1">
+									{tag}
+									<button 
+										type="button" 
+										onclick={() => removeTag(tag)}
+										class="hover:text-destructive"
+									>
+										<X class="h-3 w-3" />
+									</button>
+								</Badge>
+							{/each}
+						</div>
+						<div class="flex gap-2">
+							<Input 
+								bind:value={newTag} 
+								placeholder="Add a tag..." 
+								onkeydown={handleTagKeydown}
+								class="flex-1"
+							/>
+							<Button type="button" onclick={addTag} size="sm" variant="outline">
+								<Plus class="h-4 w-4" />
+							</Button>
+						</div>
 					</div>
 				</div>
 

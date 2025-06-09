@@ -249,8 +249,61 @@ pub async fn upload_character_handler(
         user_persona_nonce,
         &dek.0
     );
-    // Note: NewCharacter struct might not have all these _nonce fields yet.
-    // This will be addressed by updating NewCharacter definition in models/character_card.rs next.
+    
+    // Encrypt SillyTavern v3 fields that contain sensitive data
+    encrypt_field!(
+        new_character_for_db,
+        creator_comment,
+        creator_comment_nonce,
+        &dek.0
+    );
+    
+    // For depth_prompt, we need to encrypt the text content into depth_prompt_ciphertext
+    if let Some(depth_prompt_text_bytes) = new_character_for_db.depth_prompt.take() {
+        if !depth_prompt_text_bytes.is_empty() {
+            match String::from_utf8(depth_prompt_text_bytes) {
+                Ok(depth_prompt_text) if !depth_prompt_text.is_empty() => {
+                    let enc_service = EncryptionService::new();
+                    match enc_service.encrypt(&depth_prompt_text, dek.0.expose_secret()) {
+                        Ok((ciphertext, nonce)) => {
+                            new_character_for_db.depth_prompt_ciphertext = Some(ciphertext);
+                            new_character_for_db.depth_prompt_nonce = Some(nonce);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to encrypt depth_prompt: {}", e);
+                            return Err(AppError::EncryptionError(format!(
+                                "Encryption failed for depth_prompt: {e}"
+                            )));
+                        }
+                    }
+                }
+                _ => {
+                    // Invalid UTF-8 or empty, leave as None
+                    new_character_for_db.depth_prompt_ciphertext = None;
+                    new_character_for_db.depth_prompt_nonce = None;
+                }
+            }
+        }
+    }
+    
+    // For world field, encrypt from the world string into world_ciphertext
+    if let Some(world_text) = new_character_for_db.world.as_ref() {
+        if !world_text.is_empty() {
+            let enc_service = EncryptionService::new();
+            match enc_service.encrypt(world_text, dek.0.expose_secret()) {
+                Ok((ciphertext, nonce)) => {
+                    new_character_for_db.world_ciphertext = Some(ciphertext);
+                    new_character_for_db.world_nonce = Some(nonce);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to encrypt world field: {}", e);
+                    return Err(AppError::EncryptionError(format!(
+                        "Encryption failed for world field: {e}"
+                    )));
+                }
+            }
+        }
+    }
 
     info!(?new_character_for_db.name, user_id = %local_user_id, "Attempting to insert character into DB for user");
 
@@ -886,6 +939,18 @@ pub async fn generate_character_handler(
         visibility: None,
         weight: None,
         world_scenario_visibility: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
 
     let plaintext_desc = format!("Based on prompt: '{}'", payload.prompt);

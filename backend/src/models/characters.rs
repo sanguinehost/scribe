@@ -109,6 +109,18 @@ pub struct Character {
     pub model_prompt_nonce: Option<Vec<u8>>,
     pub user_persona_nonce: Option<Vec<u8>>,
     pub post_history_instructions_nonce: Option<Vec<u8>>,
+    pub fav: Option<bool>,
+    pub world: Option<String>,
+    pub creator_comment: Option<Vec<u8>>,
+    pub creator_comment_nonce: Option<Vec<u8>>,
+    pub depth_prompt: Option<Vec<u8>>,
+    pub depth_prompt_depth: Option<i32>,
+    pub depth_prompt_role: Option<String>,
+    pub talkativeness: Option<BigDecimal>,
+    pub depth_prompt_ciphertext: Option<Vec<u8>>,
+    pub depth_prompt_nonce: Option<Vec<u8>>,
+    pub world_ciphertext: Option<Vec<u8>>,
+    pub world_nonce: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for Character {
@@ -358,6 +370,39 @@ impl Character {
                     .post_history_instructions_nonce
                     .as_ref()
                     .map(|_| "[REDACTED_NONCE]"),
+            )
+            .field("fav", &self.fav)
+            .field("world", &self.world.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "creator_comment",
+                &self.creator_comment.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "creator_comment_nonce",
+                &self.creator_comment_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "depth_prompt",
+                &self.depth_prompt.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field("depth_prompt_depth", &self.depth_prompt_depth)
+            .field("depth_prompt_role", &self.depth_prompt_role.as_ref().map(|_| "[REDACTED]"))
+            .field("talkativeness", &self.talkativeness)
+            .field(
+                "depth_prompt_ciphertext",
+                &self.depth_prompt_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "depth_prompt_nonce",
+                &self.depth_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field(
+                "world_ciphertext",
+                &self.world_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "world_nonce",
+                &self.world_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             );
     }
 }
@@ -529,6 +574,9 @@ struct DecryptedCharacterFields {
     example_dialogue: Option<String>,
     model_prompt: Option<String>,
     user_persona: Option<String>,
+    creator_comment: Option<String>,
+    depth_prompt: Option<String>,
+    world: Option<String>,
 }
 
 impl Character {
@@ -639,6 +687,24 @@ impl Character {
             user_persona: Self::decrypt_field(
                 self.user_persona.as_ref(),
                 self.user_persona_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            creator_comment: Self::decrypt_field(
+                self.creator_comment.as_ref(),
+                self.creator_comment_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            depth_prompt: Self::decrypt_field(
+                self.depth_prompt_ciphertext.as_ref(),
+                self.depth_prompt_nonce.as_ref(),
+                dek,
+                &encryption_service,
+            )?,
+            world: Self::decrypt_field(
+                self.world_ciphertext.as_ref(),
+                self.world_nonce.as_ref(),
                 dek,
                 &encryption_service,
             )?,
@@ -758,6 +824,13 @@ impl Character {
             visibility: default_empty_string_if_none(self.visibility),
             weight: self.weight,
             world_scenario_visibility: default_empty_string_if_none(self.world_scenario_visibility),
+            fav: self.fav,
+            world: self.world.or(decrypted_fields.world),
+            creator_comment: decrypted_fields.creator_comment,
+            depth_prompt: decrypted_fields.depth_prompt,
+            depth_prompt_depth: self.depth_prompt_depth,
+            depth_prompt_role: self.depth_prompt_role,
+            talkativeness: self.talkativeness,
         }
     }
 }
@@ -827,6 +900,13 @@ pub struct CharacterDataForClient {
     pub visibility: Option<String>,
     pub weight: Option<BigDecimal>,
     pub world_scenario_visibility: Option<String>,
+    pub fav: Option<bool>,
+    pub world: Option<String>,
+    pub creator_comment: Option<String>,
+    pub depth_prompt: Option<String>,
+    pub depth_prompt_depth: Option<i32>,
+    pub depth_prompt_role: Option<String>,
+    pub talkativeness: Option<BigDecimal>,
 }
 
 impl std::fmt::Debug for CharacterDataForClient {
@@ -893,6 +973,13 @@ impl std::fmt::Debug for CharacterDataForClient {
             .field("visibility", &"[REDACTED]")
             .field("weight", &self.weight)
             .field("world_scenario_visibility", &"[REDACTED]")
+            .field("fav", &self.fav)
+            .field("world", &"[REDACTED]")
+            .field("creator_comment", &"[REDACTED]")
+            .field("depth_prompt", &"[REDACTED]")
+            .field("depth_prompt_depth", &self.depth_prompt_depth)
+            .field("depth_prompt_role", &"[REDACTED]")
+            .field("talkativeness", &self.talkativeness)
             .finish()
     }
 }
@@ -1051,15 +1138,18 @@ pub struct CharacterMetadata {
     pub user_id: Uuid,
     pub name: String,
     pub description: Option<Vec<u8>>,
-    pub description_nonce: Option<Vec<u8>>, // Added nonce field
+    pub description_nonce: Option<Vec<u8>>,
+    pub personality: Option<Vec<u8>>,
+    pub personality_nonce: Option<Vec<u8>>,
+    pub scenario: Option<Vec<u8>>,
+    pub scenario_nonce: Option<Vec<u8>>,
+    pub mes_example: Option<Vec<u8>>,
+    pub mes_example_nonce: Option<Vec<u8>>,
+    pub creator_comment: Option<Vec<u8>>,
+    pub creator_comment_nonce: Option<Vec<u8>>,
     pub first_mes: Option<Vec<u8>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    // Add other V2/V3 fields needed for listing/selection if necessary
-    // pub persona: Option<String>,
-    // pub greeting: Option<String>,
-    // pub example_dialogue: Option<String>,
-    // ... other fields extracted from the card
+   pub created_at: DateTime<Utc>,
+   pub updated_at: DateTime<Utc>,
 }
 
 impl std::fmt::Debug for CharacterMetadata {
@@ -1213,6 +1303,18 @@ pub fn create_dummy_character() -> Character {
         model_prompt_nonce: None,
         user_persona_nonce: None,
         post_history_instructions_nonce: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     }
 }
 
@@ -1532,7 +1634,15 @@ mod tests {
             user_id: user_uuid,
             name: "Test Character".to_string(),
             description: Some(b"A test description".to_vec()),
-            description_nonce: None, // Added missing field
+            description_nonce: None,
+            personality: None,
+            personality_nonce: None,
+            scenario: None,
+            scenario_nonce: None,
+            mes_example: None,
+            mes_example_nonce: None,
+            creator_comment: None,
+            creator_comment_nonce: None,
             first_mes: None,
             created_at: dt,
             updated_at: dt,

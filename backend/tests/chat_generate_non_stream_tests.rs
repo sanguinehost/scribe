@@ -314,6 +314,18 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         creator: None,
         source: None,
         group_only_greetings: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
 
     info!("Creating test character");
@@ -886,6 +898,18 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         creator: None,
         source: None,
         group_only_greetings: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
     let character: Character = {
         let interact_result = conn
@@ -1322,6 +1346,18 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         example_dialogue_nonce: None,
         model_prompt_nonce: None,
         user_persona_nonce: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
 
     let result = conn
@@ -1653,6 +1689,18 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         example_dialogue_nonce: None,
         model_prompt_nonce: None,
         user_persona_nonce: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
 
     let result = conn
@@ -1968,6 +2016,18 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         example_dialogue_nonce: None,
         model_prompt_nonce: None,
         user_persona_nonce: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
 
     let result = conn
@@ -2343,6 +2403,18 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         example_dialogue_nonce: None,
         model_prompt_nonce: None,
         user_persona_nonce: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
 
     let result = conn
@@ -2617,6 +2689,18 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         example_dialogue_nonce: None,
         model_prompt_nonce: None,
         user_persona_nonce: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
 
     let result = conn
@@ -3185,6 +3269,18 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         example_dialogue_nonce: None,
         model_prompt_nonce: None,
         user_persona_nonce: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
 
     let result = conn
@@ -3299,6 +3395,159 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
         .await?;
 
     assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyhow::Error> {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let user = create_test_user(
+        &test_app.db_pool,
+        "full_prompt_user".to_string(),
+        "password".to_string(),
+    )
+    .await?;
+
+    let (client, _) =
+        test_helpers::login_user_via_api(&test_app, "full_prompt_user", "password").await;
+
+    let user_dek = user.dek.as_ref().unwrap();
+    let encryption_service = scribe_backend::services::encryption_service::EncryptionService;
+
+    let (desc_ct, desc_n) =
+        encryption_service.encrypt("A detailed description.", user_dek.expose_secret_bytes())?;
+    let (pers_ct, pers_n) =
+        encryption_service.encrypt("A unique personality.", user_dek.expose_secret_bytes())?;
+    let (scen_ct, scen_n) =
+        encryption_service.encrypt("A specific scenario.", user_dek.expose_secret_bytes())?;
+    let (ex_ct, ex_n) = encryption_service
+        .encrypt("<START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>", user_dek.expose_secret_bytes())?;
+    let (sys_ct, sys_n) =
+        encryption_service.encrypt("An overriding system prompt.", user_dek.expose_secret_bytes())?;
+
+    let new_db_character = NewCharacter {
+        user_id: user.id,
+        name: "Full Prompt Char".to_string(),
+        description: Some(desc_ct),
+        description_nonce: Some(desc_n),
+        personality: Some(pers_ct),
+        personality_nonce: Some(pers_n),
+        scenario: Some(scen_ct),
+        scenario_nonce: Some(scen_n),
+        mes_example: Some(ex_ct),
+        mes_example_nonce: Some(ex_n),
+        system_prompt: Some(sys_ct),
+        system_prompt_nonce: Some(sys_n),
+        ..Default::default()
+    };
+
+    let character: Character = {
+        let conn = test_app.db_pool.get().await?;
+        conn.interact(move |conn_actual| {
+            diesel::insert_into(characters::table)
+                .values(&new_db_character)
+                .returning(Character::as_select())
+                .get_result(conn_actual)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction error: {:?}", e))??
+    };
+
+    let new_chat_session = NewChat {
+        id: Uuid::new_v4(),
+        user_id: user.id,
+        character_id: character.id,
+        title_ciphertext: None,
+        title_nonce: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        history_management_strategy: "standard".to_string(),
+        history_management_limit: 50,
+        model_name: "gemini-2.0-flash-exp".to_string(),
+        visibility: None,
+        active_custom_persona_id: None,
+        active_impersonated_character_id: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        system_prompt_ciphertext: None,
+        system_prompt_nonce: None,
+    };
+
+    let session: DbChat = {
+        let conn = test_app.db_pool.get().await?;
+        conn.interact(move |conn_actual| {
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat_session)
+                .returning(DbChat::as_select())
+                .get_result(conn_actual)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction error: {:?}", e))??
+    };
+
+    if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
+        let successful_response = genai::chat::ChatResponse {
+            contents: vec![genai::chat::MessageContent::Text(
+                "AI response.".to_string(),
+            )],
+            usage: genai::chat::Usage {
+                prompt_tokens: None,
+                prompt_tokens_details: None,
+                completion_tokens: None,
+                completion_tokens_details: None,
+                total_tokens: None,
+            },
+            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "gemini-2.0-flash-exp"),
+            provider_model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "gemini-2.0-flash-exp"),
+            reasoning_content: None,
+        };
+        mock_client.set_response(Ok(successful_response));
+    }
+
+    let payload = GenerateChatRequest {
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: "User message".to_string(),
+        }],
+        model: None,
+        query_text_for_rag: None,
+    };
+
+    let response = client
+        .post(format!(
+            "{}/api/chat/{}/generate",
+            test_app.address, session.id
+        ))
+        .json(&payload)
+        .send()
+        .await?;
+
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let last_request = test_app.mock_ai_client.as_ref().unwrap().get_last_request().unwrap();
+    let system_prompt = last_request.system.unwrap();
+
+    assert!(system_prompt.contains("<character_definition>"));
+    assert!(system_prompt.contains("An overriding system prompt."));
+    assert!(!system_prompt.contains("A detailed description.")); // Should be in details
+
+    assert!(system_prompt.contains("<character_details>"));
+    assert!(system_prompt.contains("Character Name: Full Prompt Char"));
+    assert!(system_prompt.contains("Description: A detailed description."));
+    assert!(system_prompt.contains("Personality: A unique personality."));
+    assert!(system_prompt.contains("Scenario: A specific scenario."));
+    assert!(system_prompt.contains("Example Dialogue: <START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>"));
 
     Ok(())
 }

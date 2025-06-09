@@ -526,6 +526,18 @@ pub struct NewCharacter {
     pub visibility: Option<String>,
     // weight: Option<BigDecimal>,
     pub world_scenario_visibility: Option<String>,
+    pub fav: Option<bool>,
+    pub world: Option<String>,
+    pub creator_comment: Option<Vec<u8>>,
+    pub creator_comment_nonce: Option<Vec<u8>>,
+    pub depth_prompt: Option<Vec<u8>>,
+    pub depth_prompt_depth: Option<i32>,
+    pub depth_prompt_role: Option<String>,
+    pub talkativeness: Option<bigdecimal::BigDecimal>,
+    pub depth_prompt_ciphertext: Option<Vec<u8>>,
+    pub depth_prompt_nonce: Option<Vec<u8>>,
+    pub world_ciphertext: Option<Vec<u8>>,
+    pub world_nonce: Option<Vec<u8>>,
     // created_at and updated_at are typically handled by DB or set directly in handler
     pub created_at: Option<DateTime<Utc>>, // Make consistent with schema and Character struct
     pub updated_at: Option<DateTime<Utc>>,
@@ -598,6 +610,18 @@ impl std::fmt::Debug for NewCharacter {
             .field("user_persona_visibility", &"[REDACTED]")
             .field("visibility", &"[REDACTED]")
             .field("world_scenario_visibility", &"[REDACTED]")
+            .field("fav", &self.fav)
+            .field("world", &"[REDACTED]")
+            .field("creator_comment", &"[REDACTED_BYTES]")
+            .field("creator_comment_nonce", &"[REDACTED_BYTES]")
+            .field("depth_prompt", &"[REDACTED_BYTES]")
+            .field("depth_prompt_depth", &self.depth_prompt_depth)
+            .field("depth_prompt_role", &"[REDACTED]")
+            .field("talkativeness", &self.talkativeness)
+            .field("depth_prompt_ciphertext", &"[REDACTED_BYTES]")
+            .field("depth_prompt_nonce", &"[REDACTED_BYTES]")
+            .field("world_ciphertext", &"[REDACTED_BYTES]")
+            .field("world_nonce", &"[REDACTED_BYTES]")
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .finish()
@@ -652,13 +676,53 @@ impl NewCharacter {
 
         let extensions_json = data
             .extensions // data.extensions is HashMap<String, Value>
+            .clone()
             .into_iter()
             .collect::<serde_json::Map<String, serde_json::Value>>();
         let extensions_option_json = if extensions_json.is_empty() {
             None
         } else {
-            Some(Json(serde_json::Value::Object(extensions_json))) // Wrap Value in Json for Option<Json<Value>>
+            Some(Json(serde_json::Value::Object(extensions_json.clone()))) // Wrap Value in Json for Option<Json<Value>>
         };
+
+        // Extract SillyTavern v3 fields from extensions
+        let talkativeness = data.extensions.get("talkativeness")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+            .and_then(|f| bigdecimal::BigDecimal::try_from(f).ok());
+
+        let fav = data.extensions.get("fav")
+            .and_then(|v| v.as_bool());
+
+        let world = data.extensions.get("world")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        // Parse depth_prompt object from extensions
+        let (depth_prompt_data, depth_prompt_depth, depth_prompt_role) = 
+            if let Some(depth_prompt_obj) = data.extensions.get("depth_prompt") {
+                let prompt = depth_prompt_obj.get("prompt")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.as_bytes().to_vec());
+                let depth = depth_prompt_obj.get("depth")
+                    .and_then(|v| v.as_i64())
+                    .map(|i| i as i32);
+                let role = depth_prompt_obj.get("role")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                (prompt, depth, role)
+            } else {
+                (None, None, None)
+            };
+
+        // Also store the full depth_prompt as encrypted JSON for compatibility
+        let depth_prompt_json = data.extensions.get("depth_prompt")
+            .and_then(|v| serde_json::to_string(v).ok())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.into_bytes());
 
         Self {
             // Changed from NewCharacter
@@ -761,6 +825,18 @@ impl NewCharacter {
             user_persona_visibility: None,
             visibility: None,
             world_scenario_visibility: None,
+            fav,
+            world,
+            creator_comment: None, // Not in extensions, could be mapped from creator_notes
+            creator_comment_nonce: None,
+            depth_prompt: depth_prompt_data,
+            depth_prompt_depth,
+            depth_prompt_role,
+            talkativeness,
+            depth_prompt_ciphertext: depth_prompt_json,
+            depth_prompt_nonce: None, // Will be set during encryption
+            world_ciphertext: None, // Will be encrypted from world field
+            world_nonce: None, // Will be set during encryption
             created_at: None,
             updated_at: None,
         }
@@ -894,6 +970,18 @@ impl NewCharacter {
             user_persona_visibility: None,
             visibility: None,
             world_scenario_visibility: None,
+            fav: None, // V2 doesn't have this
+            world: None, // V2 doesn't have this
+            creator_comment: None,
+            creator_comment_nonce: None,
+            depth_prompt: None, // V2 doesn't have this
+            depth_prompt_depth: None,
+            depth_prompt_role: None,
+            talkativeness: None, // V2 doesn't have this
+            depth_prompt_ciphertext: None,
+            depth_prompt_nonce: None,
+            world_ciphertext: None,
+            world_nonce: None,
             created_at: None,
             updated_at: None,
         }

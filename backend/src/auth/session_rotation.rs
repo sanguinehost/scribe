@@ -137,6 +137,10 @@ mod tests {
         let store = Arc::new(MemoryStore::default());
         let session = Session::new(None, store, None);
         
+        // Force a session ID to be created
+        session.insert("test", "value").await.unwrap();
+        session.save().await.unwrap(); // Ensure session is saved and gets an ID
+        
         // Set an old rotation time (2 hours ago)
         let old_time = Utc::now() - chrono::Duration::hours(2);
         set_last_rotation_time(&session, old_time).await.unwrap();

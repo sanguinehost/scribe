@@ -145,6 +145,18 @@ async fn create_test_character(
         user_persona_nonce: None,
         user_persona_visibility: None,
         world_scenario_visibility: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
     };
 
     let character = conn_pool

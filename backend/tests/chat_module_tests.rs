@@ -178,6 +178,18 @@ mod get_session_data_for_generation_tests {
             model_prompt_nonce: Some(vec![13; 12]),
             user_persona_nonce: Some(vec![14; 12]),
             post_history_instructions_nonce: Some(vec![15; 12]),
+            fav: Some(true),
+            world: Some("Test World".to_string()),
+            creator_comment: Some(b"Creator comment".to_vec()),
+            creator_comment_nonce: Some(vec![16; 12]),
+            depth_prompt: Some(b"Depth prompt".to_vec()),
+            depth_prompt_depth: Some(5),
+            depth_prompt_role: Some("assistant".to_string()),
+            talkativeness: Some(BigDecimal::from_str("0.8").unwrap()),
+            depth_prompt_ciphertext: Some(b"Encrypted depth prompt".to_vec()),
+            depth_prompt_nonce: Some(vec![17; 12]),
+            world_ciphertext: Some(b"Encrypted world".to_vec()),
+            world_nonce: Some(vec![18; 12]),
         }
     }
 

@@ -142,7 +142,7 @@ impl CharacterService {
             )?;
 
         // Create a NewCharacter from the DTO
-        let new_character_for_db = NewCharacter {
+        let mut new_character_for_db = NewCharacter {
             user_id: user_id_val,
             name: create_dto
                 .name
@@ -256,9 +256,49 @@ impl CharacterService {
             user_persona_visibility: None,
             visibility: None,
             world_scenario_visibility: None,
+            fav: create_dto.fav,
+            world: create_dto.world.clone(),
+            creator_comment: None, // Will be encrypted below
+            creator_comment_nonce: None,
+            depth_prompt: None, // The raw text, will be used for encryption
+            depth_prompt_depth: create_dto.depth_prompt_depth,
+            depth_prompt_role: create_dto.depth_prompt_role.clone(),
+            talkativeness: None, // Not supported yet (group chat feature)
+            depth_prompt_ciphertext: None, // Will be encrypted below
+            depth_prompt_nonce: None,
+            world_ciphertext: None, // Will be encrypted below
+            world_nonce: None,
             created_at: Some(Utc::now()),
             updated_at: Some(Utc::now()),
         };
+
+        // Encrypt SillyTavern v3 fields
+        // Encrypt creator_comment if provided
+        if let Some(creator_comment_text) = create_dto.creator_comment.as_ref() {
+            if !creator_comment_text.is_empty() {
+                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(creator_comment_text, dek_key_bytes)?;
+                new_character_for_db.creator_comment = ciphertext;
+                new_character_for_db.creator_comment_nonce = nonce;
+            }
+        }
+
+        // Encrypt depth_prompt if provided
+        if let Some(depth_prompt_text) = create_dto.depth_prompt.as_ref() {
+            if !depth_prompt_text.is_empty() {
+                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(depth_prompt_text, dek_key_bytes)?;
+                new_character_for_db.depth_prompt_ciphertext = ciphertext;
+                new_character_for_db.depth_prompt_nonce = nonce;
+            }
+        }
+
+        // Encrypt world field if provided
+        if let Some(world_text) = create_dto.world.as_ref() {
+            if !world_text.is_empty() {
+                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(world_text, dek_key_bytes)?;
+                new_character_for_db.world_ciphertext = ciphertext;
+                new_character_for_db.world_nonce = nonce;
+            }
+        }
 
         info!(character_name = %new_character_for_db.name, user_id = %user_id_val, "Attempting to insert manually created character into DB for user");
 
@@ -464,6 +504,53 @@ impl CharacterService {
         }
         if let Some(ext_val) = update_dto.extensions {
             existing_character.extensions = Some(ext_val.0);
+        }
+
+        // Handle SillyTavern v3 fields
+        if let Some(fav_val) = update_dto.fav {
+            existing_character.fav = Some(fav_val);
+        }
+        if let Some(world_val) = update_dto.world {
+            existing_character.world = if world_val.is_empty() {
+                None
+            } else {
+                Some(world_val.clone())
+            };
+            // Also encrypt into world_ciphertext
+            if !world_val.is_empty() {
+                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(&world_val, dek_key_bytes)?;
+                existing_character.world_ciphertext = ciphertext;
+                existing_character.world_nonce = nonce;
+            } else {
+                existing_character.world_ciphertext = None;
+                existing_character.world_nonce = None;
+            }
+        }
+        if let Some(depth_prompt_depth_val) = update_dto.depth_prompt_depth {
+            existing_character.depth_prompt_depth = Some(depth_prompt_depth_val);
+        }
+        if let Some(depth_prompt_role_val) = update_dto.depth_prompt_role {
+            existing_character.depth_prompt_role = Some(depth_prompt_role_val);
+        }
+
+        // Handle encrypted SillyTavern v3 fields
+        self.update_optional_encrypted_string_field(
+            update_dto.creator_comment.as_ref(),
+            dek_key_bytes,
+            &mut existing_character.creator_comment,
+            &mut existing_character.creator_comment_nonce,
+        )?;
+
+        // Handle depth_prompt - this goes into depth_prompt_ciphertext field
+        if let Some(depth_prompt_val) = update_dto.depth_prompt.as_ref() {
+            if depth_prompt_val.is_empty() {
+                existing_character.depth_prompt_ciphertext = None;
+                existing_character.depth_prompt_nonce = None;
+            } else {
+                let (ciphertext, nonce) = self.encrypt_string_field_with_nonce(depth_prompt_val, dek_key_bytes)?;
+                existing_character.depth_prompt_ciphertext = ciphertext;
+                existing_character.depth_prompt_nonce = nonce;
+            }
         }
 
         // Always update the 'updated_at' timestamp

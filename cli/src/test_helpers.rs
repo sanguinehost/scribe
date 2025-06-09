@@ -1061,6 +1061,13 @@ pub fn mock_character_data_for_client(
         visibility: Some("private".to_string()),
         weight: None,
         world_scenario_visibility: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
     }
 }
 
