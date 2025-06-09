@@ -6,13 +6,9 @@ export async function load({ data, fetch }) {
 	let chatsError = false; // Flag to indicate fetch failure
 	if (user) {
 		try {
-			console.log(`[${new Date().toISOString()}] (chat)/+layout.ts: Fetching /api/chats`);
 			const response = await fetch('/api/chats');
 
 			if (response.ok) {
-				console.log(
-					`[${new Date().toISOString()}] (chat)/+layout.ts: /api/chats response OK (${response.status})`
-				);
 				chats = await response.json();
 			} else {
 				// Log non-OK responses (like 401)

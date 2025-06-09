@@ -23,37 +23,18 @@
 	// Initialize new auth store with server data if available, then run client-side initialization.
 	// This $effect runs when `data.user` changes or on component initialization.
 	$effect(() => {
-		const timestamp = new Date().toISOString();
-		console.log(
-			`[${timestamp}] +layout.svelte $effect: data.user changed or component init. User:`,
-			data.user
-		);
 		if (data.user) {
-			console.log(
-				`[${timestamp}] +layout.svelte $effect: Setting authenticated from server data for user:`,
-				data.user.username
-			);
 			setAuthenticated(data.user);
-		} else {
-			// If no user from server, ensure client store reflects this before client-side init.
-			// This prevents a flash of authenticated content if client-side init is slow.
-			// However, initializeAuth() will also set isLoading and then unauthenticated if needed.
-			// We might not need setUnauthenticated() here if initializeAuth() is robust.
-			// For now, let initializeAuth handle the "no initial user" case.
-			console.log(
-				`[${timestamp}] +layout.svelte $effect: No user data from server. Client-side initializeAuth will run.`
-			);
 		}
+		// User data logging removed to prevent sensitive information exposure
 	});
 
 	onMount(async () => {
-		const timestamp = new Date().toISOString();
-		console.log(`[${timestamp}] +layout.svelte onMount: Calling initializeAuth.`);
 		// initializeAuth will attempt to fetch the user if not already set by server data,
 		// or if we want to re-verify on client-side navigation to a page with this layout.
 		// It's designed to be safe to call even if already authenticated.
 		await initializeAuth();
-		console.log(`[${timestamp}] +layout.svelte onMount: initializeAuth completed.`);
+		// Initialization logging removed for production
 
 		// Set up global listener for auth:invalidated events (for any legacy components)
 		const handleAuthInvalidated = () => {

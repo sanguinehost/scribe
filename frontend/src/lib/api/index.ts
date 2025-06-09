@@ -53,9 +53,7 @@ class ApiClient {
 		options: RequestInit = {},
 		fetchFn: typeof fetch = globalThis.fetch
 	): Promise<Result<T, ApiError>> {
-		console.log(
-			`[${new Date().toISOString()}] ApiClient.fetch: ENTER - ${options.method || 'GET'} ${endpoint}`
-		);
+		// Verbose logging removed - only log errors
 		try {
 			const response = await fetchFn(`${this.baseUrl}${endpoint}`, {
 				...options,
@@ -66,9 +64,12 @@ class ApiClient {
 				}
 			});
 
-			console.log(
-				`[${new Date().toISOString()}] ApiClient.fetch: Response status ${response.status} for ${endpoint}`
-			);
+			// Only log non-2xx responses
+			if (!response.ok) {
+				console.log(
+					`[${new Date().toISOString()}] ApiClient.fetch: Response status ${response.status} for ${endpoint}`
+				);
+			}
 			if (!response.ok) {
 				// Handle 401 Unauthorized specifically
 				if (response.status === 401) {
@@ -124,16 +125,11 @@ class ApiClient {
 
 			// Check if response is empty (like for a 204 No Content)
 			if (response.status === 204) {
-				console.log(
-					`[${new Date().toISOString()}] ApiClient.fetch: EXIT - Success (204 No Content) for ${endpoint}`
-				);
 				return ok({} as T);
 			}
 
 			const data = await response.json();
-			console.log(
-				`[${new Date().toISOString()}] ApiClient.fetch: EXIT - Success (200 OK) for ${endpoint}`
-			);
+			// Success logging removed - only log errors
 
 			// If we successfully made a request, clear any connection errors
 			if (browser) {
