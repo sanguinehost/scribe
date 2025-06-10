@@ -70,6 +70,6 @@
 	}
 	
 	:global(.dark .dialogue-text) {
-		color: #fb923c !important;
+		color: #a78bfa !important;
 	}
 </style>
