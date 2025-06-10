@@ -33,6 +33,7 @@ import type {
 	SessionResponse,
 	SuggestedActionsResponse,
 	UpdateChatSessionSettingsRequest,
+	ChatSessionSettingsResponse,
 	UserSettingsResponse,
 	UpdateUserSettingsRequest
 } from '$lib/types';
@@ -485,15 +486,15 @@ class ApiClient {
 	}
 
 	// Chat Session Settings methods
-	async getChatSessionSettings(sessionId: string): Promise<Result<ScribeChatSession, ApiError>> {
-		return this.fetch<ScribeChatSession>(`/api/chats/${sessionId}/settings`);
+	async getChatSessionSettings(sessionId: string): Promise<Result<ChatSessionSettingsResponse, ApiError>> {
+		return this.fetch<ChatSessionSettingsResponse>(`/api/chat/${sessionId}/settings`);
 	}
 
 	async updateChatSessionSettings(
 		sessionId: string,
 		settings: UpdateChatSessionSettingsRequest
-	): Promise<Result<ScribeChatSession, ApiError>> {
-		return this.fetch<ScribeChatSession>(`/api/chats/${sessionId}/settings`, {
+	): Promise<Result<ChatSessionSettingsResponse, ApiError>> {
+		return this.fetch<ChatSessionSettingsResponse>(`/api/chat/${sessionId}/settings`, {
 			method: 'PUT',
 			body: JSON.stringify(settings)
 		});

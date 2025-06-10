@@ -47,7 +47,6 @@
 	let localSettings = $state({
 		model_name: '', // Will be set from global or chat settings
 		active_custom_persona_id: null as string | null,
-		system_prompt: '',
 		temperature: 1.0, // Will be set from global or chat settings
 		max_output_tokens: 1000, // Will be set from global or chat settings
 		frequency_penalty: 0.0, // Will be set from global or chat settings
@@ -87,7 +86,6 @@
 			localSettings.seed !== null ||
 			localSettings.gemini_thinking_budget !== null ||
 			localSettings.gemini_enable_code_execution !== false ||
-			(localSettings.system_prompt && localSettings.system_prompt.trim() !== '') ||
 			localSettings.model_name !== '' ||
 			localSettings.context_total_token_limit !== DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT ||
 			localSettings.context_recent_history_budget !== DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET ||
@@ -115,7 +113,6 @@
 			localSettings = {
 				model_name: globalUserSettings.default_model_name || DEFAULT_CHAT_MODEL,
 				active_custom_persona_id: null, // New chats don't have an active persona by default
-				system_prompt: '', // New chats don't have a system prompt by default
 				temperature: parseFloat(String(globalUserSettings.default_temperature ?? 1.0)),
 				max_output_tokens: globalUserSettings.default_max_output_tokens || 1000,
 				frequency_penalty: globalUserSettings.default_frequency_penalty || 0.0,
@@ -144,19 +141,10 @@
 		if (result.isOk()) {
 			const settings: ChatSessionSettingsResponse = result.value;
 
-			// Handle system prompt - check if it contains binary data (likely encrypted)
-			let systemPrompt = settings.system_prompt ?? '';
-			if (systemPrompt && /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\xFF]/.test(systemPrompt)) {
-				// Contains non-printable characters - likely encrypted data that failed to decrypt
-				console.warn('System prompt appears to contain encrypted data that failed to decrypt');
-				systemPrompt = ''; // Clear it rather than showing garbage
-			}
-
 			localSettings = {
 				model_name:
 					settings.model_name ?? globalUserSettings?.default_model_name ?? DEFAULT_CHAT_MODEL,
 				active_custom_persona_id: chat.active_custom_persona_id ?? null, // This comes from the chat prop
-				system_prompt: systemPrompt,
 				temperature: parseFloat(
 					String(settings.temperature ?? globalUserSettings?.default_temperature ?? 1.0)
 				),
@@ -250,7 +238,6 @@
 				top_p: localSettings.top_p,
 				top_k: localSettings.top_k,
 				seed: localSettings.seed,
-				system_prompt: localSettings.system_prompt,
 				active_custom_persona_id: localSettings.active_custom_persona_id,
 				model_name: localSettings.model_name,
 				gemini_thinking_budget: localSettings.gemini_thinking_budget,
@@ -387,7 +374,6 @@
 			globalUserSettings.default_gemini_thinking_budget ?? null;
 		localSettings.gemini_enable_code_execution =
 			globalUserSettings.default_gemini_enable_code_execution ?? false;
-		localSettings.system_prompt = ''; // System prompt is not part of global settings, always clear
 		localSettings.model_name = globalUserSettings.default_model_name || DEFAULT_CHAT_MODEL;
 		localSettings.context_total_token_limit =
 			globalUserSettings.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT;
@@ -890,33 +876,6 @@
 								</div>
 							</div>
 
-							<!-- System Prompt Override -->
-							<div class="space-y-2">
-								<div class="flex items-center justify-between">
-									<Label for="system-prompt">System Prompt Override</Label>
-									{#if localSettings.system_prompt && localSettings.system_prompt.trim() !== ''}
-										<Button
-											variant="ghost"
-											size="sm"
-											onclick={() => {
-												localSettings.system_prompt = '';
-												toast.info('System prompt cleared');
-											}}
-										>
-											Clear
-										</Button>
-									{/if}
-								</div>
-								<Textarea
-									id="system-prompt"
-									placeholder="Override the default system prompt for this chat..."
-									rows={6}
-									bind:value={localSettings.system_prompt}
-								/>
-								<p class="text-xs text-muted-foreground">
-									Leave empty to use the active persona or character's default system prompt
-								</p>
-							</div>
 						</CardContent>
 					{/if}
 				</Card>

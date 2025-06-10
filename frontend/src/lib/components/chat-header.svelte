@@ -54,8 +54,8 @@
 		</TooltipProvider>
 	{/if}
 
-	{#if !readonly}
-		<ModelSelector class="order-1 md:order-2" />
+	{#if !readonly && chat}
+		<ModelSelector class="order-1 md:order-2" {chat} />
 	{/if}
 
 	{#if !readonly && chat}

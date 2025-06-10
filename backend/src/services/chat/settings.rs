@@ -231,21 +231,32 @@ fn decrypt_system_prompt(
     session_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<String>, AppError> {
+    info!(%session_id, %user_id, 
+          has_ciphertext = ciphertext.is_some(), 
+          ciphertext_len = ciphertext.map(|c| c.len()).unwrap_or(0),
+          has_nonce = nonce.is_some(), 
+          nonce_len = nonce.map(|n| n.len()).unwrap_or(0),
+          has_dek = user_dek.is_some(),
+          "decrypt_system_prompt: Input parameters");
+    
     match (ciphertext, nonce, user_dek) {
         (Some(ciphertext), Some(nonce), Some(dek))
             if !ciphertext.is_empty() && !nonce.is_empty() =>
         {
+            info!(%session_id, %user_id, "decrypt_system_prompt: Attempting decryption");
             let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
                 error!(%session_id, %user_id, error = ?e, "Failed to decrypt system_prompt");
                 AppError::DecryptionError("Failed to decrypt system_prompt".to_string())
             })?;
 
-            String::from_utf8(plaintext_secret.expose_secret().clone())
-                .map(Some)
+            let decrypted_text = String::from_utf8(plaintext_secret.expose_secret().clone())
                 .map_err(|e| {
                     error!(%session_id, %user_id, error = ?e, "Failed to convert decrypted system_prompt to UTF-8");
                     AppError::DecryptionError("Failed to convert system_prompt to UTF-8".to_string())
-                })
+                })?;
+
+            info!(%session_id, %user_id, decrypted_len = decrypted_text.len(), "decrypt_system_prompt: Successfully decrypted");
+            Ok(Some(decrypted_text))
         }
         (Some(_), Some(_), None) => {
             error!(%session_id, %user_id, "System prompt is encrypted but no DEK provided");
@@ -253,7 +264,18 @@ fn decrypt_system_prompt(
                 "No DEK available for decryption".to_string(),
             ))
         }
-        _ => Ok(None), // No system prompt or empty fields
+        (Some(ciphertext), None, _) => {
+            error!(%session_id, %user_id, ciphertext_len = ciphertext.len(), "System prompt ciphertext exists but nonce is None");
+            Ok(None)
+        }
+        (None, Some(_), _) => {
+            info!(%session_id, %user_id, "Nonce exists but no ciphertext");
+            Ok(None)
+        }
+        _ => {
+            info!(%session_id, %user_id, "No system prompt data");
+            Ok(None)
+        } // No system prompt or empty fields
     }
 }
 
@@ -322,7 +344,12 @@ pub async fn get_session_settings(
             user_id,
         )?;
 
-        Ok(ChatSettingsResponse {
+        info!(%session_id, %user_id, 
+              decrypted_system_prompt_is_some = decrypted_system_prompt.is_some(),
+              decrypted_system_prompt_len = decrypted_system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
+              "get_session_settings: Creating ChatSettingsResponse");
+
+        let response = ChatSettingsResponse {
             system_prompt: decrypted_system_prompt,
             temperature,
             max_output_tokens,
@@ -337,7 +364,14 @@ pub async fn get_session_settings(
             model_name,
             gemini_thinking_budget,
             gemini_enable_code_execution,
-        })
+        };
+
+        info!(%session_id, %user_id, 
+              response_system_prompt_is_some = response.system_prompt.is_some(),
+              response_system_prompt_len = response.system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
+              "get_session_settings: Response created successfully");
+
+        Ok(response)
     })
     .await?
 }
