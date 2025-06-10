@@ -18,7 +18,7 @@
 	// Removed the static 'suggestedActions' array
 </script>
 
-<div class="grid w-full gap-2 sm:grid-cols-2">
+<div class="ml-[40px] grid w-[calc(100%-50px)] gap-2 sm:grid-cols-2">
 	{#each actions as suggestedItem, i (suggestedItem.action)}
 		<div
 			in:fly|global={{ opacity: 0, y: 20, delay: 50 * i, duration: 400 }}
