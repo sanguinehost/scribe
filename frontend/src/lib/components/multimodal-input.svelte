@@ -7,30 +7,22 @@
 	// import { innerWidth } from 'svelte/reactivity/window'; // Unused? Let's remove for cleanup.
 	import { toast } from 'svelte-sonner';
 	import { Button } from './ui/button';
-	import PaperclipIcon from './icons/paperclip.svelte';
 	import StopIcon from './icons/stop.svelte';
-	import ArrowUpIcon from './icons/arrow-up.svelte';
-	import SuggestedActions from './suggested-actions.svelte';
 	// import { replaceState } from '$app/navigation'; // Unused? Let's remove for cleanup.
-	import type { User } from '$lib/types';
 
 	// Props definition
 	type Props = {
 		attachments?: any[]; // Make attachments optional
-		user: User | undefined;
 		value: string;
 		isLoading: boolean;
-		sendMessage: (content: string) => Promise<void>;
 		stopGeneration: () => void;
 		class?: string;
 	};
 
 	let {
 		attachments = $bindable([]), // Provide default empty array
-		user,
 		value = $bindable(),
 		isLoading = false,
-		sendMessage,
 		stopGeneration,
 		class: c
 	}: Props = $props();
@@ -59,34 +51,15 @@
 	const adjustHeight = () => {
 		if (textareaElement) {
 			textareaElement.style.height = 'auto';
-			// Add a small buffer (2px) to prevent scrollbar flicker on single line
-			textareaElement.style.height = `${textareaElement.scrollHeight + 2}px`;
+			textareaElement.style.height = `${textareaElement.scrollHeight}px`;
 		}
 	};
-
-	const resetHeight = () => {
-		if (textareaElement) {
-			textareaElement.style.height = 'auto';
-			// Reset to a reasonable default height (e.g., 2 rows equivalent)
-			// Let's keep the original 98px for now, but this could be refined.
-			textareaElement.style.height = '98px';
-		}
-	};
-
-	// File handling (currently disabled)
-	async function uploadFile(file: File): Promise<undefined> {
-		const formData = new FormData();
-		formData.append('file', file);
-		toast.error('File upload is not currently supported.');
-		return undefined;
-	}
 
 	async function handleFileChange(
 		event: Event & {
 			currentTarget: EventTarget & HTMLInputElement;
 		}
 	) {
-		const files = Array.from(event.currentTarget.files || []);
 		toast.error('File upload is not currently supported.');
 		// Ensure the file input is cleared
 		if (event.currentTarget) {
@@ -94,7 +67,7 @@
 		}
 	}
 
-	// Action to bind the textarea element and manage its height
+	// Action to bind the textarea element 
 	function bindTextarea(node: HTMLTextAreaElement) {
 		textareaElement = node;
 		adjustHeight(); // Adjust height immediately when bound
@@ -103,13 +76,14 @@
 		return {
 			destroy() {
 				textareaElement = null;
-				// Svelte handles top-level effect cleanup automatically
 			}
 		};
 	}
 </script>
 
-<div class="relative flex w-full flex-col gap-4">
+<div class="relative -ml-2 flex w-full gap-4">
+	<div class="flex size-8 shrink-0"></div>
+	<div class="flex w-full flex-col gap-4">
 	<input
 		type="file"
 		class="pointer-events-none fixed -left-4 -top-4 size-0.5 opacity-0"
@@ -147,7 +121,7 @@
 		placeholder="Send a message..."
 		bind:value
 		class={cn(
-			'max-h-[calc(75dvh)] min-h-[24px] resize-none overflow-hidden rounded-2xl bg-muted pb-10 pl-2 pr-2 !text-base dark:border-zinc-700',
+			'max-h-[calc(37.5dvh)] min-h-[24px] resize-none overflow-y-auto rounded-2xl bg-muted pb-10 pl-4 pr-4 !text-base dark:border-zinc-700',
 			c
 		)}
 		rows={2}
@@ -160,35 +134,13 @@
 		}}
 	></textarea>
 
-	<div class="absolute bottom-0 flex w-fit flex-row justify-start p-2">
-		{@render attachmentsButton()}
-	</div>
-
-	<div class="absolute bottom-0 right-0 flex w-fit flex-row justify-end p-2">
+	<div class="absolute bottom-0 right-0 flex w-fit flex-row justify-end p-4">
 		{#if isLoading}
 			{@render stopButton()}
-		{:else}
-			{@render sendButton()}
 		{/if}
 	</div>
 </div>
-
-{#snippet attachmentsButton()}
-	<!-- TODO: Re-enable attachment button when file upload is supported -->
-	<Button
-		class="h-fit rounded-md rounded-bl-lg p-[7px] hover:bg-zinc-200 dark:border-zinc-700 hover:dark:bg-zinc-900"
-		onclick={(event: MouseEvent) => {
-			event.preventDefault();
-			// fileInputRef?.click();
-			toast.error('File upload is not currently supported.');
-		}}
-		disabled={true}
-		variant="ghost"
-		title="File attachments not supported"
-	>
-		<PaperclipIcon size={14} class="text-muted-foreground" />
-	</Button>
-{/snippet}
+</div>
 
 {#snippet stopButton()}
 	<Button
@@ -202,16 +154,3 @@
 	</Button>
 {/snippet}
 
-{#snippet sendButton()}
-	<Button
-		class="h-fit rounded-full border p-1.5 dark:border-zinc-600"
-		onclick={(event: MouseEvent) => {
-			event.preventDefault();
-			// submitForm(); // Removed, handled by type="submit"
-		}}
-		type="submit"
-		disabled={value.length === 0 || uploadQueue.length > 0 || isLoading}
-	>
-		<ArrowUpIcon size={14} />
-	</Button>
-{/snippet}

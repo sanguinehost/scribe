@@ -606,24 +606,24 @@
 		{/if}
 
 		<!-- Message Input Form -->
-		<form
-			class="mx-auto flex w-full gap-2 bg-background px-4 pb-4 md:max-w-3xl md:pb-6"
-			onsubmit={(e) => {
-				e.preventDefault();
-				handleInputSubmit(e);
-			}}
-		>
-			{#if !readonly}
-				<MultimodalInput
-					{user}
-					bind:value={chatInput}
-					{isLoading}
-					{sendMessage}
-					{stopGeneration}
-					class="flex-1"
-				/>
-			{/if}
-		</form>
+		<div class="mx-auto w-full px-4 pb-4 md:max-w-3xl md:pb-6">
+			<form
+				onsubmit={(e) => {
+					e.preventDefault();
+					handleInputSubmit(e);
+				}}
+			>
+				{#if !readonly}
+					<MultimodalInput
+						{user}
+						bind:value={chatInput}
+						{isLoading}
+						{sendMessage}
+						{stopGeneration}
+					/>
+				{/if}
+			</form>
+		</div>
 	{/if}
 </div>
 
