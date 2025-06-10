@@ -601,7 +601,13 @@
 		<!-- Suggested Actions -->
 		{#if dynamicSuggestedActions.length > 0 && !isLoading}
 			<div class="mx-auto w-full px-4 pb-2 md:max-w-3xl">
-				<SuggestedActions {user} {sendMessage} actions={dynamicSuggestedActions} />
+				<SuggestedActions 
+					{user} 
+					{sendMessage} 
+					actions={dynamicSuggestedActions} 
+					onClear={() => { dynamicSuggestedActions = []; }}
+					onEdit={(content) => { chatInput = content; }}
+				/>
 			</div>
 		{/if}
 
