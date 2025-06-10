@@ -154,7 +154,22 @@ pub async fn upload_character_handler(
         warn!("No content type provided for character_card upload.");
     }
 
-    let parsed_card = character_parser::parse_character_card_png(&png_data)?;
+    // Parse the character card based on content type
+    let parsed_card = match content_type.as_deref() {
+        Some("application/json") => {
+            info!("Parsing as JSON character card");
+            character_parser::parse_character_card_json(&png_data)?
+        },
+        Some(ct) if ct.starts_with("image/") => {
+            info!("Parsing as PNG character card");
+            character_parser::parse_character_card_png(&png_data)?
+        },
+        _ => {
+            // Default to PNG parsing for backwards compatibility
+            info!("No content type or unknown type, defaulting to PNG parsing");
+            character_parser::parse_character_card_png(&png_data)?
+        }
+    };
     
     // Debug: Log the parsed card data
     match &parsed_card {
