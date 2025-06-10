@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
-	import { LorebookList, LorebookForm, ExportDialog, ImportLorebookDialog } from '$lib/components/lorebooks';
+	import {
+		LorebookList,
+		LorebookForm,
+		ExportDialog,
+		ImportLorebookDialog
+	} from '$lib/components/lorebooks';
 	import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from 'svelte-sonner';
@@ -34,7 +39,7 @@
 	}
 
 	function handleEditLorebook(lorebook: Lorebook) {
-		// Use an event dispatcher to notify parent components  
+		// Use an event dispatcher to notify parent components
 		const event = new CustomEvent('editLorebook', {
 			detail: { lorebookId: lorebook.id }
 		});
@@ -104,7 +109,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-6xl px-4 relative">
+<div class="relative mx-auto max-w-6xl px-4">
 	<LorebookList
 		lorebooks={lorebookStore.lorebooks}
 		isLoading={lorebookStore.isLoading}
@@ -115,11 +120,15 @@
 		onDeleteLorebook={handleDeleteLorebook}
 		onExportLorebook={handleExportLorebook}
 	/>
-	
+
 	<!-- Loading overlay for initial load -->
 	{#if lorebookStore.isLoading && lorebookStore.lorebooks.length === 0}
-		<div class="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center">
-			<div class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+		<div
+			class="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+		>
+			<div
+				class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
+			></div>
 		</div>
 	{/if}
 

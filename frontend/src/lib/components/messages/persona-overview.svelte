@@ -8,11 +8,11 @@
 	import { Button } from '$lib/components/ui/button';
 	import { slideAndFade } from '$lib/utils/transitions';
 	import {
-	 	Card,
-	 	CardHeader,
-	 	CardTitle,
-	 	CardDescription,
-	 	CardContent
+		Card,
+		CardHeader,
+		CardTitle,
+		CardDescription,
+		CardContent
 	} from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -50,7 +50,7 @@
 	let deleteDialogOpen = $state(false);
 	let isDeletingPersona = $state(false);
 	let isSettingDefault = $state(false);
-	
+
 	// Edit mode state
 	let isEditMode = $state(false);
 	let isSaving = $state(false);
@@ -127,7 +127,7 @@
 
 	function handleEdit() {
 		if (!persona) return;
-		
+
 		// Reset edit values to current persona data
 		editedName = persona.name || '';
 		editedDescription = persona.description || '';
@@ -137,7 +137,7 @@
 		editedSystemPrompt = persona.system_prompt || '';
 		editedMesExample = persona.mes_example || '';
 		editedPostHistoryInstructions = persona.post_history_instructions || '';
-		
+
 		isEditMode = true;
 	}
 
@@ -305,8 +305,15 @@
 	});
 </script>
 
-<div class="mx-auto max-w-6xl px-4" in:slideAndFade={{ y: 20, duration: 300 }} out:slideAndFade={{ y: -20, duration: 200 }}>
-	<div class="space-y-6" style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;">
+<div
+	class="mx-auto max-w-6xl px-4"
+	in:slideAndFade={{ y: 20, duration: 300 }}
+	out:slideAndFade={{ y: -20, duration: 200 }}
+>
+	<div
+		class="space-y-6"
+		style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
+	>
 		<!-- Persona Header Card -->
 		{#if isLoading}
 			<Card class="border-0 shadow-none">
@@ -339,7 +346,9 @@
 									<div>
 										<h2 class="text-3xl font-bold">{persona.name}</h2>
 										{#if persona.description}
-											<div class="mt-2 text-muted-foreground prose prose-sm dark:prose-invert max-w-none [&_*]:!text-muted-foreground">
+											<div
+												class="prose prose-sm dark:prose-invert mt-2 max-w-none text-muted-foreground [&_*]:!text-muted-foreground"
+											>
 												<MarkdownRenderer md={persona.description} />
 											</div>
 										{/if}

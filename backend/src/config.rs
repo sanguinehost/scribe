@@ -54,6 +54,10 @@ pub struct Config {
     // File Storage Config
     #[serde(default = "default_upload_storage_path")]
     pub upload_storage_path: String,
+
+    // Frontend URL
+    #[serde(default = "default_frontend_base_url")]
+    pub frontend_base_url: String,
 }
 
 impl std::fmt::Debug for Config {
@@ -97,6 +101,7 @@ impl std::fmt::Debug for Config {
             )
             .field("context_rag_token_budget", &self.context_rag_token_budget)
             .field("upload_storage_path", &self.upload_storage_path)
+            .field("frontend_base_url", &self.frontend_base_url)
             .finish()
     }
 }
@@ -159,6 +164,10 @@ fn default_upload_storage_path() -> String {
     "./uploads".to_string()
 }
 
+fn default_frontend_base_url() -> String {
+    "https://localhost:5173".to_string()
+}
+
 impl Config {
     /// Loads configuration from environment variables.
     ///
@@ -211,6 +220,7 @@ impl Default for Config {
             context_recent_history_token_budget: default_context_recent_history_token_budget(),
             context_rag_token_budget: default_context_rag_token_budget(),
             upload_storage_path: default_upload_storage_path(),
+            frontend_base_url: default_frontend_base_url(),
         }
     }
 }

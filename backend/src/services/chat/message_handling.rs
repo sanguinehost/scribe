@@ -55,7 +55,7 @@ pub async fn get_messages_for_session(
                             AppError::DatabaseQueryError(e.to_string())
                         })
                 } else {
-                    Err(AppError::Forbidden) // Keep as unit variant
+                    Err(AppError::Forbidden("Access denied to chat session".to_string()))
                 }
             },
         )

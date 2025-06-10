@@ -16,8 +16,8 @@ use crate::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
 // use crate::vector_db::QdrantClientService;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
 // use crate::auth::user_store::Backend as AuthBackend; // For axum-login
-// use crate::services::email_service::EmailService; // For email service
 use crate::auth::user_store::Backend as AuthBackend; // Added for shared AuthBackend
+use crate::services::EmailService; // For email service
 use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
 use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
 use crate::services::file_storage_service::FileStorageService; // Added for FileStorageService
@@ -44,6 +44,7 @@ pub struct AppStateServices {
     pub lorebook_service: Arc<LorebookService>,
     pub auth_backend: Arc<AuthBackend>,
     pub file_storage_service: Arc<FileStorageService>,
+    pub email_service: Arc<dyn EmailService + Send + Sync>,
 }
 
 // --- Shared application state ---
@@ -71,6 +72,7 @@ pub struct AppState {
     pub lorebook_service: Arc<LorebookService>,     // Added for LorebookService
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
     pub file_storage_service: Arc<FileStorageService>, // Added for file storage
+    pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
 }
 
 // Manual Debug implementation for AppState
@@ -94,6 +96,7 @@ impl fmt::Debug for AppState {
             .field("lorebook_service", &"<Arc<LorebookService>>") // Added for LorebookService
             .field("auth_backend", &"<Arc<AuthBackend>>") // Added
             .field("file_storage_service", &"<Arc<FileStorageService>>") // Added
+            .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
             .finish()
     }
 }
@@ -117,6 +120,7 @@ impl AppState {
             lorebook_service: services.lorebook_service,
             auth_backend: services.auth_backend,
             file_storage_service: services.file_storage_service,
+            email_service: services.email_service,
         }
     }
 }

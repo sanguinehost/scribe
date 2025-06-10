@@ -217,7 +217,7 @@ fn verify_session_ownership(
         }
         Some(owner_id) if owner_id != user_id => {
             warn!(target: "scribe_backend::services::chat::settings", %session_id, requesting_user_id = %user_id, actual_owner_id = %owner_id, "Forbidden access attempt");
-            Err(AppError::Forbidden)
+            Err(AppError::Forbidden("Access denied to chat session settings".to_string()))
         }
         Some(_) => Ok(()),
     }

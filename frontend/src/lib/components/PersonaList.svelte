@@ -53,7 +53,7 @@
 
 	// Only fetch on mount, not on every re-render
 	let hasFetched = $state(false);
-	
+
 	onMount(async () => {
 		if (!hasFetched) {
 			await fetchPersonas();
@@ -139,25 +139,27 @@
 							aria-pressed={selectedPersonaId === persona.id}
 							aria-label={`Select persona ${persona.name}`}
 						>
-					<CardHeader class="flex flex-row items-center gap-4 p-4">
-						<Avatar class="h-10 w-10">
-							<AvatarFallback>{getInitials(persona.name)}</AvatarFallback>
-						</Avatar>
-						<div class="flex-1 overflow-hidden">
-							<div class="flex items-center gap-2">
-								<CardTitle class="truncate text-base">{persona.name}</CardTitle>
-								{#if persona.id === defaultPersonaId}
-									<span class="rounded-full bg-primary px-2 py-1 text-xs text-primary-foreground">
-										Default
-									</span>
-								{/if}
-							</div>
-							<CardDescription class="truncate text-sm">
-								{getDescriptionSnippet(persona.description)}
-							</CardDescription>
-						</div>
-					</CardHeader>
-				</Card>
+							<CardHeader class="flex flex-row items-center gap-4 p-4">
+								<Avatar class="h-10 w-10">
+									<AvatarFallback>{getInitials(persona.name)}</AvatarFallback>
+								</Avatar>
+								<div class="flex-1 overflow-hidden">
+									<div class="flex items-center gap-2">
+										<CardTitle class="truncate text-base">{persona.name}</CardTitle>
+										{#if persona.id === defaultPersonaId}
+											<span
+												class="rounded-full bg-primary px-2 py-1 text-xs text-primary-foreground"
+											>
+												Default
+											</span>
+										{/if}
+									</div>
+									<CardDescription class="truncate text-sm">
+										{getDescriptionSnippet(persona.description)}
+									</CardDescription>
+								</div>
+							</CardHeader>
+						</Card>
 					</div>
 				{/key}
 			{/each}

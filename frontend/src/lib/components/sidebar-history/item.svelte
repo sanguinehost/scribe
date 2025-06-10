@@ -4,20 +4,12 @@
 		DropdownMenu,
 		DropdownMenuContent,
 		DropdownMenuItem,
-		DropdownMenuSub,
-		DropdownMenuSubContent,
-		DropdownMenuSubTrigger,
 		DropdownMenuTrigger
 	} from '../ui/dropdown-menu';
 	import { useSidebar, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem } from '../ui/sidebar';
 	import TrashIcon from '../icons/trash.svelte';
-	import GlobeIcon from '../icons/globe.svelte';
-	import CheckCircleFillIcon from '../icons/check-circle-fill.svelte';
-	import LockIcon from '../icons/lock.svelte';
-	import ShareIcon from '../icons/share.svelte';
 	import MoreHorizontalIcon from '../icons/more-horizontal.svelte';
 	import { goto } from '$app/navigation';
-	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 
 	let {
 		chat,
@@ -30,9 +22,6 @@
 	} = $props();
 
 	const context = useSidebar();
-
-	const chatHistory = ChatHistory.fromContext();
-	const chatFromHistory = $derived(chatHistory.getChatDetails(chat.id));
 </script>
 
 <SidebarMenuItem>
@@ -65,43 +54,6 @@
 		</DropdownMenuTrigger>
 
 		<DropdownMenuContent side="bottom" align="end">
-			<DropdownMenuSub>
-				<DropdownMenuSubTrigger class="cursor-pointer">
-					<ShareIcon />
-					<span>Share</span>
-				</DropdownMenuSubTrigger>
-				<DropdownMenuSubContent align="start">
-					<DropdownMenuItem
-						class="cursor-pointer flex-row justify-between"
-						onclick={() => {
-							chatHistory.updateVisibility(chat.id, 'private');
-						}}
-					>
-						<div class="flex flex-row items-center gap-2">
-							<LockIcon size={12} />
-							<span>Private</span>
-						</div>
-						{#if chatFromHistory?.visibility === 'private'}
-							<CheckCircleFillIcon />
-						{/if}
-					</DropdownMenuItem>
-					<DropdownMenuItem
-						class="cursor-pointer flex-row justify-between"
-						onclick={() => {
-							chatHistory.updateVisibility(chat.id, 'public');
-						}}
-					>
-						<div class="flex flex-row items-center gap-2">
-							<GlobeIcon />
-							<span>Public</span>
-						</div>
-						{#if chatFromHistory?.visibility === 'public'}
-							<CheckCircleFillIcon />
-						{/if}
-					</DropdownMenuItem>
-				</DropdownMenuSubContent>
-			</DropdownMenuSub>
-
 			<DropdownMenuItem
 				class="cursor-pointer text-destructive focus:bg-destructive/15 focus:text-destructive dark:text-red-500"
 				onclick={() => ondelete(chat.id)}

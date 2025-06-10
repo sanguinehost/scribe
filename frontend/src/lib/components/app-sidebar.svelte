@@ -193,7 +193,8 @@
 		<!-- Tab Navigation -->
 		<div class="flex border-b">
 			<button
-				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab === 'characters'
+				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab ===
+				'characters'
 					? 'border-b-2 border-primary bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('characters')}
@@ -201,7 +202,8 @@
 				Characters
 			</button>
 			<button
-				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab === 'personas'
+				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab ===
+				'personas'
 					? 'border-b-2 border-primary bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('personas')}
@@ -209,7 +211,8 @@
 				Personas
 			</button>
 			<button
-				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab === 'lorebooks'
+				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab ===
+				'lorebooks'
 					? 'border-b-2 border-primary bg-background text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => switchTab('lorebooks')}
@@ -220,8 +223,8 @@
 
 		<!-- Tab Content - Keep all components mounted but show/hide them to prevent re-initialization -->
 		<div class="relative h-full">
-			<div 
-				class="tab-content" 
+			<div
+				class="tab-content"
 				class:active={sidebarStore.activeTab === 'characters'}
 				class:inactive={sidebarStore.activeTab !== 'characters'}
 			>
@@ -231,8 +234,8 @@
 					on:uploadCharacter={handleUploadCharacter}
 				/>
 			</div>
-			<div 
-				class="tab-content" 
+			<div
+				class="tab-content"
 				class:active={sidebarStore.activeTab === 'personas'}
 				class:inactive={sidebarStore.activeTab !== 'personas'}
 			>
@@ -242,8 +245,8 @@
 					on:createPersona={handleCreatePersona}
 				/>
 			</div>
-			<div 
-				class="tab-content" 
+			<div
+				class="tab-content"
 				class:active={sidebarStore.activeTab === 'lorebooks'}
 				class:inactive={sidebarStore.activeTab !== 'lorebooks'}
 			>

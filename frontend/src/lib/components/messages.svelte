@@ -24,19 +24,19 @@
 	let endRef = $state<HTMLDivElement | null>(null);
 
 	let {
-	 	readonly,
-	 	loading,
-	 	messages,
-	 	selectedCharacterId = null,
-	 	character = null,
-	 	user = undefined // Add user prop here
+		readonly,
+		loading,
+		messages,
+		selectedCharacterId = null,
+		character = null,
+		user = undefined // Add user prop here
 	}: {
-	 	readonly: boolean;
-	 	loading: boolean;
-	 	messages: ScribeChatMessage[];
-	 	selectedCharacterId?: string | null;
-	 	character?: any | null; // Will be properly typed
-	 	user?: User | undefined; // Type for user prop
+		readonly: boolean;
+		loading: boolean;
+		messages: ScribeChatMessage[];
+		selectedCharacterId?: string | null;
+		character?: any | null; // Will be properly typed
+		user?: User | undefined; // Type for user prop
 	} = $props();
 
 	const dispatch = createEventDispatcher();
@@ -131,7 +131,7 @@
 	// Scroll to top when showing character overview, settings, or other empty states
 	$effect(() => {
 		if (!containerRef || !mounted) return;
-		
+
 		// If we're showing empty state content (no messages), scroll to top
 		// This triggers when view changes (character selection, settings, etc.)
 		if (messages.length === 0) {
@@ -147,7 +147,7 @@
 	// Also scroll to top when starting fresh chats (with only initial message)
 	$effect(() => {
 		if (!containerRef || !mounted) return;
-		
+
 		// For new chats with just a greeting message, scroll to top
 		// instead of bottom to show the character info and start of conversation
 		if (messages.length === 1 && messages[0]?.message_type === 'Assistant') {
@@ -183,8 +183,8 @@
 		{#if mounted && messages.length === 0 && !settingsStore.isVisible}
 			<div class="relative">
 				<!-- Apply same smooth transition approach as sidebar -->
-				<div 
-					class="main-content-view" 
+				<div
+					class="main-content-view"
 					class:active={selectedCharacterId}
 					class:inactive={!selectedCharacterId}
 				>
@@ -192,8 +192,8 @@
 						<CharacterOverview characterId={selectedCharacterId} />
 					{/if}
 				</div>
-				<div 
-					class="main-content-view" 
+				<div
+					class="main-content-view"
 					class:active={selectedPersonaStore.viewMode === 'creating'}
 					class:inactive={selectedPersonaStore.viewMode !== 'creating'}
 				>
@@ -201,37 +201,59 @@
 						<PersonaEditor on:personaCreated={handlePersonaCreated} />
 					{/if}
 				</div>
-				<div 
-					class="main-content-view" 
-					class:active={selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
-					class:inactive={!selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating'}
+				<div
+					class="main-content-view"
+					class:active={selectedPersonaStore.personaId &&
+						selectedPersonaStore.viewMode !== 'creating'}
+					class:inactive={!selectedPersonaStore.personaId ||
+						selectedPersonaStore.viewMode === 'creating'}
 				>
 					{#if selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
 						<PersonaOverview personaId={selectedPersonaStore.personaId} />
 					{/if}
 				</div>
-				<div 
-					class="main-content-view" 
-					class:active={selectedLorebookStore.viewMode === 'detail' && selectedLorebookStore.lorebookId && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
-					class:inactive={selectedLorebookStore.viewMode !== 'detail' || !selectedLorebookStore.lorebookId || selectedCharacterId || selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating'}
+				<div
+					class="main-content-view"
+					class:active={selectedLorebookStore.viewMode === 'detail' &&
+						selectedLorebookStore.lorebookId &&
+						!selectedCharacterId &&
+						!selectedPersonaStore.personaId &&
+						selectedPersonaStore.viewMode !== 'creating'}
+					class:inactive={selectedLorebookStore.viewMode !== 'detail' ||
+						!selectedLorebookStore.lorebookId ||
+						selectedCharacterId ||
+						selectedPersonaStore.personaId ||
+						selectedPersonaStore.viewMode === 'creating'}
 				>
 					{#if selectedLorebookStore.viewMode === 'detail' && selectedLorebookStore.lorebookId && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
 						<LorebookDetailOverview lorebookId={selectedLorebookStore.lorebookId} />
 					{/if}
 				</div>
-				<div 
-					class="main-content-view" 
-					class:active={selectedLorebookStore.viewMode === 'list' && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
-					class:inactive={selectedLorebookStore.viewMode !== 'list' || selectedCharacterId || selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating'}
+				<div
+					class="main-content-view"
+					class:active={selectedLorebookStore.viewMode === 'list' &&
+						!selectedCharacterId &&
+						!selectedPersonaStore.personaId &&
+						selectedPersonaStore.viewMode !== 'creating'}
+					class:inactive={selectedLorebookStore.viewMode !== 'list' ||
+						selectedCharacterId ||
+						selectedPersonaStore.personaId ||
+						selectedPersonaStore.viewMode === 'creating'}
 				>
 					{#if selectedLorebookStore.viewMode === 'list' && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
 						<LorebookOverview />
 					{/if}
 				</div>
-				<div 
-					class="main-content-view" 
-					class:active={!selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && selectedLorebookStore.viewMode === 'none'}
-					class:inactive={selectedCharacterId || selectedPersonaStore.personaId || selectedPersonaStore.viewMode === 'creating' || selectedLorebookStore.viewMode !== 'none'}
+				<div
+					class="main-content-view"
+					class:active={!selectedCharacterId &&
+						!selectedPersonaStore.personaId &&
+						selectedPersonaStore.viewMode !== 'creating' &&
+						selectedLorebookStore.viewMode === 'none'}
+					class:inactive={selectedCharacterId ||
+						selectedPersonaStore.personaId ||
+						selectedPersonaStore.viewMode === 'creating' ||
+						selectedLorebookStore.viewMode !== 'none'}
 				>
 					{#if !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && selectedLorebookStore.viewMode === 'none'}
 						<Overview />

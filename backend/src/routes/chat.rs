@@ -185,7 +185,7 @@ pub async fn generate_chat_response(
 
     if chat_session_owner_id != user_id_value {
         error!(%session_id, expected_owner = %user_id_value, actual_owner = %chat_session_owner_id, "User forbidden from accessing chat session.");
-        return Err(AppError::Forbidden);
+        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
     }
     debug!(%session_id, "User authorized for chat session");
 
@@ -822,7 +822,7 @@ pub async fn generate_suggested_actions(
 
     if chat_session_owner_id != user_id {
         error!(%session_id, expected_owner = %user_id, actual_owner = %chat_session_owner_id, "User forbidden from accessing chat session for suggested actions.");
-        return Err(AppError::Forbidden);
+        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
     }
     debug!(%session_id, "User authorized for chat session");
 
@@ -1177,7 +1177,7 @@ pub async fn create_or_update_chat_character_override_handler(
             "User {} attempted to modify overrides for chat session {} owned by {}",
             user_id, session_id, chat_session_details.0
         );
-        return Err(AppError::Forbidden);
+        return Err(AppError::Forbidden("Access denied to chat session override".to_string()));
     }
     let original_character_id = chat_session_details.1;
 

@@ -12,7 +12,7 @@
 
 	// Only fetch on mount, not on every re-render
 	let hasFetched = false;
-	
+
 	onMount(async () => {
 		if (!hasFetched) {
 			await lorebookStore.loadLorebooks();
@@ -83,7 +83,9 @@
 									<div class="min-w-0 flex-1">
 										<div class="truncate text-sm font-medium">{lorebook.name}</div>
 										{#if lorebook.description}
-											<div class="truncate text-xs text-muted-foreground">{lorebook.description}</div>
+											<div class="truncate text-xs text-muted-foreground">
+												{lorebook.description}
+											</div>
 										{/if}
 									</div>
 								</div>

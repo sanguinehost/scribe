@@ -171,7 +171,10 @@
 	}
 </script>
 
-<div class="mx-auto max-w-6xl px-4 relative" style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;">
+<div
+	class="relative mx-auto max-w-6xl px-4"
+	style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
+>
 	<!-- Show error state or not found state immediately -->
 	{#if error}
 		<div class="py-12 text-center">
@@ -210,33 +213,37 @@
 				<!-- Header skeleton -->
 				<div class="flex items-center justify-between">
 					<div class="space-y-2">
-						<div class="h-8 w-64 bg-muted animate-pulse rounded"></div>
-						<div class="h-4 w-96 bg-muted animate-pulse rounded"></div>
+						<div class="h-8 w-64 animate-pulse rounded bg-muted"></div>
+						<div class="h-4 w-96 animate-pulse rounded bg-muted"></div>
 					</div>
 					<div class="flex gap-2">
-						<div class="h-9 w-20 bg-muted animate-pulse rounded"></div>
-						<div class="h-9 w-20 bg-muted animate-pulse rounded"></div>
-						<div class="h-9 w-20 bg-muted animate-pulse rounded"></div>
+						<div class="h-9 w-20 animate-pulse rounded bg-muted"></div>
+						<div class="h-9 w-20 animate-pulse rounded bg-muted"></div>
+						<div class="h-9 w-20 animate-pulse rounded bg-muted"></div>
 					</div>
 				</div>
-				
+
 				<!-- Content skeleton -->
 				<div class="space-y-4">
 					{#each Array(3) as _}
-						<div class="border rounded-lg p-4 space-y-3">
-							<div class="h-5 w-48 bg-muted animate-pulse rounded"></div>
-							<div class="h-4 w-full bg-muted animate-pulse rounded"></div>
-							<div class="h-4 w-3/4 bg-muted animate-pulse rounded"></div>
+						<div class="space-y-3 rounded-lg border p-4">
+							<div class="h-5 w-48 animate-pulse rounded bg-muted"></div>
+							<div class="h-4 w-full animate-pulse rounded bg-muted"></div>
+							<div class="h-4 w-3/4 animate-pulse rounded bg-muted"></div>
 						</div>
 					{/each}
 				</div>
 			</div>
 		{/if}
-		
+
 		<!-- Loading overlay -->
 		{#if isLoading}
-			<div class="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center">
-				<div class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+			<div
+				class="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+			>
+				<div
+					class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
+				></div>
 			</div>
 		{/if}
 	{/if}

@@ -25,7 +25,7 @@
 
 	let open = $state(false);
 	const selectedChatModel = SelectedModel.fromContext();
-	
+
 	// When we have a chat, load and manage its model override
 	let chatModelOverride = $state<string>('');
 	let isLoadingChatSettings = $state(false);
@@ -41,7 +41,7 @@
 
 	async function loadChatSettings() {
 		if (!chat?.id) return;
-		
+
 		isLoadingChatSettings = true;
 		try {
 			const result = await apiClient.getChatSessionSettings(chat.id);
@@ -141,7 +141,9 @@
 			<DropdownMenuItem
 				onSelect={() => handleModelSelect(chatModel.id)}
 				class="group/item flex flex-row items-center justify-between gap-4"
-				data-active={chat ? chatModelOverride === chatModel.id : chatModel.id === selectedChatModel.value}
+				data-active={chat
+					? chatModelOverride === chatModel.id
+					: chatModel.id === selectedChatModel.value}
 			>
 				<div class="flex flex-col items-start gap-1">
 					<div>{chatModel.name}</div>

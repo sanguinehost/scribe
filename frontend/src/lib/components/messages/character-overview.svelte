@@ -88,16 +88,16 @@
 	// Calculate appropriate textarea rows based on content
 	function calculateTextareaRows(content: string | null | undefined, minRows = 3): number {
 		if (!content) return minRows;
-		
+
 		// Count actual line breaks in the content
 		const lineBreaks = (content.match(/\n/g) || []).length + 1;
-		
+
 		// Estimate additional lines based on text length (assuming ~80 characters per line)
 		const estimatedWrappedLines = Math.ceil(content.length / 80);
-		
+
 		// Use the larger of actual lines or estimated wrapped lines, with a minimum
 		const calculatedRows = Math.max(lineBreaks, estimatedWrappedLines, minRows);
-		
+
 		// Cap at a reasonable maximum to prevent huge textareas
 		return Math.min(calculatedRows, 15);
 	}
@@ -440,7 +440,10 @@
 </script>
 
 <div class="mx-auto max-w-4xl px-4">
-	<div class="space-y-6" style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;">
+	<div
+		class="space-y-6"
+		style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
+	>
 		<!-- Character Header Card -->
 		{#if isLoadingCharacter}
 			<Card class="border-0 shadow-none">
@@ -486,7 +489,7 @@
 									<div class="space-y-2">
 										<Input
 											bind:value={editValue}
-											class="text-3xl font-bold h-auto py-2"
+											class="h-auto py-2 text-3xl font-bold"
 											placeholder="Character name"
 											onfocus={(e) => e.target.select()}
 											onkeydown={(e) => {
@@ -497,7 +500,9 @@
 										<div class="flex gap-2">
 											<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
 												{#if isSaving}
-													<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+													<div
+														class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+													></div>
 													Saving...
 												{:else}
 													<CheckCircleFill class="h-3 w-3" />
@@ -508,97 +513,105 @@
 										</div>
 									</div>
 								{/if}
-									<div class="flex gap-3 mt-4">
-										<Button onclick={handleStartNewChat} size="lg" class="gap-2">
-											<PlusIcon class="h-4 w-4" />
-											Start New Chat
-										</Button>
-										{#if getMostRecentChat()}
-											<Button
-												variant="outline"
-												size="lg"
-												class="gap-2"
-												onclick={() => handleSelectChat(getMostRecentChat()!.id)}
-											>
-												<MessageIcon class="h-4 w-4" />
-												Continue Last Chat
-											</Button>
-										{/if}
+								<div class="mt-4 flex gap-3">
+									<Button onclick={handleStartNewChat} size="lg" class="gap-2">
+										<PlusIcon class="h-4 w-4" />
+										Start New Chat
+									</Button>
+									{#if getMostRecentChat()}
 										<Button
 											variant="outline"
 											size="lg"
 											class="gap-2"
-											onclick={() => { characterEditorOpen = true; }}
+											onclick={() => handleSelectChat(getMostRecentChat()!.id)}
 										>
-											<SettingsIcon class="h-4 w-4" />
-											Edit Character
+											<MessageIcon class="h-4 w-4" />
+											Continue Last Chat
+										</Button>
+									{/if}
+									<Button
+										variant="outline"
+										size="lg"
+										class="gap-2"
+										onclick={() => {
+											characterEditorOpen = true;
+										}}
+									>
+										<SettingsIcon class="h-4 w-4" />
+										Edit Character
+									</Button>
+								</div>
+								{#if character.description && editingField !== 'description'}
+									<div class="group relative mt-2">
+										<div
+											class="prose prose-sm dark:prose-invert max-w-none text-muted-foreground [&_*]:!text-muted-foreground"
+										>
+											<MarkdownRenderer
+												md={substituteTemplateVariables(character.description, character.name)}
+											/>
+										</div>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+											onclick={() => handleEditField('description', character.description)}
+											aria-label="Edit character description"
+										>
+											<PencilEdit class="h-3 w-3" />
 										</Button>
 									</div>
-									{#if character.description && editingField !== 'description'}
-										<div class="group relative mt-2">
-											<div class="text-muted-foreground prose prose-sm dark:prose-invert max-w-none [&_*]:!text-muted-foreground">
-												<MarkdownRenderer md={substituteTemplateVariables(character.description, character.name)} />
-											</div>
+								{:else if !character.description && editingField !== 'description'}
+									<div class="group relative mt-2">
+										<div class="text-sm italic text-muted-foreground">No description</div>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+											onclick={() => handleEditField('description', '')}
+											aria-label="Add character description"
+										>
+											<PencilEdit class="h-3 w-3" />
+										</Button>
+									</div>
+								{:else if editingField === 'description'}
+									<div class="mt-2 space-y-2">
+										<div class="flex gap-2">
+											<Textarea
+												bind:value={editValue}
+												placeholder="Character description"
+												rows={calculateTextareaRows(character.description, 3)}
+												onfocus={(e) => e.target.select()}
+												onkeydown={(e) => {
+													if (e.key === 'Escape') handleCancelEdit();
+													if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
+												}}
+												class="flex-1"
+											/>
 											<Button
-												variant="ghost"
+												variant="outline"
 												size="sm"
-												class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-												onclick={() => handleEditField('description', character.description)}
-												aria-label="Edit character description"
+												onclick={() => openPopoutEditor('description', 'Description', editValue)}
+												class="mt-1 self-start"
 											>
-												<PencilEdit class="h-3 w-3" />
+												Expand
 											</Button>
 										</div>
-									{:else if !character.description && editingField !== 'description'}
-										<div class="group relative mt-2">
-											<div class="text-muted-foreground italic text-sm">No description</div>
-											<Button
-												variant="ghost"
-												size="sm"
-												class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-												onclick={() => handleEditField('description', '')}
-												aria-label="Add character description"
-											>
-												<PencilEdit class="h-3 w-3" />
+										<div class="flex gap-2">
+											<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+												{#if isSaving}
+													<div
+														class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+													></div>
+													Saving...
+												{:else}
+													<CheckCircleFill class="h-3 w-3" />
+													Save
+												{/if}
 											</Button>
+											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
 										</div>
-									{:else if editingField === 'description'}
-										<div class="space-y-2 mt-2">
-											<div class="flex gap-2">
-												<Textarea
-													bind:value={editValue}
-													placeholder="Character description"
-													rows={calculateTextareaRows(character.description, 3)}
-													onfocus={(e) => e.target.select()}
-													onkeydown={(e) => {
-														if (e.key === 'Escape') handleCancelEdit();
-														if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
-													}}
-													class="flex-1"
-												/>
-												<Button
-													variant="outline"
-													size="sm"
-													onclick={() => openPopoutEditor('description', 'Description', editValue)}
-													class="self-start mt-1"
-												>
-													Expand
-												</Button>
-											</div>
-											<div class="flex gap-2">
-												<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
-													{#if isSaving}
-														<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-														Saving...
-													{:else}
-														<CheckCircleFill class="h-3 w-3" />
-														Save
-													{/if}
-												</Button>
-												<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
-											</div>
-										</div>
-									{/if}
+									</div>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -693,7 +706,7 @@
 				<CardContent class="space-y-4 px-0">
 					<!-- Scenario Field -->
 					{#if editingField === 'scenario'}
-						<div class="rounded-lg bg-muted/50 p-4 space-y-2">
+						<div class="space-y-2 rounded-lg bg-muted/50 p-4">
 							<h4 class="text-sm font-semibold text-muted-foreground">Scenario</h4>
 							<div class="flex gap-2">
 								<Textarea
@@ -711,7 +724,7 @@
 									variant="outline"
 									size="sm"
 									onclick={() => openPopoutEditor('scenario', 'Scenario', editValue)}
-									class="self-start mt-1"
+									class="mt-1 self-start"
 								>
 									Expand
 								</Button>
@@ -719,7 +732,9 @@
 							<div class="flex gap-2">
 								<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
 									{#if isSaving}
-										<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+										<div
+											class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+										></div>
 										Saving...
 									{:else}
 										<CheckCircleFill class="h-3 w-3" />
@@ -735,7 +750,9 @@
 							<div
 								class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 							>
-								<MarkdownRenderer md={substituteTemplateVariables(character.scenario, character.name)} />
+								<MarkdownRenderer
+									md={substituteTemplateVariables(character.scenario, character.name)}
+								/>
 							</div>
 							<Button
 								variant="ghost"
@@ -750,7 +767,7 @@
 					{:else}
 						<div class="group relative rounded-lg bg-muted/50 p-4">
 							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
-							<div class="text-muted-foreground italic text-sm">No scenario defined</div>
+							<div class="text-sm italic text-muted-foreground">No scenario defined</div>
 							<Button
 								variant="ghost"
 								size="sm"
@@ -765,7 +782,7 @@
 
 					<!-- Personality Field -->
 					{#if editingField === 'personality'}
-						<div class="rounded-lg bg-muted/50 p-4 space-y-2">
+						<div class="space-y-2 rounded-lg bg-muted/50 p-4">
 							<h4 class="text-sm font-semibold text-muted-foreground">Personality</h4>
 							<div class="flex gap-2">
 								<Textarea
@@ -783,7 +800,7 @@
 									variant="outline"
 									size="sm"
 									onclick={() => openPopoutEditor('personality', 'Personality', editValue)}
-									class="self-start mt-1"
+									class="mt-1 self-start"
 								>
 									Expand
 								</Button>
@@ -791,7 +808,9 @@
 							<div class="flex gap-2">
 								<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
 									{#if isSaving}
-										<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+										<div
+											class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+										></div>
 										Saving...
 									{:else}
 										<CheckCircleFill class="h-3 w-3" />
@@ -807,7 +826,9 @@
 							<div
 								class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 							>
-								<MarkdownRenderer md={substituteTemplateVariables(character.personality, character.name)} />
+								<MarkdownRenderer
+									md={substituteTemplateVariables(character.personality, character.name)}
+								/>
 							</div>
 							<Button
 								variant="ghost"
@@ -822,7 +843,7 @@
 					{:else}
 						<div class="group relative rounded-lg bg-muted/50 p-4">
 							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
-							<div class="text-muted-foreground italic text-sm">No personality defined</div>
+							<div class="text-sm italic text-muted-foreground">No personality defined</div>
 							<Button
 								variant="ghost"
 								size="sm"
@@ -834,7 +855,6 @@
 							</Button>
 						</div>
 					{/if}
-
 				</CardContent>
 			</Card>
 		{/if}

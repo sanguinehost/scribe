@@ -196,6 +196,12 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         lorebook_service,
         auth_backend,
         file_storage_service,
+        email_service: {
+            // Create email service based on environment
+            let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
+            let base_url = config.frontend_base_url.clone();
+            scribe_backend::services::create_email_service(&app_env, base_url)
+        },
     })
 }
 

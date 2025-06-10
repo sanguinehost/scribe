@@ -1610,3 +1610,56 @@ async fn test_session_rotation_after_login() -> AnyhowResult<()> {
 
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_login_pending_verification() -> AnyhowResult<()> {
+    let test_app = test_helpers::spawn_app(true, false, false).await;
+    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    // Ensure encryption columns exist
+    ensure_encryption_columns_exist(&test_app.db_pool).await?;
+
+    let username = format!("pending_user_{}", Uuid::new_v4());
+    let password = "password123";
+
+    // Create a new user with pending status for email verification testing.
+    let user = test_helpers::db::create_pending_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
+
+    guard.add_user(user.id);
+
+    // Attempt to log in with the pending user
+    let login_payload = json!({
+        "identifier": username,
+        "password": password
+    });
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(login_payload.to_string()))?;
+
+    let response = test_app.router.clone().oneshot(request).await?;
+
+    // Should fail with 403 Forbidden
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "Login with pending account should be forbidden"
+    );
+
+    // Verify error message
+    let (_status, error_body) = get_json_body::<Value>(response).await?;
+    assert_eq!(
+        error_body["error"],
+        "Your account is pending email verification."
+    );
+
+    guard.cleanup().await?;
+    Ok(())
+}

@@ -279,6 +279,19 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    email_verification_tokens (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        token -> Text,
+        expires_at -> Timestamptz,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     lorebook_entries (id) {
         is_enabled -> Bool,
         insertion_order -> Int4,
@@ -505,6 +518,7 @@ diesel::joinable!(chat_session_lorebooks -> lorebooks (lorebook_id));
 diesel::joinable!(chat_session_lorebooks -> users (user_id));
 diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
+diesel::joinable!(email_verification_tokens -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
 diesel::joinable!(lorebook_entries -> users (user_id));
 diesel::joinable!(lorebooks -> users (user_id));
@@ -525,6 +539,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_messages,
     chat_session_lorebooks,
     chat_sessions,
+    email_verification_tokens,
     lorebook_entries,
     lorebooks,
     old_documents,

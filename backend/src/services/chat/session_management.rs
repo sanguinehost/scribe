@@ -284,7 +284,7 @@ fn validate_and_get_character(
 
     if character.user_id != user_id {
         error!(%character_id, %user_id, owner_id=%character.user_id, "User does not own character");
-        return Err(AppError::Forbidden);
+        return Err(AppError::Forbidden("Access denied to character".to_string()));
     }
 
     Ok(character)
@@ -412,7 +412,7 @@ fn validate_lorebook_ownership(
             if owner_id == user_id {
                 Ok(())
             } else {
-                Err(AppError::Forbidden)
+                Err(AppError::Forbidden("Access denied to lorebook".to_string()))
             }
         },
     )
