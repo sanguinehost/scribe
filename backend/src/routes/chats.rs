@@ -1232,6 +1232,11 @@ pub async fn get_chat_settings_handler(
     )
     .await?;
 
+    info!(session_id = %id, user_id = %user.id,
+          response_system_prompt_is_some = chat_settings_response.system_prompt.is_some(),
+          response_system_prompt_len = chat_settings_response.system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
+          "get_chat_settings_handler: Returning response to client");
+
     Ok(Json(chat_settings_response))
 }
 

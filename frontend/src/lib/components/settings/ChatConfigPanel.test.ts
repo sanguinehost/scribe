@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import ChatConfigPanel from './ChatConfigPanel.svelte';
 import { apiClient } from '$lib/api';
 import type { EnhancedChatSessionLorebookAssociation, ScribeChatSession } from '$lib/types';
@@ -12,7 +12,8 @@ vi.mock('$lib/api', () => ({
 		setCharacterLorebookOverride: vi.fn(),
 		removeCharacterLorebookOverride: vi.fn(),
 		getChatSessionSettings: vi.fn(),
-		updateChatSessionSettings: vi.fn()
+		updateChatSessionSettings: vi.fn(),
+		getUserSettings: vi.fn()
 	}
 }));
 
@@ -24,6 +25,9 @@ vi.mock('svelte-sonner', () => ({
 		info: vi.fn()
 	}
 }));
+
+// Import the mocked toast for use in tests
+import { toast } from 'svelte-sonner';
 
 describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 	const mockChat: ScribeChatSession = {
@@ -103,8 +107,26 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 				model_name: 'gemini-1.5-pro',
 				temperature: 0.7,
 				max_output_tokens: 1000,
-				gemini_thinking_budget: null,
-				system_prompt: null
+				gemini_thinking_budget: null
+			}
+		} as any);
+
+		vi.mocked(apiClient.getUserSettings).mockResolvedValue({
+			isOk: () => true,
+			value: {
+				default_model_name: 'gemini-1.5-pro',
+				default_temperature: 1.0,
+				default_max_output_tokens: 1000,
+				default_frequency_penalty: 0.0,
+				default_presence_penalty: 0.0,
+				default_top_p: 0.95,
+				default_top_k: 40,
+				default_seed: null,
+				default_gemini_thinking_budget: null,
+				default_gemini_enable_code_execution: false,
+				default_context_total_token_limit: 8000,
+				default_context_recent_history_budget: 4000,
+				default_context_rag_budget: 2000
 			}
 		} as any);
 

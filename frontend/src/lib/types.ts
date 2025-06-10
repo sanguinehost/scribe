@@ -466,7 +466,6 @@ export type SuggestedActionsResponse = {
 // Types for Chat Session Settings
 export interface UpdateChatSessionSettingsRequest {
 	title?: string | null;
-	system_prompt?: string | null;
 	temperature?: number | null;
 	max_output_tokens?: number | null;
 	frequency_penalty?: number | null;
@@ -487,7 +486,11 @@ export interface UpdateChatSessionSettingsRequest {
 }
 
 export interface ChatSessionSettingsResponse {
-	model_name?: string | null;
+	// Required fields matching backend ChatSettingsResponse
+	model_name: string;
+	history_management_strategy: string;
+	history_management_limit: number;
+	// Optional fields
 	temperature?: number | null;
 	max_output_tokens?: number | null;
 	frequency_penalty?: number | null;
@@ -495,12 +498,13 @@ export interface ChatSessionSettingsResponse {
 	top_k?: number | null;
 	top_p?: number | null;
 	seed?: number | null;
+	stop_sequences?: (string | null)[] | null;
 	gemini_thinking_budget?: number | null;
 	gemini_enable_code_execution?: boolean | null;
+	// Context fields that don't exist in backend but are expected by frontend components
 	context_total_token_limit?: number | null;
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
-	system_prompt?: string | null;
 }
 
 // Types for Global User Settings

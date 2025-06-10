@@ -1163,3 +1163,372 @@ async fn update_chat_settings_unauthorized() {
     let response = test_app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn debug_system_prompt_encryption_decryption() {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    
+    // Create a test user
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        "debug_user".to_string(),
+        "password".to_string(),
+    )
+    .await
+    .expect("Failed to create test user");
+
+    // Create a DEK for the user
+    let dek_bytes = vec![0u8; 32]; // Use a dummy 32-byte key
+    let user_dek = SecretBox::new(Box::new(dek_bytes));
+
+    // Create a character (minimal)
+    let character: DbCharacter = test_app
+        .db_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |conn| {
+            use scribe_backend::schema::characters;
+            use scribe_backend::models::character_card::NewCharacter;
+            use chrono::Utc;
+            
+            let new_character = NewCharacter {
+                user_id: user.id,
+                spec: "character_card_v2".to_string(),
+                spec_version: "2.0.0".to_string(),
+                name: "Debug Character".to_string(),
+                visibility: Some("private".to_string()),
+                created_at: Some(Utc::now()),
+                updated_at: Some(Utc::now()),
+                ..Default::default()
+            };
+
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .get_result::<DbCharacter>(conn)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Create a chat session
+    let session = test_app
+        .db_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |conn| {
+            use scribe_backend::schema::chat_sessions;
+            use scribe_backend::models::chats::NewChat;
+            use chrono::Utc;
+            
+            let new_chat = NewChat {
+                id: Uuid::new_v4(),
+                user_id: user.id,
+                character_id: character.id,
+                title_ciphertext: None,
+                title_nonce: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                history_management_strategy: "message_window".to_string(),
+                history_management_limit: 20,
+                model_name: "gemini-2.5-flash-preview-05-20".to_string(),
+                visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
+            };
+
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat)
+                .returning(scribe_backend::models::chats::Chat::as_returning())
+                .get_result(conn)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    println!("Created session: {:?}", session.id);
+
+    // Test 1: Update the system prompt
+    let system_prompt_text = "You are a helpful assistant for debugging encryption.";
+    let update_request = UpdateChatSettingsRequest {
+        system_prompt: Some(system_prompt_text.to_string()),
+        temperature: Some(BigDecimal::from_str("0.8").unwrap()),
+        max_output_tokens: Some(1000),
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        model_name: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+    };
+
+    println!("Updating session settings with system prompt: {:?}", system_prompt_text);
+
+    let updated_settings = scribe_backend::services::chat::settings::update_session_settings(
+        &test_app.db_pool,
+        user.id,
+        session.id,
+        update_request,
+        Some(&user_dek),
+    )
+    .await
+    .expect("Failed to update session settings");
+
+    println!("Update response system_prompt: {:?}", updated_settings.system_prompt);
+
+    // Test 2: Fetch the settings back
+    println!("Fetching session settings...");
+    
+    let fetched_settings = scribe_backend::services::chat::settings::get_session_settings(
+        &test_app.db_pool,
+        user.id,
+        session.id,
+        Some(&user_dek),
+    )
+    .await
+    .expect("Failed to get session settings");
+
+    println!("Fetched system_prompt: {:?}", fetched_settings.system_prompt);
+
+    // Test 3: Check what's actually stored in the database
+    let (stored_ciphertext, stored_nonce) = test_app
+        .db_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session.id))
+                .select((
+                    chat_sessions::system_prompt_ciphertext,
+                    chat_sessions::system_prompt_nonce,
+                ))
+                .first::<(Option<Vec<u8>>, Option<Vec<u8>>)>(conn)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    println!("Stored ciphertext: {:?}", stored_ciphertext.as_ref().map(|c| c.len()));
+    println!("Stored nonce: {:?}", stored_nonce.as_ref().map(|n| n.len()));
+
+    // Test 4: Manual decryption
+    if let (Some(ciphertext), Some(nonce)) = (&stored_ciphertext, &stored_nonce) {
+        match scribe_backend::crypto::decrypt_gcm(ciphertext, nonce, &user_dek) {
+            Ok(plaintext_secret) => {
+                use secrecy::ExposeSecret;
+                let decrypted_string = String::from_utf8(plaintext_secret.expose_secret().clone())
+                    .expect("Failed to convert to UTF-8");
+                println!("Manual decryption successful: {:?}", decrypted_string);
+            }
+            Err(e) => {
+                println!("Manual decryption failed: {:?}", e);
+            }
+        }
+    }
+
+    // Assertions
+    assert!(fetched_settings.system_prompt.is_some(), "System prompt should be present");
+    assert_eq!(
+        fetched_settings.system_prompt.as_ref().unwrap(),
+        system_prompt_text,
+        "Decrypted system prompt should match original"
+    );
+}
+
+#[tokio::test]
+async fn test_actual_api_route_for_system_prompt() {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    
+    // Create a test user and login to get auth cookie
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        "api_debug_user".to_string(),
+        "password".to_string(),
+    )
+    .await
+    .expect("Failed to create test user");
+
+    let login_payload = serde_json::json!({
+        "identifier": "api_debug_user",
+        "password": "password"
+    });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
+        .unwrap();
+    
+    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let auth_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("Set-Cookie header should be present")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    // Create a character
+    let character: DbCharacter = test_app
+        .db_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |conn| {
+            use scribe_backend::schema::characters;
+            use scribe_backend::models::character_card::NewCharacter;
+            use chrono::Utc;
+            
+            let new_character = NewCharacter {
+                user_id: user.id,
+                spec: "character_card_v2".to_string(),
+                spec_version: "2.0.0".to_string(),
+                name: "API Debug Character".to_string(),
+                visibility: Some("private".to_string()),
+                created_at: Some(Utc::now()),
+                updated_at: Some(Utc::now()),
+                ..Default::default()
+            };
+
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .get_result::<DbCharacter>(conn)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Create a chat session
+    let session = test_app
+        .db_pool
+        .get()
+        .await
+        .unwrap()
+        .interact(move |conn| {
+            use scribe_backend::schema::chat_sessions;
+            use scribe_backend::models::chats::NewChat;
+            use chrono::Utc;
+            
+            let new_chat = NewChat {
+                id: Uuid::new_v4(),
+                user_id: user.id,
+                character_id: character.id,
+                title_ciphertext: None,
+                title_nonce: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                history_management_strategy: "message_window".to_string(),
+                history_management_limit: 20,
+                model_name: "gemini-2.5-flash-preview-05-20".to_string(),
+                visibility: Some("private".to_string()),
+                active_custom_persona_id: None,
+                active_impersonated_character_id: None,
+                temperature: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                top_p: None,
+                seed: None,
+                stop_sequences: None,
+                gemini_thinking_budget: None,
+                gemini_enable_code_execution: None,
+                system_prompt_ciphertext: None,
+                system_prompt_nonce: None,
+            };
+
+            diesel::insert_into(chat_sessions::table)
+                .values(&new_chat)
+                .returning(scribe_backend::models::chats::Chat::as_returning())
+                .get_result(conn)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    // First, set a system prompt via the UPDATE API route
+    let system_prompt_text = "You are a debugging assistant for API testing.";
+    let update_request = UpdateChatSettingsRequest {
+        system_prompt: Some(system_prompt_text.to_string()),
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        model_name: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+    };
+
+    println!("Testing UPDATE via API route: PUT /api/chat/{}/settings", session.id);
+    let update_api_request = Request::builder()
+        .method(Method::PUT)
+        .uri(format!("/api/chat/{}/settings", session.id))
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, auth_cookie.clone())
+        .body(Body::from(serde_json::to_string(&update_request).unwrap()))
+        .unwrap();
+
+    let update_response = test_app.router.clone().oneshot(update_api_request).await.unwrap();
+    println!("Update response status: {}", update_response.status());
+    assert_eq!(update_response.status(), StatusCode::OK);
+
+    let update_body = update_response.into_body().collect().await.unwrap().to_bytes();
+    let update_settings_resp: ChatSettingsResponse =
+        serde_json::from_slice(&update_body).expect("Failed to deserialize update response");
+    
+    println!("Update response system_prompt: {:?}", update_settings_resp.system_prompt);
+
+    // Now, fetch the settings via the GET API route that the frontend uses
+    println!("Testing GET via API route: GET /api/chat/{}/settings", session.id);
+    let get_api_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chat/{}/settings", session.id))
+        .header(header::COOKIE, auth_cookie.clone())
+        .body(Body::empty())
+        .unwrap();
+
+    let get_response = test_app.router.clone().oneshot(get_api_request).await.unwrap();
+    println!("Get response status: {}", get_response.status());
+    assert_eq!(get_response.status(), StatusCode::OK);
+
+    let get_body = get_response.into_body().collect().await.unwrap().to_bytes();
+    let get_settings_resp: ChatSettingsResponse =
+        serde_json::from_slice(&get_body).expect("Failed to deserialize get response");
+
+    println!("Get response system_prompt: {:?}", get_settings_resp.system_prompt);
+    println!("Get response system_prompt (raw bytes): {:?}", get_body);
+
+    // Assertions
+    assert!(get_settings_resp.system_prompt.is_some(), "System prompt should be present in GET response");
+    assert_eq!(
+        get_settings_resp.system_prompt.as_ref().unwrap(),
+        system_prompt_text,
+        "GET response system prompt should match original text"
+    );
+}

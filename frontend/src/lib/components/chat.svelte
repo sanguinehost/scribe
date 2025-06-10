@@ -139,6 +139,23 @@
 		}
 	}
 
+	// --- Get Current Chat Model ---
+	async function getCurrentChatModel() {
+		if (!chat?.id) return null;
+		
+		try {
+			const result = await apiClient.getChatSessionSettings(chat.id);
+			if (result.isOk()) {
+				return result.value.model_name || null;
+			} else {
+				console.error('Failed to get chat model:', result.error);
+			}
+		} catch (error) {
+			console.error('Failed to get chat model:', error);
+		}
+		return null;
+	}
+
 	// Load personas when component mounts
 	$effect(() => {
 		if (chat) {
@@ -266,7 +283,10 @@
 				},
 				// Send the constructed history. The backend expects a 'history' field (Vec<ApiChatMessage>)
 				// and an optional 'model' field.
-				body: JSON.stringify({ history: historyToSend }), // Corrected body
+				body: JSON.stringify({ 
+					history: historyToSend,
+					model: await getCurrentChatModel()
+				}), // Include current model selection
 				signal: signal // Pass the abort signal
 			});
 
