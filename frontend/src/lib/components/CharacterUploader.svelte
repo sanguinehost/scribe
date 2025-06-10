@@ -29,14 +29,14 @@
 		const target = event.target as HTMLInputElement;
 		if (target.files && target.files.length > 0) {
 			const file = target.files[0];
-			if (file.type === 'image/png') {
+			if (file.type === 'image/png' || file.type === 'application/json') {
 				selectedFile = file;
 				fileName = file.name;
 				error = null; // Clear previous errors
 			} else {
 				selectedFile = null;
 				fileName = '';
-				error = 'Invalid file type. Please select a PNG file.';
+				error = 'Invalid file type. Please select a PNG or JSON file.';
 				target.value = ''; // Reset file input
 			}
 		} else {
@@ -110,15 +110,15 @@
 	<DialogContent class="sm:max-w-[425px]">
 		<DialogHeader>
 			<DialogTitle>Upload Character Card</DialogTitle>
-			<DialogDescription>Select a V2 character card PNG file to upload.</DialogDescription>
+			<DialogDescription>Select a V2 character card PNG or JSON file to upload.</DialogDescription>
 		</DialogHeader>
 		<div class="grid gap-4 py-4">
 			<div class="grid w-full max-w-sm items-center gap-1.5">
-				<Label for="character-file">Character PNG</Label>
+				<Label for="character-file">Character File</Label>
 				<Input
 					id="character-file"
 					type="file"
-					accept=".png,image/png"
+					accept=".png,.json,image/png,application/json"
 					onchange={handleFileChange}
 					disabled={isLoading}
 				/>
