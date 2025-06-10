@@ -9,7 +9,7 @@ use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
     ChatRequest as GenAiChatRequest, ChatRole, ChatStreamEvent as GeminiResponseChunkAlias,
-    ReasoningEffort,
+    ReasoningEffort, HarmCategory, HarmBlockThreshold, SafetySetting,
 };
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
@@ -944,6 +944,16 @@ pub async fn stream_ai_response_and_save_message(
     }
     // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
     // The `gemini_enable_code_execution` variable will still affect tool declaration logic below.
+    
+    // Disable all safety filters to prevent content filtering errors
+    let safety_settings = vec![
+        SafetySetting::new(HarmCategory::Harassment, HarmBlockThreshold::BlockNone),
+        SafetySetting::new(HarmCategory::HateSpeech, HarmBlockThreshold::BlockNone),
+        SafetySetting::new(HarmCategory::SexuallyExplicit, HarmBlockThreshold::BlockNone),
+        SafetySetting::new(HarmCategory::DangerousContent, HarmBlockThreshold::BlockNone),
+        SafetySetting::new(HarmCategory::CivicIntegrity, HarmBlockThreshold::BlockNone),
+    ];
+    genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
 
     // NEW LOGIC FOR TOOL CONFIGURATION
     let mut tools_to_declare: Vec<genai::chat::Tool> = Vec::new();
