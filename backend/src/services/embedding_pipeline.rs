@@ -4,12 +4,11 @@ use crate::errors::AppError;
 use crate::llm::EmbeddingClient;
 use crate::models::chats::ChatMessage;
 use crate::state::AppState;
-use crate::text_processing::chunking::{ChunkConfig, chunk_text}; // Import ChunkConfig and ChunkingMetric
+use crate::text_processing::chunking::{ChunkConfig, chunk_text};
 use crate::vector_db::qdrant_client::{QdrantClientServiceTrait, create_qdrant_point};
 
 use crate::auth::session_dek::SessionDek;
 use async_trait::async_trait;
-// use qdrant_client::qdrant::r#match::MatchValue; // Unused import
 use qdrant_client::qdrant::{
     Condition, FieldCondition, Filter, Match, Value as QdrantValue, condition::ConditionOneOf,
     r#match::MatchValue,

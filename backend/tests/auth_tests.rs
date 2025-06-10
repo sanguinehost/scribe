@@ -1342,7 +1342,6 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore] // Added ignore for CI - Requires DB
 async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
@@ -1425,6 +1424,50 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
         !user_with_dek.dek_nonce.is_empty(),
         "DEK nonce should be populated"
     );
+
+    // Before attempting login, we need to verify the email first
+    // Get the verification token from the database
+    let conn = test_app.db_pool.get().await?;
+    let user_id_for_token = auth_response.user_id;
+    let verification_token = conn
+        .interact(move |conn| {
+            use scribe_backend::schema::email_verification_tokens::dsl::*;
+            email_verification_tokens
+                .filter(user_id.eq(user_id_for_token))
+                .select(token)
+                .first::<String>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
+
+    if let Some(token) = verification_token {
+        info!("Verifying email with token: {}", token);
+        
+        // Verify the email
+        let verify_payload = json!({
+            "token": token
+        });
+        
+        let verify_request = Request::builder()
+            .method(Method::POST)
+            .uri("/api/auth/verify-email")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(verify_payload.to_string()))?;
+
+        let verify_response = test_app.router.clone().oneshot(verify_request).await?;
+        
+        assert_eq!(
+            verify_response.status(),
+            StatusCode::OK,
+            "Email verification failed"
+        );
+        
+        info!("Email verification successful");
+    } else {
+        return Err(anyhow::anyhow!("No verification token found for user"));
+    }
 
     // Now try to login (which will test DEK decryption)
     let login_payload = json!({

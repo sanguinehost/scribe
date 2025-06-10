@@ -1439,6 +1439,9 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         lorebook_service: lorebook_service_for_test,
         auth_backend: auth_backend_for_test,
         file_storage_service: file_storage_service_for_test,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
 
     let app_state_arc = Arc::new(AppState::new(

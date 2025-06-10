@@ -7,6 +7,7 @@ use axum::{
     http::{Method, Request, StatusCode, header},
 };
 use base64::Engine;
+use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, OptionalExtension};
 use http_body_util::BodyExt;
 use scribe_backend::{crypto, models::auth::AuthResponse, test_helpers};
 use secrecy::{ExposeSecret, SecretString};
@@ -75,6 +76,44 @@ async fn test_recovery_key_generation_during_registration() -> AnyhowResult<()> 
         decoded_bytes.len() >= 16,
         "Recovery key should decode to at least 16 bytes of random data"
     );
+
+    // Verify email before login
+    let conn = test_app.db_pool.get().await?;
+    let user_id_for_token = auth_response.user_id;
+    let verification_token = conn
+        .interact(move |conn| {
+            use scribe_backend::schema::email_verification_tokens::dsl::*;
+            email_verification_tokens
+                .filter(user_id.eq(user_id_for_token))
+                .select(token)
+                .first::<String>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
+
+    if let Some(token) = verification_token {
+        let verify_payload = json!({
+            "token": token
+        });
+        
+        let verify_request = Request::builder()
+            .method(Method::POST)
+            .uri("/api/auth/verify-email")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(verify_payload.to_string()))?;
+
+        let verify_response = test_app.router.clone().oneshot(verify_request).await?;
+        
+        assert_eq!(
+            verify_response.status(),
+            StatusCode::OK,
+            "Email verification failed"
+        );
+    } else {
+        return Err(anyhow::anyhow!("No verification token found for user"));
+    }
 
     // Check that the user can login with their credentials
     let login_payload = json!({

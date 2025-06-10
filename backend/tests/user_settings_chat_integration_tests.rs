@@ -202,6 +202,9 @@ async fn test_chat_session_uses_user_default_model() {
         lorebook_service,
         auth_backend,
         file_storage_service,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
 
     let app_state_for_session = Arc::new(AppState::new(db_pool, config, app_services));

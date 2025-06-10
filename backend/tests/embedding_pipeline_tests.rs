@@ -5,16 +5,19 @@ use mockall::predicate::*;
 use qdrant_client::qdrant::{PointId, Value, point_id::PointIdOptions};
 use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
-    services::chat_override_service::ChatOverrideService,
-    services::embedding_pipeline::{
-        ChatMessageChunkMetadata, EmbeddingPipelineService, LorebookEntryParams, RetrievedMetadata,
-    }, // Updated imports
-    services::encryption_service::EncryptionService,
-    services::hybrid_token_counter::HybridTokenCounter,
-    services::lorebook_service::LorebookService, // Added LorebookService
-    services::tokenizer_service::TokenizerService,
-    services::user_persona_service::UserPersonaService, // Added UserPersonaService
-    state::{AppState, AppStateServices},                // Added AppState and AppStateServices
+    services::{
+        chat_override_service::ChatOverrideService,
+        embedding_pipeline::{
+            ChatMessageChunkMetadata, EmbeddingPipelineService, LorebookEntryParams, RetrievedMetadata,
+        },
+        encryption_service::EncryptionService,
+        hybrid_token_counter::HybridTokenCounter,
+        lorebook_service::LorebookService,
+        tokenizer_service::TokenizerService,
+        user_persona_service::UserPersonaService,
+    },
+    state::{AppState, AppStateServices},
+    state_builder::AppStateServicesBuilder, // Use the new builder
     test_helpers::{self, MockQdrantClientService}, // Removed AppStateBuilder, config. Added self for spawn_app
     text_processing::chunking::ChunkConfig,
     vector_db::qdrant_client::{QdrantClientServiceTrait, ScoredPoint, create_message_id_filter},
@@ -77,52 +80,17 @@ fn assert_retrieved_chunks_content(
 }
 
 fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
-    let embedding_pipeline_service =
-        EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
-
-    let encryption_service = Arc::new(EncryptionService::new());
-    let chat_override_service = Arc::new(ChatOverrideService::new(
-        test_app.db_pool.clone(),
-        encryption_service.clone(),
-    ));
-    let tokenizer_service = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
-    )
-    .expect("Failed to create tokenizer for test");
-    let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));
-    let user_persona_service = Arc::new(UserPersonaService::new(
-        test_app.db_pool.clone(),
-        encryption_service.clone(),
-    ));
-    let lorebook_service = Arc::new(LorebookService::new(
-        test_app.db_pool.clone(),
-        encryption_service.clone(),
-        test_app.qdrant_service.clone(),
-    ));
-    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
-        test_app.db_pool.clone(),
-    ));
-    let file_storage_service = Arc::new(
-        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service"),
-    );
-
-    let services = AppStateServices {
-        ai_client: test_app
-            .mock_ai_client
-            .clone()
-            .expect("Mock AI client should be present"),
-        embedding_client: test_app.mock_embedding_client.clone(),
-        qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: Arc::new(embedding_pipeline_service),
-        chat_override_service,
-        user_persona_service,
-        token_counter: hybrid_token_counter,
-        encryption_service,
-        lorebook_service,
-        auth_backend,
-        file_storage_service,
-    };
+    // Use the new builder pattern - much simpler!
+    let services = AppStateServicesBuilder::new(test_app.db_pool.clone(), test_app.config.clone())
+        .with_ai_client(
+            test_app
+                .mock_ai_client
+                .clone()
+                .expect("Mock AI client should be present"),
+        )
+        .with_embedding_client(test_app.mock_embedding_client.clone())
+        .with_qdrant_service(test_app.qdrant_service.clone())
+        .build();
 
     Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -673,6 +641,9 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         lorebook_service: lorebook_service_for_test_5,
         auth_backend: auth_backend_5,
         file_storage_service: file_storage_service_5,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
 
     let app_state = Arc::new(AppState::new(
@@ -766,6 +737,9 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         lorebook_service: lorebook_service_for_test_6,
         auth_backend: auth_backend_6,
         file_storage_service: file_storage_service_6,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
 
     let app_state_arc = Arc::new(AppState::new(
@@ -834,6 +808,9 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         lorebook_service: app_state_arc.lorebook_service.clone(),
         auth_backend: app_state_arc.auth_backend.clone(), // Reuse auth_backend from app_state_arc
         file_storage_service: app_state_arc.file_storage_service.clone(),
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -953,6 +930,9 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         lorebook_service: lorebook_service_for_test_7,
         auth_backend: auth_backend_7,
         file_storage_service: file_storage_service_7,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1016,6 +996,9 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         lorebook_service: app_state_arc.lorebook_service.clone(),
         auth_backend: app_state_arc.auth_backend.clone(),
         file_storage_service: app_state_arc.file_storage_service.clone(),
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1159,6 +1142,9 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         lorebook_service: lorebook_service_for_test_8,
         auth_backend: auth_backend_8,
         file_storage_service: file_storage_service_8,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1306,6 +1292,9 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         lorebook_service: lorebook_service_for_test_9,
         auth_backend: auth_backend_9,
         file_storage_service: file_storage_service_9,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1456,6 +1445,9 @@ async fn test_rag_context_injection_with_qdrant() {
         lorebook_service: lorebook_service_for_test_10,
         auth_backend: auth_backend_10,
         file_storage_service: file_storage_service_10,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1805,6 +1797,9 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         lorebook_service,
         auth_backend,
         file_storage_service,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2119,6 +2114,9 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         lorebook_service,
         auth_backend,
         file_storage_service,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
