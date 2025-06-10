@@ -2,6 +2,7 @@ pub mod character_parser;
 pub mod character_service;
 pub mod chat;
 pub mod chat_override_service;
+pub mod email_service;
 pub mod embedding_pipeline;
 pub mod encryption_service;
 pub mod file_storage_service;
@@ -15,6 +16,7 @@ pub mod user_settings_service;
 
 pub use character_service::CharacterService;
 pub use chat_override_service::ChatOverrideService;
+pub use email_service::{create_email_service, EmailService};
 // pub use auth_service::AuthService; // Module file missing
 // pub use chat_service::ChatService; // ChatService struct not found in chat_service.rs
 pub use encryption_service::EncryptionService;

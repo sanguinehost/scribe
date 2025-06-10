@@ -324,7 +324,7 @@ impl LorebookService {
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
                     if exists.is_some() {
-                        Err(AppError::Forbidden)
+                        Err(AppError::Forbidden("Access denied to lorebook".to_string()))
                     } else {
                         Err(AppError::NotFound("Lorebook not found".to_string()))
                     }
@@ -401,7 +401,7 @@ impl LorebookService {
                     }
                     Some(_) => {
                         // Lorebook exists but belongs to another user
-                        Err(AppError::Forbidden)
+                        Err(AppError::Forbidden("Access denied to lorebook".to_string()))
                     }
                     None => {
                         // Lorebook doesn't exist
@@ -1577,7 +1577,7 @@ AppError::InternalServerErrorGeneric(format!(
                     }
                     Some(_) => {
                         // Entry exists but belongs to another user
-                        Err(AppError::Forbidden)
+                        Err(AppError::Forbidden("Access denied to lorebook entry".to_string()))
                     }
                     None => {
                         // Entry doesn't exist

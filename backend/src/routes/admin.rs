@@ -66,7 +66,7 @@ fn require_admin(auth_session: &CurrentAuthSession) -> Result<(), AppError> {
                 }
                 role => {
                     warn!(user_id = %user_id, username = %username, role = ?role, "User does not have Administrator role");
-                    Err(AppError::Forbidden)
+                    Err(AppError::Forbidden("Access denied - admin privileges required".to_string()))
                 }
             }
         })

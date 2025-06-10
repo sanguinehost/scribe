@@ -26,7 +26,7 @@
 	selectedLorebookStore.setContext();
 
 	const settingsStore = SettingsStore.toContext(new SettingsStore());
-	
+
 	const sidebarStore = SidebarStore.toContext(new SidebarStore());
 
 	// Show toast notification if chat loading failed during SSR/initial load

@@ -1262,6 +1262,9 @@ mod tests {
             lorebook_service,
             auth_backend,
             file_storage_service,
+            email_service: Arc::new(crate::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            )),
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));

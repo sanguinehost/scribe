@@ -46,7 +46,7 @@
 
 	// Only fetch on mount, not on every re-render
 	let hasFetched = false;
-	
+
 	onMount(async () => {
 		if (!hasFetched) {
 			await fetchCharacters(); // Call fetch function on mount

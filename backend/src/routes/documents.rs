@@ -107,7 +107,7 @@ async fn get_documents_by_id_handler(
             // Check if the user has access to these documents
             if let Some(doc) = documents.first() {
                 if doc.user_id != user.id {
-                    return Err(AppError::Forbidden); // Changed to unit variant
+                    return Err(AppError::Forbidden("Access denied to documents".to_string()));
                 }
             }
 
@@ -155,7 +155,7 @@ async fn get_document_by_id_handler(
 
             // Check if the user has access to this document
             if document.user_id != user.id {
-                return Err(AppError::Forbidden); // Changed to unit variant
+                return Err(AppError::Forbidden("Access denied to document".to_string()));
             }
 
             Ok(document)
@@ -204,7 +204,7 @@ async fn delete_documents_by_id_after_timestamp_handler(
 
             if let Some(doc) = document {
                 if doc.user_id != user.id {
-                    return Err(AppError::Forbidden); // Changed to unit variant
+                    return Err(AppError::Forbidden("Access denied to delete document".to_string()));
                 }
             }
 
@@ -272,7 +272,7 @@ async fn create_suggestion_handler(
 
             if let Some(doc) = document {
                 if doc.user_id != user.id {
-                    return Err(AppError::Forbidden); // Changed to unit variant
+                    return Err(AppError::Forbidden("Access denied to create suggestion".to_string()));
                 }
             } else {
                 return Err(AppError::NotFound("Document not found".to_string()));
@@ -336,7 +336,7 @@ async fn get_suggestions_by_document_id_handler(
 
             if let Some(doc) = document {
                 if doc.user_id != user.id {
-                    return Err(AppError::Forbidden); // Changed to unit variant
+                    return Err(AppError::Forbidden("Access denied to get suggestions".to_string()));
                 }
             } else {
                 return Err(AppError::NotFound("Document not found".to_string()));

@@ -1,8 +1,9 @@
-use crate::auth::{self, AuthError, create_user, recover_user_password_with_phrase}; // Added recover_user_password_with_phrase
+use crate::auth::{self, AuthError, recover_user_password_with_phrase}; // Added recover_user_password_with_phrase
 use crate::errors::AppError;
 use crate::models::auth::{
     AuthResponse, ChangePasswordPayload, LoginPayload, RecoverPasswordPayload, RegisterPayload,
 }; // Added RecoverPasswordPayload
+use crate::models::email_verification::VerifyEmailPayload;
 use crate::state::{AppState, DbPool}; // Added DbPool import
 use axum::Json;
 use axum::extract::State;
@@ -67,11 +68,54 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/me", get(me_handler))
         .route("/change-password", post(change_password_handler))
         .route("/recover-password", post(recover_password_handler)) // New route
+        .route("/verify-email", post(verify_email_handler)) // New email verification route
         .route("/session", post(create_session_handler))
         .route("/session/current", get(get_session_handler)) // Changed route for GET
         .route("/session/{id}", delete(delete_session_handler)) // DELETE remains on old path for now
         .route("/session/{id}/extend", post(extend_session_handler))
         .route("/user/{id}/sessions", delete(delete_user_sessions_handler))
+}
+
+#[instrument(skip(state, payload), err)]
+pub async fn verify_email_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<VerifyEmailPayload>,
+) -> Result<Response, AppError> {
+    info!("Email verification handler entered");
+
+    let pool = state.pool.clone();
+    let token = payload.token;
+
+    let verification_result = pool
+        .get()
+        .await
+        .map_err(AppError::from)?
+        .interact(move |conn| auth::verify_email(conn, &token))
+        .await
+        .map_err(AppError::from)?;
+
+    match verification_result {
+        Ok(_) => {
+            info!("Email verification successful.");
+            Ok((
+                StatusCode::OK,
+                Json(json!({ "message": "Email verified successfully. You can now log in." })),
+            )
+                .into_response())
+        }
+        Err(AuthError::InvalidVerificationToken) => {
+            warn!("Email verification failed: Invalid or expired token.");
+            Err(AppError::BadRequest(
+                "The verification link is invalid or has expired.".to_string(),
+            ))
+        }
+        Err(e) => {
+            error!(error = ?e, "Email verification failed: Unknown AuthError.");
+            Err(AppError::InternalServerErrorGeneric(
+                "An unexpected error occurred during email verification.".to_string(),
+            ))
+        }
+    }
 }
 
 /// Handles user registration with username, email, and password.
@@ -100,84 +144,56 @@ pub async fn register_handler(
     let pool = state.pool.clone();
     let reg_username = payload.username.clone(); // Renamed to avoid shadowing schema item
     let reg_email = payload.email.clone(); // Renamed to avoid shadowing schema item
-    let plaintext_password = payload.password.clone(); // Keep original Secret for KEK derivation
 
-    // Hash the password asynchronously for storage
-    // Clone the secret to pass to hash_password, original plaintext_password is moved to create_user
-    let _pwd_hash = crate::auth::hash_password(plaintext_password.clone()).await?;
+    debug!("Attempting to create user with email verification...");
+    // Use the new create_user_with_verification function
+    let user_result = crate::auth::create_user_with_verification(
+        &pool,
+        payload,
+        state.email_service.clone(),
+    )
+    .await;
 
-    debug!("Attempting to get DB connection from pool for registration...");
-    match pool.get().await {
-        Ok(conn) => {
-            debug!("Got DB connection. Calling interact for create_user...");
-            // Pass the original payload to create_user
-            let user_result = conn
-                .interact(move |conn_inner| {
-                    // Create a new Runtime for the blocking task
-                    let rt = tokio::runtime::Runtime::new()
-                        .expect("Failed to create runtime in register handler");
-
-                    // Use the runtime to block on the async create_user call
-                    rt.block_on(create_user(conn_inner, payload))
-                })
-                .await;
-
-            match user_result {
-                Ok(inner_result) => {
-                    debug!("Interact for create_user completed.");
-                    match inner_result {
-                        Ok(user) => {
-                            info!(user_id = %user.id, "User registration successful.");
-                            // Use AuthResponse for success
-                            // The created user has the recovery phrase that was used
-                            let response = AuthResponse {
-                                user_id: user.id,
-                                username: user.username,
-                                email: user.email,
-                                role: format!("{:?}", user.role),
-                                recovery_key: user.recovery_phrase.clone(), // Get recovery phrase from the returned user
-                                default_persona_id: user.default_persona_id,
-                            };
-                            Ok((StatusCode::CREATED, Json(response)).into_response())
-                        }
-                        Err(AuthError::UsernameTaken) => {
-                            warn!("Registration failed: Username {} taken.", reg_username);
-                            Err(AppError::UsernameTaken)
-                        }
-                        Err(AuthError::EmailTaken) => {
-                            // Handle EmailTaken error
-                            warn!("Registration failed: Email {} taken.", reg_email);
-                            Err(AppError::EmailTaken)
-                        }
-                        Err(AuthError::HashingError) => {
-                            error!("Registration failed: Password hashing error.");
-                            Err(AppError::InternalServerErrorGeneric(
-                                "Password hashing failed during registration".to_string(),
-                            ))
-                        }
-                        Err(AuthError::DatabaseError(e)) => {
-                            error!(error = ?e, "Registration failed: Database error.");
-                            Err(AppError::DatabaseQueryError(e))
-                        }
-                        Err(e) => {
-                            error!(error = ?e, "Registration failed: Unknown AuthError.");
-                            Err(AppError::InternalServerErrorGeneric(
-                                "An unexpected authentication error occurred.".to_string(),
-                            ))
-                        }
-                    }
-                }
-                Err(interact_err) => {
-                    error!(error = ?interact_err, "Interact error during user creation");
-                    Err(AppError::InternalServerErrorGeneric(
-                        interact_err.to_string(),
-                    ))
-                }
-            }
+    match user_result {
+        Ok(user) => {
+            debug!("User creation with email verification completed.");
+            info!(user_id = %user.id, "User registration successful.");
+            // Use AuthResponse for success
+            // The created user has the recovery phrase that was used
+            let response = AuthResponse {
+                user_id: user.id,
+                username: user.username,
+                email: user.email,
+                role: format!("{:?}", user.role),
+                recovery_key: user.recovery_phrase.clone(), // Get recovery phrase from the returned user
+                default_persona_id: user.default_persona_id,
+            };
+            Ok((StatusCode::CREATED, Json(response)).into_response())
         }
-        Err(pool_err) => {
-            error!(error = ?pool_err, "Failed to get DB connection for registration");
-            Err(AppError::DbPoolError(pool_err.to_string()))
+        Err(AuthError::UsernameTaken) => {
+            warn!("Registration failed: Username {} taken.", reg_username);
+            Err(AppError::UsernameTaken)
+        }
+        Err(AuthError::EmailTaken) => {
+            // Handle EmailTaken error
+            warn!("Registration failed: Email {} taken.", reg_email);
+            Err(AppError::EmailTaken)
+        }
+        Err(AuthError::HashingError) => {
+            error!("Registration failed: Password hashing error.");
+            Err(AppError::InternalServerErrorGeneric(
+                "Password hashing failed during registration".to_string(),
+            ))
+        }
+        Err(AuthError::DatabaseError(e)) => {
+            error!(error = ?e, "Registration failed: Database error.");
+            Err(AppError::DatabaseQueryError(e))
+        }
+        Err(e) => {
+            error!(error = ?e, "Registration failed: Unknown AuthError.");
+            Err(AppError::InternalServerErrorGeneric(
+                "An unexpected authentication error occurred.".to_string(),
+            ))
         }
     }
 }
@@ -343,6 +359,12 @@ pub async fn login_handler(
                                     .to_string(),
                             ))
                         }
+                        AuthError::AccountPendingVerification => {
+                            warn!("Login failed: Account pending verification.");
+                            Err(AppError::Forbidden(
+                                "Your account is pending email verification.".to_string(),
+                            ))
+                        }
                         AuthError::HashingError => Err(AppError::PasswordProcessingError),
                         AuthError::CryptoOperationFailed(_) => {
                             Err(AppError::InternalServerErrorGeneric(
@@ -389,6 +411,13 @@ pub async fn login_handler(
                         AuthError::SessionDeletionError(msg) => {
                             error!("Login failed: Session deletion error: {}", msg);
                             Err(AppError::SessionError(format!("Session error: {msg}")))
+                        }
+                        AuthError::InvalidVerificationToken => {
+                            // This error should not occur during login
+                            error!("Login failed: InvalidVerificationToken encountered during login flow.");
+                            Err(AppError::InternalServerErrorGeneric(
+                                "Unexpected authentication error.".to_string(),
+                            ))
                         }
                     }
                 }
@@ -839,35 +868,24 @@ pub async fn recover_password_handler(
     // 2. Call the core password recovery logic
     debug!("Calling auth::recover_user_password_with_phrase function.");
     // Use the shared auth_backend from AppState
-    match recover_user_password_with_phrase(
+    let result = recover_user_password_with_phrase(
         &state.auth_backend,
         &state.pool,
-        payload.identifier.clone(), // identifier is still needed for the function call
+        payload.identifier.clone(),
         payload.recovery_phrase,
         payload.new_password,
     )
-    .await
-    {
+    .await;
+
+    match result {
         Ok(user_id) => {
             info!(%user_id, "Password recovered successfully in core logic.");
 
-            // 3. Session Invalidation for all user's sessions
-            // This is crucial after a password recovery.
-            // We can reuse or adapt the logic from delete_user_sessions_handler,
-            // but it needs to be called here.
-            // For now, we'll call a helper that might be similar to delete_user_sessions_handler's core.
-            // This assumes `delete_all_sessions_for_user` exists or will be created in `auth` module.
-            // It's important this doesn't rely on an active session for *this* request.
             warn!(%user_id, "Attempting to invalidate all sessions for user after password recovery.");
-            match auth::delete_all_sessions_for_user(&state.pool, user_id).await {
-                Ok(_) => {
-                    info!(%user_id, "Successfully invalidated all sessions for user after password recovery.");
-                }
-                Err(e) => {
-                    // Log the error but don't fail the entire recovery process,
-                    // as password has been reset. This is a cleanup step.
-                    error!(%user_id, error = ?e, "Failed to invalidate all sessions for user after password recovery. This is non-critical for the recovery itself but should be investigated.");
-                }
+            if let Err(e) = auth::delete_all_sessions_for_user(&state.pool, user_id).await {
+                error!(%user_id, error = ?e, "Failed to invalidate all sessions for user after password recovery. This is non-critical but should be investigated.");
+            } else {
+                info!(%user_id, "Successfully invalidated all sessions for user after password recovery.");
             }
 
             Ok((

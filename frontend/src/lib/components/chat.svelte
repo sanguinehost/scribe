@@ -71,7 +71,7 @@
 				];
 			} else {
 				// Ensure any existing initial messages don't have loading=true
-				newInitialMessages = initialMessages.map(msg => ({
+				newInitialMessages = initialMessages.map((msg) => ({
 					...msg,
 					loading: false
 				}));
@@ -142,7 +142,7 @@
 	// --- Get Current Chat Model ---
 	async function getCurrentChatModel() {
 		if (!chat?.id) return null;
-		
+
 		try {
 			const result = await apiClient.getChatSessionSettings(chat.id);
 			if (result.isOk()) {
@@ -257,8 +257,11 @@
 		// Add placeholder for assistant message
 		const assistantMessageId = crypto.randomUUID();
 		console.log('Created assistant message with ID:', assistantMessageId);
-		console.log('Current messages before adding assistant message:', messages.map(m => ({ id: m.id, loading: m.loading })));
-		
+		console.log(
+			'Current messages before adding assistant message:',
+			messages.map((m) => ({ id: m.id, loading: m.loading }))
+		);
+
 		let assistantMessage: ScribeChatMessage = {
 			id: assistantMessageId,
 			session_id: chat.id,
@@ -269,8 +272,11 @@
 			loading: true
 		};
 		messages = [...messages, assistantMessage];
-		
-		console.log('Current messages after adding assistant message:', messages.map(m => ({ id: m.id, loading: m.loading })));
+
+		console.log(
+			'Current messages after adding assistant message:',
+			messages.map((m) => ({ id: m.id, loading: m.loading }))
+		);
 
 		let fetchError: any = null; // Variable to store error from fetch/parsing
 
@@ -283,7 +289,7 @@
 				},
 				// Send the constructed history. The backend expects a 'history' field (Vec<ApiChatMessage>)
 				// and an optional 'model' field.
-				body: JSON.stringify({ 
+				body: JSON.stringify({
 					history: historyToSend,
 					model: await getCurrentChatModel()
 				}), // Include current model selection
@@ -381,7 +387,12 @@
 						if (currentData) {
 							messages = messages.map((msg) => {
 								if (msg.id === assistantMessageId) {
-									console.log('Updating content for assistant message:', msg.id, 'current loading:', msg.loading);
+									console.log(
+										'Updating content for assistant message:',
+										msg.id,
+										'current loading:',
+										msg.loading
+									);
 									return { ...msg, content: msg.content + currentData };
 								}
 								// Ensure first messages never get loading state during streaming
@@ -503,18 +514,19 @@
 			if (shouldRefetch) {
 				// Use untrack to prevent refetch from triggering reactivity loops if history affects messages
 				untrack(() => chatHistory.refetch());
-				
+
 				// Also fetch complete message data to get raw_prompt and other backend-only fields
 				// This ensures the "Show raw prompt debug info" button works immediately
 				try {
 					const messagesResponse = await fetch(`/api/chats/${chat.id}/messages`);
 					if (messagesResponse.ok) {
 						const backendMessages = await messagesResponse.json();
-						
+
 						// Transform the backend MessageResponse format to our ScribeChatMessage format
 						const transformedMessages: ScribeChatMessage[] = backendMessages.map((msg: any) => ({
 							id: msg.id,
-							content: msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '',
+							content:
+								msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '',
 							message_type: msg.message_type,
 							session_id: msg.session_id,
 							created_at: msg.created_at,
@@ -522,13 +534,13 @@
 							loading: false,
 							raw_prompt: msg.raw_prompt
 						}));
-						
+
 						// Update messages with backend data, but preserve any first messages that don't exist in backend
-						const backendMessageIds = new Set(transformedMessages.map(m => m.id));
-						const preservedFirstMessages = messages.filter(m => 
-							m.id.startsWith('first-message-') && !backendMessageIds.has(m.id)
+						const backendMessageIds = new Set(transformedMessages.map((m) => m.id));
+						const preservedFirstMessages = messages.filter(
+							(m) => m.id.startsWith('first-message-') && !backendMessageIds.has(m.id)
 						);
-						
+
 						// Combine preserved first messages with backend messages, maintaining order
 						messages = [...preservedFirstMessages, ...transformedMessages];
 					}
@@ -621,12 +633,16 @@
 		<!-- Suggested Actions -->
 		{#if dynamicSuggestedActions.length > 0 && !isLoading}
 			<div class="mx-auto w-full px-4 pb-2 md:max-w-3xl">
-				<SuggestedActions 
-					{user} 
-					{sendMessage} 
-					actions={dynamicSuggestedActions} 
-					onClear={() => { dynamicSuggestedActions = []; }}
-					onEdit={(content) => { chatInput = content; }}
+				<SuggestedActions
+					{user}
+					{sendMessage}
+					actions={dynamicSuggestedActions}
+					onClear={() => {
+						dynamicSuggestedActions = [];
+					}}
+					onEdit={(content) => {
+						chatInput = content;
+					}}
 				/>
 			</div>
 		{/if}

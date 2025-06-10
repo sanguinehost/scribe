@@ -44,8 +44,8 @@ pub enum AppError {
     #[error("Unauthorized: {0}")]
     Unauthorized(String), // General unauthorized access
 
-    #[error("Forbidden")]
-    Forbidden, // Access denied despite authentication
+    #[error("Forbidden: {0}")]
+    Forbidden(String), // Access denied despite authentication
 
     #[error("Authentication framework error: {0}")]
     AuthError(String), // Use String instead of the full error type
@@ -331,7 +331,7 @@ impl AppError {
                 | Self::InvalidInput(_)
                 | Self::InvalidCredentials
                 | Self::Unauthorized(_)
-                | Self::Forbidden
+                | Self::Forbidden(_)
                 | Self::NotFound(_)
                 | Self::UserNotFound
                 | Self::SessionNotFound
@@ -378,7 +378,7 @@ impl AppError {
                 | Self::InvalidInput(_)
                 | Self::InvalidCredentials
                 | Self::Unauthorized(_)
-                | Self::Forbidden
+                | Self::Forbidden(_)
                 | Self::NotFound(_)
                 | Self::UserNotFound
                 | Self::SessionNotFound
@@ -402,7 +402,7 @@ impl AppError {
                 (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
             }
             Self::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
-            Self::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
+            Self::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             Self::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()),
             Self::SessionNotFound => (
@@ -1059,6 +1059,12 @@ impl From<crate::auth::AuthError> for AppError {
             crate::auth::AuthError::AccountLocked => Self::Unauthorized(
                 "Your account is locked. Please contact an administrator.".to_string(),
             ),
+            crate::auth::AuthError::AccountPendingVerification => {
+                Self::Forbidden("Your account is pending email verification.".to_string())
+            }
+            crate::auth::AuthError::InvalidVerificationToken => {
+                Self::BadRequest("Invalid or expired verification token.".to_string())
+            }
         }
     }
 }

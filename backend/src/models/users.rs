@@ -46,6 +46,8 @@ pub enum AccountStatus {
     Active,
     #[db_rename = "locked"]
     Locked,
+    #[db_rename = "pending"]
+    Pending,
 }
 
 // --- Newtype wrapper for DEK serialization ---

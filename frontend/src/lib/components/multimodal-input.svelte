@@ -67,7 +67,7 @@
 		}
 	}
 
-	// Action to bind the textarea element 
+	// Action to bind the textarea element
 	function bindTextarea(node: HTMLTextAreaElement) {
 		textareaElement = node;
 		adjustHeight(); // Adjust height immediately when bound
@@ -84,62 +84,62 @@
 <div class="relative -ml-2 flex w-full gap-4">
 	<div class="flex size-8 shrink-0"></div>
 	<div class="flex w-full flex-col gap-4">
-	<input
-		type="file"
-		class="pointer-events-none fixed -left-4 -top-4 size-0.5 opacity-0"
-		bind:this={fileInputRef}
-		multiple
-		onchange={handleFileChange}
-		tabIndex={-1}
-	/>
+		<input
+			type="file"
+			class="pointer-events-none fixed -left-4 -top-4 size-0.5 opacity-0"
+			bind:this={fileInputRef}
+			multiple
+			onchange={handleFileChange}
+			tabIndex={-1}
+		/>
 
-	{#if (attachments && attachments.length > 0) || uploadQueue.length > 0}
-		<div class="flex flex-row items-end gap-2 overflow-x-scroll">
-			{#if attachments}
-				{#each attachments as attachment (attachment.url)}
-					<PreviewAttachment attachment={attachment as any} />
-					<!-- Cast to any for now, refine later if needed -->
+		{#if (attachments && attachments.length > 0) || uploadQueue.length > 0}
+			<div class="flex flex-row items-end gap-2 overflow-x-scroll">
+				{#if attachments}
+					{#each attachments as attachment (attachment.url)}
+						<PreviewAttachment attachment={attachment as any} />
+						<!-- Cast to any for now, refine later if needed -->
+					{/each}
+				{/if}
+
+				{#each uploadQueue as filename}
+					<PreviewAttachment
+						attachment={{
+							url: '',
+							name: filename,
+							contentType: ''
+						}}
+						uploading
+					/>
 				{/each}
-			{/if}
-
-			{#each uploadQueue as filename}
-				<PreviewAttachment
-					attachment={{
-						url: '',
-						name: filename,
-						contentType: ''
-					}}
-					uploading
-				/>
-			{/each}
-		</div>
-	{/if}
-
-	<!-- Using a native textarea with use directive for element binding -->
-	<textarea
-		use:bindTextarea
-		placeholder="Send a message..."
-		bind:value
-		class={cn(
-			'max-h-[calc(37.5dvh)] min-h-[24px] resize-none overflow-y-auto rounded-2xl bg-muted pb-10 pl-4 pr-4 !text-base dark:border-zinc-700',
-			c
-		)}
-		rows={2}
-		onkeydown={(event: KeyboardEvent) => {
-			if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-				event.preventDefault();
-				// Trigger form submission instead of internal submitForm
-				textareaElement?.form?.requestSubmit();
-			}
-		}}
-	></textarea>
-
-	<div class="absolute bottom-0 right-0 flex w-fit flex-row justify-end p-4">
-		{#if isLoading}
-			{@render stopButton()}
+			</div>
 		{/if}
+
+		<!-- Using a native textarea with use directive for element binding -->
+		<textarea
+			use:bindTextarea
+			placeholder="Send a message..."
+			bind:value
+			class={cn(
+				'max-h-[calc(37.5dvh)] min-h-[24px] resize-none overflow-y-auto rounded-2xl bg-muted pb-10 pl-4 pr-4 !text-base dark:border-zinc-700',
+				c
+			)}
+			rows={2}
+			onkeydown={(event: KeyboardEvent) => {
+				if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+					event.preventDefault();
+					// Trigger form submission instead of internal submitForm
+					textareaElement?.form?.requestSubmit();
+				}
+			}}
+		></textarea>
+
+		<div class="absolute bottom-0 right-0 flex w-fit flex-row justify-end p-4">
+			{#if isLoading}
+				{@render stopButton()}
+			{/if}
+		</div>
 	</div>
-</div>
 </div>
 
 {#snippet stopButton()}
@@ -153,4 +153,3 @@
 		<StopIcon size={14} />
 	</Button>
 {/snippet}
-

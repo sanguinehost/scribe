@@ -252,6 +252,20 @@ class ApiClient {
 		);
 	}
 
+	async verifyEmail(
+		token: string,
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<Result<{ message: string }, ApiError>> {
+		return this.fetch<{ message: string }>(
+			'/api/auth/verify-email',
+			{
+				method: 'POST',
+				body: JSON.stringify({ token })
+			},
+			fetchFn
+		);
+	}
+
 	// Session methods
 	async createSession(
 		session: Session,
@@ -486,7 +500,9 @@ class ApiClient {
 	}
 
 	// Chat Session Settings methods
-	async getChatSessionSettings(sessionId: string): Promise<Result<ChatSessionSettingsResponse, ApiError>> {
+	async getChatSessionSettings(
+		sessionId: string
+	): Promise<Result<ChatSessionSettingsResponse, ApiError>> {
 		return this.fetch<ChatSessionSettingsResponse>(`/api/chat/${sessionId}/settings`);
 	}
 

@@ -3,12 +3,9 @@
 pub use crate::models::auth::RegisterPayload; // Added for RegisterPayload
 use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery};
 use crate::schema::users;
-// Required imports for synchronous Diesel
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
 };
-// Removed DbPool import as functions will now take PgConnection
-// use crate::state::DbPool;
 use bcrypt::BcryptError;
 use deadpool_diesel::InteractError;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
@@ -19,11 +16,20 @@ use uuid::Uuid; // Import InteractError
 
 use crate::crypto::{self, CryptoError}; // Added for encryption
 use crate::state::DbPool; // Added for delete_all_sessions_for_user
-// use crate::models::users::{UserDataForClient, UserDataForClientWithKekRecipients};
-// use crate::services::email_service::EmailServiceTrait;
+use crate::services::EmailService; // Added for email verification
+use crate::models::email_verification::{NewEmailVerificationToken}; // Added for verification tokens
+use chrono::{Duration, Utc}; // Added for token expiration
+use std::sync::Arc;
+use crate::models::email_verification::EmailVerificationToken;
 
 // Type alias for complex return type
 type VerifyCredentialsResult = Result<(User, Option<SecretBox<Vec<u8>>>), AuthError>;
+
+/// Generate a secure random verification token
+fn generate_verification_token() -> String {
+    // Generate a 32-character alphanumeric token using UUID for simplicity and security
+    format!("{}", uuid::Uuid::new_v4().simple())
+}
 
 // Make AuthError enum public
 #[derive(Error, Debug)]
@@ -40,6 +46,8 @@ pub enum AuthError {
     UserNotFound,
     #[error("Account locked")]
     AccountLocked,
+    #[error("Account is pending verification")]
+    AccountPendingVerification,
     #[error("Database error during authentication: {0}")]
     DatabaseError(String),
     #[error("Database pool error: {0}")]
@@ -54,6 +62,8 @@ pub enum AuthError {
     InvalidRecoveryPhrase,
     #[error("Session deletion error: {0}")]
     SessionDeletionError(String),
+    #[error("Invalid or expired verification token")]
+    InvalidVerificationToken,
 }
 
 // Manual PartialEq implementation for test comparisons
@@ -66,8 +76,10 @@ impl PartialEq for AuthError {
             | (Self::HashingError, Self::HashingError)
             | (Self::UserNotFound, Self::UserNotFound)
             | (Self::AccountLocked, Self::AccountLocked)
+            | (Self::AccountPendingVerification, Self::AccountPendingVerification)
             | (Self::RecoveryNotSetup, Self::RecoveryNotSetup)
-            | (Self::InvalidRecoveryPhrase, Self::InvalidRecoveryPhrase) => true,
+            | (Self::InvalidRecoveryPhrase, Self::InvalidRecoveryPhrase)
+            | (Self::InvalidVerificationToken, Self::InvalidVerificationToken) => true,
             (Self::DatabaseError(a), Self::DatabaseError(b))
             | (Self::InteractError(a), Self::InteractError(b))
             | (Self::SessionDeletionError(a), Self::SessionDeletionError(b)) => a == b,
@@ -132,11 +144,80 @@ pub fn are_there_any_users(conn: &mut PgConnection) -> Result<bool, AuthError> {
     Ok(user_count > 0)
 }
 
-// Function to create a new user
-#[instrument(skip(conn, credentials), err)] // Skip entire credentials struct for safety, Secret fields are not logged by Debug.
+// Function to create a new user with email verification
+#[instrument(skip(pool, credentials, email_service), err)]
+pub async fn create_user_with_verification(
+    pool: &DbPool,
+    credentials: RegisterPayload,
+    email_service: Arc<dyn EmailService + Send + Sync>,
+) -> Result<User, AuthError> {
+    // Hash password first in async context
+    let password_hash = hash_password(credentials.password.clone()).await?;
+    
+    let conn = pool.get().await.map_err(AuthError::PoolError)?;
+    
+    // Clone credentials for the async block
+    let credentials_clone = credentials.clone();
+    let user = conn
+        .interact(move |conn| {
+            // This is a sync function that creates the user
+            create_user_sync(conn, credentials_clone, password_hash)
+        })
+        .await
+        .map_err(AuthError::from)??;
+    
+    // Generate verification token
+    let verification_token = generate_verification_token();
+    let expires_at = Utc::now() + Duration::hours(24);
+    
+    let new_token = NewEmailVerificationToken {
+        user_id: user.id,
+        token: verification_token.clone(),
+        expires_at,
+    };
+    
+    // Store verification token in database
+    let conn = pool.get().await.map_err(AuthError::PoolError)?;
+    conn.interact(move |conn| {
+        use crate::schema::email_verification_tokens;
+        diesel::insert_into(email_verification_tokens::table)
+            .values(&new_token)
+            .execute(conn)
+    })
+    .await
+    .map_err(AuthError::from)??;
+    
+    // Send verification email
+    if let Err(e) = email_service
+        .send_verification_email(&user.email, &user.username, &verification_token)
+        .await
+    {
+        error!(user_id = %user.id, error = ?e, "Failed to send verification email");
+        // Continue despite email failure - user is created but won't get email
+        warn!("User created but verification email failed to send");
+    }
+    
+    info!(user_id = %user.id, "User created with verification token");
+    Ok(user)
+}
+
+// Function to create a new user (backward compatibility wrapper)
+#[instrument(skip(conn, credentials), err)]
 pub async fn create_user(
     conn: &mut PgConnection,
+    credentials: RegisterPayload,
+) -> Result<User, AuthError> {
+    // Hash password first in async context
+    let password_hash = hash_password(credentials.password.clone()).await?;
+    create_user_sync(conn, credentials, password_hash)
+}
+
+// Function to create a new user (internal sync helper)
+#[instrument(skip(conn, credentials, password_hash), err)] // Skip entire credentials struct for safety, Secret fields are not logged by Debug.
+pub fn create_user_sync(
+    conn: &mut PgConnection,
     mut credentials: RegisterPayload, // Use RegisterPayload struct, make it mutable
+    password_hash: String, // Pre-hashed password
 ) -> Result<User, AuthError> {
     info!("Attempting to create user with encryption");
 
@@ -225,7 +306,7 @@ pub async fn create_user(
     // 3. Create a NewUser instance
     let new_user = NewUser {
         username: credentials.username.clone(), // Clone username from credentials
-        password_hash: hash_password(credentials.password.clone()).await?, // Use the pre-hashed password
+        password_hash, // Use the pre-hashed password
         email: credentials.email.clone(), // Clone email from credentials
         kek_salt,
         encrypted_dek,
@@ -234,7 +315,7 @@ pub async fn create_user(
         dek_nonce,
         recovery_dek_nonce,
         role: user_role, // Using appropriate role based on whether this is the first user
-        account_status: AccountStatus::Active, // Default to Active account status
+        account_status: AccountStatus::Pending, // Default to Pending account status
     };
 
     debug!("Inserting new user with encryption fields into database...");
@@ -332,9 +413,16 @@ pub fn verify_credentials(
 
     if is_valid {
         // Check account status
-        if user.account_status == Some("locked".to_string()) {
-            warn!(user_id = %user.id, "Login attempt for locked account."); // Removed PII: identifier, username, email
-            return Err(AuthError::AccountLocked);
+        match user.account_status.as_deref() {
+            Some("locked") => {
+                warn!(user_id = %user.id, "Login attempt for locked account.");
+                return Err(AuthError::AccountLocked);
+            }
+            Some("pending") => {
+                warn!(user_id = %user.id, "Login attempt for pending account.");
+                return Err(AuthError::AccountPendingVerification);
+            }
+            _ => {} // Active or other statuses are allowed
         }
 
         debug!(user_id = %user.id, "Password verification successful. Attempting DEK decryption..."); // Removed PII: identifier, username, email
@@ -730,6 +818,55 @@ pub async fn delete_all_sessions_for_user(
     );
     Ok(deleted_count)
 }
+
+#[instrument(skip(conn), err)]
+pub fn verify_email(
+    conn: &mut PgConnection,
+    token: &str,
+) -> Result<User, AuthError> {
+    use crate::schema::email_verification_tokens;
+    use crate::schema::users;
+
+    info!("Attempting to verify email with token");
+
+    // 1. Find the token in the database
+    let verification_token: EmailVerificationToken = email_verification_tokens::table
+        .filter(email_verification_tokens::token.eq(token))
+        .first(conn)
+        .map_err(|_| AuthError::InvalidVerificationToken)?;
+
+    // 2. Check if the token has expired
+    if verification_token.expires_at < Utc::now() {
+        warn!(token_id = %verification_token.id, "Attempted to use expired verification token");
+        // Optionally, delete the expired token
+        diesel::delete(email_verification_tokens::table.find(verification_token.id))
+            .execute(conn)
+            .ok(); // Ignore result, best-effort cleanup
+        return Err(AuthError::InvalidVerificationToken);
+    }
+
+    // 3. Update the user's account status to Active
+    let updated_user = diesel::update(users::table.find(verification_token.user_id))
+        .set(users::account_status.eq(AccountStatus::Active))
+        .returning(UserDbQuery::as_returning())
+        .get_result::<UserDbQuery>(conn)
+        .map_err(|e| {
+            error!(user_id = %verification_token.user_id, error = ?e, "Failed to update user status to active");
+            AuthError::from(e)
+        })?;
+
+    // 4. Delete the used verification token
+    diesel::delete(email_verification_tokens::table.find(verification_token.id))
+        .execute(conn)
+        .map_err(|e| {
+            error!(token_id = %verification_token.id, error = ?e, "Failed to delete used verification token");
+            AuthError::DatabaseError(e.to_string())
+        })?;
+
+    info!(user_id = %updated_user.id, "Email successfully verified and user account activated");
+    Ok(User::from(updated_user))
+}
+
 
 #[cfg(test)]
 mod tests {

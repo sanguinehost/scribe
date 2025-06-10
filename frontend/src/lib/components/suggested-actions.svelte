@@ -37,7 +37,7 @@
 			<X size={12} />
 		</Button>
 	</div>
-	
+
 	<!-- Suggestions grid -->
 	<div class="grid gap-2 sm:grid-cols-2">
 		{#each actions as suggestedItem, i (suggestedItem.action)}
@@ -49,7 +49,7 @@
 					Display logic: Show first two items always.
 					Show items 3 and 4 only on 'sm' screens and up.
 				-->
-				<div class="relative group rounded-xl border">
+				<div class="group relative rounded-xl border">
 					<Button
 						variant="ghost"
 						onclick={async () => {
@@ -69,7 +69,7 @@
 							e.stopPropagation();
 							onEdit(suggestedItem.action);
 						}}
-						class="absolute right-1 top-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-muted"
+						class="absolute right-1 top-1 h-6 w-6 p-0 opacity-0 hover:bg-muted group-hover:opacity-100"
 						aria-label={`Edit suggestion: ${suggestedItem.action}`}
 					>
 						<PenTool size={12} />

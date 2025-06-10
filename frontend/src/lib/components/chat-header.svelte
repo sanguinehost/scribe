@@ -9,7 +9,6 @@
 	import ModelSelector from './model-selector.svelte';
 	import type { User } from '$lib/types'; // Updated import path
 	import type { ScribeChatSession } from '$lib/types'; // Use Scribe type
-	import VisibilitySelector from './visibility-selector.svelte';
 	import SidebarUserNav from './sidebar-user-nav.svelte'; // Import SidebarUserNav
 	import VercelIcon from './icons/vercel.svelte';
 
@@ -56,9 +55,5 @@
 
 	{#if !readonly && chat}
 		<ModelSelector class="order-1 md:order-2" {chat} />
-	{/if}
-
-	{#if !readonly && chat}
-		<VisibilitySelector {chat} class="order-1 md:order-3" />
 	{/if}
 </header>

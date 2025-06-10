@@ -26,6 +26,8 @@
 	import { writable } from 'svelte/store';
 	import { createEventDispatcher, onMount } from 'svelte';
 
+const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
+
 	export let open = false;
 
 	const dispatch = createEventDispatcher();
@@ -96,12 +98,14 @@
 		{
 			value: 'user',
 			label: 'User',
-			description: 'Inserts the note as a user message. Good for simulating user replies or steering conversation.'
+			description:
+				'Inserts the note as a user message. Good for simulating user replies or steering conversation.'
 		},
 		{
 			value: 'assistant',
 			label: 'Assistant',
-			description: "Inserts the note as an assistant message. Good for correcting or guiding AI's previous responses."
+			description:
+				"Inserts the note as an assistant message. Good for correcting or guiding AI's previous responses."
 		}
 	];
 
@@ -275,8 +279,8 @@
 			<DialogHeader>
 				<DialogTitle>Create New Character</DialogTitle>
 				<DialogDescription>
-					Create a new character by filling in the details below. Name, description, and first message
-					are required.
+					Create a new character by filling in the details below. Name, description, and first
+					message are required.
 				</DialogDescription>
 			</DialogHeader>
 
@@ -285,7 +289,7 @@
 				<div class="space-y-4 border-b pb-4">
 					<div class="flex items-center gap-2">
 						<h3 class="text-lg font-semibold">Basic Information</h3>
-						<div class="flex items-center gap-2 ml-auto">
+						<div class="ml-auto flex items-center gap-2">
 							<Tooltip>
 								<TooltipTrigger>
 									<Checkbox id="favorite" bind:checked={formData.fav} />
@@ -299,7 +303,7 @@
 						</div>
 					</div>
 
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 						<div class="grid gap-2">
 							<Label for="name">Name *</Label>
 							<Input id="name" bind:value={formData.name} placeholder="Character Name" required />
@@ -312,7 +316,7 @@
 
 					<div class="grid gap-2">
 						<Label>Tags</Label>
-						<div class="flex flex-wrap gap-2 mb-2">
+						<div class="mb-2 flex flex-wrap gap-2">
 							{#each formData.tags as tag}
 								<Badge variant="secondary" class="flex items-center gap-1">
 									{tag}
@@ -366,16 +370,20 @@
 							<Globe class="h-4 w-4" />
 							Lorebooks
 						</Label>
-						<div class="rounded-md border border-input bg-transparent p-3 space-y-2 max-h-48 overflow-y-auto">
+						<div
+							class="max-h-48 space-y-2 overflow-y-auto rounded-md border border-input bg-transparent p-3"
+						>
 							{#if $lorebooks && $lorebooks.length > 0}
 								{#each $lorebooks as lorebook}
 									<div class="flex items-center space-x-2">
-										<Checkbox 
+										<Checkbox
 											id={`lorebook-${lorebook.id}`}
 											checked={formData.selectedLorebooks.includes(lorebook.id)}
-											onclick={() => {
+											on:click={() => {
 												if (formData.selectedLorebooks.includes(lorebook.id)) {
-													formData.selectedLorebooks = formData.selectedLorebooks.filter(id => id !== lorebook.id);
+													formData.selectedLorebooks = formData.selectedLorebooks.filter(
+														(id) => id !== lorebook.id
+													);
 												} else {
 													formData.selectedLorebooks = [...formData.selectedLorebooks, lorebook.id];
 												}
@@ -562,11 +570,11 @@
 								<Textarea
 									id="depth_prompt"
 									bind:value={formData.depth_prompt}
-									placeholder='e.g., "The character is secretly a dragon."'
+									placeholder={depthPromptPlaceholder}
 									rows={3}
 								/>
 							</div>
-							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 								<div class="grid gap-2">
 									<div class="flex items-center gap-1">
 										<Label for="depth_prompt_depth">Insertion Depth</Label>
@@ -575,11 +583,11 @@
 												<HelpCircle class="h-4 w-4 text-muted-foreground" />
 											</TooltipTrigger>
 											<TooltipContent>
-												<div class="space-y-2 p-2 max-w-xs">
+												<div class="max-w-xs space-y-2 p-2">
 													<p>
 														Insertion depth determines where the Character's Note is injected into
-														the conversation history sent to the AI. It's counted from the end
-														of the chat history.
+														the conversation history sent to the AI. It's counted from the end of
+														the chat history.
 													</p>
 													<p class="font-semibold">Why use a deeper insertion?</p>
 													<p>
@@ -587,16 +595,15 @@
 														sudden command, the instruction feels like an established fact or a
 														thought the character has been having for a while.
 													</p>
-													<p class="font-semibold mt-2">Example:</p>
-													<ul class="list-disc pl-4 space-y-1">
+													<p class="mt-2 font-semibold">Example:</p>
+													<ul class="list-disc space-y-1 pl-4">
 														<li>
-															<strong>Depth 0:</strong> Inserting "[Character is now angry]"
-															can feel abrupt.
+															<strong>Depth 0:</strong> Inserting "[Character is now angry]" can feel
+															abrupt.
 														</li>
 														<li>
-															<strong>Depth 4:</strong> Inserting the same note 4 messages
-															ago allows the AI to build up to the anger more organically
-															over its next few responses.
+															<strong>Depth 4:</strong> Inserting the same note 4 messages ago allows
+															the AI to build up to the anger more organically over its next few responses.
 														</li>
 													</ul>
 												</div>
@@ -622,7 +629,7 @@
 												<HelpCircle class="h-4 w-4 text-muted-foreground" />
 											</TooltipTrigger>
 											<TooltipContent>
-												<div class="space-y-2 p-2 max-w-xs">
+												<div class="max-w-xs space-y-2 p-2">
 													{#each insertionRoles as role}
 														<p><strong>{role.label}:</strong> {role.description}</p>
 													{/each}
@@ -685,8 +692,7 @@
 		<DialogHeader>
 			<DialogTitle>Edit {popoutFieldLabel}</DialogTitle>
 			<DialogDescription>
-				Edit the {popoutFieldLabel.toLowerCase()} content in a larger editor for better
-				readability.
+				Edit the {popoutFieldLabel.toLowerCase()} content in a larger editor for better readability.
 			</DialogDescription>
 		</DialogHeader>
 

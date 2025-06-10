@@ -875,7 +875,6 @@
 									</select>
 								</div>
 							</div>
-
 						</CardContent>
 					{/if}
 				</Card>

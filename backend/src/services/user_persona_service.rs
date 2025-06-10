@@ -180,7 +180,7 @@ impl UserPersonaService {
                         target_persona_user_id = %persona_db.user_id,
                         "User attempted to access a persona they do not own."
                     );
-                    return Err(AppError::Forbidden);
+                    return Err(AppError::Forbidden("Access denied to user persona".to_string()));
                 }
                 tracing::info!(user_id = %current_user.id, persona_id = %persona_db.id, "Successfully fetched user persona, attempting conversion to client data.");
                 persona_db.into_data_for_client(dek_opt)
@@ -279,7 +279,7 @@ impl UserPersonaService {
                 target_persona_user_id = %persona.user_id,
                 "User attempted to update a persona they do not own."
             );
-            return Err(AppError::Forbidden);
+            return Err(AppError::Forbidden("Access denied to update user persona".to_string()));
         }
 
         let mut changed = false;
@@ -437,7 +437,7 @@ impl UserPersonaService {
                         target_persona_user_id = %persona.user_id,
                         "User attempted to delete a persona they do not own."
                     );
-                    return Err(AppError::Forbidden);
+                    return Err(AppError::Forbidden("Access denied to delete user persona".to_string()));
                 }
 
                 // Proceed with deletion

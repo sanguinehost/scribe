@@ -106,18 +106,18 @@
 
 	// Tag management functions
 	let newTag = '';
-	
+
 	function addTag() {
 		if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
 			formData.tags = [...formData.tags, newTag.trim()];
 			newTag = '';
 		}
 	}
-	
+
 	function removeTag(tagToRemove: string) {
-		formData.tags = formData.tags.filter(tag => tag !== tagToRemove);
+		formData.tags = formData.tags.filter((tag) => tag !== tagToRemove);
 	}
-	
+
 	function handleTagKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter') {
 			event.preventDefault();
@@ -176,12 +176,12 @@
 					<!-- Tags Section -->
 					<div class="space-y-2">
 						<Label>Tags</Label>
-						<div class="flex flex-wrap gap-2 mb-2">
+						<div class="mb-2 flex flex-wrap gap-2">
 							{#each formData.tags as tag}
 								<Badge variant="secondary" class="flex items-center gap-1">
 									{tag}
-									<button 
-										type="button" 
+									<button
+										type="button"
 										onclick={() => removeTag(tag)}
 										class="hover:text-destructive"
 									>
@@ -191,9 +191,9 @@
 							{/each}
 						</div>
 						<div class="flex gap-2">
-							<Input 
-								bind:value={newTag} 
-								placeholder="Add a tag..." 
+							<Input
+								bind:value={newTag}
+								placeholder="Add a tag..."
 								onkeydown={handleTagKeydown}
 								class="flex-1"
 							/>

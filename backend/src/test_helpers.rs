@@ -1037,6 +1037,9 @@ impl TestAppStateBuilder {
             lorebook_service,
             auth_backend: self.auth_backend,
             file_storage_service: Arc::new(FileStorageService::new("./test_uploads").unwrap()),
+            email_service: Arc::new(crate::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            )),
         };
 
         AppState::new(self.db_pool, self.config, services)
@@ -1524,6 +1527,80 @@ pub mod db {
             .await
             .map_err(|interact_err| {
                 anyhow::anyhow!("DB interact error for create_test_user: {}", interact_err)
+            })??;
+
+        // Convert to DbUser
+        let mut user: DbUser = user_from_db.into();
+
+        // IMPORTANT: Set the plaintext DEK on the User object directly.
+        // This is what would happen in the normal login flow (verify_credentials -> authenticate).
+        // Without this, the SessionDek extractor won't be able to access the DEK for encryption.
+
+        // user.dek is Option<SerializableSecretDek(SecretBox<Vec<u8>>)>
+        // plaintext_dek_box is SecretBox<Vec<u8>>
+        user.dek = Some(SerializableSecretDek(plaintext_dek_box));
+
+        Ok(user)
+    }
+
+    /// Creates a test user with pending account status (for email verification tests)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
+    pub async fn create_pending_test_user(
+        pool: &PgPool,
+        username: String,
+        password_str: String,
+    ) -> Result<DbUser, anyhow::Error> {
+        let conn = pool.get().await?;
+        let email = format!("{username}@test.com");
+
+        let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
+        let username_clone_for_payload = username.clone(); // Clone for NewUser payload
+
+        let password_hash = auth::hash_password(SecretString::from(password_str.clone()))
+            .await
+            .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?;
+
+        let kek_salt = crate::crypto::generate_salt()
+            .map_err(|e| anyhow::anyhow!("KEK salt generation failed: {}", e))?;
+
+        // Assuming generate_dek() now returns Result<SecretBox<Vec<u8>>, CryptoError>
+        let plaintext_dek_box: SecretBox<Vec<u8>> =
+            crate::crypto::generate_dek().context("DEK generation failed in create_pending_test_user")?;
+
+        let kek = crate::crypto::derive_kek(&SecretString::from(password_str_for_kek), &kek_salt)
+            .map_err(|e| anyhow::anyhow!("KEK derivation failed: {}", e))?;
+
+        let (encrypted_dek_bytes, dek_nonce_bytes) =
+            crate::crypto::encrypt_gcm(plaintext_dek_box.expose_secret(), &kek) // expose_secret() on SecretBox<Vec<u8>> gives &Vec<u8>
+                .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
+
+        let new_user_payload = NewUser {
+            username: username_clone_for_payload,
+            password_hash,
+            email,
+            kek_salt,
+            encrypted_dek: encrypted_dek_bytes,
+            dek_nonce: dek_nonce_bytes,
+            encrypted_dek_by_recovery: None,
+            recovery_kek_salt: None,
+            recovery_dek_nonce: None,
+            role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
+            account_status: AccountStatus::Pending,      // Set to Pending for email verification
+        };
+
+        let user_from_db: UserDbQuery = conn
+            .interact(move |conn_actual| {
+                diesel::insert_into(crate::schema::users::table)
+                    .values(new_user_payload) // new_user_payload is moved here
+                    .returning(UserDbQuery::as_returning())
+                    .get_result::<UserDbQuery>(conn_actual)
+            })
+            .await
+            .map_err(|interact_err| {
+                anyhow::anyhow!("DB interact error for create_pending_test_user: {}", interact_err)
             })??;
 
         // Convert to DbUser
