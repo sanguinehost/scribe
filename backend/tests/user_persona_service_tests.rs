@@ -339,7 +339,7 @@ async fn test_update_user_persona_forbidden() -> AnyhowResult<()> {
         .update_user_persona(&user2, &dek2, persona_for_user1.id, update_dto)
         .await;
     assert!(
-        matches!(result, Err(AppError::Forbidden)),
+        matches!(result, Err(AppError::Forbidden(_))),
         "Expected Forbidden, got {result:?}"
     );
 
@@ -440,7 +440,7 @@ async fn test_delete_user_persona_forbidden() -> AnyhowResult<()> {
         .delete_user_persona(&user2, persona_for_user1.id)
         .await;
     assert!(
-        matches!(delete_result, Err(AppError::Forbidden)),
+        matches!(delete_result, Err(AppError::Forbidden(_))),
         "Expected Forbidden, got {delete_result:?}"
     );
 
@@ -495,7 +495,7 @@ async fn test_get_user_persona_forbidden() -> AnyhowResult<()> {
         .get_user_persona(&user2, Some(&dek2), persona_for_user1.id)
         .await;
     assert!(
-        matches!(result, Err(AppError::Forbidden)),
+        matches!(result, Err(AppError::Forbidden(_))),
         "Expected Forbidden, got {result:?}"
     );
 

@@ -595,13 +595,13 @@ pub async fn create_character_handler(
 
     // Instantiate services
     let enc_service = Arc::new(EncryptionService::new());
-    let lorebook_service = Arc::new(LorebookService::new(
+    let _lorebook_service = Arc::new(LorebookService::new(
         state.pool.clone(),
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     ));
     let character_service =
-        CharacterService::new(state.pool.clone(), enc_service, lorebook_service);
+        CharacterService::new(state.pool.clone(), enc_service);
 
     // Call the service method
     let client_data = character_service
@@ -1164,13 +1164,13 @@ pub async fn update_character_handler(
 
     // Instantiate services
     let enc_service = Arc::new(EncryptionService::new());
-    let lorebook_service = Arc::new(LorebookService::new(
+    let _lorebook_service = Arc::new(LorebookService::new(
         state.pool.clone(),
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     ));
     let character_service =
-        CharacterService::new(state.pool.clone(), enc_service, lorebook_service);
+        CharacterService::new(state.pool.clone(), enc_service);
 
     // Call the service method
     let client_data = character_service

@@ -11,6 +11,7 @@ pub mod routes;
 pub mod schema;
 pub mod services;
 pub mod state;
+pub mod state_builder;
 pub mod text_processing;
 pub mod vector_db;
 
@@ -27,3 +28,6 @@ pub use state::AppState;
 // Conditionally compile test helpers only when testing
 // pub mod test_helpers; // Now unconditionally compiled
 pub mod test_helpers;
+
+#[cfg(test)]
+pub mod test_fixtures;

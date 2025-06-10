@@ -1069,6 +1069,8 @@ pub fn mock_character_data_for_client(
         depth_prompt_depth: None,
         depth_prompt_role: None,
         talkativeness: None,
+        lorebook_id: None,
+        lorebook_ids: vec![],
     }
 }
 

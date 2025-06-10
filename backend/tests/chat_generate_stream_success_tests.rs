@@ -486,6 +486,9 @@ async fn test_first_mes_included_in_history() {
         lorebook_service,
         auth_backend,
         file_storage_service,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
 
     let state_for_service =

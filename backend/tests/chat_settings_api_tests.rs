@@ -484,6 +484,9 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
         lorebook_service: lorebook_service_for_test,
         auth_backend: auth_backend_for_test,
         file_storage_service: file_storage_service_for_test,
+        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
+            "http://localhost:3000".to_string(),
+        )),
     };
 
     Arc::new(AppState::new(

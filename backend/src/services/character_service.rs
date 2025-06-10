@@ -14,9 +14,8 @@ use crate::models::characters::{Character, CharacterDataForClient};
 use crate::schema::characters; // For characters::table, characters::id
 use crate::schema::characters::dsl::{id as character_dsl_id, user_id as character_dsl_user_id}; // for explicit column access
 use crate::services::encryption_service::EncryptionService;
-use crate::services::lorebook_service::LorebookService;
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
+    BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
     result::Error as DieselError,
 }; // For .values(), .returning(), .get_result(), etc.
 use diesel_json; // For Json<Value> type in Diesel models
@@ -29,7 +28,6 @@ type EncryptedFieldResult = (Option<Vec<u8>>, Option<Vec<u8>>);
 pub struct CharacterService {
     db_pool: DeadpoolPgPool, // Changed from sqlx::PgPool
     encryption_service: Arc<EncryptionService>,
-    lorebook_service: Arc<LorebookService>,
 }
 
 impl CharacterService {
@@ -37,13 +35,11 @@ impl CharacterService {
     pub fn new(
         db_pool: DeadpoolPgPool,
         encryption_service: Arc<EncryptionService>,
-        lorebook_service: Arc<LorebookService>,
     ) -> Self {
         // Changed db_pool type
         Self {
             db_pool,
             encryption_service,
-            lorebook_service,
         }
     }
 

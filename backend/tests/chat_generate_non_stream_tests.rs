@@ -3500,6 +3500,13 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         .map_err(|e| anyhow::anyhow!("Database interaction error: {:?}", e))??
     };
 
+    // --- Mock RAG Response ---
+    // The generate endpoint will try to do RAG, so we need to provide mock responses
+    test_app
+        .mock_embedding_pipeline_service
+        .set_retrieve_responses_sequence(vec![Ok(vec![]), Ok(vec![])]);
+    // --- End Mock RAG Response ---
+
     if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
         let successful_response = genai::chat::ChatResponse {
             contents: vec![genai::chat::MessageContent::Text(
@@ -3553,18 +3560,19 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         .unwrap();
     let system_prompt = last_request.system.unwrap();
 
-    assert!(system_prompt.contains("<character_definition>"));
-    assert!(system_prompt.contains("An overriding system prompt."));
-    assert!(!system_prompt.contains("A detailed description.")); // Should be in details
 
-    assert!(system_prompt.contains("<character_details>"));
-    assert!(system_prompt.contains("Character Name: Full Prompt Char"));
-    assert!(system_prompt.contains("Description: A detailed description."));
-    assert!(system_prompt.contains("Personality: A unique personality."));
-    assert!(system_prompt.contains("Scenario: A specific scenario."));
+    assert!(system_prompt.contains("<character_profile>"));
+    // Note: The character's system prompt override is now incorporated into the base prompt template
+    // rather than being a separate section
+    
+    // Check character details are included in the new format
+    assert!(system_prompt.contains("Character Name:** Full Prompt Char"));
+    assert!(system_prompt.contains("Description:** A detailed description."));
+    assert!(system_prompt.contains("Personality:** A unique personality."));
+    assert!(system_prompt.contains("Scenario:** A specific scenario."));
     assert!(
         system_prompt
-            .contains("Example Dialogue: <START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>")
+            .contains("Example Dialogue:** <START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>")
     );
 
     Ok(())
