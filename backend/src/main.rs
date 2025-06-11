@@ -364,8 +364,8 @@ fn build_router(
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
                 GovernorConfigBuilder::default()
-                    .per_second(2)
-                    .burst_size(5)
+                    .per_second(20)
+                    .burst_size(50)
                     .key_extractor(GlobalKeyExtractor)
                     .finish()
                     .unwrap(),
