@@ -20,23 +20,39 @@ async fn test_rate_limiting_with_running_server() -> AnyhowResult<()> {
     let mut successful = 0;
     let mut rate_limited = 0;
 
-    // Send 10 requests as fast as possible to the running server
+    // Send 10 requests in parallel to trigger rate limiting
+    let mut tasks = Vec::new();
+    
     for i in 1..=10 {
-        let payload = json!({
-            "username": format!("user{}", i),
-            "email": format!("user{}@example.com", i),
-            "password": "Password123!"
+        let client = client.clone();
+        let address = test_app.address.clone();
+        
+        let task = tokio::spawn(async move {
+            let payload = json!({
+                "username": format!("user{}", i),
+                "email": format!("user{}@example.com", i),
+                "password": "Password123!"
+            });
+
+            let response = client
+                .post(&format!("{}/api/auth/register", address))
+                .header("content-type", "application/json")
+                .json(&payload)
+                .send()
+                .await?;
+
+            Ok::<_, anyhow::Error>((i, response.status(), response))
         });
-
-        let response = client
-            .post(&format!("{}/api/auth/register", test_app.address))
-            .header("content-type", "application/json")
-            .json(&payload)
-            .send()
-            .await?;
-
-        let status = response.status();
-        info!("Request {} status: {}", i, status);
+        
+        tasks.push(task);
+    }
+    
+    // Wait for all requests to complete
+    for task in tasks {
+        let result = task.await??;
+        let (request_num, status, response) = result;
+        
+        info!("Request {} status: {}", request_num, status);
 
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             rate_limited += 1;
@@ -47,7 +63,7 @@ async fn test_rate_limiting_with_running_server() -> AnyhowResult<()> {
         } else {
             // Log other status codes to understand what's happening
             let body = response.text().await?;
-            info!("Request {} unexpected status {} with body: {}", i, status, body);
+            info!("Request {} unexpected status {} with body: {}", request_num, status, body);
         }
     }
 
