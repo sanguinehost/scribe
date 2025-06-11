@@ -11,7 +11,7 @@ use tokio::sync::Mutex as TokioMutex; // Add Mutex for test tracking
 // Use the AiClient trait from our llm module
 use crate::llm::AiClient;
 use crate::llm::EmbeddingClient; // Add this
-use crate::services::embedding_pipeline::EmbeddingPipelineServiceTrait;
+use crate::services::embeddings::EmbeddingPipelineServiceTrait;
 // Remove concrete service import, use trait
 // use crate::vector_db::QdrantClientService;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;

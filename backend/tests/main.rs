@@ -67,7 +67,6 @@ pub mod chat_session_api_tests;
 pub mod chat_settings_api_tests;
 pub mod chat_suggested_actions_tests;
 pub mod db_integration_tests;
-pub mod embedding_pipeline_tests;
 pub mod first_user_admin_tests;
 pub mod health_check;
 pub mod lorebook_api_tests;

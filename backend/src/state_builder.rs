@@ -5,7 +5,7 @@ use crate::{
     services::{
         chat_override_service::ChatOverrideService,
         email_service::{EmailService, LoggingEmailService},
-        embedding_pipeline::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait},
+        embeddings::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait},
         encryption_service::EncryptionService,
         file_storage_service::FileStorageService,
         gemini_token_client::GeminiTokenClient,

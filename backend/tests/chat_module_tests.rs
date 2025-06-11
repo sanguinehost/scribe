@@ -23,7 +23,7 @@ mod get_session_data_for_generation_tests {
                      // but tests will use the functions that return them, not the types directly in most cases here.
                      // DbChatMessage is an alias for ChatMessage from models::chats
     };
-    use scribe_backend::services::embedding_pipeline::RetrievedChunk;
+    use scribe_backend::services::embeddings::RetrievedChunk;
     use scribe_backend::services::gemini_token_client::GeminiTokenClient;
     use scribe_backend::services::hybrid_token_counter::CountingMode; // For token counting in tests
     use scribe_backend::services::hybrid_token_counter::HybridTokenCounter;
@@ -50,7 +50,7 @@ mod get_session_data_for_generation_tests {
         #[allow(dead_code)]
         character_id: Uuid,
         #[allow(dead_code)]
-        mock_embedding_pipeline: Arc<MockEmbeddingPipelineService>,
+        mock_embeddings: Arc<MockEmbeddingPipelineService>,
         user_dek: Option<Arc<SecretBox<Vec<u8>>>>,
     }
 
@@ -203,13 +203,13 @@ mod get_session_data_for_generation_tests {
         let mock_ai_client = Arc::new(MockAiClient::new());
         let mock_embedding_client = Arc::new(MockEmbeddingClient::new());
         let mock_qdrant_service = Arc::new(MockQdrantClientService::new());
-        let mock_embedding_pipeline = MockEmbeddingPipelineService::new();
+        let mock_embeddings = MockEmbeddingPipelineService::new();
 
         (
             mock_ai_client,
             mock_embedding_client,
             mock_qdrant_service,
-            mock_embedding_pipeline,
+            mock_embeddings,
         )
     }
 
@@ -220,7 +220,7 @@ mod get_session_data_for_generation_tests {
         mock_ai_client: Arc<MockAiClient>,
         mock_embedding_client: Arc<MockEmbeddingClient>,
         mock_qdrant_service: Arc<MockQdrantClientService>,
-        mock_embedding_pipeline: MockEmbeddingPipelineService,
+        mock_embeddings: MockEmbeddingPipelineService,
     ) -> AppState {
         let token_counter_service = create_token_counter_service(&config);
         let shared_encryption_service =
@@ -240,9 +240,9 @@ mod get_session_data_for_generation_tests {
             auth_backend,
         )
         .with_token_counter(token_counter_service)
-        .with_embedding_pipeline_service(Arc::new(mock_embedding_pipeline)
+        .with_embedding_pipeline_service(Arc::new(mock_embeddings)
             as Arc<
-                dyn scribe_backend::services::embedding_pipeline::EmbeddingPipelineServiceTrait
+                dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait
                     + Send
                     + Sync,
             >)
@@ -275,11 +275,11 @@ mod get_session_data_for_generation_tests {
             .unwrap_or_else(|| create_default_test_character(character_id, user_id));
 
         // Create all mock services
-        let (mock_ai_client, mock_embedding_client, mock_qdrant_service, mock_embedding_pipeline) =
+        let (mock_ai_client, mock_embedding_client, mock_qdrant_service, mock_embeddings) =
             create_mock_services();
 
         // Store a reference to the embedding pipeline for the test setup
-        let mock_embedding_pipeline_for_test = Arc::new(mock_embedding_pipeline.clone());
+        let mock_embeddings_for_test = Arc::new(mock_embeddings.clone());
 
         // Build the app state
         let app_state = build_test_app_state(
@@ -288,7 +288,7 @@ mod get_session_data_for_generation_tests {
             mock_ai_client,
             mock_embedding_client,
             mock_qdrant_service,
-            mock_embedding_pipeline,
+            mock_embeddings,
         );
 
         TestSetup {
@@ -298,7 +298,7 @@ mod get_session_data_for_generation_tests {
             #[allow(dead_code)]
             character_id,
             #[allow(dead_code)]
-            mock_embedding_pipeline: mock_embedding_pipeline_for_test,
+            mock_embeddings: mock_embeddings_for_test,
             user_dek,
         }
     }
@@ -516,8 +516,8 @@ mod get_session_data_for_generation_tests {
             RetrievedChunk {
                 text: lore_chunk1_content.to_string(),
                 score: 0.9,
-                metadata: scribe_backend::services::embedding_pipeline::RetrievedMetadata::Lorebook(
-                    scribe_backend::services::embedding_pipeline::LorebookChunkMetadata {
+                metadata: scribe_backend::services::embeddings::RetrievedMetadata::Lorebook(
+                    scribe_backend::services::embeddings::LorebookChunkMetadata {
                         original_lorebook_entry_id: Uuid::new_v4(),
                         lorebook_id,
                         user_id,
@@ -533,8 +533,8 @@ mod get_session_data_for_generation_tests {
             RetrievedChunk {
                 text: lore_chunk2_content.to_string(),
                 score: 0.8,
-                metadata: scribe_backend::services::embedding_pipeline::RetrievedMetadata::Lorebook(
-                    scribe_backend::services::embedding_pipeline::LorebookChunkMetadata {
+                metadata: scribe_backend::services::embeddings::RetrievedMetadata::Lorebook(
+                    scribe_backend::services::embeddings::LorebookChunkMetadata {
                         original_lorebook_entry_id: Uuid::new_v4(),
                         lorebook_id,
                         user_id,
@@ -672,7 +672,7 @@ mod get_session_data_for_generation_tests {
         // retrieve_relevant_chunks is called twice: once for lorebooks, once for older chat history.
         // For this test, we expect both to return empty vectors.
         setup
-            .mock_embedding_pipeline
+            .mock_embeddings
             .set_retrieve_responses_sequence(vec![
                 Ok(Vec::new()), // For lorebook chunks
                 Ok(Vec::new()), // For older chat history chunks
@@ -847,7 +847,7 @@ mod get_session_data_for_generation_tests {
 
         // Configure mock expectations for RAG
         setup
-            .mock_embedding_pipeline
+            .mock_embeddings
             .set_retrieve_responses_sequence(vec![
                 Ok(expected_lore_chunks.clone()), // Response for the lorebook chunks call
                 Ok(Vec::new()), // Response for the older chat history call (empty for this test)
@@ -1532,8 +1532,8 @@ mod get_session_data_for_generation_tests {
         let lore_chunk1 = RetrievedChunk {
             text: lore_chunk1_content.to_string(),
             score: 0.9,
-            metadata: scribe_backend::services::embedding_pipeline::RetrievedMetadata::Lorebook(
-                scribe_backend::services::embedding_pipeline::LorebookChunkMetadata {
+            metadata: scribe_backend::services::embeddings::RetrievedMetadata::Lorebook(
+                scribe_backend::services::embeddings::LorebookChunkMetadata {
                     original_lorebook_entry_id: Uuid::new_v4(),
                     lorebook_id,
                     user_id: setup.user_id,
@@ -1550,7 +1550,7 @@ mod get_session_data_for_generation_tests {
 
         // Configure mock expectations
         setup
-            .mock_embedding_pipeline
+            .mock_embeddings
             .set_retrieve_responses_sequence(vec![
                 Ok(expected_lore_chunks.clone()), // For lorebook chunks
                 Ok(Vec::new()),                   // For older chat history chunks
@@ -1866,8 +1866,8 @@ mod get_session_data_for_generation_tests {
                 text: (*content).to_string(),
                 #[allow(clippy::cast_precision_loss)]
                 score: (idx as f32).mul_add(-0.01, 0.85), // Ensure some ordering if needed
-                metadata: scribe_backend::services::embedding_pipeline::RetrievedMetadata::Chat(
-                    scribe_backend::services::embedding_pipeline::ChatMessageChunkMetadata {
+                metadata: scribe_backend::services::embeddings::RetrievedMetadata::Chat(
+                    scribe_backend::services::embeddings::ChatMessageChunkMetadata {
                         message_id: msg_id, // Use the ID we generated for this message
                         session_id: setup.session_id,
                         user_id: setup.user_id,
@@ -1965,7 +1965,7 @@ mod get_session_data_for_generation_tests {
 
         // Configure mock expectations
         setup
-            .mock_embedding_pipeline
+            .mock_embeddings
             .set_retrieve_responses_sequence(vec![
                 Ok(expected_older_chat_chunks.clone()), // For older chat history chunks (lorebook call is skipped in this test)
             ]);
@@ -2105,7 +2105,7 @@ mod get_session_data_for_generation_tests {
 
         // Ensure no overlap between recent history (actual IDs from DB) and RAG items (mocked IDs)
         for rag_chunk in &rag_items {
-            if let scribe_backend::services::embedding_pipeline::RetrievedMetadata::Chat(
+            if let scribe_backend::services::embeddings::RetrievedMetadata::Chat(
                 chat_meta,
             ) = &rag_chunk.metadata
             {

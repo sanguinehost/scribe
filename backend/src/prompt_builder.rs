@@ -3,7 +3,7 @@ use crate::{
     errors::AppError,
     models::characters::CharacterMetadata,
     services::{
-        embedding_pipeline::RetrievedChunk,
+        embeddings::RetrievedChunk,
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
     },
 };
@@ -693,7 +693,7 @@ async fn build_final_prompt_strings(
 
         for (rag_item, _) in &calculation.rag_items_with_tokens {
             match &rag_item.metadata {
-                crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) => {
+                crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
                     writeln!(
                         rag_context_for_user_message,
                         "<chat_history speaker=\"{}\">{}</chat_history>",
@@ -702,7 +702,7 @@ async fn build_final_prompt_strings(
                     )
                     .unwrap();
                 }
-                crate::services::embedding_pipeline::RetrievedMetadata::Lorebook(lorebook_meta) => {
+                crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) => {
                     write!(rag_context_for_user_message, "<lorebook_entry").unwrap();
 
                     if let Some(title) = &lorebook_meta.entry_title {

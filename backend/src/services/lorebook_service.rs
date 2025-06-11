@@ -18,7 +18,7 @@ use crate::{
         users::User,
     },
     schema::{lorebook_entries, lorebooks},
-    services::{EncryptionService, embedding_pipeline::LorebookEntryParams},
+    services::{EncryptionService, embeddings::LorebookEntryParams},
     vector_db::qdrant_client::{
         Condition, ConditionOneOf, FieldCondition, Filter, Match, MatchValue,
         QdrantClientServiceTrait,
@@ -3012,7 +3012,7 @@ AppError::InternalServerErrorGeneric(format!(
                                     }
                                 });
 
-                            let params = crate::services::embedding_pipeline::LorebookEntryParams {
+                            let params = crate::services::embeddings::LorebookEntryParams {
                                 original_lorebook_entry_id: inserted_entry.id,
                                 lorebook_id: inserted_entry.lorebook_id,
                                 user_id: inserted_entry.user_id,

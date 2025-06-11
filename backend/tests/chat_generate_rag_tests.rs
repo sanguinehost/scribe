@@ -34,7 +34,7 @@ use scribe_backend::{
         users::User,
     },
     schema, // Import the whole schema module
-    services::embedding_pipeline::{ChatMessageChunkMetadata, RetrievedChunk, RetrievedMetadata}, // Updated imports
+    services::embeddings::{ChatMessageChunkMetadata, RetrievedChunk, RetrievedMetadata}, // Updated imports
     test_helpers::{self, PipelineCall},
 };
 use serde_json::json;
@@ -392,7 +392,7 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
     // We know from the previous debugging that the embedding calls are being made
     // but they're not being tracked properly in the embedding_call_tracker.
     // Rather than wait for calls that won't appear in the tracker, let's check the
-    // mock_embedding_pipeline_service calls directly.
+    // mock_embeddings_service calls directly.
 
     // Allow time for async operations
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -431,7 +431,7 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
                 .iter()
                 .filter_map(|call| {
                     if let PipelineCall::ProcessAndEmbedMessage { message_id, .. } = call {
-                        Some(*message_id)
+                        Some(message_id.clone())
                     } else {
                         None
                     }
@@ -534,7 +534,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
     // We know from the previous debugging that the embedding calls are being made
     // but they're not being tracked properly in the embedding_call_tracker.
     // Rather than wait for calls that won't appear in the tracker, let's check the
-    // mock_embedding_pipeline_service calls directly.
+    // mock_embeddings_service calls directly.
 
     // Allow time for async operations
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -848,9 +848,9 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         active_lorebook_ids_for_search: called_lorebook_ids,
     }) = retrieve_calls.first()
     {
-        assert_eq!(*called_user_id, user.id);
-        assert_eq!(*called_session_id, Some(session.id));
-        assert_eq!(*called_query_text, query_text);
+        assert_eq!(called_user_id, &user.id);
+        assert_eq!(called_session_id, &Some(session.id));
+        assert_eq!(&called_query_text.as_str(), &query_text);
         // In this test, active_lorebook_ids_for_search will be None as it's not set up
         // in get_session_data_for_generation for this specific test path yet.
         // This is fine as build_prompt_with_rag handles Option<Vec<Uuid>>.
@@ -1296,7 +1296,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
 #[allow(clippy::too_many_lines)]
 async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
-    // Pass false for use_real_embedding_pipeline and use_real_qdrant by default for this helper
+    // Pass false for use_real_embeddings and use_real_qdrant by default for this helper
     let test_app = test_helpers::spawn_app(use_real_ai, false, false).await;
 
     let user = test_helpers::db::create_test_user(
@@ -1539,7 +1539,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
     // We know from previous debugging that the embedding calls are being made
     // but they're not being tracked properly in the embedding_call_tracker.
     // Rather than wait for calls that won't appear in the tracker, let's check the
-    // mock_embedding_pipeline_service calls directly.
+    // mock_embeddings_service calls directly.
 
     // Allow time for async operations
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -1577,7 +1577,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
             .iter()
             .filter_map(|call| {
                 if let PipelineCall::ProcessAndEmbedMessage { message_id, .. } = call {
-                    Some(*message_id)
+                    Some(message_id.clone())
                 } else {
                     None
                 }
@@ -1699,7 +1699,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         .expect("Mock AI not called");
 
     // Character's system_prompt is None in setup_test_data.
-    // Since mock_embedding_pipeline_service returns Ok(vec![]),
+    // Since mock_embeddings_service returns Ok(vec![]),
     // build_prompt_with_rag will produce an empty string or a minimal structure if it always adds headers.
     // Let's check prompt_builder.rs: if relevant_chunks is empty, rag_prompt_parts is empty.
     // Verify system prompt has expected structure and content for RAG functionality
