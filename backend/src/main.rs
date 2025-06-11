@@ -66,6 +66,7 @@ use scribe_backend::services::chat_override_service::ChatOverrideService; // <<<
 use scribe_backend::services::encryption_service::EncryptionService;
 use scribe_backend::services::lorebook::LorebookService; // Added for LorebookService
 use scribe_backend::services::user_persona_service::UserPersonaService;
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer, key_extractor::GlobalKeyExtractor};
 use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module // <<< ADDED THIS IMPORT
 
 // Define the embedded migrations macro
@@ -198,9 +199,10 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         file_storage_service,
         email_service: {
             // Create email service based on environment
-            let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
+            let app_env = config.app_env.clone();
             let base_url = config.frontend_base_url.clone();
-            scribe_backend::services::create_email_service(&app_env, base_url)
+            let from_email = config.from_email.clone();
+            scribe_backend::services::email_service::create_email_service(&app_env, base_url, from_email).await?
         },
     })
 }
@@ -358,6 +360,16 @@ fn build_router(
     Router::new()
         .nest("/api", public_api_routes)
         .nest("/api", protected_api_routes)
+        .layer(GovernorLayer {
+            config: std::sync::Arc::new(
+                GovernorConfigBuilder::default()
+                    .per_second(2)
+                    .burst_size(5)
+                    .key_extractor(GlobalKeyExtractor)
+                    .finish()
+                    .unwrap(),
+            ),
+        })
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
         .with_state(app_state)

@@ -3,7 +3,7 @@ use crate::{
     config::Config,
     llm::{AiClient, EmbeddingClient},
     services::{
-        email_service::{EmailService, LoggingEmailService},
+        email_service::{EmailService, create_email_service},
         file_storage_service::FileStorageService,
     },
     state::{AppState, DbPool},
@@ -19,10 +19,10 @@ pub struct TestFixtures;
 impl TestFixtures {
     /// Create a minimal test AppState with mock services
     /// Only requires database pool and config - all other services are mocked
-    pub fn minimal_app_state(
+    pub async fn minimal_app_state(
         pool: DbPool,
         config: Arc<Config>,
-    ) -> AppState {
+    ) -> Result<AppState, Box<dyn std::error::Error + Send + Sync>> {
         let mock_ai_client: Arc<dyn AiClient + Send + Sync> = Arc::new(MockAiClient::new());
         let mock_embedding_client: Arc<dyn EmbeddingClient + Send + Sync> = 
             Arc::new(MockEmbeddingClient::new());
@@ -33,17 +33,17 @@ impl TestFixtures {
             .with_ai_client(mock_ai_client)
             .with_embedding_client(mock_embedding_client)
             .with_qdrant_service(mock_qdrant_service)
-            .build();
+            .build().await?;
 
-        AppState::new(pool, config, services)
+        Ok(AppState::new(pool, config, services))
     }
 
     /// Create a test AppState with real services where possible, mocked externals
     /// Use this when you need to test actual service logic but don't want external dependencies
-    pub fn real_services_app_state(
+    pub async fn real_services_app_state(
         pool: DbPool,
         config: Arc<Config>,
-    ) -> AppState {
+    ) -> Result<AppState, Box<dyn std::error::Error + Send + Sync>> {
         let mock_ai_client: Arc<dyn AiClient + Send + Sync> = Arc::new(MockAiClient::new());
         let mock_embedding_client: Arc<dyn EmbeddingClient + Send + Sync> = 
             Arc::new(MockEmbeddingClient::new());
@@ -55,9 +55,9 @@ impl TestFixtures {
             .with_ai_client(mock_ai_client)
             .with_embedding_client(mock_embedding_client)
             .with_qdrant_service(mock_qdrant_service)
-            .build();
+            .build().await?;
 
-        AppState::new(pool, config, services)
+        Ok(AppState::new(pool, config, services))
     }
 
     /// Create a test AppState with custom overrides
@@ -79,8 +79,9 @@ impl TestFixtures {
     }
 
     /// Create a logging email service for tests
-    pub fn test_email_service() -> Arc<dyn EmailService + Send + Sync> {
-        Arc::new(LoggingEmailService::new("http://localhost:3000".to_string()))
+    pub async fn test_email_service() -> Result<Arc<dyn EmailService + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+        create_email_service("development", "http://localhost:3000".to_string(), None).await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
     }
 
     /// Create a test file storage service
@@ -107,7 +108,7 @@ macro_rules! test_app_state {
             $(
                 builder = builder.$service($value);
             )*
-            $crate::state::AppState::new($pool.clone(), $config.clone(), builder.build())
+            $crate::state::AppState::new($pool.clone(), $config.clone(), builder.build().await.expect("Failed to build app state in test macro"))
         }
     };
 }
@@ -126,7 +127,7 @@ mod tests {
         let _app_state = TestFixtures::minimal_app_state(
             test_app.db_pool.clone(),
             test_app.config.clone(),
-        );
+        ).await.expect("Failed to create minimal app state");
         // If we get here without panicking, the fixture works
     }
 
@@ -135,14 +136,16 @@ mod tests {
         test_helpers::ensure_tracing_initialized();
         
         let test_app = test_helpers::spawn_app(false, false, false).await;
-        let custom_email_service = TestFixtures::test_email_service();
+        let custom_email_service = TestFixtures::test_email_service().await.expect("Failed to create email service");
         
+        let services = TestFixtures::custom_app_state(test_app.db_pool.clone(), test_app.config.clone())
+            .with_email_service(custom_email_service)
+            .build().await.expect("Failed to build services");
+            
         let app_state = AppState::new(
             test_app.db_pool.clone(),
             test_app.config.clone(),
-            TestFixtures::custom_app_state(test_app.db_pool.clone(), test_app.config.clone())
-                .with_email_service(custom_email_service)
-                .build()
+            services
         );
         
         // Verify the app state was created successfully

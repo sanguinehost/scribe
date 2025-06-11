@@ -52,6 +52,7 @@ use axum::{
 };
 use axum::{
     body::Body,
+    extract::Request as AxumRequest,
     http::{Request, StatusCode}, // Removed unused Method, header
 };
 use axum_login::{AuthManagerLayerBuilder, AuthSession}; // Removed unused login_required
@@ -84,6 +85,8 @@ use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
 use tower_sessions::{
     Expiry, SessionManagerLayer, cookie::Key as TowerSessionKey, cookie::SameSite,
 }; // Added SameSite
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer, key_extractor::GlobalKeyExtractor};
+use tower_http::trace::{TraceLayer, DefaultMakeSpan};
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid; // Added for CryptoProvider
 
@@ -972,7 +975,7 @@ impl TestAppStateBuilder {
     ///
     /// Panics if the tokenizer model cannot be loaded from the expected path
     #[must_use]
-    pub fn build(self) -> AppState {
+    pub async fn build(self) -> Result<AppState, Box<dyn std::error::Error + Send + Sync>> {
         let encryption_service = Arc::new(EncryptionService::new());
 
         let embedding_pipeline_service = self.embedding_pipeline_service.unwrap_or_else(|| {
@@ -1037,12 +1040,14 @@ impl TestAppStateBuilder {
             lorebook_service,
             auth_backend: self.auth_backend,
             file_storage_service: Arc::new(FileStorageService::new("./test_uploads").unwrap()),
-            email_service: Arc::new(crate::services::email_service::LoggingEmailService::new(
+            email_service: crate::services::email_service::create_email_service(
+                "development",
                 "http://localhost:3000".to_string(),
-            )),
+                None,
+            ).await?,
         };
 
-        AppState::new(self.db_pool, self.config, services)
+        Ok(AppState::new(self.db_pool, self.config, services))
     }
 }
 
@@ -1136,6 +1141,11 @@ async fn auth_log_wrapper(
         "EXITING auth_log_wrapper for protected routes"
     );
     res
+}
+
+async fn test_request_logging_middleware(req: AxumRequest, next: Next) -> AxumResponse {
+    tracing::info!(target: "test_router_debug", "TEST ROUTER: Method={}, URI={}", req.method(), req.uri());
+    next.run(req).await
 }
 
 #[instrument(skip_all, fields(multi_thread, use_real_ai, use_real_qdrant))]
@@ -1278,7 +1288,7 @@ pub async fn spawn_app_with_options(
             .with_embedding_pipeline_service(mock_embedding_pipeline_service_for_test_app.clone());
     }
 
-    let app_state_inner = builder.build();
+    let app_state_inner = builder.build().await.expect("Failed to build test app state");
 
     let session_store = DieselSessionStore::new(pool.clone());
     let secret_key_hex_str: &String = config_arc
@@ -1311,10 +1321,23 @@ pub async fn spawn_app_with_options(
     // embedding_call_tracker_for_state is no longer needed here as TestApp won't store it.
     // It's accessible via app_state_inner.embedding_call_tracker if necessary.
 
-    // Corrected Router Setup for Tests
+    // Corrected Router Setup for Tests  
+    let auth_routes_with_rate_limiting = Router::new()
+        .nest("/auth", auth_routes_module::auth_routes())
+        .layer(GovernorLayer {
+            config: std::sync::Arc::new(
+                GovernorConfigBuilder::default()
+                    .per_second(2)
+                    .burst_size(5)
+                    .key_extractor(GlobalKeyExtractor)
+                    .finish()
+                    .unwrap(),
+            ),
+        });
+    
     let public_api_routes_for_test = Router::new()
         .route("/health", get(health_check))
-        .merge(Router::new().nest("/auth", auth_routes_module::auth_routes())); // Align with main.rs
+        .merge(auth_routes_with_rate_limiting); // Use rate-limited auth routes
 
     let protected_api_routes_for_test = Router::new()
         .nest(
@@ -1340,14 +1363,19 @@ pub async fn spawn_app_with_options(
 
     // Combine public and protected routes before nesting under /api
     let all_api_routes = Router::new()
-        .merge(public_api_routes_for_test) // Contains /health, /auth/*
+        .merge(public_api_routes_for_test) // Contains /health, /auth/* (auth already has rate limiting)
         .merge(protected_api_routes_for_test); // Re-enabled protected routes
 
     let router_for_server = Router::new() // Renamed to avoid conflict with router field in TestApp
         .nest("/api", all_api_routes) // Nest all combined API routes under /api
         .layer(CookieManagerLayer::new())
         .layer(auth_layer) // Re-enabled auth layer
-        .with_state(app_state_inner.clone());
+        .with_state(app_state_inner.clone())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+        )
+        .layer(axum::middleware::from_fn(test_request_logging_middleware));
 
     let router_for_test_app = router_for_server.clone(); // Clone before moving
 

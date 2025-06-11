@@ -64,14 +64,14 @@ pub fn auth_routes() -> Router<AppState> {
     Router::new()
         .route("/register", post(register_handler))
         .route("/login", post(login_handler))
+        .route("/verify-email", post(verify_email_handler))
         .route("/logout", post(logout_handler))
         .route("/me", get(me_handler))
         .route("/change-password", post(change_password_handler))
-        .route("/recover-password", post(recover_password_handler)) // New route
-        .route("/verify-email", post(verify_email_handler)) // New email verification route
+        .route("/recover-password", post(recover_password_handler))
         .route("/session", post(create_session_handler))
-        .route("/session/current", get(get_session_handler)) // Changed route for GET
-        .route("/session/{id}", delete(delete_session_handler)) // DELETE remains on old path for now
+        .route("/session/current", get(get_session_handler))
+        .route("/session/{id}", delete(delete_session_handler))
         .route("/session/{id}/extend", post(extend_session_handler))
         .route("/user/{id}/sessions", delete(delete_user_sessions_handler))
 }
