@@ -353,13 +353,14 @@ fn build_router(
         .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
         .route_layer(login_required!(AuthBackend));
 
-    let public_api_routes = Router::new()
-        .route("/health", get(health_check))
-        .merge(Router::new().nest("/auth", auth_routes()));
+    // Health endpoint - not rate limited for monitoring purposes
+    let health_routes = Router::new()
+        .route("/api/health", get(health_check));
 
-    Router::new()
-        .nest("/api", public_api_routes)
-        .nest("/api", protected_api_routes)
+    // Rate-limited API routes (both public and protected)
+    let rate_limited_api_routes = Router::new()
+        .nest("/auth", auth_routes()) // Auth routes under /api/auth
+        .merge(protected_api_routes) // Protected routes under /api
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
                 GovernorConfigBuilder::default()
@@ -369,7 +370,11 @@ fn build_router(
                     .finish()
                     .unwrap(),
             ),
-        })
+        });
+
+    Router::new()
+        .merge(health_routes) // Health endpoint not rate limited
+        .nest("/api", rate_limited_api_routes) // All other API routes are rate limited
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
         .with_state(app_state)
