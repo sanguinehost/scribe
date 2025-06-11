@@ -34,7 +34,7 @@ use scribe_backend::models::{
     users::User,
 };
 use scribe_backend::schema::chat_messages;
-use scribe_backend::services::lorebook_service::LorebookService;
+use scribe_backend::services::lorebook::LorebookService;
 use scribe_backend::state::{AppState, AppStateServices};
 // scribe_backend::test_helpers is already imported. TestDataGuard will be used as test_helpers::TestDataGuard.
 

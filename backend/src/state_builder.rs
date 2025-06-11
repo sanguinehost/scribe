@@ -10,7 +10,7 @@ use crate::{
         file_storage_service::FileStorageService,
         gemini_token_client::GeminiTokenClient,
         hybrid_token_counter::HybridTokenCounter,
-        lorebook_service::LorebookService,
+        lorebook::LorebookService,
         tokenizer_service::TokenizerService,
         user_persona_service::UserPersonaService,
     },

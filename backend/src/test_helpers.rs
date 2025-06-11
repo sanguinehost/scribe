@@ -901,7 +901,7 @@ pub struct TestAppStateBuilder {
     chat_override_service: Option<Arc<ChatOverrideService>>,
     user_persona_service: Option<Arc<UserPersonaService>>,
     token_counter: Option<Arc<HybridTokenCounter>>,
-    lorebook_service: Option<Arc<crate::services::lorebook_service::LorebookService>>, // Fully qualify
+    lorebook_service: Option<Arc<crate::services::lorebook::LorebookService>>, // Fully qualify
     auth_backend: Arc<AuthBackend>, // Add auth_backend to builder
 }
 
@@ -960,7 +960,7 @@ impl TestAppStateBuilder {
     #[must_use]
     pub fn with_lorebook_service(
         mut self,
-        service: Arc<crate::services::lorebook_service::LorebookService>, // Fully qualify
+        service: Arc<crate::services::lorebook::LorebookService>, // Fully qualify
     ) -> Self {
         self.lorebook_service = Some(service);
         self
@@ -1017,7 +1017,7 @@ impl TestAppStateBuilder {
         });
 
         let lorebook_service = self.lorebook_service.unwrap_or_else(|| {
-            Arc::new(crate::services::lorebook_service::LorebookService::new(
+            Arc::new(crate::services::lorebook::LorebookService::new(
                 // Fully qualify
                 self.db_pool.clone(),
                 encryption_service.clone(),

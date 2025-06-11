@@ -15,7 +15,7 @@ use scribe_backend::{
         encryption_service::EncryptionService,      // Added
         gemini_token_client::GeminiTokenClient,     // Added
         hybrid_token_counter::HybridTokenCounter,   // Added
-        lorebook_service::LorebookService,          // Added
+        lorebook::LorebookService,          // Added
         tokenizer_service::TokenizerService,        // Added
         user_persona_service::UserPersonaService,   // Added
     },

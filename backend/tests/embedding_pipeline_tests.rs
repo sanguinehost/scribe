@@ -12,7 +12,7 @@ use scribe_backend::{
         },
         encryption_service::EncryptionService,
         hybrid_token_counter::HybridTokenCounter,
-        lorebook_service::LorebookService,
+        lorebook::LorebookService,
         tokenizer_service::TokenizerService,
         user_persona_service::UserPersonaService,
     },

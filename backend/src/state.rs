@@ -22,7 +22,7 @@ use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED TH
 use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
 use crate::services::file_storage_service::FileStorageService; // Added for FileStorageService
 use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
-use crate::services::lorebook_service::LorebookService; // Added for LorebookService
+use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl

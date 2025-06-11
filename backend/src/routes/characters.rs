@@ -35,7 +35,7 @@ use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto};
 use crate::schema::chat_sessions;
 use crate::services::character_service::CharacterService;
 use crate::services::encryption_service::EncryptionService; // Added import
-use crate::services::lorebook_service::LorebookService;
+use crate::services::lorebook::LorebookService;
 use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
 // DieselError moved to main diesel imports
