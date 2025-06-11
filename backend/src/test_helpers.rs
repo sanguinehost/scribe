@@ -1322,22 +1322,9 @@ pub async fn spawn_app_with_options(
     // It's accessible via app_state_inner.embedding_call_tracker if necessary.
 
     // Corrected Router Setup for Tests  
-    let auth_routes_with_rate_limiting = Router::new()
-        .nest("/auth", auth_routes_module::auth_routes())
-        .layer(GovernorLayer {
-            config: std::sync::Arc::new(
-                GovernorConfigBuilder::default()
-                    .per_second(2)
-                    .burst_size(5)
-                    .key_extractor(GlobalKeyExtractor)
-                    .finish()
-                    .unwrap(),
-            ),
-        });
-    
     let public_api_routes_for_test = Router::new()
         .route("/health", get(health_check))
-        .merge(auth_routes_with_rate_limiting); // Use rate-limited auth routes
+        .merge(Router::new().nest("/auth", auth_routes_module::auth_routes()));
 
     let protected_api_routes_for_test = Router::new()
         .nest(
@@ -1368,6 +1355,16 @@ pub async fn spawn_app_with_options(
 
     let router_for_server = Router::new() // Renamed to avoid conflict with router field in TestApp
         .nest("/api", all_api_routes) // Nest all combined API routes under /api
+        .layer(GovernorLayer {
+            config: std::sync::Arc::new(
+                GovernorConfigBuilder::default()
+                    .per_second(2)
+                    .burst_size(5)
+                    .key_extractor(GlobalKeyExtractor)
+                    .finish()
+                    .unwrap(),
+            ),
+        })
         .layer(CookieManagerLayer::new())
         .layer(auth_layer) // Re-enabled auth layer
         .with_state(app_state_inner.clone())
