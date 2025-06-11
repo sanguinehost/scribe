@@ -1153,6 +1153,11 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
     spawn_app_with_options(multi_thread, use_real_ai, use_real_qdrant, false).await
 }
 
+/// Spawn app with permissive rate limiting for tests that make many sequential requests
+pub async fn spawn_app_permissive_rate_limiting(multi_thread: bool, use_real_ai: bool, use_real_qdrant: bool) -> TestApp {
+    spawn_app_with_rate_limiting_options(multi_thread, use_real_ai, use_real_qdrant, false, 100, 50).await
+}
+
 #[instrument(
     skip_all,
     fields(
@@ -1167,6 +1172,28 @@ pub async fn spawn_app_with_options(
     use_real_ai: bool,
     use_real_qdrant: bool,
     use_real_embedding_pipeline: bool,
+) -> TestApp {
+    spawn_app_with_rate_limiting_options(multi_thread, use_real_ai, use_real_qdrant, use_real_embedding_pipeline, 2, 5).await
+}
+
+#[instrument(
+    skip_all,
+    fields(
+        multi_thread,
+        use_real_ai,
+        use_real_qdrant,
+        use_real_embedding_pipeline,
+        rate_limit_per_second,
+        rate_limit_burst_size
+    )
+)]
+pub async fn spawn_app_with_rate_limiting_options(
+    multi_thread: bool,
+    use_real_ai: bool,
+    use_real_qdrant: bool,
+    use_real_embedding_pipeline: bool,
+    rate_limit_per_second: u64,
+    rate_limit_burst_size: u32,
 ) -> TestApp {
     ensure_tracing_initialized();
     ensure_rustls_provider_installed(); // Ensure rustls crypto provider is set up
@@ -1321,10 +1348,9 @@ pub async fn spawn_app_with_options(
     // embedding_call_tracker_for_state is no longer needed here as TestApp won't store it.
     // It's accessible via app_state_inner.embedding_call_tracker if necessary.
 
-    // Corrected Router Setup for Tests  
-    let public_api_routes_for_test = Router::new()
-        .route("/health", get(health_check))
-        .merge(Router::new().nest("/auth", auth_routes_module::auth_routes()));
+    // Health endpoint - not rate limited for monitoring purposes (matches production)
+    let health_routes_for_test = Router::new()
+        .route("/api/health", get(health_check));
 
     let protected_api_routes_for_test = Router::new()
         .nest(
@@ -1348,23 +1374,24 @@ pub async fn spawn_app_with_options(
             auth_log_wrapper,
         ));
 
-    // Combine public and protected routes before nesting under /api
-    let all_api_routes = Router::new()
-        .merge(public_api_routes_for_test) // Contains /health, /auth/* (auth already has rate limiting)
-        .merge(protected_api_routes_for_test); // Re-enabled protected routes
-
-    let router_for_server = Router::new() // Renamed to avoid conflict with router field in TestApp
-        .nest("/api", all_api_routes) // Nest all combined API routes under /api
+    // Rate-limited API routes (both auth and protected routes)
+    let rate_limited_api_routes = Router::new()
+        .nest("/auth", auth_routes_module::auth_routes()) // Auth routes under /api/auth
+        .merge(protected_api_routes_for_test) // Protected routes under /api
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
                 GovernorConfigBuilder::default()
-                    .per_second(2)
-                    .burst_size(5)
+                    .per_second(rate_limit_per_second)
+                    .burst_size(rate_limit_burst_size)
                     .key_extractor(GlobalKeyExtractor)
                     .finish()
                     .unwrap(),
             ),
-        })
+        });
+
+    let router_for_server = Router::new() // Renamed to avoid conflict with router field in TestApp
+        .merge(health_routes_for_test) // Health endpoint not rate limited
+        .nest("/api", rate_limited_api_routes) // All other API routes are rate limited
         .layer(CookieManagerLayer::new())
         .layer(auth_layer) // Re-enabled auth layer
         .with_state(app_state_inner.clone())
