@@ -4,7 +4,7 @@ use crate::{
     llm::{AiClient, EmbeddingClient},
     services::{
         chat_override_service::ChatOverrideService,
-        email_service::{EmailService, LoggingEmailService},
+        email_service::{EmailService, create_email_service},
         embeddings::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait},
         encryption_service::EncryptionService,
         file_storage_service::FileStorageService,
@@ -131,7 +131,7 @@ impl AppStateServicesBuilder {
     /// 
     /// Panics if required services (AI client, embedding client, Qdrant service) are not provided
     /// and cannot be created from configuration.
-    pub fn build(self) -> AppStateServices {
+    pub async fn build(self) -> Result<AppStateServices, Box<dyn std::error::Error + Send + Sync>> {
         // Get or create encryption service first as many services depend on it
         let encryption_service = self.encryption_service
             .unwrap_or_else(|| Arc::new(EncryptionService::new()));
@@ -148,10 +148,16 @@ impl AppStateServicesBuilder {
             });
 
         // Get or create email service
-        let email_service = self.email_service
-            .unwrap_or_else(|| {
-                Arc::new(LoggingEmailService::new(self.config.frontend_base_url.clone()))
-            });
+        let email_service = match self.email_service {
+            Some(service) => service,
+            None => {
+                create_email_service(
+                    &self.config.app_env,
+                    self.config.frontend_base_url.clone(),
+                    self.config.from_email.clone(),
+                ).await?
+            }
+        };
 
         // Get or create token counter
         let token_counter = self.token_counter
@@ -214,7 +220,7 @@ impl AppStateServicesBuilder {
                 ))
             });
 
-        AppStateServices {
+        Ok(AppStateServices {
             ai_client,
             embedding_client,
             qdrant_service,
@@ -227,7 +233,7 @@ impl AppStateServicesBuilder {
             auth_backend,
             file_storage_service,
             email_service,
-        }
+        })
     }
 }
 
@@ -339,8 +345,8 @@ impl AppStateBuilder {
     }
 
     /// Build the AppState
-    pub fn build(self) -> AppState {
-        let services = self.services_builder.build();
-        AppState::new(self.pool, self.config, services)
+    pub async fn build(self) -> Result<AppState, Box<dyn std::error::Error + Send + Sync>> {
+        let services = self.services_builder.build().await?;
+        Ok(AppState::new(self.pool, self.config, services))
     }
 }

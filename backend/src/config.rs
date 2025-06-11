@@ -58,6 +58,11 @@ pub struct Config {
     // Frontend URL
     #[serde(default = "default_frontend_base_url")]
     pub frontend_base_url: String,
+
+    // Email Configuration
+    #[serde(default = "default_app_env")]
+    pub app_env: String,
+    pub from_email: Option<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -102,6 +107,11 @@ impl std::fmt::Debug for Config {
             .field("context_rag_token_budget", &self.context_rag_token_budget)
             .field("upload_storage_path", &self.upload_storage_path)
             .field("frontend_base_url", &self.frontend_base_url)
+            .field("app_env", &self.app_env)
+            .field(
+                "from_email",
+                &self.from_email.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -168,6 +178,10 @@ fn default_frontend_base_url() -> String {
     "https://localhost:5173".to_string()
 }
 
+fn default_app_env() -> String {
+    "development".to_string()
+}
+
 impl Config {
     /// Loads configuration from environment variables.
     ///
@@ -221,6 +235,8 @@ impl Default for Config {
             context_rag_token_budget: default_context_rag_token_budget(),
             upload_storage_path: default_upload_storage_path(),
             frontend_base_url: default_frontend_base_url(),
+            app_env: default_app_env(),
+            from_email: None,
         }
     }
 }

@@ -57,7 +57,9 @@ async fn setup_common_test_env(username: &str) -> TestSetup {
         auth_backend,
     )
     .with_embedding_pipeline_service(app.mock_embedding_pipeline_service.clone())
-    .build();
+    .build()
+    .await
+    .expect("Failed to build app state for test");
     let app_state_arc = Arc::new(app_state_for_service);
 
     TestSetup {
