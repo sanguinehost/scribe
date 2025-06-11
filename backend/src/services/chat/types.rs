@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 // Imports needed for the types defined in this file, based on original chat_service.rs
 pub use crate::models::chats::{ChatMessage, DbInsertableChatMessage, MessageRole};
-pub use crate::services::embedding_pipeline::RetrievedChunk;
+pub use crate::services::embeddings::RetrievedChunk;
 // User and UserPersona are not directly re-exported here as they were not top-level imports
 // in chat_service.rs for general use by other modules. They were used internally.
 // Modules like generation.rs will import them directly from crate::models if needed.

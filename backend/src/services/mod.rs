@@ -3,7 +3,7 @@ pub mod character_service;
 pub mod chat;
 pub mod chat_override_service;
 pub mod email_service;
-pub mod embedding_pipeline;
+pub mod embeddings;
 pub mod encryption_service;
 pub mod file_storage_service;
 pub mod gemini_token_client;

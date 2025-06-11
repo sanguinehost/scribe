@@ -7,7 +7,7 @@ use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
     services::{
         chat_override_service::ChatOverrideService,
-        embedding_pipeline::{
+        embeddings::{
             ChatMessageChunkMetadata, EmbeddingPipelineService, LorebookEntryParams, RetrievedMetadata,
         },
         encryption_service::EncryptionService,
@@ -30,7 +30,7 @@ use uuid::Uuid; // For mock assertions
 
 // Helper to assert content and metadata of retrieved chunks
 fn assert_retrieved_chunks_content(
-    retrieved_chunks: &[scribe_backend::services::embedding_pipeline::RetrievedChunk],
+    retrieved_chunks: &[scribe_backend::services::embeddings::RetrievedChunk],
     test_session_id: Uuid,
     message_id_1: Uuid,
     message_id_2: Uuid,
@@ -593,7 +593,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         .clone()
         .expect("Mock Qdrant service");
 
-    let embedding_pipeline_service =
+    let embeddings_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
     // Create dependent services for AppState
@@ -633,7 +633,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
             .expect("Mock AI client should be present"),
         embedding_client: test_app.mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: Arc::new(embedding_pipeline_service),
+        embedding_pipeline_service: Arc::new(embeddings_service),
         chat_override_service: chat_override_service_for_test_5,
         user_persona_service: user_persona_service_for_test_5,
         token_counter: hybrid_token_counter_for_test_5,
@@ -752,7 +752,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     let query_text = "Query for invalid UUID metadata";
     let session_id = Uuid::new_v4();
     let limit = 3;
-    let _mock_query_embedding = vec![0.6; 3072]; // Prefixed with _ as it's unused with mock_embedding_pipeline_service
+    let _mock_query_embedding = vec![0.6; 3072]; // Prefixed with _ as it's unused with mock_embeddings_service
 
     mock_qdrant_service_concrete.set_search_response(Ok(vec![
         create_mock_scored_point_simple(&MockScoredPointParams {
@@ -783,13 +783,13 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     // To make the second point's message_id invalid, we need to modify the mock_qdrant_service_concrete's response
     // This is a bit tricky as set_search_response takes ownership. We'll set it, then modify.
     // This test's intent is to check how the *real* EmbeddingPipelineService handles bad data from Qdrant.
-    // So, the mock_embedding_pipeline_service should not be used here.
+    // So, the mock_embeddings_service should not be used here.
     // The panic "MockEmbeddingPipelineService::retrieve_relevant_chunks called but no more responses were queued"
     // indicates that the mock service was called, which is not the intent for testing metadata parsing.
 
     // Let's re-evaluate the setup for these metadata tests.
     // They should use the *real* EmbeddingPipelineService and a mock Qdrant that returns malformed data.
-    let real_embedding_pipeline_service =
+    let real_embeddings_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
     // Create a new AppState with the real service
@@ -800,7 +800,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             .expect("Mock AI client should be present"),
         embedding_client: test_app.mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(), // This is the MockQdrantClientService
-        embedding_pipeline_service: Arc::new(real_embedding_pipeline_service), // Use the real service
+        embedding_pipeline_service: Arc::new(real_embeddings_service), // Use the real service
         chat_override_service: app_state_arc.chat_override_service.clone(), // Reuse from previous app_state_arc
         user_persona_service: app_state_arc.user_persona_service.clone(),
         token_counter: app_state_arc.token_counter.clone(),
@@ -979,7 +979,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         },
     ]));
 
-    let real_embedding_pipeline_service =
+    let real_embeddings_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
     let services_for_metadata_test_2 = AppStateServices {
         ai_client: test_app
@@ -988,7 +988,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             .expect("Mock AI client should be present"),
         embedding_client: test_app.mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: Arc::new(real_embedding_pipeline_service),
+        embedding_pipeline_service: Arc::new(real_embeddings_service),
         chat_override_service: app_state_arc.chat_override_service.clone(),
         user_persona_service: app_state_arc.user_persona_service.clone(),
         token_counter: app_state_arc.token_counter.clone(),
@@ -1121,7 +1121,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         },
     ]));
 
-    let real_embedding_pipeline_service =
+    let real_embeddings_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
     let file_storage_service_8 = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
@@ -1134,7 +1134,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             .expect("Mock AI client should be present"),
         embedding_client: test_app.mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: Arc::new(real_embedding_pipeline_service),
+        embedding_pipeline_service: Arc::new(real_embeddings_service),
         chat_override_service: chat_override_service_for_test_8, // Use services created in this test
         user_persona_service: user_persona_service_for_test_8,
         token_counter: hybrid_token_counter_for_test_8,
@@ -1270,7 +1270,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         },
     ]));
 
-    let real_embedding_pipeline_service =
+    let real_embeddings_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
     let file_storage_service_9 = Arc::new(
         scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
@@ -1284,7 +1284,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             .expect("Mock AI client should be present"),
         embedding_client: mock_embedding_client.clone(), // Use the mock_embedding_client from this test's scope
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: Arc::new(real_embedding_pipeline_service),
+        embedding_pipeline_service: Arc::new(real_embeddings_service),
         chat_override_service: chat_override_service_for_test_9, // Use services created in this test
         user_persona_service: user_persona_service_for_test_9,
         token_counter: hybrid_token_counter_for_test_9,
@@ -1362,7 +1362,7 @@ async fn test_rag_context_injection_with_qdrant() {
     }
 
     // Create a real EmbeddingPipelineService
-    let embedding_pipeline_service_instance = // Renamed to avoid conflict
+    let embeddings_service_instance = // Renamed to avoid conflict
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
     // Set up test data
@@ -1437,7 +1437,7 @@ async fn test_rag_context_injection_with_qdrant() {
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: Arc::new(embedding_pipeline_service_instance), // Use the renamed instance
+        embedding_pipeline_service: Arc::new(embeddings_service_instance), // Use the renamed instance
         chat_override_service: chat_override_service_for_test_10,
         user_persona_service: user_persona_service_for_test_10,
         token_counter: hybrid_token_counter_for_test_10,
@@ -1752,7 +1752,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         return;
     }
 
-    let embedding_pipeline_service_instance =
+    let embeddings_service_instance =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
     let mock_embedding_client = test_app.mock_embedding_client.clone();
@@ -1789,7 +1789,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         ai_client: test_app.ai_client.clone(),
         embedding_client: mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: Arc::new(embedding_pipeline_service_instance),
+        embedding_pipeline_service: Arc::new(embeddings_service_instance),
         chat_override_service,
         user_persona_service,
         token_counter: hybrid_token_counter,
@@ -2069,7 +2069,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         return;
     }
 
-    let embedding_pipeline_service_instance =
+    let embeddings_service_instance =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
     let mock_embedding_client = test_app.mock_embedding_client.clone();
@@ -2106,7 +2106,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         ai_client: test_app.ai_client.clone(),
         embedding_client: mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: Arc::new(embedding_pipeline_service_instance),
+        embedding_pipeline_service: Arc::new(embeddings_service_instance),
         chat_override_service,
         user_persona_service,
         token_counter: hybrid_token_counter,

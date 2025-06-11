@@ -11,7 +11,7 @@ use scribe_backend::{
     services::{
         UserSettingsService,
         chat_override_service::ChatOverrideService, // Added
-        embedding_pipeline::EmbeddingPipelineServiceTrait, // Added
+        embeddings::EmbeddingPipelineServiceTrait, // Added
         encryption_service::EncryptionService,      // Added
         gemini_token_client::GeminiTokenClient,     // Added
         hybrid_token_counter::HybridTokenCounter,   // Added

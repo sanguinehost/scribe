@@ -28,7 +28,7 @@ use crate::{
     },
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::{
-        embedding_pipeline::RetrievedChunk, // Corrected struct name
+        embeddings::RetrievedChunk, // Corrected struct name
         // history_manager::HistoryManager, // Removed, manage_history is a free function
         hybrid_token_counter::CountingMode,
         tokenizer_service::TokenEstimate,
@@ -631,7 +631,7 @@ pub async fn get_session_data_for_generation(
 
                 debug!(target: "rag_debug", %session_id, num_raw_older_chunks = older_chat_chunks.len(), "Raw older chat RAG chunks before filtering:");
                 for (i, chunk) in older_chat_chunks.iter().enumerate() {
-                    if let crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) =
+                    if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
                         &chunk.metadata
                     {
                         debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), "  Raw older chat RAG chunk");
@@ -643,7 +643,7 @@ pub async fn get_session_data_for_generation(
                 let initial_older_chunk_count = older_chat_chunks.len();
                 older_chat_chunks.retain(|chunk| {
                     match &chunk.metadata {
-                        crate::services::embedding_pipeline::RetrievedMetadata::Chat(chat_meta) => {
+                        crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
                             let is_recent = recent_message_ids.contains(&chat_meta.message_id);
                             if is_recent {
                                 debug!(target: "rag_debug", %session_id, message_id = %chat_meta.message_id, score = chunk.score, "Filtering older RAG chat chunk (ID: {}) because it IS IN recent_message_ids.", chat_meta.message_id);
@@ -652,7 +652,7 @@ pub async fn get_session_data_for_generation(
                             }
                             !is_recent // Keep if NOT recent
                         }
-                        crate::services::embedding_pipeline::RetrievedMetadata::Lorebook(lore_meta) => {
+                        crate::services::embeddings::RetrievedMetadata::Lorebook(lore_meta) => {
                             // This case should ideally not be hit if retrieve_relevant_chunks was called with Some(session_id) and None for lorebook_ids
                             warn!(target: "rag_debug", %session_id, lorebook_id = %lore_meta.lorebook_id, entry_id = %lore_meta.original_lorebook_entry_id, "Encountered unexpected Lorebook metadata when filtering older CHAT HISTORY RAG chunks. Keeping it by default.");
                             true

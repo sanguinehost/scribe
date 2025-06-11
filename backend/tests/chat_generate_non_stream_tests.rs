@@ -37,7 +37,7 @@ use scribe_backend::models::{
     users::User, // Directly import User
 };
 use scribe_backend::schema::{characters, chat_messages, chat_sessions, sessions};
-use scribe_backend::services::embedding_pipeline::{
+use scribe_backend::services::embeddings::{
     ChatMessageChunkMetadata, RetrievedChunk, RetrievedMetadata,
 };
 use scribe_backend::test_helpers::db::create_test_user; // Already present

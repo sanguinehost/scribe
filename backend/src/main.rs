@@ -42,7 +42,7 @@ use hex::decode;
 use scribe_backend::config::Config; // Import Config instead
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
-use scribe_backend::services::embedding_pipeline::{
+use scribe_backend::services::embeddings::{
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
 };
 use scribe_backend::services::file_storage_service::FileStorageService; // Added
