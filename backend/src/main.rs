@@ -64,7 +64,7 @@ use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
 use rustls::crypto::ring;
 use scribe_backend::services::chat_override_service::ChatOverrideService; // <<< ADDED IMPORT
 use scribe_backend::services::encryption_service::EncryptionService;
-use scribe_backend::services::lorebook_service::LorebookService; // Added for LorebookService
+use scribe_backend::services::lorebook::LorebookService; // Added for LorebookService
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module // <<< ADDED THIS IMPORT
 

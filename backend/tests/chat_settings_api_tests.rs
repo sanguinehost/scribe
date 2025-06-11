@@ -23,7 +23,7 @@ use scribe_backend::models::chats::{
 use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::services::chat::session_management::create_session_and_maybe_first_message;
 use scribe_backend::services::chat::settings::get_session_settings;
-use scribe_backend::services::lorebook_service::LorebookService; // Added LorebookService
+use scribe_backend::services::lorebook::LorebookService; // Added LorebookService
 use scribe_backend::state::{AppState, AppStateServices};
 use scribe_backend::test_helpers;
 use std::sync::Arc; // Added for Result in set_history_settings

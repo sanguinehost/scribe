@@ -22,7 +22,7 @@ use scribe_backend::{
     services::{
         chat::generation::get_session_data_for_generation, // Updated to new path
         hybrid_token_counter::HybridTokenCounter,
-        lorebook_service::LorebookService,
+        lorebook::LorebookService,
         tokenizer_service::TokenizerService,
     },
     state::{AppState, AppStateServices},

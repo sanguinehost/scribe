@@ -17,7 +17,7 @@ mod tests {
         config::Config,
         crypto::encrypt_gcm, // Updated for encryption tests
         models::chats::MessageRole,
-        services::lorebook_service::LorebookService, // Added for LorebookService
+        services::lorebook::LorebookService, // Added for LorebookService
         state::AppStateServices,
         test_helpers::{
             MockAiClient, MockEmbeddingClient, MockQdrantClientService, db::setup_test_database,
