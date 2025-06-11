@@ -5,7 +5,6 @@ pub mod crypto;
 pub mod errors;
 pub mod llm;
 pub mod logging;
-pub mod middleware;
 pub mod models;
 pub mod prompt_builder;
 pub mod routes;
