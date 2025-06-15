@@ -68,6 +68,7 @@
 				<ChatConfigPanel
 					{chat}
 					{availablePersonas}
+					compact={true}
 					on:settingsUpdated={handleSettingsUpdated}
 					on:personaChanged={handlePersonaChanged}
 				/>
