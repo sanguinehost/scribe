@@ -123,11 +123,46 @@
 	$effect(() => {
 		if (!(containerRef && endRef)) return;
 
-		const observer = new MutationObserver(() => {
+		const observer = new MutationObserver((mutations) => {
 			if (!endRef || scrollLock.locked) return;
-			// Only auto-scroll if we have actual chat messages
-			// Don't scroll for character overviews, settings, or empty states
-			if (messages.length > 0) {
+			
+			// Only scroll for meaningful content changes, not button state changes
+			const shouldScroll = mutations.some(mutation => {
+				// Allow childList changes (new messages)
+				if (mutation.type === 'childList') return true;
+				
+				// Allow text content changes (message content updates)
+				if (mutation.type === 'characterData') return true;
+				
+				// For attribute changes, only scroll if it's not a UI state change
+				if (mutation.type === 'attributes') {
+					const target = mutation.target as Element;
+					// Ignore class changes on buttons and their children
+					if (target.tagName === 'BUTTON' || target.closest('button')) {
+						return false;
+					}
+					// Ignore class changes on avatar elements (they change during loading)
+					if (target.id?.startsWith('bits-') || target.classList?.contains('size-8')) {
+						return false;
+					}
+					// Ignore class changes on elements with message action classes
+					if (target.classList?.contains('opacity-0') || 
+						target.classList?.contains('opacity-100') ||
+						target.closest('.group')) {
+						return false;
+					}
+					// Ignore attribute changes on interactive UI elements
+					if (target.closest('[data-role]') || target.closest('.relative')) {
+						return false;
+					}
+					return true;
+				}
+				
+				return false;
+			});
+			
+			// Only auto-scroll if we have actual chat messages and meaningful changes occurred
+			if (shouldScroll && messages.length > 0) {
 				endRef.scrollIntoView({ behavior: 'instant', block: 'end' });
 			}
 		});
