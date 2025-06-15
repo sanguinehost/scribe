@@ -30,13 +30,16 @@
 	import ChevronUp from '../icons/chevron-up.svelte';
 	import LorebookSelectionDialog from '$lib/components/shared/LorebookSelectionDialog.svelte';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
+	import ContextConfiguratorCompact from '$lib/components/shared/ContextConfiguratorCompact.svelte';
 
 	let {
 		chat,
-		availablePersonas = []
+		availablePersonas = [],
+		compact = false
 	}: {
 		chat: ScribeChatSession | null;
 		availablePersonas?: UserPersona[];
+		compact?: boolean; // When true, use compact layout for sidebar
 	} = $props();
 
 	const dispatch = createEventDispatcher();
@@ -837,13 +840,23 @@
 					{#if expandedSections.advanced}
 						<CardContent class="space-y-4">
 							<!-- Context Configuration Override -->
-							<ContextConfigurator
-								bind:total_token_limit={localSettings.context_total_token_limit}
-								bind:recent_history_budget={localSettings.context_recent_history_budget}
-								bind:rag_budget={localSettings.context_rag_budget}
-								title="Context Override"
-								description="Override default context allocation for this chat."
-							/>
+							{#if compact}
+								<ContextConfiguratorCompact
+									bind:total_token_limit={localSettings.context_total_token_limit}
+									bind:recent_history_budget={localSettings.context_recent_history_budget}
+									bind:rag_budget={localSettings.context_rag_budget}
+									title="Context Override"
+									description="Override default context allocation for this chat."
+								/>
+							{:else}
+								<ContextConfigurator
+									bind:total_token_limit={localSettings.context_total_token_limit}
+									bind:recent_history_budget={localSettings.context_recent_history_budget}
+									bind:rag_budget={localSettings.context_rag_budget}
+									title="Context Override"
+									description="Override default context allocation for this chat."
+								/>
+							{/if}
 
 							<!-- Gemini-specific Options -->
 							<div class="grid grid-cols-2 gap-3">
