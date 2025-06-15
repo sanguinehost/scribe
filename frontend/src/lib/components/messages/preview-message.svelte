@@ -13,6 +13,7 @@
 	import type { ScribeChatMessage, User, ScribeCharacter } from '$lib/types'; // Import User and ScribeCharacter
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
 	import { env } from '$env/dynamic/public';
+	import { getLock } from '$lib/hooks/lock';
 
 	let {
 		message,
@@ -45,6 +46,9 @@
 	// Edit mode state
 	let isEditing = $state(false);
 	let editedContent = $state('');
+	
+	// Get scroll lock during component initialization
+	const scrollLock = getLock('messages-scroll');
 
 	// Function to get initials for fallback avatar
 	function getInitials(name: string | undefined | null): string {
@@ -53,21 +57,46 @@
 
 	// Edit mode functions
 	function startEditing() {
+		// Lock scrolling before making DOM changes
+		scrollLock.locked = true;
+		
 		isEditing = true;
 		editedContent = message.content;
+		
+		// Unlock after DOM has settled
+		setTimeout(() => {
+			scrollLock.locked = false;
+		}, 200);
 	}
 
 	function cancelEditing() {
+		// Lock scrolling before making DOM changes
+		scrollLock.locked = true;
+		
 		isEditing = false;
 		editedContent = '';
+		
+		// Unlock after DOM has settled
+		setTimeout(() => {
+			scrollLock.locked = false;
+		}, 200);
 	}
 
 	function saveEdit() {
 		if (editedContent.trim() && editedContent.trim() !== message.content) {
 			onSaveEditedMessage?.(message.id, editedContent.trim());
 		}
+		
+		// Lock scrolling before making DOM changes
+		scrollLock.locked = true;
+		
 		isEditing = false;
 		editedContent = '';
+		
+		// Unlock after DOM has settled
+		setTimeout(() => {
+			scrollLock.locked = false;
+		}, 200);
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
