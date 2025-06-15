@@ -11,7 +11,7 @@
 	import MultimodalInput from './multimodal-input.svelte';
 	import SuggestedActions from './suggested-actions.svelte'; // Import SuggestedActions
 	import ChatConfigSidebar from './chat-config-sidebar.svelte';
-	import { untrack } from 'svelte'; // Remove incorrect effect import
+	// Removed untrack import as we no longer use it
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
@@ -53,6 +53,10 @@
 	// Scribe chat state management
 	let messages = $state<ScribeChatMessage[]>([]); // Start with a truly empty array
 	let initialMessagesSet = $state(false); // Flag to ensure we only set initial messages once
+	
+	// Message variants storage: messageId -> array of variant contents
+	let messageVariants = $state<Map<string, { content: string; timestamp: string }[]>>(new Map());
+	let currentVariantIndex = $state<Map<string, number>>(new Map());
 
 	$effect(() => {
 		if (!initialMessagesSet) {
@@ -540,25 +544,19 @@
 				shouldRefetch = false;
 			}
 			if (shouldRefetch) {
-				// Use untrack to prevent refetch from triggering reactivity loops if history affects messages
-				untrack(() => chatHistory.refetch());
-
-				// Fetch only the most recent assistant message to get raw_prompt and other backend-only fields
-				// This ensures the "Show raw prompt debug info" button works immediately without refreshing all messages
+				// Get the latest messages to find the backend message ID for this assistant message
 				try {
-					// Find the assistant message we just completed by content and recency
-					const completedAssistantMessage = messages.find(
-						(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
-					);
-					
-					if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
-						// Get all messages to find the matching backend message by content and timestamp
-						const messagesResult = await apiClient.getMessagesByChatId(chat.id);
-						if (messagesResult.isOk()) {
-							const backendMessages = messagesResult.value;
-							
-							// Find the most recent assistant message that matches our content
-							// Sort by created_at descending and find the first match
+					const messagesResult = await apiClient.getMessagesByChatId(chat.id);
+					if (messagesResult.isOk()) {
+						const backendMessages = messagesResult.value;
+						
+						// Find the most recent assistant message that matches our content
+						const completedAssistantMessage = messages.find(
+							(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
+						);
+						
+						if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
+							// Find matching backend message by content (most recent first)
 							const matchingBackendMessage = backendMessages
 								.filter((msg: any) => msg.message_type === 'Assistant')
 								.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -566,29 +564,31 @@
 									const backendContent = msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
 									return backendContent.trim() === completedAssistantMessage.content.trim();
 								});
-
+							
 							if (matchingBackendMessage) {
-								// Update only this specific message with backend data
+								// Update the frontend message with the real backend ID
 								messages = messages.map((msg) => {
 									if (msg.id === assistantMessageId) {
 										return {
 											...msg,
-											id: matchingBackendMessage.id, // Update to backend ID
-											created_at: matchingBackendMessage.created_at,
-											raw_prompt: matchingBackendMessage.raw_prompt,
-											loading: false
+											backend_id: matchingBackendMessage.id, // Store backend ID separately
+											created_at: typeof matchingBackendMessage.created_at === 'string' 
+												? matchingBackendMessage.created_at 
+												: matchingBackendMessage.created_at.toISOString(),
+											session_id: matchingBackendMessage.session_id || msg.session_id
 										};
 									}
 									return msg;
 								});
-								console.log('Successfully updated assistant message with backend data');
-							} else {
-								console.warn('Could not find matching backend message for completed assistant message');
+								console.log('Updated assistant message with backend ID:', matchingBackendMessage.id);
 							}
+							
+							// Update chat preview in sidebar without triggering full reload
+							const preview = completedAssistantMessage.content.trim().substring(0, 100);
+							chatHistory.updateChatPreview(chat.id, preview);
 						}
 					}
 				} catch (err) {
-					// Non-critical error - raw prompt debug just won't be available immediately
 					console.warn('Failed to fetch backend message data after streaming:', err);
 				}
 			}
@@ -614,13 +614,356 @@
 		}
 	}
 
+	// Regenerate AI response without adding a new user message
+	async function regenerateResponse(userMessageContent: string, originalMessageId?: string) {
+		if (!chat?.id || !user?.id) {
+			error = 'Chat session or user information is missing.';
+			toast.error(error);
+			return;
+		}
+
+		isLoading = true;
+		error = null;
+
+		// Build the history - messages array already has the right messages after we removed the assistant message
+		// Just convert to API format
+		const historyToSend = messages
+			.filter((m) => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant'))
+			.map((m) => ({
+				role: m.message_type === 'Assistant' ? 'assistant' : 'user',
+				content: m.content
+			}));
+
+		// Continue with the same streaming logic as sendMessage but skip user message creation
+		currentAbortController = new AbortController();
+		const signal = currentAbortController.signal;
+
+		// Add placeholder for assistant message
+		const assistantMessageId = crypto.randomUUID();
+		console.log('Created assistant message with ID:', assistantMessageId);
+
+		let assistantMessage: ScribeChatMessage = {
+			id: assistantMessageId,
+			session_id: chat.id,
+			message_type: 'Assistant',
+			content: '',
+			created_at: new Date().toISOString(),
+			user_id: '',
+			loading: true
+		};
+		messages = [...messages, assistantMessage];
+
+		let fetchError: any = null;
+
+		try {
+			const baseUrl = (env.PUBLIC_API_URL || '').trim();
+			const apiUrl = `${baseUrl}/api/chat/${chat.id}/generate`;
+			
+			console.log('[regenerateResponse] Environment check:', {
+				'env.PUBLIC_API_URL': env.PUBLIC_API_URL,
+				'baseUrl': baseUrl,
+				'apiUrl': apiUrl
+			});
+			
+			const response = await fetch(apiUrl, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Accept: 'text/event-stream'
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					history: historyToSend,
+					model: await getCurrentChatModel()
+				}),
+				signal: signal
+			});
+
+			console.log('[regenerateResponse] Response status:', response.status, 'ok:', response.ok);
+			console.log('[regenerateResponse] Response headers:', response.headers);
+
+			if (!response.ok) {
+				if (response.status === 401) {
+					window.dispatchEvent(new CustomEvent('auth:invalidated'));
+					throw new Error('Session expired. Please sign in again.');
+				}
+
+				const errorData = await response.json().catch(() => {
+					if (response.status >= 500) {
+						return {
+							message: 'Server error - the backend may be temporarily unavailable. Please try again.'
+						};
+					}
+					return { message: 'Failed to generate response' };
+				});
+				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+			}
+
+			if (!response.body) {
+				throw new Error('Response body is null');
+			}
+
+			console.log('[regenerateResponse] Response body exists, starting to read stream');
+
+			// Process the stream (same logic as sendMessage)
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let currentEvent = 'message';
+			let currentData = '';
+
+			while (true) {
+				const { value, done } = await reader.read();
+				if (done) {
+					console.log('[regenerateResponse] Stream reading done');
+					break;
+				}
+				const chunk = decoder.decode(value, { stream: true });
+				console.log('[regenerateResponse] Received chunk:', chunk);
+				buffer += chunk;
+
+				let eventEndIndex;
+				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
+					const messageBlock = buffer.substring(0, eventEndIndex);
+					buffer = buffer.substring(eventEndIndex + 2);
+
+					currentEvent = 'message';
+					currentData = '';
+
+					for (const line of messageBlock.split('\n')) {
+						if (line.startsWith('event:')) {
+							currentEvent = line.substring(6).trim();
+						} else if (line.startsWith('data:')) {
+							const dataLineContent = line.substring(5);
+							if (currentData.length > 0) {
+								currentData += '\n';
+							}
+							currentData += dataLineContent.startsWith(' ')
+								? dataLineContent.substring(1)
+								: dataLineContent;
+						}
+					}
+
+					console.log('[regenerateResponse] Processing event:', currentEvent, 'data:', currentData);
+
+					if (currentEvent === 'done' && currentData === '[DONE]') {
+						console.log('SSE stream finished with [DONE] signal.');
+					} else if (currentEvent === 'error') {
+						console.error('SSE Error Event:', currentData);
+						error = `Stream error: ${currentData}`;
+						toast.error(error);
+						reader.cancel('SSE error event received');
+						throw new Error(error);
+					} else if (currentEvent === 'content') {
+						if (currentData) {
+							messages = messages.map((msg) => {
+								if (msg.id === assistantMessageId) {
+									console.log('[regenerateResponse] Updating message content for:', assistantMessageId);
+									return { ...msg, content: msg.content + currentData };
+								}
+								if (msg.id.startsWith('first-message-')) {
+									return { ...msg, loading: false };
+								}
+								return msg;
+							});
+						}
+					} else if (currentEvent === 'reasoning_chunk') {
+						// Handle reasoning chunks like in sendMessage
+						if (currentData) {
+							console.log('SSE Reasoning Chunk:', currentData);
+						}
+					}
+				}
+			}
+
+			// Finalize assistant message
+			messages = messages.map((msg) => {
+				if (msg.id === assistantMessageId) {
+					return { ...msg, loading: false };
+				}
+				if (msg.id.startsWith('first-message-')) {
+					return { ...msg, loading: false };
+				}
+				return msg;
+			});
+		} catch (err: any) {
+			fetchError = err;
+			if (err.name === 'AbortError') {
+				console.log('Regeneration aborted by user.');
+				toast.info('Generation stopped.');
+				messages = messages.filter((msg) => msg.id !== assistantMessageId);
+			} else {
+				if (!error) {
+					error = err.message || 'An unexpected error occurred.';
+					toast.error(error ?? 'Unknown error');
+				}
+				messages = messages.filter((msg) => msg.id !== assistantMessageId);
+			}
+		} finally {
+			isLoading = false;
+			currentAbortController = null;
+
+			// Update chat preview and message ID as in sendMessage
+			let shouldRefetch = true;
+			if (fetchError && fetchError.name === 'AbortError') {
+				shouldRefetch = false;
+			}
+			if (error) {
+				shouldRefetch = false;
+			}
+			if (shouldRefetch) {
+				try {
+					const messagesResult = await apiClient.getMessagesByChatId(chat.id);
+					if (messagesResult.isOk()) {
+						const backendMessages = messagesResult.value;
+						
+						const completedAssistantMessage = messages.find(
+							(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
+						);
+						
+						if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
+							const matchingBackendMessage = backendMessages
+								.filter((msg: any) => msg.message_type === 'Assistant')
+								.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+								.find((msg: any) => {
+									const backendContent = msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
+									return backendContent.trim() === completedAssistantMessage.content.trim();
+								});
+							
+							if (matchingBackendMessage) {
+								messages = messages.map((msg) => {
+									if (msg.id === assistantMessageId) {
+										return {
+											...msg,
+											backend_id: matchingBackendMessage.id, // Store backend ID separately
+											created_at: typeof matchingBackendMessage.created_at === 'string' 
+												? matchingBackendMessage.created_at 
+												: matchingBackendMessage.created_at.toISOString(),
+											session_id: matchingBackendMessage.session_id || msg.session_id
+										};
+									}
+									return msg;
+								});
+								console.log('Updated regenerated assistant message with backend ID:', matchingBackendMessage.id);
+							}
+							
+							const preview = completedAssistantMessage.content.trim().substring(0, 100);
+							chatHistory.updateChatPreview(chat.id, preview);
+						}
+					}
+				} catch (err) {
+					console.warn('Failed to fetch backend message data after regeneration:', err);
+				}
+			}
+		}
+	}
+
 	// Handle greeting changes from alternate greetings
 	function handleGreetingChanged(event: CustomEvent) {
-		const { index, content } = event.detail;
+		const { content } = event.detail;
 
 		// Update the first message content in the messages array
 		const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
 		messages = messages.map((msg) => (msg.id === firstMessageId ? { ...msg, content } : msg));
+	}
+
+	// Message action handlers
+	function handleRetryMessage(messageId: string) {
+		if (!chat?.id || isLoading) return;
+		
+		console.log('Retry message:', messageId);
+		
+		// Find the assistant message to retry
+		const messageIndex = messages.findIndex(msg => msg.id === messageId);
+		if (messageIndex === -1) return;
+		
+		const targetMessage = messages[messageIndex];
+		if (targetMessage.message_type !== 'Assistant') return;
+		
+		// Save current message content as a variant before regenerating
+		if (targetMessage.content.trim()) {
+			const variants = messageVariants.get(messageId) || [];
+			variants.push({ 
+				content: targetMessage.content,
+				timestamp: targetMessage.created_at || new Date().toISOString()
+			});
+			messageVariants.set(messageId, variants);
+			// Set current index to the new variant we're about to generate
+			currentVariantIndex.set(messageId, variants.length);
+		}
+		
+		// Find the previous user message to regenerate from
+		const userMessageIndex = messageIndex - 1;
+		if (userMessageIndex < 0) return;
+		
+		const userMessage = messages[userMessageIndex];
+		if (userMessage.message_type !== 'User') return;
+		
+		// Remove the assistant message and any messages after it
+		messages = messages.slice(0, messageIndex);
+		
+		// Regenerate the response by calling the streaming logic directly
+		// Pass the original messageId so we can maintain variants
+		regenerateResponse(userMessage.content, messageId);
+	}
+
+	function handleEditMessage(messageId: string) {
+		console.log('Edit message:', messageId);
+		// TODO: Implement edit logic
+		// 1. Find the message
+		// 2. Put it in edit mode
+		// 3. Allow editing and resending
+	}
+
+	function handlePreviousVariant(messageId: string) {
+		console.log('Previous variant:', messageId);
+		
+		const variants = messageVariants.get(messageId);
+		if (!variants || variants.length === 0) return;
+		
+		const currentIndex = currentVariantIndex.get(messageId) ?? variants.length;
+		if (currentIndex <= 0) return; // Already at the oldest variant
+		
+		const newIndex = currentIndex - 1;
+		currentVariantIndex.set(messageId, newIndex);
+		
+		// Update the message content with the previous variant
+		messages = messages.map(msg => {
+			if (msg.id === messageId) {
+				return {
+					...msg,
+					content: variants[newIndex].content
+				};
+			}
+			return msg;
+		});
+	}
+
+	function handleNextVariant(messageId: string) {
+		console.log('Next variant / Regenerate:', messageId);
+		
+		const variants = messageVariants.get(messageId);
+		const currentIndex = currentVariantIndex.get(messageId) ?? -1;
+		
+		// If we have saved variants and we're not at the latest one
+		if (variants && currentIndex < variants.length - 1) {
+			// Show next variant
+			const newIndex = currentIndex + 1;
+			currentVariantIndex.set(messageId, newIndex);
+			
+			messages = messages.map(msg => {
+				if (msg.id === messageId) {
+					return {
+						...msg,
+						content: variants[newIndex].content
+					};
+				}
+				return msg;
+			});
+		} else {
+			// No more variants, generate a new one
+			handleRetryMessage(messageId);
+		}
 	}
 </script>
 
@@ -633,6 +976,13 @@
 		{messages}
 		selectedCharacterId={selectedCharacterStore.characterId}
 		{character}
+		{user}
+		{messageVariants}
+		{currentVariantIndex}
+		onRetryMessage={handleRetryMessage}
+		onEditMessage={handleEditMessage}
+		onPreviousVariant={handlePreviousVariant}
+		onNextVariant={handleNextVariant}
 		on:personaCreated
 		on:greetingChanged={handleGreetingChanged}
 	/>
@@ -700,10 +1050,8 @@
 			>
 				{#if !readonly}
 					<MultimodalInput
-						{user}
 						bind:value={chatInput}
 						{isLoading}
-						{sendMessage}
 						{stopGeneration}
 					/>
 				{/if}

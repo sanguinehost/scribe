@@ -46,7 +46,8 @@ export async function load({ params: { chatId }, parent }) {
 		const messagesResponseJson: RawApiMessage[] = messagesResult.value;
 		const messages: ScribeChatMessage[] = messagesResponseJson.map(
 			(rawMsg): ScribeChatMessage => ({
-				id: rawMsg.id,
+				id: rawMsg.id, // For existing messages, use backend ID as main ID
+				backend_id: rawMsg.id, // Also store in backend_id for consistency
 				session_id: rawMsg.session_id,
 				message_type: rawMsg.message_type,
 				content:

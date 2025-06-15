@@ -7,7 +7,7 @@
 	import PreviewAttachment from '../preview-attachment.svelte';
 	import { Markdown } from '../markdown';
 	import MessageReasoning from '../message-reasoning.svelte';
-	import RawPromptDebug from './raw-prompt-debug.svelte';
+	import MessageActions from './message-actions.svelte';
 	import { fly } from 'svelte/transition';
 	import type { ScribeChatMessage, User, ScribeCharacter } from '$lib/types'; // Import User and ScribeCharacter
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
@@ -18,13 +18,25 @@
 		readonly,
 		loading,
 		user, // Add user prop
-		character // Add character prop
+		character, // Add character prop
+		onRetryMessage,
+		onEditMessage,
+		onPreviousVariant,
+		onNextVariant,
+		hasVariants = false,
+		variantInfo = null
 	}: {
 		message: ScribeChatMessage;
 		readonly: boolean;
 		loading: boolean;
 		user: User | undefined; // Define type for user
 		character: ScribeCharacter | null | undefined; // Define type for character
+		onRetryMessage?: (messageId: string) => void;
+		onEditMessage?: (messageId: string) => void;
+		onPreviousVariant?: (messageId: string) => void;
+		onNextVariant?: (messageId: string) => void;
+		hasVariants?: boolean;
+		variantInfo?: { current: number; total: number } | null;
 	} = $props();
 
 	// Function to get initials for fallback avatar
@@ -110,44 +122,39 @@
 			<!-- {#if message.experimental_attachments && message.experimental_attachments.length > 0} ... {/if} -->
 
 			<!-- Render message content directly -->
-			<div
-				class={cn(
-					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2',
-					{
-						'border-primary/10 bg-primary/10': message.message_type === 'User'
-					}
-				)}
-			>
-				<Markdown md={message.content} />
-				{#if message.message_type === 'Assistant' && message.loading}
-					<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
-				{/if}
-			</div>
-
-			<!-- Raw Prompt Debug for Assistant messages (excluding first messages) -->
-			{#if message.message_type === 'Assistant' && !message.loading && !isFirstMessage(message)}
-				{#if message.raw_prompt}
-					<RawPromptDebug rawPrompt={message.raw_prompt} />
-				{:else}
-					<!-- Debug: Show when raw_prompt is missing (but not for first messages) -->
-					<div class="w-full">
-						<div
-							class="rounded border bg-yellow-50 p-2 text-xs text-muted-foreground dark:bg-yellow-900/20"
-						>
-							Debug: No raw_prompt data available for this message
-						</div>
-					</div>
-				{/if}
-			{/if}
-
-			<!-- TODO: Re-implement message actions if needed -->
-			<!-- {#if message.message_type === 'Assistant' && !readonly}
-				<div class="flex w-full items-center justify-end gap-2">
-					<Button variant="ghost" size="icon" class="size-8 text-muted-foreground">
-						<CopyIcon size={14} />
-					</Button>
+			<div class="relative group">
+				<div
+					class={cn(
+						'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8',
+						{
+							'border-primary/10 bg-primary/10': message.message_type === 'User'
+						}
+					)}
+				>
+					<Markdown md={message.content} />
+					{#if message.message_type === 'Assistant' && message.loading}
+						<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
+					{/if}
 				</div>
-			{/if} -->
+
+				<!-- Modern message actions - positioned at bottom-right -->
+				<div class="absolute bottom-2 right-2 transition-opacity duration-200" 
+					 class:opacity-0={message.loading || readonly}
+					 class:opacity-100={!message.loading && !readonly}
+					 class:pointer-events-none={message.loading || readonly}>
+					<MessageActions 
+						{message} 
+						{readonly}
+						loading={message.loading}
+						{hasVariants}
+						{variantInfo}
+						onRetry={() => onRetryMessage?.(message.id)}
+						onEdit={() => onEditMessage?.(message.id)}
+						onPreviousVariant={() => onPreviousVariant?.(message.id)}
+						onNextVariant={() => onNextVariant?.(message.id)}
+					/>
+				</div>
+			</div>
 		</div>
 	</div>
 </div>

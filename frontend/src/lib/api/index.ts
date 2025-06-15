@@ -510,6 +510,10 @@ class ApiClient {
 		return this.fetch<Message[]>(`/api/chats/${chatId}/messages`);
 	}
 
+	async getMessageById(messageId: string): Promise<Result<Message, ApiError>> {
+		return this.fetch<Message>(`/api/chats/messages/${messageId}`);
+	}
+
 	async createMessage(
 		chatId: string,
 		data: CreateMessageRequest
@@ -518,10 +522,6 @@ class ApiClient {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
-	}
-
-	async getMessageById(id: string): Promise<Result<Message, ApiError>> {
-		return this.fetch<Message>(`/api/messages/${id}`);
 	}
 
 	async voteMessage(id: string, type: 'up' | 'down'): Promise<Result<void, ApiError>> {
