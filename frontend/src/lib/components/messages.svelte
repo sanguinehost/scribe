@@ -29,7 +29,13 @@
 		messages,
 		selectedCharacterId = null,
 		character = null,
-		user = undefined // Add user prop here
+		user = undefined, // Add user prop here
+		onRetryMessage,
+		onEditMessage,
+		onPreviousVariant,
+		onNextVariant,
+		messageVariants,
+		currentVariantIndex
 	}: {
 		readonly: boolean;
 		loading: boolean;
@@ -37,6 +43,12 @@
 		selectedCharacterId?: string | null;
 		character?: any | null; // Will be properly typed
 		user?: User | undefined; // Type for user prop
+		onRetryMessage?: (messageId: string) => void;
+		onEditMessage?: (messageId: string) => void;
+		onPreviousVariant?: (messageId: string) => void;
+		onNextVariant?: (messageId: string) => void;
+		messageVariants?: Map<string, { content: string; timestamp: string }[]>;
+		currentVariantIndex?: Map<string, number>;
 	} = $props();
 
 	const dispatch = createEventDispatcher();
@@ -275,7 +287,24 @@
 					{user}
 				/>
 			{:else}
-				<PreviewMessage {message} {readonly} {loading} {user} {character} />
+				{@const variants = messageVariants?.get(message.id)}
+				{@const currentIndex = currentVariantIndex?.get(message.id) ?? (variants?.length ?? -1)}
+				{@const hasVariants = (variants?.length ?? 0) > 0}
+				{@const variantInfo = hasVariants ? { current: currentIndex, total: variants.length - 1 } : null}
+				
+				<PreviewMessage 
+					{message} 
+					{readonly} 
+					{loading} 
+					{user} 
+					{character}
+					{hasVariants}
+					{variantInfo}
+					{onRetryMessage}
+					{onEditMessage}
+					{onPreviousVariant}
+					{onNextVariant}
+				/>
 			{/if}
 		{/each}
 

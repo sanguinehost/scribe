@@ -75,6 +75,16 @@ export class ChatHistory {
 		}
 	}
 
+	// Method to update chat preview without API calls
+	updateChatPreview(chatId: string, lastMessageContent: string) {
+		this.chats = this.chats.map((chat) => {
+			if (chat.id === chatId) {
+				return { ...chat, last_message_preview: lastMessageContent };
+			}
+			return chat;
+		});
+	}
+
 	static fromContext(): ChatHistory {
 		return getContext(contextKey);
 	}

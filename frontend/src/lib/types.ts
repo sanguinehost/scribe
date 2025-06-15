@@ -427,7 +427,8 @@ export type MessageResponse = {
 
 // Scribe-specific chat message interface for frontend components
 export interface ScribeChatMessage {
-	id: string;
+	id: string; // Stable frontend ID for UI consistency
+	backend_id?: string; // Actual backend ID (updates after save)
 	content: string;
 	message_type: MessageRole;
 	session_id?: string; // Chat session ID
