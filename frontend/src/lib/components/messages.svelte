@@ -32,6 +32,7 @@
 		user = undefined, // Add user prop here
 		onRetryMessage,
 		onEditMessage,
+		onSaveEditedMessage,
 		onPreviousVariant,
 		onNextVariant,
 		messageVariants,
@@ -45,6 +46,7 @@
 		user?: User | undefined; // Type for user prop
 		onRetryMessage?: (messageId: string) => void;
 		onEditMessage?: (messageId: string) => void;
+		onSaveEditedMessage?: (messageId: string, newContent: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
 		onNextVariant?: (messageId: string) => void;
 		messageVariants?: Map<string, { content: string; timestamp: string }[]>;
@@ -302,6 +304,7 @@
 					{variantInfo}
 					{onRetryMessage}
 					{onEditMessage}
+					{onSaveEditedMessage}
 					{onPreviousVariant}
 					{onNextVariant}
 				/>

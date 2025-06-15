@@ -235,6 +235,7 @@ pub async fn generate_chat_response(
         session_id,
         current_user_content.clone(),
         Some(session_dek_arc.clone()), // Use Arc clone
+        Some(payload.history), // Pass frontend-filtered history
     )
     .await?;
 
@@ -857,6 +858,7 @@ pub async fn generate_suggested_actions(
         session_id,
         current_user_content_for_service_call,
         Some(session_dek_arc.clone()),
+        None, // No frontend history for suggestions - use DB history
     )
     .await?;
 

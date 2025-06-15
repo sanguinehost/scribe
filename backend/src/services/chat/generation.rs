@@ -96,6 +96,7 @@ pub async fn get_session_data_for_generation(
     session_id: Uuid,
     user_message_content: String,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
+    frontend_history: Option<Vec<crate::models::chats::ApiChatMessage>>,
 ) -> Result<GenerationDataWithUnsavedUserMessage, AppError> {
     let user_message_content_for_closure = user_message_content.clone(); // Used for DbInsertableChatMessage later
     info!(target: "chat_service_persona_debug", %session_id, %user_id, "Entering get_session_data_for_generation.");
@@ -233,6 +234,7 @@ pub async fn get_session_data_for_generation(
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let dek_for_interact_cloned = user_dek_secret_box.clone();
         let initial_effective_system_prompt = effective_system_prompt; // Capture current state
+        let frontend_history_for_interact = frontend_history.clone(); // Clone for closure
 
         conn.interact(move |conn_interaction| {
             let (
@@ -320,14 +322,21 @@ pub async fn get_session_data_for_generation(
                     AppError::DatabaseQueryError(format!("Failed to query overrides: {e}"))
                 })?;
 
-            let messages_raw_db: Vec<DbChatMessage> = chat_messages::table
-                .filter(chat_messages::session_id.eq(session_id))
-                .order(chat_messages::created_at.asc()) // Fetch in ascending order for correct processing later
-                .select(DbChatMessage::as_select())
-                .load::<DbChatMessage>(conn_interaction)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
-                })?;
+            // Only query database messages if no frontend history is provided
+            let messages_raw_db: Vec<DbChatMessage> = if frontend_history_for_interact.is_none() {
+                chat_messages::table
+                    .filter(chat_messages::session_id.eq(session_id))
+                    .order(chat_messages::created_at.asc()) // Fetch in ascending order for correct processing later
+                    .select(DbChatMessage::as_select())
+                    .load::<DbChatMessage>(conn_interaction)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
+                    })?
+            } else {
+                // When frontend history is provided, we don't need database messages
+                // The frontend-filtered history will be converted later
+                Vec::new()
+            };
 
             let mut current_effective_system_prompt = initial_effective_system_prompt;
 
@@ -482,6 +491,45 @@ pub async fn get_session_data_for_generation(
         }
     };
 
+    // --- Convert Frontend History to DbChatMessage Format (if provided) ---
+    let final_messages_for_processing: Vec<DbChatMessage> = if let Some(ref api_messages) = frontend_history {
+        debug!(%session_id, "Using frontend-provided history ({} messages) instead of database query", api_messages.len());
+        
+        // Convert ApiChatMessage to DbChatMessage format
+        // Note: We exclude the last message as it's the current user message being processed
+        let history_without_current = if api_messages.len() > 1 {
+            &api_messages[..api_messages.len() - 1]
+        } else {
+            &[]
+        };
+        
+        history_without_current.iter().enumerate().map(|(index, api_msg)| {
+            let message_role = match api_msg.role.to_lowercase().as_str() {
+                "user" => MessageRole::User,
+                "assistant" => MessageRole::Assistant,
+                "system" => MessageRole::System,
+                _ => MessageRole::User, // Default fallback
+            };
+            
+            DbChatMessage {
+                id: Uuid::new_v4(), // Generate temporary ID for frontend messages
+                session_id,
+                user_id,
+                message_type: message_role,
+                content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
+                content_nonce: None, // No encryption for frontend-provided history
+                created_at: chrono::Utc::now() - chrono::Duration::seconds(1000 - index as i64), // Fake timestamps
+                prompt_tokens: None,
+                completion_tokens: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
+            }
+        }).collect()
+    } else {
+        debug!(%session_id, "Using database-queried history ({} messages)", existing_messages_db_raw.len());
+        existing_messages_db_raw
+    };
+
     // --- Token-based Recent History Management (Async) ---
     let recent_history_token_budget = state.config.context_recent_history_token_budget;
     debug!(target: "test_debug", %session_id, %recent_history_token_budget, "Starting recent history processing.");
@@ -489,7 +537,7 @@ pub async fn get_session_data_for_generation(
     let mut actual_recent_history_tokens: usize = 0; // CHANGED to usize
 
     // Iterate newest to oldest (reverse of DB query order)
-    for db_msg_raw in existing_messages_db_raw.iter().rev() {
+    for db_msg_raw in final_messages_for_processing.iter().rev() {
         debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, "Processing message for recent history.");
         let decrypted_content_str = match (db_msg_raw.content_nonce.as_ref(), &user_dek_secret_box)
         {
@@ -609,19 +657,20 @@ pub async fn get_session_data_for_generation(
             }
         }
 
-        // Retrieve Older Chat History Chunks
-        info!(%session_id, "Retrieving older chat history chunks for RAG.");
-        match state
-            .embedding_pipeline_service
-            .retrieve_relevant_chunks(
-                state.clone(),
-                user_id,
-                Some(session_id), // Searching chat history for the current session
-                None,             // Not searching lorebooks here
-                &user_message_content, // query_text
-                rag_query_limit_per_source,
-            )
-            .await
+        // Retrieve Older Chat History Chunks (only if using database history)
+        if frontend_history.is_none() {
+            info!(%session_id, "Retrieving older chat history chunks for RAG (database mode).");
+            match state
+                .embedding_pipeline_service
+                .retrieve_relevant_chunks(
+                    state.clone(),
+                    user_id,
+                    Some(session_id), // Searching chat history for the current session
+                    None,             // Not searching lorebooks here
+                    &user_message_content, // query_text
+                    rag_query_limit_per_source,
+                )
+                .await
         {
             Ok(mut older_chat_chunks) => {
                 info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
@@ -671,6 +720,9 @@ pub async fn get_session_data_for_generation(
             Err(e) => {
                 warn!(%session_id, error = %e, "Failed to retrieve older chat history chunks for RAG. Proceeding without them.");
             }
+        }
+        } else {
+            info!(%session_id, "Skipping older chat history RAG retrieval (frontend mode - preventing orphaned message contamination).");
         }
 
         // Assemble and Budget RAG Context

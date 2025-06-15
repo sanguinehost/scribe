@@ -29,7 +29,7 @@ export async function load({ params: { chatId }, parent }) {
 		// Fetch chat session details
 		const chatResult = await apiClient.getChatById(chatId);
 		if (chatResult.isErr()) {
-			if (chatResult.error.statusCode === 404) {
+			if ('statusCode' in chatResult.error && chatResult.error.statusCode === 404) {
 				error(404, 'Chat not found');
 			}
 			console.error('Failed to fetch chat:', chatResult.error);
