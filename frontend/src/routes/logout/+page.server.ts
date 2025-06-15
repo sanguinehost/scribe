@@ -1,12 +1,15 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
+import { env } from '$env/dynamic/public';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	// Call backend logout API
 	const sessionCookie = cookies.get('id');
 	if (sessionCookie) {
 		try {
-			await fetch('/api/auth/logout', {
+			const baseUrl = (env.PUBLIC_API_URL || '').trim();
+			const logoutUrl = baseUrl ? `${baseUrl}/api/auth/logout` : '/api/auth/logout';
+			await fetch(logoutUrl, {
 				method: 'POST',
 				headers: {
 					Cookie: `id=${sessionCookie}`
@@ -31,7 +34,9 @@ export const actions: Actions = {
 		const sessionCookie = cookies.get('id');
 		if (sessionCookie) {
 			try {
-				await fetch('/api/auth/logout', {
+				const baseUrl = (env.PUBLIC_API_URL || '').trim();
+				const logoutUrl = baseUrl ? `${baseUrl}/api/auth/logout` : '/api/auth/logout';
+				await fetch(logoutUrl, {
 					method: 'POST',
 					headers: {
 						Cookie: `id=${sessionCookie}`

@@ -18,6 +18,7 @@ use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::PgPool;
 use scribe_backend::auth::session_store::DieselSessionStore;
+use scribe_backend::errors::AppError;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
 use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::admin::admin_routes;
@@ -177,7 +178,9 @@ fn setup_database_pool(config: &Config) -> PgPool {
 // Initialize all services
 async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppStateServices> {
     // --- Initialize GenAI Client Asynchronously ---
-    let ai_client = build_gemini_client()?;
+    let api_key = config.gemini_api_key.as_ref()
+        .ok_or_else(|| AppError::ConfigError("GEMINI_API_KEY is required".to_string()))?;
+    let ai_client = build_gemini_client(api_key, &config.gemini_api_base_url)?;
     let ai_client_arc = Arc::new(ai_client);
 
     // --- Initialize Embedding Client ---
@@ -425,8 +428,8 @@ fn build_router(
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
                 GovernorConfigBuilder::default()
-                    .per_second(100)
-                    .burst_size(200)
+                    .per_second(500) // Increased from 100
+                    .burst_size(1000) // Increased from 200
                     .key_extractor(GlobalKeyExtractor)
                     .finish()
                     .unwrap(),

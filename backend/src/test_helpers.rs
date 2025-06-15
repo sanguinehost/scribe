@@ -1223,7 +1223,10 @@ pub async fn spawn_app_with_rate_limiting_options(
         Arc<dyn AiClient + Send + Sync>,
         Option<Arc<MockAiClient>>,
     ) = if use_real_ai {
-        let real_ai_client = crate::llm::gemini_client::build_gemini_client()
+        let api_key = std::env::var("GEMINI_API_KEY")
+            .unwrap_or_else(|_| "test-api-key".to_string());
+        let base_url = "https://generativelanguage.googleapis.com";
+        let real_ai_client = crate::llm::gemini_client::build_gemini_client(&api_key, base_url)
             .expect("Failed to build real AI client for test");
         (Arc::new(real_ai_client), None)
     } else {
