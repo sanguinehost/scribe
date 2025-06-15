@@ -3,6 +3,7 @@ use futures::StreamExt;
 use genai::{
     Client, ClientBuilder, ModelIden,
     chat::{ChatOptions, ChatRequest, ChatResponse},
+    resolver::{AuthData, AuthResolver},
 };
 use std::sync::Arc;
 
@@ -114,7 +115,7 @@ impl AiClient for ScribeGeminiClient {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
-        tracing::error!(
+        tracing::debug!(
             target: "gemini_client",
             model_name = %model_name,
             has_system_prompt = request.system.is_some(),
@@ -165,10 +166,23 @@ impl AiClient for Arc<ScribeGeminiClient> {
 ///
 /// # Errors
 ///
-/// This function currently always succeeds and returns `Ok(Arc<ScribeGeminiClient>)`.
-/// Future versions may return errors if client configuration validation is added.
-pub fn build_gemini_client() -> Result<Arc<ScribeGeminiClient>, AppError> {
-    let client = ClientBuilder::default().build();
+/// This function configures the client with the provided API key and base URL.
+/// Returns an error if client configuration is invalid.
+pub fn build_gemini_client(
+    api_key: &str,
+    _base_url: &str, // TODO: Use this when genai crate supports custom base URLs
+) -> Result<Arc<ScribeGeminiClient>, AppError> {
+    // Create an auth resolver that provides the API key
+    let api_key_owned = api_key.to_string();
+    let auth_resolver = AuthResolver::from_resolver_fn(
+        move |_model_iden: ModelIden| -> Result<Option<AuthData>, genai::resolver::Error> {
+            Ok(Some(AuthData::from_single(api_key_owned.clone())))
+        },
+    );
+    
+    let client = ClientBuilder::default()
+        .with_auth_resolver(auth_resolver)
+        .build();
     Ok(Arc::new(ScribeGeminiClient { inner: client }))
 }
 
@@ -207,7 +221,9 @@ mod tests {
     // --- Existing Integration Tests (Keep them) ---
     #[tokio::test]
     async fn test_build_gemini_client_wrapper_ok() {
-        let result = build_gemini_client();
+        let api_key = "test-api-key";
+        let base_url = "https://generativelanguage.googleapis.com";
+        let result = build_gemini_client(api_key, base_url);
         assert!(
             result.is_ok(),
             "Failed to build Gemini client wrapper: {:?}",
@@ -218,7 +234,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_generate_simple_response_integration_via_wrapper() {
-        let client_wrapper = build_gemini_client().expect("Failed to build Gemini client wrapper");
+        let api_key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set for integration tests");
+        let base_url = "https://generativelanguage.googleapis.com";
+        let client_wrapper = build_gemini_client(&api_key, base_url).expect("Failed to build Gemini client wrapper");
         let user_message = "Test Wrapper: Say hello!".to_string();
         let model_name_for_test = "gemini-2.5-flash-preview-05-20";
         let result =
@@ -232,7 +250,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_stream_chat_integration_via_wrapper() {
-        let client_wrapper = build_gemini_client().expect("Failed to build Gemini client wrapper");
+        let api_key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set for integration tests");
+        let base_url = "https://generativelanguage.googleapis.com";
+        let client_wrapper = build_gemini_client(&api_key, base_url).expect("Failed to build Gemini client wrapper");
         let user_message = "Test Stream Wrapper: Say hello stream!".to_string();
         let model_name_for_test = "gemini-2.5-flash-preview-05-20";
         let chat_request = ChatRequest::from_user(user_message);
@@ -269,7 +289,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_generate_simple_response_with_different_models() {
-        let client_wrapper = build_gemini_client().expect("Failed to build Gemini client wrapper");
+        let api_key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set for integration tests");
+        let base_url = "https://generativelanguage.googleapis.com";
+        let client_wrapper = build_gemini_client(&api_key, base_url).expect("Failed to build Gemini client wrapper");
         let models_to_test = vec![
             "gemini-2.5-pro-preview-06-05",
             "gemini-2.5-flash-preview-05-20",

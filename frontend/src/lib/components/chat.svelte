@@ -129,16 +129,32 @@
 	// Chat interface state logging removed for production
 
 	// --- Load Available Personas ---
+	let lastPersonasLoad = 0;
+	const PERSONAS_THROTTLE = 5000; // 5 seconds minimum between loads
+	
 	async function loadAvailablePersonas() {
+		const now = Date.now();
+		if (now - lastPersonasLoad < PERSONAS_THROTTLE) {
+			console.log('Throttling personas load request');
+			return;
+		}
+		
+		lastPersonasLoad = now;
 		try {
-			const result = await apiClient.getPersonas();
+			const result = await apiClient.getUserPersonas();
 			if (result.isOk()) {
 				availablePersonas = result.value;
+				console.log('Loaded personas:', availablePersonas.length);
 			} else {
 				console.error('Failed to load personas:', result.error);
+				// Don't show error for rate limiting
+				if (result.error.statusCode !== 429) {
+					toast.error(`Failed to load personas: ${result.error.message}`);
+				}
 			}
 		} catch (error) {
 			console.error('Failed to load personas:', error);
+			toast.error('Failed to load personas');
 		}
 	}
 
@@ -159,11 +175,9 @@
 		return null;
 	}
 
-	// Load personas when component mounts
+	// Load personas when component mounts (regardless of chat)
 	$effect(() => {
-		if (chat) {
-			loadAvailablePersonas();
-		}
+		loadAvailablePersonas();
 	});
 
 	// --- Scribe Backend Interaction Logic ---
@@ -529,38 +543,53 @@
 				// Use untrack to prevent refetch from triggering reactivity loops if history affects messages
 				untrack(() => chatHistory.refetch());
 
-				// Also fetch complete message data to get raw_prompt and other backend-only fields
-				// This ensures the "Show raw prompt debug info" button works immediately
+				// Fetch only the most recent assistant message to get raw_prompt and other backend-only fields
+				// This ensures the "Show raw prompt debug info" button works immediately without refreshing all messages
 				try {
-					const messagesResponse = await fetch(`/api/chats/${chat.id}/messages`);
-					if (messagesResponse.ok) {
-						const backendMessages = await messagesResponse.json();
+					// Find the assistant message we just completed by content and recency
+					const completedAssistantMessage = messages.find(
+						(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
+					);
+					
+					if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
+						// Get all messages to find the matching backend message by content and timestamp
+						const messagesResult = await apiClient.getMessagesByChatId(chat.id);
+						if (messagesResult.isOk()) {
+							const backendMessages = messagesResult.value;
+							
+							// Find the most recent assistant message that matches our content
+							// Sort by created_at descending and find the first match
+							const matchingBackendMessage = backendMessages
+								.filter((msg: any) => msg.message_type === 'Assistant')
+								.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+								.find((msg: any) => {
+									const backendContent = msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
+									return backendContent.trim() === completedAssistantMessage.content.trim();
+								});
 
-						// Transform the backend MessageResponse format to our ScribeChatMessage format
-						const transformedMessages: ScribeChatMessage[] = backendMessages.map((msg: any) => ({
-							id: msg.id,
-							content:
-								msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '',
-							message_type: msg.message_type,
-							session_id: msg.session_id,
-							created_at: msg.created_at,
-							user_id: '', // Not available in MessageResponse
-							loading: false,
-							raw_prompt: msg.raw_prompt
-						}));
-
-						// Update messages with backend data, but preserve any first messages that don't exist in backend
-						const backendMessageIds = new Set(transformedMessages.map((m) => m.id));
-						const preservedFirstMessages = messages.filter(
-							(m) => m.id.startsWith('first-message-') && !backendMessageIds.has(m.id)
-						);
-
-						// Combine preserved first messages with backend messages, maintaining order
-						messages = [...preservedFirstMessages, ...transformedMessages];
+							if (matchingBackendMessage) {
+								// Update only this specific message with backend data
+								messages = messages.map((msg) => {
+									if (msg.id === assistantMessageId) {
+										return {
+											...msg,
+											id: matchingBackendMessage.id, // Update to backend ID
+											created_at: matchingBackendMessage.created_at,
+											raw_prompt: matchingBackendMessage.raw_prompt,
+											loading: false
+										};
+									}
+									return msg;
+								});
+								console.log('Successfully updated assistant message with backend data');
+							} else {
+								console.warn('Could not find matching backend message for completed assistant message');
+							}
+						}
 					}
 				} catch (err) {
 					// Non-critical error - raw prompt debug just won't be available immediately
-					console.warn('Failed to fetch complete message data after streaming:', err);
+					console.warn('Failed to fetch backend message data after streaming:', err);
 				}
 			}
 		}

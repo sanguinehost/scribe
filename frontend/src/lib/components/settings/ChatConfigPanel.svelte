@@ -193,7 +193,17 @@
 		isLoading = false;
 	}
 
+	let lastGlobalSettingsLoad = 0;
+	const GLOBAL_SETTINGS_THROTTLE = 2000; // 2 seconds minimum between loads
+
 	async function loadGlobalSettings() {
+		const now = Date.now();
+		if (now - lastGlobalSettingsLoad < GLOBAL_SETTINGS_THROTTLE) {
+			console.log('Throttling global settings load request');
+			return;
+		}
+		
+		lastGlobalSettingsLoad = now;
 		isLoading = true;
 		try {
 			const userSettingsResult = await apiClient.getUserSettings();
@@ -201,7 +211,10 @@
 				globalUserSettings = userSettingsResult.value;
 			} else {
 				console.error('Failed to load global user settings:', userSettingsResult.error);
-				toast.error('Failed to load global settings');
+				// Don't show error toast if rate limited, as it's expected
+				if (userSettingsResult.error.statusCode !== 429) {
+					toast.error('Failed to load global settings');
+				}
 			}
 		} catch (error) {
 			console.error('Failed to load global settings:', error);

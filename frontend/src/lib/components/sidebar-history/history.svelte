@@ -18,6 +18,7 @@
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { Skeleton } from '../ui/skeleton';
+	import { apiClient } from '$lib/api';
 
 	let { user }: { user?: User } = $props();
 	const chatHistory = ChatHistory.fromContext();
@@ -76,15 +77,9 @@
 	async function handleDeleteChat() {
 		const deletePromise = (async () => {
 			// Use Scribe endpoint for deleting a chat
-			const res = await fetch(`/api/chats/${chatIdToDelete}`, {
-				method: 'DELETE',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({ id: chatIdToDelete })
-			});
-			if (!res.ok) {
-				throw new Error();
+			const result = await apiClient.deleteChatById(chatIdToDelete);
+			if (result.isErr()) {
+				throw new Error(result.error.message);
 			}
 		})();
 
