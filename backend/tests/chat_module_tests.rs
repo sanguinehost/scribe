@@ -688,6 +688,7 @@ mod get_session_data_for_generation_tests {
             setup.session_id,
             user_message_content.clone(),
             setup.user_dek.clone(),
+            None, // Use database history for tests
         )
         .await;
 
@@ -863,6 +864,7 @@ mod get_session_data_for_generation_tests {
             setup.session_id,
             user_message_content.clone(),
             setup.user_dek.clone(),
+            None, // Use database history for tests
         )
         .await;
 
@@ -1151,6 +1153,7 @@ mod get_session_data_for_generation_tests {
             setup.session_id,
             user_message_content.clone(),
             setup.user_dek.clone(),
+            None, // Use database history for tests
         )
         .await;
 
@@ -1566,6 +1569,7 @@ mod get_session_data_for_generation_tests {
             setup.session_id,
             user_message_content.clone(),
             setup.user_dek.clone(),
+            None, // Use database history for tests
         )
         .await;
 
@@ -1980,6 +1984,7 @@ mod get_session_data_for_generation_tests {
             setup.session_id,
             user_message_content.clone(),
             setup.user_dek.clone(),
+            None, // Use database history for tests
         )
         .await;
 

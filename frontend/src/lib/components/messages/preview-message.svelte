@@ -3,6 +3,7 @@
 	import SparklesIcon from '../icons/sparkles.svelte';
 	import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 	import { Button } from '../ui/button';
+	import { Textarea } from '../ui/textarea';
 	import PencilEditIcon from '../icons/pencil-edit.svelte';
 	import PreviewAttachment from '../preview-attachment.svelte';
 	import { Markdown } from '../markdown';
@@ -21,6 +22,7 @@
 		character, // Add character prop
 		onRetryMessage,
 		onEditMessage,
+		onSaveEditedMessage,
 		onPreviousVariant,
 		onNextVariant,
 		hasVariants = false,
@@ -33,15 +35,49 @@
 		character: ScribeCharacter | null | undefined; // Define type for character
 		onRetryMessage?: (messageId: string) => void;
 		onEditMessage?: (messageId: string) => void;
+		onSaveEditedMessage?: (messageId: string, newContent: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
 		onNextVariant?: (messageId: string) => void;
 		hasVariants?: boolean;
 		variantInfo?: { current: number; total: number } | null;
 	} = $props();
 
+	// Edit mode state
+	let isEditing = $state(false);
+	let editedContent = $state('');
+
 	// Function to get initials for fallback avatar
 	function getInitials(name: string | undefined | null): string {
 		return name ? name.charAt(0).toUpperCase() : '?';
+	}
+
+	// Edit mode functions
+	function startEditing() {
+		isEditing = true;
+		editedContent = message.content;
+	}
+
+	function cancelEditing() {
+		isEditing = false;
+		editedContent = '';
+	}
+
+	function saveEdit() {
+		if (editedContent.trim() && editedContent.trim() !== message.content) {
+			onSaveEditedMessage?.(message.id, editedContent.trim());
+		}
+		isEditing = false;
+		editedContent = '';
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+			event.preventDefault();
+			saveEdit();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			cancelEditing();
+		}
 	}
 
 	// Create properly formatted avatar URL for character
@@ -123,37 +159,75 @@
 
 			<!-- Render message content directly -->
 			<div class="relative group">
-				<div
-					class={cn(
-						'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8',
-						{
-							'border-primary/10 bg-primary/10': message.message_type === 'User'
-						}
-					)}
-				>
-					<Markdown md={message.content} />
-					{#if message.message_type === 'Assistant' && message.loading}
-						<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
-					{/if}
-				</div>
+				{#if isEditing && message.message_type === 'User'}
+					<!-- Edit mode for user messages -->
+					<div class="space-y-3">
+						<Textarea
+							bind:value={editedContent}
+							onkeydown={handleKeydown}
+							placeholder="Edit your message..."
+							class="min-h-[80px] resize-none focus:ring-2 focus:ring-primary"
+							autofocus
+						/>
+						<div class="flex gap-2 justify-end">
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={cancelEditing}
+							>
+								Cancel
+							</Button>
+							<Button
+								size="sm"
+								onclick={saveEdit}
+								disabled={!editedContent.trim() || editedContent.trim() === message.content}
+							>
+								Save & Send
+							</Button>
+						</div>
+					</div>
+				{:else}
+					<!-- Normal message display -->
+					<div
+						class={cn(
+							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8',
+							{
+								'border-primary/10 bg-primary/10': message.message_type === 'User'
+							}
+						)}
+					>
+						<Markdown md={message.content} />
+						{#if message.message_type === 'Assistant' && message.loading}
+							<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
+						{/if}
+					</div>
+				{/if}
 
 				<!-- Modern message actions - positioned at bottom-right -->
-				<div class="absolute bottom-2 right-2 transition-opacity duration-200" 
-					 class:opacity-0={message.loading || readonly}
-					 class:opacity-100={!message.loading && !readonly}
-					 class:pointer-events-none={message.loading || readonly}>
-					<MessageActions 
-						{message} 
-						{readonly}
-						loading={message.loading}
-						{hasVariants}
-						{variantInfo}
-						onRetry={() => onRetryMessage?.(message.id)}
-						onEdit={() => onEditMessage?.(message.id)}
-						onPreviousVariant={() => onPreviousVariant?.(message.id)}
-						onNextVariant={() => onNextVariant?.(message.id)}
-					/>
-				</div>
+				{#if !isEditing}
+					<div class="absolute bottom-2 right-2 transition-opacity duration-200" 
+						 class:opacity-0={message.loading || readonly}
+						 class:opacity-100={!message.loading && !readonly}
+						 class:pointer-events-none={message.loading || readonly}>
+						<MessageActions 
+							{message} 
+							{readonly}
+							loading={message.loading}
+							{hasVariants}
+							{variantInfo}
+							onRetry={() => onRetryMessage?.(message.id)}
+							onEdit={() => {
+								if (message.message_type === 'User') {
+									startEditing();
+								} else {
+									onEditMessage?.(message.id);
+								}
+							}}
+							onPreviousVariant={() => onPreviousVariant?.(message.id)}
+							onNextVariant={() => onNextVariant?.(message.id)}
+						/>
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>

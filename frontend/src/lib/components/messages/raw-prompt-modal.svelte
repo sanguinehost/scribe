@@ -45,7 +45,7 @@
 				}
 			} else {
 				console.error('Failed to fetch message:', result.error);
-				if (result.error.statusCode === 404) {
+				if ('statusCode' in result.error && result.error.statusCode === 404) {
 					error = 'Message not found - it may still be processing';
 				} else {
 					error = `Failed to fetch message: ${result.error.message}`;

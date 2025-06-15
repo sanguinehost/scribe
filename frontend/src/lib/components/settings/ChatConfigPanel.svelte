@@ -212,7 +212,10 @@
 			} else {
 				console.error('Failed to load global user settings:', userSettingsResult.error);
 				// Don't show error toast if rate limited, as it's expected
-				if (userSettingsResult.error.statusCode !== 429) {
+				if ('statusCode' in userSettingsResult.error && userSettingsResult.error.statusCode !== 429) {
+					toast.error('Failed to load global settings');
+				} else if (!('statusCode' in userSettingsResult.error)) {
+					// Show error for non-response errors (client/network errors)
 					toast.error('Failed to load global settings');
 				}
 			}

@@ -152,7 +152,10 @@
 			} else {
 				console.error('Failed to load personas:', result.error);
 				// Don't show error for rate limiting
-				if (result.error.statusCode !== 429) {
+				if ('statusCode' in result.error && result.error.statusCode !== 429) {
+					toast.error(`Failed to load personas: ${result.error.message}`);
+				} else if (!('statusCode' in result.error)) {
+					// Show error for non-response errors (client/network errors)
 					toast.error(`Failed to load personas: ${result.error.message}`);
 				}
 			}
@@ -595,6 +598,236 @@
 		}
 	}
 
+	// Generate AI response based on current messages (used for edited messages)
+	async function generateAIResponse() {
+		if (!chat?.id || !user?.id) {
+			error = 'Chat session or user information is missing.';
+			toast.error(error);
+			return;
+		}
+
+		isLoading = true;
+		error = null;
+
+		// Build history from current messages
+		const historyToSend = messages
+			.filter((m) => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant'))
+			.map((m) => ({
+				role: m.message_type === 'Assistant' ? 'assistant' : 'user',
+				content: m.content
+			}));
+
+		// Use the same streaming logic as sendMessage but skip user message creation
+		currentAbortController = new AbortController();
+		const signal = currentAbortController.signal;
+
+		// Add placeholder for assistant message
+		const assistantMessageId = crypto.randomUUID();
+		console.log('Created assistant message with ID:', assistantMessageId);
+
+		let assistantMessage: ScribeChatMessage = {
+			id: assistantMessageId,
+			session_id: chat.id,
+			message_type: 'Assistant',
+			content: '',
+			created_at: new Date().toISOString(),
+			user_id: '',
+			loading: true
+		};
+		messages = [...messages, assistantMessage];
+
+		let fetchError: any = null;
+
+		try {
+			const baseUrl = (env.PUBLIC_API_URL || '').trim();
+			const apiUrl = `${baseUrl}/api/chat/${chat.id}/generate`;
+			
+			console.log('[generateAIResponse] Environment check:', {
+				'env.PUBLIC_API_URL': env.PUBLIC_API_URL,
+				'baseUrl': baseUrl,
+				'apiUrl': apiUrl
+			});
+			
+			const response = await fetch(apiUrl, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Accept: 'text/event-stream'
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					history: historyToSend,
+					model: await getCurrentChatModel()
+				}),
+				signal: signal
+			});
+
+			console.log('[generateAIResponse] Response status:', response.status, 'ok:', response.ok);
+
+			if (!response.ok) {
+				if (response.status === 401) {
+					window.dispatchEvent(new CustomEvent('auth:invalidated'));
+					throw new Error('Session expired. Please sign in again.');
+				}
+
+				const errorData = await response.json().catch(() => {
+					if (response.status >= 500) {
+						return {
+							message: 'Server error - the backend may be temporarily unavailable. Please try again.'
+						};
+					}
+					return { message: 'Failed to generate response' };
+				});
+				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+			}
+
+			if (!response.body) {
+				throw new Error('Response body is null');
+			}
+
+			// Process the stream (same logic as sendMessage)
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let currentEvent = 'message';
+			let currentData = '';
+
+			while (true) {
+				const { value, done } = await reader.read();
+				if (done) {
+					break;
+				}
+				const chunk = decoder.decode(value, { stream: true });
+				buffer += chunk;
+
+				let eventEndIndex;
+				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
+					const messageBlock = buffer.substring(0, eventEndIndex);
+					buffer = buffer.substring(eventEndIndex + 2);
+
+					currentEvent = 'message';
+					currentData = '';
+
+					for (const line of messageBlock.split('\n')) {
+						if (line.startsWith('event:')) {
+							currentEvent = line.substring(6).trim();
+						} else if (line.startsWith('data:')) {
+							const dataLineContent = line.substring(5);
+							if (currentData.length > 0) {
+								currentData += '\n';
+							}
+							currentData += dataLineContent.startsWith(' ')
+								? dataLineContent.substring(1)
+								: dataLineContent;
+						}
+					}
+
+					if (currentEvent === 'done' && currentData === '[DONE]') {
+						console.log('SSE stream finished with [DONE] signal.');
+					} else if (currentEvent === 'error') {
+						console.error('SSE Error Event:', currentData);
+						error = `Stream error: ${currentData}`;
+						toast.error(error);
+						reader.cancel('SSE error event received');
+						throw new Error(error);
+					} else if (currentEvent === 'content') {
+						if (currentData) {
+							messages = messages.map((msg) => {
+								if (msg.id === assistantMessageId) {
+									return { ...msg, content: msg.content + currentData };
+								}
+								if (msg.id.startsWith('first-message-')) {
+									return { ...msg, loading: false };
+								}
+								return msg;
+							});
+						}
+					}
+				}
+			}
+
+			// Finalize assistant message
+			messages = messages.map((msg) => {
+				if (msg.id === assistantMessageId) {
+					return { ...msg, loading: false };
+				}
+				if (msg.id.startsWith('first-message-')) {
+					return { ...msg, loading: false };
+				}
+				return msg;
+			});
+		} catch (err: any) {
+			fetchError = err;
+			if (err.name === 'AbortError') {
+				console.log('Generation aborted by user.');
+				toast.info('Generation stopped.');
+				messages = messages.filter((msg) => msg.id !== assistantMessageId);
+			} else {
+				if (!error) {
+					error = err.message || 'An unexpected error occurred.';
+					toast.error(error ?? 'Unknown error');
+				}
+				messages = messages.filter((msg) => msg.id !== assistantMessageId);
+			}
+		} finally {
+			isLoading = false;
+			currentAbortController = null;
+
+			// Update chat preview and message ID as in sendMessage
+			let shouldRefetch = true;
+			if (fetchError && fetchError.name === 'AbortError') {
+				shouldRefetch = false;
+			}
+			if (error) {
+				shouldRefetch = false;
+			}
+			if (shouldRefetch) {
+				try {
+					const messagesResult = await apiClient.getMessagesByChatId(chat.id);
+					if (messagesResult.isOk()) {
+						const backendMessages = messagesResult.value;
+						
+						const completedAssistantMessage = messages.find(
+							(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
+						);
+						
+						if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
+							const matchingBackendMessage = backendMessages
+								.filter((msg: any) => msg.message_type === 'Assistant')
+								.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+								.find((msg: any) => {
+									const backendContent = msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
+									return backendContent.trim() === completedAssistantMessage.content.trim();
+								});
+							
+							if (matchingBackendMessage) {
+								messages = messages.map((msg) => {
+									if (msg.id === assistantMessageId) {
+										return {
+											...msg,
+											backend_id: matchingBackendMessage.id,
+											created_at: typeof matchingBackendMessage.created_at === 'string' 
+												? matchingBackendMessage.created_at 
+												: matchingBackendMessage.created_at.toISOString(),
+											session_id: matchingBackendMessage.session_id || msg.session_id
+										};
+									}
+									return msg;
+								});
+								console.log('Updated generated assistant message with backend ID:', matchingBackendMessage.id);
+							}
+							
+							const preview = completedAssistantMessage.content.trim().substring(0, 100);
+							chatHistory.updateChatPreview(chat.id, preview);
+						}
+					}
+				} catch (err) {
+					console.warn('Failed to fetch backend message data after generation:', err);
+				}
+			}
+		}
+	}
+
 	function stopGeneration() {
 		if (currentAbortController) {
 			currentAbortController.abort();
@@ -909,10 +1142,48 @@
 
 	function handleEditMessage(messageId: string) {
 		console.log('Edit message:', messageId);
-		// TODO: Implement edit logic
-		// 1. Find the message
-		// 2. Put it in edit mode
-		// 3. Allow editing and resending
+		// TODO: Implement edit logic for assistant messages
+		// This is currently only used for assistant messages (user messages use inline editing)
+	}
+
+	function handleSaveEditedMessage(messageId: string, newContent: string) {
+		console.log('Save edited message:', messageId, 'New content:', newContent);
+		
+		if (!chat?.id || isLoading) return;
+		
+		// Find the message index
+		const messageIndex = messages.findIndex(msg => msg.id === messageId);
+		if (messageIndex === -1) return;
+		
+		const targetMessage = messages[messageIndex];
+		if (targetMessage.message_type !== 'User') return;
+		
+		// Update the message content
+		messages = messages.map(msg => {
+			if (msg.id === messageId) {
+				return {
+					...msg,
+					content: newContent
+				};
+			}
+			return msg;
+		});
+		
+		// Clear all subsequent messages (everything after this user message)
+		messages = messages.slice(0, messageIndex + 1);
+		
+		// Clear any variant data for removed messages
+		const keptMessageIds = new Set(messages.map(m => m.id));
+		for (const [variantMessageId] of messageVariants) {
+			if (!keptMessageIds.has(variantMessageId)) {
+				messageVariants.delete(variantMessageId);
+				currentVariantIndex.delete(variantMessageId);
+			}
+		}
+		
+		// Generate new AI response based on the edited message
+		// Don't use sendMessage since we already have the user message - just trigger AI response
+		generateAIResponse();
 	}
 
 	function handlePreviousVariant(messageId: string) {
@@ -981,6 +1252,7 @@
 		{currentVariantIndex}
 		onRetryMessage={handleRetryMessage}
 		onEditMessage={handleEditMessage}
+		onSaveEditedMessage={handleSaveEditedMessage}
 		onPreviousVariant={handlePreviousVariant}
 		onNextVariant={handleNextVariant}
 		on:personaCreated

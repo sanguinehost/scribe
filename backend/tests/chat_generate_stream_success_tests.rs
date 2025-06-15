@@ -511,6 +511,7 @@ async fn test_first_mes_included_in_history() {
         session.id,
         user_message_content.to_string(),
         Some(session_dek_arc),
+        None, // Use database history for tests
     )
     .await
     .expect("Failed to get session data for generation");
