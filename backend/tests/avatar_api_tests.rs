@@ -255,7 +255,7 @@ async fn test_invalid_persona_id_format() -> Result<()> {
 #[tokio::test]
 async fn test_avatar_routes_registration() -> Result<()> {
     ensure_tracing_initialized();
-    let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
+    let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Test multiple avatar endpoints to ensure they're registered

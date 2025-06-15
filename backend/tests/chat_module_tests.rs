@@ -214,7 +214,7 @@ mod get_session_data_for_generation_tests {
     }
 
     /// Helper to build the `AppState` with all mock services
-    fn build_test_app_state(
+    async fn build_test_app_state(
         pool: PgPool,
         config: Arc<scribe_backend::config::Config>,
         mock_ai_client: Arc<MockAiClient>,
@@ -248,6 +248,8 @@ mod get_session_data_for_generation_tests {
             >)
         .with_user_persona_service(user_persona_service)
         .build()
+        .await
+        .expect("Failed to build app state for test")
     }
 
     async fn setup_test_env(params: TestEnvParams) -> TestSetup {
@@ -289,7 +291,8 @@ mod get_session_data_for_generation_tests {
             mock_embedding_client,
             mock_qdrant_service,
             mock_embeddings,
-        );
+        )
+        .await;
 
         TestSetup {
             app_state: Arc::new(app_state),

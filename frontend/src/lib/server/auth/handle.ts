@@ -1,4 +1,5 @@
 import type { Handle } from '@sveltejs/kit';
+import { env } from '$env/dynamic/public';
 // Unused imports after simplification:
 // import {
 // 	deleteSessionTokenCookie,
@@ -53,13 +54,19 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	// For non-API requests, validate session and set user in locals for SSR
 	if (!event.url.pathname.startsWith('/api/')) {
-		const sessionCookie = event.cookies.get('session');
+		const sessionCookie = event.cookies.get('id');
 		if (sessionCookie) {
 			try {
 				// Validate session with backend
-				const response = await event.fetch('/api/auth/me', {
+				// In local dev, use relative URL to work with Vite proxy
+				// In production, use full backend URL
+				const isProduction = process.env.NODE_ENV === 'production' || env.PUBLIC_API_URL;
+				const authUrl = isProduction ? `${env.PUBLIC_API_URL?.trim()}/api/auth/me` : '/api/auth/me';
+				console.log(`[${timestamp}] handle: Validating session at ${authUrl}`);
+				
+				const response = await event.fetch(authUrl, {
 					headers: {
-						Cookie: `session=${sessionCookie}`
+						Cookie: `id=${sessionCookie}`
 					}
 				});
 

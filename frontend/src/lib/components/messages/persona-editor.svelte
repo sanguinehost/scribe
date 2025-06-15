@@ -5,6 +5,7 @@
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import type { CreateUserPersonaRequest } from '$lib/api';
+	import { apiClient } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -59,38 +60,20 @@
 
 		isCreating = true;
 		try {
-			const response = await fetch('/api/personas', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify(formData)
-			});
+			const result = await apiClient.createUserPersona(formData);
 
-			if (!response.ok) {
-				if (response.status === 401) {
-					console.log('Unauthorized access during persona creation, redirecting to signin.');
-					await goto('/signin');
-					return;
-				}
-				throw new Error(`HTTP error! status: ${response.status}`);
+			if (result.isOk()) {
+				toast.success('Persona created successfully!');
+				const createdPersona = result.value;
+				// Update the selected persona store to show the created persona
+				selectedPersonaStore.selectPersona(createdPersona.id);
+				// Trigger refresh in the persona list
+				selectedPersonaStore.triggerRefresh();
+				onSuccess?.();
+			} else {
+				console.error('Failed to create persona:', result.error);
+				toast.error(`Failed to create persona: ${result.error.message}`);
 			}
-
-			const createdPersona = await response.json();
-			toast.success('Persona created successfully!');
-
-			// Trigger refresh of persona list
-			selectedPersonaStore.triggerRefresh();
-
-			// Dispatch event to notify parent components
-			dispatch('personaCreated', { persona: createdPersona });
-
-			// Clear the creating state and optionally select the new persona
-			selectedPersonaStore.clear();
-			onSuccess?.();
-
-			// Navigate back to home to show the default view
-			goto('/', { invalidateAll: true });
 		} catch (error: any) {
 			console.error('Failed to create persona:', error);
 			toast.error('Failed to create persona. Please try again.');
@@ -105,7 +88,7 @@
 	}
 
 	// Tag management functions
-	let newTag = '';
+	let newTag = $state('');
 
 	function addTag() {
 		if (newTag.trim() && !formData.tags.includes(newTag.trim())) {

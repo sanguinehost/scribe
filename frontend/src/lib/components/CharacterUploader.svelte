@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
+	import { apiClient } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -54,30 +55,17 @@
 		isLoading = true;
 		error = null;
 
-		const formData = new FormData();
-		formData.append('character_card', selectedFile); // Match backend expected field name
-
 		try {
-			const response = await fetch('/api/characters/upload', {
-				method: 'POST',
-				body: formData
-				// Headers are not explicitly set for FormData; browser sets Content-Type correctly
-				// Cookies should be sent automatically by the browser for authentication
-			});
-
-			if (!response.ok) {
-				const errorData = await response
-					.json()
-					.catch(() => ({ message: 'Upload failed with status: ' + response.status }));
-				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+			const result = await apiClient.uploadCharacter(selectedFile);
+			
+			if (result.isOk()) {
+				console.log('Character upload successful:', result.value);
+				dispatch('uploadSuccess', { character: result.value }); // Notify parent component with character data
+				closeDialog(); // Close dialog on success
+			} else {
+				console.error('Character upload failed:', result.error);
+				error = result.error.message;
 			}
-
-			// Assuming successful upload returns some data, or just status 200/201
-			// const result = await response.json();
-			// console.log('Upload successful:', result);
-
-			dispatch('uploadSuccess'); // Notify parent component
-			closeDialog(); // Close dialog on success
 		} catch (e: any) {
 			console.error('Upload failed:', e);
 			error = e.message || 'An unexpected error occurred during upload.';

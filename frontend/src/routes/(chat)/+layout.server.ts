@@ -1,8 +1,14 @@
 import { chatModels, DEFAULT_CHAT_MODEL } from '$lib/ai/models';
 import { SelectedModel } from '$lib/hooks/selected-model.svelte.js';
+import { redirect } from '@sveltejs/kit';
 
 export async function load({ cookies, locals }) {
 	const { user } = locals;
+	
+	// Redirect to signin if not authenticated - this protects all chat routes including "/"
+	if (!user) {
+		redirect(307, '/signin');
+	}
 	const sidebarCollapsed = cookies.get('sidebar:state') !== 'true';
 
 	let modelId = cookies.get('selected-model');

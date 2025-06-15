@@ -11,12 +11,14 @@ use deadpool_diesel::Pool as DeadpoolPool;
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use std::net::SocketAddr;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tower_http::cors::CorsLayer;
 
 // Use modules from the library crate
 use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::PgPool;
 use scribe_backend::auth::session_store::DieselSessionStore;
+use scribe_backend::errors::AppError;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
 use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::admin::admin_routes;
@@ -56,20 +58,61 @@ use time::Duration;
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
-// Removed unused: use tokio::net::TcpListener;
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
 use axum::response::Response as AxumResponse;
-use axum_server::tls_rustls::RustlsConfig; // <-- ADD this
+use axum_server::tls_rustls::RustlsConfig;
 use rustls::crypto::ring;
-use scribe_backend::services::chat_override_service::ChatOverrideService; // <<< ADDED IMPORT
+use rcgen::generate_simple_self_signed;
+use scribe_backend::services::chat_override_service::ChatOverrideService;
 use scribe_backend::services::encryption_service::EncryptionService;
-use scribe_backend::services::lorebook::LorebookService; // Added for LorebookService
+use scribe_backend::services::lorebook::LorebookService;
 use scribe_backend::services::user_persona_service::UserPersonaService;
-use std::path::PathBuf; // <-- Add PathBuf import // <-- Import the ring provider module // <<< ADDED THIS IMPORT
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer, key_extractor::GlobalKeyExtractor};
+use std::path::PathBuf;
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+
+// Generate or load certificate for cloud environments
+async fn load_cloud_certificate() -> Result<RustlsConfig> {
+    // Try to load certificate from environment variables first (for proper certificates)
+    if let (Ok(cert_pem), Ok(key_pem)) = (env::var("TLS_CERT_PEM"), env::var("TLS_KEY_PEM")) {
+        tracing::info!("Loading TLS certificate from environment variables for end-to-end encryption");
+        
+        let config = RustlsConfig::from_pem(cert_pem.into_bytes(), key_pem.into_bytes())
+            .await
+            .context("Failed to create RustlsConfig from environment certificate")?;
+        
+        tracing::info!("TLS certificate loaded successfully from environment");
+        return Ok(config);
+    }
+    
+    // Fallback to self-signed certificate if no proper certificate is provided
+    tracing::info!("No certificate provided in environment, generating self-signed certificate for end-to-end encryption");
+    
+    // Generate a simple self-signed certificate for internal communication
+    let subject_alt_names = vec![
+        "localhost".to_string(),
+        "backend.staging.local".to_string(),
+        "staging-scribe-backend".to_string(),
+    ];
+    let cert_key = generate_simple_self_signed(subject_alt_names)
+        .context("Failed to generate self-signed certificate")?;
+    
+    // Get PEM-encoded certificate and private key
+    let cert_pem = cert_key.cert.pem();
+    let key_pem = cert_key.key_pair.serialize_pem();
+    
+    tracing::info!("Self-signed certificate generated successfully");
+    
+    // Create RustlsConfig from the generated certificate and key
+    let config = RustlsConfig::from_pem(cert_pem.into_bytes(), key_pem.into_bytes())
+        .await
+        .context("Failed to create RustlsConfig from generated certificate")?;
+    
+    Ok(config)
+}
 
 async fn main_request_logging_middleware(req: AxumRequest, next: Next) -> AxumResponse {
     tracing::info!(target: "main_router_debug", "MAIN ROUTER: Method={}, URI={}", req.method(), req.uri());
@@ -112,20 +155,32 @@ fn setup_database_pool(config: &Config) -> PgPool {
         .expect("DATABASE_URL not set in config");
     tracing::info!("Connecting to database...");
     let manager = DeadpoolManager::new(db_url, DeadpoolRuntime::Tokio1);
-    let pool_config = PoolConfig::default();
+    
+    // Configure pool size based on environment
+    let mut pool_config = PoolConfig::default();
+    let max_size = match config.environment.as_deref() {
+        Some("development") => 50, // Local docker has max_connections = 200
+        Some("staging") | Some("production") => 20, // Cloud RDS has ~90 total connections
+        _ => 20, // Default to conservative for unknown environments
+    };
+    pool_config.max_size = max_size;
+    pool_config.timeouts.wait = Some(std::time::Duration::from_secs(30)); // 30 second timeout
+    
     let pool: PgPool = DeadpoolPool::builder(manager)
         .config(pool_config)
         .runtime(DeadpoolRuntime::Tokio1)
         .build()
         .expect("Failed to create DB pool.");
-    tracing::info!("Database connection pool established.");
+    tracing::info!("Database connection pool established with max_size: {}", max_size);
     pool
 }
 
 // Initialize all services
 async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppStateServices> {
     // --- Initialize GenAI Client Asynchronously ---
-    let ai_client = build_gemini_client()?;
+    let api_key = config.gemini_api_key.as_ref()
+        .ok_or_else(|| AppError::ConfigError("GEMINI_API_KEY is required".to_string()))?;
+    let ai_client = build_gemini_client(api_key, &config.gemini_api_base_url)?;
     let ai_client_arc = Arc::new(ai_client);
 
     // --- Initialize Embedding Client ---
@@ -198,9 +253,10 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         file_storage_service,
         email_service: {
             // Create email service based on environment
-            let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
+            let app_env = config.environment.as_deref().unwrap_or("development");
             let base_url = config.frontend_base_url.clone();
-            scribe_backend::services::create_email_service(&app_env, base_url)
+            let from_email = config.from_email.clone();
+            scribe_backend::services::email_service::create_email_service(app_env, base_url, from_email).await?
         },
     })
 }
@@ -317,10 +373,20 @@ fn setup_app_state_and_auth(
         decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
     let _signing_key = Key::from(&key_bytes);
 
-    let session_manager_layer = SessionManagerLayer::new(session_store)
+    let mut session_manager_layer = SessionManagerLayer::new(session_store)
         .with_secure(config.session_cookie_secure)
         .with_same_site(SameSite::Lax)
+        .with_http_only(true)
+        .with_path("/".to_string())
         .with_expiry(Expiry::OnInactivity(Duration::hours(24)));
+
+    // Set cookie domain if specified in config (for production/staging)
+    if let Some(ref domain) = config.cookie_domain {
+        tracing::info!("Setting session cookie domain to: {}", domain);
+        session_manager_layer = session_manager_layer.with_domain(domain.clone());
+    } else {
+        tracing::info!("No cookie domain specified, using default (localhost-compatible)");
+    }
 
     let auth_backend = services.auth_backend.clone();
     let auth_layer =
@@ -351,13 +417,55 @@ fn build_router(
         .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
         .route_layer(login_required!(AuthBackend));
 
-    let public_api_routes = Router::new()
-        .route("/health", get(health_check))
-        .merge(Router::new().nest("/auth", auth_routes()));
+    // Health endpoint - not rate limited for monitoring purposes
+    let health_routes = Router::new()
+        .route("/api/health", get(health_check));
+
+    // Rate-limited API routes (both public and protected)
+    let rate_limited_api_routes = Router::new()
+        .nest("/auth", auth_routes()) // Auth routes under /api/auth
+        .merge(protected_api_routes) // Protected routes under /api
+        .layer(GovernorLayer {
+            config: std::sync::Arc::new(
+                GovernorConfigBuilder::default()
+                    .per_second(500) // Increased from 100
+                    .burst_size(1000) // Increased from 200
+                    .key_extractor(GlobalKeyExtractor)
+                    .finish()
+                    .unwrap(),
+            ),
+        });
+
+    // Configure CORS for the frontend
+    // With the proxy pattern, requests will appear to come from staging.scribe.sanguinehost.com
+    // via Vercel's edge proxy, but they'll have the correct origin headers
+    let cors = CorsLayer::new()
+        .allow_origin([
+            "https://staging.scribe.sanguinehost.com".parse().unwrap(), // Primary frontend domain
+            "https://localhost:5173".parse().unwrap(),                   // Local development
+            "http://localhost:5173".parse().unwrap(),                    // Local development (HTTP)
+            "http://localhost:3000".parse().unwrap(),                    // Local development alt port
+        ])
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+        ])
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::ACCEPT,
+            axum::http::header::CACHE_CONTROL,
+            axum::http::header::PRAGMA,
+        ])
+        .allow_credentials(true);
 
     Router::new()
-        .nest("/api", public_api_routes)
-        .nest("/api", protected_api_routes)
+        .merge(health_routes) // Health endpoint not rate limited
+        .nest("/api", rate_limited_api_routes) // All other API routes are rate limited
+        .layer(cors)
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
         .with_state(app_state)
@@ -370,30 +478,50 @@ fn build_router(
 
 // Start the server with TLS configuration
 async fn start_server(config: &Config, app: Router) -> Result<()> {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let project_root = manifest_dir
-        .parent()
-        .context("Failed to get project root from manifest dir")?;
-
-    let cert_path = project_root.join(".certs/cert.pem");
-    let key_path = project_root.join(".certs/key.pem");
-
-    tracing::info!(cert_path = %cert_path.display(), key_path = %key_path.display(), "Loading TLS certificates");
-
-    let tls_config = RustlsConfig::from_pem_file(cert_path, key_path)
-        .await
-        .context("Failed to load TLS certificate/key for Axum server")?;
-
     let port = config.port;
     let addr_str = format!("0.0.0.0:{port}");
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 
-    tracing::info!("Starting HTTPS server on {}", addr);
+    // Check if we're in a cloud environment (staging/production)
+    let environment = config.environment.as_deref().unwrap_or("development");
+    
+    if environment == "staging" || environment == "production" {
+        // For cloud environments, load certificates for end-to-end encryption
+        tracing::info!("Cloud environment detected ({}), loading certificates for end-to-end encryption", environment);
+        
+        let tls_config = load_cloud_certificate()
+            .await
+            .context("Failed to load certificate for cloud deployment")?;
 
-    axum_server::bind_rustls(addr, tls_config)
-        .serve(app.into_make_service())
-        .await
-        .context("HTTPS server failed to start")?;
+        tracing::info!("Starting HTTPS server with TLS certificates on {}", addr);
+
+        axum_server::bind_rustls(addr, tls_config)
+            .serve(app.into_make_service())
+            .await
+            .context("HTTPS server failed to start")?;
+    } else {
+        // For local development, use certificates from .certs directory
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let project_root = manifest_dir
+            .parent()
+            .context("Failed to get project root from manifest dir")?;
+
+        let cert_path = project_root.join(".certs/cert.pem");
+        let key_path = project_root.join(".certs/key.pem");
+
+        tracing::info!(cert_path = %cert_path.display(), key_path = %key_path.display(), "Loading TLS certificates for local development");
+
+        let tls_config = RustlsConfig::from_pem_file(cert_path, key_path)
+            .await
+            .context("Failed to load TLS certificate/key for local development. Run 'scripts/dev_certs.sh' to generate certificates.")?;
+
+        tracing::info!("Starting HTTPS server with local certificates on {}", addr);
+
+        axum_server::bind_rustls(addr, tls_config)
+            .serve(app.into_make_service())
+            .await
+            .context("HTTPS server failed to start")?;
+    }
 
     Ok(())
 }
@@ -418,7 +546,7 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
             tracing::error!("Failed to run database migrations: {:?}", e);
             Err(anyhow::anyhow!("Migration diesel error: {:?}", e))
         }
-    })
+     })
     .await
     .map_err(|e| anyhow::anyhow!("Migration interact task failed: {}", e))??; // Propagate InteractError then inner Result
     Ok(())
