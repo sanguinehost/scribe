@@ -193,7 +193,7 @@ export async function initializeAuth(): Promise<void> {
 						`[${new Date().toISOString()}] auth.svelte.ts: Network error during auth check - server may be down. Keeping current state.`
 					);
 					setConnectionError(); // Set connection error state, but keep user data
-				} else if (result.error.name === 'ApiResponseError' && result.error.statusCode === 401) {
+				} else if (result.error.name === 'ApiResponseError' && 'statusCode' in result.error && result.error.statusCode === 401) {
 					// Session expired - clear user and show specific message
 					console.log(
 						`[${new Date().toISOString()}] auth.svelte.ts: Session expired (401). Logging out user.`

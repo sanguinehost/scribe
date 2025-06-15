@@ -11,6 +11,7 @@
 	import { fly } from 'svelte/transition';
 	import type { ScribeChatMessage, User, ScribeCharacter } from '$lib/types'; // Import User and ScribeCharacter
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
+	import { env } from '$env/dynamic/public';
 
 	let {
 		message,
@@ -30,6 +31,20 @@
 	function getInitials(name: string | undefined | null): string {
 		return name ? name.charAt(0).toUpperCase() : '?';
 	}
+
+	// Create properly formatted avatar URL for character
+	const characterAvatarSrc = $derived.by(() => {
+		if (!character?.avatar) return null;
+		
+		// If avatar already has a full URL, use it as-is
+		if (character.avatar.startsWith('http://') || character.avatar.startsWith('https://')) {
+			return character.avatar;
+		}
+		
+		// Otherwise, prepend the API URL
+		const apiBaseUrl = (env.PUBLIC_API_URL || '').trim();
+		return `${apiBaseUrl}${character.avatar}`;
+	});
 
 	// Function to detect if a message is the first message from a character
 	function isFirstMessage(message: ScribeChatMessage): boolean {
@@ -62,8 +77,8 @@
 	>
 		{#if message.message_type === 'Assistant'}
 			<Avatar class="size-8 shrink-0">
-				{#if character?.avatar}
-					<AvatarImage src={character.avatar} alt={character.name} />
+				{#if characterAvatarSrc}
+					<AvatarImage src={characterAvatarSrc} alt={character.name} />
 				{/if}
 				<AvatarFallback>
 					{getInitials(character?.name)}

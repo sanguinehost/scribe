@@ -3,13 +3,13 @@ import type { PageServerLoad, Actions } from './$types';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	// Call backend logout API
-	const sessionCookie = cookies.get('session');
+	const sessionCookie = cookies.get('id');
 	if (sessionCookie) {
 		try {
 			await fetch('/api/auth/logout', {
 				method: 'POST',
 				headers: {
-					Cookie: `session=${sessionCookie}`
+					Cookie: `id=${sessionCookie}`
 				}
 			});
 		} catch (error) {
@@ -19,7 +19,7 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 	}
 
 	// Clear the session cookie
-	cookies.delete('session', { path: '/' });
+	cookies.delete('id', { path: '/' });
 
 	// Redirect to signin
 	throw redirect(303, '/signin');
@@ -28,13 +28,13 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 export const actions: Actions = {
 	default: async ({ cookies, fetch }) => {
 		// Same logic as load for POST requests
-		const sessionCookie = cookies.get('session');
+		const sessionCookie = cookies.get('id');
 		if (sessionCookie) {
 			try {
 				await fetch('/api/auth/logout', {
 					method: 'POST',
 					headers: {
-						Cookie: `session=${sessionCookie}`
+						Cookie: `id=${sessionCookie}`
 					}
 				});
 			} catch (error) {
@@ -42,7 +42,7 @@ export const actions: Actions = {
 			}
 		}
 
-		cookies.delete('session', { path: '/' });
+		cookies.delete('id', { path: '/' });
 		throw redirect(303, '/signin');
 	}
 };

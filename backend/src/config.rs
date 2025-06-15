@@ -17,6 +17,8 @@ pub struct Config {
     pub cookie_signing_key: Option<String>, // Keep optional if it can be generated
     #[serde(default = "default_session_cookie_secure")]
     pub session_cookie_secure: bool,
+    pub environment: Option<String>, // Environment (development, staging, production)
+    pub cookie_domain: Option<String>, // Cookie domain for sessions
 
     // Qdrant Config
     pub qdrant_url: Option<String>,
@@ -59,7 +61,7 @@ pub struct Config {
     #[serde(default = "default_frontend_base_url")]
     pub frontend_base_url: String,
 
-    // Email Configuration
+    // Email Configuration  
     #[serde(default = "default_app_env")]
     pub app_env: String,
     pub from_email: Option<String>,
@@ -83,6 +85,8 @@ impl std::fmt::Debug for Config {
                 &self.cookie_signing_key.as_ref().map(|_| "[REDACTED]"),
             )
             .field("session_cookie_secure", &self.session_cookie_secure)
+            .field("environment", &self.environment)
+            .field("cookie_domain", &self.cookie_domain)
             .field(
                 "qdrant_url",
                 &self.qdrant_url.as_ref().map(|_| "[REDACTED]"),
@@ -220,6 +224,8 @@ impl Default for Config {
             port: default_port(),
             cookie_signing_key: None,
             session_cookie_secure: default_session_cookie_secure(),
+            environment: None,
+            cookie_domain: None,
             qdrant_url: None,
             qdrant_collection_name: default_qdrant_collection_name(),
             embedding_dimension: default_embedding_dimension(),

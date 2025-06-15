@@ -1,4 +1,5 @@
 import type { ScribeChatSession } from '$lib/types.js';
+import { apiClient } from '$lib/api';
 
 export async function load({ data, fetch }) {
 	const { user } = data;
@@ -6,23 +7,23 @@ export async function load({ data, fetch }) {
 	let chatsError = false; // Flag to indicate fetch failure
 	if (user) {
 		try {
-			const response = await fetch('/api/chats');
+			const result = await apiClient.getChats();
 
-			if (response.ok) {
-				chats = await response.json();
+			if (result.isOk()) {
+				chats = result.value;
 			} else {
-				// Log non-OK responses (like 401)
+				// Log API errors
 				console.error(
-					`[${new Date().toISOString()}] (chat)/+layout.ts: Received non-OK status (${response.status}) from /api/chats`
+					`[${new Date().toISOString()}] (chat)/+layout.ts: API error fetching chats:`,
+					result.error
 				);
-				chatsError = true; // Set flag on non-OK response
-				// Optionally, you could try reading response.text() for more details
+				chatsError = true; // Set flag on API error
 				// chats remains an empty array, preventing a crash
 			}
 		} catch (error: unknown) {
-			// Catch network errors or JSON parsing errors
+			// Catch network errors or other unexpected errors
 			console.error(
-				`[${new Date().toISOString()}] (chat)/+layout.ts: Error fetching /api/chats:`,
+				`[${new Date().toISOString()}] (chat)/+layout.ts: Error fetching chats:`,
 				error instanceof Error ? error.message : error
 			);
 			chatsError = true; // Set flag on fetch/parse error

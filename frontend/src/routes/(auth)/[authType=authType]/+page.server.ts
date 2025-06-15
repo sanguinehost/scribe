@@ -1,4 +1,4 @@
-import { setSessionTokenCookie } from '$lib/server/auth/index.js'; // generateSessionToken and createSession will not be used for signup
+// No longer setting session cookies manually - axum-login handles this automatically
 import { fail, redirect, type ActionFailure } from '@sveltejs/kit';
 import { z } from 'zod';
 import { apiClient } from '$lib/api';
@@ -13,9 +13,8 @@ type AuthErrorData = {
 };
 
 export function load({ locals }) {
-	// Note: Until app.d.ts is updated with proper types, this will show as an error
-	// but it's expected to work at runtime as the handle hook sets this property
-	if (locals.session) {
+	// Redirect authenticated users back to main app
+	if (locals.user) {
 		return redirect(307, '/');
 	}
 }
@@ -169,18 +168,9 @@ export const actions = {
 				console.log('User logged in successfully via apiClient:', loginData.user);
 				console.log('Full loginData structure:', loginData);
 
-				// For signin, use the session_id and expires_at from the login API response
-				// to set the cookie. The session_id is what axum-login expects.
-				if (!loginData.session_id) {
-					console.error('LoginData missing session_id:', loginData);
-					return fail(500, {
-						success: false,
-						message: 'Login response missing session data.',
-						email: identifier
-					});
-				}
-				setSessionTokenCookie(cookies, loginData.session_id, new Date(loginData.expires_at));
-				console.log('Signin successful, cookie set with session_id from backend.');
+				// For signin, the backend (axum-login) automatically sets the session cookie
+				// We don't need to set our own cookie here as it would conflict with the backend's cookie
+				console.log('Signin successful, backend has set session cookie automatically.');
 				return redirect(303, '/');
 			}
 

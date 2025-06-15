@@ -39,13 +39,16 @@ import type {
 } from '$lib/types';
 import { setConnectionError, setSessionExpired } from '$lib/auth.svelte'; // Import the new auth store functions
 import { browser } from '$app/environment'; // To check if in browser context
+import { env } from '$env/dynamic/public';
 
 // Actual API client
 class ApiClient {
 	private baseUrl: string;
 
 	constructor(baseUrl: string = '') {
-		this.baseUrl = baseUrl;
+		// Use PUBLIC_API_URL if available, otherwise fall back to relative paths
+		// Trim whitespace/newlines that might be added by environment variable processing
+		this.baseUrl = (baseUrl || env.PUBLIC_API_URL || '').trim();
 	}
 
 	// Generic fetch method with error handling
@@ -54,15 +57,32 @@ class ApiClient {
 		options: RequestInit = {},
 		fetchFn: typeof fetch = globalThis.fetch
 	): Promise<Result<T, ApiError>> {
-		// Verbose logging removed - only log errors
+		// Add debug logging for production debugging
+		const fullUrl = `${this.baseUrl}${endpoint}`;
+		console.log(`[${new Date().toISOString()}] ApiClient.fetch: Making request to ${fullUrl}`, {
+			method: options.method || 'GET',
+			headers: options.headers,
+			credentials: 'include',
+			baseUrl: this.baseUrl
+		});
+		
 		try {
-			const response = await fetchFn(`${this.baseUrl}${endpoint}`, {
+			const response = await fetchFn(fullUrl, {
 				...options,
 				credentials: 'include',
 				headers: {
 					'Content-Type': 'application/json',
 					...options.headers
 				}
+			});
+
+			// Log response details for debugging
+			console.log(`[${new Date().toISOString()}] ApiClient.fetch: Response received`, {
+				url: fullUrl,
+				status: response.status,
+				statusText: response.statusText,
+				headers: Object.fromEntries(response.headers.entries()),
+				ok: response.ok
 			});
 
 			// Only log non-2xx responses
@@ -399,6 +419,66 @@ class ApiClient {
 		return this.fetch<void>(`/api/characters/remove/${id}`, {
 			method: 'DELETE'
 		});
+	}
+
+	async uploadCharacter(file: File): Promise<Result<Character, ApiError>> {
+		console.log(
+			`[${new Date().toISOString()}] ApiClient.uploadCharacter: Uploading character file ${file.name}`
+		);
+
+		const formData = new FormData();
+		formData.append('character_card', file);
+
+		try {
+			const fullUrl = `${this.baseUrl}/api/characters/upload`;
+			console.log(`[${new Date().toISOString()}] ApiClient.uploadCharacter: Making multipart request to ${fullUrl}`);
+
+			const response = await fetch(fullUrl, {
+				method: 'POST',
+				body: formData,
+				credentials: 'include'
+				// Note: Don't set Content-Type header - let browser set it with boundary for multipart
+			});
+
+			console.log(`[${new Date().toISOString()}] ApiClient.uploadCharacter: Response received`, {
+				url: fullUrl,
+				status: response.status,
+				statusText: response.statusText,
+				ok: response.ok
+			});
+
+			if (!response.ok) {
+				let errorData = { message: 'An unknown error occurred' };
+				try {
+					errorData = await response.json();
+				} catch (parseError) {
+					console.error(
+						`[${new Date().toISOString()}] ApiClient.uploadCharacter: Failed to parse error JSON`,
+						parseError
+					);
+				}
+				console.error(
+					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Upload failed with status ${response.status}`,
+					errorData
+				);
+				return err(new ApiResponseError(response.status, errorData.message));
+			}
+
+			const data = await response.json();
+			console.log(`[${new Date().toISOString()}] ApiClient.uploadCharacter: Upload successful`, data);
+			return ok(data as Character);
+		} catch (error) {
+			console.error(
+				`[${new Date().toISOString()}] ApiClient.uploadCharacter: Network/Fetch Error`,
+				error
+			);
+			return err(
+				new ApiNetworkError(
+					'Unable to upload character. Please check your connection or try again later.',
+					error as Error
+				)
+			);
+		}
 	}
 	// End Character methods
 
