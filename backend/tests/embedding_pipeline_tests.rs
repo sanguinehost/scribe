@@ -79,7 +79,7 @@ fn assert_retrieved_chunks_content(
     }
 }
 
-fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
+async fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
     // Use the new builder pattern - much simpler!
     let services = AppStateServicesBuilder::new(test_app.db_pool.clone(), test_app.config.clone())
         .with_ai_client(
@@ -90,7 +90,9 @@ fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
         )
         .with_embedding_client(test_app.mock_embedding_client.clone())
         .with_qdrant_service(test_app.qdrant_service.clone())
-        .build();
+        .build()
+        .await
+        .expect("Failed to build services for test");
 
     Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -225,7 +227,7 @@ async fn test_process_and_embed_message_integration() {
 
     let mock_embedding_client = test_app.mock_embedding_client.clone();
     let qdrant_service_trait = test_app.qdrant_service.clone();
-    let app_state = create_test_app_state(test_app.clone());
+    let app_state = create_test_app_state(test_app.clone()).await;
 
     let test_message_id = Uuid::new_v4();
     let test_session_id = Uuid::new_v4();
@@ -283,7 +285,7 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         .clone()
         .expect("Mock Qdrant service should be present");
 
-    let app_state = create_test_app_state(test_app.clone());
+    let app_state = create_test_app_state(test_app.clone()).await;
 
     // 2. Prepare test data
     let test_message_id = Uuid::new_v4();
@@ -431,7 +433,7 @@ async fn test_retrieve_relevant_chunks_success() {
         .clone()
         .expect("Mock Qdrant service");
 
-    let _app_state = create_test_app_state(test_app);
+    let _app_state = create_test_app_state(test_app).await;
 
     // 2. Prepare mock responses and expectations
     let _test_session_id = Uuid::new_v4();
@@ -451,7 +453,7 @@ async fn test_retrieve_relevant_chunks_success_with_real_execution() {
         .clone()
         .expect("Mock Qdrant service");
 
-    let app_state = create_test_app_state(test_app.clone());
+    let app_state = create_test_app_state(test_app.clone()).await;
 
     // 2. Prepare mock responses and expectations
     let test_session_id = Uuid::new_v4();
@@ -553,7 +555,7 @@ async fn test_retrieve_relevant_chunks_no_results() {
         .clone()
         .expect("Mock Qdrant service");
 
-    let app_state = create_test_app_state(test_app.clone());
+    let app_state = create_test_app_state(test_app.clone()).await;
 
     // 2. Configure mock Qdrant service to return no results
     mock_qdrant_service_concrete.set_search_response(Ok(Vec::new()));

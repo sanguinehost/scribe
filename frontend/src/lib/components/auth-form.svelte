@@ -23,7 +23,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { Snippet } from 'svelte'; // Keep this import
 	import { toast } from 'svelte-sonner';
@@ -79,7 +78,7 @@
 
 <form method="POST" class="flex flex-col gap-4 px-4 sm:px-16" use:enhance={enhanceCallback}>
 	<div class="flex flex-col gap-2">
-		<Label for={identifierName} class=" text-zinc-600 dark:text-zinc-400">{identifierLabel}</Label>
+		<label for={identifierName} class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-zinc-600 dark:text-zinc-400">{identifierLabel}</label>
 
 		<Input
 			id={identifierName}
@@ -96,7 +95,7 @@
 
 	{#if authType === 'register'}
 		<div class="flex flex-col gap-2">
-			<Label for="username" class="text-zinc-600 dark:text-zinc-400">Username</Label>
+			<label for="username" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-zinc-600 dark:text-zinc-400">Username</label>
 			<Input
 				id="username"
 				name="username"
@@ -111,7 +110,7 @@
 	{/if}
 
 	<div class="flex flex-col gap-2">
-		<Label for="password" class="text-zinc-600 dark:text-zinc-400">Password</Label>
+		<label for="password" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-zinc-600 dark:text-zinc-400">Password</label>
 
 		<Input
 			id="password"

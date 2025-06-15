@@ -1,6 +1,7 @@
 // import type { VisibilityType } from '$lib/components/visibility-selector.svelte'; // Remove old import
 // import type { Chat } from '$lib/server/db/schema'; // Remove old type
 import type { ScribeChatSession, VisibilityType } from '$lib/types'; // Use Scribe types
+import { apiClient } from '$lib/api';
 import { getContext, setContext } from 'svelte';
 import { toast } from 'svelte-sonner';
 
@@ -36,10 +37,10 @@ export class ChatHistory {
 	async refetch() {
 		this.#revalidating = true;
 		try {
-			// Use Scribe endpoint for fetching chats
-			const res = await fetch('/api/chats');
-			if (res.ok) {
-				this.chats = await res.json();
+			// Use apiClient for fetching chats
+			const result = await apiClient.getChats();
+			if (result.isOk()) {
+				this.chats = result.value;
 			}
 		} finally {
 			this.#revalidating = false;
@@ -55,19 +56,10 @@ export class ChatHistory {
 		);
 
 		try {
-			const response = await fetch(`/api/chats/${chatId}`, {
-				method: 'PATCH', // Or PUT, depending on API design
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({ visibility: newVisibility }) // Adjust payload as needed
-			});
-
-			if (!response.ok) {
-				const errorData = await response
-					.json()
-					.catch(() => ({ message: 'Failed to update visibility' }));
-				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+			const result = await apiClient.updateChatVisibility(chatId, newVisibility);
+			
+			if (result.isErr()) {
+				throw new Error(result.error.message || 'Failed to update visibility');
 			}
 
 			// Optional: Refetch or update based on response if needed

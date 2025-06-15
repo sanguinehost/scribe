@@ -16,6 +16,7 @@
 	import TrashIcon from '$lib/components/icons/trash.svelte';
 	import { createEventDispatcher } from 'svelte';
 	import { apiClient } from '$lib/api';
+	import { env } from '$env/dynamic/public';
 
 	import type { CharacterDataForClient } from '$lib/types';
 
@@ -80,7 +81,20 @@
 
 	// The backend populates character.avatar with the image URL (/api/characters/{id}/assets/{asset_id})
 	// Append width and height query parameters for server-side resizing
-	const avatarSrc = character.avatar ? `${character.avatar}?width=56&height=56` : null;
+	// In production, we need to prepend the API URL if it's not already included
+	const avatarSrc = $derived.by(() => {
+		if (!character.avatar) return null;
+		
+		// If avatar already has a full URL, use it as-is
+		if (character.avatar.startsWith('http://') || character.avatar.startsWith('https://')) {
+			return `${character.avatar}?width=56&height=56`;
+		}
+		
+		// Otherwise, prepend the API URL
+		// Use env variable for API URL in production
+		const apiBaseUrl = (env.PUBLIC_API_URL || '').trim();
+		return `${apiBaseUrl}${character.avatar}?width=56&height=56`;
+	});
 </script>
 
 <Card
