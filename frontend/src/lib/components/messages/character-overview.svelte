@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { apiClient } from '$lib/api';
+	import { env } from '$env/dynamic/public';
 	import type { Character, ScribeChatSession, UserPersona } from '$lib/types';
 	import { getCurrentUser } from '$lib/auth.svelte';
 	import { toast } from 'svelte-sonner';
@@ -84,6 +85,20 @@
 	function getInitials(name: string): string {
 		return name ? name.charAt(0).toUpperCase() : '?';
 	}
+
+	// Create properly formatted avatar URL
+	const characterAvatarSrc = $derived.by(() => {
+		if (!character?.avatar) return null;
+		
+		// If avatar already has a full URL, use it as-is
+		if (character.avatar.startsWith('http://') || character.avatar.startsWith('https://')) {
+			return character.avatar;
+		}
+		
+		// Otherwise, prepend the API URL
+		const apiBaseUrl = (env.PUBLIC_API_URL || '').trim();
+		return `${apiBaseUrl}${character.avatar}`;
+	});
 
 	// Calculate appropriate textarea rows based on content
 	function calculateTextareaRows(content: string | null | undefined, minRows = 3): number {
@@ -463,8 +478,8 @@
 				<CardHeader class="px-0">
 					<div class="flex items-start space-x-6">
 						<Avatar class="h-24 w-24 border-2 border-muted">
-							{#if character.avatar}
-								<AvatarImage src={character.avatar} alt={character.name} />
+							{#if characterAvatarSrc}
+								<AvatarImage src={characterAvatarSrc} alt={character.name} />
 							{/if}
 							<AvatarFallback class="text-3xl font-semibold">
 								{getInitials(character.name)}

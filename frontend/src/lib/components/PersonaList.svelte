@@ -2,6 +2,7 @@
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { UserPersona } from '$lib/types';
+	import { apiClient } from '$lib/api';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
@@ -23,19 +24,15 @@
 		isLoading = true;
 		error = null;
 		try {
-			const response = await fetch('/api/personas');
-			if (!response.ok) {
-				// Check specifically for 401 Unauthorized
-				if (response.status === 401) {
-					console.log('Unauthorized access to personas, emitting auth:invalidated event.');
-					window.dispatchEvent(new CustomEvent('auth:invalidated'));
-					return;
-				}
-				throw new Error(`HTTP error! status: ${response.status}`);
+			const result = await apiClient.getUserPersonas();
+			if (result.isOk()) {
+				personas = result.value;
+				error = null;
+				// TODO: Get default persona ID from user settings
+			} else {
+				console.error('Failed to fetch personas:', result.error);
+				error = `Failed to fetch personas: ${result.error.message}`;
 			}
-			personas = await response.json();
-			error = null;
-			// TODO: Get default persona ID from user settings
 		} catch (e: any) {
 			if (e instanceof Error && e.message.includes('401')) {
 				console.error('Caught 401 during fetch, redirection initiated.');

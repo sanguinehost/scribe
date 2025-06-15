@@ -1,0 +1,11 @@
+{
+  "buildCommand": "pnpm build",
+  "devCommand": "pnpm dev",
+  "installCommand": "pnpm install",
+  "framework": "sveltekit",
+  "build": {
+    "env": {
+      "VITE_BUILD_SKIP_TYPE_CHECK": "true"
+    }
+  }
+}

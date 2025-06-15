@@ -11,7 +11,6 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import SidebarUserNav from './sidebar-user-nav.svelte';
-	// import { SidebarHistory } from './sidebar-history'; // Remove SidebarHistory import
 	import CharacterList from './CharacterList.svelte'; // Import the new CharacterList component
 	import CharacterUploader from './CharacterUploader.svelte'; // Import the uploader component
 	import PersonaList from './PersonaList.svelte'; // Import the PersonaList component
@@ -68,6 +67,10 @@
 		console.log('Upload successful, refreshing list...');
 		if (characterListComp) {
 			await characterListComp.refresh(); // Call refresh on the CharacterList instance
+		}
+		// Also refresh lorebooks since character upload can create embedded lorebooks
+		if (lorebookListComp) {
+			await lorebookListComp.refresh(); // Call refresh on the LorebooksSidebarList instance
 		}
 	}
 

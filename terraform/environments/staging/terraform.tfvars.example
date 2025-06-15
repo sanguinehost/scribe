@@ -1,0 +1,60 @@
+# Example Terraform variables for staging environment
+# Copy this file to terraform.tfvars and customize the values
+
+# General configuration
+environment = "staging"
+aws_region  = "us-east-1"
+
+# Domain configuration
+domain_name               = "staging.scribe.sanguinehost.com"
+subject_alternative_names = ["api.staging.scribe.sanguinehost.com"]
+
+# Networking configuration (defaults are usually fine)
+# vpc_cidr             = "10.0.0.0/16"
+# public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
+# private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
+
+# Database configuration
+postgres_version             = "15.4"
+db_instance_class           = "db.t4g.micro"  # Free tier eligible
+allocated_storage           = 20
+max_allocated_storage       = 100
+database_name               = "scribe"
+master_username             = "scribe_admin"
+backup_retention_period     = 7
+multi_az_enabled           = false  # Disabled for staging to save costs
+monitoring_interval        = 0      # Disabled for staging to save costs
+performance_insights_enabled = false  # Disabled for staging to save costs
+
+# Redis configuration
+redis_version                   = "7.0"
+redis_node_type                = "cache.t4g.micro"  # Free tier eligible
+redis_num_cache_nodes          = 1  # Single node for staging
+redis_snapshot_retention_limit = 3  # Reduced for staging
+
+# ECS configuration (small sizes for staging)
+backend_cpu           = 256   # 0.25 vCPU
+backend_memory        = 512   # 512 MB
+backend_desired_count = 1     # Single instance for staging
+qdrant_cpu            = 256   # 0.25 vCPU
+qdrant_memory         = 512   # 512 MB
+qdrant_desired_count  = 1
+efs_provisioned_throughput = 10
+log_retention_days    = 7     # Reduced for staging
+
+# ALB configuration
+rate_limit_per_5min = 1000    # Lower for staging
+# access_logs_bucket = ""     # Disabled for staging
+
+# Monitoring configuration (mostly disabled for staging to save costs)
+create_sns_topic       = false  # Disabled for staging
+enable_cloudtrail      = false  # Disabled for staging
+# cloudtrail_bucket_name = ""
+
+# Application secrets (REQUIRED - set these values)
+# IMPORTANT: Never commit these values to version control!
+# Set via environment variables or a secure terraform.tfvars file
+gemini_api_key = "your-gemini-api-key-here"
+
+# Example of setting via environment variables instead:
+# export TF_VAR_gemini_api_key="your-gemini-api-key-here"

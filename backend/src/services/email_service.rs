@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_ses::{Client as SesClient, types::Destination, types::Content, types::Body, types::Message};
+use std::error::Error as StdError;
 use std::sync::Arc;
 use thiserror::Error;
 use tracing::{error, info};
@@ -205,9 +206,11 @@ impl EmailService for SesEmailService {
                     to_email = %to_email,
                     username = %username,
                     error = %e,
+                    error_debug = ?e,
+                    error_source = ?e.source(),
                     "Failed to send verification email via AWS SES"
                 );
-                Err(EmailError::SendFailed(format!("AWS SES error: {}", e)))
+                Err(EmailError::SendFailed(format!("AWS SES error: {} (source: {:?})", e, e.source())))
             }
         }
     }
@@ -220,11 +223,11 @@ pub async fn create_email_service(
     from_email: Option<String>,
 ) -> Result<Arc<dyn EmailService + Send + Sync>, EmailError> {
     match app_env {
-        "production" => {
-            info!("Creating SES email service for production");
+        "production" | "staging" => {
+            info!("Creating SES email service for {}", app_env);
             let from_email = from_email
                 .ok_or_else(|| EmailError::ConfigurationError(
-                    "FROM_EMAIL environment variable is required for production".to_string()
+                    format!("FROM_EMAIL environment variable is required for {}", app_env)
                 ))?;
             let service = SesEmailService::new(base_url, from_email).await?;
             Ok(Arc::new(service))

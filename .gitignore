@@ -51,3 +51,6 @@ uploads/
 
 # Uploads
 uploads/
+
+# Certs generated for cloud deployment
+.internal-certs

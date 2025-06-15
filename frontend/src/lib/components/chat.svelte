@@ -15,6 +15,7 @@
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
+	import { env } from '$env/dynamic/public';
 
 	let {
 		user,
@@ -130,9 +131,11 @@
 	// --- Load Available Personas ---
 	async function loadAvailablePersonas() {
 		try {
-			const response = await fetch('/api/personas');
-			if (response.ok) {
-				availablePersonas = await response.json();
+			const result = await apiClient.getPersonas();
+			if (result.isOk()) {
+				availablePersonas = result.value;
+			} else {
+				console.error('Failed to load personas:', result.error);
 			}
 		} catch (error) {
 			console.error('Failed to load personas:', error);
@@ -281,12 +284,23 @@
 		let fetchError: any = null; // Variable to store error from fetch/parsing
 
 		try {
-			const response = await fetch(`/api/chat/${chat.id}/generate`, {
+			// Use the same environment variable logic as apiClient
+			const baseUrl = (env.PUBLIC_API_URL || '').trim();
+			const apiUrl = `${baseUrl}/api/chat/${chat.id}/generate`;
+			
+			console.log('[sendMessage] Environment check:', {
+				'env.PUBLIC_API_URL': env.PUBLIC_API_URL,
+				'baseUrl': baseUrl,
+				'apiUrl': apiUrl
+			});
+			
+			const response = await fetch(apiUrl, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					Accept: 'text/event-stream' // Indicate we want SSE
 				},
+				credentials: 'include', // Include cookies for authentication
 				// Send the constructed history. The backend expects a 'history' field (Vec<ApiChatMessage>)
 				// and an optional 'model' field.
 				body: JSON.stringify({

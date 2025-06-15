@@ -209,7 +209,10 @@ impl LorebookService {
             "Successfully created lorebook [REDACTED_UUID] with format 'silly_tavern_full_v1' for user [REDACTED_UUID]"
         );
 
-        // Import all entries
+        // Prepare all entries for batch insertion
+        let mut new_entries_batch = Vec::new();
+        let mut embedding_tasks = Vec::new();
+
         for (uid, entry) in payload.entries {
             let keys_text = if entry.key.as_ref().map_or(true, |k| k.is_empty()) {
                 None
@@ -242,9 +245,9 @@ impl LorebookService {
             };
 
             tracing::debug!(
-                "Creating lorebook entry [REDACTED_UUID]: title='[REDACTED]', content_len=[REDACTED], keys=[REDACTED]"
+                "Preparing lorebook entry [REDACTED_UUID]: title='[REDACTED]', content_len=[REDACTED], keys=[REDACTED]"
             );
-            // Create the entry directly without embedding generation
+            
             let new_entry_id = Uuid::new_v4();
 
             // Encrypt the fields if DEK is provided
@@ -332,117 +335,139 @@ impl LorebookService {
                 updated_at: Some(current_time),
             };
 
+            // Store the entry data for embedding generation
+            embedding_tasks.push((
+                new_entry_db.id,
+                entry_payload.entry_title.clone(),
+                entry_payload.content.clone(),
+                entry_payload.keys_text.clone(),
+            ));
+
+            new_entries_batch.push(new_entry_db);
+        }
+
+        // Batch insert all entries in a single transaction
+        if !new_entries_batch.is_empty() {
+            info!("Batch inserting {} lorebook entries", new_entries_batch.len());
+            
+            info!("Getting database connection for batch insert...");
             let conn = self.pool.get().await.map_err(|e| {
+                error!("Failed to get DB connection for batch insert: {e}");
                 AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
             })?;
+            info!("Successfully obtained database connection for batch insert");
 
-            match conn
+            info!("Starting database interaction for batch insert...");
+            let inserted_entries: Vec<LorebookEntry> = conn
                 .interact(move |conn_sync| {
-                    diesel::insert_into(lorebook_entries::table)
-                        .values(&new_entry_db)
+                    info!("Inside database interaction, executing batch insert SQL...");
+                    let result = diesel::insert_into(lorebook_entries::table)
+                        .values(&new_entries_batch)
                         .returning(LorebookEntry::as_returning())
-                        .get_result::<LorebookEntry>(conn_sync)
+                        .get_results::<LorebookEntry>(conn_sync);
+                    info!("Batch insert SQL execution completed");
+                    result
                 })
                 .await
-            {
-                Ok(Ok(inserted_entry)) => {
-                    // Generate embeddings for the newly created entry
-                    info!("Generating embeddings for imported lorebook entry [REDACTED_UUID]");
+                .map_err(|e| {
+                    error!("Failed to batch insert lorebook entries: {}", e);
+                    AppError::InternalServerErrorGeneric(format!("Failed to batch insert entries: {e}"))
+                })?
+                .map_err(|e| {
+                    error!("Database error during batch insert: {}", e);
+                    AppError::DatabaseQueryError(format!("Batch insert failed: {e}"))
+                })?;
 
-                    let user_dek_bytes = user_dek.unwrap().expose_secret();
+            info!("Successfully batch inserted {} lorebook entries", inserted_entries.len());
 
-                    // Decrypt the content for embedding
-                    let decrypted_title_result = self.encryption_service.decrypt(
-                        &inserted_entry.entry_title_ciphertext,
-                        &inserted_entry.entry_title_nonce,
-                        user_dek_bytes,
-                    );
-                    let decrypted_content_result = self.encryption_service.decrypt(
-                        &inserted_entry.content_ciphertext,
-                        &inserted_entry.content_nonce,
-                        user_dek_bytes,
-                    );
-                    let decrypted_keys_text_result = if inserted_entry.keys_text_nonce.is_empty() {
-                        Ok(None)
-                    } else {
-                        self.encryption_service
-                            .decrypt(
-                                &inserted_entry.keys_text_ciphertext,
-                                &inserted_entry.keys_text_nonce,
-                                user_dek_bytes,
-                            )
-                            .map(Some)
-                    };
+            // Generate embeddings for all inserted entries in the background
+            let user_dek_bytes = user_dek.unwrap().expose_secret().clone();
+            for inserted_entry in inserted_entries {
+                info!("Generating embeddings for imported lorebook entry [REDACTED_UUID]");
 
-                    match (
-                        decrypted_title_result,
-                        decrypted_content_result,
-                        decrypted_keys_text_result,
-                    ) {
-                        (Ok(title_bytes), Ok(content_bytes), Ok(keys_bytes_opt)) => {
-                            let decrypted_title =
-                                String::from_utf8_lossy(&title_bytes).into_owned();
-                            let decrypted_content =
-                                String::from_utf8_lossy(&content_bytes).into_owned();
-                            let decrypted_keywords = keys_bytes_opt
-                                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                                .and_then(|keys_str| {
-                                    if keys_str.trim().is_empty() {
+                // Decrypt the content for embedding
+                let decrypted_title_result = self.encryption_service.decrypt(
+                    &inserted_entry.entry_title_ciphertext,
+                    &inserted_entry.entry_title_nonce,
+                    &user_dek_bytes,
+                );
+                let decrypted_content_result = self.encryption_service.decrypt(
+                    &inserted_entry.content_ciphertext,
+                    &inserted_entry.content_nonce,
+                    &user_dek_bytes,
+                );
+                let decrypted_keys_text_result = if inserted_entry.keys_text_nonce.is_empty() {
+                    Ok(None)
+                } else {
+                    self.encryption_service
+                        .decrypt(
+                            &inserted_entry.keys_text_ciphertext,
+                            &inserted_entry.keys_text_nonce,
+                            &user_dek_bytes,
+                        )
+                        .map(Some)
+                };
+
+                match (
+                    decrypted_title_result,
+                    decrypted_content_result,
+                    decrypted_keys_text_result,
+                ) {
+                    (Ok(title_bytes), Ok(content_bytes), Ok(keys_bytes_opt)) => {
+                        let decrypted_title =
+                            String::from_utf8_lossy(&title_bytes).into_owned();
+                        let decrypted_content =
+                            String::from_utf8_lossy(&content_bytes).into_owned();
+                        let decrypted_keywords = keys_bytes_opt
+                            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                            .and_then(|keys_str| {
+                                if keys_str.trim().is_empty() {
+                                    None
+                                } else {
+                                    let keywords: Vec<String> = keys_str
+                                        .split(',')
+                                        .map(|s| s.trim().to_string())
+                                        .filter(|s| !s.is_empty())
+                                        .collect();
+                                    if keywords.is_empty() {
                                         None
                                     } else {
-                                        let keywords: Vec<String> = keys_str
-                                            .split(',')
-                                            .map(|s| s.trim().to_string())
-                                            .filter(|s| !s.is_empty())
-                                            .collect();
-                                        if keywords.is_empty() {
-                                            None
-                                        } else {
-                                            Some(keywords)
-                                        }
+                                        Some(keywords)
                                     }
-                                });
-
-                            let params = crate::services::embeddings::LorebookEntryParams {
-                                original_lorebook_entry_id: inserted_entry.id,
-                                lorebook_id: inserted_entry.lorebook_id,
-                                user_id: inserted_entry.user_id,
-                                decrypted_content,
-                                decrypted_title: Some(decrypted_title),
-                                decrypted_keywords,
-                                is_enabled: inserted_entry.is_enabled,
-                                is_constant: inserted_entry.is_constant,
-                            };
-
-                            // Spawn embedding generation in background to avoid blocking import
-                            let state_clone = state.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = state_clone
-                                    .embedding_pipeline_service
-                                    .process_and_embed_lorebook_entry(state_clone.clone(), params)
-                                    .await
-                                {
-                                    error!(
-                                        "Failed to generate embeddings for imported lorebook entry: {:?}",
-                                        e
-                                    );
                                 }
                             });
-                        }
-                        _ => {
-                            error!(
-                                "Failed to decrypt lorebook entry fields for embedding generation. Skipping embeddings for this entry."
-                            );
-                        }
+
+                        let params = crate::services::embeddings::LorebookEntryParams {
+                            original_lorebook_entry_id: inserted_entry.id,
+                            lorebook_id: inserted_entry.lorebook_id,
+                            user_id: inserted_entry.user_id,
+                            decrypted_content,
+                            decrypted_title: Some(decrypted_title),
+                            decrypted_keywords,
+                            is_enabled: inserted_entry.is_enabled,
+                            is_constant: inserted_entry.is_constant,
+                        };
+
+                        // Spawn embedding generation in background to avoid blocking import
+                        let state_clone = state.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = state_clone
+                                .embedding_pipeline_service
+                                .process_and_embed_lorebook_entry(state_clone.clone(), params)
+                                .await
+                            {
+                                error!(
+                                    "Failed to generate embeddings for imported lorebook entry: {:?}",
+                                    e
+                                );
+                            }
+                        });
                     }
-                }
-                Ok(Err(e)) => {
-                    error!("Failed to import entry [REDACTED_UUID]: {:?}", e);
-                    // Continue importing other entries
-                }
-                Err(e) => {
-                    error!("Failed to import entry [REDACTED_UUID]: {:?}", e);
-                    // Continue importing other entries
+                    _ => {
+                        error!(
+                            "Failed to decrypt lorebook entry fields for embedding generation. Skipping embeddings for this entry."
+                        );
+                    }
                 }
             }
         }
