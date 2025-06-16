@@ -12,13 +12,14 @@
 	import { getTheme } from '@sejohnson/svelte-themes';
 	import { getCurrentUser, getIsAuthenticated, getHasConnectionError } from '$lib/auth.svelte';
 	import { apiClient } from '$lib/api';
-	import { setUnauthenticated } from '$lib/auth.svelte';
+	import { performLogout } from '$lib/auth.svelte';
 	import { goto } from '$app/navigation';
 	const theme = getTheme();
 
 	async function handleSignOut() {
-		// Use the logout route which handles both backend logout and cookie clearing
-		setUnauthenticated();
+		// Use comprehensive logout that clears both state and cookies immediately
+		await performLogout('manual', false);
+		// Then navigate to logout route for backend cleanup and final redirect
 		goto('/logout');
 	}
 </script>

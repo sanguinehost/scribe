@@ -93,23 +93,111 @@ export function setConnectionError(): void {
 	}
 }
 
-export function setSessionExpired(): void {
-	auth.user = null;
-	auth.isAuthenticated = false;
-	auth.isLoading = false;
-	auth.hasConnectionError = false; // Clear connection errors - this is a session issue, not network
-	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Session expired, user logged out.`);
+// Comprehensive logout function that clears both state and cookies
+let isLoggingOut = false; // Prevent duplicate logout attempts
+let lastLogoutTime = 0;
+const LOGOUT_DEBOUNCE = 1000; // 1 second debounce between logout attempts
 
-	// Debounce session expired notifications
-	if (browser && !hasShownSessionInvalidated) {
-		hasShownSessionInvalidated = true;
-		window.dispatchEvent(new CustomEvent('auth:session-expired'));
+export async function performLogout(
+	reason: 'expired' | 'manual' | 'error' = 'manual',
+	showNotification = true
+): Promise<void> {
+	const now = Date.now();
 
-		// Reset the flag after 5 seconds
-		sessionInvalidatedTimeout = setTimeout(() => {
-			hasShownSessionInvalidated = false;
-		}, 5000);
+	// Debounce rapid logout attempts
+	if (isLoggingOut || now - lastLogoutTime < LOGOUT_DEBOUNCE) {
+		console.log(
+			`[${new Date().toISOString()}] auth.svelte.ts: Logout already in progress or debounced, skipping duplicate attempt`
+		);
+		return;
 	}
+
+	lastLogoutTime = now;
+
+	isLoggingOut = true;
+	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Performing logout, reason: ${reason}`);
+
+	try {
+		// Clear client-side auth state
+		auth.user = null;
+		auth.isAuthenticated = false;
+		auth.isLoading = false;
+		auth.hasConnectionError = false;
+
+		// Clear cookies with priority on client-side (immediate) then server-side (HttpOnly backup)
+		if (browser) {
+			// 1. IMMEDIATE: Clear cookies client-side first (works for non-HttpOnly cookies)
+			clearSessionCookies();
+
+			// 2. BACKUP: Call server-side endpoint to clear HttpOnly cookies
+			// Don't await this to avoid blocking the logout process
+			fetch('/api/invalidate-session', {
+				method: 'POST',
+				credentials: 'include'
+			})
+				.then(() => {
+					console.log(
+						`[${new Date().toISOString()}] auth.svelte.ts: Server-side session invalidation successful`
+					);
+				})
+				.catch((error) => {
+					console.warn(
+						`[${new Date().toISOString()}] auth.svelte.ts: Server-side session invalidation failed:`,
+						error
+					);
+				});
+		}
+
+		// Clear debounce timeouts
+		if (connectionErrorTimeout) {
+			clearTimeout(connectionErrorTimeout);
+			connectionErrorTimeout = null;
+		}
+		if (sessionInvalidatedTimeout) {
+			clearTimeout(sessionInvalidatedTimeout);
+			sessionInvalidatedTimeout = null;
+		}
+		hasShownConnectionError = false;
+		hasShownSessionInvalidated = false;
+
+		// Show notification and handle events based on reason
+		if (browser && showNotification) {
+			if (reason === 'expired' && !hasShownSessionInvalidated) {
+				hasShownSessionInvalidated = true;
+				console.log(
+					`[${new Date().toISOString()}] auth.svelte.ts: Dispatching auth:session-expired event`
+				);
+				window.dispatchEvent(new CustomEvent('auth:session-expired'));
+
+				// Also redirect immediately as a fallback
+				setTimeout(() => {
+					import('$app/navigation').then(({ goto }) => {
+						console.log(
+							`[${new Date().toISOString()}] auth.svelte.ts: Fallback redirect to /signin`
+						);
+						goto('/signin');
+					});
+				}, 2000); // 2 second fallback redirect
+
+				// Reset the flag after 5 seconds
+				sessionInvalidatedTimeout = setTimeout(() => {
+					hasShownSessionInvalidated = false;
+				}, 5000);
+			} else if (reason === 'manual') {
+				// For manual logout, we don't need to show a notification
+				// as the user initiated the action
+			}
+		}
+
+		console.log(`[${new Date().toISOString()}] auth.svelte.ts: Logout completed successfully`);
+	} finally {
+		isLoggingOut = false;
+	}
+}
+
+export function setSessionExpired(): void {
+	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Session expired detected`);
+	performLogout('expired', true);
 }
 
 export function clearConnectionError(): void {
@@ -123,6 +211,124 @@ export function clearConnectionError(): void {
 	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Connection error cleared.`);
 }
 
+// Enhanced client-side cookie clearing utility that works in both local and cloud environments
+function clearSessionCookies(): void {
+	if (!browser) return;
+
+	try {
+		// Get current domain info for more targeted deletion
+		const hostname = window.location.hostname;
+		const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+		const domainParts = hostname.split('.');
+		const parentDomain = domainParts.length > 2 ? '.' + domainParts.slice(-2).join('.') : '';
+
+		// Clear all possible session cookie variations to handle different environments
+		const cookieNames = ['id', 'session', 'sessionid', 'session_id'];
+		const cookieOptions = [];
+
+		for (const name of cookieNames) {
+			// Basic deletion (most important - this should work for most cases)
+			cookieOptions.push(`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`);
+			cookieOptions.push(`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0`);
+
+			// For localhost/development
+			if (isLocalhost) {
+				cookieOptions.push(
+					`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; domain=${hostname}`
+				);
+				cookieOptions.push(
+					`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; domain=${hostname}`
+				);
+			}
+
+			// For cloud deployment with current domain
+			if (!isLocalhost) {
+				cookieOptions.push(
+					`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; domain=${hostname}`
+				);
+				cookieOptions.push(
+					`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; domain=${hostname}`
+				);
+
+				// With parent domain for subdomains
+				if (parentDomain) {
+					cookieOptions.push(
+						`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; domain=${parentDomain}`
+					);
+					cookieOptions.push(
+						`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; domain=${parentDomain}`
+					);
+				}
+			}
+
+			// Secure variants for HTTPS environments
+			if (window.location.protocol === 'https:') {
+				cookieOptions.push(
+					`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; secure; samesite=lax`
+				);
+				cookieOptions.push(
+					`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; secure; samesite=lax`
+				);
+
+				if (!isLocalhost && parentDomain) {
+					cookieOptions.push(
+						`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; secure; samesite=lax; domain=${parentDomain}`
+					);
+					cookieOptions.push(
+						`${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; secure; samesite=lax; domain=${parentDomain}`
+					);
+				}
+			}
+		}
+
+		// Apply all cookie deletion attempts
+		let successCount = 0;
+		cookieOptions.forEach((cookieString) => {
+			try {
+				document.cookie = cookieString;
+				successCount++;
+			} catch (e) {
+				// Silently continue if any specific cookie deletion fails
+			}
+		});
+
+		console.log(
+			`[${new Date().toISOString()}] auth.svelte.ts: Session cookies cleared from client-side (${successCount}/${cookieOptions.length} attempts successful)`
+		);
+	} catch (error) {
+		console.warn(`[${new Date().toISOString()}] auth.svelte.ts: Error clearing cookies:`, error);
+	}
+}
+
+// Debug utility to check current cookies (for testing cookie deletion)
+export function debugCookies(): void {
+	if (!browser) return;
+
+	const allCookies = document.cookie;
+	const sessionCookies = allCookies
+		.split(';')
+		.map((cookie) => cookie.trim())
+		.filter(
+			(cookie) =>
+				cookie.startsWith('id=') ||
+				cookie.startsWith('session=') ||
+				cookie.startsWith('sessionid=') ||
+				cookie.startsWith('session_id=')
+		);
+
+	console.log(
+		`[${new Date().toISOString()}] auth.svelte.ts: Current session cookies visible to JS:`,
+		sessionCookies
+	);
+	console.log(
+		`[${new Date().toISOString()}] auth.svelte.ts: All cookies visible to JS:`,
+		allCookies
+	);
+	console.log(
+		`[${new Date().toISOString()}] auth.svelte.ts: NOTE: HttpOnly cookies (like 'id') are NOT visible to JavaScript and cannot be deleted client-side!`
+	);
+}
+
 export function setLoading(): void {
 	auth.isLoading = true;
 	// Loading state logging removed for production
@@ -133,10 +339,13 @@ export function setLoading(): void {
 // If successful, it updates the store. If it fails (e.g., 401), it also updates the store.
 import { apiClient } from '$lib/api';
 import { browser } from '$app/environment';
+import { goto } from '$app/navigation';
 
 let initializePromise: Promise<void> | null = null;
+let lastSessionCheck = 0;
+const SESSION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-export async function initializeAuth(): Promise<void> {
+export async function initializeAuth(forceRecheck = false): Promise<void> {
 	if (!browser) {
 		console.log(
 			`[${new Date().toISOString()}] auth.svelte.ts: Skipping auth initialization on server.`
@@ -148,6 +357,17 @@ export async function initializeAuth(): Promise<void> {
 			auth.isLoading = false;
 		}
 		return;
+	}
+
+	const now = Date.now();
+
+	// Allow forced recheck (e.g., after connection restored) or if enough time has passed
+	if (forceRecheck || now - lastSessionCheck > SESSION_CHECK_INTERVAL) {
+		console.log(
+			`[${new Date().toISOString()}] auth.svelte.ts: ${forceRecheck ? 'Forced' : 'Periodic'} session revalidation triggered`
+		);
+		initializePromise = null; // Clear cached promise
+		lastSessionCheck = now;
 	}
 
 	// Prevent multiple initializations
@@ -193,7 +413,11 @@ export async function initializeAuth(): Promise<void> {
 						`[${new Date().toISOString()}] auth.svelte.ts: Network error during auth check - server may be down. Keeping current state.`
 					);
 					setConnectionError(); // Set connection error state, but keep user data
-				} else if (result.error.name === 'ApiResponseError' && 'statusCode' in result.error && result.error.statusCode === 401) {
+				} else if (
+					result.error.name === 'ApiResponseError' &&
+					'statusCode' in result.error &&
+					result.error.statusCode === 401
+				) {
 					// Session expired - clear user and show specific message
 					console.log(
 						`[${new Date().toISOString()}] auth.svelte.ts: Session expired (401). Logging out user.`

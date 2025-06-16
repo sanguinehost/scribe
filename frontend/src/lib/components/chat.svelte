@@ -53,7 +53,7 @@
 	// Scribe chat state management
 	let messages = $state<ScribeChatMessage[]>([]); // Start with a truly empty array
 	let initialMessagesSet = $state(false); // Flag to ensure we only set initial messages once
-	
+
 	// Message variants storage: messageId -> array of variant contents
 	let messageVariants = $state<Map<string, { content: string; timestamp: string }[]>>(new Map());
 	let currentVariantIndex = $state<Map<string, number>>(new Map());
@@ -135,14 +135,14 @@
 	// --- Load Available Personas ---
 	let lastPersonasLoad = 0;
 	const PERSONAS_THROTTLE = 5000; // 5 seconds minimum between loads
-	
+
 	async function loadAvailablePersonas() {
 		const now = Date.now();
 		if (now - lastPersonasLoad < PERSONAS_THROTTLE) {
 			console.log('Throttling personas load request');
 			return;
 		}
-		
+
 		lastPersonasLoad = now;
 		try {
 			const result = await apiClient.getUserPersonas();
@@ -308,13 +308,13 @@
 			// Use the same environment variable logic as apiClient
 			const baseUrl = (env.PUBLIC_API_URL || '').trim();
 			const apiUrl = `${baseUrl}/api/chat/${chat.id}/generate`;
-			
+
 			console.log('[sendMessage] Environment check:', {
 				'env.PUBLIC_API_URL': env.PUBLIC_API_URL,
-				'baseUrl': baseUrl,
-				'apiUrl': apiUrl
+				baseUrl: baseUrl,
+				apiUrl: apiUrl
 			});
-			
+
 			const response = await fetch(apiUrl, {
 				method: 'POST',
 				headers: {
@@ -335,7 +335,7 @@
 				// Check for auth error
 				if (response.status === 401) {
 					// Emit auth invalidation event
-					window.dispatchEvent(new CustomEvent('auth:invalidated'));
+					window.dispatchEvent(new CustomEvent('auth:session-expired'));
 					throw new Error('Session expired. Please sign in again.');
 				}
 
@@ -516,7 +516,7 @@
 					import('$lib/api').then(({ apiClient }) => {
 						apiClient.getSession().then((result) => {
 							if (result.isErr() || !result.value.user) {
-								window.dispatchEvent(new CustomEvent('auth:invalidated'));
+								window.dispatchEvent(new CustomEvent('auth:session-expired'));
 							}
 						});
 					});
@@ -552,22 +552,26 @@
 					const messagesResult = await apiClient.getMessagesByChatId(chat.id);
 					if (messagesResult.isOk()) {
 						const backendMessages = messagesResult.value;
-						
+
 						// Find the most recent assistant message that matches our content
 						const completedAssistantMessage = messages.find(
 							(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
 						);
-						
+
 						if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
 							// Find matching backend message by content (most recent first)
 							const matchingBackendMessage = backendMessages
 								.filter((msg: any) => msg.message_type === 'Assistant')
-								.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+								.sort(
+									(a: any, b: any) =>
+										new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+								)
 								.find((msg: any) => {
-									const backendContent = msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
+									const backendContent =
+										msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
 									return backendContent.trim() === completedAssistantMessage.content.trim();
 								});
-							
+
 							if (matchingBackendMessage) {
 								// Update the frontend message with the real backend ID
 								messages = messages.map((msg) => {
@@ -575,17 +579,21 @@
 										return {
 											...msg,
 											backend_id: matchingBackendMessage.id, // Store backend ID separately
-											created_at: typeof matchingBackendMessage.created_at === 'string' 
-												? matchingBackendMessage.created_at 
-												: matchingBackendMessage.created_at.toISOString(),
+											created_at:
+												typeof matchingBackendMessage.created_at === 'string'
+													? matchingBackendMessage.created_at
+													: matchingBackendMessage.created_at.toISOString(),
 											session_id: matchingBackendMessage.session_id || msg.session_id
 										};
 									}
 									return msg;
 								});
-								console.log('Updated assistant message with backend ID:', matchingBackendMessage.id);
+								console.log(
+									'Updated assistant message with backend ID:',
+									matchingBackendMessage.id
+								);
 							}
-							
+
 							// Update chat preview in sidebar without triggering full reload
 							const preview = completedAssistantMessage.content.trim().substring(0, 100);
 							chatHistory.updateChatPreview(chat.id, preview);
@@ -641,13 +649,13 @@
 		try {
 			const baseUrl = (env.PUBLIC_API_URL || '').trim();
 			const apiUrl = `${baseUrl}/api/chat/${chat.id}/generate`;
-			
+
 			console.log('[generateAIResponse] Environment check:', {
 				'env.PUBLIC_API_URL': env.PUBLIC_API_URL,
-				'baseUrl': baseUrl,
-				'apiUrl': apiUrl
+				baseUrl: baseUrl,
+				apiUrl: apiUrl
 			});
-			
+
 			const response = await fetch(apiUrl, {
 				method: 'POST',
 				headers: {
@@ -666,14 +674,15 @@
 
 			if (!response.ok) {
 				if (response.status === 401) {
-					window.dispatchEvent(new CustomEvent('auth:invalidated'));
+					window.dispatchEvent(new CustomEvent('auth:session-expired'));
 					throw new Error('Session expired. Please sign in again.');
 				}
 
 				const errorData = await response.json().catch(() => {
 					if (response.status >= 500) {
 						return {
-							message: 'Server error - the backend may be temporarily unavailable. Please try again.'
+							message:
+								'Server error - the backend may be temporarily unavailable. Please try again.'
 						};
 					}
 					return { message: 'Failed to generate response' };
@@ -786,37 +795,45 @@
 					const messagesResult = await apiClient.getMessagesByChatId(chat.id);
 					if (messagesResult.isOk()) {
 						const backendMessages = messagesResult.value;
-						
+
 						const completedAssistantMessage = messages.find(
 							(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
 						);
-						
+
 						if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
 							const matchingBackendMessage = backendMessages
 								.filter((msg: any) => msg.message_type === 'Assistant')
-								.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+								.sort(
+									(a: any, b: any) =>
+										new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+								)
 								.find((msg: any) => {
-									const backendContent = msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
+									const backendContent =
+										msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
 									return backendContent.trim() === completedAssistantMessage.content.trim();
 								});
-							
+
 							if (matchingBackendMessage) {
 								messages = messages.map((msg) => {
 									if (msg.id === assistantMessageId) {
 										return {
 											...msg,
 											backend_id: matchingBackendMessage.id,
-											created_at: typeof matchingBackendMessage.created_at === 'string' 
-												? matchingBackendMessage.created_at 
-												: matchingBackendMessage.created_at.toISOString(),
+											created_at:
+												typeof matchingBackendMessage.created_at === 'string'
+													? matchingBackendMessage.created_at
+													: matchingBackendMessage.created_at.toISOString(),
 											session_id: matchingBackendMessage.session_id || msg.session_id
 										};
 									}
 									return msg;
 								});
-								console.log('Updated generated assistant message with backend ID:', matchingBackendMessage.id);
+								console.log(
+									'Updated generated assistant message with backend ID:',
+									matchingBackendMessage.id
+								);
 							}
-							
+
 							const preview = completedAssistantMessage.content.trim().substring(0, 100);
 							chatHistory.updateChatPreview(chat.id, preview);
 						}
@@ -891,13 +908,13 @@
 		try {
 			const baseUrl = (env.PUBLIC_API_URL || '').trim();
 			const apiUrl = `${baseUrl}/api/chat/${chat.id}/generate`;
-			
+
 			console.log('[regenerateResponse] Environment check:', {
 				'env.PUBLIC_API_URL': env.PUBLIC_API_URL,
-				'baseUrl': baseUrl,
-				'apiUrl': apiUrl
+				baseUrl: baseUrl,
+				apiUrl: apiUrl
 			});
-			
+
 			const response = await fetch(apiUrl, {
 				method: 'POST',
 				headers: {
@@ -917,14 +934,15 @@
 
 			if (!response.ok) {
 				if (response.status === 401) {
-					window.dispatchEvent(new CustomEvent('auth:invalidated'));
+					window.dispatchEvent(new CustomEvent('auth:session-expired'));
 					throw new Error('Session expired. Please sign in again.');
 				}
 
 				const errorData = await response.json().catch(() => {
 					if (response.status >= 500) {
 						return {
-							message: 'Server error - the backend may be temporarily unavailable. Please try again.'
+							message:
+								'Server error - the backend may be temporarily unavailable. Please try again.'
 						};
 					}
 					return { message: 'Failed to generate response' };
@@ -991,7 +1009,10 @@
 						if (currentData) {
 							messages = messages.map((msg) => {
 								if (msg.id === assistantMessageId) {
-									console.log('[regenerateResponse] Updating message content for:', assistantMessageId);
+									console.log(
+										'[regenerateResponse] Updating message content for:',
+										assistantMessageId
+									);
 									return { ...msg, content: msg.content + currentData };
 								}
 								if (msg.id.startsWith('first-message-')) {
@@ -1049,52 +1070,60 @@
 					const messagesResult = await apiClient.getMessagesByChatId(chat.id);
 					if (messagesResult.isOk()) {
 						const backendMessages = messagesResult.value;
-						
+
 						const completedAssistantMessage = messages.find(
 							(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
 						);
-						
+
 						if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
 							const matchingBackendMessage = backendMessages
 								.filter((msg: any) => msg.message_type === 'Assistant')
-								.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+								.sort(
+									(a: any, b: any) =>
+										new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+								)
 								.find((msg: any) => {
-									const backendContent = msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
+									const backendContent =
+										msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
 									return backendContent.trim() === completedAssistantMessage.content.trim();
 								});
-							
+
 							if (matchingBackendMessage) {
 								messages = messages.map((msg) => {
 									if (msg.id === assistantMessageId) {
 										return {
 											...msg,
 											backend_id: matchingBackendMessage.id, // Store backend ID separately
-											created_at: typeof matchingBackendMessage.created_at === 'string' 
-												? matchingBackendMessage.created_at 
-												: matchingBackendMessage.created_at.toISOString(),
+											created_at:
+												typeof matchingBackendMessage.created_at === 'string'
+													? matchingBackendMessage.created_at
+													: matchingBackendMessage.created_at.toISOString(),
 											session_id: matchingBackendMessage.session_id || msg.session_id
 										};
 									}
 									return msg;
 								});
-								console.log('Updated regenerated assistant message with backend ID:', matchingBackendMessage.id);
+								console.log(
+									'Updated regenerated assistant message with backend ID:',
+									matchingBackendMessage.id
+								);
 							}
-							
+
 							// If this was a regeneration (variant), save the new content
 							if (originalMessageId && completedAssistantMessage) {
 								const variants = messageVariants.get(originalMessageId) || [];
-								
+
 								// Save the new variant
 								variants.push({
 									content: completedAssistantMessage.content,
 									timestamp: completedAssistantMessage.created_at || new Date().toISOString()
 								});
 								messageVariants.set(originalMessageId, variants);
-								
+
 								// Now update the current index to point to the newly created variant
 								currentVariantIndex.set(originalMessageId, variants.length - 1);
 							}
-							
+
 							const preview = completedAssistantMessage.content.trim().substring(0, 100);
 							chatHistory.updateChatPreview(chat.id, preview);
 						}
@@ -1118,42 +1147,42 @@
 	// Message action handlers
 	async function handleRetryMessage(messageId: string) {
 		if (!chat?.id || isLoading) return;
-		
+
 		console.log('Retry message:', messageId);
-		
+
 		// Find the assistant message to retry
-		const messageIndex = messages.findIndex(msg => msg.id === messageId);
+		const messageIndex = messages.findIndex((msg) => msg.id === messageId);
 		if (messageIndex === -1) return;
-		
+
 		const targetMessage = messages[messageIndex];
 		if (targetMessage.message_type !== 'Assistant') return;
-		
+
 		// Initialize variants array if this is the first retry
 		let variants = messageVariants.get(messageId) || [];
-		
+
 		// If this is the first retry (no variants exist), save the original message as index 0
 		if (variants.length === 0 && targetMessage.content.trim()) {
-			variants.push({ 
+			variants.push({
 				content: targetMessage.content,
 				timestamp: targetMessage.created_at || new Date().toISOString()
 			});
 			messageVariants.set(messageId, variants);
 		}
-		
+
 		// Don't update the current index yet - wait until the new variant is actually generated
 		// This keeps the UI showing the current count (e.g., 2/2) until the new one exists
-		
+
 		// Find the previous user message to regenerate from
 		const userMessageIndex = messageIndex - 1;
 		if (userMessageIndex < 0) return;
-		
+
 		const userMessage = messages[userMessageIndex];
 		if (userMessage.message_type !== 'User') return;
-		
+
 		// Remove the assistant message and any messages after it
 		const removedMessages = messages.slice(messageIndex);
 		messages = messages.slice(0, messageIndex);
-		
+
 		// Clean up variant data for any messages that will be removed (except the one we're regenerating)
 		for (const removedMsg of removedMessages) {
 			if (removedMsg.id !== messageId) {
@@ -1161,10 +1190,10 @@
 				currentVariantIndex.delete(removedMsg.id);
 			}
 		}
-		
+
 		// Delete trailing messages from backend (including embeddings)
 		// Only delete messages after the one we're regenerating
-		const messagesToDelete = removedMessages.filter(msg => msg.id !== messageId);
+		const messagesToDelete = removedMessages.filter((msg) => msg.id !== messageId);
 		if (messagesToDelete.length > 0 && messagesToDelete[0].backend_id) {
 			try {
 				await apiClient.deleteTrailingMessages(messagesToDelete[0].backend_id);
@@ -1173,7 +1202,7 @@
 				// Continue with regeneration even if cleanup fails
 			}
 		}
-		
+
 		// Regenerate the response by calling the streaming logic directly
 		// Pass the original messageId so we can maintain variants
 		regenerateResponse(userMessage.content, messageId);
@@ -1187,18 +1216,18 @@
 
 	async function handleSaveEditedMessage(messageId: string, newContent: string) {
 		console.log('Save edited message:', messageId, 'New content:', newContent);
-		
+
 		if (!chat?.id || isLoading) return;
-		
+
 		// Find the message index
-		const messageIndex = messages.findIndex(msg => msg.id === messageId);
+		const messageIndex = messages.findIndex((msg) => msg.id === messageId);
 		if (messageIndex === -1) return;
-		
+
 		const targetMessage = messages[messageIndex];
 		if (targetMessage.message_type !== 'User') return;
-		
+
 		// Update the message content
-		messages = messages.map(msg => {
+		messages = messages.map((msg) => {
 			if (msg.id === messageId) {
 				return {
 					...msg,
@@ -1207,22 +1236,22 @@
 			}
 			return msg;
 		});
-		
+
 		// Get messages that will be removed for backend cleanup
 		const removedMessages = messages.slice(messageIndex + 1);
-		
+
 		// Clear all subsequent messages (everything after this user message)
 		messages = messages.slice(0, messageIndex + 1);
-		
+
 		// Clear any variant data for removed messages
-		const keptMessageIds = new Set(messages.map(m => m.id));
+		const keptMessageIds = new Set(messages.map((m) => m.id));
 		for (const [variantMessageId] of messageVariants) {
 			if (!keptMessageIds.has(variantMessageId)) {
 				messageVariants.delete(variantMessageId);
 				currentVariantIndex.delete(variantMessageId);
 			}
 		}
-		
+
 		// Delete trailing messages from backend (including embeddings)
 		if (removedMessages.length > 0 && removedMessages[0].backend_id) {
 			try {
@@ -1232,7 +1261,7 @@
 				// Continue with regeneration even if cleanup fails
 			}
 		}
-		
+
 		// Generate new AI response based on the edited message
 		// Don't use sendMessage since we already have the user message - just trigger AI response
 		generateAIResponse();
@@ -1240,19 +1269,19 @@
 
 	function handlePreviousVariant(messageId: string) {
 		console.log('Previous variant:', messageId);
-		
+
 		const variants = messageVariants.get(messageId);
 		const currentIndex = currentVariantIndex.get(messageId) ?? 0;
-		
+
 		// Can't go back if we're at index 0 (original message)
 		if (currentIndex <= 0) return;
-		
+
 		const newIndex = currentIndex - 1;
 		currentVariantIndex.set(messageId, newIndex);
-		
+
 		// Update the message content with the previous variant
 		if (variants && newIndex < variants.length) {
-			messages = messages.map(msg => {
+			messages = messages.map((msg) => {
 				if (msg.id === messageId) {
 					return {
 						...msg,
@@ -1266,17 +1295,17 @@
 
 	function handleNextVariant(messageId: string) {
 		console.log('Next variant / Regenerate:', messageId);
-		
+
 		const variants = messageVariants.get(messageId) || [];
 		const currentIndex = currentVariantIndex.get(messageId) ?? 0;
-		
+
 		// If we have saved variants and we're not at the latest one
 		if (variants.length > 0 && currentIndex < variants.length - 1) {
 			// Show next variant
 			const newIndex = currentIndex + 1;
 			currentVariantIndex.set(messageId, newIndex);
-			
-			messages = messages.map(msg => {
+
+			messages = messages.map((msg) => {
 				if (msg.id === messageId) {
 					return {
 						...msg,
@@ -1375,11 +1404,7 @@
 				}}
 			>
 				{#if !readonly}
-					<MultimodalInput
-						bind:value={chatInput}
-						{isLoading}
-						{stopGeneration}
-					/>
+					<MultimodalInput bind:value={chatInput} {isLoading} {stopGeneration} />
 				{/if}
 			</form>
 		</div>

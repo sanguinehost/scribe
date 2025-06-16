@@ -25,6 +25,15 @@ export default defineConfig({
 				headers: {
 					Host: 'localhost:5173',
 					Origin: 'https://localhost:5173'
+				},
+				// Exclude frontend-only endpoints from being proxied to backend
+				bypass: (req) => {
+					// Let SvelteKit handle invalidate-session
+					if (req.url?.includes('/api/invalidate-session')) {
+						return req.url;
+					}
+					// All other /api requests go to backend
+					return null;
 				}
 			}
 		}

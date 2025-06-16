@@ -38,7 +38,9 @@
 
 		// Set up global listener for auth:invalidated events (for any legacy components)
 		const handleAuthInvalidated = () => {
-			console.log('[Layout] Global auth:invalidated event received, redirecting to signin');
+			console.log(
+				'[Layout] Global auth:invalidated event received (legacy), redirecting to signin'
+			);
 			setUnauthenticated();
 			goto('/signin');
 		};
@@ -71,6 +73,8 @@
 				description: 'Server is back online. You can continue using the app.',
 				duration: 3000
 			});
+			// Force session revalidation now that connection is restored
+			initializeAuth(true);
 		};
 
 		window.addEventListener('auth:connection-error', handleConnectionError);
@@ -82,7 +86,7 @@
 			() => {
 				// Only check if user thinks they're authenticated
 				if (getIsAuthenticated()) {
-					initializeAuth(); // This will call /api/auth/me and handle 401s
+					initializeAuth(true); // Force recheck to bypass cached promise
 				}
 			},
 			5 * 60 * 1000
