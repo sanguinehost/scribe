@@ -27,6 +27,7 @@ class SidebarState {
 	setOpen: SidebarStateProps['setOpen'];
 	#isMobile: IsMobile;
 	state = $derived.by(() => (this.open ? 'expanded' : 'collapsed'));
+	openedByHover = $state(false);
 
 	constructor(props: SidebarStateProps) {
 		this.setOpen = props.setOpen;
@@ -53,7 +54,13 @@ class SidebarState {
 	};
 
 	toggle = () => {
+		this.openedByHover = false; // Regular toggle clears hover state
 		return this.#isMobile.current ? (this.openMobile = !this.openMobile) : this.setOpen(!this.open);
+	};
+
+	setOpenByHover = (open: boolean) => {
+		this.openedByHover = open;
+		this.setOpen(open);
 	};
 }
 

@@ -8,6 +8,7 @@
 		SidebarHeader,
 		SidebarMenu
 	} from './ui/sidebar';
+	import ChevronLeft from './icons/chevron-left.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import SidebarUserNav from './sidebar-user-nav.svelte';
@@ -189,6 +190,15 @@
 						Scribe
 					</span>
 				</a>
+				<!-- Collapse button on desktop -->
+				<Button
+					variant="ghost"
+					size="icon"
+					class="hidden h-8 w-8 md:flex"
+					onclick={() => context.toggle()}
+				>
+					<ChevronLeft class="h-4 w-4" />
+				</Button>
 			</div>
 		</SidebarMenu>
 	</SidebarHeader>

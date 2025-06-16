@@ -68,6 +68,23 @@
 					: 'group-data-[collapsible=icon]:w-[var(--sidebar-width-icon)]'
 			)}
 		></div>
+		
+		<!-- Hover trigger zone when sidebar is collapsed -->
+		{#if sidebar.state === 'collapsed'}
+			<div
+				class="fixed left-0 top-0 z-50 h-svh w-2 bg-border/30 hover:bg-primary/20 hover:w-3 cursor-pointer transition-all duration-200"
+				onmouseenter={() => sidebar.setOpenByHover(true)}
+				role="button"
+				tabindex="0"
+				aria-label="Expand sidebar"
+				onkeydown={(e) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						sidebar.setOpenByHover(true);
+					}
+				}}
+			></div>
+		{/if}
 		<div
 			class={cn(
 				'fixed inset-y-0 z-10 hidden h-svh w-[var(--sidebar-width)] transition-[left,right,width] duration-200 ease-linear md:flex',
@@ -80,6 +97,16 @@
 					: 'group-data-[collapsible=icon]:w-[var(--sidebar-width-icon)] group-data-[side=left]:border-r group-data-[side=right]:border-l',
 				className
 			)}
+			onmouseleave={() => {
+				// Auto-collapse when mouse leaves if opened by hover trigger
+				if (sidebar.state === 'expanded' && sidebar.openedByHover) {
+					setTimeout(() => {
+						if (sidebar.openedByHover) {
+							sidebar.setOpenByHover(false);
+						}
+					}, 300);
+				}
+			}}
 			{...restProps}
 		>
 			<div

@@ -7,22 +7,25 @@
 	const sidebar = useSidebar();
 </script>
 
-<TooltipProvider>
-	<Tooltip>
-		<TooltipTrigger>
-			{#snippet child({ props })}
-				<Button
-					{...props}
-					onclick={() => {
-						sidebar.toggle();
-					}}
-					variant="outline"
-					class="md:h-fit md:px-2"
-				>
-					<SidebarLeftIcon />
-				</Button>
-			{/snippet}
-		</TooltipTrigger>
-		<TooltipContent align="start">Toggle Sidebar</TooltipContent>
-	</Tooltip>
-</TooltipProvider>
+<!-- Show on mobile always, and on desktop only when sidebar is closed -->
+<div class="{sidebar.state === 'collapsed' ? '' : 'md:hidden'}">
+	<TooltipProvider>
+		<Tooltip>
+			<TooltipTrigger>
+				{#snippet child({ props })}
+					<Button
+						{...props}
+						onclick={() => {
+							sidebar.toggle();
+						}}
+						variant="outline"
+						class="h-fit px-2"
+					>
+						<SidebarLeftIcon />
+					</Button>
+				{/snippet}
+			</TooltipTrigger>
+			<TooltipContent align="start">Toggle Sidebar</TooltipContent>
+		</Tooltip>
+	</TooltipProvider>
+</div>
