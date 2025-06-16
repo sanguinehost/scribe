@@ -210,10 +210,10 @@
 </script>
 
 <Tooltip.Provider>
-	<div bind:this={containerRef} class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll pt-4">
+	<div bind:this={containerRef} class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(mounted && messages.length === 0) || settingsStore.isVisible ? '' : 'pt-4'}">
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
 		{#if settingsStore.isVisible}
-			<div class="relative">
+			<div class="relative flex-1 flex items-center justify-center">
 				{#key settingsStore.viewMode}
 					{#if settingsStore.viewMode === 'overview'}
 						<div in:fly={{ y: 30, duration: 400, easing: quintOut }} out:fade={{ duration: 200 }}>
@@ -230,7 +230,7 @@
 
 		<!-- Empty Chat Placeholders (only if chat is empty AND settings are NOT visible) -->
 		{#if mounted && messages.length === 0 && !settingsStore.isVisible}
-			<div class="relative">
+			<div class="relative flex-1 flex">
 				<!-- Apply same smooth transition approach as sidebar -->
 				<div
 					class="main-content-view"

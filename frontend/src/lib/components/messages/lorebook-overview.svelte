@@ -109,7 +109,8 @@
 	}
 </script>
 
-<div class="relative mx-auto max-w-6xl px-4">
+<div class="w-full px-4">
+<div class="relative mx-auto max-w-6xl">
 	<LorebookList
 		lorebooks={lorebookStore.lorebooks}
 		isLoading={lorebookStore.isLoading}
@@ -178,6 +179,7 @@
 		}}
 		onExport={handleExportFormat}
 	/>
+</div>
 </div>
 
 <ImportLorebookDialog

@@ -171,8 +171,9 @@
 	}
 </script>
 
+<div class="w-full px-4">
 <div
-	class="relative mx-auto max-w-6xl px-4"
+	class="relative mx-auto max-w-6xl"
 	style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
 >
 	<!-- Show error state or not found state immediately -->
@@ -254,4 +255,5 @@
 		onClose={() => (showExportDialog = false)}
 		onExport={handleExportFormat}
 	/>
+</div>
 </div>
