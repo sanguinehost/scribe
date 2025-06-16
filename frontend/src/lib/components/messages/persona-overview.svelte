@@ -306,10 +306,11 @@
 </script>
 
 <div
-	class="mx-auto max-w-6xl px-4"
+	class="flex h-full w-full items-center justify-center px-4"
 	in:slideAndFade={{ y: 20, duration: 300 }}
 	out:slideAndFade={{ y: -20, duration: 200 }}
 >
+<div class="mx-auto max-w-6xl w-full">
 	<div
 		class="space-y-6"
 		style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
@@ -482,6 +483,7 @@
 			</Card>
 		{/if}
 	</div>
+</div>
 </div>
 
 <!-- Delete Confirmation Dialog -->

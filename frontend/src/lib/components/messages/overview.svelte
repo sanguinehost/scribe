@@ -5,8 +5,9 @@
 	import { quintOut } from 'svelte/easing';
 </script>
 
-<div class="mx-auto max-w-3xl md:mt-20">
-	<div class="flex max-w-xl flex-col gap-8 rounded-xl p-6 text-center leading-relaxed">
+<div class="flex h-full w-full items-start justify-center p-6 pt-[20vh]">
+	<div class="max-w-3xl">
+		<div class="flex max-w-xl flex-col gap-8 rounded-xl p-6 text-center leading-relaxed mx-auto">
 		<p class="flex flex-row items-center justify-center gap-4">
 			<!-- Using a generic Pen Tool icon as a placeholder -->
 			<svg
@@ -48,5 +49,6 @@
 		</p>
 
 		<!-- Removed settings button div -->
+		</div>
 	</div>
 </div>
