@@ -8,6 +8,7 @@
 	import { toast } from 'svelte-sonner';
 	import { Button } from './ui/button';
 	import StopIcon from './icons/stop.svelte';
+	import ImpersonateWidget from './impersonate-widget.svelte';
 	// import { replaceState } from '$app/navigation'; // Unused? Let's remove for cleanup.
 
 	// Props definition
@@ -16,6 +17,8 @@
 		value: string;
 		isLoading: boolean;
 		stopGeneration: () => void;
+		chatId?: string; // Add chatId for impersonate/expand features
+		onImpersonate?: (response: string) => void; // Callback for impersonate results
 		class?: string;
 	};
 
@@ -24,6 +27,8 @@
 		value = $bindable(),
 		isLoading = false,
 		stopGeneration,
+		chatId,
+		onImpersonate,
 		class: c
 	}: Props = $props();
 
@@ -41,9 +46,12 @@
 	});
 
 	// Effect to adjust textarea height based on value changes
-	$effect.pre(() => {
+	$effect(() => {
 		if (textareaElement && value !== undefined) {
-			adjustHeight();
+			// Use a small delay to ensure DOM has updated after value change
+			requestAnimationFrame(() => {
+				adjustHeight();
+			});
 		}
 	});
 
@@ -78,6 +86,27 @@
 				textareaElement = null;
 			}
 		};
+	}
+
+	// Handle text expansion from impersonate widget
+	function handleTextExpansion(expandedText: string) {
+		value = expandedText;
+		// Ensure height is adjusted after setting the value
+		// Use requestAnimationFrame to ensure the DOM has updated
+		requestAnimationFrame(() => {
+			adjustHeight();
+			// Focus the textarea after expansion
+			if (textareaElement) {
+				textareaElement.focus();
+			}
+		});
+	}
+
+	// Handle impersonate results
+	function handleImpersonateResults(response: string) {
+		if (onImpersonate) {
+			onImpersonate(response);
+		}
 	}
 </script>
 
@@ -125,6 +154,10 @@
 				c
 			)}
 			rows={2}
+			oninput={() => {
+				// Ensure height adjusts on any input change
+				adjustHeight();
+			}}
 			onkeydown={(event: KeyboardEvent) => {
 				if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
 					event.preventDefault();
@@ -134,7 +167,16 @@
 			}}
 		></textarea>
 
-		<div class="absolute bottom-0 right-0 flex w-fit flex-row justify-end p-4">
+		<div class="absolute bottom-0 right-0 flex w-fit flex-row items-center gap-1 p-4">
+			{#if chatId}
+				<ImpersonateWidget
+					{value}
+					{chatId}
+					onExpand={handleTextExpansion}
+					onImpersonate={handleImpersonateResults}
+					disabled={isLoading}
+				/>
+			{/if}
 			{#if isLoading}
 				{@render stopButton()}
 			{/if}

@@ -35,7 +35,11 @@ import type {
 	UpdateChatSessionSettingsRequest,
 	ChatSessionSettingsResponse,
 	UserSettingsResponse,
-	UpdateUserSettingsRequest
+	UpdateUserSettingsRequest,
+	ExpandTextRequest,
+	ExpandTextResponse,
+	ImpersonateRequest,
+	ImpersonateResponse
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -821,6 +825,24 @@ class ApiClient {
 		return this.fetch<ScribeMinimalLorebook | LorebookUploadPayload>(
 			`/api/lorebooks/${lorebookId}/export?format=${format}`
 		);
+	}
+
+	// Text expansion method
+	async expandText(chatId: string, originalText: string): Promise<Result<ExpandTextResponse, ApiError>> {
+		const payload: ExpandTextRequest = { original_text: originalText };
+		return this.fetch<ExpandTextResponse>(`/api/chat/${chatId}/expand`, {
+			method: 'POST',
+			body: JSON.stringify(payload)
+		});
+	}
+
+	// Impersonate method - generates user actions based on chat context
+	async impersonate(chatId: string): Promise<Result<ImpersonateResponse, ApiError>> {
+		const payload: ImpersonateRequest = {};
+		return this.fetch<ImpersonateResponse>(`/api/chat/${chatId}/impersonate`, {
+			method: 'POST',
+			body: JSON.stringify(payload)
+		});
 	}
 }
 

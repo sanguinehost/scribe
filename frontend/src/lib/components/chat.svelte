@@ -97,6 +97,9 @@
 	let dynamicSuggestedActions = $state<Array<{ action: string }>>([]);
 	let isLoadingSuggestions = $state(false);
 
+	// --- Impersonate Response State ---
+	// Removed - impersonate now directly sets input text
+
 	// --- Chat Config Sidebar State ---
 	let isChatConfigOpen = $state(false);
 	let availablePersonas = $state<UserPersona[]>([]);
@@ -1395,6 +1398,7 @@
 			</div>
 		{/if}
 
+
 		<!-- Message Input Form -->
 		<div class="mx-auto w-full px-4 pb-4 md:max-w-3xl md:pb-6">
 			<form
@@ -1404,7 +1408,15 @@
 				}}
 			>
 				{#if !readonly}
-					<MultimodalInput bind:value={chatInput} {isLoading} {stopGeneration} />
+					<MultimodalInput 
+						bind:value={chatInput} 
+						{isLoading} 
+						{stopGeneration} 
+						chatId={chat?.id}
+						onImpersonate={(response) => {
+							chatInput = response;
+						}}
+					/>
 				{/if}
 			</form>
 		</div>

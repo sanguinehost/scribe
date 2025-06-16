@@ -564,3 +564,21 @@ export interface UserSettingsResponse {
 	created_at: string;
 	updated_at: string;
 }
+
+// Text expansion types
+export interface ExpandTextRequest {
+	original_text: string;
+}
+
+export interface ExpandTextResponse {
+	expanded_text: string;
+}
+
+// Impersonate request (for generating full user response)
+export interface ImpersonateRequest {
+	// Empty for now, uses chat context
+}
+
+export interface ImpersonateResponse {
+	generated_response: string;
+}

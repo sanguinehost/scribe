@@ -10,7 +10,11 @@ use crate::models::chats::CreateChatSessionPayload;
 use crate::models::chats::{
     Chat,
     CreateMessageVariantPayload,
+    ExpandTextRequest,
+    ExpandTextResponse,
     GenerateChatRequest,
+    ImpersonateRequest,
+    ImpersonateResponse,
     MessageRole,
     MessageVariantDto,
     SuggestedActionItem,
@@ -753,6 +757,8 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
             "/:session_id/suggested-actions",
             post(generate_suggested_actions),
         )
+        .route("/:session_id/expand", post(expand_text_handler))
+        .route("/:session_id/impersonate", post(impersonate_handler))
         .route("/ping", get(ping_handler))
         .route(
             "/:chat_id/settings",
@@ -1315,6 +1321,549 @@ pub async fn create_or_update_chat_character_override_handler(
     info!(override_id = %upserted_override.id, "Chat character override created/updated successfully via handler calling service");
 
     Ok(Json(upserted_override))
+}
+
+// ============================================================================
+// Text Expansion Handler
+// ============================================================================
+
+#[instrument(skip(state, auth_session, _session_dek), fields(user_id, session_id))]
+pub async fn expand_text_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Path(session_id): Path<Uuid>,
+    _session_dek: SessionDek,
+    Json(payload): Json<ExpandTextRequest>,
+) -> Result<Json<ExpandTextResponse>, AppError> {
+    info!("Entering expand_text_handler for session_id: {}", session_id);
+
+    // Validate the payload
+    payload.validate().map_err(|e| {
+        warn!("Validation failed for expand text request: {}", e);
+        AppError::BadRequest(format!("Invalid request: {}", e))
+    })?;
+
+    let user = auth_session.user.ok_or_else(|| {
+        error!("User not found in session for text expansion (session_id: {})", session_id);
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+    let user_id = user.id;
+    tracing::Span::current().record("user_id", tracing::field::display(user_id));
+    tracing::Span::current().record("session_id", tracing::field::display(session_id));
+
+    // Verify chat session ownership
+    let chat_session_owner_id = state
+        .pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(chat_sessions::user_id)
+                .first::<Uuid>(conn)
+                .optional()
+        })
+        .await??
+        .ok_or_else(|| AppError::NotFound(format!("Chat session {session_id} not found")))?;
+
+    if chat_session_owner_id != user_id {
+        error!(
+            "User {} attempted to expand text for chat session {} owned by {}",
+            user_id, session_id, chat_session_owner_id
+        );
+        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
+    }
+
+    // Get the active persona for this chat session
+    let _chat_settings = state
+        .pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(chat_sessions::active_custom_persona_id)
+                .first::<Option<Uuid>>(conn)
+        })
+        .await??;
+
+    // Use the full generation pipeline for text expansion - same as impersonate but with different system prompt
+    
+    // Get the existing chat messages to build proper context
+    let messages_result = state
+        .pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            use crate::schema::chat_messages;
+            chat_messages::table
+                .filter(chat_messages::session_id.eq(session_id))
+                .order(chat_messages::created_at.asc())
+                .select(crate::models::chats::ChatMessage::as_select())
+                .load(conn)
+        })
+        .await??;
+
+    // Build the chat history in the format expected by the generation service
+    let mut chat_history = Vec::new();
+    
+    // Decrypt and convert existing messages to API format
+    for db_message in messages_result.iter() {
+        let decrypted_content = if let Some(nonce) = &db_message.content_nonce {
+            match crate::crypto::decrypt_gcm(&db_message.content, nonce, &_session_dek.0) {
+                Ok(content) => String::from_utf8_lossy(content.expose_secret()).to_string(),
+                Err(_) => continue, // Skip messages we can't decrypt
+            }
+        } else {
+            // Fallback for unencrypted content (shouldn't happen in production)
+            String::from_utf8_lossy(&db_message.content).to_string()
+        };
+
+        let api_message = crate::models::chats::ApiChatMessage {
+            role: match db_message.message_type {
+                MessageRole::User => "user".to_string(),
+                MessageRole::Assistant => "assistant".to_string(),
+                MessageRole::System => "system".to_string(),
+            },
+            content: decrypted_content,
+        };
+        chat_history.push(api_message);
+    }
+    
+    // Add a special instruction for text expansion
+    let expansion_instruction = crate::models::chats::ApiChatMessage {
+        role: "user".to_string(),
+        content: format!("[EXPAND: Take this brief text and expand it into a more detailed, natural response while maintaining perfect consistency with the conversation's established tone, style, setting, and voice. Original text: '{}']", payload.original_text),
+    };
+    chat_history.push(expansion_instruction);
+
+    // Use the existing generation infrastructure
+    let state_arc = Arc::new(state);
+    let user_dek_arc = Arc::new(_session_dek.0);
+    
+    // Clone the state_arc for later use in deletion
+    let delete_state = state_arc.clone();
+    
+    // Get session data and model configuration like the normal chat flow does
+    let session_data = state_arc
+        .pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            use crate::schema::chat_sessions;
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select((
+                    chat_sessions::history_management_strategy,
+                    chat_sessions::history_management_limit,
+                    chat_sessions::model_name,
+                    chat_sessions::temperature,
+                    chat_sessions::max_output_tokens,
+                    chat_sessions::frequency_penalty,
+                    chat_sessions::presence_penalty,
+                    chat_sessions::top_k,
+                    chat_sessions::top_p,
+                    chat_sessions::stop_sequences,
+                    chat_sessions::seed,
+                    chat_sessions::active_custom_persona_id,
+                ))
+                .first::<(String, i32, String, Option<bigdecimal::BigDecimal>, Option<i32>, Option<bigdecimal::BigDecimal>, Option<bigdecimal::BigDecimal>, Option<i32>, Option<bigdecimal::BigDecimal>, Option<Vec<Option<String>>>, Option<i32>, Option<Uuid>)>(conn)
+        })
+        .await??;
+
+    // Build the special system prompt for text expansion with full context awareness
+    let mut expansion_system_prompt = "You are a text expansion assistant helping the USER (not the character) expand their brief input text. ".to_string();
+    
+    // Add persona context if available
+    if let Some(persona_id) = session_data.11 {
+        expansion_system_prompt.push_str(&format!(
+            "The user has an active persona (ID: {}) - expand the text AS THE USER/PERSONA would write it. ", persona_id
+        ));
+    }
+    
+    expansion_system_prompt.push_str(
+        "CRITICAL INSTRUCTIONS:
+        1. You are expanding text that the USER wants to send, NOT generating a response from the character/AI
+        2. Write the expanded text in the USER's voice, maintaining their persona and writing style
+        3. Use ALL conversation context to maintain consistency with established tone and setting
+        4. Keep the user's original meaning and intent completely intact
+        5. Make the text more detailed and natural within the conversation context
+        6. Write as if you ARE the user/persona, not as the character responding to them
+        7. Do NOT write from the character's perspective or as a response to the user
+        
+        When the user asks you to expand text, take their brief input and elaborate it while writing AS THE USER."
+    );
+
+    // Convert API messages to GenAI format for the generation service
+    let mut genai_messages = chat_history.into_iter().map(|msg| {
+        GenAiChatMessage {
+            role: match msg.role.as_str() {
+                "user" => ChatRole::User,
+                "assistant" => ChatRole::Assistant,
+                "system" => ChatRole::System,
+                _ => ChatRole::User,
+            },
+            content: MessageContent::Text(msg.content),
+            options: None,
+        }
+    }).collect::<Vec<_>>();
+    
+    // Add the user's text to be expanded as the final message
+    genai_messages.push(GenAiChatMessage {
+        role: ChatRole::User,
+        content: MessageContent::Text(format!("Please expand this text: \"{}\"", payload.original_text)),
+        options: None,
+    });
+
+    // Create StreamAiParams for the generation service with full pipeline
+    let stream_params = chat::generation::StreamAiParams {
+        state: state_arc,
+        session_id,
+        user_id,
+        incoming_genai_messages: genai_messages,
+        system_prompt: Some(expansion_system_prompt),
+        temperature: session_data.3,
+        max_output_tokens: session_data.4,
+        frequency_penalty: session_data.5,
+        presence_penalty: session_data.6,
+        top_k: session_data.7,
+        top_p: session_data.8,
+        stop_sequences: session_data.9.and_then(|seq| {
+            seq.into_iter().collect::<Option<Vec<String>>>()
+        }),
+        seed: session_data.10,
+        model_name: session_data.2,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: Some(false),
+        request_thinking: false,
+        user_dek: Some(user_dek_arc),
+    };
+
+    // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
+    let mut response_stream = chat::generation::stream_ai_response_and_save_message(stream_params).await?;
+    
+    // Collect the response 
+    let mut expanded_text = String::new();
+    
+    while let Some(event_result) = response_stream.next().await {
+        match event_result {
+            Ok(event) => {
+                match event {
+                    chat::types::ScribeSseEvent::Content(content) => {
+                        expanded_text.push_str(&content);
+                    }
+                    chat::types::ScribeSseEvent::Error(error_msg) => {
+                        error!("Error in expansion stream: {}", error_msg);
+                        return Err(AppError::BadGateway("Failed to expand text".to_string()));
+                    }
+                    _ => {
+                        // Skip other event types (thinking, etc.)
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Error in expansion stream: {}", e);
+                return Err(AppError::BadGateway("Failed to expand text".to_string()));
+            }
+        }
+    }
+    
+    // Delete the most recent message since we don't want it saved for expansion
+    // The generation service will have just created a message, so we find and delete the most recent one
+    let delete_session_id = session_id;
+    let _ = delete_state
+        .pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            use crate::schema::chat_messages;
+            // Find the most recent message for this session and delete it (it will be the AI response we just generated)
+            if let Ok(recent_message) = chat_messages::table
+                .filter(chat_messages::session_id.eq(delete_session_id))
+                .order(chat_messages::created_at.desc())
+                .select(crate::models::chats::ChatMessage::as_select())
+                .first(conn)
+            {
+                let _ = diesel::delete(chat_messages::table.filter(chat_messages::id.eq(recent_message.id)))
+                    .execute(conn);
+                debug!("Deleted expansion message with ID: {}", recent_message.id);
+            }
+        })
+        .await;
+
+    if expanded_text.trim().is_empty() {
+        warn!("AI returned empty text expansion");
+        return Err(AppError::BadGateway("AI failed to generate expanded text".to_string()));
+    }
+
+    info!("Text expansion completed successfully for session_id: {}", session_id);
+    Ok(Json(ExpandTextResponse {
+        expanded_text: expanded_text.trim().to_string(),
+    }))
+}
+
+// ============================================================================
+// Impersonate Handler
+// ============================================================================
+
+#[instrument(skip(state, auth_session, session_dek), fields(user_id, session_id))]
+pub async fn impersonate_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Path(session_id): Path<Uuid>,
+    session_dek: SessionDek,
+    Json(payload): Json<ImpersonateRequest>,
+) -> Result<Json<ImpersonateResponse>, AppError> {
+    info!("Entering impersonate_handler for session_id: {}", session_id);
+
+    // Validate the payload
+    payload.validate().map_err(|e| {
+        warn!("Validation failed for impersonate request: {}", e);
+        AppError::BadRequest(format!("Invalid request: {}", e))
+    })?;
+
+    let user = auth_session.user.ok_or_else(|| {
+        error!("User not found in session for impersonation (session_id: {})", session_id);
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+    let user_id = user.id;
+    tracing::Span::current().record("user_id", tracing::field::display(user_id));
+    tracing::Span::current().record("session_id", tracing::field::display(session_id));
+
+    // Verify chat session ownership
+    let chat_session_owner_id = state
+        .pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(chat_sessions::user_id)
+                .first::<Uuid>(conn)
+                .optional()
+        })
+        .await??
+        .ok_or_else(|| AppError::NotFound(format!("Chat session {session_id} not found")))?;
+
+    if chat_session_owner_id != user_id {
+        error!(
+            "User {} attempted to impersonate for chat session {} owned by {}",
+            user_id, session_id, chat_session_owner_id
+        );
+        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
+    }
+
+    // Use the existing chat generation infrastructure but with an "impersonation" system prompt
+    // This will include RAG, persona context, and all the same features as regular chat
+    
+    // Get the existing chat messages to build proper context
+    let messages_result = state
+        .pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            use crate::schema::chat_messages;
+            chat_messages::table
+                .filter(chat_messages::session_id.eq(session_id))
+                .order(chat_messages::created_at.asc())
+                .select(crate::models::chats::ChatMessage::as_select())
+                .load(conn)
+        })
+        .await??;
+
+    // Build the chat history in the format expected by the generation service
+    let mut chat_history = Vec::new();
+    
+    // Decrypt and convert existing messages to API format
+    for db_message in messages_result.iter() {
+        let decrypted_content = if let Some(nonce) = &db_message.content_nonce {
+            match crate::crypto::decrypt_gcm(&db_message.content, nonce, &session_dek.0) {
+                Ok(content) => String::from_utf8_lossy(content.expose_secret()).to_string(),
+                Err(_) => continue, // Skip messages we can't decrypt
+            }
+        } else {
+            // Fallback for unencrypted content (shouldn't happen in production)
+            String::from_utf8_lossy(&db_message.content).to_string()
+        };
+
+        let api_message = crate::models::chats::ApiChatMessage {
+            role: match db_message.message_type {
+                MessageRole::User => "user".to_string(),
+                MessageRole::Assistant => "assistant".to_string(),
+                MessageRole::System => "system".to_string(),
+            },
+            content: decrypted_content,
+        };
+        chat_history.push(api_message);
+    }
+    
+    // Add a special system message to instruct the AI to impersonate the user
+    let impersonation_instruction = crate::models::chats::ApiChatMessage {
+        role: "user".to_string(),
+        content: "[IMPERSONATE: You are now speaking as the user persona. Generate a natural response that the user would make in this conversation context. Respond only as the user, not as an assistant.]".to_string(),
+    };
+    chat_history.push(impersonation_instruction);
+
+    // Create the generation request using the existing chat pipeline
+    let generation_request = GenerateChatRequest {
+        history: chat_history,
+        model: None, // Use chat's configured model
+        query_text_for_rag: Some("What should the user say in response to this conversation?".to_string()),
+    };
+
+    // Call the existing generate_chat_response handler logic but collect the response
+    // instead of streaming it directly to the client
+    
+    // Use the chat generation service infrastructure directly
+    let state_arc = Arc::new(state);
+    let user_dek_arc = Arc::new(session_dek.0);
+    
+    // Clone the state_arc for later use in deletion
+    let delete_state = state_arc.clone();
+    
+    // Get session data and model configuration like the normal chat flow does
+    let session_data = state_arc
+        .pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            use crate::schema::chat_sessions;
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select((
+                    chat_sessions::history_management_strategy,
+                    chat_sessions::history_management_limit,
+                    chat_sessions::model_name,
+                    chat_sessions::temperature,
+                    chat_sessions::max_output_tokens,
+                    chat_sessions::frequency_penalty,
+                    chat_sessions::presence_penalty,
+                    chat_sessions::top_k,
+                    chat_sessions::top_p,
+                    chat_sessions::stop_sequences,
+                    chat_sessions::seed,
+                    chat_sessions::active_custom_persona_id,
+                ))
+                .first::<(String, i32, String, Option<bigdecimal::BigDecimal>, Option<i32>, Option<bigdecimal::BigDecimal>, Option<bigdecimal::BigDecimal>, Option<i32>, Option<bigdecimal::BigDecimal>, Option<Vec<Option<String>>>, Option<i32>, Option<Uuid>)>(conn)
+        })
+        .await??;
+
+    // Build the special system prompt for impersonation
+    let mut impersonation_system_prompt = "You are impersonating the user in this conversation. ".to_string();
+    
+    // Add persona context if available
+    if let Some(persona_id) = session_data.11 {
+        impersonation_system_prompt.push_str(&format!(
+            "You are speaking AS the user persona (ID: {}). ", persona_id
+        ));
+    }
+    
+    impersonation_system_prompt.push_str(
+        "Generate a natural response that this user would make given the conversation context. \
+        Respond only as the user character, not as an assistant. Use the user's personality, \
+        speaking style, and context from the conversation history and any retrieved information. \
+        Do not break character or mention that you are an AI."
+    );
+
+    // Convert API messages to GenAI format for the generation service
+    let genai_messages = generation_request.history.into_iter().map(|msg| {
+        GenAiChatMessage {
+            role: match msg.role.as_str() {
+                "user" => ChatRole::User,
+                "assistant" => ChatRole::Assistant,
+                "system" => ChatRole::System,
+                _ => ChatRole::User,
+            },
+            content: MessageContent::Text(msg.content),
+            options: None,
+        }
+    }).collect();
+
+    // Create StreamAiParams for the generation service
+    let stream_params = chat::generation::StreamAiParams {
+        state: state_arc,
+        session_id,
+        user_id,
+        incoming_genai_messages: genai_messages,
+        system_prompt: Some(impersonation_system_prompt),
+        temperature: session_data.3,
+        max_output_tokens: session_data.4,
+        frequency_penalty: session_data.5,
+        presence_penalty: session_data.6,
+        top_k: session_data.7,
+        top_p: session_data.8,
+        stop_sequences: session_data.9.and_then(|seq| {
+            seq.into_iter().collect::<Option<Vec<String>>>()
+        }),
+        seed: session_data.10,
+        model_name: session_data.2,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: Some(false),
+        request_thinking: false,
+        user_dek: Some(user_dek_arc),
+    };
+
+    // Generate the response using the full pipeline
+    let mut response_stream = chat::generation::stream_ai_response_and_save_message(stream_params).await?;
+    
+    // Collect the response 
+    let mut generated_response = String::new();
+    
+    while let Some(event_result) = response_stream.next().await {
+        match event_result {
+            Ok(event) => {
+                match event {
+                    chat::types::ScribeSseEvent::Content(content) => {
+                        generated_response.push_str(&content);
+                    }
+                    chat::types::ScribeSseEvent::Error(error_msg) => {
+                        error!("Error in impersonation stream: {}", error_msg);
+                        return Err(AppError::BadGateway("Failed to generate response".to_string()));
+                    }
+                    _ => {
+                        // Skip other event types (thinking, etc.)
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Error in impersonation stream: {}", e);
+                return Err(AppError::BadGateway("Failed to generate response".to_string()));
+            }
+        }
+    }
+    
+    // Delete the most recent message since we don't want it saved for impersonation
+    // The generation service will have just created a message, so we find and delete the most recent one
+    let delete_session_id = session_id;
+    let _ = delete_state
+        .pool
+        .get()
+        .await?
+        .interact(move |conn| {
+            use crate::schema::chat_messages;
+            // Find the most recent message for this session and delete it (it will be the AI response we just generated)
+            if let Ok(recent_message) = chat_messages::table
+                .filter(chat_messages::session_id.eq(delete_session_id))
+                .order(chat_messages::created_at.desc())
+                .select(crate::models::chats::ChatMessage::as_select())
+                .first(conn)
+            {
+                let _ = diesel::delete(chat_messages::table.filter(chat_messages::id.eq(recent_message.id)))
+                    .execute(conn);
+                debug!("Deleted impersonation message with ID: {}", recent_message.id);
+            }
+        })
+        .await;
+    
+    if generated_response.trim().is_empty() {
+        warn!("AI returned empty impersonation response");
+        return Err(AppError::BadGateway("AI failed to generate response".to_string()));
+    }
+
+    info!("Impersonation completed successfully for session_id: {}", session_id);
+    Ok(Json(ImpersonateResponse {
+        generated_response: generated_response.trim().to_string(),
+    }))
 }
 
 // ============================================================================
