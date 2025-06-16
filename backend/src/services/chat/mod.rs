@@ -2,6 +2,7 @@
 
 pub mod generation;
 pub mod message_handling;
+pub mod message_variants;
 pub mod overrides;
 pub mod session_management;
 pub mod settings;

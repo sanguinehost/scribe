@@ -325,9 +325,9 @@
 				/>
 			{:else}
 				{@const variants = messageVariants?.get(message.id)}
-				{@const currentIndex = currentVariantIndex?.get(message.id) ?? (variants?.length ?? -1)}
-				{@const hasVariants = (variants?.length ?? 0) > 0}
-				{@const variantInfo = hasVariants ? { current: currentIndex, total: variants.length - 1 } : null}
+				{@const currentIndex = currentVariantIndex?.get(message.id) ?? ((variants?.length ?? 0) > 0 ? variants.length - 1 : 0)}
+				{@const hasVariants = (variants?.length ?? 0) > 0 || currentIndex > 0}
+				{@const variantInfo = hasVariants ? { current: currentIndex, total: (variants?.length ?? 1) - 1 } : null}
 				
 				<PreviewMessage 
 					{message} 

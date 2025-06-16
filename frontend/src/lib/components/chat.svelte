@@ -871,9 +871,9 @@
 		currentAbortController = new AbortController();
 		const signal = currentAbortController.signal;
 
-		// Add placeholder for assistant message
-		const assistantMessageId = crypto.randomUUID();
-		console.log('Created assistant message with ID:', assistantMessageId);
+		// Use the original message ID if provided (for variants), otherwise create a new one
+		const assistantMessageId = originalMessageId || crypto.randomUUID();
+		console.log('Using assistant message ID:', assistantMessageId, 'Original:', originalMessageId);
 
 		let assistantMessage: ScribeChatMessage = {
 			id: assistantMessageId,
@@ -1080,6 +1080,21 @@
 								console.log('Updated regenerated assistant message with backend ID:', matchingBackendMessage.id);
 							}
 							
+							// If this was a regeneration (variant), save the new content
+							if (originalMessageId && completedAssistantMessage) {
+								const variants = messageVariants.get(originalMessageId) || [];
+								
+								// Save the new variant
+								variants.push({
+									content: completedAssistantMessage.content,
+									timestamp: completedAssistantMessage.created_at || new Date().toISOString()
+								});
+								messageVariants.set(originalMessageId, variants);
+								
+								// Now update the current index to point to the newly created variant
+								currentVariantIndex.set(originalMessageId, variants.length - 1);
+							}
+							
 							const preview = completedAssistantMessage.content.trim().substring(0, 100);
 							chatHistory.updateChatPreview(chat.id, preview);
 						}
@@ -1101,7 +1116,7 @@
 	}
 
 	// Message action handlers
-	function handleRetryMessage(messageId: string) {
+	async function handleRetryMessage(messageId: string) {
 		if (!chat?.id || isLoading) return;
 		
 		console.log('Retry message:', messageId);
@@ -1113,17 +1128,20 @@
 		const targetMessage = messages[messageIndex];
 		if (targetMessage.message_type !== 'Assistant') return;
 		
-		// Save current message content as a variant before regenerating
-		if (targetMessage.content.trim()) {
-			const variants = messageVariants.get(messageId) || [];
+		// Initialize variants array if this is the first retry
+		let variants = messageVariants.get(messageId) || [];
+		
+		// If this is the first retry (no variants exist), save the original message as index 0
+		if (variants.length === 0 && targetMessage.content.trim()) {
 			variants.push({ 
 				content: targetMessage.content,
 				timestamp: targetMessage.created_at || new Date().toISOString()
 			});
 			messageVariants.set(messageId, variants);
-			// Set current index to the new variant we're about to generate
-			currentVariantIndex.set(messageId, variants.length);
 		}
+		
+		// Don't update the current index yet - wait until the new variant is actually generated
+		// This keeps the UI showing the current count (e.g., 2/2) until the new one exists
 		
 		// Find the previous user message to regenerate from
 		const userMessageIndex = messageIndex - 1;
@@ -1133,7 +1151,28 @@
 		if (userMessage.message_type !== 'User') return;
 		
 		// Remove the assistant message and any messages after it
+		const removedMessages = messages.slice(messageIndex);
 		messages = messages.slice(0, messageIndex);
+		
+		// Clean up variant data for any messages that will be removed (except the one we're regenerating)
+		for (const removedMsg of removedMessages) {
+			if (removedMsg.id !== messageId) {
+				messageVariants.delete(removedMsg.id);
+				currentVariantIndex.delete(removedMsg.id);
+			}
+		}
+		
+		// Delete trailing messages from backend (including embeddings)
+		// Only delete messages after the one we're regenerating
+		const messagesToDelete = removedMessages.filter(msg => msg.id !== messageId);
+		if (messagesToDelete.length > 0 && messagesToDelete[0].backend_id) {
+			try {
+				await apiClient.deleteTrailingMessages(messagesToDelete[0].backend_id);
+			} catch (err) {
+				console.warn('Failed to delete trailing messages from backend:', err);
+				// Continue with regeneration even if cleanup fails
+			}
+		}
 		
 		// Regenerate the response by calling the streaming logic directly
 		// Pass the original messageId so we can maintain variants
@@ -1146,7 +1185,7 @@
 		// This is currently only used for assistant messages (user messages use inline editing)
 	}
 
-	function handleSaveEditedMessage(messageId: string, newContent: string) {
+	async function handleSaveEditedMessage(messageId: string, newContent: string) {
 		console.log('Save edited message:', messageId, 'New content:', newContent);
 		
 		if (!chat?.id || isLoading) return;
@@ -1169,6 +1208,9 @@
 			return msg;
 		});
 		
+		// Get messages that will be removed for backend cleanup
+		const removedMessages = messages.slice(messageIndex + 1);
+		
 		// Clear all subsequent messages (everything after this user message)
 		messages = messages.slice(0, messageIndex + 1);
 		
@@ -1181,6 +1223,16 @@
 			}
 		}
 		
+		// Delete trailing messages from backend (including embeddings)
+		if (removedMessages.length > 0 && removedMessages[0].backend_id) {
+			try {
+				await apiClient.deleteTrailingMessages(removedMessages[0].backend_id);
+			} catch (err) {
+				console.warn('Failed to delete trailing messages from backend:', err);
+				// Continue with regeneration even if cleanup fails
+			}
+		}
+		
 		// Generate new AI response based on the edited message
 		// Don't use sendMessage since we already have the user message - just trigger AI response
 		generateAIResponse();
@@ -1190,34 +1242,36 @@
 		console.log('Previous variant:', messageId);
 		
 		const variants = messageVariants.get(messageId);
-		if (!variants || variants.length === 0) return;
+		const currentIndex = currentVariantIndex.get(messageId) ?? 0;
 		
-		const currentIndex = currentVariantIndex.get(messageId) ?? variants.length;
-		if (currentIndex <= 0) return; // Already at the oldest variant
+		// Can't go back if we're at index 0 (original message)
+		if (currentIndex <= 0) return;
 		
 		const newIndex = currentIndex - 1;
 		currentVariantIndex.set(messageId, newIndex);
 		
 		// Update the message content with the previous variant
-		messages = messages.map(msg => {
-			if (msg.id === messageId) {
-				return {
-					...msg,
-					content: variants[newIndex].content
-				};
-			}
-			return msg;
-		});
+		if (variants && newIndex < variants.length) {
+			messages = messages.map(msg => {
+				if (msg.id === messageId) {
+					return {
+						...msg,
+						content: variants[newIndex].content
+					};
+				}
+				return msg;
+			});
+		}
 	}
 
 	function handleNextVariant(messageId: string) {
 		console.log('Next variant / Regenerate:', messageId);
 		
-		const variants = messageVariants.get(messageId);
-		const currentIndex = currentVariantIndex.get(messageId) ?? -1;
+		const variants = messageVariants.get(messageId) || [];
+		const currentIndex = currentVariantIndex.get(messageId) ?? 0;
 		
 		// If we have saved variants and we're not at the latest one
-		if (variants && currentIndex < variants.length - 1) {
+		if (variants.length > 0 && currentIndex < variants.length - 1) {
 			// Show next variant
 			const newIndex = currentIndex + 1;
 			currentVariantIndex.set(messageId, newIndex);
