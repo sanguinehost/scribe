@@ -1749,6 +1749,59 @@ impl std::fmt::Debug for CreateMessageRequest {
     }
 }
 
+// Text expansion request and response for AI-powered text impersonation
+#[derive(Clone, Serialize, Deserialize, Validate)]
+pub struct ExpandTextRequest {
+    #[validate(length(min = 1, max = 2000))]
+    pub original_text: String,
+}
+
+impl std::fmt::Debug for ExpandTextRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExpandTextRequest")
+            .field("original_text", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ExpandTextResponse {
+    pub expanded_text: String,
+}
+
+impl std::fmt::Debug for ExpandTextResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExpandTextResponse")
+            .field("expanded_text", &"[REDACTED]")
+            .finish()
+    }
+}
+
+// Impersonate request and response for generating full user response
+#[derive(Clone, Serialize, Deserialize, Validate)]
+pub struct ImpersonateRequest {
+    // Empty for now, uses chat context
+}
+
+impl std::fmt::Debug for ImpersonateRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImpersonateRequest").finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ImpersonateResponse {
+    pub generated_response: String,
+}
+
+impl std::fmt::Debug for ImpersonateResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImpersonateResponse")
+            .field("generated_response", &"[REDACTED]")
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
