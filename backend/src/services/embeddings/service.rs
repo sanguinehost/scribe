@@ -667,6 +667,104 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         Ok(combined_results)
     }
 
+    /// Deletes all embedding chunks associated with specific message IDs.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::VectorDbError` if Qdrant deletion fails.
+    #[instrument(skip_all, fields(message_ids = ?message_ids, user_id = %user_id))]
+    async fn delete_message_chunks(
+        &self,
+        state: Arc<AppState>,
+        message_ids: Vec<Uuid>,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        if message_ids.is_empty() {
+            return Ok(());
+        }
+
+        info!("Attempting to delete chunks for {} messages", message_ids.len());
+
+        let qdrant_service = &state.qdrant_service;
+
+        // Create filter to match messages by IDs and user
+        let mut conditions = vec![
+            // Match user_id
+            Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "user_id".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                    }),
+                    ..Default::default()
+                })),
+            },
+            // Match source_type
+            Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "source_type".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword("chat_message".to_string())),
+                    }),
+                    ..Default::default()
+                })),
+            },
+        ];
+
+        // Add condition for message IDs (use OR logic for multiple message IDs)
+        if message_ids.len() == 1 {
+            conditions.push(Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "message_id".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword(message_ids[0].to_string())),
+                    }),
+                    ..Default::default()
+                })),
+            });
+        } else {
+            // For multiple message IDs, create a separate filter that uses "should" (OR) logic
+            let message_id_conditions: Vec<Condition> = message_ids.iter().map(|id| {
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "message_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                }
+            }).collect();
+
+            let filter = Filter {
+                must: conditions,
+                should: message_id_conditions,
+                ..Default::default()
+            };
+
+            qdrant_service.delete_points_by_filter(filter).await?;
+            info!(
+                "Successfully deleted chunks for {} messages for user {}",
+                message_ids.len(), user_id
+            );
+
+            return Ok(());
+        }
+
+        let filter = Filter {
+            must: conditions,
+            ..Default::default()
+        };
+
+        qdrant_service.delete_points_by_filter(filter).await?;
+        info!(
+            "Successfully deleted chunks for {} messages for user {}",
+            message_ids.len(), user_id
+        );
+
+        Ok(())
+    }
+
     #[instrument(skip_all, fields(original_lorebook_entry_id = %original_lorebook_entry_id, user_id = %user_id))]
     async fn delete_lorebook_entry_chunks(
         &self,

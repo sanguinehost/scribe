@@ -9,8 +9,10 @@ use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
 use crate::models::chats::CreateChatSessionPayload;
 use crate::models::chats::{
     Chat,
+    CreateMessageVariantPayload,
     GenerateChatRequest,
     MessageRole,
+    MessageVariantDto,
     SuggestedActionItem,
     SuggestedActionsRequest,
     SuggestedActionsResponse, // Corrected DbChatMessage to ChatMessage
@@ -761,11 +763,125 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
             "/overrides/:session_id",
             post(create_or_update_chat_character_override_handler).with_state(state.clone()),
         )
+        // Message variant routes
+        .route("/messages/:message_id/variants", 
+            get(get_message_variants_handler).post(create_message_variant_handler))
+        .route("/messages/:message_id/variants/:variant_index", 
+            get(get_message_variant_by_index_handler).delete(delete_message_variant_handler))
+        .route("/messages/:message_id/variants/count", 
+            get(get_variant_count_handler))
         .with_state(state)
 }
 
 async fn ping_handler() -> &'static str {
     "pong_from_chat_routes"
+}
+
+// Message variant handler functions
+
+/// Get all variants for a message
+async fn get_message_variants_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    session_dek: SessionDek,
+    Path(message_id): Path<Uuid>,
+) -> Result<Json<Vec<MessageVariantDto>>, AppError> {
+    let user = auth_session.user.as_ref().ok_or_else(|| {
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    let variants = crate::services::chat::message_variants::get_message_variants(
+        Arc::new(state),
+        message_id,
+        user.id,
+        &session_dek.0,
+    ).await?;
+
+    Ok(Json(variants))
+}
+
+/// Create a new variant for a message
+async fn create_message_variant_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    session_dek: SessionDek,
+    Path(message_id): Path<Uuid>,
+    Json(payload): Json<CreateMessageVariantPayload>,
+) -> Result<(StatusCode, Json<MessageVariantDto>), AppError> {
+    let user = auth_session.user.as_ref().ok_or_else(|| {
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    let variant = crate::services::chat::message_variants::create_message_variant(
+        Arc::new(state),
+        message_id,
+        &payload.content,
+        user.id,
+        &session_dek.0,
+    ).await?;
+
+    Ok((StatusCode::CREATED, Json(variant)))
+}
+
+/// Get a specific variant by index
+async fn get_message_variant_by_index_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    session_dek: SessionDek,
+    Path((message_id, variant_index)): Path<(Uuid, i32)>,
+) -> Result<Json<Option<MessageVariantDto>>, AppError> {
+    let user = auth_session.user.as_ref().ok_or_else(|| {
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    let variant = crate::services::chat::message_variants::get_message_variant_by_index(
+        Arc::new(state),
+        message_id,
+        variant_index,
+        user.id,
+        &session_dek.0,
+    ).await?;
+
+    Ok(Json(variant))
+}
+
+/// Delete a message variant
+async fn delete_message_variant_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Path((message_id, variant_index)): Path<(Uuid, i32)>,
+) -> Result<Json<bool>, AppError> {
+    let user = auth_session.user.as_ref().ok_or_else(|| {
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    let deleted = crate::services::chat::message_variants::delete_message_variant(
+        Arc::new(state),
+        message_id,
+        variant_index,
+        user.id,
+    ).await?;
+
+    Ok(Json(deleted))
+}
+
+/// Get variant count for a message
+async fn get_variant_count_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Path(message_id): Path<Uuid>,
+) -> Result<Json<i64>, AppError> {
+    let user = auth_session.user.as_ref().ok_or_else(|| {
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    let count = crate::services::chat::message_variants::get_variant_count(
+        Arc::new(state),
+        message_id,
+        user.id,
+    ).await?;
+
+    Ok(Json(count))
 }
 
 #[instrument(skip(state, auth_session, _payload), fields(session_id = %session_id))] // _payload as it's not used
@@ -1200,3 +1316,7 @@ pub async fn create_or_update_chat_character_override_handler(
 
     Ok(Json(upserted_override))
 }
+
+// ============================================================================
+// Message Variant Handlers
+// ============================================================================

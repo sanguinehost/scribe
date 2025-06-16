@@ -341,6 +341,22 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    message_variants (id) {
+        id -> Uuid,
+        parent_message_id -> Uuid,
+        variant_index -> Int4,
+        content -> Bytea,
+        content_nonce -> Nullable<Bytea>,
+        user_id -> Uuid,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     old_documents (id, created_at) {
         id -> Uuid,
         created_at -> Timestamptz,
@@ -522,6 +538,8 @@ diesel::joinable!(email_verification_tokens -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
 diesel::joinable!(lorebook_entries -> users (user_id));
 diesel::joinable!(lorebooks -> users (user_id));
+diesel::joinable!(message_variants -> chat_messages (parent_message_id));
+diesel::joinable!(message_variants -> users (user_id));
 diesel::joinable!(old_documents -> users (user_id));
 diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
@@ -542,6 +560,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     email_verification_tokens,
     lorebook_entries,
     lorebooks,
+    message_variants,
     old_documents,
     old_suggestions,
     old_votes,

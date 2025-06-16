@@ -612,6 +612,23 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         }, |response| response)
     }
 
+    async fn delete_message_chunks(
+        &self,
+        _state: Arc<AppState>,
+        message_ids: Vec<Uuid>,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        tracing::info!(
+            target: "mock_embedding_pipeline",
+            "MockEmbeddingPipelineService::delete_message_chunks called for {} messages, user_id: {}",
+            message_ids.len(), user_id
+        );
+        // In a real scenario, this would interact with Qdrant via QdrantClientService
+        // For the mock, we just log and return Ok.
+        // If tests need to verify this was called, they can check logs or add to `self.calls`.
+        Ok(())
+    }
+
     async fn delete_lorebook_entry_chunks(
         &self,
         _state: Arc<AppState>,

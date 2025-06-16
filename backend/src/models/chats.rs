@@ -1,4 +1,4 @@
-use crate::schema::{chat_messages, chat_sessions};
+use crate::schema::{chat_messages, chat_sessions, message_variants};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
@@ -1130,6 +1130,19 @@ impl std::fmt::Debug for GenerateResponsePayload {
         f.debug_struct("GenerateResponsePayload")
             .field("content", &"[REDACTED]")
             .field("model", &self.model)
+            .finish()
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct CreateMessageVariantPayload {
+    pub content: String,
+}
+
+impl std::fmt::Debug for CreateMessageVariantPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateMessageVariantPayload")
+            .field("content", &"[REDACTED]")
             .finish()
     }
 }
@@ -2300,5 +2313,133 @@ mod tests {
             ..Default::default()
         };
         assert!(none_settings.validate().is_ok());
+    }
+}
+
+// ============================================================================
+// Message Variants Models
+// ============================================================================
+
+/// Database model for message variants
+#[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone, Associations)]
+#[diesel(belongs_to(ChatMessage, foreign_key = parent_message_id))]
+#[diesel(table_name = message_variants)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct MessageVariant {
+    pub id: Uuid,
+    pub parent_message_id: Uuid,
+    pub variant_index: i32,
+    pub content: Vec<u8>, // Encrypted content
+    pub content_nonce: Option<Vec<u8>>,
+    pub user_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Insertable model for creating new message variants
+#[derive(Insertable, Serialize, Deserialize, Clone)]
+#[diesel(table_name = message_variants)]
+pub struct NewMessageVariant {
+    pub parent_message_id: Uuid,
+    pub variant_index: i32,
+    pub content: Vec<u8>, // Encrypted content
+    pub content_nonce: Option<Vec<u8>>,
+    pub user_id: Uuid,
+}
+
+impl MessageVariant {
+    /// Decrypt the content field using the provided DEK
+    pub fn decrypt_content(&self, dek: &SecretBox<Vec<u8>>) -> Result<String, AppError> {
+        if self.content.is_empty() {
+            return Ok(String::new());
+        }
+
+        let nonce = self.content_nonce.as_ref().ok_or_else(|| {
+            tracing::error!(
+                "MessageVariant ID {} content is present but nonce is missing. Cannot decrypt.",
+                self.id
+            );
+            AppError::DecryptionError("Missing nonce for content decryption".to_string())
+        })?;
+
+        if nonce.is_empty() {
+            tracing::error!(
+                "MessageVariant ID {} content is present but nonce is empty. Cannot decrypt.",
+                self.id
+            );
+            return Err(AppError::DecryptionError(
+                "Nonce is empty for content decryption".to_string(),
+            ));
+        }
+
+        let plaintext_secret = decrypt_gcm(&self.content, nonce, dek).map_err(|e| {
+            error!(
+                "Failed to decrypt message variant content for ID {}: {}",
+                self.id, e
+            );
+            AppError::DecryptionError(format!("Decryption failed for variant content: {e}"))
+        })?;
+
+        String::from_utf8(plaintext_secret.expose_secret().clone()).map_err(|e| {
+            tracing::error!(
+                "Failed to convert decrypted variant content to UTF-8: {}",
+                e
+            );
+            AppError::DecryptionError("Failed to convert variant content to UTF-8".to_string())
+        })
+    }
+}
+
+impl NewMessageVariant {
+    /// Create a new message variant with encrypted content
+    pub fn new(
+        parent_message_id: Uuid,
+        variant_index: i32,
+        content: &str,
+        user_id: Uuid,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<Self, AppError> {
+        let (encrypted_content, nonce) = encrypt_gcm(content.as_bytes(), dek)
+            .map_err(|e| AppError::CryptoError(e.to_string()))?;
+
+        Ok(Self {
+            parent_message_id,
+            variant_index,
+            content: encrypted_content,
+            content_nonce: Some(nonce),
+            user_id,
+        })
+    }
+}
+
+/// DTO for API responses containing decrypted variant data
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MessageVariantDto {
+    pub id: Uuid,
+    pub parent_message_id: Uuid,
+    pub variant_index: i32,
+    pub content: String, // Decrypted content
+    pub user_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl MessageVariantDto {
+    /// Convert from database model with decrypted content
+    pub fn from_model(
+        variant: MessageVariant,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<Self, AppError> {
+        let content = variant.decrypt_content(dek)?;
+
+        Ok(Self {
+            id: variant.id,
+            parent_message_id: variant.parent_message_id,
+            variant_index: variant.variant_index,
+            content,
+            user_id: variant.user_id,
+            created_at: variant.created_at,
+            updated_at: variant.updated_at,
+        })
     }
 }

@@ -1101,8 +1101,9 @@ pub async fn delete_trailing_messages_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     if !message_ids.is_empty() {
-        // Clone message_ids *before* the first closure moves the original
+        // Clone message_ids for different operations
         let message_ids_clone_for_messages = message_ids.clone();
+        let message_ids_clone_for_embeddings = message_ids.clone();
 
         // Delete associated votes first
         pool.get()
@@ -1121,7 +1122,17 @@ pub async fn delete_trailing_messages_handler(
             .await
             .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
-        // Now delete the messages
+        // Delete embeddings from Qdrant
+        if let Err(e) = state
+            .embedding_pipeline_service
+            .delete_message_chunks(Arc::new(state.clone()), message_ids_clone_for_embeddings, user.id)
+            .await
+        {
+            // Log error but don't fail the whole operation
+            tracing::warn!("Failed to delete message embeddings from Qdrant: {}", e);
+        }
+
+        // Now delete the messages from PostgreSQL
         pool.get()
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?

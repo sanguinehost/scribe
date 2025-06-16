@@ -25,6 +25,14 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         params: LorebookEntryParams,
     ) -> Result<(), AppError>;
 
+    /// Deletes all chunks associated with specific message IDs.
+    async fn delete_message_chunks(
+        &self,
+        state: Arc<AppState>,
+        message_ids: Vec<Uuid>,
+        user_id: Uuid,
+    ) -> Result<(), AppError>;
+
     /// Deletes all chunks associated with a specific lorebook entry.
     async fn delete_lorebook_entry_chunks(
         &self,
