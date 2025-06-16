@@ -37,7 +37,13 @@ import type {
 	UserSettingsResponse,
 	UpdateUserSettingsRequest
 } from '$lib/types';
-import { setConnectionError, setSessionExpired } from '$lib/auth.svelte'; // Import the new auth store functions
+import {
+	setConnectionError,
+	performLogout,
+	getHasConnectionError,
+	clearConnectionError,
+	debugCookies
+} from '$lib/auth.svelte'; // Import the new auth store functions
 import { browser } from '$app/environment'; // To check if in browser context
 import { env } from '$env/dynamic/public';
 
@@ -65,7 +71,7 @@ class ApiClient {
 			credentials: 'include',
 			baseUrl: this.baseUrl
 		});
-		
+
 		try {
 			const response = await fetchFn(fullUrl, {
 				...options,
@@ -97,10 +103,10 @@ class ApiClient {
 					// Only update auth store and redirect if we're in the browser
 					if (browser) {
 						console.log(
-							`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Session expired.`
+							`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Session expired, performing comprehensive logout.`
 						);
-						// Use the new session expired handler which shows better messaging
-						setSessionExpired();
+						// Use comprehensive logout that clears both state and cookies
+						await performLogout('expired', true);
 					} else {
 						console.log(
 							`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized on server-side fetch. Not redirecting.`
@@ -154,16 +160,20 @@ class ApiClient {
 
 			// If we successfully made a request, clear any connection errors
 			if (browser) {
-				import('$lib/auth.svelte').then(({ getHasConnectionError, clearConnectionError }) => {
-					if (getHasConnectionError()) {
-						console.log(
-							`[${new Date().toISOString()}] ApiClient.fetch: Server appears to be back online, clearing connection error state.`
-						);
-						// Clear connection error state
-						clearConnectionError();
-						window.dispatchEvent(new CustomEvent('auth:connection-restored'));
-					}
-				});
+				if (getHasConnectionError()) {
+					console.log(
+						`[${new Date().toISOString()}] ApiClient.fetch: Server appears to be back online, clearing connection error state.`
+					);
+					// Clear connection error state
+					clearConnectionError();
+					window.dispatchEvent(new CustomEvent('auth:connection-restored'));
+
+					// Import initializeAuth dynamically to avoid circular dependency
+					import('$lib/auth.svelte').then(({ initializeAuth }) => {
+						// Force session revalidation now that server is back
+						initializeAuth(true);
+					});
+				}
 			}
 
 			return ok(data as T);
@@ -431,7 +441,9 @@ class ApiClient {
 
 		try {
 			const fullUrl = `${this.baseUrl}/api/characters/upload`;
-			console.log(`[${new Date().toISOString()}] ApiClient.uploadCharacter: Making multipart request to ${fullUrl}`);
+			console.log(
+				`[${new Date().toISOString()}] ApiClient.uploadCharacter: Making multipart request to ${fullUrl}`
+			);
 
 			const response = await fetch(fullUrl, {
 				method: 'POST',
@@ -465,7 +477,10 @@ class ApiClient {
 			}
 
 			const data = await response.json();
-			console.log(`[${new Date().toISOString()}] ApiClient.uploadCharacter: Upload successful`, data);
+			console.log(
+				`[${new Date().toISOString()}] ApiClient.uploadCharacter: Upload successful`,
+				data
+			);
 			return ok(data as Character);
 		} catch (error) {
 			console.error(
@@ -811,3 +826,6 @@ class ApiClient {
 
 // Export a singleton instance
 export const apiClient = new ApiClient();
+
+// Export debug utilities for testing
+export { debugCookies };
