@@ -217,7 +217,9 @@ fn verify_session_ownership(
         }
         Some(owner_id) if owner_id != user_id => {
             warn!(target: "scribe_backend::services::chat::settings", %session_id, requesting_user_id = %user_id, actual_owner_id = %owner_id, "Forbidden access attempt");
-            Err(AppError::Forbidden("Access denied to chat session settings".to_string()))
+            Err(AppError::Forbidden(
+                "Access denied to chat session settings".to_string(),
+            ))
         }
         Some(_) => Ok(()),
     }
@@ -238,7 +240,7 @@ fn decrypt_system_prompt(
           nonce_len = nonce.map(|n| n.len()).unwrap_or(0),
           has_dek = user_dek.is_some(),
           "decrypt_system_prompt: Input parameters");
-    
+
     match (ciphertext, nonce, user_dek) {
         (Some(ciphertext), Some(nonce), Some(dek))
             if !ciphertext.is_empty() && !nonce.is_empty() =>

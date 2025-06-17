@@ -25,7 +25,7 @@ pub struct AppStateServicesBuilder {
     // Required dependencies
     db_pool: DbPool,
     config: Arc<Config>,
-    
+
     // Service overrides - all optional
     ai_client: Option<Arc<dyn AiClient + Send + Sync>>,
     embedding_client: Option<Arc<dyn EmbeddingClient + Send + Sync>>,
@@ -72,7 +72,10 @@ impl AppStateServicesBuilder {
         self
     }
 
-    pub fn with_qdrant_service(mut self, service: Arc<dyn QdrantClientServiceTrait + Send + Sync>) -> Self {
+    pub fn with_qdrant_service(
+        mut self,
+        service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    ) -> Self {
         self.qdrant_service = Some(service);
         self
     }
@@ -126,26 +129,29 @@ impl AppStateServicesBuilder {
     }
 
     /// Build AppStateServices with defaults for any unspecified services
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if required services (AI client, embedding client, Qdrant service) are not provided
     /// and cannot be created from configuration.
     pub async fn build(self) -> Result<AppStateServices, Box<dyn std::error::Error + Send + Sync>> {
         // Get or create encryption service first as many services depend on it
-        let encryption_service = self.encryption_service
+        let encryption_service = self
+            .encryption_service
             .unwrap_or_else(|| Arc::new(EncryptionService::new()));
 
         // Get or create auth backend
-        let auth_backend = self.auth_backend
+        let auth_backend = self
+            .auth_backend
             .unwrap_or_else(|| Arc::new(AuthBackend::new(self.db_pool.clone())));
 
         // Get or create file storage service
-        let file_storage_service = self.file_storage_service
-            .unwrap_or_else(|| {
-                Arc::new(FileStorageService::new(&self.config.upload_storage_path)
-                    .expect("Failed to create file storage service"))
-            });
+        let file_storage_service = self.file_storage_service.unwrap_or_else(|| {
+            Arc::new(
+                FileStorageService::new(&self.config.upload_storage_path)
+                    .expect("Failed to create file storage service"),
+            )
+        });
 
         // Get or create email service
         let email_service = match self.email_service {
@@ -155,70 +161,70 @@ impl AppStateServicesBuilder {
                     &self.config.app_env,
                     self.config.frontend_base_url.clone(),
                     self.config.from_email.clone(),
-                ).await?
+                )
+                .await?
             }
         };
 
         // Get or create token counter
-        let token_counter = self.token_counter
-            .unwrap_or_else(|| {
-                let tokenizer_service = TokenizerService::new(&self.config.tokenizer_model_path)
-                    .expect("Failed to create tokenizer service");
-                
-                let gemini_token_client = self.config.gemini_api_key.as_ref()
-                    .map(|api_key| GeminiTokenClient::new(api_key.clone()));
-                
-                Arc::new(HybridTokenCounter::new(
-                    tokenizer_service,
-                    gemini_token_client,
-                    self.config.token_counter_default_model.clone(),
-                ))
-            });
+        let token_counter = self.token_counter.unwrap_or_else(|| {
+            let tokenizer_service = TokenizerService::new(&self.config.tokenizer_model_path)
+                .expect("Failed to create tokenizer service");
+
+            let gemini_token_client = self
+                .config
+                .gemini_api_key
+                .as_ref()
+                .map(|api_key| GeminiTokenClient::new(api_key.clone()));
+
+            Arc::new(HybridTokenCounter::new(
+                tokenizer_service,
+                gemini_token_client,
+                self.config.token_counter_default_model.clone(),
+            ))
+        });
 
         // Get or create embedding pipeline service
-        let embedding_pipeline_service = self.embedding_pipeline_service
-            .unwrap_or_else(|| {
-                let chunk_config = ChunkConfig::from(self.config.as_ref());
-                Arc::new(EmbeddingPipelineService::new(chunk_config))
-            });
+        let embedding_pipeline_service = self.embedding_pipeline_service.unwrap_or_else(|| {
+            let chunk_config = ChunkConfig::from(self.config.as_ref());
+            Arc::new(EmbeddingPipelineService::new(chunk_config))
+        });
 
         // Get or create chat override service
-        let chat_override_service = self.chat_override_service
-            .unwrap_or_else(|| {
-                Arc::new(ChatOverrideService::new(
-                    self.db_pool.clone(),
-                    encryption_service.clone(),
-                ))
-            });
+        let chat_override_service = self.chat_override_service.unwrap_or_else(|| {
+            Arc::new(ChatOverrideService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ))
+        });
 
         // Get or create user persona service
-        let user_persona_service = self.user_persona_service
-            .unwrap_or_else(|| {
-                Arc::new(UserPersonaService::new(
-                    self.db_pool.clone(),
-                    encryption_service.clone(),
-                ))
-            });
+        let user_persona_service = self.user_persona_service.unwrap_or_else(|| {
+            Arc::new(UserPersonaService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ))
+        });
 
         // For required external services, we need them to be provided
-        let ai_client = self.ai_client
-            .expect("AI client must be provided");
-        
-        let embedding_client = self.embedding_client
+        let ai_client = self.ai_client.expect("AI client must be provided");
+
+        let embedding_client = self
+            .embedding_client
             .expect("Embedding client must be provided");
-        
-        let qdrant_service = self.qdrant_service
+
+        let qdrant_service = self
+            .qdrant_service
             .expect("Qdrant service must be provided");
 
         // Get or create lorebook service (depends on qdrant)
-        let lorebook_service = self.lorebook_service
-            .unwrap_or_else(|| {
-                Arc::new(LorebookService::new(
-                    self.db_pool.clone(),
-                    encryption_service.clone(),
-                    qdrant_service.clone(),
-                ))
-            });
+        let lorebook_service = self.lorebook_service.unwrap_or_else(|| {
+            Arc::new(LorebookService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+                qdrant_service.clone(),
+            ))
+        });
 
         Ok(AppStateServices {
             ai_client,
@@ -273,7 +279,10 @@ impl AppStateBuilder {
         self
     }
 
-    pub fn with_qdrant_service(mut self, service: Arc<dyn QdrantClientServiceTrait + Send + Sync>) -> Self {
+    pub fn with_qdrant_service(
+        mut self,
+        service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    ) -> Self {
         self.services_builder = self.services_builder.with_qdrant_service(service);
         self
     }
@@ -283,7 +292,9 @@ impl AppStateBuilder {
         service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
     ) -> Self {
         Self {
-            services_builder: self.services_builder.with_embedding_pipeline_service(service),
+            services_builder: self
+                .services_builder
+                .with_embedding_pipeline_service(service),
             ..self
         }
     }

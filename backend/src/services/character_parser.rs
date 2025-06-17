@@ -1,9 +1,9 @@
 // backend/src/services/character_parser.rs
 
 use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3};
-use serde::{Deserialize, Serialize};
 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use png::Decoder;
+use serde::{Deserialize, Serialize};
 use serde_json;
 use std::io::{Cursor, Read, Seek}; // Added Read and Seek for zip
 use thiserror::Error; // Import the derive macro
@@ -205,26 +205,39 @@ fn try_parse_chara_fallback(
 ) -> Result<Option<CharacterCardDataV3>, ParserError> {
     chara_data_base64.map_or(Ok(None), |base64_str| {
         let decoded_bytes = base64_standard.decode(base64_str)?;
-        
+
         // Debug: Log the actual JSON being parsed
         if let Ok(json_str) = String::from_utf8(decoded_bytes.clone()) {
-            info!("V2 chara chunk JSON: {}", json_str.chars().take(200).collect::<String>());
+            info!(
+                "V2 chara chunk JSON: {}",
+                json_str.chars().take(200).collect::<String>()
+            );
         }
-        
+
         // Try to parse as structured V2 format first (with spec/data fields)
         if let Ok(v2_card) = serde_json::from_slice::<CharacterCardV2>(&decoded_bytes) {
             info!("Parsed as structured V2 format with spec: {}", v2_card.spec);
             let mut data_v2 = v2_card.data;
-            info!("V2 structured data after parsing: name={:?}, description_len={}", data_v2.name, data_v2.description.len());
+            info!(
+                "V2 structured data after parsing: name={:?}, description_len={}",
+                data_v2.name,
+                data_v2.description.len()
+            );
             apply_v2_fallback_note(&mut data_v2, ccv3_parse_failed);
             return Ok(Some(data_v2));
         }
-        
+
         // Fallback to flat V2 format (direct CharacterCardDataV3)
         let mut data_v2 = serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes)?;
 
-        info!("Loaded character from V2 'chara' chunk (flat format). Applying V3 compatibility note.");
-        info!("V2 flat data after parsing: name={:?}, description_len={}", data_v2.name, data_v2.description.len());
+        info!(
+            "Loaded character from V2 'chara' chunk (flat format). Applying V3 compatibility note."
+        );
+        info!(
+            "V2 flat data after parsing: name={:?}, description_len={}",
+            data_v2.name,
+            data_v2.description.len()
+        );
         apply_v2_fallback_note(&mut data_v2, ccv3_parse_failed);
         Ok(Some(data_v2))
     })
@@ -296,16 +309,16 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
 /// - Required fields are missing
 pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
     // First, try to detect if this is a V2 card by checking the structure
-    let json_value: serde_json::Value = serde_json::from_slice(json_data)
-        .map_err(|e| ParserError::JsonError(e.to_string()))?;
-    
+    let json_value: serde_json::Value =
+        serde_json::from_slice(json_data).map_err(|e| ParserError::JsonError(e.to_string()))?;
+
     let is_v2_format = detect_v2_format(&json_value);
-    
+
     if is_v2_format {
         // Parse as V2 format and return as V2Fallback
         let data_v2 = serde_json::from_slice::<CharacterCardDataV3>(json_data)
             .map_err(|e| ParserError::JsonError(e.to_string()))?;
-        
+
         info!("Loaded character from V2 JSON format. Treating as V2 fallback.");
         Ok(ParsedCharacterCard::V2Fallback(data_v2))
     } else {
@@ -329,17 +342,17 @@ fn detect_v2_format(json_value: &serde_json::Value) -> bool {
         let has_spec = obj.contains_key("spec");
         let has_spec_version = obj.contains_key("spec_version");
         let has_data = obj.contains_key("data");
-        
+
         // If it has V3 structure markers, it's V3
         if has_spec || has_spec_version || has_data {
             return false;
         }
-        
+
         // Check for typical V2 fields at the root level
-        let has_v2_fields = obj.contains_key("name") 
-            && obj.contains_key("description") 
+        let has_v2_fields = obj.contains_key("name")
+            && obj.contains_key("description")
             && obj.contains_key("personality");
-            
+
         has_v2_fields
     } else {
         false
@@ -1359,7 +1372,7 @@ mod tests {
         }"#;
 
         let result = parse_character_card_json(v2_json.as_bytes());
-        
+
         // Should now succeed as V2Fallback
         match result {
             Ok(ParsedCharacterCard::V2Fallback(data)) => {
@@ -1373,17 +1386,17 @@ mod tests {
                 assert_eq!(data.creator, "Tester");
                 assert_eq!(data.character_version, "main");
                 println!("V2 JSON parsing succeeded after fix");
-            },
+            }
             Ok(ParsedCharacterCard::V3(card)) => {
                 // Should not happen with true V2 format
                 panic!("Unexpected V3 parsing for flat V2 JSON: {:?}", card);
-            },
+            }
             Err(e) => {
                 panic!("V2 JSON parsing failed unexpectedly: {:?}", e);
             }
         }
     }
-    
+
     #[test]
     fn test_parse_text_chara_chunk() {
         let v2_json =

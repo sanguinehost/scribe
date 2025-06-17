@@ -14,7 +14,10 @@ async fn test_rate_limiting_with_running_server() -> AnyhowResult<()> {
     test_helpers::ensure_tracing_initialized();
     let test_app = test_helpers::spawn_app(false, false, false).await;
 
-    info!("Testing rate limiting with running server at: {}", test_app.address);
+    info!(
+        "Testing rate limiting with running server at: {}",
+        test_app.address
+    );
 
     let client = reqwest::Client::new();
     let mut successful = 0;
@@ -22,11 +25,11 @@ async fn test_rate_limiting_with_running_server() -> AnyhowResult<()> {
 
     // Send 10 requests in parallel to trigger rate limiting
     let mut tasks = Vec::new();
-    
+
     for i in 1..=10 {
         let client = client.clone();
         let address = test_app.address.clone();
-        
+
         let task = tokio::spawn(async move {
             let payload = json!({
                 "username": format!("user{}", i),
@@ -43,15 +46,15 @@ async fn test_rate_limiting_with_running_server() -> AnyhowResult<()> {
 
             Ok::<_, anyhow::Error>((i, response.status(), response))
         });
-        
+
         tasks.push(task);
     }
-    
+
     // Wait for all requests to complete
     for task in tasks {
         let result = task.await??;
         let (request_num, status, response) = result;
-        
+
         info!("Request {} status: {}", request_num, status);
 
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -63,17 +66,26 @@ async fn test_rate_limiting_with_running_server() -> AnyhowResult<()> {
         } else {
             // Log other status codes to understand what's happening
             let body = response.text().await?;
-            info!("Request {} unexpected status {} with body: {}", request_num, status, body);
+            info!(
+                "Request {} unexpected status {} with body: {}",
+                request_num, status, body
+            );
         }
     }
 
-    info!("Summary: {} successful, {} rate limited", successful, rate_limited);
+    info!(
+        "Summary: {} successful, {} rate limited",
+        successful, rate_limited
+    );
 
     // We expect at least some requests to be rate limited
     // With burst_size(5) and 10 requests, at least 5 should be rate limited
-    assert!(rate_limited > 0, 
-           "Expected at least one request to be rate limited, got {} successful and {} rate limited", 
-           successful, rate_limited);
+    assert!(
+        rate_limited > 0,
+        "Expected at least one request to be rate limited, got {} successful and {} rate limited",
+        successful,
+        rate_limited
+    );
 
     Ok(())
 }
@@ -105,7 +117,7 @@ async fn test_rate_limiting_recovery_with_server() -> AnyhowResult<()> {
     }
 
     info!("Rate limit should be exhausted, waiting for recovery...");
-    
+
     // Wait for rate limit to recover (2 requests per second, wait 3 seconds)
     sleep(Duration::from_secs(3)).await;
 
@@ -126,8 +138,11 @@ async fn test_rate_limiting_recovery_with_server() -> AnyhowResult<()> {
     info!("Recovery request status: {}", response.status());
 
     // This request should succeed after waiting for recovery
-    assert_ne!(response.status(), reqwest::StatusCode::TOO_MANY_REQUESTS,
-              "Request should succeed after rate limit recovery period");
+    assert_ne!(
+        response.status(),
+        reqwest::StatusCode::TOO_MANY_REQUESTS,
+        "Request should succeed after rate limit recovery period"
+    );
 
     Ok(())
 }

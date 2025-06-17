@@ -159,33 +159,38 @@ pub async fn upload_character_handler(
         Some("application/json") => {
             info!("Parsing as JSON character card");
             character_parser::parse_character_card_json(&png_data)?
-        },
+        }
         Some(ct) if ct.starts_with("image/") => {
             info!("Parsing as PNG character card");
             character_parser::parse_character_card_png(&png_data)?
-        },
+        }
         _ => {
             // Default to PNG parsing for backwards compatibility
             info!("No content type or unknown type, defaulting to PNG parsing");
             character_parser::parse_character_card_png(&png_data)?
         }
     };
-    
+
     // Debug: Log the parsed card data
     match &parsed_card {
         character_parser::ParsedCharacterCard::V3(card) => {
-            info!("Parsed as V3: spec={}, spec_version={}, name={:?}", 
-                  card.spec, card.spec_version, card.data.name);
-        },
+            info!(
+                "Parsed as V3: spec={}, spec_version={}, name={:?}",
+                card.spec, card.spec_version, card.data.name
+            );
+        }
         character_parser::ParsedCharacterCard::V2Fallback(data) => {
             info!("Parsed as V2Fallback: name={:?}", data.name);
-        },
+        }
     }
-    
+
     let mut new_character_for_db = NewCharacter::from_parsed_card(&parsed_card, local_user_id);
-    
+
     // Debug: Log the converted character data
-    info!("Converted to NewCharacter: name={:?}", new_character_for_db.name);
+    info!(
+        "Converted to NewCharacter: name={:?}",
+        new_character_for_db.name
+    );
 
     // --- Encrypt all designated fields before saving ---
     // Helper macro to reduce boilerplate for encrypting Option<Vec<u8>> fields
@@ -600,8 +605,7 @@ pub async fn create_character_handler(
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     ));
-    let character_service =
-        CharacterService::new(state.pool.clone(), enc_service);
+    let character_service = CharacterService::new(state.pool.clone(), enc_service);
 
     // Call the service method
     let client_data = character_service
@@ -1169,8 +1173,7 @@ pub async fn update_character_handler(
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     ));
-    let character_service =
-        CharacterService::new(state.pool.clone(), enc_service);
+    let character_service = CharacterService::new(state.pool.clone(), enc_service);
 
     // Call the service method
     let client_data = character_service

@@ -51,7 +51,9 @@ pub async fn get_user_avatar(
 
     // Users can only access their own avatars
     if current_user.id != user_id {
-        return Err(AppError::Forbidden("Access denied to user avatar".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to user avatar".to_string(),
+        ));
     }
 
     // Load the user avatar from database
@@ -119,7 +121,9 @@ pub async fn upload_user_avatar(
 
     // Users can only upload their own avatars
     if current_user.id != user_id {
-        return Err(AppError::Forbidden("Access denied to upload avatar".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to upload avatar".to_string(),
+        ));
     }
 
     let mut image_data: Option<Bytes> = None;
@@ -228,7 +232,9 @@ pub async fn delete_user_avatar(
 
     // Users can only delete their own avatars
     if current_user.id != user_id {
-        return Err(AppError::Forbidden("Access denied to delete avatar".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to delete avatar".to_string(),
+        ));
     }
 
     let conn = state

@@ -4,7 +4,9 @@ use uuid::Uuid;
 use reqwest::header::COOKIE;
 use scribe_backend::models::auth::AuthResponse;
 use scribe_backend::models::user_personas::{CreateUserPersonaDto, UserPersonaDataForClient}; // Changed UserPersona to UserPersonaDataForClient
-use scribe_backend::test_helpers::{TestDataGuard, db, login_user_via_api, spawn_app, spawn_app_permissive_rate_limiting};
+use scribe_backend::test_helpers::{
+    TestDataGuard, db, login_user_via_api, spawn_app, spawn_app_permissive_rate_limiting,
+};
 
 #[tokio::test]
 async fn get_me_includes_default_persona_id() {

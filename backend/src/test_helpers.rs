@@ -82,11 +82,13 @@ use rustls;
 use time; // For time::Duration for session expiry
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
+use tower_governor::{
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
+};
+use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tower_sessions::{
     Expiry, SessionManagerLayer, cookie::Key as TowerSessionKey, cookie::SameSite,
 }; // Added SameSite
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer, key_extractor::GlobalKeyExtractor};
-use tower_http::trace::{TraceLayer, DefaultMakeSpan};
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid; // Added for CryptoProvider
 
@@ -1061,7 +1063,8 @@ impl TestAppStateBuilder {
                 "development",
                 "http://localhost:3000".to_string(),
                 None,
-            ).await?,
+            )
+            .await?,
         };
 
         Ok(AppState::new(self.db_pool, self.config, services))
@@ -1171,8 +1174,13 @@ pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: b
 }
 
 /// Spawn app with permissive rate limiting for tests that make many sequential requests
-pub async fn spawn_app_permissive_rate_limiting(multi_thread: bool, use_real_ai: bool, use_real_qdrant: bool) -> TestApp {
-    spawn_app_with_rate_limiting_options(multi_thread, use_real_ai, use_real_qdrant, false, 100, 50).await
+pub async fn spawn_app_permissive_rate_limiting(
+    multi_thread: bool,
+    use_real_ai: bool,
+    use_real_qdrant: bool,
+) -> TestApp {
+    spawn_app_with_rate_limiting_options(multi_thread, use_real_ai, use_real_qdrant, false, 100, 50)
+        .await
 }
 
 #[instrument(
@@ -1190,7 +1198,15 @@ pub async fn spawn_app_with_options(
     use_real_qdrant: bool,
     use_real_embedding_pipeline: bool,
 ) -> TestApp {
-    spawn_app_with_rate_limiting_options(multi_thread, use_real_ai, use_real_qdrant, use_real_embedding_pipeline, 2, 5).await
+    spawn_app_with_rate_limiting_options(
+        multi_thread,
+        use_real_ai,
+        use_real_qdrant,
+        use_real_embedding_pipeline,
+        2,
+        5,
+    )
+    .await
 }
 
 #[instrument(
@@ -1240,8 +1256,8 @@ pub async fn spawn_app_with_rate_limiting_options(
         Arc<dyn AiClient + Send + Sync>,
         Option<Arc<MockAiClient>>,
     ) = if use_real_ai {
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .unwrap_or_else(|_| "test-api-key".to_string());
+        let api_key =
+            std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-api-key".to_string());
         let base_url = "https://generativelanguage.googleapis.com";
         let real_ai_client = crate::llm::gemini_client::build_gemini_client(&api_key, base_url)
             .expect("Failed to build real AI client for test");
@@ -1335,7 +1351,10 @@ pub async fn spawn_app_with_rate_limiting_options(
             .with_embedding_pipeline_service(mock_embedding_pipeline_service_for_test_app.clone());
     }
 
-    let app_state_inner = builder.build().await.expect("Failed to build test app state");
+    let app_state_inner = builder
+        .build()
+        .await
+        .expect("Failed to build test app state");
 
     let session_store = DieselSessionStore::new(pool.clone());
     let secret_key_hex_str: &String = config_arc
@@ -1369,8 +1388,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     // It's accessible via app_state_inner.embedding_call_tracker if necessary.
 
     // Health endpoint - not rate limited for monitoring purposes (matches production)
-    let health_routes_for_test = Router::new()
-        .route("/api/health", get(health_check));
+    let health_routes_for_test = Router::new().route("/api/health", get(health_check));
 
     let protected_api_routes_for_test = Router::new()
         .nest(
@@ -1639,8 +1657,8 @@ pub mod db {
             .map_err(|e| anyhow::anyhow!("KEK salt generation failed: {}", e))?;
 
         // Assuming generate_dek() now returns Result<SecretBox<Vec<u8>>, CryptoError>
-        let plaintext_dek_box: SecretBox<Vec<u8>> =
-            crate::crypto::generate_dek().context("DEK generation failed in create_pending_test_user")?;
+        let plaintext_dek_box: SecretBox<Vec<u8>> = crate::crypto::generate_dek()
+            .context("DEK generation failed in create_pending_test_user")?;
 
         let kek = crate::crypto::derive_kek(&SecretString::from(password_str_for_kek), &kek_salt)
             .map_err(|e| anyhow::anyhow!("KEK derivation failed: {}", e))?;
@@ -1660,7 +1678,7 @@ pub mod db {
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
             role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
-            account_status: AccountStatus::Pending,      // Set to Pending for email verification
+            account_status: AccountStatus::Pending,     // Set to Pending for email verification
         };
 
         let user_from_db: UserDbQuery = conn
@@ -1672,7 +1690,10 @@ pub mod db {
             })
             .await
             .map_err(|interact_err| {
-                anyhow::anyhow!("DB interact error for create_pending_test_user: {}", interact_err)
+                anyhow::anyhow!(
+                    "DB interact error for create_pending_test_user: {}",
+                    interact_err
+                )
             })??;
 
         // Convert to DbUser

@@ -1,5 +1,5 @@
-use super::*;
 use super::get_user_from_session;
+use super::*;
 
 impl LorebookService {
     #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
@@ -1112,5 +1112,4 @@ AppError::InternalServerErrorGeneric(format!(
             .await
             .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {e}")))?
     }
-
 }

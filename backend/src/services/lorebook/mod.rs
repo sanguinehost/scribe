@@ -49,12 +49,12 @@ pub struct LorebookService {
 }
 
 // Module declarations
-mod lorebook_crud;
-mod entry_crud;
-mod chat_associations;
 mod character_associations;
+mod chat_associations;
+mod entry_crud;
 mod export_import;
 mod helpers;
+mod lorebook_crud;
 
 // Re-export important items
 pub use helpers::get_user_from_session;

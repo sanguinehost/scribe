@@ -484,9 +484,11 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
         lorebook_service: lorebook_service_for_test,
         auth_backend: auth_backend_for_test,
         file_storage_service: file_storage_service_for_test,
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
 
     Arc::new(AppState::new(
@@ -1170,7 +1172,7 @@ async fn update_chat_settings_unauthorized() {
 #[tokio::test]
 async fn debug_system_prompt_encryption_decryption() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    
+
     // Create a test user
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
@@ -1191,10 +1193,10 @@ async fn debug_system_prompt_encryption_decryption() {
         .await
         .unwrap()
         .interact(move |conn| {
-            use scribe_backend::schema::characters;
-            use scribe_backend::models::character_card::NewCharacter;
             use chrono::Utc;
-            
+            use scribe_backend::models::character_card::NewCharacter;
+            use scribe_backend::schema::characters;
+
             let new_character = NewCharacter {
                 user_id: user.id,
                 spec: "character_card_v2".to_string(),
@@ -1221,10 +1223,10 @@ async fn debug_system_prompt_encryption_decryption() {
         .await
         .unwrap()
         .interact(move |conn| {
-            use scribe_backend::schema::chat_sessions;
-            use scribe_backend::models::chats::NewChat;
             use chrono::Utc;
-            
+            use scribe_backend::models::chats::NewChat;
+            use scribe_backend::schema::chat_sessions;
+
             let new_chat = NewChat {
                 id: Uuid::new_v4(),
                 user_id: user.id,
@@ -1283,7 +1285,10 @@ async fn debug_system_prompt_encryption_decryption() {
         gemini_enable_code_execution: None,
     };
 
-    println!("Updating session settings with system prompt: {:?}", system_prompt_text);
+    println!(
+        "Updating session settings with system prompt: {:?}",
+        system_prompt_text
+    );
 
     let updated_settings = scribe_backend::services::chat::settings::update_session_settings(
         &test_app.db_pool,
@@ -1295,11 +1300,14 @@ async fn debug_system_prompt_encryption_decryption() {
     .await
     .expect("Failed to update session settings");
 
-    println!("Update response system_prompt: {:?}", updated_settings.system_prompt);
+    println!(
+        "Update response system_prompt: {:?}",
+        updated_settings.system_prompt
+    );
 
     // Test 2: Fetch the settings back
     println!("Fetching session settings...");
-    
+
     let fetched_settings = scribe_backend::services::chat::settings::get_session_settings(
         &test_app.db_pool,
         user.id,
@@ -1309,7 +1317,10 @@ async fn debug_system_prompt_encryption_decryption() {
     .await
     .expect("Failed to get session settings");
 
-    println!("Fetched system_prompt: {:?}", fetched_settings.system_prompt);
+    println!(
+        "Fetched system_prompt: {:?}",
+        fetched_settings.system_prompt
+    );
 
     // Test 3: Check what's actually stored in the database
     let (stored_ciphertext, stored_nonce) = test_app
@@ -1330,7 +1341,10 @@ async fn debug_system_prompt_encryption_decryption() {
         .unwrap()
         .unwrap();
 
-    println!("Stored ciphertext: {:?}", stored_ciphertext.as_ref().map(|c| c.len()));
+    println!(
+        "Stored ciphertext: {:?}",
+        stored_ciphertext.as_ref().map(|c| c.len())
+    );
     println!("Stored nonce: {:?}", stored_nonce.as_ref().map(|n| n.len()));
 
     // Test 4: Manual decryption
@@ -1349,7 +1363,10 @@ async fn debug_system_prompt_encryption_decryption() {
     }
 
     // Assertions
-    assert!(fetched_settings.system_prompt.is_some(), "System prompt should be present");
+    assert!(
+        fetched_settings.system_prompt.is_some(),
+        "System prompt should be present"
+    );
     assert_eq!(
         fetched_settings.system_prompt.as_ref().unwrap(),
         system_prompt_text,
@@ -1360,7 +1377,7 @@ async fn debug_system_prompt_encryption_decryption() {
 #[tokio::test]
 async fn test_actual_api_route_for_system_prompt() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    
+
     // Create a test user and login to get auth cookie
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
@@ -1380,8 +1397,13 @@ async fn test_actual_api_route_for_system_prompt() {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
         .unwrap();
-    
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
     let auth_cookie = login_response
         .headers()
@@ -1398,10 +1420,10 @@ async fn test_actual_api_route_for_system_prompt() {
         .await
         .unwrap()
         .interact(move |conn| {
-            use scribe_backend::schema::characters;
-            use scribe_backend::models::character_card::NewCharacter;
             use chrono::Utc;
-            
+            use scribe_backend::models::character_card::NewCharacter;
+            use scribe_backend::schema::characters;
+
             let new_character = NewCharacter {
                 user_id: user.id,
                 spec: "character_card_v2".to_string(),
@@ -1428,10 +1450,10 @@ async fn test_actual_api_route_for_system_prompt() {
         .await
         .unwrap()
         .interact(move |conn| {
-            use scribe_backend::schema::chat_sessions;
-            use scribe_backend::models::chats::NewChat;
             use chrono::Utc;
-            
+            use scribe_backend::models::chats::NewChat;
+            use scribe_backend::schema::chat_sessions;
+
             let new_chat = NewChat {
                 id: Uuid::new_v4(),
                 user_id: user.id,
@@ -1488,7 +1510,10 @@ async fn test_actual_api_route_for_system_prompt() {
         gemini_enable_code_execution: None,
     };
 
-    println!("Testing UPDATE via API route: PUT /api/chat/{}/settings", session.id);
+    println!(
+        "Testing UPDATE via API route: PUT /api/chat/{}/settings",
+        session.id
+    );
     let update_api_request = Request::builder()
         .method(Method::PUT)
         .uri(format!("/api/chat/{}/settings", session.id))
@@ -1497,18 +1522,34 @@ async fn test_actual_api_route_for_system_prompt() {
         .body(Body::from(serde_json::to_string(&update_request).unwrap()))
         .unwrap();
 
-    let update_response = test_app.router.clone().oneshot(update_api_request).await.unwrap();
+    let update_response = test_app
+        .router
+        .clone()
+        .oneshot(update_api_request)
+        .await
+        .unwrap();
     println!("Update response status: {}", update_response.status());
     assert_eq!(update_response.status(), StatusCode::OK);
 
-    let update_body = update_response.into_body().collect().await.unwrap().to_bytes();
+    let update_body = update_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let update_settings_resp: ChatSettingsResponse =
         serde_json::from_slice(&update_body).expect("Failed to deserialize update response");
-    
-    println!("Update response system_prompt: {:?}", update_settings_resp.system_prompt);
+
+    println!(
+        "Update response system_prompt: {:?}",
+        update_settings_resp.system_prompt
+    );
 
     // Now, fetch the settings via the GET API route that the frontend uses
-    println!("Testing GET via API route: GET /api/chat/{}/settings", session.id);
+    println!(
+        "Testing GET via API route: GET /api/chat/{}/settings",
+        session.id
+    );
     let get_api_request = Request::builder()
         .method(Method::GET)
         .uri(format!("/api/chat/{}/settings", session.id))
@@ -1516,7 +1557,12 @@ async fn test_actual_api_route_for_system_prompt() {
         .body(Body::empty())
         .unwrap();
 
-    let get_response = test_app.router.clone().oneshot(get_api_request).await.unwrap();
+    let get_response = test_app
+        .router
+        .clone()
+        .oneshot(get_api_request)
+        .await
+        .unwrap();
     println!("Get response status: {}", get_response.status());
     assert_eq!(get_response.status(), StatusCode::OK);
 
@@ -1524,11 +1570,17 @@ async fn test_actual_api_route_for_system_prompt() {
     let get_settings_resp: ChatSettingsResponse =
         serde_json::from_slice(&get_body).expect("Failed to deserialize get response");
 
-    println!("Get response system_prompt: {:?}", get_settings_resp.system_prompt);
+    println!(
+        "Get response system_prompt: {:?}",
+        get_settings_resp.system_prompt
+    );
     println!("Get response system_prompt (raw bytes): {:?}", get_body);
 
     // Assertions
-    assert!(get_settings_resp.system_prompt.is_some(), "System prompt should be present in GET response");
+    assert!(
+        get_settings_resp.system_prompt.is_some(),
+        "System prompt should be present in GET response"
+    );
     assert_eq!(
         get_settings_resp.system_prompt.as_ref().unwrap(),
         system_prompt_text,

@@ -52,7 +52,9 @@ pub async fn set_character_override(
                     "User {} attempted to set override for session {} owned by {}",
                     user_id, session_id, chat_owner_id
                 );
-                return Err(AppError::Forbidden("Access denied to chat session override".to_string()));
+                return Err(AppError::Forbidden(
+                    "Access denied to chat session override".to_string(),
+                ));
             }
 
             // 2. Encrypt the value

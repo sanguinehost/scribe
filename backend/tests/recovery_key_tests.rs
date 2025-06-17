@@ -7,7 +7,7 @@ use axum::{
     http::{Method, Request, StatusCode, header},
 };
 use base64::Engine;
-use diesel::{QueryDsl, ExpressionMethods, RunQueryDsl, OptionalExtension};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use http_body_util::BodyExt;
 use scribe_backend::{crypto, models::auth::AuthResponse, test_helpers};
 use secrecy::{ExposeSecret, SecretString};
@@ -97,7 +97,7 @@ async fn test_recovery_key_generation_during_registration() -> AnyhowResult<()> 
         let verify_payload = json!({
             "token": token
         });
-        
+
         let verify_request = Request::builder()
             .method(Method::POST)
             .uri("/api/auth/verify-email")
@@ -105,7 +105,7 @@ async fn test_recovery_key_generation_during_registration() -> AnyhowResult<()> 
             .body(Body::from(verify_payload.to_string()))?;
 
         let verify_response = test_app.router.clone().oneshot(verify_request).await?;
-        
+
         assert_eq!(
             verify_response.status(),
             StatusCode::OK,
