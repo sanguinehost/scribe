@@ -243,7 +243,12 @@ pub async fn generate_chat_response(
         session_id,
         current_user_content.clone(),
         Some(session_dek_arc.clone()), // Use Arc clone
-        Some(payload.history),         // Pass frontend-filtered history
+        // If payload.history only contains the current message, use database history instead
+        if payload.history.len() <= 1 {
+            None
+        } else {
+            Some(payload.history)
+        },
     )
     .await?;
 

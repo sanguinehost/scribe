@@ -1509,13 +1509,9 @@ pub async fn stream_ai_response_and_save_message(
             trace!("[DONE] not sent due to stream_error_occurred=true in chat_service");
         } else if accumulated_content.is_empty() && !stream_error_occurred {
             // If the stream ended successfully but produced no content,
-            // this is likely due to safety filters blocking the response
-            warn!(session_id = %stream_session_id, "AI stream finished successfully but produced no content - likely blocked by safety filters");
-
-            // Send an informative error to the user
-            yield Ok(ScribeSseEvent::Error(
-                "LLM API error: Your message was blocked by AI safety filters. Please try rephrasing your message with different wording.".to_string()
-            ));
+            // let the chat route handle this by sending [DONE_EMPTY]
+            // Do not send an error event here as this is a successful completion
+            warn!(session_id = %stream_session_id, "AI stream finished successfully but produced no content - letting chat route handle [DONE_EMPTY]");
         }
         trace!("Finished SSE async_stream! block in chat_service");
     };

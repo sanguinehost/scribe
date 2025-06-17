@@ -437,7 +437,7 @@ impl From<ClientCharacterDataForClient> for CharacterDataForClient {
             depth_prompt_depth: client.depth_prompt_depth,
             depth_prompt_role: client.depth_prompt_role,
             talkativeness: client.talkativeness,
-            lorebook_id: client.lorebook_id, // Initialize new field
+            lorebook_id: client.lorebook_id,   // Initialize new field
             lorebook_ids: client.lorebook_ids, // Initialize new field
         }
     }
