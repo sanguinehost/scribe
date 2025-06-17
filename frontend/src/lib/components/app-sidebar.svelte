@@ -128,11 +128,23 @@
 		// This prevents unnecessary navigation and content flickering
 	}
 
-	function openSettings() {
+	async function openSettings() {
+		// Set transitioning state immediately to prevent Overview from showing
+		settingsStore.isTransitioning = true;
+		
 		// Clear all selections when opening settings
 		selectedCharacterStore.clear();
 		selectedPersonaStore.clear();
 		selectedLorebookStore.clear();
+		
+		// Only navigate if we're not on the home page already
+		// This prevents unnecessary page reloads that break transitions
+		if ($page.url.pathname !== '/') {
+			await goto('/', { replaceState: true });
+			// Small delay to ensure navigation completes smoothly
+			await new Promise(resolve => setTimeout(resolve, 50));
+		}
+		
 		settingsStore.show();
 		context.setOpenMobile(false); // Close mobile sidebar if open
 	}

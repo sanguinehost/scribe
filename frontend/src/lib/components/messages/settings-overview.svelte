@@ -15,7 +15,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-3xl" transition:fly={{ y: 20, duration: 400, easing: quintOut }}>
+<div class="mx-auto max-w-3xl">
 	<div class="flex max-w-xl flex-col gap-8 rounded-xl p-6 text-center leading-relaxed mx-auto">
 		<p class="flex flex-row items-center justify-center gap-4">
 			<!-- Settings icon -->

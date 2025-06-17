@@ -56,8 +56,8 @@
 		gemini: false
 	});
 
-	function goBack() {
-		settingsStore.setViewMode('overview');
+	function closeSettings() {
+		settingsStore.hide();
 	}
 
 	async function saveSettings() {
@@ -187,11 +187,16 @@
 	];
 </script>
 
-<div class="mx-auto max-w-4xl md:mt-8" transition:fly={{ y: 20, duration: 400, easing: quintOut }}>
+<div class="mx-auto max-w-4xl md:mt-8">
 	<div class="flex flex-col gap-6">
 		<!-- Header -->
 		<div class="flex items-center gap-4">
-			<Button variant="ghost" onclick={goBack} class="p-2">
+			<div class="flex-1">
+				<h1 class="text-2xl font-bold">Settings</h1>
+				<p class="text-muted-foreground">Configure default values and application preferences</p>
+			</div>
+			<Button variant="outline" onclick={resetToDefaults}>Reset to Defaults</Button>
+			<Button variant="ghost" onclick={closeSettings}>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					width="16"
@@ -203,15 +208,11 @@
 					stroke-linecap="round"
 					stroke-linejoin="round"
 				>
-					<path d="m12 19-7-7 7-7" />
-					<path d="M19 12H5" />
+					<path d="m18 6 6 6-6 6" />
+					<path d="M6 12h12" />
 				</svg>
+				Close
 			</Button>
-			<div class="flex-1">
-				<h1 class="text-2xl font-bold">Settings</h1>
-				<p class="text-muted-foreground">Configure default values and application preferences</p>
-			</div>
-			<Button variant="outline" onclick={resetToDefaults}>Reset to Defaults</Button>
 		</div>
 
 		{#if isLoading}
@@ -482,7 +483,7 @@
 
 				<!-- Save Button -->
 				<div class="flex justify-end gap-4 border-t pt-6">
-					<Button variant="outline" onclick={goBack}>Cancel</Button>
+					<Button variant="outline" onclick={closeSettings}>Cancel</Button>
 					<Button onclick={saveSettings} disabled={isLoading}>
 						{#if isLoading}
 							<svg
