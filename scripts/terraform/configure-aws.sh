@@ -74,7 +74,7 @@ configure_aws() {
     log_info "You'll need:"
     echo "1. AWS Access Key ID"
     echo "2. AWS Secret Access Key"
-    echo "3. Default region (recommended: us-east-1)"
+    echo "3. Default region (recommended: ap-southeast-4)"
     echo "4. Default output format (recommended: json)"
     echo
     
@@ -109,28 +109,28 @@ verify_permissions() {
     fi
     
     # Test EC2 permissions
-    if aws ec2 describe-regions --region us-east-1 &> /dev/null; then
+    if aws ec2 describe-regions --region ap-southeast-4 &> /dev/null; then
         log_success "✓ EC2 permissions verified"
     else
         log_warning "⚠ EC2 permissions may be insufficient"
     fi
     
     # Test ECS permissions
-    if aws ecs list-clusters --region us-east-1 &> /dev/null; then
+    if aws ecs list-clusters --region ap-southeast-4 &> /dev/null; then
         log_success "✓ ECS permissions verified"
     else
         log_warning "⚠ ECS permissions may be insufficient"
     fi
     
     # Test RDS permissions
-    if aws rds describe-db-instances --region us-east-1 &> /dev/null; then
+    if aws rds describe-db-instances --region ap-southeast-4 &> /dev/null; then
         log_success "✓ RDS permissions verified"
     else
         log_warning "⚠ RDS permissions may be insufficient"
     fi
     
     # Test Secrets Manager permissions
-    if aws secretsmanager list-secrets --region us-east-1 &> /dev/null; then
+    if aws secretsmanager list-secrets --region ap-southeast-4 &> /dev/null; then
         log_success "✓ Secrets Manager permissions verified"
     else
         log_warning "⚠ Secrets Manager permissions may be insufficient"

@@ -82,7 +82,7 @@ systemctl start tailscaled
 cat > /home/ec2-user/connect-db.sh << 'SCRIPT'
 #!/bin/bash
 # Get database URL from AWS Secrets Manager
-SECRET_ARN="arn:aws:secretsmanager:us-east-1:058264339990:secret:staging/scribe/database-4IK3zB"
+SECRET_ARN="arn:aws:secretsmanager:ap-southeast-4:058264339990:secret:staging/scribe/database-4IK3zB"
 DB_URL=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query 'SecretString' --output text | jq -r '.url')
 
 if [ -n "$DB_URL" ]; then

@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-AWS_REGION="us-east-1"
+AWS_REGION="ap-southeast-4"
 ECS_CLUSTER="staging-scribe-cluster"
 BACKEND_SERVICE="staging-scribe-backend"
 TASK_FAMILY="staging-scribe-backend"

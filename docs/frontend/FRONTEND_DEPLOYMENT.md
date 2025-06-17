@@ -31,7 +31,7 @@ Edit `.env.production` with your backend URL:
 PUBLIC_API_URL=https://staging.scribe.sanguinehost.com
 
 # Or use the raw ALB DNS during initial setup
-# PUBLIC_API_URL=https://your-alb-dns-name.us-east-1.elb.amazonaws.com
+# PUBLIC_API_URL=https://your-alb-dns-name.ap-southeast-4.elb.amazonaws.com
 ```
 
 ### 3. Deploy to Vercel

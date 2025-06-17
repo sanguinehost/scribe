@@ -23,7 +23,7 @@ log_success() {
 }
 
 # Configuration
-AWS_REGION="us-east-1"
+AWS_REGION="ap-southeast-4"
 DB_INSTANCE_ID="staging-scribe-postgres"
 
 main() {

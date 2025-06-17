@@ -43,4 +43,4 @@ terraform apply tfplan
 
 echo -e "${GREEN}[SUCCESS]${NC} Terraform changes applied successfully!"
 echo -e "${BLUE}[INFO]${NC} The ECS service will automatically redeploy with the new environment variable."
-echo -e "${BLUE}[INFO]${NC} Monitor the deployment with: aws ecs describe-services --cluster staging-scribe-cluster --services staging-scribe-backend --region us-east-1"
+echo -e "${BLUE}[INFO]${NC} Monitor the deployment with: aws ecs describe-services --cluster staging-scribe-cluster --services staging-scribe-backend --region ap-southeast-4"
