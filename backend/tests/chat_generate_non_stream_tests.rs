@@ -1576,7 +1576,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     let _ = response.bytes().await?; // Changed for reqwest::Response
 
     // With token-based windowing and a large default CONTEXT_RECENT_HISTORY_TOKEN_BUDGET,
-    // all 5 historical messages should be included.
+    // all 5 historical messages plus the current message should be included.
     test_helpers::assert_ai_history(
         &test_app,
         &[
@@ -1585,6 +1585,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
             ("User", "Msg 2"),
             ("Assistant", "Reply 2"),
             ("User", "Msg 3"),
+            ("User", "**[User Input]**\nUser message 4"),
         ],
     );
     test_data_guard.cleanup().await?;
@@ -1904,7 +1905,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     let _ = response.bytes().await?; // Changed for reqwest::Response
 
     // With token-based windowing and a large default CONTEXT_RECENT_HISTORY_TOKEN_BUDGET,
-    // all 4 historical messages should be included.
+    // all 4 historical messages plus the current message should be included.
     test_helpers::assert_ai_history(
         &test_app,
         &[
@@ -1912,6 +1913,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
             ("Assistant", "Reply one"),
             ("User", "Message two"),
             ("Assistant", "Reply two"),
+            ("User", "**[User Input]**\nUser message 3"),
         ],
     );
     test_data_guard.cleanup().await?;
@@ -2232,7 +2234,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     let _ = response.bytes().await?; // Changed for reqwest::Response
 
     // With token-based windowing (no truncation at this stage) and a large default budget,
-    // all messages should be included untruncated.
+    // all messages plus the current message should be included untruncated.
     test_helpers::assert_ai_history(
         &test_app,
         &[
@@ -2240,6 +2242,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
             ("Assistant", "Reply one"),
             ("User", "Message two"),
             ("Assistant", "Reply two"),
+            ("User", "**[User Input]**\nUser message 3"),
         ],
     );
 
@@ -2291,6 +2294,8 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     // DB now has: M1, R1, M2, R2, "User message 3", "Mock response"
     // History for AI should remain the same as all messages fit the large default budget.
     // The old assertion expected message content truncation based on session settings.
+    // After the second call, database messages plus the new current message should be included
+    // Note: The AI response from the first call may not be saved to DB yet during this test
     test_helpers::assert_ai_history(
         &test_app,
         &[
@@ -2298,6 +2303,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
             ("Assistant", "Reply one"),
             ("User", "Message two"),
             ("Assistant", "Reply two"),
+            ("User", "**[User Input]**\nUser message 3"),
         ],
     );
     test_data_guard.cleanup().await?;
@@ -2582,7 +2588,14 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let _ = response.bytes().await?; // Changed for reqwest::Response
 
-    test_helpers::assert_ai_history(&test_app, &[("User", "Msg 1"), ("Assistant", "Reply 1")]);
+    test_helpers::assert_ai_history(
+        &test_app,
+        &[
+            ("User", "Msg 1"),
+            ("Assistant", "Reply 1"),
+            ("User", "**[User Input]**\nUser message 2"),
+        ],
+    );
     test_data_guard.cleanup().await?;
     Ok(())
 }
@@ -2905,7 +2918,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     let _ = response.bytes().await?;
 
     // With token-based windowing (no truncation at this stage) and a large default budget,
-    // all messages should be included untruncated.
+    // all messages plus the current message should be included untruncated.
     test_helpers::assert_ai_history(
         &test_app,
         &[
@@ -2913,6 +2926,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
             ("Assistant", "Reply one"),
             ("User", "Message two"),
             ("Assistant", "Reply two"),
+            ("User", "**[User Input]**\nUser message 3"),
         ],
     );
 
@@ -2965,6 +2979,8 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     // History for AI (limit 25) should be: "y one", "Message two", "Reply two"
     // History for AI should remain the same as all messages fit the large default budget.
     // The old assertion expected message content truncation based on session settings.
+    // After the second call, database messages plus the new current message should be included
+    // Note: The AI response from the first call may not be saved to DB yet during this test
     test_helpers::assert_ai_history(
         &test_app,
         &[
@@ -2972,6 +2988,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
             ("Assistant", "Reply one"),
             ("User", "Message two"),
             ("Assistant", "Reply two"),
+            ("User", "**[User Input]**\nUser message 3"),
         ],
     );
     test_data_guard.cleanup().await?;

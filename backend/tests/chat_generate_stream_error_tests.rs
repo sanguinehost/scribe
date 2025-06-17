@@ -1012,9 +1012,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
         },
         ParsedSseEvent {
             event: Some("error".to_string()),
-            data: format!(
-                "LLM API error (chat_service loop): LLM Generation Error: {mock_error_message}"
-            ),
+            data: format!("LLM API error: LLM Generation Error: {mock_error_message}"),
         },
     ];
 

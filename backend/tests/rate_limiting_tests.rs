@@ -4,9 +4,12 @@
 //!
 //! Tests the tower_governor rate limiting functionality applied to the entire application.
 //! Rate limiting is configured globally with:
-//! - 50 requests per burst
-//! - Replenishing at 20 requests per second
+//! - 5 requests per burst (for basic spawn_app test configuration)
+//! - Replenishing at 2 requests per second (for basic spawn_app test configuration)
 //! - Based on peer IP address
+//!
+//! Note: For tests that need higher limits, use spawn_app_permissive_rate_limiting
+//! which provides 50 burst with 100 requests per second.
 
 use anyhow::Result as AnyhowResult;
 use axum::{
@@ -227,8 +230,8 @@ async fn test_rate_limiting_applies_to_login_endpoint() -> AnyhowResult<()> {
 
     info!("Testing that rate limiting applies to login endpoint");
 
-    // Send requests within burst limit
-    for i in 1..=20 {
+    // Send requests within burst limit (5 requests for default spawn_app config)
+    for i in 1..=5 {
         let request = create_login_request();
         let response = test_app.router.clone().oneshot(request).await.unwrap();
         info!("Login request {} status: {}", i, response.status());
@@ -242,6 +245,18 @@ async fn test_rate_limiting_applies_to_login_endpoint() -> AnyhowResult<()> {
         );
     }
 
+    // Send additional request to verify rate limiting is working
+    let request = create_login_request();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
+    info!("Login request 6 status: {}", response.status());
+
+    // This request should be rate limited
+    assert_eq!(
+        response.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "Login request 6 should be rate limited (exceeds burst limit)",
+    );
+
     Ok(())
 }
 
@@ -253,8 +268,8 @@ async fn test_rate_limiting_applies_to_verify_email_endpoint() -> AnyhowResult<(
 
     info!("Testing that rate limiting applies to verify-email endpoint");
 
-    // Send requests within burst limit
-    for i in 1..=20 {
+    // Send requests within burst limit (5 requests for default spawn_app config)
+    for i in 1..=5 {
         let request = create_verify_email_request();
         let response = test_app.router.clone().oneshot(request).await.unwrap();
         info!("Verify email request {} status: {}", i, response.status());
@@ -267,6 +282,18 @@ async fn test_rate_limiting_applies_to_verify_email_endpoint() -> AnyhowResult<(
             i
         );
     }
+
+    // Send additional request to verify rate limiting is working
+    let request = create_verify_email_request();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
+    info!("Verify email request 6 status: {}", response.status());
+
+    // This request should be rate limited
+    assert_eq!(
+        response.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "Verify email request 6 should be rate limited (exceeds burst limit)",
+    );
 
     Ok(())
 }

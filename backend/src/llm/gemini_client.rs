@@ -212,11 +212,29 @@ pub async fn generate_simple_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ctor::ctor;
     use futures::stream;
     use genai::chat::ChatStreamEvent;
     use genai::{ModelIden, adapter};
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
     use tokio::time::sleep;
+
+    // Initialize environment for unit tests
+    #[ctor]
+    fn init_env_for_unit_tests() {
+        // CARGO_MANIFEST_DIR points to the backend directory
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        // Go up one level to get to the workspace root where .env is located
+        let workspace_root = manifest_dir.parent().unwrap_or(&manifest_dir);
+        let dot_env_path = workspace_root.join(".env");
+
+        if dot_env_path.exists() {
+            if let Err(e) = dotenvy::from_path(&dot_env_path) {
+                eprintln!("Failed to load .env for unit tests: {}", e);
+            }
+        }
+    }
 
     // --- Existing Integration Tests (Keep them) ---
     #[tokio::test]
