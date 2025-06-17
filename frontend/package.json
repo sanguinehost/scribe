@@ -19,13 +19,13 @@
 	"devDependencies": {
 		"@eslint/compat": "^1.2.5",
 		"@eslint/js": "^9.18.0",
+		"@internationalized/date": "^3.8.1",
 		"@lucide/svelte": "^0.483.0",
 		"@oslojs/crypto": "^1.0.1",
 		"@oslojs/encoding": "^1.1.0",
 		"@sejohnson/svelte-themes": "^0.0.6",
 		"@sveltejs/adapter-vercel": "^5.5.2",
 		"@sveltejs/kit": "^2.16.0",
-		"@internationalized/date": "^3.8.1",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
 		"@testing-library/jest-dom": "^6.6.3",
 		"@testing-library/svelte": "^5.2.7",
@@ -74,5 +74,9 @@
 			"esbuild"
 		]
 	},
-	"packageManager": "pnpm@10.10.0"
+	"packageManager": "pnpm@10.10.0",
+	"dependencies": {
+		"@types/dompurify": "^3.2.0",
+		"dompurify": "^3.2.6"
+	}
 }

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { apiClient } from '$lib/api';
 	import { env } from '$env/dynamic/public';
 	import type { Character, ScribeChatSession, UserPersona } from '$lib/types';
 	import { getCurrentUser } from '$lib/auth.svelte';
 	import { toast } from 'svelte-sonner';
+	import DOMPurify from 'dompurify';
 	// Removed transitions - handled at container level in messages.svelte
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -13,8 +13,6 @@
 	import {
 		Card,
 		CardHeader,
-		CardTitle,
-		CardDescription,
 		CardContent
 	} from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
@@ -57,7 +55,6 @@
 	let character = $state<Character | null>(null);
 	let chats = $state<ScribeChatSession[]>([]);
 	let allChats = $state<ScribeChatSession[]>([]);
-	let showAllChats = $state(false);
 	let isLoadingCharacter = $state(true);
 	let isLoadingChats = $state(true);
 	let deleteDialogOpen = $state(false);
@@ -74,9 +71,15 @@
 
 	// Pop-out editor state for inline editing
 	let popoutEditorOpen = $state(false);
-	let popoutFieldName = $state('');
 	let popoutFieldLabel = $state('');
 	let popoutContent = $state('');
+
+
+	// Full-screen states
+	let descriptionFullScreen = $state(false);
+	let scenarioFullScreen = $state(false);
+	let personalityFullScreen = $state(false);
+
 
 	// User persona for template substitution
 	let currentUserPersona = $state<UserPersona | null>(null);
@@ -89,12 +92,12 @@
 	// Create properly formatted avatar URL
 	const characterAvatarSrc = $derived.by(() => {
 		if (!character?.avatar) return null;
-		
+
 		// If avatar already has a full URL, use it as-is
 		if (character.avatar.startsWith('http://') || character.avatar.startsWith('https://')) {
 			return character.avatar;
 		}
-		
+
 		// Otherwise, prepend the API URL
 		const apiBaseUrl = (env.PUBLIC_API_URL || '').trim();
 		return `${apiBaseUrl}${character.avatar}`;
@@ -123,35 +126,42 @@
 		return text.replace(/\{\{char\}\}/g, characterName).replace(/\{\{user\}\}/g, userPersonaName);
 	}
 
-	// Basic HTML sanitization to prevent XSS while preserving formatting
+	// Check if content contains HTML tags
+	function containsHtml(text: string | null | undefined): boolean {
+		if (!text) return false;
+		return /<[^>]*>/g.test(text);
+	}
+
+	// Text truncation utilities
+
+	// Secure HTML sanitization using DOMPurify
 	function sanitizeHtml(html: string | null | undefined): string {
 		if (!html) return '';
 
-		// Create a temporary div to parse HTML
-		const temp = document.createElement('div');
-		temp.innerHTML = html;
-
-		// Remove script tags and event handlers
-		const scripts = temp.querySelectorAll('script');
-		scripts.forEach((script) => script.remove());
-
-		// Remove all event handlers
-		const allElements = temp.querySelectorAll('*');
-		allElements.forEach((el) => {
-			// Remove all attributes that start with 'on'
-			Array.from(el.attributes).forEach((attr) => {
-				if (attr.name.startsWith('on')) {
-					el.removeAttribute(attr.name);
-				}
-			});
-
-			// Remove javascript: hrefs
-			if (el.tagName === 'A' && el.getAttribute('href')?.startsWith('javascript:')) {
-				el.removeAttribute('href');
-			}
+		// Configure DOMPurify to allow safe formatting tags while removing dangerous content
+		return DOMPurify.sanitize(html, {
+			ALLOWED_TAGS: [
+				'p',
+				'br',
+				'strong',
+				'em',
+				'i',
+				'b',
+				'span',
+				'div',
+				'h1',
+				'h2',
+				'h3',
+				'h4',
+				'h5',
+				'h6'
+			],
+			ALLOWED_ATTR: ['style'],
+			ALLOW_DATA_ATTR: false,
+			// Remove any remaining black/white color styles that don't work with themes
+			SANITIZE_DOM: true,
+			KEEP_CONTENT: true
 		});
-
-		return temp.innerHTML;
 	}
 
 	function formatDate(date: string | Date): string {
@@ -393,22 +403,13 @@
 		}
 	}
 
-	function toggleAllChats() {
-		showAllChats = !showAllChats;
-		if (showAllChats) {
-			chats = allChats;
-		} else {
-			chats = allChats.slice(0, 5);
-		}
-	}
 
 	function getMostRecentChat(): ScribeChatSession | null {
 		if (allChats.length === 0) return null;
 		return allChats[0]; // Assuming chats are sorted by creation date descending
 	}
 
-	function openPopoutEditor(fieldName: string, fieldLabel: string, currentValue: string) {
-		popoutFieldName = fieldName;
+	function openPopoutEditor(_fieldName: string, fieldLabel: string, currentValue: string) {
 		popoutFieldLabel = fieldLabel;
 		popoutContent = currentValue || '';
 		popoutEditorOpen = true;
@@ -417,14 +418,12 @@
 	function savePopoutEditor() {
 		editValue = popoutContent;
 		popoutEditorOpen = false;
-		popoutFieldName = '';
 		popoutFieldLabel = '';
 		popoutContent = '';
 	}
 
 	function cancelPopoutEditor() {
 		popoutEditorOpen = false;
-		popoutFieldName = '';
 		popoutFieldLabel = '';
 		popoutContent = '';
 	}
@@ -454,64 +453,244 @@
 	});
 </script>
 
-<div class="mx-auto max-w-4xl px-4">
+<div class="mx-auto max-w-7xl px-4 h-[90vh] flex flex-col gap-6">
 	<div
-		class="space-y-6"
+		class="flex-1 min-h-0 flex flex-col gap-6"
 		style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
 	>
-		<!-- Character Header Card -->
+		<!-- Compact Character Header -->
 		{#if isLoadingCharacter}
-			<Card class="border-0 shadow-none">
-				<CardHeader class="px-0">
-					<div class="flex items-center space-x-6">
-						<Skeleton class="h-24 w-24 rounded-full" />
-						<div class="flex-1 space-y-3">
-							<Skeleton class="h-8 w-2/3" />
-							<Skeleton class="h-4 w-full" />
-							<Skeleton class="h-4 w-5/6" />
+			<Card class="border-0 shadow-sm">
+				<CardHeader class="py-4">
+					<div class="flex items-center gap-4">
+						<Skeleton class="h-16 w-16 rounded-full" />
+						<div class="flex-1 space-y-2">
+							<Skeleton class="h-7 w-1/2" />
+							<Skeleton class="h-4 w-3/4" />
+						</div>
+						<div class="flex gap-2">
+							<Skeleton class="h-10 w-32" />
+							<Skeleton class="h-10 w-24" />
 						</div>
 					</div>
 				</CardHeader>
 			</Card>
 		{:else if character}
-			<Card class="border-0 shadow-none">
-				<CardHeader class="px-0">
-					<div class="flex items-start space-x-6">
-						<Avatar class="h-24 w-24 border-2 border-muted">
+			<!-- Compact Character Header -->
+			<Card class="border-0 shadow-sm">
+				<CardHeader class="py-4">
+					<div class="flex items-center gap-4">
+						<!-- Compact Avatar -->
+						<Avatar class="h-16 w-16 border-2 border-muted">
 							{#if characterAvatarSrc}
 								<AvatarImage src={characterAvatarSrc} alt={character.name} />
 							{/if}
-							<AvatarFallback class="text-3xl font-semibold">
+							<AvatarFallback class="text-xl font-semibold">
 								{getInitials(character.name)}
 							</AvatarFallback>
 						</Avatar>
-						<div class="flex-1 space-y-4">
-							<div class="relative">
-								{#if editingField !== 'name'}
-									<div class="group relative">
-										<h2 class="text-3xl font-bold">{character.name}</h2>
+
+						<!-- Character Name and Inline Edit -->
+						<div class="min-w-0 flex-1">
+							{#if editingField !== 'name'}
+								<div class="group relative">
+									<h1 class="truncate text-2xl font-bold">{character.name}</h1>
+									<Button
+										variant="ghost"
+										size="sm"
+										class="absolute -right-2 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+										onclick={() => handleEditField('name', character?.name || '')}
+										aria-label="Edit character name"
+									>
+										<PencilEdit class="h-3 w-3" />
+									</Button>
+								</div>
+							{:else}
+								<div class="space-y-2">
+									<Input
+										bind:value={editValue}
+										class="h-auto py-1 text-2xl font-bold"
+										placeholder="Character name"
+										onfocus={(e) => (e.target as HTMLInputElement)?.select()}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') handleSaveField();
+											if (e.key === 'Escape') handleCancelEdit();
+										}}
+									/>
+									<div class="flex gap-2">
+										<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+											{#if isSaving}
+												<div
+													class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+												></div>
+												Saving...
+											{:else}
+												<CheckCircleFill class="h-3 w-3" />
+												Save
+											{/if}
+										</Button>
+										<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+									</div>
+								</div>
+							{/if}
+							<p class="mt-1 text-sm text-muted-foreground">
+								{allChats.length} conversation{allChats.length !== 1 ? 's' : ''}
+							</p>
+						</div>
+
+						<!-- Primary Actions -->
+						<div class="flex flex-shrink-0 gap-2">
+							<Button onclick={handleStartNewChat} size="default" class="gap-2">
+								<PlusIcon class="h-4 w-4" />
+								New Chat
+							</Button>
+							{#if getMostRecentChat()}
+								<Button
+									variant="outline"
+									size="default"
+									class="gap-2"
+									onclick={() => handleSelectChat(getMostRecentChat()!.id)}
+								>
+									<MessageIcon class="h-4 w-4" />
+									Continue
+								</Button>
+							{/if}
+							<Button
+								variant="outline"
+								size="default"
+								class="gap-1"
+								onclick={() => {
+									characterEditorOpen = true;
+								}}
+							>
+								<SettingsIcon class="h-4 w-4" />
+								Edit
+							</Button>
+						</div>
+					</div>
+				</CardHeader>
+			</Card>
+
+			<!-- Two-Column Layout -->
+			<div class="grid grid-cols-1 gap-6 md:grid-cols-5 flex-1 min-h-0">
+				<!-- Left Column: Recent Chats & Character Details (2/5 width) -->
+				<div class="flex flex-col gap-4 md:col-span-2 md:min-h-0">
+					<!-- Recent Chats -->
+					<Card class="shadow-sm flex flex-col md:flex-1 md:min-h-0">
+						<CardHeader class="pb-3">
+							<h3 class="text-lg font-semibold">Recent Chats</h3>
+						</CardHeader>
+						<CardContent class="pt-0 flex-1 overflow-y-auto">
+							{#if isLoadingChats}
+								<div class="space-y-2">
+									{#each Array(3) as _}
+										<div class="flex items-center gap-3 p-2">
+											<Skeleton class="h-2 w-2 rounded-full" />
+											<div class="flex-1 space-y-1">
+												<Skeleton class="h-4 w-3/4" />
+												<Skeleton class="h-3 w-1/4" />
+											</div>
+										</div>
+									{/each}
+								</div>
+							{:else if chats.length === 0}
+								<div class="py-8 text-center">
+									<MessageIcon class="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+									<p class="text-sm text-muted-foreground">No conversations yet</p>
+								</div>
+							{:else}
+								<div class="space-y-1">
+									{#each chats as chat}
+										<div
+											class="group cursor-pointer rounded-md p-2 transition-colors hover:bg-muted/50"
+											onclick={() => handleSelectChat(chat.id)}
+											onkeydown={(e) => e.key === 'Enter' && handleSelectChat(chat.id)}
+											tabindex={0}
+											role="button"
+										>
+											<div class="flex items-center gap-2">
+												<div class="h-2 w-2 rounded-full bg-muted-foreground/50"></div>
+												<div class="min-w-0 flex-1">
+													<p class="truncate text-sm font-medium">
+														{chat.title || `Chat with ${character?.name}`}
+													</p>
+													<p class="text-xs text-muted-foreground">
+														{formatDate(chat.created_at)}
+													</p>
+												</div>
+												<Button
+													variant="ghost"
+													size="sm"
+													class="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+													onclick={(e) => handleDeleteClick(e, chat)}
+													aria-label="Delete chat"
+												>
+													<TrashIcon class="h-3 w-3 text-destructive" />
+												</Button>
+											</div>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</CardContent>
+					</Card>
+
+					{#if character}
+						<!-- Scenario Section -->
+						<Card class="shadow-sm flex flex-col md:flex-1 md:min-h-0">
+							<CardHeader class="pb-3">
+								<div class="flex items-center justify-between">
+									<h3 class="text-lg font-semibold">Scenario</h3>
+									<div class="flex items-center gap-2">
+										{#if character.scenario && editingField !== 'scenario'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="h-6 w-6 p-0"
+												onclick={() => (scenarioFullScreen = true)}
+												title="View full screen"
+											>
+												<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+												</svg>
+											</Button>
+										{/if}
 										<Button
 											variant="ghost"
 											size="sm"
-											class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-											onclick={() => handleEditField('name', character.name)}
-											aria-label="Edit character name"
+											class="h-6 w-6 p-0"
+											onclick={() => handleEditField('scenario', character?.scenario || '')}
+											aria-label="Edit scenario"
 										>
 											<PencilEdit class="h-3 w-3" />
 										</Button>
 									</div>
-								{:else}
-									<div class="space-y-2">
-										<Input
-											bind:value={editValue}
-											class="h-auto py-2 text-3xl font-bold"
-											placeholder="Character name"
-											onfocus={(e) => e.target.select()}
-											onkeydown={(e) => {
-												if (e.key === 'Enter') handleSaveField();
-												if (e.key === 'Escape') handleCancelEdit();
-											}}
-										/>
+								</div>
+							</CardHeader>
+							<CardContent class="pt-0 flex-1 overflow-y-auto">
+								{#if editingField === 'scenario'}
+									<div class="space-y-3">
+										<div class="flex gap-2">
+											<Textarea
+												bind:value={editValue}
+												placeholder="Character scenario"
+												rows={calculateTextareaRows(character.scenario, 4)}
+												onfocus={(e) => (e.target as HTMLTextAreaElement)?.select()}
+												onkeydown={(e) => {
+													if (e.key === 'Escape') handleCancelEdit();
+													if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
+												}}
+												class="flex-1"
+											/>
+											<Button
+												variant="outline"
+												size="sm"
+												onclick={() => openPopoutEditor('scenario', 'Scenario', editValue)}
+												class="mt-1 self-start"
+											>
+												Expand
+											</Button>
+										</div>
 										<div class="flex gap-2">
 											<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
 												{#if isSaving}
@@ -527,75 +706,211 @@
 											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
 										</div>
 									</div>
-								{/if}
-								<div class="mt-4 flex gap-3">
-									<Button onclick={handleStartNewChat} size="lg" class="gap-2">
-										<PlusIcon class="h-4 w-4" />
-										Start New Chat
-									</Button>
-									{#if getMostRecentChat()}
+								{:else if character.scenario}
+									<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
+										{#if containsHtml(character.scenario)}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+											{@html sanitizeHtml(
+												substituteTemplateVariables(
+													character.scenario,
+													character.name
+												)
+											)}
+										{:else}
+											<MarkdownRenderer
+												md={substituteTemplateVariables(
+													character.scenario,
+													character.name
+												)}
+											/>
+										{/if}
+									</div>
+								{:else}
+									<div class="py-8 text-center">
+										<p class="mb-3 text-sm text-muted-foreground">No scenario defined</p>
 										<Button
 											variant="outline"
-											size="lg"
+											size="sm"
+											onclick={() => handleEditField('scenario', '')}
 											class="gap-2"
-											onclick={() => handleSelectChat(getMostRecentChat()!.id)}
 										>
-											<MessageIcon class="h-4 w-4" />
-											Continue Last Chat
+											<PencilEdit class="h-3 w-3" />
+											Add Scenario
 										</Button>
-									{/if}
-									<Button
-										variant="outline"
-										size="lg"
-										class="gap-2"
-										onclick={() => {
-											characterEditorOpen = true;
-										}}
-									>
-										<SettingsIcon class="h-4 w-4" />
-										Edit Character
-									</Button>
-								</div>
-								{#if character.description && editingField !== 'description'}
-									<div class="group relative mt-2">
-										<div
-											class="prose prose-sm dark:prose-invert max-w-none text-muted-foreground [&_*]:!text-muted-foreground"
-										>
-											<MarkdownRenderer
-												md={substituteTemplateVariables(character.description, character.name)}
-											/>
-										</div>
+									</div>
+								{/if}
+							</CardContent>
+						</Card>
+
+						<!-- Personality Section -->
+						<Card class="shadow-sm flex flex-col md:flex-1 md:min-h-0">
+							<CardHeader class="pb-3">
+								<div class="flex items-center justify-between">
+									<h3 class="text-lg font-semibold">Personality</h3>
+									<div class="flex items-center gap-2">
+										{#if character.personality && editingField !== 'personality'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="h-6 w-6 p-0"
+												onclick={() => (personalityFullScreen = true)}
+												title="View full screen"
+											>
+												<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+												</svg>
+											</Button>
+										{/if}
 										<Button
 											variant="ghost"
 											size="sm"
-											class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-											onclick={() => handleEditField('description', character.description)}
+											class="h-6 w-6 p-0"
+											onclick={() => handleEditField('personality', character?.personality || '')}
+											aria-label="Edit personality"
+										>
+											<PencilEdit class="h-3 w-3" />
+										</Button>
+									</div>
+								</div>
+							</CardHeader>
+							<CardContent class="pt-0 flex-1 overflow-y-auto">
+								{#if editingField === 'personality'}
+									<div class="space-y-3">
+										<div class="flex gap-2">
+											<Textarea
+												bind:value={editValue}
+												placeholder="Character personality"
+												rows={calculateTextareaRows(character.personality, 4)}
+												onfocus={(e) => (e.target as HTMLTextAreaElement)?.select()}
+												onkeydown={(e) => {
+													if (e.key === 'Escape') handleCancelEdit();
+													if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
+												}}
+												class="flex-1"
+											/>
+											<Button
+												variant="outline"
+												size="sm"
+												onclick={() => openPopoutEditor('personality', 'Personality', editValue)}
+												class="mt-1 self-start"
+											>
+												Expand
+											</Button>
+										</div>
+										<div class="flex gap-2">
+											<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+												{#if isSaving}
+													<div
+														class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+													></div>
+													Saving...
+												{:else}
+													<CheckCircleFill class="h-3 w-3" />
+													Save
+												{/if}
+											</Button>
+											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+										</div>
+									</div>
+								{:else if character.personality}
+									<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
+										{#if containsHtml(character.personality)}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+											{@html sanitizeHtml(
+												substituteTemplateVariables(
+													character.personality,
+													character.name
+												)
+											)}
+										{:else}
+											<MarkdownRenderer
+												md={substituteTemplateVariables(
+													character.personality,
+													character.name
+												)}
+											/>
+										{/if}
+									</div>
+								{:else}
+									<div class="py-8 text-center">
+										<p class="mb-3 text-sm text-muted-foreground">No personality defined</p>
+										<Button
+											variant="outline"
+											size="sm"
+											onclick={() => handleEditField('personality', '')}
+											class="gap-2"
+										>
+											<PencilEdit class="h-3 w-3" />
+											Add Personality
+										</Button>
+									</div>
+								{/if}
+							</CardContent>
+						</Card>
+					{/if}
+				</div>
+
+				<!-- Right Column: Character Description (3/5 width) -->
+				<div class="flex flex-col gap-4 md:col-span-3 md:min-h-0">
+					{#if character.description || editingField === 'description'}
+						<Card class="shadow-sm flex flex-col md:flex-1 md:min-h-0">
+							<CardHeader class="pb-3">
+								<div class="flex items-center justify-between">
+									<h3 class="text-lg font-semibold">Description</h3>
+									<div class="flex items-center gap-2">
+										{#if character.description && editingField !== 'description'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="h-6 w-6 p-0"
+												onclick={() => (descriptionFullScreen = true)}
+												title="View full screen"
+											>
+												<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+												</svg>
+											</Button>
+										{/if}
+										<Button
+											variant="ghost"
+											size="sm"
+											class="h-6 w-6 p-0"
+											onclick={() => handleEditField('description', character?.description || '')}
 											aria-label="Edit character description"
 										>
 											<PencilEdit class="h-3 w-3" />
 										</Button>
 									</div>
-								{:else if !character.description && editingField !== 'description'}
-									<div class="group relative mt-2">
-										<div class="text-sm italic text-muted-foreground">No description</div>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="absolute -right-8 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-											onclick={() => handleEditField('description', '')}
-											aria-label="Add character description"
-										>
-											<PencilEdit class="h-3 w-3" />
-										</Button>
+								</div>
+							</CardHeader>
+							<CardContent class="pt-0 flex-1 overflow-y-auto">
+								{#if editingField !== 'description'}
+									<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground pb-6">
+										{#if containsHtml(character.description)}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+											{@html sanitizeHtml(
+												substituteTemplateVariables(
+													character.description || '',
+													character.name
+												)
+											)}
+										{:else}
+											<MarkdownRenderer
+												md={substituteTemplateVariables(
+													character.description || '',
+													character.name
+												)}
+											/>
+										{/if}
 									</div>
-								{:else if editingField === 'description'}
-									<div class="mt-2 space-y-2">
+								{:else}
+									<div class="space-y-3">
 										<div class="flex gap-2">
 											<Textarea
 												bind:value={editValue}
 												placeholder="Character description"
-												rows={calculateTextareaRows(character.description, 3)}
-												onfocus={(e) => e.target.select()}
+												rows={calculateTextareaRows(character.description, 8)}
+												onfocus={(e) => (e.target as HTMLTextAreaElement)?.select()}
 												onkeydown={(e) => {
 													if (e.key === 'Escape') handleCancelEdit();
 													if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
@@ -627,254 +942,176 @@
 										</div>
 									</div>
 								{/if}
-							</div>
-						</div>
-					</div>
-				</CardHeader>
-			</Card>
-		{/if}
-
-		<!-- Chat Sessions Section -->
-		<div class="space-y-4">
-			<div class="flex items-center justify-between">
-				<h3 class="text-xl font-semibold">Recent Chats</h3>
+							</CardContent>
+						</Card>
+					{:else}
+						<Card class="border-dashed shadow-sm">
+							<CardContent class="py-8 text-center">
+								<p class="mb-3 text-muted-foreground">No description available</p>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => handleEditField('description', '')}
+									class="gap-2"
+								>
+									<PencilEdit class="h-3 w-3" />
+									Add Description
+								</Button>
+							</CardContent>
+						</Card>
+					{/if}
+				</div>
 			</div>
-
-			{#if isLoadingChats}
-				<div class="grid gap-3">
-					{#each Array(3) as _}
-						<Card class="cursor-pointer transition-colors hover:bg-muted/50">
-							<CardHeader>
-								<div class="space-y-2">
-									<Skeleton class="h-5 w-3/4" />
-									<Skeleton class="h-4 w-1/4" />
-								</div>
-							</CardHeader>
-						</Card>
-					{/each}
-				</div>
-			{:else if chats.length === 0}
-				<Card class="border-dashed">
-					<CardContent class="py-12 text-center">
-						<MessageIcon class="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-						<p class="mb-4 text-muted-foreground">
-							No conversations yet with {character?.name || 'this character'}
-						</p>
-						<Button onclick={handleStartNewChat} variant="outline" disabled={!character}>
-							Start Your First Chat
-						</Button>
-					</CardContent>
-				</Card>
-			{:else}
-				<div class="grid gap-3">
-					{#each chats as chat}
-						<Card
-							class="group cursor-pointer transition-colors hover:bg-muted/50"
-							onclick={() => handleSelectChat(chat.id)}
-							onkeydown={(e) => e.key === 'Enter' && handleSelectChat(chat.id)}
-							tabindex={0}
-							role="button"
-						>
-							<CardHeader class="pb-6">
-								<div class="flex items-start justify-between">
-									<div class="min-w-0 flex-1 space-y-1">
-										<CardTitle class="truncate text-base font-medium">
-											{chat.title || `Chat with ${character?.name}`}
-										</CardTitle>
-										<CardDescription class="text-sm">
-											{formatDate(chat.created_at)}
-										</CardDescription>
-									</div>
-									<div class="ml-3 flex items-center gap-2">
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100"
-											onclick={(e) => handleDeleteClick(e, chat)}
-											aria-label="Delete chat"
-											title="Delete chat (hold Shift to skip confirmation)"
-										>
-											<TrashIcon class="h-4 w-4 text-destructive" />
-										</Button>
-										<MessageIcon class="h-5 w-5 flex-shrink-0 text-muted-foreground" />
-									</div>
-								</div>
-							</CardHeader>
-						</Card>
-					{/each}
-				</div>
-			{/if}
-
-			<!-- Show All Chats Button -->
-			{#if allChats.length > 5}
-				<div class="pt-4 text-center">
-					<Button variant="outline" onclick={toggleAllChats}>
-						{showAllChats ? 'Show Recent Only' : `Show All ${allChats.length} Chats`}
-					</Button>
-				</div>
-			{/if}
-		</div>
-
-		<!-- Character Details Section ---->
-		{#if character}
-			<Card class="border-0 shadow-none">
-				<CardContent class="space-y-4 px-0">
-					<!-- Scenario Field -->
-					{#if editingField === 'scenario'}
-						<div class="space-y-2 rounded-lg bg-muted/50 p-4">
-							<h4 class="text-sm font-semibold text-muted-foreground">Scenario</h4>
-							<div class="flex gap-2">
-								<Textarea
-									bind:value={editValue}
-									placeholder="Character scenario"
-									rows={calculateTextareaRows(character.scenario, 4)}
-									onfocus={(e) => e.target.select()}
-									onkeydown={(e) => {
-										if (e.key === 'Escape') handleCancelEdit();
-										if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
-									}}
-									class="flex-1"
-								/>
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={() => openPopoutEditor('scenario', 'Scenario', editValue)}
-									class="mt-1 self-start"
-								>
-									Expand
-								</Button>
-							</div>
-							<div class="flex gap-2">
-								<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
-									{#if isSaving}
-										<div
-											class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
-										></div>
-										Saving...
-									{:else}
-										<CheckCircleFill class="h-3 w-3" />
-										Save
-									{/if}
-								</Button>
-								<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
-							</div>
-						</div>
-					{:else if character.scenario}
-						<div class="group relative rounded-lg bg-muted/50 p-4">
-							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
-							<div
-								class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-							>
-								<MarkdownRenderer
-									md={substituteTemplateVariables(character.scenario, character.name)}
-								/>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-								onclick={() => handleEditField('scenario', character.scenario)}
-								aria-label="Edit scenario"
-							>
-								<PencilEdit class="h-3 w-3" />
-							</Button>
-						</div>
-					{:else}
-						<div class="group relative rounded-lg bg-muted/50 p-4">
-							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
-							<div class="text-sm italic text-muted-foreground">No scenario defined</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-								onclick={() => handleEditField('scenario', '')}
-								aria-label="Add scenario"
-							>
-								<PencilEdit class="h-3 w-3" />
-							</Button>
-						</div>
-					{/if}
-
-					<!-- Personality Field -->
-					{#if editingField === 'personality'}
-						<div class="space-y-2 rounded-lg bg-muted/50 p-4">
-							<h4 class="text-sm font-semibold text-muted-foreground">Personality</h4>
-							<div class="flex gap-2">
-								<Textarea
-									bind:value={editValue}
-									placeholder="Character personality"
-									rows={calculateTextareaRows(character.personality, 4)}
-									onfocus={(e) => e.target.select()}
-									onkeydown={(e) => {
-										if (e.key === 'Escape') handleCancelEdit();
-										if (e.key === 'Enter' && e.ctrlKey) handleSaveField();
-									}}
-									class="flex-1"
-								/>
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={() => openPopoutEditor('personality', 'Personality', editValue)}
-									class="mt-1 self-start"
-								>
-									Expand
-								</Button>
-							</div>
-							<div class="flex gap-2">
-								<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
-									{#if isSaving}
-										<div
-											class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
-										></div>
-										Saving...
-									{:else}
-										<CheckCircleFill class="h-3 w-3" />
-										Save
-									{/if}
-								</Button>
-								<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
-							</div>
-						</div>
-					{:else if character.personality}
-						<div class="group relative rounded-lg bg-muted/50 p-4">
-							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
-							<div
-								class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-							>
-								<MarkdownRenderer
-									md={substituteTemplateVariables(character.personality, character.name)}
-								/>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-								onclick={() => handleEditField('personality', character.personality)}
-								aria-label="Edit personality"
-							>
-								<PencilEdit class="h-3 w-3" />
-							</Button>
-						</div>
-					{:else}
-						<div class="group relative rounded-lg bg-muted/50 p-4">
-							<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
-							<div class="text-sm italic text-muted-foreground">No personality defined</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="absolute -right-2 top-2 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-								onclick={() => handleEditField('personality', '')}
-								aria-label="Add personality"
-							>
-								<PencilEdit class="h-3 w-3" />
-							</Button>
-						</div>
-					{/if}
-				</CardContent>
-			</Card>
-		{/if}
+{/if}
 	</div>
 </div>
+
+<!-- Full-Screen Description Modal -->
+{#if descriptionFullScreen && character?.description}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) descriptionFullScreen = false;
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') descriptionFullScreen = false;
+		}}
+		tabindex="0"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="description-title"
+	>
+		<div class="w-full max-w-4xl max-h-[90vh] overflow-auto bg-background rounded-lg shadow-lg">
+			<div class="sticky top-0 bg-background border-b p-4 flex items-center justify-between">
+				<h2 id="description-title" class="text-xl font-semibold">
+					{character.name} - Description
+				</h2>
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={() => (descriptionFullScreen = false)}
+					class="h-8 w-8 p-0"
+				>
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</Button>
+			</div>
+			<div class="p-6">
+				<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
+					{#if containsHtml(character.description)}
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						{@html sanitizeHtml(
+							substituteTemplateVariables(character.description, character.name)
+						)}
+					{:else}
+						<MarkdownRenderer
+							md={substituteTemplateVariables(character.description || '', character.name)}
+						/>
+					{/if}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Full-Screen Scenario Modal -->
+{#if scenarioFullScreen && character?.scenario}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) scenarioFullScreen = false;
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') scenarioFullScreen = false;
+		}}
+		tabindex="0"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="scenario-title"
+	>
+		<div class="w-full max-w-4xl max-h-[90vh] overflow-auto bg-background rounded-lg shadow-lg">
+			<div class="sticky top-0 bg-background border-b p-4 flex items-center justify-between">
+				<h2 id="scenario-title" class="text-xl font-semibold">
+					{character.name} - Scenario
+				</h2>
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={() => (scenarioFullScreen = false)}
+					class="h-8 w-8 p-0"
+				>
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</Button>
+			</div>
+			<div class="p-6">
+				<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
+					{#if containsHtml(character.scenario)}
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						{@html sanitizeHtml(
+							substituteTemplateVariables(character.scenario, character.name)
+						)}
+					{:else}
+						<MarkdownRenderer
+							md={substituteTemplateVariables(character.scenario || '', character.name)}
+						/>
+					{/if}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Full-Screen Personality Modal -->
+{#if personalityFullScreen && character?.personality}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) personalityFullScreen = false;
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') personalityFullScreen = false;
+		}}
+		tabindex="0"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="personality-title"
+	>
+		<div class="w-full max-w-4xl max-h-[90vh] overflow-auto bg-background rounded-lg shadow-lg">
+			<div class="sticky top-0 bg-background border-b p-4 flex items-center justify-between">
+				<h2 id="personality-title" class="text-xl font-semibold">
+					{character.name} - Personality
+				</h2>
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={() => (personalityFullScreen = false)}
+					class="h-8 w-8 p-0"
+				>
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</Button>
+			</div>
+			<div class="p-6">
+				<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
+					{#if containsHtml(character.personality)}
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						{@html sanitizeHtml(
+							substituteTemplateVariables(character.personality, character.name)
+						)}
+					{:else}
+						<MarkdownRenderer
+							md={substituteTemplateVariables(character.personality || '', character.name)}
+						/>
+					{/if}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <!-- Character Editor Dialog -->
 {#if character}
@@ -944,14 +1181,12 @@
 		color: hsl(var(--foreground)) !important;
 	}
 
-	/* Ensure text remains visible in both themes */
 	:global(.prose p),
 	:global(.prose span),
 	:global(.prose strong) {
 		color: hsl(var(--foreground)) !important;
 	}
 
-	/* Properly style centered text */
 	:global(.prose p[style*='text-align: center']) {
 		margin-top: 1rem;
 		margin-bottom: 1rem;

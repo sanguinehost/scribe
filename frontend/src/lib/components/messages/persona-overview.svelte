@@ -4,6 +4,7 @@
 	import { toast } from 'svelte-sonner';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { fly } from 'svelte/transition';
+	import DOMPurify from 'dompurify';
 	import { quintOut } from 'svelte/easing';
 	import { Button } from '$lib/components/ui/button';
 	import { slideAndFade } from '$lib/utils/transitions';
@@ -69,30 +70,40 @@
 		return name ? name.charAt(0).toUpperCase() : '?';
 	}
 
-	// Basic HTML sanitization to prevent XSS while preserving formatting
+	// Check if content contains HTML tags
+	function containsHtml(text: string | null | undefined): boolean {
+		if (!text) return false;
+		return /<[^>]*>/g.test(text);
+	}
+
+	// Secure HTML sanitization using DOMPurify
 	function sanitizeHtml(html: string | null | undefined): string {
 		if (!html) return '';
 
-		const temp = document.createElement('div');
-		temp.innerHTML = html;
-
-		const scripts = temp.querySelectorAll('script');
-		scripts.forEach((script) => script.remove());
-
-		const allElements = temp.querySelectorAll('*');
-		allElements.forEach((el) => {
-			Array.from(el.attributes).forEach((attr) => {
-				if (attr.name.startsWith('on')) {
-					el.removeAttribute(attr.name);
-				}
-			});
-
-			if (el.tagName === 'A' && el.getAttribute('href')?.startsWith('javascript:')) {
-				el.removeAttribute('href');
-			}
+		// Configure DOMPurify to allow safe formatting tags while removing dangerous content
+		return DOMPurify.sanitize(html, {
+			ALLOWED_TAGS: [
+				'p',
+				'br',
+				'strong',
+				'em',
+				'i',
+				'b',
+				'span',
+				'div',
+				'h1',
+				'h2',
+				'h3',
+				'h4',
+				'h5',
+				'h6'
+			],
+			ALLOWED_ATTR: ['style'],
+			ALLOW_DATA_ATTR: false,
+			// Remove any remaining black/white color styles that don't work with themes
+			SANITIZE_DOM: true,
+			KEEP_CONTENT: true
 		});
-
-		return temp.innerHTML;
 	}
 
 	async function loadPersonaData() {
@@ -310,180 +321,216 @@
 	in:slideAndFade={{ y: 20, duration: 300 }}
 	out:slideAndFade={{ y: -20, duration: 200 }}
 >
-<div class="mx-auto max-w-6xl w-full">
-	<div
-		class="space-y-6"
-		style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
-	>
-		<!-- Persona Header Card -->
-		{#if isLoading}
-			<Card class="border-0 shadow-none">
-				<CardHeader class="px-0">
-					<div class="flex items-center space-x-6">
-						<Skeleton class="h-24 w-24 rounded-full" />
-						<div class="flex-1 space-y-3">
-							<Skeleton class="h-8 w-2/3" />
-							<Skeleton class="h-4 w-full" />
-							<Skeleton class="h-4 w-5/6" />
+	<div class="mx-auto w-full max-w-6xl">
+		<div
+			class="space-y-6"
+			style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
+		>
+			<!-- Persona Header Card -->
+			{#if isLoading}
+				<Card class="border-0 shadow-none">
+					<CardHeader class="px-0">
+						<div class="flex items-center space-x-6">
+							<Skeleton class="h-24 w-24 rounded-full" />
+							<div class="flex-1 space-y-3">
+								<Skeleton class="h-8 w-2/3" />
+								<Skeleton class="h-4 w-full" />
+								<Skeleton class="h-4 w-5/6" />
+							</div>
 						</div>
-					</div>
-				</CardHeader>
-			</Card>
-		{:else if persona}
-			<Card class="border-0 shadow-none">
-				<CardHeader class="px-0">
-					<div class="flex items-start space-x-6">
-						<Avatar class="h-24 w-24 border-2 border-muted">
-							{#if persona.avatar}
-								<AvatarImage src={`${persona.avatar}?width=96&height=96`} alt={persona.name} />
-							{/if}
-							<AvatarFallback class="text-3xl font-semibold">
-								{getInitials(persona.name)}
-							</AvatarFallback>
-						</Avatar>
-						<div class="flex-1 space-y-4">
-							<div class="relative">
-								{#if !isEditMode}
-									<div>
-										<h2 class="text-3xl font-bold">{persona.name}</h2>
-										{#if persona.description}
-											<div
-												class="prose prose-sm dark:prose-invert mt-2 max-w-none text-muted-foreground [&_*]:!text-muted-foreground"
-											>
-												<MarkdownRenderer md={persona.description} />
+					</CardHeader>
+				</Card>
+			{:else if persona}
+				<Card class="border-0 shadow-none">
+					<CardHeader class="px-0">
+						<div class="flex items-start space-x-6">
+							<Avatar class="h-24 w-24 border-2 border-muted">
+								{#if persona.avatar}
+									<AvatarImage src={`${persona.avatar}?width=96&height=96`} alt={persona.name} />
+								{/if}
+								<AvatarFallback class="text-3xl font-semibold">
+									{getInitials(persona.name)}
+								</AvatarFallback>
+							</Avatar>
+							<div class="flex-1 space-y-4">
+								<div class="relative">
+									{#if !isEditMode}
+										<div>
+											<h2 class="text-3xl font-bold">{persona.name}</h2>
+											{#if persona.description}
+												<div
+													class="prose prose-sm dark:prose-invert mt-2 max-w-none text-muted-foreground [&_*]:!text-muted-foreground"
+												>
+													{#if containsHtml(persona.description)}
+														<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+														{@html sanitizeHtml(persona.description)}
+													{:else}
+														<MarkdownRenderer md={persona.description} />
+													{/if}
+												</div>
+											{/if}
+										</div>
+									{:else}
+										<div class="space-y-3">
+											<div>
+												<Label for="edit-name" class="text-sm font-medium">Name</Label>
+												<Input
+													id="edit-name"
+													bind:value={editedName}
+													class="mt-1"
+													placeholder="Persona name"
+												/>
 											</div>
-										{/if}
-									</div>
-								{:else}
-									<div class="space-y-3">
-										<div>
-											<Label for="edit-name" class="text-sm font-medium">Name</Label>
-											<Input
-												id="edit-name"
-												bind:value={editedName}
-												class="mt-1"
-												placeholder="Persona name"
-											/>
+											<div>
+												<Label for="edit-description" class="text-sm font-medium">Description</Label
+												>
+												<Textarea
+													id="edit-description"
+													bind:value={editedDescription}
+													class="mt-1"
+													placeholder="Persona description"
+													rows={3}
+												/>
+											</div>
 										</div>
-										<div>
-											<Label for="edit-description" class="text-sm font-medium">Description</Label>
-											<Textarea
-												id="edit-description"
-												bind:value={editedDescription}
-												class="mt-1"
-												placeholder="Persona description"
-												rows={3}
-											/>
-										</div>
-									</div>
-								{/if}
-							</div>
-							<div class="flex gap-2">
-								{#if !isEditMode}
-									<Button onclick={handleEdit} size="lg" class="gap-2">
-										<PencilEditIcon class="h-4 w-4" />
-										Edit Persona
-									</Button>
-									<Button
-										onclick={handleSetDefault}
-										variant="outline"
-										size="lg"
-										disabled={isSettingDefault}
-									>
-										{isSettingDefault ? 'Setting...' : 'Set as Default'}
-									</Button>
-									<Button onclick={handleDeleteClick} variant="destructive" size="lg">
-										<TrashIcon class="h-4 w-4" />
-									</Button>
-								{:else}
-									<Button onclick={handleSave} disabled={isSaving} size="lg" class="gap-2">
-										{#if isSaving}
-											<div
-												class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-											></div>
-											Saving...
-										{:else}
-											<CheckCircleFill class="h-4 w-4" />
-											Save Changes
-										{/if}
-									</Button>
-									<Button onclick={handleCancelEdit} variant="outline" size="lg">Cancel</Button>
-								{/if}
+									{/if}
+								</div>
+								<div class="flex gap-2">
+									{#if !isEditMode}
+										<Button onclick={handleEdit} size="lg" class="gap-2">
+											<PencilEditIcon class="h-4 w-4" />
+											Edit Persona
+										</Button>
+										<Button
+											onclick={handleSetDefault}
+											variant="outline"
+											size="lg"
+											disabled={isSettingDefault}
+										>
+											{isSettingDefault ? 'Setting...' : 'Set as Default'}
+										</Button>
+										<Button onclick={handleDeleteClick} variant="destructive" size="lg">
+											<TrashIcon class="h-4 w-4" />
+										</Button>
+									{:else}
+										<Button onclick={handleSave} disabled={isSaving} size="lg" class="gap-2">
+											{#if isSaving}
+												<div
+													class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+												></div>
+												Saving...
+											{:else}
+												<CheckCircleFill class="h-4 w-4" />
+												Save Changes
+											{/if}
+										</Button>
+										<Button onclick={handleCancelEdit} variant="outline" size="lg">Cancel</Button>
+									{/if}
+								</div>
 							</div>
 						</div>
-					</div>
-				</CardHeader>
+					</CardHeader>
 
-				{#if persona.scenario || persona.personality || persona.first_mes || persona.system_prompt}
-					<CardContent class="space-y-4 px-0">
-						{#if persona.scenario}
-							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
-								<div
-									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-								>
-									<MarkdownRenderer md={persona.scenario} />
+					{#if persona.scenario || persona.personality || persona.first_mes || persona.system_prompt}
+						<CardContent class="space-y-4 px-0">
+							{#if persona.scenario}
+								<div class="rounded-lg bg-muted/50 p-4">
+									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
+									<div
+										class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+									>
+										{#if containsHtml(persona.scenario)}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+											{@html sanitizeHtml(persona.scenario)}
+										{:else}
+											<MarkdownRenderer md={persona.scenario} />
+										{/if}
+									</div>
 								</div>
-							</div>
-						{/if}
-						{#if persona.personality}
-							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
-								<div
-									class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-								>
-									<MarkdownRenderer md={persona.personality} />
+							{/if}
+							{#if persona.personality}
+								<div class="rounded-lg bg-muted/50 p-4">
+									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
+									<div
+										class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+									>
+										{#if containsHtml(persona.personality)}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+											{@html sanitizeHtml(persona.personality)}
+										{:else}
+											<MarkdownRenderer md={persona.personality} />
+										{/if}
+									</div>
 								</div>
-							</div>
-						{/if}
-						{#if persona.first_mes}
-							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">First Message</h4>
-								<div
-									class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-								>
-									<MarkdownRenderer md={persona.first_mes} />
+							{/if}
+							{#if persona.first_mes}
+								<div class="rounded-lg bg-muted/50 p-4">
+									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">First Message</h4>
+									<div
+										class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+									>
+										{#if containsHtml(persona.first_mes)}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+											{@html sanitizeHtml(persona.first_mes)}
+										{:else}
+											<MarkdownRenderer md={persona.first_mes} />
+										{/if}
+									</div>
 								</div>
-							</div>
-						{/if}
-						{#if persona.system_prompt}
-							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">System Prompt</h4>
-								<div
-									class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-								>
-									<MarkdownRenderer md={persona.system_prompt} />
+							{/if}
+							{#if persona.system_prompt}
+								<div class="rounded-lg bg-muted/50 p-4">
+									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">System Prompt</h4>
+									<div
+										class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+									>
+										{#if containsHtml(persona.system_prompt)}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+											{@html sanitizeHtml(persona.system_prompt)}
+										{:else}
+											<MarkdownRenderer md={persona.system_prompt} />
+										{/if}
+									</div>
 								</div>
-							</div>
-						{/if}
-						{#if persona.mes_example}
-							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Message Example</h4>
-								<div
-									class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-								>
-									<MarkdownRenderer md={persona.mes_example} />
+							{/if}
+							{#if persona.mes_example}
+								<div class="rounded-lg bg-muted/50 p-4">
+									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Message Example</h4>
+									<div
+										class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+									>
+										{#if containsHtml(persona.mes_example)}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+											{@html sanitizeHtml(persona.mes_example)}
+										{:else}
+											<MarkdownRenderer md={persona.mes_example} />
+										{/if}
+									</div>
 								</div>
-							</div>
-						{/if}
-						{#if persona.post_history_instructions}
-							<div class="rounded-lg bg-muted/50 p-4">
-								<h4 class="mb-2 text-sm font-semibold text-muted-foreground">
-									Post-History Instructions
-								</h4>
-								<div
-									class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-								>
-									<MarkdownRenderer md={persona.post_history_instructions} />
+							{/if}
+							{#if persona.post_history_instructions}
+								<div class="rounded-lg bg-muted/50 p-4">
+									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">
+										Post-History Instructions
+									</h4>
+									<div
+										class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
+									>
+										{#if containsHtml(persona.post_history_instructions)}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+											{@html sanitizeHtml(persona.post_history_instructions)}
+										{:else}
+											<MarkdownRenderer md={persona.post_history_instructions} />
+										{/if}
+									</div>
 								</div>
-							</div>
-						{/if}
-					</CardContent>
-				{/if}
-			</Card>
-		{/if}
+							{/if}
+						</CardContent>
+					{/if}
+				</Card>
+			{/if}
+		</div>
 	</div>
-</div>
 </div>
 
 <!-- Delete Confirmation Dialog -->
