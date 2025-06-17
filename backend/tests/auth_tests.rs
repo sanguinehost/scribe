@@ -1444,12 +1444,12 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
 
     if let Some(token) = verification_token {
         info!("Verifying email with token: {}", token);
-        
+
         // Verify the email
         let verify_payload = json!({
             "token": token
         });
-        
+
         let verify_request = Request::builder()
             .method(Method::POST)
             .uri("/api/auth/verify-email")
@@ -1457,13 +1457,13 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
             .body(Body::from(verify_payload.to_string()))?;
 
         let verify_response = test_app.router.clone().oneshot(verify_request).await?;
-        
+
         assert_eq!(
             verify_response.status(),
             StatusCode::OK,
             "Email verification failed"
         );
-        
+
         info!("Email verification successful");
     } else {
         return Err(anyhow::anyhow!("No verification token found for user"));

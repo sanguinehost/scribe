@@ -674,12 +674,10 @@ mod get_session_data_for_generation_tests {
         // Configure mock expectations for embedding pipeline service
         // retrieve_relevant_chunks is called twice: once for lorebooks, once for older chat history.
         // For this test, we expect both to return empty vectors.
-        setup
-            .mock_embeddings
-            .set_retrieve_responses_sequence(vec![
-                Ok(Vec::new()), // For lorebook chunks
-                Ok(Vec::new()), // For older chat history chunks
-            ]);
+        setup.mock_embeddings.set_retrieve_responses_sequence(vec![
+            Ok(Vec::new()), // For lorebook chunks
+            Ok(Vec::new()), // For older chat history chunks
+        ]);
 
         // Act
         let result = get_session_data_for_generation(
@@ -850,12 +848,10 @@ mod get_session_data_for_generation_tests {
         let expected_lore_chunks = create_test_rag_chunks(lorebook_id, setup.user_id);
 
         // Configure mock expectations for RAG
-        setup
-            .mock_embeddings
-            .set_retrieve_responses_sequence(vec![
-                Ok(expected_lore_chunks.clone()), // Response for the lorebook chunks call
-                Ok(Vec::new()), // Response for the older chat history call (empty for this test)
-            ]);
+        setup.mock_embeddings.set_retrieve_responses_sequence(vec![
+            Ok(expected_lore_chunks.clone()), // Response for the lorebook chunks call
+            Ok(Vec::new()), // Response for the older chat history call (empty for this test)
+        ]);
 
         // Act
         let result = get_session_data_for_generation(
@@ -1555,12 +1551,10 @@ mod get_session_data_for_generation_tests {
         let expected_lore_chunks = vec![lore_chunk1.clone()];
 
         // Configure mock expectations
-        setup
-            .mock_embeddings
-            .set_retrieve_responses_sequence(vec![
-                Ok(expected_lore_chunks.clone()), // For lorebook chunks
-                Ok(Vec::new()),                   // For older chat history chunks
-            ]);
+        setup.mock_embeddings.set_retrieve_responses_sequence(vec![
+            Ok(expected_lore_chunks.clone()), // For lorebook chunks
+            Ok(Vec::new()),                   // For older chat history chunks
+        ]);
 
         // Act
         let result = get_session_data_for_generation(
@@ -1971,11 +1965,9 @@ mod get_session_data_for_generation_tests {
                 .collect();
 
         // Configure mock expectations
-        setup
-            .mock_embeddings
-            .set_retrieve_responses_sequence(vec![
-                Ok(expected_older_chat_chunks.clone()), // For older chat history chunks (lorebook call is skipped in this test)
-            ]);
+        setup.mock_embeddings.set_retrieve_responses_sequence(vec![
+            Ok(expected_older_chat_chunks.clone()), // For older chat history chunks (lorebook call is skipped in this test)
+        ]);
 
         // Act
         let result = get_session_data_for_generation(
@@ -2113,9 +2105,8 @@ mod get_session_data_for_generation_tests {
 
         // Ensure no overlap between recent history (actual IDs from DB) and RAG items (mocked IDs)
         for rag_chunk in &rag_items {
-            if let scribe_backend::services::embeddings::RetrievedMetadata::Chat(
-                chat_meta,
-            ) = &rag_chunk.metadata
+            if let scribe_backend::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
+                &rag_chunk.metadata
             {
                 assert!(
                     !recent_history_message_ids_from_db.contains(&chat_meta.message_id),

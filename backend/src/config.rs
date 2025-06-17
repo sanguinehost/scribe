@@ -61,7 +61,7 @@ pub struct Config {
     #[serde(default = "default_frontend_base_url")]
     pub frontend_base_url: String,
 
-    // Email Configuration  
+    // Email Configuration
     #[serde(default = "default_app_env")]
     pub app_env: String,
     pub from_email: Option<String>,

@@ -147,12 +147,9 @@ pub async fn register_handler(
 
     debug!("Attempting to create user with email verification...");
     // Use the new create_user_with_verification function
-    let user_result = crate::auth::create_user_with_verification(
-        &pool,
-        payload,
-        state.email_service.clone(),
-    )
-    .await;
+    let user_result =
+        crate::auth::create_user_with_verification(&pool, payload, state.email_service.clone())
+            .await;
 
     match user_result {
         Ok(user) => {
@@ -414,7 +411,9 @@ pub async fn login_handler(
                         }
                         AuthError::InvalidVerificationToken => {
                             // This error should not occur during login
-                            error!("Login failed: InvalidVerificationToken encountered during login flow.");
+                            error!(
+                                "Login failed: InvalidVerificationToken encountered during login flow."
+                            );
                             Err(AppError::InternalServerErrorGeneric(
                                 "Unexpected authentication error.".to_string(),
                             ))

@@ -366,7 +366,9 @@ pub async fn get_chat_by_id_handler(
 
     // Ensure the user owns this chat or it's public
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
-        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to chat session".to_string(),
+        ));
     }
 
     // Return the full Chat struct directly
@@ -408,7 +410,9 @@ pub async fn delete_chat_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     if chat.user_id != user.id {
-        return Err(AppError::Forbidden("Access denied to delete chat session".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to delete chat session".to_string(),
+        ));
     }
 
     // Delete the chat (votes and messages will cascade due to foreign key constraints)
@@ -500,7 +504,9 @@ fn fetch_chat_with_ownership_check(
             chat_id,
             chat.user_id
         );
-        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to chat session".to_string(),
+        ));
     }
 
     tracing::debug!("Successfully verified chat ownership for user {}", user_id);
@@ -657,7 +663,9 @@ pub async fn create_message_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     if chat.user_id != user.id {
-        return Err(AppError::Forbidden("Access denied to create message".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to create message".to_string(),
+        ));
     }
 
     let message_role_enum = if payload.role.to_lowercase() == "user" {
@@ -1078,7 +1086,9 @@ pub async fn delete_trailing_messages_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     if chat.user_id != user.id {
-        return Err(AppError::Forbidden("Access denied to delete messages".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to delete messages".to_string(),
+        ));
     }
 
     // Get all messages to delete
@@ -1125,7 +1135,11 @@ pub async fn delete_trailing_messages_handler(
         // Delete embeddings from Qdrant
         if let Err(e) = state
             .embedding_pipeline_service
-            .delete_message_chunks(Arc::new(state.clone()), message_ids_clone_for_embeddings, user.id)
+            .delete_message_chunks(
+                Arc::new(state.clone()),
+                message_ids_clone_for_embeddings,
+                user.id,
+            )
             .await
         {
             // Log error but don't fail the whole operation
@@ -1188,7 +1202,9 @@ pub async fn update_chat_visibility_handler(
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     if chat.user_id != user.id {
-        return Err(AppError::Forbidden("Access denied to update chat visibility".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to update chat visibility".to_string(),
+        ));
     }
 
     // Ensure visibility is one of the allowed values

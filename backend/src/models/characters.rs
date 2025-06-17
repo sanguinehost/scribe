@@ -923,7 +923,7 @@ pub struct CharacterDataForClient {
     pub depth_prompt_role: Option<String>,
     pub talkativeness: Option<BigDecimal>,
     pub lorebook_id: Option<Uuid>, // Deprecated - for backward compatibility
-    pub lorebook_ids: Vec<Uuid>, // Multiple lorebooks support
+    pub lorebook_ids: Vec<Uuid>,   // Multiple lorebooks support
 }
 
 impl std::fmt::Debug for CharacterDataForClient {
@@ -1480,8 +1480,9 @@ mod tests {
         // Print out the actual value for debugging
         println!("Description value: {:?}", client_data_no_desc.description);
         assert_eq!(client_data_no_desc.description, Some(String::new())); // Expect Some("") instead of None
-        let client_data_no_desc_no_dek =
-            char_no_desc.into_decrypted_for_client(None, vec![]).unwrap();
+        let client_data_no_desc_no_dek = char_no_desc
+            .into_decrypted_for_client(None, vec![])
+            .unwrap();
         assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
     }
 
@@ -1537,8 +1538,9 @@ mod tests {
         // Print out the actual value for debugging
         println!("Description value: {:?}", client_data_no_desc.description);
         assert_eq!(client_data_no_desc.description, Some(String::new())); // Expect Some("") instead of None
-        let client_data_no_desc_no_dek =
-            char_no_desc.into_decrypted_for_client(None, vec![]).unwrap();
+        let client_data_no_desc_no_dek = char_no_desc
+            .into_decrypted_for_client(None, vec![])
+            .unwrap();
         assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
     }
 

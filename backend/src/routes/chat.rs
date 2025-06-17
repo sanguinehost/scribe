@@ -191,7 +191,9 @@ pub async fn generate_chat_response(
 
     if chat_session_owner_id != user_id_value {
         error!(%session_id, expected_owner = %user_id_value, actual_owner = %chat_session_owner_id, "User forbidden from accessing chat session.");
-        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to chat session".to_string(),
+        ));
     }
     debug!(%session_id, "User authorized for chat session");
 
@@ -241,7 +243,7 @@ pub async fn generate_chat_response(
         session_id,
         current_user_content.clone(),
         Some(session_dek_arc.clone()), // Use Arc clone
-        Some(payload.history), // Pass frontend-filtered history
+        Some(payload.history),         // Pass frontend-filtered history
     )
     .await?;
 
@@ -600,7 +602,7 @@ pub async fn generate_chat_response(
                     chat_options: Some(chat_options),
                     session_id,
                     character_name: Some(character_db_model.name.clone()),
-                }
+                },
             )
             .await
             {
@@ -664,18 +666,32 @@ pub async fn generate_chat_response(
                 Err(e) => {
                     let error_str = e.to_string();
                     error!(error = ?e, %session_id, "AI generation failed for non-streaming request (JSON path)");
-                    
+
                     // Provide more specific error messages for common issues
-                    if error_str.contains("PropertyNotFound(\"/content/parts\")") || error_str.contains("PropertyNotFound(\"/candidates\")") {
+                    if error_str.contains("PropertyNotFound(\"/content/parts\")")
+                        || error_str.contains("PropertyNotFound(\"/candidates\")")
+                    {
                         Err(AppError::AiServiceError("AI safety filters blocked the request. Please try rephrasing your message.".to_string()))
-                    } else if error_str.contains("Failed to parse stream data") || error_str.contains("trailing characters") {
-                        Err(AppError::AiServiceError("AI service returned malformed data. Please try again.".to_string()))
+                    } else if error_str.contains("Failed to parse stream data")
+                        || error_str.contains("trailing characters")
+                    {
+                        Err(AppError::AiServiceError(
+                            "AI service returned malformed data. Please try again.".to_string(),
+                        ))
                     } else if error_str.contains("safety") || error_str.contains("blocked") {
-                        Err(AppError::AiServiceError("Request was blocked by AI safety filters. Please try again.".to_string()))
+                        Err(AppError::AiServiceError(
+                            "Request was blocked by AI safety filters. Please try again."
+                                .to_string(),
+                        ))
                     } else if error_str.contains("quota") || error_str.contains("rate limit") {
-                        Err(AppError::AiServiceError("AI service is temporarily busy. Please wait and try again.".to_string()))
+                        Err(AppError::AiServiceError(
+                            "AI service is temporarily busy. Please wait and try again."
+                                .to_string(),
+                        ))
                     } else {
-                        Err(AppError::AiServiceError(format!("AI generation failed: {e}")))
+                        Err(AppError::AiServiceError(format!(
+                            "AI generation failed: {e}"
+                        )))
                     }
                 }
             }
@@ -792,12 +808,18 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
             post(create_or_update_chat_character_override_handler).with_state(state.clone()),
         )
         // Message variant routes
-        .route("/messages/:message_id/variants", 
-            get(get_message_variants_handler).post(create_message_variant_handler))
-        .route("/messages/:message_id/variants/:variant_index", 
-            get(get_message_variant_by_index_handler).delete(delete_message_variant_handler))
-        .route("/messages/:message_id/variants/count", 
-            get(get_variant_count_handler))
+        .route(
+            "/messages/:message_id/variants",
+            get(get_message_variants_handler).post(create_message_variant_handler),
+        )
+        .route(
+            "/messages/:message_id/variants/:variant_index",
+            get(get_message_variant_by_index_handler).delete(delete_message_variant_handler),
+        )
+        .route(
+            "/messages/:message_id/variants/count",
+            get(get_variant_count_handler),
+        )
         .with_state(state)
 }
 
@@ -814,16 +836,18 @@ async fn get_message_variants_handler(
     session_dek: SessionDek,
     Path(message_id): Path<Uuid>,
 ) -> Result<Json<Vec<MessageVariantDto>>, AppError> {
-    let user = auth_session.user.as_ref().ok_or_else(|| {
-        AppError::Unauthorized("User not found in session".to_string())
-    })?;
+    let user = auth_session
+        .user
+        .as_ref()
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let variants = crate::services::chat::message_variants::get_message_variants(
         Arc::new(state),
         message_id,
         user.id,
         &session_dek.0,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(variants))
 }
@@ -836,9 +860,10 @@ async fn create_message_variant_handler(
     Path(message_id): Path<Uuid>,
     Json(payload): Json<CreateMessageVariantPayload>,
 ) -> Result<(StatusCode, Json<MessageVariantDto>), AppError> {
-    let user = auth_session.user.as_ref().ok_or_else(|| {
-        AppError::Unauthorized("User not found in session".to_string())
-    })?;
+    let user = auth_session
+        .user
+        .as_ref()
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let variant = crate::services::chat::message_variants::create_message_variant(
         Arc::new(state),
@@ -846,7 +871,8 @@ async fn create_message_variant_handler(
         &payload.content,
         user.id,
         &session_dek.0,
-    ).await?;
+    )
+    .await?;
 
     Ok((StatusCode::CREATED, Json(variant)))
 }
@@ -858,9 +884,10 @@ async fn get_message_variant_by_index_handler(
     session_dek: SessionDek,
     Path((message_id, variant_index)): Path<(Uuid, i32)>,
 ) -> Result<Json<Option<MessageVariantDto>>, AppError> {
-    let user = auth_session.user.as_ref().ok_or_else(|| {
-        AppError::Unauthorized("User not found in session".to_string())
-    })?;
+    let user = auth_session
+        .user
+        .as_ref()
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let variant = crate::services::chat::message_variants::get_message_variant_by_index(
         Arc::new(state),
@@ -868,7 +895,8 @@ async fn get_message_variant_by_index_handler(
         variant_index,
         user.id,
         &session_dek.0,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(variant))
 }
@@ -879,16 +907,18 @@ async fn delete_message_variant_handler(
     auth_session: CurrentAuthSession,
     Path((message_id, variant_index)): Path<(Uuid, i32)>,
 ) -> Result<Json<bool>, AppError> {
-    let user = auth_session.user.as_ref().ok_or_else(|| {
-        AppError::Unauthorized("User not found in session".to_string())
-    })?;
+    let user = auth_session
+        .user
+        .as_ref()
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let deleted = crate::services::chat::message_variants::delete_message_variant(
         Arc::new(state),
         message_id,
         variant_index,
         user.id,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(deleted))
 }
@@ -899,15 +929,17 @@ async fn get_variant_count_handler(
     auth_session: CurrentAuthSession,
     Path(message_id): Path<Uuid>,
 ) -> Result<Json<i64>, AppError> {
-    let user = auth_session.user.as_ref().ok_or_else(|| {
-        AppError::Unauthorized("User not found in session".to_string())
-    })?;
+    let user = auth_session
+        .user
+        .as_ref()
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let count = crate::services::chat::message_variants::get_variant_count(
         Arc::new(state),
         message_id,
         user.id,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(count))
 }
@@ -967,7 +999,9 @@ pub async fn generate_suggested_actions(
 
     if chat_session_owner_id != user_id {
         error!(%session_id, expected_owner = %user_id, actual_owner = %chat_session_owner_id, "User forbidden from accessing chat session for suggested actions.");
-        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to chat session".to_string(),
+        ));
     }
     debug!(%session_id, "User authorized for chat session");
 
@@ -1193,7 +1227,6 @@ pub async fn generate_suggested_actions(
         .map_err(|e| {
             let error_str = e.to_string();
             error!(%session_id, "Gemini API error for suggested actions: {:?}", e);
-            
             // Provide more specific error messages for common issues
             if error_str.contains("PropertyNotFound(\"/content/parts\")") {
                 AppError::AiServiceError("AI safety filters blocked the suggestion request. Please try again with different conversation context.".to_string())
@@ -1336,7 +1369,9 @@ pub async fn create_or_update_chat_character_override_handler(
             "User {} attempted to modify overrides for chat session {} owned by {}",
             user_id, session_id, chat_session_details.0
         );
-        return Err(AppError::Forbidden("Access denied to chat session override".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to chat session override".to_string(),
+        ));
     }
     let original_character_id = chat_session_details.1;
 
@@ -1370,7 +1405,10 @@ pub async fn expand_text_handler(
     _session_dek: SessionDek,
     Json(payload): Json<ExpandTextRequest>,
 ) -> Result<Json<ExpandTextResponse>, AppError> {
-    info!("Entering expand_text_handler for session_id: {}", session_id);
+    info!(
+        "Entering expand_text_handler for session_id: {}",
+        session_id
+    );
 
     // Validate the payload
     payload.validate().map_err(|e| {
@@ -1379,7 +1417,10 @@ pub async fn expand_text_handler(
     })?;
 
     let user = auth_session.user.ok_or_else(|| {
-        error!("User not found in session for text expansion (session_id: {})", session_id);
+        error!(
+            "User not found in session for text expansion (session_id: {})",
+            session_id
+        );
         AppError::Unauthorized("User not found in session".to_string())
     })?;
     let user_id = user.id;
@@ -1406,7 +1447,9 @@ pub async fn expand_text_handler(
             "User {} attempted to expand text for chat session {} owned by {}",
             user_id, session_id, chat_session_owner_id
         );
-        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to chat session".to_string(),
+        ));
     }
 
     // Get the active persona for this chat session
@@ -1423,7 +1466,7 @@ pub async fn expand_text_handler(
         .await??;
 
     // Use the full generation pipeline for text expansion - same as impersonate but with different system prompt
-    
+
     // Get the existing chat messages to build proper context
     let messages_result = state
         .pool
@@ -1441,7 +1484,7 @@ pub async fn expand_text_handler(
 
     // Build the chat history in the format expected by the generation service
     let mut chat_history = Vec::new();
-    
+
     // Decrypt and convert existing messages to API format
     for db_message in messages_result.iter() {
         let decrypted_content = if let Some(nonce) = &db_message.content_nonce {
@@ -1464,21 +1507,24 @@ pub async fn expand_text_handler(
         };
         chat_history.push(api_message);
     }
-    
+
     // Add a special instruction for text expansion
     let expansion_instruction = crate::models::chats::ApiChatMessage {
         role: "user".to_string(),
-        content: format!("[EXPAND: Take this brief text and expand it into a more detailed, natural response while maintaining perfect consistency with the conversation's established tone, style, setting, and voice. Original text: '{}']", payload.original_text),
+        content: format!(
+            "[EXPAND: Take this brief text and expand it into a more detailed, natural response while maintaining perfect consistency with the conversation's established tone, style, setting, and voice. Original text: '{}']",
+            payload.original_text
+        ),
     };
     chat_history.push(expansion_instruction);
 
     // Use the existing generation infrastructure
     let state_arc = Arc::new(state);
     let user_dek_arc = Arc::new(_session_dek.0);
-    
+
     // Clone the state_arc for later use in deletion
     let delete_state = state_arc.clone();
-    
+
     // Get session data and model configuration like the normal chat flow does
     let session_data = state_arc
         .pool
@@ -1502,20 +1548,33 @@ pub async fn expand_text_handler(
                     chat_sessions::seed,
                     chat_sessions::active_custom_persona_id,
                 ))
-                .first::<(String, i32, String, Option<bigdecimal::BigDecimal>, Option<i32>, Option<bigdecimal::BigDecimal>, Option<bigdecimal::BigDecimal>, Option<i32>, Option<bigdecimal::BigDecimal>, Option<Vec<Option<String>>>, Option<i32>, Option<Uuid>)>(conn)
+                .first::<(
+                    String,
+                    i32,
+                    String,
+                    Option<bigdecimal::BigDecimal>,
+                    Option<i32>,
+                    Option<bigdecimal::BigDecimal>,
+                    Option<bigdecimal::BigDecimal>,
+                    Option<i32>,
+                    Option<bigdecimal::BigDecimal>,
+                    Option<Vec<Option<String>>>,
+                    Option<i32>,
+                    Option<Uuid>,
+                )>(conn)
         })
         .await??;
 
     // Build the special system prompt for text expansion with full context awareness
     let mut expansion_system_prompt = "You are a text expansion assistant helping the USER (not the character) expand their brief input text. ".to_string();
-    
+
     // Add persona context if available
     if let Some(persona_id) = session_data.11 {
         expansion_system_prompt.push_str(&format!(
             "The user has an active persona (ID: {}) - expand the text AS THE USER/PERSONA would write it. ", persona_id
         ));
     }
-    
+
     expansion_system_prompt.push_str(
         "CRITICAL INSTRUCTIONS:
         1. You are expanding text that the USER wants to send, NOT generating a response from the character/AI
@@ -1530,8 +1589,9 @@ pub async fn expand_text_handler(
     );
 
     // Convert API messages to GenAI format for the generation service
-    let mut genai_messages = chat_history.into_iter().map(|msg| {
-        GenAiChatMessage {
+    let mut genai_messages = chat_history
+        .into_iter()
+        .map(|msg| GenAiChatMessage {
             role: match msg.role.as_str() {
                 "user" => ChatRole::User,
                 "assistant" => ChatRole::Assistant,
@@ -1540,13 +1600,16 @@ pub async fn expand_text_handler(
             },
             content: MessageContent::Text(msg.content),
             options: None,
-        }
-    }).collect::<Vec<_>>();
-    
+        })
+        .collect::<Vec<_>>();
+
     // Add the user's text to be expanded as the final message
     genai_messages.push(GenAiChatMessage {
         role: ChatRole::User,
-        content: MessageContent::Text(format!("Please expand this text: \"{}\"", payload.original_text)),
+        content: MessageContent::Text(format!(
+            "Please expand this text: \"{}\"",
+            payload.original_text
+        )),
         options: None,
     });
 
@@ -1563,9 +1626,9 @@ pub async fn expand_text_handler(
         presence_penalty: session_data.6,
         top_k: session_data.7,
         top_p: session_data.8,
-        stop_sequences: session_data.9.and_then(|seq| {
-            seq.into_iter().collect::<Option<Vec<String>>>()
-        }),
+        stop_sequences: session_data
+            .9
+            .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
         seed: session_data.10,
         model_name: session_data.2,
         gemini_thinking_budget: None,
@@ -1576,11 +1639,12 @@ pub async fn expand_text_handler(
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
-    let mut response_stream = chat::generation::stream_ai_response_and_save_message(stream_params).await?;
-    
-    // Collect the response 
+    let mut response_stream =
+        chat::generation::stream_ai_response_and_save_message(stream_params).await?;
+
+    // Collect the response
     let mut expanded_text = String::new();
-    
+
     while let Some(event_result) = response_stream.next().await {
         match event_result {
             Ok(event) => {
@@ -1603,7 +1667,7 @@ pub async fn expand_text_handler(
             }
         }
     }
-    
+
     // Delete the most recent message since we don't want it saved for expansion
     // The generation service will have just created a message, so we find and delete the most recent one
     let delete_session_id = session_id;
@@ -1620,8 +1684,10 @@ pub async fn expand_text_handler(
                 .select(crate::models::chats::ChatMessage::as_select())
                 .first(conn)
             {
-                let _ = diesel::delete(chat_messages::table.filter(chat_messages::id.eq(recent_message.id)))
-                    .execute(conn);
+                let _ = diesel::delete(
+                    chat_messages::table.filter(chat_messages::id.eq(recent_message.id)),
+                )
+                .execute(conn);
                 debug!("Deleted expansion message with ID: {}", recent_message.id);
             }
         })
@@ -1629,10 +1695,15 @@ pub async fn expand_text_handler(
 
     if expanded_text.trim().is_empty() {
         warn!("AI returned empty text expansion");
-        return Err(AppError::BadGateway("AI failed to generate expanded text".to_string()));
+        return Err(AppError::BadGateway(
+            "AI failed to generate expanded text".to_string(),
+        ));
     }
 
-    info!("Text expansion completed successfully for session_id: {}", session_id);
+    info!(
+        "Text expansion completed successfully for session_id: {}",
+        session_id
+    );
     Ok(Json(ExpandTextResponse {
         expanded_text: expanded_text.trim().to_string(),
     }))
@@ -1650,7 +1721,10 @@ pub async fn impersonate_handler(
     session_dek: SessionDek,
     Json(payload): Json<ImpersonateRequest>,
 ) -> Result<Json<ImpersonateResponse>, AppError> {
-    info!("Entering impersonate_handler for session_id: {}", session_id);
+    info!(
+        "Entering impersonate_handler for session_id: {}",
+        session_id
+    );
 
     // Validate the payload
     payload.validate().map_err(|e| {
@@ -1659,7 +1733,10 @@ pub async fn impersonate_handler(
     })?;
 
     let user = auth_session.user.ok_or_else(|| {
-        error!("User not found in session for impersonation (session_id: {})", session_id);
+        error!(
+            "User not found in session for impersonation (session_id: {})",
+            session_id
+        );
         AppError::Unauthorized("User not found in session".to_string())
     })?;
     let user_id = user.id;
@@ -1686,12 +1763,14 @@ pub async fn impersonate_handler(
             "User {} attempted to impersonate for chat session {} owned by {}",
             user_id, session_id, chat_session_owner_id
         );
-        return Err(AppError::Forbidden("Access denied to chat session".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to chat session".to_string(),
+        ));
     }
 
     // Use the existing chat generation infrastructure but with an "impersonation" system prompt
     // This will include RAG, persona context, and all the same features as regular chat
-    
+
     // Get the existing chat messages to build proper context
     let messages_result = state
         .pool
@@ -1709,7 +1788,7 @@ pub async fn impersonate_handler(
 
     // Build the chat history in the format expected by the generation service
     let mut chat_history = Vec::new();
-    
+
     // Decrypt and convert existing messages to API format
     for db_message in messages_result.iter() {
         let decrypted_content = if let Some(nonce) = &db_message.content_nonce {
@@ -1732,7 +1811,7 @@ pub async fn impersonate_handler(
         };
         chat_history.push(api_message);
     }
-    
+
     // Add a special system message to instruct the AI to impersonate the user
     let impersonation_instruction = crate::models::chats::ApiChatMessage {
         role: "user".to_string(),
@@ -1744,19 +1823,21 @@ pub async fn impersonate_handler(
     let generation_request = GenerateChatRequest {
         history: chat_history,
         model: None, // Use chat's configured model
-        query_text_for_rag: Some("What should the user say in response to this conversation?".to_string()),
+        query_text_for_rag: Some(
+            "What should the user say in response to this conversation?".to_string(),
+        ),
     };
 
     // Call the existing generate_chat_response handler logic but collect the response
     // instead of streaming it directly to the client
-    
+
     // Use the chat generation service infrastructure directly
     let state_arc = Arc::new(state);
     let user_dek_arc = Arc::new(session_dek.0);
-    
+
     // Clone the state_arc for later use in deletion
     let delete_state = state_arc.clone();
-    
+
     // Get session data and model configuration like the normal chat flow does
     let session_data = state_arc
         .pool
@@ -1780,30 +1861,47 @@ pub async fn impersonate_handler(
                     chat_sessions::seed,
                     chat_sessions::active_custom_persona_id,
                 ))
-                .first::<(String, i32, String, Option<bigdecimal::BigDecimal>, Option<i32>, Option<bigdecimal::BigDecimal>, Option<bigdecimal::BigDecimal>, Option<i32>, Option<bigdecimal::BigDecimal>, Option<Vec<Option<String>>>, Option<i32>, Option<Uuid>)>(conn)
+                .first::<(
+                    String,
+                    i32,
+                    String,
+                    Option<bigdecimal::BigDecimal>,
+                    Option<i32>,
+                    Option<bigdecimal::BigDecimal>,
+                    Option<bigdecimal::BigDecimal>,
+                    Option<i32>,
+                    Option<bigdecimal::BigDecimal>,
+                    Option<Vec<Option<String>>>,
+                    Option<i32>,
+                    Option<Uuid>,
+                )>(conn)
         })
         .await??;
 
     // Build the special system prompt for impersonation
-    let mut impersonation_system_prompt = "You are impersonating the user in this conversation. ".to_string();
-    
+    let mut impersonation_system_prompt =
+        "You are impersonating the user in this conversation. ".to_string();
+
     // Add persona context if available
     if let Some(persona_id) = session_data.11 {
         impersonation_system_prompt.push_str(&format!(
-            "You are speaking AS the user persona (ID: {}). ", persona_id
+            "You are speaking AS the user persona (ID: {}). ",
+            persona_id
         ));
     }
-    
+
     impersonation_system_prompt.push_str(
         "Generate a natural response that this user would make given the conversation context. \
         Respond only as the user character, not as an assistant. Use the user's personality, \
         speaking style, and context from the conversation history and any retrieved information. \
-        Do not break character or mention that you are an AI."
+        Do not break character or mention that you are an AI.",
     );
 
     // Convert API messages to GenAI format for the generation service
-    let genai_messages = generation_request.history.into_iter().map(|msg| {
-        GenAiChatMessage {
+    let genai_messages = generation_request
+        .history
+        .into_iter()
+        .map(|msg| GenAiChatMessage {
             role: match msg.role.as_str() {
                 "user" => ChatRole::User,
                 "assistant" => ChatRole::Assistant,
@@ -1812,8 +1910,8 @@ pub async fn impersonate_handler(
             },
             content: MessageContent::Text(msg.content),
             options: None,
-        }
-    }).collect();
+        })
+        .collect();
 
     // Create StreamAiParams for the generation service
     let stream_params = chat::generation::StreamAiParams {
@@ -1828,9 +1926,9 @@ pub async fn impersonate_handler(
         presence_penalty: session_data.6,
         top_k: session_data.7,
         top_p: session_data.8,
-        stop_sequences: session_data.9.and_then(|seq| {
-            seq.into_iter().collect::<Option<Vec<String>>>()
-        }),
+        stop_sequences: session_data
+            .9
+            .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
         seed: session_data.10,
         model_name: session_data.2,
         gemini_thinking_budget: None,
@@ -1841,11 +1939,12 @@ pub async fn impersonate_handler(
     };
 
     // Generate the response using the full pipeline
-    let mut response_stream = chat::generation::stream_ai_response_and_save_message(stream_params).await?;
-    
-    // Collect the response 
+    let mut response_stream =
+        chat::generation::stream_ai_response_and_save_message(stream_params).await?;
+
+    // Collect the response
     let mut generated_response = String::new();
-    
+
     while let Some(event_result) = response_stream.next().await {
         match event_result {
             Ok(event) => {
@@ -1855,7 +1954,9 @@ pub async fn impersonate_handler(
                     }
                     chat::types::ScribeSseEvent::Error(error_msg) => {
                         error!("Error in impersonation stream: {}", error_msg);
-                        return Err(AppError::BadGateway("Failed to generate response".to_string()));
+                        return Err(AppError::BadGateway(
+                            "Failed to generate response".to_string(),
+                        ));
                     }
                     _ => {
                         // Skip other event types (thinking, etc.)
@@ -1864,11 +1965,13 @@ pub async fn impersonate_handler(
             }
             Err(e) => {
                 error!("Error in impersonation stream: {}", e);
-                return Err(AppError::BadGateway("Failed to generate response".to_string()));
+                return Err(AppError::BadGateway(
+                    "Failed to generate response".to_string(),
+                ));
             }
         }
     }
-    
+
     // Delete the most recent message since we don't want it saved for impersonation
     // The generation service will have just created a message, so we find and delete the most recent one
     let delete_session_id = session_id;
@@ -1885,19 +1988,29 @@ pub async fn impersonate_handler(
                 .select(crate::models::chats::ChatMessage::as_select())
                 .first(conn)
             {
-                let _ = diesel::delete(chat_messages::table.filter(chat_messages::id.eq(recent_message.id)))
-                    .execute(conn);
-                debug!("Deleted impersonation message with ID: {}", recent_message.id);
+                let _ = diesel::delete(
+                    chat_messages::table.filter(chat_messages::id.eq(recent_message.id)),
+                )
+                .execute(conn);
+                debug!(
+                    "Deleted impersonation message with ID: {}",
+                    recent_message.id
+                );
             }
         })
         .await;
-    
+
     if generated_response.trim().is_empty() {
         warn!("AI returned empty impersonation response");
-        return Err(AppError::BadGateway("AI failed to generate response".to_string()));
+        return Err(AppError::BadGateway(
+            "AI failed to generate response".to_string(),
+        ));
     }
 
-    info!("Impersonation completed successfully for session_id: {}", session_id);
+    info!(
+        "Impersonation completed successfully for session_id: {}",
+        session_id
+    );
     Ok(Json(ImpersonateResponse {
         generated_response: generated_response.trim().to_string(),
     }))

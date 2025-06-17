@@ -1,27 +1,25 @@
 //! Test cases to verify that orphaned messages are properly excluded from AI context and RAG
 //! when using frontend-provided history
 
-use scribe_backend::models::chats::{ApiChatMessage, Chat as ChatSession, NewChat};
+use chrono::Utc;
+use diesel::{RunQueryDsl, SelectableHelper};
 use scribe_backend::models::characters::Character as DbCharacter;
-use scribe_backend::services::chat::generation::get_session_data_for_generation;
-use scribe_backend::test_helpers;
-use scribe_backend::state::{AppState, AppStateServices};
-use scribe_backend::services::{
-    encryption_service::EncryptionService,
-    chat_override_service::ChatOverrideService,
-    user_persona_service::UserPersonaService,
-    hybrid_token_counter::HybridTokenCounter,
-    tokenizer_service::TokenizerService,
-    lorebook::LorebookService,
-    file_storage_service::FileStorageService,
-    email_service::LoggingEmailService,
+use scribe_backend::models::chats::{ApiChatMessage, Chat as ChatSession, NewChat};
+use scribe_backend::schema::{
+    characters::dsl as characters_dsl, chat_sessions::dsl as chat_sessions_dsl,
 };
-use scribe_backend::schema::{characters::dsl as characters_dsl, chat_sessions::dsl as chat_sessions_dsl};
+use scribe_backend::services::chat::generation::get_session_data_for_generation;
+use scribe_backend::services::{
+    chat_override_service::ChatOverrideService, email_service::LoggingEmailService,
+    encryption_service::EncryptionService, file_storage_service::FileStorageService,
+    hybrid_token_counter::HybridTokenCounter, lorebook::LorebookService,
+    tokenizer_service::TokenizerService, user_persona_service::UserPersonaService,
+};
+use scribe_backend::state::{AppState, AppStateServices};
+use scribe_backend::test_helpers;
 use secrecy::SecretBox;
 use std::sync::Arc;
 use uuid::Uuid;
-use diesel::{RunQueryDsl, SelectableHelper};
-use chrono::Utc;
 
 /// Helper function to create a test character and session
 async fn create_test_character_and_session(
@@ -110,7 +108,7 @@ async fn create_test_character_and_session(
 async fn test_frontend_history_vs_database_history() {
     // This test verifies the core functionality: when frontend history is provided,
     // it should be used instead of querying the database
-    
+
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let _guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
 
@@ -126,7 +124,7 @@ async fn test_frontend_history_vs_database_history() {
     // Create character and session in database
     let (_character, session) = create_test_character_and_session(&test_app, user.id).await;
     let session_id = session.id;
-    
+
     // Create AppState similar to how spawn_app does it
     let encryption_service = Arc::new(EncryptionService::new());
     let chat_override_service = Arc::new(ChatOverrideService::new(
@@ -178,10 +176,14 @@ async fn test_frontend_history_vs_database_history() {
     let session_dek_arc = Arc::new(session_dek);
 
     // Mock embedding pipeline to return empty results
-    test_app.mock_embedding_pipeline_service.add_retrieve_response(Ok(vec![]));
-    test_app.mock_embedding_pipeline_service.add_retrieve_response(Ok(vec![]));
+    test_app
+        .mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![]));
+    test_app
+        .mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![]));
 
-    // Test 1: With no frontend history (database mode) 
+    // Test 1: With no frontend history (database mode)
     let _result_db = get_session_data_for_generation(
         state_arc.clone(),
         user.id,
@@ -193,13 +195,15 @@ async fn test_frontend_history_vs_database_history() {
     .await
     .expect("Database mode should work");
 
-    // Track calls from database mode 
+    // Track calls from database mode
     let db_calls = test_app.mock_embedding_pipeline_service.get_calls();
     let db_call_count = db_calls.len();
 
     // Clear calls for next test
     test_app.mock_embedding_pipeline_service.clear_calls();
-    test_app.mock_embedding_pipeline_service.add_retrieve_response(Ok(vec![])); // Set up for frontend test
+    test_app
+        .mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![])); // Set up for frontend test
 
     // Test 2: With frontend history - should NOT call RAG for chat history
     let frontend_history = vec![
@@ -232,7 +236,7 @@ async fn test_frontend_history_vs_database_history() {
     // because it skips chat history RAG to prevent orphaned message contamination
     let frontend_calls = test_app.mock_embedding_pipeline_service.get_calls();
     let frontend_call_count = frontend_calls.len();
-    
+
     // Verify that frontend mode doesn't make more RAG calls than database mode
     // This proves chat history RAG is being skipped in frontend mode
     assert!(
@@ -242,7 +246,8 @@ async fn test_frontend_history_vs_database_history() {
         frontend_call_count
     );
 
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = result_frontend;
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
+        result_frontend;
 
     // Should have 2 messages from frontend history (excluding current message)
     assert_eq!(
@@ -261,7 +266,9 @@ async fn test_frontend_history_vs_database_history() {
         "Previous assistant response"
     );
 
-    println!("✅ Test passed: Frontend history prevents database query and orphaned message contamination");
+    println!(
+        "✅ Test passed: Frontend history prevents database query and orphaned message contamination"
+    );
 }
 
 /// Test to verify that orphaned messages don't contaminate context when editing messages
@@ -269,7 +276,7 @@ async fn test_frontend_history_vs_database_history() {
 async fn test_orphaned_message_exclusion_scenario() {
     // This test simulates the real scenario where a user edits a message
     // and we need to ensure that subsequent messages (orphans) are excluded
-    
+
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let _guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
 
@@ -285,7 +292,7 @@ async fn test_orphaned_message_exclusion_scenario() {
     // Create character and session in database
     let (_character, session) = create_test_character_and_session(&test_app, user.id).await;
     let session_id = session.id;
-    
+
     // Create AppState
     let encryption_service = Arc::new(EncryptionService::new());
     let chat_override_service = Arc::new(ChatOverrideService::new(
@@ -337,7 +344,9 @@ async fn test_orphaned_message_exclusion_scenario() {
     let session_dek_arc = Arc::new(session_dek);
 
     // Set up mock responses
-    test_app.mock_embedding_pipeline_service.add_retrieve_response(Ok(vec![])); // Lorebook
+    test_app
+        .mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![])); // Lorebook
 
     // Simulate a conversation where a message was edited and we have orphaned messages
     // Frontend provides filtered history that excludes orphaned messages
@@ -354,7 +363,7 @@ async fn test_orphaned_message_exclusion_scenario() {
             role: "user".to_string(),
             content: "What's the weather like?".to_string(), // User edited this message
         },
-        // Note: Any messages that came after the original "What's the weather like?" 
+        // Note: Any messages that came after the original "What's the weather like?"
         // message are now orphaned and should NOT appear in this history
         ApiChatMessage {
             role: "user".to_string(),
@@ -403,4 +412,3 @@ async fn test_orphaned_message_exclusion_scenario() {
 
     println!("✅ Test passed: Orphaned messages are properly excluded from context and RAG");
 }
-

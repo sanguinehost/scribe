@@ -875,8 +875,11 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     );
 
     // Verify system prompt contains key elements for RAG functionality (not exact string match)
-    let system_prompt = last_ai_request.system.as_ref().expect("System prompt should be present");
-    
+    let system_prompt = last_ai_request
+        .system
+        .as_ref()
+        .expect("System prompt should be present");
+
     // Check for key prompt elements that matter for RAG functionality
     assert!(
         system_prompt.contains("Character Assignment"),
@@ -1201,8 +1204,11 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
     // The system prompt should be present and contain key elements for RAG functionality,
     // even if RAG retrieval fails (graceful degradation)
-    let system_prompt = last_ai_request.system.as_ref().expect("System prompt should be present");
-    
+    let system_prompt = last_ai_request
+        .system
+        .as_ref()
+        .expect("System prompt should be present");
+
     // Test for key structural elements rather than exact content
     assert!(
         system_prompt.contains("Character Assignment"),
@@ -1703,8 +1709,11 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     // build_prompt_with_rag will produce an empty string or a minimal structure if it always adds headers.
     // Let's check prompt_builder.rs: if relevant_chunks is empty, rag_prompt_parts is empty.
     // Verify system prompt has expected structure and content for RAG functionality
-    let system_prompt = last_ai_request.system.as_ref().expect("System prompt should be present");
-    
+    let system_prompt = last_ai_request
+        .system
+        .as_ref()
+        .expect("System prompt should be present");
+
     // Test for key elements that should be present in a RAG-enabled chat prompt
     assert!(
         system_prompt.contains("Character Assignment"),
@@ -1833,8 +1842,11 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
 
     // System prompt should be the new RAG prompt format
     // Verify system prompt contains key elements for RAG functionality (not exact string match)
-    let system_prompt = last_ai_request.system.as_ref().expect("System prompt should be present");
-    
+    let system_prompt = last_ai_request
+        .system
+        .as_ref()
+        .expect("System prompt should be present");
+
     // Test for structural elements that matter for functionality
     assert!(
         system_prompt.contains("Character Assignment"),
@@ -1956,8 +1968,11 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
 
     // System prompt should be the new RAG prompt format
     // Verify system prompt contains key elements for RAG functionality (not exact string match)
-    let system_prompt = last_ai_request.system.as_ref().expect("System prompt should be present");
-    
+    let system_prompt = last_ai_request
+        .system
+        .as_ref()
+        .expect("System prompt should be present");
+
     // Test for structural elements that matter for functionality
     assert!(
         system_prompt.contains("Character Assignment"),

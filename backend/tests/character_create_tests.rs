@@ -455,7 +455,8 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
 #[tokio::test]
 async fn test_create_character_missing_required_fields() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
-    let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+    let test_app =
+        scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let pool = test_app.db_pool.clone();
     let mut guard = TestDataGuard::new(pool.clone());
 

@@ -284,7 +284,9 @@ fn validate_and_get_character(
 
     if character.user_id != user_id {
         error!(%character_id, %user_id, owner_id=%character.user_id, "User does not own character");
-        return Err(AppError::Forbidden("Access denied to character".to_string()));
+        return Err(AppError::Forbidden(
+            "Access denied to character".to_string(),
+        ));
     }
 
     Ok(character)

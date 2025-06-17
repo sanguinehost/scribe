@@ -1,9 +1,9 @@
-use crate::errors::AppError;
-use crate::auth::session_dek::SessionDek;
-use crate::models::chats::ChatMessage;
-use crate::state::AppState;
 use super::metadata::LorebookEntryParams;
 use super::retrieval::RetrievedChunk;
+use crate::auth::session_dek::SessionDek;
+use crate::errors::AppError;
+use crate::models::chats::ChatMessage;
+use crate::state::AppState;
 use async_trait::async_trait;
 use std::sync::Arc;
 use uuid::Uuid;

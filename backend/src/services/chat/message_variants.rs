@@ -1,14 +1,14 @@
 // backend/src/services/chat/message_variants.rs
 
-use crate::models::chats::{MessageVariant, NewMessageVariant, MessageVariantDto};
-use crate::schema::message_variants;
 use crate::errors::AppError;
+use crate::models::chats::{MessageVariant, MessageVariantDto, NewMessageVariant};
+use crate::schema::message_variants;
 use crate::state::AppState;
-use diesel::prelude::*;
 use diesel::pg::PgConnection;
+use diesel::prelude::*;
+use secrecy::SecretBox;
 use std::sync::Arc;
 use uuid::Uuid;
-use secrecy::SecretBox;
 
 /// Get all variants for a specific message
 pub async fn get_message_variants(
@@ -19,17 +19,19 @@ pub async fn get_message_variants(
 ) -> Result<Vec<MessageVariantDto>, AppError> {
     let conn = state.pool.get().await?;
 
-    let variants = conn.interact(move |conn| {
-        message_variants::table
-            .filter(message_variants::parent_message_id.eq(message_id))
-            .filter(message_variants::user_id.eq(user_id))
-            .order(message_variants::variant_index.asc())
-            .select(MessageVariant::as_select())
-            .load::<MessageVariant>(conn)
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to load message variants: {e}"))
-            })
-    }).await?;
+    let variants = conn
+        .interact(move |conn| {
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .filter(message_variants::user_id.eq(user_id))
+                .order(message_variants::variant_index.asc())
+                .select(MessageVariant::as_select())
+                .load::<MessageVariant>(conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to load message variants: {e}"))
+                })
+        })
+        .await?;
 
     // Decrypt all variants
     let mut decrypted_variants = Vec::new();
@@ -50,31 +52,27 @@ pub async fn create_message_variant(
     dek: &SecretBox<Vec<u8>>,
 ) -> Result<MessageVariantDto, AppError> {
     let conn = state.pool.get().await?;
-    
+
     // Get the next variant index first
-    let next_index = conn.interact(move |conn| {
-        get_next_variant_index(&mut *conn, message_id)
-    }).await??;
+    let next_index = conn
+        .interact(move |conn| get_next_variant_index(&mut *conn, message_id))
+        .await??;
 
     // Create new variant with encryption outside the closure
-    let new_variant = NewMessageVariant::new(
-        message_id,
-        next_index,
-        content,
-        user_id,
-        dek,
-    )?;
+    let new_variant = NewMessageVariant::new(message_id, next_index, content, user_id, dek)?;
 
     // Insert into database
-    let created_variant = conn.interact(move |conn| {
-        diesel::insert_into(message_variants::table)
-            .values(&new_variant)
-            .returning(MessageVariant::as_returning())
-            .get_result::<MessageVariant>(&mut *conn)
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to create message variant: {e}"))
-            })
-    }).await??;
+    let created_variant = conn
+        .interact(move |conn| {
+            diesel::insert_into(message_variants::table)
+                .values(&new_variant)
+                .returning(MessageVariant::as_returning())
+                .get_result::<MessageVariant>(&mut *conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to create message variant: {e}"))
+                })
+        })
+        .await??;
 
     // Return decrypted DTO
     MessageVariantDto::from_model(created_variant, dek)
@@ -90,18 +88,20 @@ pub async fn get_message_variant_by_index(
 ) -> Result<Option<MessageVariantDto>, AppError> {
     let conn = state.pool.get().await?;
 
-    let variant = conn.interact(move |conn| {
-        message_variants::table
-            .filter(message_variants::parent_message_id.eq(message_id))
-            .filter(message_variants::variant_index.eq(variant_index))
-            .filter(message_variants::user_id.eq(user_id))
-            .select(MessageVariant::as_select())
-            .first::<MessageVariant>(&mut *conn)
-            .optional()
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to load message variant: {e}"))
-            })
-    }).await?;
+    let variant = conn
+        .interact(move |conn| {
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .filter(message_variants::variant_index.eq(variant_index))
+                .filter(message_variants::user_id.eq(user_id))
+                .select(MessageVariant::as_select())
+                .first::<MessageVariant>(&mut *conn)
+                .optional()
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to load message variant: {e}"))
+                })
+        })
+        .await?;
 
     match variant? {
         Some(v) => Ok(Some(MessageVariantDto::from_model(v, dek)?)),
@@ -118,18 +118,20 @@ pub async fn delete_message_variant(
 ) -> Result<bool, AppError> {
     let conn = state.pool.get().await?;
 
-    let deleted_count = conn.interact(move |conn| {
-        diesel::delete(
-            message_variants::table
-                .filter(message_variants::parent_message_id.eq(message_id))
-                .filter(message_variants::variant_index.eq(variant_index))
-                .filter(message_variants::user_id.eq(user_id))
-        )
-        .execute(&mut *conn)
-        .map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to delete message variant: {e}"))
+    let deleted_count = conn
+        .interact(move |conn| {
+            diesel::delete(
+                message_variants::table
+                    .filter(message_variants::parent_message_id.eq(message_id))
+                    .filter(message_variants::variant_index.eq(variant_index))
+                    .filter(message_variants::user_id.eq(user_id)),
+            )
+            .execute(&mut *conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to delete message variant: {e}"))
+            })
         })
-    }).await?;
+        .await?;
 
     Ok(deleted_count? > 0)
 }
@@ -142,25 +144,24 @@ pub async fn get_variant_count(
 ) -> Result<i64, AppError> {
     let conn = state.pool.get().await?;
 
-    let count = conn.interact(move |conn| {
-        message_variants::table
-            .filter(message_variants::parent_message_id.eq(message_id))
-            .filter(message_variants::user_id.eq(user_id))
-            .count()
-            .get_result::<i64>(&mut *conn)
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to count message variants: {e}"))
-            })
-    }).await?;
+    let count = conn
+        .interact(move |conn| {
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .filter(message_variants::user_id.eq(user_id))
+                .count()
+                .get_result::<i64>(&mut *conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to count message variants: {e}"))
+                })
+        })
+        .await?;
 
     Ok(count?)
 }
 
 /// Helper function to get the next variant index for a message
-fn get_next_variant_index(
-    conn: &mut PgConnection,
-    message_id: Uuid,
-) -> Result<i32, AppError> {
+fn get_next_variant_index(conn: &mut PgConnection, message_id: Uuid) -> Result<i32, AppError> {
     let max_index: Option<i32> = message_variants::table
         .filter(message_variants::parent_message_id.eq(message_id))
         .select(diesel::dsl::max(message_variants::variant_index))
@@ -181,11 +182,11 @@ pub async fn ensure_original_variant_exists(
     dek: &SecretBox<Vec<u8>>,
 ) -> Result<(), AppError> {
     let variant_count = get_variant_count(state.clone(), message_id, user_id).await?;
-    
+
     if variant_count == 0 {
         // Create variant index 0 with the original content
         let conn = state.pool.get().await?;
-        
+
         // Create original variant with encryption outside the closure
         let original_variant = NewMessageVariant::new(
             message_id,
@@ -202,8 +203,9 @@ pub async fn ensure_original_variant_exists(
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
                 })
-        }).await??;
+        })
+        .await??;
     }
-    
+
     Ok(())
 }

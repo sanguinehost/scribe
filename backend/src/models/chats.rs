@@ -2479,10 +2479,7 @@ pub struct MessageVariantDto {
 
 impl MessageVariantDto {
     /// Convert from database model with decrypted content
-    pub fn from_model(
-        variant: MessageVariant,
-        dek: &SecretBox<Vec<u8>>,
-    ) -> Result<Self, AppError> {
+    pub fn from_model(variant: MessageVariant, dek: &SecretBox<Vec<u8>>) -> Result<Self, AppError> {
         let content = variant.decrypt_content(dek)?;
 
         Ok(Self {

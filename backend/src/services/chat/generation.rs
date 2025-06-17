@@ -9,7 +9,7 @@ use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
     ChatRequest as GenAiChatRequest, ChatRole, ChatStreamEvent as GeminiResponseChunkAlias,
-    ReasoningEffort, HarmCategory, HarmBlockThreshold, SafetySetting,
+    HarmBlockThreshold, HarmCategory, ReasoningEffort, SafetySetting,
 };
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
@@ -492,9 +492,11 @@ pub async fn get_session_data_for_generation(
     };
 
     // --- Convert Frontend History to DbChatMessage Format (if provided) ---
-    let final_messages_for_processing: Vec<DbChatMessage> = if let Some(ref api_messages) = frontend_history {
+    let final_messages_for_processing: Vec<DbChatMessage> = if let Some(ref api_messages) =
+        frontend_history
+    {
         debug!(%session_id, "Using frontend-provided history ({} messages) instead of database query", api_messages.len());
-        
+
         // Convert ApiChatMessage to DbChatMessage format
         // Note: We exclude the last message as it's the current user message being processed
         let history_without_current = if api_messages.len() > 1 {
@@ -502,29 +504,33 @@ pub async fn get_session_data_for_generation(
         } else {
             &[]
         };
-        
-        history_without_current.iter().enumerate().map(|(index, api_msg)| {
-            let message_role = match api_msg.role.to_lowercase().as_str() {
-                "user" => MessageRole::User,
-                "assistant" => MessageRole::Assistant,
-                "system" => MessageRole::System,
-                _ => MessageRole::User, // Default fallback
-            };
-            
-            DbChatMessage {
-                id: Uuid::new_v4(), // Generate temporary ID for frontend messages
-                session_id,
-                user_id,
-                message_type: message_role,
-                content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
-                content_nonce: None, // No encryption for frontend-provided history
-                created_at: chrono::Utc::now() - chrono::Duration::seconds(1000 - index as i64), // Fake timestamps
-                prompt_tokens: None,
-                completion_tokens: None,
-                raw_prompt_ciphertext: None,
-                raw_prompt_nonce: None,
-            }
-        }).collect()
+
+        history_without_current
+            .iter()
+            .enumerate()
+            .map(|(index, api_msg)| {
+                let message_role = match api_msg.role.to_lowercase().as_str() {
+                    "user" => MessageRole::User,
+                    "assistant" => MessageRole::Assistant,
+                    "system" => MessageRole::System,
+                    _ => MessageRole::User, // Default fallback
+                };
+
+                DbChatMessage {
+                    id: Uuid::new_v4(), // Generate temporary ID for frontend messages
+                    session_id,
+                    user_id,
+                    message_type: message_role,
+                    content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
+                    content_nonce: None, // No encryption for frontend-provided history
+                    created_at: chrono::Utc::now() - chrono::Duration::seconds(1000 - index as i64), // Fake timestamps
+                    prompt_tokens: None,
+                    completion_tokens: None,
+                    raw_prompt_ciphertext: None,
+                    raw_prompt_nonce: None,
+                }
+            })
+            .collect()
     } else {
         debug!(%session_id, "Using database-queried history ({} messages)", existing_messages_db_raw.len());
         existing_messages_db_raw
@@ -671,26 +677,26 @@ pub async fn get_session_data_for_generation(
                     rag_query_limit_per_source,
                 )
                 .await
-        {
-            Ok(mut older_chat_chunks) => {
-                info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
-                let recent_message_ids: std::collections::HashSet<Uuid> =
-                    managed_recent_history.iter().map(|msg| msg.id).collect();
-                debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
+            {
+                Ok(mut older_chat_chunks) => {
+                    info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
+                    let recent_message_ids: std::collections::HashSet<Uuid> =
+                        managed_recent_history.iter().map(|msg| msg.id).collect();
+                    debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
 
-                debug!(target: "rag_debug", %session_id, num_raw_older_chunks = older_chat_chunks.len(), "Raw older chat RAG chunks before filtering:");
-                for (i, chunk) in older_chat_chunks.iter().enumerate() {
-                    if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
-                        &chunk.metadata
-                    {
-                        debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), "  Raw older chat RAG chunk");
-                    } else {
-                        debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
+                    debug!(target: "rag_debug", %session_id, num_raw_older_chunks = older_chat_chunks.len(), "Raw older chat RAG chunks before filtering:");
+                    for (i, chunk) in older_chat_chunks.iter().enumerate() {
+                        if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
+                            &chunk.metadata
+                        {
+                            debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), "  Raw older chat RAG chunk");
+                        } else {
+                            debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
+                        }
                     }
-                }
 
-                let initial_older_chunk_count = older_chat_chunks.len();
-                older_chat_chunks.retain(|chunk| {
+                    let initial_older_chunk_count = older_chat_chunks.len();
+                    older_chat_chunks.retain(|chunk| {
                     match &chunk.metadata {
                         crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
                             let is_recent = recent_message_ids.contains(&chat_meta.message_id);
@@ -713,14 +719,14 @@ pub async fn get_session_data_for_generation(
                         // }
                     }
                 });
-                debug!(target: "rag_debug", %session_id, %initial_older_chunk_count, final_older_chunk_count = older_chat_chunks.len(), "Older chat RAG chunks filtering complete.");
-                info!(%session_id, num_older_chat_chunks_filtered = older_chat_chunks.len(), "Filtered older chat history chunks."); // Existing log, good for summary
-                combined_rag_candidates.extend(older_chat_chunks);
+                    debug!(target: "rag_debug", %session_id, %initial_older_chunk_count, final_older_chunk_count = older_chat_chunks.len(), "Older chat RAG chunks filtering complete.");
+                    info!(%session_id, num_older_chat_chunks_filtered = older_chat_chunks.len(), "Filtered older chat history chunks."); // Existing log, good for summary
+                    combined_rag_candidates.extend(older_chat_chunks);
+                }
+                Err(e) => {
+                    warn!(%session_id, error = %e, "Failed to retrieve older chat history chunks for RAG. Proceeding without them.");
+                }
             }
-            Err(e) => {
-                warn!(%session_id, error = %e, "Failed to retrieve older chat history chunks for RAG. Proceeding without them.");
-            }
-        }
         } else {
             info!(%session_id, "Skipping older chat history RAG retrieval (frontend mode - preventing orphaned message contamination).");
         }
@@ -987,10 +993,10 @@ pub async fn exec_chat_with_retry(
 ) -> Result<genai::chat::ChatResponse, AppError> {
     const MAX_RETRIES: u8 = 2;
     let mut retry_count = 0;
-    
+
     // Store original system prompt for retry attempts
     let original_system_prompt = params.chat_request.system.clone();
-    
+
     loop {
         // Create chat request for this attempt
         let attempt_chat_request = {
@@ -1004,7 +1010,7 @@ pub async fn exec_chat_with_retry(
                     .map(|prompt| create_jailbreak_prompt(prompt))
                     .unwrap_or_else(|| create_jailbreak_prompt(""))
             };
-            
+
             // Add prefill as fake assistant message for all attempts
             let mut messages_with_prefill = params.chat_request.messages.clone();
             let prefill_content = if retry_count == 0 {
@@ -1014,28 +1020,33 @@ pub async fn exec_chat_with_retry(
                 // Retry attempts: use enhanced jailbreak prefill
                 create_jailbreak_prefill(params.character_name.as_deref())
             };
-            
+
             let prefill_message = genai::chat::ChatMessage {
                 role: genai::chat::ChatRole::Assistant,
                 content: genai::chat::MessageContent::Text(prefill_content),
                 options: None,
             };
             messages_with_prefill.push(prefill_message);
-            
-            let mut request = genai::chat::ChatRequest::new(messages_with_prefill)
-                .with_system(system_prompt);
-            
+
+            let mut request =
+                genai::chat::ChatRequest::new(messages_with_prefill).with_system(system_prompt);
+
             if let Some(tools) = &params.chat_request.tools {
                 request = request.with_tools(tools.clone());
             }
             request
         };
-        
+
         info!(session_id = %params.session_id, retry_count, "Attempting non-streaming AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
-        
-        match params.state
+
+        match params
+            .state
             .ai_client
-            .exec_chat(&params.model_name, attempt_chat_request, params.chat_options.clone())
+            .exec_chat(
+                &params.model_name,
+                attempt_chat_request,
+                params.chat_options.clone(),
+            )
             .await
         {
             Ok(response) => {
@@ -1047,9 +1058,9 @@ pub async fn exec_chat_with_retry(
             Err(e) => {
                 let error_str = e.to_string();
                 let is_safety_error = is_safety_filter_error(&error_str);
-                
+
                 warn!(session_id = %params.session_id, retry_count, error = %e, is_safety_error, "Non-streaming AI generation attempt failed");
-                
+
                 if is_safety_error && retry_count < MAX_RETRIES {
                     retry_count += 1;
                     info!(session_id = %params.session_id, retry_count, "Safety filter detected, retrying with enhanced prompt");
@@ -1079,10 +1090,10 @@ pub async fn stream_ai_response_and_save_message_with_retry(
 ) -> Result<ScribeEventStream, AppError> {
     const MAX_RETRIES: u8 = 2;
     let mut retry_count = 0;
-    
+
     // Store original system prompt for retry attempts
     let original_system_prompt = params.system_prompt.clone();
-    
+
     loop {
         // Create parameters for this attempt
         let attempt_params = StreamAiParams {
@@ -1098,7 +1109,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
                     // Retry attempts: use enhanced jailbreak prefill
                     create_jailbreak_prefill(params.character_name.as_deref())
                 };
-                
+
                 // Add fake assistant message with prefill for all attempts
                 let prefill_message = genai::chat::ChatMessage {
                     role: genai::chat::ChatRole::Assistant,
@@ -1113,7 +1124,9 @@ pub async fn stream_ai_response_and_save_message_with_retry(
                 original_system_prompt.clone()
             } else {
                 // Retry attempts: use jailbreak prompt
-                original_system_prompt.as_ref().map(|prompt| create_jailbreak_prompt(prompt))
+                original_system_prompt
+                    .as_ref()
+                    .map(|prompt| create_jailbreak_prompt(prompt))
             },
             temperature: params.temperature.clone(),
             max_output_tokens: params.max_output_tokens,
@@ -1130,9 +1143,9 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             user_dek: params.user_dek.clone(),
             character_name: params.character_name.clone(),
         };
-        
+
         info!(session_id = %params.session_id, retry_count, "Attempting AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
-        
+
         match stream_ai_response_and_save_message(attempt_params).await {
             Ok(stream) => {
                 if retry_count > 0 {
@@ -1143,9 +1156,9 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             Err(e) => {
                 let error_str = e.to_string();
                 let is_safety_error = is_safety_filter_error(&error_str);
-                
+
                 warn!(session_id = %params.session_id, retry_count, error = %e, is_safety_error, "AI generation attempt failed");
-                
+
                 if is_safety_error && retry_count < MAX_RETRIES {
                     retry_count += 1;
                     info!(session_id = %params.session_id, retry_count, "Safety filter detected, retrying with enhanced prompt");
@@ -1237,13 +1250,19 @@ pub async fn stream_ai_response_and_save_message(
     }
     // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
     // The `gemini_enable_code_execution` variable will still affect tool declaration logic below.
-    
+
     // Disable all safety filters to prevent content filtering errors
     let safety_settings = vec![
         SafetySetting::new(HarmCategory::Harassment, HarmBlockThreshold::BlockNone),
         SafetySetting::new(HarmCategory::HateSpeech, HarmBlockThreshold::BlockNone),
-        SafetySetting::new(HarmCategory::SexuallyExplicit, HarmBlockThreshold::BlockNone),
-        SafetySetting::new(HarmCategory::DangerousContent, HarmBlockThreshold::BlockNone),
+        SafetySetting::new(
+            HarmCategory::SexuallyExplicit,
+            HarmBlockThreshold::BlockNone,
+        ),
+        SafetySetting::new(
+            HarmCategory::DangerousContent,
+            HarmBlockThreshold::BlockNone,
+        ),
         SafetySetting::new(HarmCategory::CivicIntegrity, HarmBlockThreshold::BlockNone),
     ];
     genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
@@ -1357,11 +1376,11 @@ pub async fn stream_ai_response_and_save_message(
                             || chunk_lower.contains("against my guidelines")
                             || chunk_lower.contains("inappropriate content")
                             || chunk_lower.contains("harmful content");
-                        
+
                         if is_likely_safety_refusal {
                             warn!(session_id = %stream_session_id, content = %chunk.content, "Detected potential safety refusal in AI response");
                         }
-                        
+
                         accumulated_content.push_str(&chunk.content);
                         yield Ok(ScribeSseEvent::Content(chunk.content.clone()));
                     }
@@ -1492,7 +1511,7 @@ pub async fn stream_ai_response_and_save_message(
             // If the stream ended successfully but produced no content,
             // this is likely due to safety filters blocking the response
             warn!(session_id = %stream_session_id, "AI stream finished successfully but produced no content - likely blocked by safety filters");
-            
+
             // Send an informative error to the user
             yield Ok(ScribeSseEvent::Error(
                 "LLM API error: Your message was blocked by AI safety filters. Please try rephrasing your message with different wording.".to_string()

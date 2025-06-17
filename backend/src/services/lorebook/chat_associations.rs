@@ -1,5 +1,5 @@
-use super::*;
 use super::get_user_from_session;
+use super::*;
 
 impl LorebookService {
     #[instrument(skip(self, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id))]

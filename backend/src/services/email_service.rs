@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
-use aws_sdk_ses::{Client as SesClient, types::Destination, types::Content, types::Body, types::Message};
+use aws_sdk_ses::{
+    Client as SesClient, types::Body, types::Content, types::Destination, types::Message,
+};
 use std::error::Error as StdError;
 use std::sync::Arc;
 use thiserror::Error;
@@ -52,19 +54,22 @@ impl EmailService for LoggingEmailService {
         username: &str,
         verification_token: &str,
     ) -> EmailResult<()> {
-        let verification_link = format!("{}/verify-email?token={}", self.base_url, verification_token);
-        
+        let verification_link = format!(
+            "{}/verify-email?token={}",
+            self.base_url, verification_token
+        );
+
         info!(
             to_email = %to_email,
             username = %username,
             verification_link = %verification_link,
             "📧 EMAIL VERIFICATION (DEV MODE) - Click the link below to verify your account:"
         );
-        
+
         println!("\n🔗 EMAIL VERIFICATION LINK for {}:", username);
         println!("   {}", verification_link);
         println!("   (This would normally be sent to: {})\n", to_email);
-        
+
         Ok(())
     }
 }
@@ -80,12 +85,10 @@ pub struct SesEmailService {
 impl SesEmailService {
     /// Create a new SES email service
     pub async fn new(base_url: String, from_email: String) -> Result<Self, EmailError> {
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .load()
-            .await;
-        
+        let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
+
         let client = SesClient::new(&config);
-        
+
         Ok(Self {
             client,
             base_url,
@@ -102,8 +105,11 @@ impl EmailService for SesEmailService {
         username: &str,
         verification_token: &str,
     ) -> EmailResult<()> {
-        let verification_link = format!("{}/verify-email?token={}", self.base_url, verification_token);
-        
+        let verification_link = format!(
+            "{}/verify-email?token={}",
+            self.base_url, verification_token
+        );
+
         let subject = "Verify your Sanguine Scribe account";
         let html_body = format!(
             r#"
@@ -147,33 +153,37 @@ impl EmailService for SesEmailService {
             "#,
             username, verification_link, verification_link, verification_link
         );
-        
+
         let text_body = format!(
             "Hi {}!\n\nThank you for signing up for Sanguine Scribe. To complete your registration, please verify your email address by clicking the link below:\n\n{}\n\nThis link will expire in 24 hours. If you didn't create an account with us, you can safely ignore this email.\n\nBest regards,\nThe Sanguine Scribe Team",
             username, verification_link
         );
 
-        let destination = Destination::builder()
-            .to_addresses(to_email)
-            .build();
+        let destination = Destination::builder().to_addresses(to_email).build();
 
         let subject_content = Content::builder()
             .data(subject)
             .charset("UTF-8")
             .build()
-            .map_err(|e| EmailError::ConfigurationError(format!("Failed to build subject: {}", e)))?;
+            .map_err(|e| {
+                EmailError::ConfigurationError(format!("Failed to build subject: {}", e))
+            })?;
 
         let html_content = Content::builder()
             .data(html_body)
             .charset("UTF-8")
             .build()
-            .map_err(|e| EmailError::ConfigurationError(format!("Failed to build HTML content: {}", e)))?;
+            .map_err(|e| {
+                EmailError::ConfigurationError(format!("Failed to build HTML content: {}", e))
+            })?;
 
         let text_content = Content::builder()
             .data(text_body)
             .charset("UTF-8")
             .build()
-            .map_err(|e| EmailError::ConfigurationError(format!("Failed to build text content: {}", e)))?;
+            .map_err(|e| {
+                EmailError::ConfigurationError(format!("Failed to build text content: {}", e))
+            })?;
 
         let body = Body::builder()
             .html(html_content)
@@ -185,7 +195,8 @@ impl EmailService for SesEmailService {
             .body(body)
             .build();
 
-        match self.client
+        match self
+            .client
             .send_email()
             .source(&self.from_email)
             .destination(destination)
@@ -210,7 +221,11 @@ impl EmailService for SesEmailService {
                     error_source = ?e.source(),
                     "Failed to send verification email via AWS SES"
                 );
-                Err(EmailError::SendFailed(format!("AWS SES error: {} (source: {:?})", e, e.source())))
+                Err(EmailError::SendFailed(format!(
+                    "AWS SES error: {} (source: {:?})",
+                    e,
+                    e.source()
+                )))
             }
         }
     }
@@ -225,10 +240,12 @@ pub async fn create_email_service(
     match app_env {
         "production" | "staging" => {
             info!("Creating SES email service for {}", app_env);
-            let from_email = from_email
-                .ok_or_else(|| EmailError::ConfigurationError(
-                    format!("FROM_EMAIL environment variable is required for {}", app_env)
-                ))?;
+            let from_email = from_email.ok_or_else(|| {
+                EmailError::ConfigurationError(format!(
+                    "FROM_EMAIL environment variable is required for {}",
+                    app_env
+                ))
+            })?;
             let service = SesEmailService::new(base_url, from_email).await?;
             Ok(Arc::new(service))
         }

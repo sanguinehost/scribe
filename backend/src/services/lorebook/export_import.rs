@@ -1,5 +1,5 @@
-use super::*;
 use super::get_user_from_session;
+use super::*;
 
 impl LorebookService {
     pub async fn export_lorebook(
@@ -247,7 +247,7 @@ impl LorebookService {
             tracing::debug!(
                 "Preparing lorebook entry [REDACTED_UUID]: title='[REDACTED]', content_len=[REDACTED], keys=[REDACTED]"
             );
-            
+
             let new_entry_id = Uuid::new_v4();
 
             // Encrypt the fields if DEK is provided
@@ -348,8 +348,11 @@ impl LorebookService {
 
         // Batch insert all entries in a single transaction
         if !new_entries_batch.is_empty() {
-            info!("Batch inserting {} lorebook entries", new_entries_batch.len());
-            
+            info!(
+                "Batch inserting {} lorebook entries",
+                new_entries_batch.len()
+            );
+
             info!("Getting database connection for batch insert...");
             let conn = self.pool.get().await.map_err(|e| {
                 error!("Failed to get DB connection for batch insert: {e}");
@@ -371,14 +374,19 @@ impl LorebookService {
                 .await
                 .map_err(|e| {
                     error!("Failed to batch insert lorebook entries: {}", e);
-                    AppError::InternalServerErrorGeneric(format!("Failed to batch insert entries: {e}"))
+                    AppError::InternalServerErrorGeneric(format!(
+                        "Failed to batch insert entries: {e}"
+                    ))
                 })?
                 .map_err(|e| {
                     error!("Database error during batch insert: {}", e);
                     AppError::DatabaseQueryError(format!("Batch insert failed: {e}"))
                 })?;
 
-            info!("Successfully batch inserted {} lorebook entries", inserted_entries.len());
+            info!(
+                "Successfully batch inserted {} lorebook entries",
+                inserted_entries.len()
+            );
 
             // Generate embeddings for all inserted entries in the background
             let user_dek_bytes = user_dek.unwrap().expose_secret().clone();
@@ -414,8 +422,7 @@ impl LorebookService {
                     decrypted_keys_text_result,
                 ) {
                     (Ok(title_bytes), Ok(content_bytes), Ok(keys_bytes_opt)) => {
-                        let decrypted_title =
-                            String::from_utf8_lossy(&title_bytes).into_owned();
+                        let decrypted_title = String::from_utf8_lossy(&title_bytes).into_owned();
                         let decrypted_content =
                             String::from_utf8_lossy(&content_bytes).into_owned();
                         let decrypted_keywords = keys_bytes_opt

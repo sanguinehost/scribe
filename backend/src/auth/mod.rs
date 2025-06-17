@@ -3,11 +3,11 @@
 pub use crate::models::auth::RegisterPayload; // Added for RegisterPayload
 use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery};
 use crate::schema::users;
+use bcrypt::BcryptError;
+use deadpool_diesel::InteractError;
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
 };
-use bcrypt::BcryptError;
-use deadpool_diesel::InteractError;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 use thiserror::Error;
 use tokio::task::JoinError;
@@ -15,12 +15,12 @@ use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid; // Import InteractError
 
 use crate::crypto::{self, CryptoError}; // Added for encryption
-use crate::state::DbPool; // Added for delete_all_sessions_for_user
+use crate::models::email_verification::EmailVerificationToken;
+use crate::models::email_verification::NewEmailVerificationToken; // Added for verification tokens
 use crate::services::EmailService; // Added for email verification
-use crate::models::email_verification::{NewEmailVerificationToken}; // Added for verification tokens
+use crate::state::DbPool; // Added for delete_all_sessions_for_user
 use chrono::{Duration, Utc}; // Added for token expiration
 use std::sync::Arc;
-use crate::models::email_verification::EmailVerificationToken;
 
 // Type alias for complex return type
 type VerifyCredentialsResult = Result<(User, Option<SecretBox<Vec<u8>>>), AuthError>;
@@ -153,9 +153,9 @@ pub async fn create_user_with_verification(
 ) -> Result<User, AuthError> {
     // Hash password first in async context
     let password_hash = hash_password(credentials.password.clone()).await?;
-    
+
     let conn = pool.get().await.map_err(AuthError::PoolError)?;
-    
+
     // Clone credentials for the async block
     let credentials_clone = credentials.clone();
     let user = conn
@@ -165,17 +165,17 @@ pub async fn create_user_with_verification(
         })
         .await
         .map_err(AuthError::from)??;
-    
+
     // Generate verification token
     let verification_token = generate_verification_token();
     let expires_at = Utc::now() + Duration::hours(24);
-    
+
     let new_token = NewEmailVerificationToken {
         user_id: user.id,
         token: verification_token.clone(),
         expires_at,
     };
-    
+
     // Store verification token in database
     let conn = pool.get().await.map_err(AuthError::PoolError)?;
     conn.interact(move |conn| {
@@ -186,7 +186,7 @@ pub async fn create_user_with_verification(
     })
     .await
     .map_err(AuthError::from)??;
-    
+
     // Send verification email
     if let Err(e) = email_service
         .send_verification_email(&user.email, &user.username, &verification_token)
@@ -196,7 +196,7 @@ pub async fn create_user_with_verification(
         // Continue despite email failure - user is created but won't get email
         warn!("User created but verification email failed to send");
     }
-    
+
     info!(user_id = %user.id, "User created with verification token");
     Ok(user)
 }
@@ -217,7 +217,7 @@ pub async fn create_user(
 pub fn create_user_sync(
     conn: &mut PgConnection,
     mut credentials: RegisterPayload, // Use RegisterPayload struct, make it mutable
-    password_hash: String, // Pre-hashed password
+    password_hash: String,            // Pre-hashed password
 ) -> Result<User, AuthError> {
     info!("Attempting to create user with encryption");
 
@@ -306,8 +306,8 @@ pub fn create_user_sync(
     // 3. Create a NewUser instance
     let new_user = NewUser {
         username: credentials.username.clone(), // Clone username from credentials
-        password_hash, // Use the pre-hashed password
-        email: credentials.email.clone(), // Clone email from credentials
+        password_hash,                          // Use the pre-hashed password
+        email: credentials.email.clone(),       // Clone email from credentials
         kek_salt,
         encrypted_dek,
         encrypted_dek_by_recovery,
@@ -820,10 +820,7 @@ pub async fn delete_all_sessions_for_user(
 }
 
 #[instrument(skip(conn), err)]
-pub fn verify_email(
-    conn: &mut PgConnection,
-    token: &str,
-) -> Result<User, AuthError> {
+pub fn verify_email(conn: &mut PgConnection, token: &str) -> Result<User, AuthError> {
     use crate::schema::email_verification_tokens;
     use crate::schema::users;
 
@@ -866,7 +863,6 @@ pub fn verify_email(
     info!(user_id = %updated_user.id, "Email successfully verified and user account activated");
     Ok(User::from(updated_user))
 }
-
 
 #[cfg(test)]
 mod tests {

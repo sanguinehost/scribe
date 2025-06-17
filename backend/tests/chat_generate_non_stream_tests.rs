@@ -3560,11 +3560,10 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         .unwrap();
     let system_prompt = last_request.system.unwrap();
 
-
     assert!(system_prompt.contains("<character_profile>"));
     // Note: The character's system prompt override is now incorporated into the base prompt template
     // rather than being a separate section
-    
+
     // Check character details are included in the new format
     assert!(system_prompt.contains("Character Name:** Full Prompt Char"));
     assert!(system_prompt.contains("Description:** A detailed description."));

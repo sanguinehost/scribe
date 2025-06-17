@@ -1,5 +1,5 @@
-use super::*;
 use super::get_user_from_session;
+use super::*;
 
 impl LorebookService {
     pub async fn associate_lorebook_to_character(

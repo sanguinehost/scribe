@@ -10,16 +10,16 @@ use deadpool_diesel::postgres::{
 use deadpool_diesel::Pool as DeadpoolPool;
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use std::net::SocketAddr;
-use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tower_http::cors::CorsLayer;
+use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
 // Use modules from the library crate
 use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::PgPool;
 use scribe_backend::auth::session_store::DieselSessionStore;
-use scribe_backend::errors::AppError;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
+use scribe_backend::errors::AppError;
 use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
@@ -40,36 +40,38 @@ use std::env; // Added for current_dir
 // Imports for axum-login and tower-sessions
 use axum_login::{AuthManagerLayerBuilder, login_required}; // Modified
 // Import SessionManagerLayer directly from tower_sessions
-use hex::decode;
-use scribe_backend::config::Config; // Import Config instead
-use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
-use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
-use scribe_backend::services::embeddings::{
-    EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
-};
-use scribe_backend::services::file_storage_service::FileStorageService; // Added
-use scribe_backend::services::gemini_token_client::GeminiTokenClient; // Added
-use scribe_backend::services::hybrid_token_counter::HybridTokenCounter; // Added
-use scribe_backend::services::tokenizer_service::TokenizerService; // Added
-use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
-use scribe_backend::vector_db::QdrantClientService;
-use std::sync::Arc;
-use time::Duration;
-use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
-use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
-use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
 use axum::response::Response as AxumResponse;
 use axum_server::tls_rustls::RustlsConfig;
-use rustls::crypto::ring;
+use hex::decode;
 use rcgen::generate_simple_self_signed;
+use rustls::crypto::ring;
+use scribe_backend::config::Config; // Import Config instead
+use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
+use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
 use scribe_backend::services::chat_override_service::ChatOverrideService;
+use scribe_backend::services::embeddings::{
+    EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
+};
 use scribe_backend::services::encryption_service::EncryptionService;
+use scribe_backend::services::file_storage_service::FileStorageService; // Added
+use scribe_backend::services::gemini_token_client::GeminiTokenClient; // Added
+use scribe_backend::services::hybrid_token_counter::HybridTokenCounter; // Added
 use scribe_backend::services::lorebook::LorebookService;
+use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer, key_extractor::GlobalKeyExtractor};
+use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
+use scribe_backend::vector_db::QdrantClientService;
 use std::path::PathBuf;
+use std::sync::Arc;
+use time::Duration;
+use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
+use tower_governor::{
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
+};
+use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
+use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -78,19 +80,23 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 async fn load_cloud_certificate() -> Result<RustlsConfig> {
     // Try to load certificate from environment variables first (for proper certificates)
     if let (Ok(cert_pem), Ok(key_pem)) = (env::var("TLS_CERT_PEM"), env::var("TLS_KEY_PEM")) {
-        tracing::info!("Loading TLS certificate from environment variables for end-to-end encryption");
-        
+        tracing::info!(
+            "Loading TLS certificate from environment variables for end-to-end encryption"
+        );
+
         let config = RustlsConfig::from_pem(cert_pem.into_bytes(), key_pem.into_bytes())
             .await
             .context("Failed to create RustlsConfig from environment certificate")?;
-        
+
         tracing::info!("TLS certificate loaded successfully from environment");
         return Ok(config);
     }
-    
+
     // Fallback to self-signed certificate if no proper certificate is provided
-    tracing::info!("No certificate provided in environment, generating self-signed certificate for end-to-end encryption");
-    
+    tracing::info!(
+        "No certificate provided in environment, generating self-signed certificate for end-to-end encryption"
+    );
+
     // Generate a simple self-signed certificate for internal communication
     let subject_alt_names = vec![
         "localhost".to_string(),
@@ -99,18 +105,18 @@ async fn load_cloud_certificate() -> Result<RustlsConfig> {
     ];
     let cert_key = generate_simple_self_signed(subject_alt_names)
         .context("Failed to generate self-signed certificate")?;
-    
+
     // Get PEM-encoded certificate and private key
     let cert_pem = cert_key.cert.pem();
     let key_pem = cert_key.key_pair.serialize_pem();
-    
+
     tracing::info!("Self-signed certificate generated successfully");
-    
+
     // Create RustlsConfig from the generated certificate and key
     let config = RustlsConfig::from_pem(cert_pem.into_bytes(), key_pem.into_bytes())
         .await
         .context("Failed to create RustlsConfig from generated certificate")?;
-    
+
     Ok(config)
 }
 
@@ -155,30 +161,35 @@ fn setup_database_pool(config: &Config) -> PgPool {
         .expect("DATABASE_URL not set in config");
     tracing::info!("Connecting to database...");
     let manager = DeadpoolManager::new(db_url, DeadpoolRuntime::Tokio1);
-    
+
     // Configure pool size based on environment
     let mut pool_config = PoolConfig::default();
     let max_size = match config.environment.as_deref() {
         Some("development") => 50, // Local docker has max_connections = 200
         Some("staging") | Some("production") => 20, // Cloud RDS has ~90 total connections
-        _ => 20, // Default to conservative for unknown environments
+        _ => 20,                   // Default to conservative for unknown environments
     };
     pool_config.max_size = max_size;
     pool_config.timeouts.wait = Some(std::time::Duration::from_secs(30)); // 30 second timeout
-    
+
     let pool: PgPool = DeadpoolPool::builder(manager)
         .config(pool_config)
         .runtime(DeadpoolRuntime::Tokio1)
         .build()
         .expect("Failed to create DB pool.");
-    tracing::info!("Database connection pool established with max_size: {}", max_size);
+    tracing::info!(
+        "Database connection pool established with max_size: {}",
+        max_size
+    );
     pool
 }
 
 // Initialize all services
 async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppStateServices> {
     // --- Initialize GenAI Client Asynchronously ---
-    let api_key = config.gemini_api_key.as_ref()
+    let api_key = config
+        .gemini_api_key
+        .as_ref()
         .ok_or_else(|| AppError::ConfigError("GEMINI_API_KEY is required".to_string()))?;
     let ai_client = build_gemini_client(api_key, &config.gemini_api_base_url)?;
     let ai_client_arc = Arc::new(ai_client);
@@ -256,7 +267,10 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
             let app_env = config.environment.as_deref().unwrap_or("development");
             let base_url = config.frontend_base_url.clone();
             let from_email = config.from_email.clone();
-            scribe_backend::services::email_service::create_email_service(app_env, base_url, from_email).await?
+            scribe_backend::services::email_service::create_email_service(
+                app_env, base_url, from_email,
+            )
+            .await?
         },
     })
 }
@@ -418,8 +432,7 @@ fn build_router(
         .route_layer(login_required!(AuthBackend));
 
     // Health endpoint - not rate limited for monitoring purposes
-    let health_routes = Router::new()
-        .route("/api/health", get(health_check));
+    let health_routes = Router::new().route("/api/health", get(health_check));
 
     // Rate-limited API routes (both public and protected)
     let rate_limited_api_routes = Router::new()
@@ -442,9 +455,9 @@ fn build_router(
     let cors = CorsLayer::new()
         .allow_origin([
             "https://staging.scribe.sanguinehost.com".parse().unwrap(), // Primary frontend domain
-            "https://localhost:5173".parse().unwrap(),                   // Local development
-            "http://localhost:5173".parse().unwrap(),                    // Local development (HTTP)
-            "http://localhost:3000".parse().unwrap(),                    // Local development alt port
+            "https://localhost:5173".parse().unwrap(),                  // Local development
+            "http://localhost:5173".parse().unwrap(),                   // Local development (HTTP)
+            "http://localhost:3000".parse().unwrap(), // Local development alt port
         ])
         .allow_methods([
             axum::http::Method::GET,
@@ -484,11 +497,14 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
 
     // Check if we're in a cloud environment (staging/production)
     let environment = config.environment.as_deref().unwrap_or("development");
-    
+
     if environment == "staging" || environment == "production" {
         // For cloud environments, load certificates for end-to-end encryption
-        tracing::info!("Cloud environment detected ({}), loading certificates for end-to-end encryption", environment);
-        
+        tracing::info!(
+            "Cloud environment detected ({}), loading certificates for end-to-end encryption",
+            environment
+        );
+
         let tls_config = load_cloud_certificate()
             .await
             .context("Failed to load certificate for cloud deployment")?;
@@ -546,7 +562,7 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
             tracing::error!("Failed to run database migrations: {:?}", e);
             Err(anyhow::anyhow!("Migration diesel error: {:?}", e))
         }
-     })
+    })
     .await
     .map_err(|e| anyhow::anyhow!("Migration interact task failed: {}", e))??; // Propagate InteractError then inner Result
     Ok(())

@@ -8,7 +8,8 @@ use scribe_backend::{
     services::{
         chat_override_service::ChatOverrideService,
         embeddings::{
-            ChatMessageChunkMetadata, EmbeddingPipelineService, LorebookEntryParams, RetrievedMetadata,
+            ChatMessageChunkMetadata, EmbeddingPipelineService, LorebookEntryParams,
+            RetrievedMetadata,
         },
         encryption_service::EncryptionService,
         hybrid_token_counter::HybridTokenCounter,
@@ -643,9 +644,11 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         lorebook_service: lorebook_service_for_test_5,
         auth_backend: auth_backend_5,
         file_storage_service: file_storage_service_5,
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
 
     let app_state = Arc::new(AppState::new(
@@ -739,9 +742,11 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         lorebook_service: lorebook_service_for_test_6,
         auth_backend: auth_backend_6,
         file_storage_service: file_storage_service_6,
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
 
     let app_state_arc = Arc::new(AppState::new(
@@ -810,9 +815,11 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         lorebook_service: app_state_arc.lorebook_service.clone(),
         auth_backend: app_state_arc.auth_backend.clone(), // Reuse auth_backend from app_state_arc
         file_storage_service: app_state_arc.file_storage_service.clone(),
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -932,9 +939,11 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         lorebook_service: lorebook_service_for_test_7,
         auth_backend: auth_backend_7,
         file_storage_service: file_storage_service_7,
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -998,9 +1007,11 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         lorebook_service: app_state_arc.lorebook_service.clone(),
         auth_backend: app_state_arc.auth_backend.clone(),
         file_storage_service: app_state_arc.file_storage_service.clone(),
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1144,9 +1155,11 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         lorebook_service: lorebook_service_for_test_8,
         auth_backend: auth_backend_8,
         file_storage_service: file_storage_service_8,
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1294,9 +1307,11 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         lorebook_service: lorebook_service_for_test_9,
         auth_backend: auth_backend_9,
         file_storage_service: file_storage_service_9,
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1447,9 +1462,11 @@ async fn test_rag_context_injection_with_qdrant() {
         lorebook_service: lorebook_service_for_test_10,
         auth_backend: auth_backend_10,
         file_storage_service: file_storage_service_10,
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1799,9 +1816,11 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         lorebook_service,
         auth_backend,
         file_storage_service,
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2116,9 +2135,11 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         lorebook_service,
         auth_backend,
         file_storage_service,
-        email_service: Arc::new(scribe_backend::services::email_service::LoggingEmailService::new(
-            "http://localhost:3000".to_string(),
-        )),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),

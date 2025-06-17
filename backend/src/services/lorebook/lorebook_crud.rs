@@ -1,5 +1,5 @@
-use super::*;
 use super::get_user_from_session;
+use super::*;
 
 impl LorebookService {
     /// Creates a new lorebook for the authenticated user.
@@ -411,5 +411,4 @@ impl LorebookService {
 
         Ok(())
     }
-
 }

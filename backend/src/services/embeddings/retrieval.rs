@@ -1,7 +1,7 @@
+use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata};
 use crate::errors::AppError;
 use crate::llm::EmbeddingClient;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
-use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata};
 use std::sync::Arc;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;

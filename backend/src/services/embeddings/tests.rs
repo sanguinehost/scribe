@@ -1,18 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use crate::services::embeddings::{
-        EmbeddingPipelineService,
-        ChatMessageChunkMetadata, LorebookEntryParams,
-        RetrievedMetadata
-    };
-    use crate::text_processing::chunking::ChunkConfig;
-    use std::collections::HashMap;
-    use std::sync::Arc;
-    use uuid::Uuid;
-    use crate::errors::AppError;
-    use crate::state::AppState;
-    use crate::models::chats::ChatMessage;
     use crate::auth::session_dek::SessionDek;
+    use crate::errors::AppError;
+    use crate::models::chats::ChatMessage;
+    use crate::services::embeddings::{
+        ChatMessageChunkMetadata, EmbeddingPipelineService, LorebookEntryParams, RetrievedMetadata,
+    };
+    use crate::state::AppState;
+    use crate::text_processing::chunking::ChunkConfig;
     use crate::{
         config::Config,
         crypto::encrypt_gcm, // Updated for encryption tests
@@ -26,10 +21,12 @@ mod tests {
     };
     use chrono::Utc;
     use qdrant_client::qdrant::{
-        PointId, ScoredPoint, Value, Filter,
-        condition::ConditionOneOf, r#match::MatchValue
+        Filter, PointId, ScoredPoint, Value, condition::ConditionOneOf, r#match::MatchValue,
     };
-    use secrecy::SecretBox; // For encryption tests
+    use secrecy::SecretBox;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use uuid::Uuid; // For encryption tests
     // For creating test JSON values
     // Ensure this is imported ONCE here
 

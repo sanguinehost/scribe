@@ -1,16 +1,15 @@
+use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
+use super::retrieval::{RetrievedChunk, RetrievedMetadata};
+use super::trait_def::EmbeddingPipelineServiceTrait;
+use crate::auth::session_dek::SessionDek;
 use crate::errors::AppError;
 use crate::models::chats::ChatMessage;
 use crate::state::AppState;
 use crate::text_processing::chunking::{ChunkConfig, chunk_text};
 use crate::vector_db::qdrant_client::create_qdrant_point;
-use crate::auth::session_dek::SessionDek;
-use super::trait_def::EmbeddingPipelineServiceTrait;
-use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
-use super::retrieval::{RetrievedChunk, RetrievedMetadata};
 use async_trait::async_trait;
 use qdrant_client::qdrant::{
-    Condition, FieldCondition, Filter, Match, condition::ConditionOneOf,
-    r#match::MatchValue,
+    Condition, FieldCondition, Filter, Match, condition::ConditionOneOf, r#match::MatchValue,
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;
@@ -683,7 +682,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             return Ok(());
         }
 
-        info!("Attempting to delete chunks for {} messages", message_ids.len());
+        info!(
+            "Attempting to delete chunks for {} messages",
+            message_ids.len()
+        );
 
         let qdrant_service = &state.qdrant_service;
 
@@ -724,8 +726,9 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             });
         } else {
             // For multiple message IDs, create a separate filter that uses "should" (OR) logic
-            let message_id_conditions: Vec<Condition> = message_ids.iter().map(|id| {
-                Condition {
+            let message_id_conditions: Vec<Condition> = message_ids
+                .iter()
+                .map(|id| Condition {
                     condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
                         key: "message_id".to_string(),
                         r#match: Some(Match {
@@ -733,8 +736,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                         }),
                         ..Default::default()
                     })),
-                }
-            }).collect();
+                })
+                .collect();
 
             let filter = Filter {
                 must: conditions,
@@ -745,7 +748,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             qdrant_service.delete_points_by_filter(filter).await?;
             info!(
                 "Successfully deleted chunks for {} messages for user {}",
-                message_ids.len(), user_id
+                message_ids.len(),
+                user_id
             );
 
             return Ok(());
@@ -759,7 +763,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         qdrant_service.delete_points_by_filter(filter).await?;
         info!(
             "Successfully deleted chunks for {} messages for user {}",
-            message_ids.len(), user_id
+            message_ids.len(),
+            user_id
         );
 
         Ok(())
@@ -822,4 +827,3 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         Ok(())
     }
 }
-
