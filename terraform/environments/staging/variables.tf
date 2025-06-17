@@ -11,7 +11,7 @@ variable "environment" {
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "us-east-1"
+  default     = "ap-southeast-4"
 }
 
 variable "ec2_key_pair_name" {

@@ -63,7 +63,7 @@ The deployment creates a complete, production-ready AWS infrastructure:
 
    **Optional Settings** (defaults are usually fine):
    ```hcl
-   aws_region = "us-east-1"
+   aws_region = "ap-southeast-4"
    environment = "staging"
    
    # Database settings
@@ -280,7 +280,7 @@ AWS SES starts in sandbox mode, which has the following restrictions:
 
 If SES is in sandbox mode, you'll see errors like:
 ```
-User is not authorized to perform `ses:SendEmail' on resource `arn:aws:ses:us-east-1:...:identity/user@example.com'
+User is not authorized to perform `ses:SendEmail' on resource `arn:aws:ses:ap-southeast-4:...:identity/user@example.com'
 ```
 
 **Workaround for testing**:

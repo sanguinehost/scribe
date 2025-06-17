@@ -71,7 +71,7 @@ domain_name = "staging.scribe.sanguinehost.com"
 gemini_api_key = "your-gemini-api-key-here"
 
 # Optional: Customize other settings as needed
-aws_region = "us-east-1"
+aws_region = "ap-southeast-4"
 environment = "staging"
 ```
 

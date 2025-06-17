@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-AWS_REGION=${AWS_REGION:-us-east-1}
+AWS_REGION=${AWS_REGION:-ap-southeast-4}
 ENVIRONMENT=${ENVIRONMENT:-staging}
 LOG_GROUP_BACKEND="/ecs/${ENVIRONMENT}-scribe-backend"
 LOG_GROUP_QDRANT="/ecs/${ENVIRONMENT}-scribe-qdrant"
@@ -155,7 +155,7 @@ usage() {
     echo "  $0 list backend      - List backend log streams"
     echo ""
     echo "Environment variables:"
-    echo "  AWS_REGION          - AWS region (default: us-east-1)"
+    echo "  AWS_REGION          - AWS region (default: ap-southeast-4)"
     echo "  ENVIRONMENT         - Environment name (default: staging)"
 }
 
