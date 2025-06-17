@@ -435,6 +435,8 @@ export interface ScribeChatMessage {
 	created_at?: string; // Creation timestamp
 	user_id?: string; // User ID who created the message
 	loading?: boolean;
+	error?: string | null; // Error message if generation failed
+	retryable?: boolean; // Whether this message can be retried
 	raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
 }
 

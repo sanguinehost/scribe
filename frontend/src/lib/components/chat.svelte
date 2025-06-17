@@ -96,6 +96,8 @@
 	// --- Suggested Actions State ---
 	let dynamicSuggestedActions = $state<Array<{ action: string }>>([]);
 	let isLoadingSuggestions = $state(false);
+	let suggestionsError = $state<string | null>(null);
+	let suggestionsRetryable = $state(false);
 
 	// --- Impersonate Response State ---
 	// Removed - impersonate now directly sets input text
@@ -205,6 +207,9 @@
 
 		try {
 			isLoadingSuggestions = true;
+			suggestionsError = null;
+			suggestionsRetryable = false;
+			
 			const result = await apiClient.fetchSuggestedActions(chat.id);
 
 			if (result.isOk()) {
@@ -219,14 +224,39 @@
 			} else {
 				const error = result.error;
 				console.error('Error fetching suggested actions:', error.message);
-				toast.error(`Could not load suggested actions: ${error.message}`);
+				
+				// Clean up error message for user display
+				let cleanErrorMessage = error.message;
+				if (error.message.includes('PropertyNotFound("/content/parts")') || error.message.includes('PropertyNotFound("/candidates")')) {
+					cleanErrorMessage = 'AI safety filters blocked the suggestion request. Try again or continue chatting.';
+				} else if (error.message.includes('Failed to parse stream data') || error.message.includes('trailing characters')) {
+					cleanErrorMessage = 'AI service returned malformed data. Please try again.';
+				} else if (error.message.includes('Gemini API error:')) {
+					// Remove redundant "Gemini API error:" prefix
+					cleanErrorMessage = error.message.replace('Gemini API error: ', '');
+				}
+				
+				suggestionsError = cleanErrorMessage;
+				suggestionsRetryable = true;
 				dynamicSuggestedActions = [];
+				toast.error(`Could not load suggested actions: ${cleanErrorMessage}`);
 			}
 		} catch (err: any) {
 			// Catch any unexpected errors during the API client call itself
 			console.error('Error fetching suggested actions:', err);
-			toast.error(`Could not load suggested actions: ${err.message}`);
+			
+			// Clean up error message for user display
+			let cleanErrorMessage = err.message || 'An unexpected error occurred.';
+			if (cleanErrorMessage.includes('PropertyNotFound("/content/parts")') || cleanErrorMessage.includes('PropertyNotFound("/candidates")')) {
+				cleanErrorMessage = 'AI safety filters blocked the suggestion request. Try again or continue chatting.';
+			} else if (cleanErrorMessage.includes('Failed to parse stream data') || cleanErrorMessage.includes('trailing characters')) {
+				cleanErrorMessage = 'AI service returned malformed data. Please try again.';
+			}
+			
+			suggestionsError = cleanErrorMessage;
+			suggestionsRetryable = true;
 			dynamicSuggestedActions = [];
+			toast.error(`Could not load suggested actions: ${cleanErrorMessage}`);
 		} finally {
 			isLoadingSuggestions = false;
 		}
@@ -417,7 +447,17 @@
 						// Finalization happens after the loop
 					} else if (currentEvent === 'error') {
 						console.error('SSE Error Event:', currentData);
-						error = `Stream error: ${currentData}`;
+						// Clean up error message for user display
+						let cleanErrorMessage = currentData;
+						if (currentData.includes('PropertyNotFound("/candidates")') || currentData.includes('PropertyNotFound("/content/parts")')) {
+							cleanErrorMessage = 'AI safety filters blocked the request. Please try rephrasing your message.';
+						} else if (currentData.includes('Failed to parse stream data') || currentData.includes('trailing characters')) {
+							cleanErrorMessage = 'AI service returned malformed data. Please try again.';
+						} else if (currentData.startsWith('LLM API error:')) {
+							cleanErrorMessage = currentData; // Already user-friendly
+						}
+						
+						error = cleanErrorMessage;
 						toast.error(error);
 						reader.cancel('SSE error event received');
 						throw new Error(error); // Stop processing
@@ -489,7 +529,66 @@
 				}
 			}
 
-			// Handle any remaining data in the buffer after the loop (should be empty if stream ended cleanly)
+			// Handle any remaining data in the buffer after the loop
+			// The stream may have ended but there could still be unprocessed SSE events in the buffer
+			if (buffer.trim().length > 0) {
+				console.log('Processing remaining buffer data after stream end:', buffer);
+				
+				// Process any remaining complete SSE messages
+				let eventEndIndex;
+				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
+					const messageBlock = buffer.substring(0, eventEndIndex);
+					buffer = buffer.substring(eventEndIndex + 2);
+
+					currentEvent = 'message';
+					currentData = '';
+
+					for (const line of messageBlock.split('\n')) {
+						if (line.startsWith('event:')) {
+							currentEvent = line.substring(6).trim();
+						} else if (line.startsWith('data:')) {
+							const dataLineContent = line.substring(5);
+							if (currentData.length > 0) {
+								currentData += '\n';
+							}
+							currentData += dataLineContent.startsWith(' ')
+								? dataLineContent.substring(1)
+								: dataLineContent;
+						}
+					}
+
+					// Process the final buffered event
+					if (currentEvent === 'done' && currentData === '[DONE]') {
+						console.log('SSE stream finished with [DONE] signal from remaining buffer.');
+					} else if (currentEvent === 'error') {
+						console.error('SSE Error Event from remaining buffer:', currentData);
+						error = `Stream error: ${currentData}`;
+						toast.error(error);
+					} else if (currentEvent === 'content') {
+						if (currentData) {
+							messages = messages.map((msg) => {
+								if (msg.id === assistantMessageId) {
+									console.log('Updating content from remaining buffer for assistant message:', msg.id);
+									return { ...msg, content: msg.content + currentData };
+								}
+								if (msg.id.startsWith('first-message-')) {
+									return { ...msg, loading: false };
+								}
+								return msg;
+							});
+						}
+					} else if (currentEvent === 'reasoning_chunk') {
+						if (currentData) {
+							console.log('SSE Reasoning Chunk from remaining buffer:', currentData);
+						}
+					}
+				}
+
+				// Log any truly incomplete data left in buffer
+				if (buffer.trim().length > 0) {
+					console.warn('Incomplete SSE data left in buffer after processing:', buffer);
+				}
+			}
 
 			// Finalize assistant message state only if no error occurred during fetch/parsing
 			messages = messages.map((msg) => {
@@ -526,13 +625,36 @@
 				}
 
 				// Error might have been set by the 'error' event handler already
-				if (!error) {
-					// Only set if not already set by SSE 'error' event
-					error = err.message || 'An unexpected error occurred.';
-					toast.error(error ?? 'Unknown error'); // Ensure non-null string for toast
+				let errorMessage = error || err.message || 'An unexpected error occurred.';
+				
+				// Clean up error message for better user experience
+				if (errorMessage.includes('PropertyNotFound("/candidates")') || errorMessage.includes('PropertyNotFound("/content/parts")')) {
+					errorMessage = 'AI safety filters blocked the request. Please try rephrasing your message.';
+				} else if (errorMessage.includes('Failed to parse stream data') || errorMessage.includes('trailing characters')) {
+					errorMessage = 'AI service returned malformed data. Please try again.';
+				} else if (errorMessage.includes('LLM API error:')) {
+					// Keep the LLM API error as is, it's already user-friendly
+				} else {
+					errorMessage = `AI generation failed: ${errorMessage}`;
 				}
-				// Remove placeholder assistant message on error
-				messages = messages.filter((msg) => msg.id !== assistantMessageId);
+				
+				if (!error) {
+					// Only show toast if not already set by SSE 'error' event
+					toast.error(errorMessage);
+				}
+				
+				// Mark assistant message as failed instead of removing it
+				messages = messages.map((msg) => {
+					if (msg.id === assistantMessageId) {
+						return { 
+							...msg, 
+							loading: false, 
+							error: errorMessage,
+							retryable: true 
+						};
+					}
+					return msg;
+				});
 				// Optionally remove optimistic user message on error
 				// messages = messages.filter(m => m.id !== userMessage.id);
 			}
@@ -755,6 +877,63 @@
 							});
 						}
 					}
+				}
+			}
+
+			// Handle any remaining data in the buffer after the loop  
+			// The stream may have ended but there could still be unprocessed SSE events in the buffer
+			if (buffer.trim().length > 0) {
+				console.log('[generateAIResponse] Processing remaining buffer data after stream end:', buffer);
+				
+				// Process any remaining complete SSE messages
+				let eventEndIndex;
+				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
+					const messageBlock = buffer.substring(0, eventEndIndex);
+					buffer = buffer.substring(eventEndIndex + 2);
+
+					currentEvent = 'message';
+					currentData = '';
+
+					for (const line of messageBlock.split('\n')) {
+						if (line.startsWith('event:')) {
+							currentEvent = line.substring(6).trim();
+						} else if (line.startsWith('data:')) {
+							const dataLineContent = line.substring(5);
+							if (currentData.length > 0) {
+								currentData += '\n';
+							}
+							currentData += dataLineContent.startsWith(' ')
+								? dataLineContent.substring(1)
+								: dataLineContent;
+						}
+					}
+
+					// Process the final buffered event
+					if (currentEvent === 'done' && currentData === '[DONE]') {
+						console.log('[generateAIResponse] SSE stream finished with [DONE] signal from remaining buffer.');
+					} else if (currentEvent === 'error') {
+						console.error('[generateAIResponse] SSE Error Event from remaining buffer:', currentData);
+						error = `Stream error: ${currentData}`;
+						toast.error(error);
+					} else if (currentEvent === 'content') {
+						if (currentData) {
+							messages = messages.map((msg) => {
+								if (msg.id === assistantMessageId) {
+									console.log('[generateAIResponse] Updating content from remaining buffer for assistant message:', msg.id);
+									return { ...msg, content: msg.content + currentData };
+								}
+								if (msg.id.startsWith('first-message-')) {
+									return { ...msg, loading: false };
+								}
+								return msg;
+							});
+						}
+					}
+				}
+
+				// Log any truly incomplete data left in buffer
+				if (buffer.trim().length > 0) {
+					console.warn('[generateAIResponse] Incomplete SSE data left in buffer after processing:', buffer);
 				}
 			}
 
@@ -1030,6 +1209,67 @@
 							console.log('SSE Reasoning Chunk:', currentData);
 						}
 					}
+				}
+			}
+
+			// Handle any remaining data in the buffer after the loop  
+			// The stream may have ended but there could still be unprocessed SSE events in the buffer
+			if (buffer.trim().length > 0) {
+				console.log('[regenerateResponse] Processing remaining buffer data after stream end:', buffer);
+				
+				// Process any remaining complete SSE messages
+				let eventEndIndex;
+				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
+					const messageBlock = buffer.substring(0, eventEndIndex);
+					buffer = buffer.substring(eventEndIndex + 2);
+
+					currentEvent = 'message';
+					currentData = '';
+
+					for (const line of messageBlock.split('\n')) {
+						if (line.startsWith('event:')) {
+							currentEvent = line.substring(6).trim();
+						} else if (line.startsWith('data:')) {
+							const dataLineContent = line.substring(5);
+							if (currentData.length > 0) {
+								currentData += '\n';
+							}
+							currentData += dataLineContent.startsWith(' ')
+								? dataLineContent.substring(1)
+								: dataLineContent;
+						}
+					}
+
+					// Process the final buffered event
+					if (currentEvent === 'done' && currentData === '[DONE]') {
+						console.log('[regenerateResponse] SSE stream finished with [DONE] signal from remaining buffer.');
+					} else if (currentEvent === 'error') {
+						console.error('[regenerateResponse] SSE Error Event from remaining buffer:', currentData);
+						error = `Stream error: ${currentData}`;
+						toast.error(error);
+					} else if (currentEvent === 'content') {
+						if (currentData) {
+							messages = messages.map((msg) => {
+								if (msg.id === assistantMessageId) {
+									console.log('[regenerateResponse] Updating content from remaining buffer for assistant message:', msg.id);
+									return { ...msg, content: msg.content + currentData };
+								}
+								if (msg.id.startsWith('first-message-')) {
+									return { ...msg, loading: false };
+								}
+								return msg;
+							});
+						}
+					} else if (currentEvent === 'reasoning_chunk') {
+						if (currentData) {
+							console.log('[regenerateResponse] SSE Reasoning Chunk from remaining buffer:', currentData);
+						}
+					}
+				}
+
+				// Log any truly incomplete data left in buffer
+				if (buffer.trim().length > 0) {
+					console.warn('[regenerateResponse] Incomplete SSE data left in buffer after processing:', buffer);
 				}
 			}
 
@@ -1322,6 +1562,66 @@
 			handleRetryMessage(messageId);
 		}
 	}
+
+	// Retry a failed assistant message
+	async function handleRetryFailedMessage(messageId: string) {
+		if (!chat?.id || isLoading) return;
+
+		console.log('Retry failed message:', messageId);
+
+		// Find the failed assistant message
+		const messageIndex = messages.findIndex((msg) => msg.id === messageId);
+		if (messageIndex === -1) return;
+
+		const failedMessage = messages[messageIndex];
+		if (failedMessage.message_type !== 'Assistant' || !failedMessage.error) return;
+
+		// Find the previous user message to regenerate from
+		const userMessageIndex = messageIndex - 1;
+		if (userMessageIndex < 0) return;
+
+		const userMessage = messages[userMessageIndex];
+		if (userMessage.message_type !== 'User') return;
+
+		// Clear the error state and set to loading
+		messages = messages.map((msg) => {
+			if (msg.id === messageId) {
+				return { 
+					...msg, 
+					loading: true, 
+					error: null,
+					retryable: false,
+					content: '' // Clear content for fresh generation
+				};
+			}
+			return msg;
+		});
+
+		// Remove any messages after the failed one (they were dependent on the failed generation)
+		const messagesToKeep = messages.slice(0, messageIndex + 1);
+		const messagesToRemove = messages.slice(messageIndex + 1);
+		messages = messagesToKeep;
+
+		// Clean up variant data for removed messages
+		for (const removedMsg of messagesToRemove) {
+			messageVariants.delete(removedMsg.id);
+			currentVariantIndex.delete(removedMsg.id);
+		}
+
+		// Delete trailing messages from backend if they exist
+		if (messagesToRemove.length > 0 && messagesToRemove[0].backend_id) {
+			try {
+				await apiClient.deleteTrailingMessages(messagesToRemove[0].backend_id);
+			} catch (err) {
+				console.warn('Failed to delete trailing messages from backend during retry:', err);
+				// Continue with retry even if cleanup fails
+			}
+		}
+
+		// Regenerate the response using the same logic as normal generation
+		// Use the existing regenerateResponse function
+		regenerateResponse(userMessage.content, messageId);
+	}
 </script>
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
@@ -1337,6 +1637,7 @@
 		{messageVariants}
 		{currentVariantIndex}
 		onRetryMessage={handleRetryMessage}
+		onRetryFailedMessage={handleRetryFailedMessage}
 		onEditMessage={handleEditMessage}
 		onSaveEditedMessage={handleSaveEditedMessage}
 		onPreviousVariant={handlePreviousVariant}
@@ -1395,6 +1696,57 @@
 						chatInput = content;
 					}}
 				/>
+			</div>
+		{/if}
+
+		<!-- Suggested Actions Error -->
+		{#if suggestionsError && !isLoading && !isLoadingSuggestions}
+			<div class="mx-auto w-full px-4 pb-2 md:max-w-3xl">
+				<div class="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/20">
+					<div class="flex items-start gap-3">
+						<div class="flex-shrink-0 text-red-500 mt-0.5">
+							<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+								<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+							</svg>
+						</div>
+						<div class="flex-1">
+							<p class="text-red-700 dark:text-red-300 font-medium text-sm">
+								Failed to load suggestions
+							</p>
+							<p class="text-red-600 dark:text-red-400 text-sm mt-1">
+								{suggestionsError}
+							</p>
+							{#if suggestionsRetryable}
+								<div class="flex gap-2 mt-3">
+									<button
+										type="button"
+										onclick={() => {
+											suggestionsError = null;
+											suggestionsRetryable = false;
+											fetchSuggestedActions();
+										}}
+										class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 dark:text-red-300 dark:bg-red-950/30 dark:border-red-700 dark:hover:bg-red-950/50"
+									>
+										<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+										</svg>
+										Retry
+									</button>
+									<button
+										type="button"
+										onclick={() => {
+											suggestionsError = null;
+											suggestionsRetryable = false;
+										}}
+										class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1 dark:text-gray-300 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700"
+									>
+										Dismiss
+									</button>
+								</div>
+							{/if}
+						</div>
+					</div>
+				</div>
 			</div>
 		{/if}
 

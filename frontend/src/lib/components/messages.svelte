@@ -30,6 +30,7 @@
 		character = null,
 		user = undefined, // Add user prop here
 		onRetryMessage,
+		onRetryFailedMessage,
 		onEditMessage,
 		onSaveEditedMessage,
 		onPreviousVariant,
@@ -44,6 +45,7 @@
 		character?: any | null; // Will be properly typed
 		user?: User | undefined; // Type for user prop
 		onRetryMessage?: (messageId: string) => void;
+		onRetryFailedMessage?: (messageId: string) => void;
 		onEditMessage?: (messageId: string) => void;
 		onSaveEditedMessage?: (messageId: string, newContent: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
@@ -339,6 +341,7 @@
 					{hasVariants}
 					{variantInfo}
 					{onRetryMessage}
+					{onRetryFailedMessage}
 					{onEditMessage}
 					{onSaveEditedMessage}
 					{onPreviousVariant}

@@ -22,6 +22,7 @@
 		user, // Add user prop
 		character, // Add character prop
 		onRetryMessage,
+		onRetryFailedMessage,
 		onEditMessage,
 		onSaveEditedMessage,
 		onPreviousVariant,
@@ -35,6 +36,7 @@
 		user: User | undefined; // Define type for user
 		character: ScribeCharacter | null | undefined; // Define type for character
 		onRetryMessage?: (messageId: string) => void;
+		onRetryFailedMessage?: (messageId: string) => void;
 		onEditMessage?: (messageId: string) => void;
 		onSaveEditedMessage?: (messageId: string, newContent: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
@@ -221,13 +223,54 @@
 						class={cn(
 							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8',
 							{
-								'border-primary/10 bg-primary/10': message.message_type === 'User'
+								'border-primary/10 bg-primary/10': message.message_type === 'User',
+								'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20': message.error
 							}
 						)}
 					>
-						<Markdown md={message.content} />
-						{#if message.message_type === 'Assistant' && message.loading}
-							<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
+						{#if message.error}
+							<!-- Error state display -->
+							<div class="flex items-start gap-3 mb-3">
+								<div class="flex-shrink-0 text-red-500 mt-1">
+									<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+									</svg>
+								</div>
+								<div class="flex-1">
+									<p class="text-red-700 dark:text-red-300 font-medium text-sm">
+										Generation failed
+									</p>
+									<p class="text-red-600 dark:text-red-400 text-sm mt-1">
+										{message.error}
+									</p>
+									{#if message.retryable && onRetryFailedMessage}
+										<Button
+											variant="outline"
+											size="sm"
+											class="mt-2 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950/30"
+											onclick={() => onRetryFailedMessage?.(message.id)}
+										>
+											<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+											</svg>
+											Retry
+										</Button>
+									{/if}
+								</div>
+							</div>
+							{#if message.content}
+								<!-- Show partial content if any was generated before the error -->
+								<div class="border-t border-red-200 dark:border-red-800 pt-3 mt-3">
+									<p class="text-xs text-red-600 dark:text-red-400 mb-2">Partial response:</p>
+									<Markdown md={message.content} />
+								</div>
+							{/if}
+						{:else}
+							<!-- Normal content display -->
+							<Markdown md={message.content} />
+							{#if message.message_type === 'Assistant' && message.loading}
+								<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
+							{/if}
 						{/if}
 					</div>
 				{/if}

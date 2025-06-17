@@ -424,7 +424,7 @@ pub async fn generate_chat_response(
             // The assistant's message will be saved by stream_ai_response_and_save_message.
 
             let dek_for_stream_service = session_dek_arc.clone();
-            match chat::generation::stream_ai_response_and_save_message(
+            match chat::generation::stream_ai_response_and_save_message_with_retry(
                 chat::generation::StreamAiParams {
                     state: state_arc.clone(),
                     session_id,
@@ -444,6 +444,7 @@ pub async fn generate_chat_response(
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
                     user_dek: Some(dek_for_stream_service),
+                    character_name: Some(character_db_model.name.clone()),
                 },
             )
             .await
@@ -591,10 +592,17 @@ pub async fn generate_chat_response(
 
             trace!(%session_id, chat_request = ?chat_request, chat_options = ?chat_options, "Prepared ChatRequest and Options for AI (non-streaming, JSON path)");
 
-            match state_arc
-                .ai_client
-                .exec_chat(&model_to_use, chat_request, Some(chat_options))
-                .await
+            match chat::generation::exec_chat_with_retry(
+                chat::generation::ExecChatWithRetryParams {
+                    state: state_arc.clone(),
+                    model_name: model_to_use.clone(),
+                    chat_request,
+                    chat_options: Some(chat_options),
+                    session_id,
+                    character_name: Some(character_db_model.name.clone()),
+                }
+            )
+            .await
             {
                 Ok(chat_response) => {
                     debug!(%session_id, "Received successful non-streaming AI response (JSON path)");
@@ -654,8 +662,21 @@ pub async fn generate_chat_response(
                     Ok(Json(response_payload).into_response())
                 }
                 Err(e) => {
+                    let error_str = e.to_string();
                     error!(error = ?e, %session_id, "AI generation failed for non-streaming request (JSON path)");
-                    Err(e) // Convert genai::Error to AppError
+                    
+                    // Provide more specific error messages for common issues
+                    if error_str.contains("PropertyNotFound(\"/content/parts\")") || error_str.contains("PropertyNotFound(\"/candidates\")") {
+                        Err(AppError::AiServiceError("AI safety filters blocked the request. Please try rephrasing your message.".to_string()))
+                    } else if error_str.contains("Failed to parse stream data") || error_str.contains("trailing characters") {
+                        Err(AppError::AiServiceError("AI service returned malformed data. Please try again.".to_string()))
+                    } else if error_str.contains("safety") || error_str.contains("blocked") {
+                        Err(AppError::AiServiceError("Request was blocked by AI safety filters. Please try again.".to_string()))
+                    } else if error_str.contains("quota") || error_str.contains("rate limit") {
+                        Err(AppError::AiServiceError("AI service is temporarily busy. Please wait and try again.".to_string()))
+                    } else {
+                        Err(AppError::AiServiceError(format!("AI generation failed: {e}")))
+                    }
                 }
             }
         }
@@ -665,7 +686,7 @@ pub async fn generate_chat_response(
 
             // This is largely a copy of the SSE path above.
             let dek_for_fallback_stream_service = session_dek_arc.clone(); // MODIFIED: Use Arc clone
-            match chat::generation::stream_ai_response_and_save_message(
+            match chat::generation::stream_ai_response_and_save_message_with_retry(
                 chat::generation::StreamAiParams {
                     state: state_arc.clone(),
                     session_id,
@@ -685,6 +706,7 @@ pub async fn generate_chat_response(
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
                     user_dek: Some(dek_for_fallback_stream_service),
+                    character_name: Some(character_db_model.name.clone()),
                 },
             )
             .await
@@ -1169,8 +1191,21 @@ pub async fn generate_suggested_actions(
         .exec_chat(&model_for_suggestions, chat_request, Some(chat_options))
         .await
         .map_err(|e| {
+            let error_str = e.to_string();
             error!(%session_id, "Gemini API error for suggested actions: {:?}", e);
-            AppError::AiServiceError(format!("Gemini API error: {e}"))
+            
+            // Provide more specific error messages for common issues
+            if error_str.contains("PropertyNotFound(\"/content/parts\")") {
+                AppError::AiServiceError("AI safety filters blocked the suggestion request. Please try again with different conversation context.".to_string())
+            } else if error_str.contains("Failed to parse stream data") || error_str.contains("trailing characters") {
+                AppError::AiServiceError("AI service returned malformed data. Please try again.".to_string())
+            } else if error_str.contains("safety") || error_str.contains("blocked") {
+                AppError::AiServiceError("Request was blocked by AI safety filters. Please try again.".to_string())
+            } else if error_str.contains("quota") || error_str.contains("rate limit") {
+                AppError::AiServiceError("AI service is temporarily busy. Please wait and try again.".to_string())
+            } else {
+                AppError::AiServiceError(format!("Gemini API error: {e}"))
+            }
         })?;
 
     debug!(%session_id, "Received response from Gemini for suggested actions");
@@ -1180,8 +1215,8 @@ pub async fn generate_suggested_actions(
         text.to_string()
     } else {
         error!(%session_id, "Gemini response for suggested actions (JsonSchemaSpec) did not contain text content or was empty. Full response: {:?}", gemini_response);
-        return Err(AppError::InternalServerErrorGeneric(
-            "AI response (JsonSchemaSpec) was empty or not in the expected text format".to_string(),
+        return Err(AppError::AiServiceError(
+            "AI safety filters blocked the suggestion request. Please try again with different conversation context.".to_string()
         ));
     };
     debug!(%session_id, "Gemini response text (JsonSchemaSpec) for suggested actions: {}", response_text);
@@ -1537,6 +1572,7 @@ pub async fn expand_text_handler(
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
         user_dek: Some(user_dek_arc),
+        character_name: None, // Text expansion doesn't have a character
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -1801,6 +1837,7 @@ pub async fn impersonate_handler(
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
         user_dek: Some(user_dek_arc),
+        character_name: None, // Impersonation doesn't have a character
     };
 
     // Generate the response using the full pipeline
