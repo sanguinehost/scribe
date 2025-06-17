@@ -2,19 +2,23 @@ import { getContext, setContext } from 'svelte';
 
 export class SettingsStore {
 	isVisible = $state(false);
-	viewMode = $state<'overview' | 'consolidated'>('overview');
+	isTransitioning = $state(false);
 
 	show() {
-		this.isVisible = true;
-		this.viewMode = 'overview';
+		this.isTransitioning = true;
+		// Small delay to prevent flashing of other content
+		setTimeout(() => {
+			this.isVisible = true;
+			this.isTransitioning = false;
+		}, 50);
 	}
 
 	hide() {
-		this.isVisible = false;
-	}
-
-	setViewMode(mode: 'overview' | 'consolidated') {
-		this.viewMode = mode;
+		this.isTransitioning = true;
+		setTimeout(() => {
+			this.isVisible = false;
+			this.isTransitioning = false;
+		}, 300); // Match fade out duration
 	}
 
 	static fromContext(): SettingsStore {

@@ -4,10 +4,9 @@
 	import CharacterOverview from './messages/character-overview.svelte';
 	import PersonaOverview from './messages/persona-overview.svelte';
 	import PersonaEditor from './messages/persona-editor.svelte';
-	import SettingsOverview from './messages/settings-overview.svelte';
 	import LorebookOverview from './messages/lorebook-overview.svelte';
 	import LorebookDetailOverview from './messages/lorebook-detail-overview.svelte';
-	import ConsolidatedSettings from './settings/ConsolidatedSettings.svelte';
+	import Settings from './settings/Settings.svelte';
 	import { createEventDispatcher, onMount } from 'svelte';
 	import PreviewMessage from './messages/preview-message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
@@ -212,24 +211,26 @@
 <Tooltip.Provider>
 	<div bind:this={containerRef} class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(mounted && messages.length === 0) || settingsStore.isVisible ? '' : 'pt-4'}">
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
-		{#if settingsStore.isVisible}
+		{#if settingsStore.isVisible || settingsStore.isTransitioning}
 			<div class="relative flex-1 flex items-center justify-center">
-				{#key settingsStore.viewMode}
-					{#if settingsStore.viewMode === 'overview'}
-						<div in:fly={{ y: 30, duration: 400, easing: quintOut }} out:fade={{ duration: 200 }}>
-							<SettingsOverview />
-						</div>
-					{:else if settingsStore.viewMode === 'consolidated'}
-						<div in:fly={{ y: 30, duration: 400, easing: quintOut }} out:fade={{ duration: 200 }}>
-							<ConsolidatedSettings />
-						</div>
-					{/if}
-				{/key}
+				<div 
+					class="w-full settings-content-view" 
+					class:active={settingsStore.isVisible}
+					class:inactive={!settingsStore.isVisible}
+				>
+					<div 
+						class="settings-view-content"
+						in:fade={{ duration: 400 }} 
+						out:fade={{ duration: 300 }}
+					>
+						<Settings />
+					</div>
+				</div>
 			</div>
 		{/if}
 
-		<!-- Empty Chat Placeholders (only if chat is empty AND settings are NOT visible) -->
-		{#if mounted && messages.length === 0 && !settingsStore.isVisible}
+		<!-- Empty Chat Placeholders (only if chat is empty AND settings are NOT visible AND not transitioning) -->
+		{#if mounted && messages.length === 0 && !settingsStore.isVisible && !settingsStore.isTransitioning}
 			<div class="relative flex-1 flex">
 				<!-- Apply same smooth transition approach as sidebar -->
 				<div
@@ -374,5 +375,26 @@
 	.main-content-view.inactive {
 		pointer-events: none;
 		opacity: 0;
+	}
+
+	.settings-content-view {
+		transition: opacity 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+		pointer-events: none;
+		opacity: 0;
+	}
+
+	.settings-content-view.active {
+		pointer-events: auto;
+		opacity: 1;
+	}
+
+	.settings-content-view.inactive {
+		pointer-events: none;
+		opacity: 0;
+	}
+
+	.settings-view-content {
+		width: 100%;
+		max-width: 100%;
 	}
 </style>
