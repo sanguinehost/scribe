@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import AiAssistantDialog from './ai-assistant-dialog-v2.svelte';
+import AiAssistantDialog from './ai-assistant-dialog.svelte';
 import type { CharacterContext } from '$lib/types';
 
 // Mock the API client
@@ -54,7 +54,7 @@ describe('AI Assistant Dialog - Lorebook Integration', () => {
 		await fireEvent.input(textArea, { target: { value: 'Generate a description of Lassenia' } });
 
 		// Find and click the generate button
-		const generateButton = screen.getByText('Generate');
+		const generateButton = screen.getByText('Generate description');
 		await fireEvent.click(generateButton);
 
 		// Wait for the API call
@@ -69,7 +69,14 @@ describe('AI Assistant Dialog - Lorebook Integration', () => {
 					user_prompt: 'Generate a description of Lassenia',
 					character_context: expect.objectContaining({
 						name: 'Lassenia',
-						description: 'A mysterious princess'
+						description: 'A mysterious princess',
+						first_mes: null,
+						mes_example: null,
+						system_prompt: null,
+						depth_prompt: null,
+						alternate_greetings: null,
+						lorebook_entries: null,
+						associated_persona: null
 					}),
 					generation_options: null,
 					lorebook_id: 'lorebook-uuid-123' // Should use first selected lorebook
@@ -113,7 +120,7 @@ describe('AI Assistant Dialog - Lorebook Integration', () => {
 		const textArea = screen.getByRole('textbox');
 		await fireEvent.input(textArea, { target: { value: 'Generate personality' } });
 
-		const generateButton = screen.getByText('Generate');
+		const generateButton = screen.getByText(/Generate/);
 		await fireEvent.click(generateButton);
 
 		await waitFor(() => {
@@ -163,7 +170,7 @@ describe('AI Assistant Dialog - Lorebook Integration', () => {
 		const textArea = screen.getByRole('textbox');
 		await fireEvent.input(textArea, { target: { value: 'Generate scenario' } });
 
-		const generateButton = screen.getByText('Generate');
+		const generateButton = screen.getByText(/Generate/);
 		await fireEvent.click(generateButton);
 
 		await waitFor(() => {
@@ -217,7 +224,7 @@ describe('AI Assistant Dialog - Lorebook Integration', () => {
 		const textArea = screen.getByRole('textbox');
 		await fireEvent.input(textArea, { target: { value: 'This will fail' } });
 
-		const generateButton = screen.getByText('Generate');
+		const generateButton = screen.getByText(/Generate/);
 		await fireEvent.click(generateButton);
 
 		// Should not call onGenerated when there's an error
@@ -259,7 +266,7 @@ describe('AI Assistant Dialog - Lorebook Integration', () => {
 		const textArea = screen.getByRole('textbox');
 		await fireEvent.input(textArea, { target: { value: 'Generate greeting' } });
 
-		const generateButton = screen.getByText('Generate');
+		const generateButton = screen.getByText(/Generate/);
 		await fireEvent.click(generateButton);
 
 		await waitFor(() => {
@@ -307,7 +314,7 @@ describe('AI Assistant Dialog - Lorebook Integration', () => {
 		const textArea = screen.getByRole('textbox');
 		await fireEvent.input(textArea, { target: { value: 'Create second greeting' } });
 
-		const generateButton = screen.getByText('Generate');
+		const generateButton = screen.getByText(/Generate/);
 		await fireEvent.click(generateButton);
 
 		await waitFor(() => {
