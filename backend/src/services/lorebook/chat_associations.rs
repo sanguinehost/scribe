@@ -94,13 +94,13 @@ impl LorebookService {
                 ))
             })?;
 
-        // 3. Check if lorebook is already linked via character
+        // 3. Check if lorebook is already linked via character (only for character-based chats)
         let character_id = chat_session.character_id;
-        let is_character_linked = conn
-            .interact(move |conn_sync| {
+        let is_character_linked = if let Some(char_id) = character_id {
+            conn.interact(move |conn_sync| {
                 use crate::schema::character_lorebooks::dsl as cl_dsl;
                 cl_dsl::character_lorebooks
-                    .filter(cl_dsl::character_id.eq(character_id))
+                    .filter(cl_dsl::character_id.eq(char_id))
                     .filter(cl_dsl::lorebook_id.eq(lorebook_id_to_associate))
                     .filter(cl_dsl::user_id.eq(current_user_id))
                     .count()
@@ -118,7 +118,11 @@ impl LorebookService {
             .map_err(|db_err| {
                 error!("Failed to query character lorebook association: {}", db_err);
                 AppError::DatabaseQueryError(db_err.to_string())
-            })?;
+            })?
+        } else {
+            // For non-character chats, character_linked is always false
+            false
+        };
 
         // If the lorebook is linked via character and has a 'disable' override,
         // remove the override because the user is explicitly adding it to the chat.
@@ -538,7 +542,7 @@ impl LorebookService {
                     .filter(cs_dsl::id.eq(chat_session_id_param))
                     .filter(cs_dsl::user_id.eq(current_user_id))
                     .select((cs_dsl::id, cs_dsl::character_id))
-                    .first::<(Uuid, Uuid)>(conn_sync)
+                    .first::<(Uuid, Option<Uuid>)>(conn_sync)
                     .optional()
             })
             .await
@@ -582,13 +586,17 @@ impl LorebookService {
                     .select((csl_dsl::lorebook_id, l_dsl::name, csl_dsl::created_at))
                     .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?;
 
-                // Get character-linked associations
-                let character_associations = cl_dsl::character_lorebooks
-                    .inner_join(l_dsl::lorebooks.on(cl_dsl::lorebook_id.eq(l_dsl::id)))
-                    .filter(cl_dsl::character_id.eq(character_id))
-                    .filter(cl_dsl::user_id.eq(current_user_id))
-                    .select((cl_dsl::lorebook_id, l_dsl::name, cl_dsl::created_at))
-                    .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?;
+                // Get character-linked associations (only for character-based chats)
+                let character_associations = if let Some(char_id) = character_id {
+                    cl_dsl::character_lorebooks
+                        .inner_join(l_dsl::lorebooks.on(cl_dsl::lorebook_id.eq(l_dsl::id)))
+                        .filter(cl_dsl::character_id.eq(char_id))
+                        .filter(cl_dsl::user_id.eq(current_user_id))
+                        .select((cl_dsl::lorebook_id, l_dsl::name, cl_dsl::created_at))
+                        .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?
+                } else {
+                    Vec::new()
+                };
 
                 // Get all overrides for this chat session
                 let overrides = cclo_dsl::chat_character_lorebook_overrides
@@ -745,7 +753,7 @@ impl LorebookService {
                     .filter(cs_dsl::id.eq(chat_session_id_param))
                     .filter(cs_dsl::user_id.eq(current_user_id))
                     .select((cs_dsl::id, cs_dsl::character_id))
-                    .first::<(Uuid, Uuid)>(conn_sync)
+                    .first::<(Uuid, Option<Uuid>)>(conn_sync)
                     .optional()
             })
             .await
@@ -773,14 +781,18 @@ impl LorebookService {
                     .get_result::<i64>(conn_sync)?
                     > 0;
 
-                // Check if it's a character-level association
-                let character_association_exists = cl_dsl::character_lorebooks
-                    .filter(cl_dsl::character_id.eq(character_id))
-                    .filter(cl_dsl::lorebook_id.eq(lorebook_id_param))
-                    .filter(cl_dsl::user_id.eq(current_user_id))
-                    .count()
-                    .get_result::<i64>(conn_sync)?
-                    > 0;
+                // Check if it's a character-level association (only for character-based chats)
+                let character_association_exists = if let Some(char_id) = character_id {
+                    cl_dsl::character_lorebooks
+                        .filter(cl_dsl::character_id.eq(char_id))
+                        .filter(cl_dsl::lorebook_id.eq(lorebook_id_param))
+                        .filter(cl_dsl::user_id.eq(current_user_id))
+                        .count()
+                        .get_result::<i64>(conn_sync)?
+                        > 0
+                } else {
+                    false
+                };
 
                 Ok::<_, diesel::result::Error>((
                     chat_association_exists,

@@ -39,7 +39,19 @@ import type {
 	ExpandTextRequest,
 	ExpandTextResponse,
 	ImpersonateRequest,
-	ImpersonateResponse
+	ImpersonateResponse,
+	GenerateCharacterFieldRequest,
+	GenerateCharacterFieldResponse,
+	GenerateCompleteCharacterRequest,
+	GenerateCompleteCharacterResponse,
+	EnhanceCharacterRequest,
+	EnhanceCharacterResponse,
+	GenerateLorebookEntriesRequest,
+	GenerateLorebookEntriesResponse,
+	GenerateLorebookEntryRequest,
+	GenerateLorebookEntryResponse,
+	ScribeAssistantRequest,
+	ScribeAssistantResponse
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -499,6 +511,17 @@ class ApiClient {
 			);
 		}
 	}
+
+	async generateCharacter(payload: { prompt: string }): Promise<Result<Character, ApiError>> {
+		console.log(
+			`[${new Date().toISOString()}] ApiClient.generateCharacter: Generating character from prompt`
+		);
+		return this.fetch<Character>('/api/characters/generate', {
+			method: 'POST',
+			body: JSON.stringify(payload)
+		});
+	}
+
 	// End Character methods
 
 	async deleteChatById(id: string): Promise<Result<void, ApiError>> {
@@ -842,6 +865,70 @@ class ApiClient {
 		return this.fetch<ImpersonateResponse>(`/api/chat/${chatId}/impersonate`, {
 			method: 'POST',
 			body: JSON.stringify(payload)
+		});
+	}
+
+	// ============================================================================
+	// AI Generation Methods (leveraging existing expand/impersonate infrastructure)
+	// ============================================================================
+
+	// Generate or enhance a specific character field
+	async generateCharacterField(
+		request: GenerateCharacterFieldRequest
+	): Promise<Result<GenerateCharacterFieldResponse, ApiError>> {
+		return this.fetch<GenerateCharacterFieldResponse>('/api/generation/character/field', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	// Generate a complete character from a prompt
+	async generateCompleteCharacter(
+		request: GenerateCompleteCharacterRequest
+	): Promise<Result<GenerateCompleteCharacterResponse, ApiError>> {
+		return this.fetch<GenerateCompleteCharacterResponse>('/api/generation/character/complete', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	// Enhance an existing character
+	async enhanceCharacter(
+		request: EnhanceCharacterRequest
+	): Promise<Result<EnhanceCharacterResponse, ApiError>> {
+		return this.fetch<EnhanceCharacterResponse>('/api/generation/character/enhance', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	// Generate lorebook entries
+	async generateLorebookEntries(
+		request: GenerateLorebookEntriesRequest
+	): Promise<Result<GenerateLorebookEntriesResponse, ApiError>> {
+		return this.fetch<GenerateLorebookEntriesResponse>('/api/generation/lorebook/entries', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	// Generate a single lorebook entry
+	async generateLorebookEntry(
+		request: GenerateLorebookEntryRequest
+	): Promise<Result<GenerateLorebookEntryResponse, ApiError>> {
+		return this.fetch<GenerateLorebookEntryResponse>('/api/generation/lorebook/entry', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	// Chat with Scribe assistant for content creation
+	async scribeAssistant(
+		request: ScribeAssistantRequest
+	): Promise<Result<ScribeAssistantResponse, ApiError>> {
+		return this.fetch<ScribeAssistantResponse>('/api/generation/scribe-assistant', {
+			method: 'POST',
+			body: JSON.stringify(request)
 		});
 	}
 }

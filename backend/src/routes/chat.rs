@@ -9,6 +9,7 @@ use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
 use crate::models::chats::CreateChatSessionPayload;
 use crate::models::chats::{
     Chat,
+    ChatMode,
     CreateMessageVariantPayload,
     ExpandTextRequest,
     ExpandTextResponse,
@@ -79,7 +80,7 @@ pub struct ChatSessionWithDekResponse {
     // Made pub
     pub id: Uuid,
     pub user_id: Uuid,
-    pub character_id: Uuid,
+    pub character_id: Option<Uuid>,
     pub title: Option<String>,
     pub dek_present: bool, // Simpler representation of DEK presence
 }
@@ -99,10 +100,12 @@ pub async fn create_chat_session_handler(
     })?;
     let user_id = user.id;
     tracing::Span::current().record("user_id", tracing::field::display(user_id));
-    tracing::Span::current().record(
-        "character_id",
-        tracing::field::display(payload.character_id),
-    );
+    if let Some(character_id) = payload.character_id {
+        tracing::Span::current().record(
+            "character_id",
+            tracing::field::display(character_id),
+        );
+    }
     if let Some(persona_id) = payload.active_custom_persona_id {
         tracing::Span::current().record(
             "active_custom_persona_id",
@@ -110,7 +113,7 @@ pub async fn create_chat_session_handler(
         );
     }
 
-    debug!(user_id = %user_id, character_id = %payload.character_id, active_custom_persona_id=?payload.active_custom_persona_id, "User, character, and persona ID extracted");
+    debug!(user_id = %user_id, character_id = ?payload.character_id, active_custom_persona_id=?payload.active_custom_persona_id, "User, character, and persona ID extracted");
 
     // Call the service function to create the chat session
     // Character-associated lorebooks are now handled implicitly by the lorebook service
@@ -119,6 +122,7 @@ pub async fn create_chat_session_handler(
         state.into(),
         user_id,
         payload.character_id,
+        payload.chat_mode.unwrap_or(ChatMode::Character),
         payload.active_custom_persona_id, // Pass the new field
         None, // Do NOT pass character-derived lorebook IDs here; they are handled implicitly.
         Some(Arc::new(session_dek.0)), // Pass the DEK, wrapped in Arc for the service
@@ -260,11 +264,14 @@ pub async fn generate_chat_response(
         gen_top_p = ?gen_top_p,
         gen_model_name = %gen_model_name_from_service,
         rag_items_count = rag_context_items_from_service.len(),
-        %session_character_id,
+        ?session_character_id,
         "Retrieved data for generation from chat_service."
     );
 
-    // Fetch Character model from DB
+    // Fetch Character model from DB (only for character-based chats)
+    let char_id = session_character_id.ok_or_else(|| {
+        AppError::BadRequest("Character-based generation endpoints not supported for non-character chat modes".to_string())
+    })?;
     let character_db_model = state_arc
         .pool
         .get()
@@ -272,7 +279,7 @@ pub async fn generate_chat_response(
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
             app_schema::characters::table
-                .filter(app_schema::characters::id.eq(session_character_id))
+                .filter(app_schema::characters::id.eq(char_id))
                 .filter(app_schema::characters::user_id.eq(user_id_value))
                 .select(Character::as_select())
                 .first::<Character>(conn)
@@ -281,19 +288,19 @@ pub async fn generate_chat_response(
         .map_err(|e| {
             error!(error = %e, "Interact dispatch error fetching character model");
             AppError::InternalServerErrorGeneric(format!(
-                "Interact dispatch error fetching character {session_character_id}: {e}"
+                "Interact dispatch error fetching character: {e}"
             ))
         })?
         .map_err(|e_db| {
             if e_db == diesel::result::Error::NotFound {
-                error!(%session_character_id, %user_id_value, "Character not found for user");
+                error!(character_id = %char_id, %user_id_value, "Character not found for user");
                 AppError::NotFound(format!(
-                    "Character {session_character_id} not found for user {user_id_value}"
+                    "Character {} not found for user {}", char_id, user_id_value
                 ))
             } else {
-                error!(error = %e_db, %session_character_id, "Failed to query character");
+                error!(error = %e_db, character_id = %char_id, "Failed to query character");
                 AppError::DatabaseQueryError(format!(
-                    "Failed to query character {session_character_id}: {e_db}"
+                    "Failed to query character {}: {}", char_id, e_db
                 ))
             }
         })?;
@@ -1047,14 +1054,17 @@ pub async fn generate_suggested_actions(
 
     debug!(%session_id, "Fetched session data for suggestions. History items: {}", managed_db_history.len());
 
-    // Fetch Character model from DB
+    // Fetch Character model from DB (only for character-based chats)
+    let char_id = session_character_id.ok_or_else(|| {
+        AppError::BadRequest("Suggested actions not supported for non-character chat modes".to_string())
+    })?;
     let character_db_model = state_arc
         .pool
         .get()
         .await?
         .interact(move |conn| {
             app_schema::characters::table
-                .filter(app_schema::characters::id.eq(session_character_id))
+                .filter(app_schema::characters::id.eq(char_id))
                 .filter(app_schema::characters::user_id.eq(user_id)) // Ensure user owns character
                 .select(Character::as_select())
                 .first::<Character>(conn)
@@ -1363,7 +1373,7 @@ pub async fn create_or_update_chat_character_override_handler(
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select((chat_sessions::user_id, chat_sessions::character_id))
-                .first::<(Uuid, Uuid)>(conn)
+                .first::<(Uuid, Option<Uuid>)>(conn)
                 .optional()
         })
         .await??
@@ -1378,7 +1388,9 @@ pub async fn create_or_update_chat_character_override_handler(
             "Access denied to chat session override".to_string(),
         ));
     }
-    let original_character_id = chat_session_details.1;
+    let original_character_id = chat_session_details.1.ok_or_else(|| {
+        AppError::BadRequest("Cannot create character overrides for non-character chat sessions".to_string())
+    })?;
 
     // 2. Call the ChatOverrideService to handle the logic
     let upserted_override: ChatCharacterOverride = state

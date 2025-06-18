@@ -5,8 +5,9 @@
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import ChatHeader from './chat-header.svelte';
 	import type { User, ScribeCharacter } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
-	import type { ScribeChatSession, ScribeChatMessage } from '$lib/types'; // Import Scribe types
+	import type { ScribeChatSession, ScribeChatMessage, ChatMode } from '$lib/types'; // Import Scribe types
 	import type { UserPersona } from '$lib/types';
+	import { createChatModeStrategy } from '$lib/strategies/chat';
 	import Messages from './messages.svelte';
 	import MultimodalInput from './multimodal-input.svelte';
 	import SuggestedActions from './suggested-actions.svelte'; // Import SuggestedActions
@@ -107,23 +108,59 @@
 	let availablePersonas = $state<UserPersona[]>([]);
 
 	// --- State for chat interface visibility ---
-	// The entire chat interface (input box, suggestions) should only show when we have both chat AND character
+	// The chat interface visibility now depends on the chat mode strategy
 	let shouldShowChatInterface = $state(false);
 
-	// Update visibility when props change
-	$effect(() => {
-		const hasChat = chat !== undefined && chat !== null;
-		const hasCharacter = character !== undefined && character !== null;
-		const shouldShow = hasChat && hasCharacter;
+	// Create strategy based on chat mode
+	let chatModeStrategy = $derived.by(() => {
+		if (!chat) return null;
+		
+		// Check if chat_mode exists and is valid
+		if (!chat.chat_mode) {
+			console.error('Chat object missing chat_mode field:', chat);
+			return null;
+		}
+		
+		try {
+			return createChatModeStrategy(chat.chat_mode);
+		} catch (error) {
+			console.error('Failed to create chat mode strategy:', error, 'for mode:', chat.chat_mode);
+			return null;
+		}
+	});
 
-		// Debug logging for tests
+	// Create derived placeholder text
+	let placeholderText = $derived.by(() => {
+		const strategy = chatModeStrategy;
+		if (!strategy) return "Send a message...";
+		return strategy.getMessageInputPlaceholder(character || null);
+	});
+
+	// Update visibility when props change using the strategy pattern
+	$effect(() => {
+		const strategy = chatModeStrategy;
+		if (!strategy) {
+			shouldShowChatInterface = false;
+			return;
+		}
+
+		// Additional safety check - ensure the strategy function exists
+		if (typeof strategy.shouldShowChatInterface !== 'function') {
+			console.error('Strategy does not have shouldShowChatInterface method:', strategy);
+			shouldShowChatInterface = false;
+			return;
+		}
+
+		const shouldShow = strategy.shouldShowChatInterface(chat || null, character || null);
+
+		// Debug logging for tests and development
 		if (process.env.NODE_ENV === 'test') {
 			console.log('shouldShowChatInterface effect update:', {
-				hasChat,
-				hasCharacter,
+				chat_mode: chat?.chat_mode,
 				shouldShow,
 				chat_id: chat?.id || 'undefined',
-				character_id: character?.id || 'undefined'
+				character_id: character?.id || 'undefined',
+				strategy: strategy.constructor.name
 			});
 		}
 
@@ -131,7 +168,7 @@
 	});
 
 	// Button is enabled when we can actually fetch suggestions (same as interface visibility)
-	let canFetchSuggestions = $derived(() => {
+	let canFetchSuggestions = $derived.by(() => {
 		return shouldShowChatInterface;
 	});
 
@@ -1765,6 +1802,7 @@
 						{isLoading} 
 						{stopGeneration} 
 						chatId={chat?.id}
+						placeholder={placeholderText}
 						onImpersonate={(response) => {
 							chatInput = response;
 						}}

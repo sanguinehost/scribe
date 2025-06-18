@@ -1080,7 +1080,8 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
     Chat {
         id,
         user_id: Uuid::new_v4(),
-        character_id,
+        character_id: Some(character_id),
+        chat_mode: scribe_backend::models::chats::ChatMode::Character,
         title_ciphertext: Some(b"mock_encrypted_title".to_vec()),
         title_nonce: Some(b"mock_nonce_12345".to_vec()),
         created_at: Utc::now(),
@@ -1111,7 +1112,8 @@ pub fn mock_chat_session_for_client(id: Uuid, character_id: Uuid) -> ChatForClie
     ChatForClient {
         id,
         user_id: Uuid::new_v4(),
-        character_id,
+        character_id: Some(character_id),
+        chat_mode: scribe_backend::models::chats::ChatMode::Character,
         title: Some("Mock Chat Session".to_string()), // Decrypted title
         system_prompt: Some("You are a helpful mock assistant".to_string()), // Decrypted system prompt
         temperature: Some(BigDecimal::from_str("0.7").unwrap()),

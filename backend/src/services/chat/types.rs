@@ -19,7 +19,7 @@ pub type GenerationDataWithUnsavedUserMessage = (
     Vec<ChatMessage>, // 0: managed_db_history (CHANGED from HistoryForGeneration) - Changed DbChatMessage to ChatMessage
     Option<String>, // 1: system_prompt (this is the final_effective_system_prompt for the builder, from persona/override only)
     Option<Vec<Uuid>>, // 2: active_lorebook_ids_for_search
-    Uuid,           // 3: session_character_id (NEW)
+    Option<Uuid>,   // 3: session_character_id (NEW) - Now optional for non-character chat modes
     Option<String>, // 4: raw_character_system_prompt (NEW - from character_db.system_prompt)
     Option<BigDecimal>, // 5: temperature (was 4)
     Option<i32>,    // 6: max_output_tokens (was 5)

@@ -24,7 +24,9 @@ pub async fn handle_list_chat_sessions_action<H: IoHandler, C: HttpClient>(
 
                     io_handler.write_line(&format!(
                         "  - Session ID: {}, Character ID: {}, Last Updated: {}",
-                        session.id, session.character_id, updated_at_str
+                        session.id, 
+                        session.character_id.map_or("None".to_string(), |id| id.to_string()),
+                        updated_at_str
                     ))?;
                 }
             }
@@ -56,7 +58,7 @@ pub async fn handle_view_chat_history_action<H: IoHandler, C: HttpClient>(
             "  [{}] Session ID: {}, Character ID: {}, Last Updated: {}",
             index + 1,
             session.id,
-            session.character_id,
+            session.character_id.map_or("None".to_string(), |id| id.to_string()),
             updated_at_str
         ))?;
     }
@@ -155,7 +157,7 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
             "  [{}] Session ID: {}, Character ID: {}, Last Updated: {}",
             index + 1,
             session.id,
-            session.character_id,
+            session.character_id.map_or("None".to_string(), |id| id.to_string()),
             updated_at_str
         ))?;
     }

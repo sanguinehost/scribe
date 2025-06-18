@@ -16,6 +16,7 @@
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
 	import { Expand, X, Heart, Globe, Plus, HelpCircle } from 'lucide-svelte';
+	import AiAssistantWidget from './ai-assistant-widget.svelte';
 	import {
 		Tooltip,
 		TooltipProvider,
@@ -200,6 +201,25 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 		};
 	}
 
+	// Helper function to build complete character context for AI generation
+	function buildCharacterContext(excludeGreetingIndex?: number) {
+		return {
+			name: formData.name,
+			description: formData.description,
+			personality: formData.personality,
+			scenario: formData.scenario,
+			first_mes: formData.first_mes,
+			mes_example: formData.mes_example,
+			system_prompt: formData.system_prompt,
+			depth_prompt: formData.depth_prompt,
+			tags: formData.tags,
+			alternate_greetings: excludeGreetingIndex !== undefined 
+				? formData.alternate_greetings.filter((_, i) => i !== excludeGreetingIndex)
+				: formData.alternate_greetings,
+			selectedLorebooks: formData.selectedLorebooks // Pass selected lorebook IDs
+		};
+	}
+
 	function openPopoutEditor(fieldKey: string, fieldLabel: string, greetingIndex?: number) {
 		popoutFieldKey = fieldKey;
 		popoutFieldName = fieldKey;
@@ -344,7 +364,18 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="description">Description *</Label>
+						<div class="flex items-center justify-between">
+							<Label for="description">Description *</Label>
+							<AiAssistantWidget
+								fieldName="description"
+								fieldValue={formData.description}
+								characterContext={buildCharacterContext()}
+								onGenerated={(text) => {
+									formData.description = text;
+								}}
+								variant="compact"
+							/>
+						</div>
 						<Textarea
 							id="description"
 							bind:value={formData.description}
@@ -355,7 +386,18 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 					</div>
 
 					<div class="grid gap-2">
-						<Label for="first_mes">First Message *</Label>
+						<div class="flex items-center justify-between">
+							<Label for="first_mes">First Message *</Label>
+							<AiAssistantWidget
+								fieldName="first_mes"
+								fieldValue={formData.first_mes}
+								characterContext={buildCharacterContext()}
+								onGenerated={(text) => {
+									formData.first_mes = text;
+								}}
+								variant="compact"
+							/>
+						</div>
 						<Textarea
 							id="first_mes"
 							bind:value={formData.first_mes}
@@ -379,13 +421,15 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 										<Checkbox
 											id={`lorebook-${lorebook.id}`}
 											checked={formData.selectedLorebooks.includes(lorebook.id)}
-											on:click={() => {
-												if (formData.selectedLorebooks.includes(lorebook.id)) {
+											on:change={(event) => {
+												const isChecked = event.detail;
+												
+												if (isChecked) {
+													formData.selectedLorebooks = [...formData.selectedLorebooks, lorebook.id];
+												} else {
 													formData.selectedLorebooks = formData.selectedLorebooks.filter(
 														(id) => id !== lorebook.id
 													);
-												} else {
-													formData.selectedLorebooks = [...formData.selectedLorebooks, lorebook.id];
 												}
 											}}
 										/>
@@ -401,6 +445,7 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 						<p class="text-sm text-muted-foreground">
 							Select multiple lorebooks to provide additional context for this character.
 						</p>
+						
 					</div>
 
 					<div class="grid gap-2">
@@ -421,12 +466,26 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 							<div class="space-y-2">
 								{#each formData.alternate_greetings as greeting, index (index)}
 									<div class="flex gap-2">
-										<Textarea
-											bind:value={formData.alternate_greetings[index]}
-											placeholder={`Alternate greeting ${index + 1}...`}
-											rows={4}
-											class="flex-1"
-										/>
+										<div class="flex-1 space-y-2">
+											<div class="flex items-center justify-between">
+												<span class="text-sm font-medium">Greeting {index + 1}</span>
+												<AiAssistantWidget
+													fieldName={`alternate_greeting_${index + 1}`}
+													fieldValue={formData.alternate_greetings[index]}
+													characterContext={buildCharacterContext(index)}
+													onGenerated={(text) => {
+														formData.alternate_greetings[index] = text;
+													}}
+													variant="compact"
+												/>
+											</div>
+											<Textarea
+												bind:value={formData.alternate_greetings[index]}
+												placeholder={`Alternate greeting ${index + 1}...`}
+												rows={4}
+												class="w-full"
+											/>
+										</div>
 										<div class="flex flex-col gap-1">
 											<Button
 												type="button"
@@ -475,15 +534,26 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 							<div class="grid gap-2">
 								<div class="flex items-center justify-between">
 									<Label for="personality">Personality</Label>
-									<Button
-										type="button"
-										variant="ghost"
-										size="sm"
-										onclick={() => openPopoutEditor('personality', 'Personality')}
-										class="h-6 px-2 text-xs"
-									>
-										Expand
-									</Button>
+									<div class="flex items-center gap-1">
+										<AiAssistantWidget
+											fieldName="personality"
+											fieldValue={formData.personality}
+											characterContext={buildCharacterContext()}
+											onGenerated={(text) => {
+												formData.personality = text;
+											}}
+											variant="compact"
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={() => openPopoutEditor('personality', 'Personality')}
+											class="h-6 px-2 text-xs"
+										>
+											Expand
+										</Button>
+									</div>
 								</div>
 								<Textarea
 									id="personality"
@@ -495,15 +565,26 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 							<div class="grid gap-2">
 								<div class="flex items-center justify-between">
 									<Label for="scenario">Scenario</Label>
-									<Button
-										type="button"
-										variant="ghost"
-										size="sm"
-										onclick={() => openPopoutEditor('scenario', 'Scenario')}
-										class="h-6 px-2 text-xs"
-									>
-										Expand
-									</Button>
+									<div class="flex items-center gap-1">
+										<AiAssistantWidget
+											fieldName="scenario"
+											fieldValue={formData.scenario}
+											characterContext={buildCharacterContext()}
+											onGenerated={(text) => {
+												formData.scenario = text;
+											}}
+											variant="compact"
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={() => openPopoutEditor('scenario', 'Scenario')}
+											class="h-6 px-2 text-xs"
+										>
+											Expand
+										</Button>
+									</div>
 								</div>
 								<Textarea
 									id="scenario"
@@ -515,15 +596,26 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 							<div class="grid gap-2">
 								<div class="flex items-center justify-between">
 									<Label for="mes_example">Message Examples</Label>
-									<Button
-										type="button"
-										variant="ghost"
-										size="sm"
-										onclick={() => openPopoutEditor('mes_example', 'Message Example')}
-										class="h-6 px-2 text-xs"
-									>
-										Expand
-									</Button>
+									<div class="flex items-center gap-1">
+										<AiAssistantWidget
+											fieldName="mes_example"
+											fieldValue={formData.mes_example}
+											characterContext={buildCharacterContext()}
+											onGenerated={(text) => {
+												formData.mes_example = text;
+											}}
+											variant="compact"
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={() => openPopoutEditor('mes_example', 'Message Example')}
+											class="h-6 px-2 text-xs"
+										>
+											Expand
+										</Button>
+									</div>
 								</div>
 								<Textarea
 									id="mes_example"
@@ -557,15 +649,26 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 							<div class="grid gap-2">
 								<div class="flex items-center justify-between">
 									<Label for="depth_prompt">Content</Label>
-									<Button
-										type="button"
-										variant="ghost"
-										size="sm"
-										onclick={() => openPopoutEditor('depth_prompt', "Character's Note Content")}
-										class="h-6 px-2 text-xs"
-									>
-										Expand
-									</Button>
+									<div class="flex items-center gap-1">
+										<AiAssistantWidget
+											fieldName="depth_prompt"
+											fieldValue={formData.depth_prompt}
+											characterContext={buildCharacterContext()}
+											onGenerated={(text) => {
+												formData.depth_prompt = text;
+											}}
+											variant="compact"
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={() => openPopoutEditor('depth_prompt', "Character's Note Content")}
+											class="h-6 px-2 text-xs"
+										>
+											Expand
+										</Button>
+									</div>
 								</div>
 								<Textarea
 									id="depth_prompt"
@@ -659,7 +762,18 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 						<summary class="cursor-pointer text-lg font-semibold">Advanced</summary>
 						<div class="space-y-4 pt-2">
 							<div class="grid gap-2">
-								<Label for="system_prompt">System Instructions</Label>
+								<div class="flex items-center justify-between">
+									<Label for="system_prompt">System Instructions</Label>
+									<AiAssistantWidget
+										fieldName="system_prompt"
+										fieldValue={formData.system_prompt}
+										characterContext={buildCharacterContext()}
+										onGenerated={(text) => {
+											formData.system_prompt = text;
+										}}
+										variant="compact"
+									/>
+								</div>
 								<Textarea
 									id="system_prompt"
 									bind:value={formData.system_prompt}

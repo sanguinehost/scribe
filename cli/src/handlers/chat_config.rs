@@ -41,7 +41,7 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
             i + 1,
             session.title.as_deref().unwrap_or("Untitled"), // Now decrypted
             session.id,
-            session.character_id
+            session.character_id.map_or("None".to_string(), |id| id.to_string())
         ))?;
     }
 

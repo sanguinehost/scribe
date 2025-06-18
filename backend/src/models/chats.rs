@@ -45,7 +45,7 @@ pub type SettingsTuple = (
 pub struct Chat {
     pub id: Uuid,
     pub user_id: Uuid,
-    pub character_id: Uuid,
+    pub character_id: Option<Uuid>,
     pub temperature: Option<bigdecimal::BigDecimal>,
     pub max_output_tokens: Option<i32>,
     pub created_at: DateTime<Utc>,
@@ -68,6 +68,7 @@ pub struct Chat {
     pub title_ciphertext: Option<Vec<u8>>,
     pub title_nonce: Option<Vec<u8>>,
     pub stop_sequences: Option<Vec<Option<String>>>,
+    pub chat_mode: ChatMode,
 }
 
 impl std::fmt::Debug for Chat {
@@ -265,6 +266,59 @@ impl std::fmt::Display for MessageRole {
             Self::User => write!(f, "User"),
             Self::Assistant => write!(f, "Assistant"),
             Self::System => write!(f, "System"),
+        }
+    }
+}
+
+// ChatMode enum for different types of chat sessions
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow,
+)]
+#[diesel(sql_type = diesel::sql_types::Text)]
+pub enum ChatMode {
+    #[default]
+    Character,
+    ScribeAssistant,
+    Rpg,
+}
+
+// Manual ToSql implementation for ChatMode
+impl ToSql<diesel::sql_types::Text, Pg> for ChatMode {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        match *self {
+            ChatMode::Character => out.write_all(b"Character")?,
+            ChatMode::ScribeAssistant => out.write_all(b"ScribeAssistant")?,
+            ChatMode::Rpg => out.write_all(b"Rpg")?,
+        }
+        Ok(IsNull::No)
+    }
+}
+
+// Manual FromSql implementation for ChatMode
+impl FromSql<diesel::sql_types::Text, Pg> for ChatMode {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        match bytes.as_bytes() {
+            b"Character" => Ok(Self::Character),
+            b"ScribeAssistant" => Ok(Self::ScribeAssistant),
+            b"Rpg" => Ok(Self::Rpg),
+            unrecognized => {
+                error!(
+                    "Unrecognized chat_mode enum variant from DB: {:?}",
+                    String::from_utf8_lossy(unrecognized)
+                );
+                Err("Unrecognized enum variant from database".into())
+            }
+        }
+    }
+}
+
+// Implement Display for ChatMode
+impl std::fmt::Display for ChatMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Character => write!(f, "Character"),
+            Self::ScribeAssistant => write!(f, "ScribeAssistant"),
+            Self::Rpg => write!(f, "Rpg"),
         }
     }
 }
@@ -1106,8 +1160,9 @@ impl std::fmt::Debug for NewChatMessageRequest {
 
 #[derive(Deserialize, Serialize)]
 pub struct CreateChatSessionPayload {
-    pub character_id: Uuid,
+    pub character_id: Option<Uuid>,
     pub active_custom_persona_id: Option<Uuid>,
+    pub chat_mode: Option<ChatMode>, // Default to Character if not provided
 }
 
 impl std::fmt::Debug for CreateChatSessionPayload {
@@ -1115,6 +1170,7 @@ impl std::fmt::Debug for CreateChatSessionPayload {
         f.debug_struct("CreateChatSessionPayload")
             .field("character_id", &self.character_id)
             .field("active_custom_persona_id", &self.active_custom_persona_id)
+            .field("chat_mode", &self.chat_mode)
             .finish()
     }
 }
@@ -1216,7 +1272,7 @@ impl std::fmt::Debug for GenerateChatRequest {
 pub struct ChatForClient {
     pub id: Uuid,
     pub user_id: Uuid,
-    pub character_id: Uuid,
+    pub character_id: Option<Uuid>,
     pub title: Option<String>,
     pub system_prompt: Option<String>,
     pub temperature: Option<bigdecimal::BigDecimal>,
@@ -1237,6 +1293,7 @@ pub struct ChatForClient {
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<Uuid>,
     pub active_impersonated_character_id: Option<Uuid>,
+    pub chat_mode: ChatMode,
 }
 
 impl Chat {
@@ -1358,6 +1415,7 @@ impl Chat {
             visibility: self.visibility,
             active_custom_persona_id: self.active_custom_persona_id,
             active_impersonated_character_id: self.active_impersonated_character_id,
+            chat_mode: self.chat_mode,
         })
     }
 }
@@ -1831,7 +1889,8 @@ mod tests {
         Chat {
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
-            character_id: Uuid::new_v4(),
+            character_id: Some(Uuid::new_v4()),
+            chat_mode: ChatMode::Character,
             title_ciphertext: None,
             title_nonce: None,
             system_prompt_ciphertext: None,

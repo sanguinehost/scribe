@@ -17,13 +17,14 @@
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
 	import { Expand, X, Star, Heart, Globe, Plus, Trash2, HelpCircle } from 'lucide-svelte';
+	import GenerationWidget from './generation-widget.svelte';
 	import {
 		Tooltip,
 		TooltipProvider,
 		TooltipTrigger,
 		TooltipContent
 	} from '$lib/components/ui/tooltip';
-	import type { Character, Lorebook } from '$lib/types';
+	import type { Character, Lorebook, CharacterContext } from '$lib/types';
 	import { writable } from 'svelte/store';
 	import { tick } from 'svelte';
 
@@ -55,6 +56,17 @@
 	let popoutContent = '';
 	let popoutFieldKey = ''; // Used to store the actual formData key
 	let popoutFieldType: 'text' | 'number' | 'select' = 'text'; // Added to handle different input types
+
+	// Helper to get current character context for generation
+	$: characterContext = (() => {
+		const context: CharacterContext = {};
+		if (formData.name) context.name = formData.name;
+		if (formData.description) context.description = formData.description;
+		if (formData.personality) context.personality = formData.personality;
+		if (formData.scenario) context.scenario = formData.scenario;
+		if (formData.tags && formData.tags.length > 0) context.tags = formData.tags;
+		return context;
+	})();
 
 	// Form data with all SillyTavern v3 fields - these SHOULD be used in backend
 	let formData = {
@@ -412,7 +424,18 @@
 						</div>
 
 						<div class="grid gap-2">
-							<Label for="description">Description</Label>
+							<div class="flex items-center justify-between">
+								<Label for="description">Description</Label>
+								<GenerationWidget
+									fieldName="description"
+									fieldValue={formData.description}
+									{characterContext}
+									onGenerated={(generatedText) => {
+										formData.description = generatedText;
+									}}
+									disabled={saving}
+								/>
+							</div>
 							<Textarea
 								id="description"
 								bind:value={formData.description}
@@ -422,7 +445,18 @@
 						</div>
 
 						<div class="grid gap-2">
-							<Label for="first_mes">First Message</Label>
+							<div class="flex items-center justify-between">
+								<Label for="first_mes">First Message</Label>
+								<GenerationWidget
+									fieldName="first_mes"
+									fieldValue={formData.first_mes}
+									{characterContext}
+									onGenerated={(generatedText) => {
+										formData.first_mes = generatedText;
+									}}
+									disabled={saving}
+								/>
+							</div>
 							<Textarea
 								id="first_mes"
 								bind:value={formData.first_mes}
@@ -544,15 +578,26 @@
 								<div class="grid gap-2">
 									<div class="flex items-center justify-between">
 										<Label for="personality">Personality</Label>
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											onclick={() => openPopoutEditor('personality', 'Personality')}
-											class="h-6 px-2 text-xs"
-										>
-											Expand
-										</Button>
+										<div class="flex items-center gap-2">
+											<GenerationWidget
+												fieldName="personality"
+												fieldValue={formData.personality}
+												{characterContext}
+												onGenerated={(generatedText) => {
+													formData.personality = generatedText;
+												}}
+												disabled={saving}
+											/>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												onclick={() => openPopoutEditor('personality', 'Personality')}
+												class="h-6 px-2 text-xs"
+											>
+												Expand
+											</Button>
+										</div>
 									</div>
 									<Textarea
 										id="personality"
@@ -564,15 +609,26 @@
 								<div class="grid gap-2">
 									<div class="flex items-center justify-between">
 										<Label for="scenario">Scenario</Label>
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											onclick={() => openPopoutEditor('scenario', 'Scenario')}
-											class="h-6 px-2 text-xs"
-										>
-											Expand
-										</Button>
+										<div class="flex items-center gap-2">
+											<GenerationWidget
+												fieldName="scenario"
+												fieldValue={formData.scenario}
+												{characterContext}
+												onGenerated={(generatedText) => {
+													formData.scenario = generatedText;
+												}}
+												disabled={saving}
+											/>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												onclick={() => openPopoutEditor('scenario', 'Scenario')}
+												class="h-6 px-2 text-xs"
+											>
+												Expand
+											</Button>
+										</div>
 									</div>
 									<Textarea
 										id="scenario"

@@ -6,7 +6,10 @@ use secrecy::SecretBox; // Removed SecretString
 use scribe_backend::{
     auth::user_store::Backend as AuthBackend, // Added
     llm::EmbeddingClient,                     // Removed AiClient, Added EmbeddingClient
-    models::user_settings::{NewUserSettings, UserSettings},
+    models::{
+        chats::ChatMode,
+        user_settings::{NewUserSettings, UserSettings},
+    },
     schema::user_settings,
     services::{
         UserSettingsService,
@@ -227,7 +230,8 @@ async fn test_chat_session_uses_user_default_model() {
         scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
             app_state_for_session, // Use the correctly constructed AppState
             user_db.id,
-            character.id,
+            Some(character.id),   // character_id is now Option<Uuid>
+            ChatMode::Character,  // chat_mode
             None,                 // No custom persona
             None,                 // No lorebooks
             user_dek_for_session, // Use the DEK from the test user

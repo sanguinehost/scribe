@@ -48,7 +48,7 @@ type ScribeEventStream =
 type SessionDataTuple = (
     String,                      // history_management_strategy
     i32,                         // history_management_limit
-    Uuid,                        // session_character_id
+    Option<Uuid>,                // session_character_id
     Option<BigDecimal>,          // temperature
     Option<i32>,                 // max_output_tokens
     Option<BigDecimal>,          // frequency_penalty
@@ -278,7 +278,7 @@ pub async fn get_session_data_for_generation(
                 .first::<(
                     String,
                     i32,
-                    Uuid,
+                    Option<Uuid>,
                     Option<Vec<u8>>,
                     Option<Vec<u8>>,
                     Option<BigDecimal>,
@@ -302,21 +302,26 @@ pub async fn get_session_data_for_generation(
                     )),
                 })?;
 
+            // TODO: Refactor to handle different chat modes as per MODULAR_CHAT_SYSTEM_DESIGN.md
+            let char_id = sess_char_id.ok_or_else(|| {
+                AppError::BadRequest("Cannot generate chat response for non-character chat sessions".to_string())
+            })?;
+            
             let character_db: Character = characters::table
-                .filter(characters::id.eq(sess_char_id))
+                .filter(characters::id.eq(char_id))
                 .first::<Character>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
-                        AppError::NotFound(format!("Character {sess_char_id} not found"))
+                        AppError::NotFound(format!("Character {} not found", char_id))
                     }
                     _ => AppError::DatabaseQueryError(format!(
-                        "Failed to query character {sess_char_id}: {e}"
+                        "Failed to query character {}: {}", char_id, e
                     )),
                 })?;
 
             let overrides_db: Vec<ChatCharacterOverride> = chat_character_overrides::table
                 .filter(chat_character_overrides::chat_session_id.eq(session_id))
-                .filter(chat_character_overrides::original_character_id.eq(sess_char_id))
+                .filter(chat_character_overrides::original_character_id.eq(char_id))
                 .load::<ChatCharacterOverride>(conn_interaction)
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to query overrides: {e}"))
@@ -444,7 +449,10 @@ pub async fn get_session_data_for_generation(
         let pool_clone_lore = state.pool.clone();
         let user_id_clone = user_id;
         let session_id_clone = session_id;
-        let character_id_clone = session_character_id_db;
+        // Use the already validated char_id instead of the Option<Uuid>
+        let character_id_clone = session_character_id_db.ok_or_else(|| {
+            AppError::BadRequest("Character ID required for lorebook lookup".to_string())
+        })?;
 
         match pool_clone_lore
             .get()
@@ -472,7 +480,7 @@ pub async fn get_session_data_for_generation(
             }
         }
     };
-    info!(%session_id, character_id = %session_character_id_db, ?active_lorebook_ids_for_search, "Comprehensive active lorebook IDs determined (session + character linked).");
+    info!(%session_id, character_id = ?session_character_id_db, ?active_lorebook_ids_for_search, "Comprehensive active lorebook IDs determined (session + character linked).");
 
     // --- Calculate User Prompt Tokens (Now that model_name is available) ---
     let user_prompt_tokens_val: Option<i32> = match state
