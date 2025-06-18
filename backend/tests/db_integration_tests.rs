@@ -868,7 +868,7 @@ fn test_chat_session_insert_and_query() {
             .get_result(conn)?;
 
         assert_eq!(inserted_session.user_id, user.id);
-        assert_eq!(inserted_session.character_id, character.id);
+        assert_eq!(inserted_session.character_id, Some(character.id));
         // assert_eq!(inserted_session.system_prompt, new_session.system_prompt);
         // assert_eq!(inserted_session.temperature, new_session.temperature);
         // assert_eq!(
@@ -885,7 +885,7 @@ fn test_chat_session_insert_and_query() {
 
         assert_eq!(found_session.id, inserted_session.id);
         assert_eq!(found_session.user_id, user.id);
-        assert_eq!(found_session.character_id, character.id);
+        assert_eq!(found_session.character_id, Some(character.id));
 
         println!("Successfully inserted and queried chat session.");
         Ok(())

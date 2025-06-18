@@ -35,6 +35,7 @@ describe('ChatConfigPanel - Redundant Lorebook Associations', () => {
 		title: 'Test Chat',
 		character_id: 'char-456',
 		character_name: 'Test Character',
+		chat_mode: 'Character',
 		user_id: 'user-789',
 		created_at: '2023-01-01T00:00:00Z',
 		updated_at: '2023-01-01T00:00:00Z',

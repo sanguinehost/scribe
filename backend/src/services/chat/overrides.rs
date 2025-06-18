@@ -39,7 +39,7 @@ pub async fn set_character_override(
             let (chat_owner_id, original_character_id_from_session) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select((chat_sessions::user_id, chat_sessions::character_id))
-                .first::<(Uuid, Uuid)>(transaction_conn)
+                .first::<(Uuid, Option<Uuid>)>(transaction_conn)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
                         AppError::NotFound(format!("Chat session {session_id} not found."))
@@ -56,6 +56,11 @@ pub async fn set_character_override(
                     "Access denied to chat session override".to_string(),
                 ));
             }
+
+            // Check that this is a character-based chat session
+            let original_character_id = original_character_id_from_session.ok_or_else(|| {
+                AppError::BadRequest("Cannot create character overrides for non-character chat sessions".to_string())
+            })?;
 
             // 2. Encrypt the value
             let (encrypted_value, nonce) = if let Some(dek) = &owned_user_dek_opt {
@@ -80,7 +85,7 @@ pub async fn set_character_override(
             let new_override = NewChatCharacterOverride {
                 id: Uuid::new_v4(), // Generate a new ID for insert, conflict target will handle existing
                 chat_session_id: session_id,
-                original_character_id: original_character_id_from_session,
+                original_character_id: original_character_id,
                 field_name: field_name_clone,
                 overridden_value: encrypted_value.clone(), // Clone for insert
                 overridden_value_nonce: nonce.clone(),     // Clone for insert

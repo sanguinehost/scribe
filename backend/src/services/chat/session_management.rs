@@ -12,6 +12,7 @@ use crate::{
         characters::Character,
         chats::{
             Chat,
+            ChatMode,
             MessageRole,
             // ChatSessionSettings, // Removed, settings are part of Chat struct
             // HistoryManagementStrategy, // Removed, strategy is a field in Chat struct
@@ -351,11 +352,76 @@ fn encrypt_session_data(
     ))
 }
 
+/// Encrypts session data for assistant mode
+fn encrypt_assistant_session_data(
+    session_title: &str,
+    _effective_active_persona_id: Option<Uuid>,
+    _user_id: Uuid,
+    user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
+    _transaction_conn: &mut PgConnection,
+) -> Result<EncryptedSessionData, AppError> {
+    // Encrypt session title
+    let (encrypted_title_bytes, title_nonce_bytes) = crate::crypto::encrypt_gcm(
+        session_title.as_bytes(),
+        user_dek_secret_box.ok_or_else(|| {
+            AppError::BadRequest("User DEK is required to create sessions".to_string())
+        })?,
+    )
+    .map_err(|e| AppError::EncryptionError(format!("Failed to encrypt session title: {e}")))?;
+
+    // Create system prompt for assistant mode
+    let assistant_system_prompt = "You are Scribe Assistant, a helpful AI designed to assist with character creation, world-building, and narrative development. You can help users create compelling characters, develop rich backstories, design scenarios, and enhance their creative writing projects.";
+    
+    let (encrypted_system_prompt_bytes, sp_nonce_bytes) = 
+        crate::crypto::encrypt_gcm(assistant_system_prompt.as_bytes(), user_dek_secret_box.unwrap())
+            .map_err(|e| {
+                AppError::EncryptionError(format!("Failed to encrypt system prompt: {e}"))
+            })?;
+
+    Ok((
+        (encrypted_title_bytes, title_nonce_bytes),
+        (Some(encrypted_system_prompt_bytes), Some(sp_nonce_bytes)),
+    ))
+}
+
+/// Encrypts session data for RPG mode
+fn encrypt_rpg_session_data(
+    session_title: &str,
+    _effective_active_persona_id: Option<Uuid>,
+    _user_id: Uuid,
+    user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
+    _transaction_conn: &mut PgConnection,
+) -> Result<EncryptedSessionData, AppError> {
+    // Encrypt session title
+    let (encrypted_title_bytes, title_nonce_bytes) = crate::crypto::encrypt_gcm(
+        session_title.as_bytes(),
+        user_dek_secret_box.ok_or_else(|| {
+            AppError::BadRequest("User DEK is required to create sessions".to_string())
+        })?,
+    )
+    .map_err(|e| AppError::EncryptionError(format!("Failed to encrypt session title: {e}")))?;
+
+    // Create system prompt for RPG mode
+    let rpg_system_prompt = "You are a RPG Game Master, skilled in creating immersive tabletop role-playing experiences. You can manage game mechanics, track character stats, handle dice rolls, and create engaging narratives for players.";
+    
+    let (encrypted_system_prompt_bytes, sp_nonce_bytes) = 
+        crate::crypto::encrypt_gcm(rpg_system_prompt.as_bytes(), user_dek_secret_box.unwrap())
+            .map_err(|e| {
+                AppError::EncryptionError(format!("Failed to encrypt system prompt: {e}"))
+            })?;
+
+    Ok((
+        (encrypted_title_bytes, title_nonce_bytes),
+        (Some(encrypted_system_prompt_bytes), Some(sp_nonce_bytes)),
+    ))
+}
+
 /// Parameters for inserting a chat session
 struct ChatSessionInsertParams {
     new_session_id: Uuid,
     user_id: Uuid,
-    character_id: Uuid,
+    character_id: Option<Uuid>,
+    chat_mode: ChatMode,
     encrypted_title_bytes: Vec<u8>,
     title_nonce_bytes: Vec<u8>,
     encrypted_system_prompt_bytes: Option<Vec<u8>>,
@@ -376,6 +442,7 @@ fn insert_chat_session(
             chat_sessions::id.eq(params.new_session_id),
             chat_sessions::user_id.eq(params.user_id),
             chat_sessions::character_id.eq(params.character_id),
+            chat_sessions::chat_mode.eq(params.chat_mode),
             chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
             chat_sessions::title_nonce.eq(params.title_nonce_bytes),
             chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
@@ -486,7 +553,8 @@ fn fetch_created_session(
 fn create_session_in_transaction(
     transaction_conn: &mut PgConnection,
     user_id: Uuid,
-    character_id: Uuid,
+    character_id: Option<Uuid>,
+    chat_mode: ChatMode,
     active_custom_persona_id: Option<Uuid>,
     lorebook_ids: Option<Vec<Uuid>>,
     user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
@@ -497,29 +565,77 @@ fn create_session_in_transaction(
     let effective_active_persona_id =
         determine_effective_persona_id(user_id, active_custom_persona_id, transaction_conn);
 
-    let character = validate_and_get_character(character_id, user_id, transaction_conn)?;
-    let sanitized_character_name = sanitize_character_name(&character)?;
+    // Handle different chat modes
+    let (character_opt, _sanitized_name, encrypted_title_bytes, title_nonce_bytes, encrypted_system_prompt_bytes, sp_nonce_bytes) = match chat_mode {
+        ChatMode::Character => {
+            // Character mode requires a character_id
+            let character_id = character_id.ok_or_else(|| {
+                AppError::BadRequest("Character mode requires a character_id".to_string())
+            })?;
+            
+            let character = validate_and_get_character(character_id, user_id, transaction_conn)?;
+            let sanitized_character_name = sanitize_character_name(&character)?;
+            
+            info!(?character_id, %user_id, "Inserting new character chat session");
+            
+            let (
+                (encrypted_title_bytes, title_nonce_bytes),
+                (encrypted_system_prompt_bytes, sp_nonce_bytes),
+            ) = encrypt_session_data(
+                &sanitized_character_name,
+                &character,
+                effective_active_persona_id,
+                user_id,
+                user_dek_secret_box,
+                transaction_conn,
+            )?;
+            
+            (Some(character), sanitized_character_name, encrypted_title_bytes, title_nonce_bytes, encrypted_system_prompt_bytes, sp_nonce_bytes)
+        },
+        ChatMode::ScribeAssistant => {
+            info!(%user_id, "Inserting new Scribe Assistant chat session");
+            
+            let session_title = "Scribe Assistant";
+            let (
+                (encrypted_title_bytes, title_nonce_bytes),
+                (encrypted_system_prompt_bytes, sp_nonce_bytes),
+            ) = encrypt_assistant_session_data(
+                session_title,
+                effective_active_persona_id,
+                user_id,
+                user_dek_secret_box,
+                transaction_conn,
+            )?;
+            
+            (None, session_title.to_string(), encrypted_title_bytes, title_nonce_bytes, encrypted_system_prompt_bytes, sp_nonce_bytes)
+        },
+        ChatMode::Rpg => {
+            info!(%user_id, "Inserting new RPG chat session");
+            
+            let session_title = "RPG Session";
+            let (
+                (encrypted_title_bytes, title_nonce_bytes),
+                (encrypted_system_prompt_bytes, sp_nonce_bytes),
+            ) = encrypt_rpg_session_data(
+                session_title,
+                effective_active_persona_id,
+                user_id,
+                user_dek_secret_box,
+                transaction_conn,
+            )?;
+            
+            (None, session_title.to_string(), encrypted_title_bytes, title_nonce_bytes, encrypted_system_prompt_bytes, sp_nonce_bytes)
+        },
+    };
 
-    info!(%character_id, %user_id, "Inserting new chat session");
     let new_session_id = Uuid::new_v4();
-
-    let (
-        (encrypted_title_bytes, title_nonce_bytes),
-        (encrypted_system_prompt_bytes, sp_nonce_bytes),
-    ) = encrypt_session_data(
-        &sanitized_character_name,
-        &character,
-        effective_active_persona_id,
-        user_id,
-        user_dek_secret_box,
-        transaction_conn,
-    )?;
 
     insert_chat_session(
         ChatSessionInsertParams {
             new_session_id,
             user_id,
             character_id,
+            chat_mode,
             encrypted_title_bytes,
             title_nonce_bytes,
             encrypted_system_prompt_bytes,
@@ -532,20 +648,30 @@ fn create_session_in_transaction(
         transaction_conn,
     )?;
 
-    associate_lorebooks(
-        new_session_id,
-        user_id,
-        character_id,
-        lorebook_ids,
-        transaction_conn,
-    )?;
+    // Only associate lorebooks for character mode
+    if let ChatMode::Character = chat_mode {
+        if let Some(char_id) = character_id {
+            associate_lorebooks(
+                new_session_id,
+                user_id,
+                char_id,
+                lorebook_ids,
+                transaction_conn,
+            )?;
+        }
+    }
 
     let fully_created_session = fetch_created_session(new_session_id, transaction_conn)?;
 
+    // Extract first message data if character exists
+    let (first_mes, first_mes_nonce) = character_opt
+        .map(|c| (c.first_mes, c.first_mes_nonce))
+        .unwrap_or((None, None));
+
     Ok((
         fully_created_session,
-        character.first_mes,
-        character.first_mes_nonce,
+        first_mes,
+        first_mes_nonce,
     ))
 }
 
@@ -614,7 +740,8 @@ async fn process_first_message(
 pub async fn create_session_and_maybe_first_message(
     state: Arc<AppState>,
     user_id: Uuid,
-    character_id: Uuid,
+    character_id: Option<Uuid>,
+    chat_mode: ChatMode,
     active_custom_persona_id: Option<Uuid>,
     lorebook_ids: Option<Vec<Uuid>>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
@@ -669,6 +796,7 @@ pub async fn create_session_and_maybe_first_message(
                     transaction_conn,
                     user_id,
                     character_id,
+                    chat_mode,
                     active_custom_persona_id,
                     lorebook_ids_for_closure,
                     user_dek_for_closure.as_ref(),

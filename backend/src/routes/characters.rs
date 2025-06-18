@@ -12,6 +12,11 @@ use crate::models::characters::{Character, CharacterDataForClient};
 use crate::schema::character_assets::dsl::character_assets;
 use crate::schema::characters::dsl::{characters, id, user_id};
 use crate::services::character_parser::{self};
+use crate::services::character_generation::{
+    FieldGenerator, FullCharacterGenerator, EnhancementService,
+    FieldGenerationRequest, FullCharacterRequest, EnhancementRequest,
+    FieldGenerationResult, FullCharacterResult, EnhancementResult,
+};
 use crate::state::AppState;
 use axum::{
     Router,
@@ -81,6 +86,10 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
         .route("/:id", put(update_character_handler)) // Added PUT for update on /:id
         .route("/remove/:id", delete(delete_character_handler))
         .route("/generate", post(generate_character_handler))
+        .route("/generate/field", post(generate_field_handler))
+        .route("/generate/full", post(generate_full_character_handler))
+        .route("/enhance/field", post(enhance_field_handler))
+        .route("/analyze/style", post(analyze_style_handler))
         .route(
             "/:character_id/assets/:asset_id",
             get(get_character_asset_handler),
@@ -1304,4 +1313,120 @@ pub async fn get_character_asset_handler(
 
     debug!(character_id = %character_id, asset_id = %asset_id, content_type = %content_type, image_data_len = final_image_data.len(), "Character asset served successfully");
     Ok(response)
+}
+
+// --- Character Generation Endpoints ---
+
+// POST /api/characters/generate/field
+#[instrument(skip_all, fields(field = ?payload.field))]
+pub async fn generate_field_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Json(payload): Json<FieldGenerationRequest>,
+) -> Result<Json<FieldGenerationResult>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+
+    info!("Generating field {:?} for user request", payload.field);
+
+    let field_generator = FieldGenerator::new(Arc::new(state));
+    let result = field_generator.generate_field(payload, user.id).await?;
+
+    Ok(Json(result))
+}
+
+// POST /api/characters/generate/full
+#[instrument(skip_all)]
+pub async fn generate_full_character_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Json(payload): Json<FullCharacterRequest>,
+) -> Result<Json<FullCharacterResult>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+
+    info!("Generating full character from concept: {}", payload.concept);
+
+    let full_generator = FullCharacterGenerator::new(Arc::new(state));
+    let result = full_generator.generate_character(payload, user.id).await?;
+
+    Ok(Json(result))
+}
+
+// POST /api/characters/enhance/field
+#[instrument(skip_all, fields(field = ?payload.field))]
+pub async fn enhance_field_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Json(payload): Json<EnhancementRequest>,
+) -> Result<Json<EnhancementResult>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+
+    info!("Enhancing field {:?} for user", payload.field);
+
+    let enhancement_service = EnhancementService::new(Arc::new(state));
+    let result = enhancement_service.enhance_field(payload, user.id).await?;
+
+    Ok(Json(result))
+}
+
+// POST /api/characters/analyze/style
+#[instrument(skip_all)]
+pub async fn analyze_style_handler(
+    State(_state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let _user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+
+    // Extract content from payload
+    let content = payload
+        .get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::InvalidInput("Content field required".to_string()))?;
+
+    info!("Analyzing style for content with {} characters", content.len());
+
+    // For now, implement basic style analysis
+    // This will be enhanced with more sophisticated analysis later
+    let detected_style = if content.contains("{{char}}") || content.contains("{{user}}") {
+        "system"
+    } else if content.contains("Characters(") {
+        "group" 
+    } else if content.contains("Name:") || content.contains("Age:") {
+        "profile"
+    } else {
+        "narrative"
+    };
+
+    let confidence = match detected_style {
+        "system" | "group" => 0.9,
+        "profile" => 0.8,
+        _ => 0.6,
+    };
+
+    let result = serde_json::json!({
+        "detected_style": detected_style,
+        "confidence": confidence,
+        "style_indicators": match detected_style {
+            "system" => vec!["Contains {{char}} or {{user}} placeholders"],
+            "group" => vec!["Uses Characters() format"],
+            "profile" => vec!["Contains structured data fields"],
+            _ => vec!["Uses narrative prose style"],
+        },
+        "recommendations": match detected_style {
+            "system" => vec!["Consider adding more behavioral guidelines"],
+            "group" => vec!["Ensure each character has distinct traits"],
+            "profile" => vec!["Add personality section after biographical data"],
+            _ => vec!["Add more sensory details and background"],
+        }
+    });
+
+    Ok(Json(result))
 }

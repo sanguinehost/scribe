@@ -272,7 +272,8 @@ pub async fn create_chat_handler(
     let chat = chat::session_management::create_session_and_maybe_first_message(
         app_state,
         user.id,
-        payload.character_id,
+        Some(payload.character_id),
+        crate::models::chats::ChatMode::Character,
         payload.active_custom_persona_id, // active_custom_persona_id
         payload.lorebook_ids.clone(),     // lorebook_ids
         user_dek_arc,
@@ -320,7 +321,7 @@ pub async fn create_chat_handler(
     info!(
         message = "Chat session created in handler",
         chat_id = %chat.id,
-        character_id = %chat.character_id,
+        character_id = ?chat.character_id,
         user_id = %chat.user_id,
         system_prompt_present = chat.system_prompt_ciphertext.is_some(), // Avoid logging potentially large/sensitive prompt
         title_present = chat.title_ciphertext.is_some() // Also avoid logging title directly

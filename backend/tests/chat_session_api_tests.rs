@@ -20,7 +20,7 @@ use diesel::prelude::*;
 use anyhow::Error as AnyhowError;
 use scribe_backend::models::character_card::NewCharacter;
 use scribe_backend::models::characters::Character as DbCharacter;
-use scribe_backend::models::chats::{Chat as DbChatSession, NewChat};
+use scribe_backend::models::chats::{Chat as DbChatSession, ChatMode, NewChat};
 use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::test_helpers; // For spawn_app, create_test_user
 use secrecy::{ExposeSecret, SecretBox};
@@ -1459,7 +1459,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
             app_state_arc,
             user.id,
-            character_id,
+            Some(character_id),     // character_id is now Option<Uuid>
+            ChatMode::Character,    // chat_mode
             None,                   // active_custom_persona_id
             None,                   // lorebook_ids
             Some(user_dek.clone()), // user_dek_secret_box
@@ -1475,7 +1476,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     test_data_guard.add_chat(session.id);
 
     assert_eq!(session.user_id, user.id);
-    assert_eq!(session.character_id, character_id);
+    assert_eq!(session.character_id, Some(character_id));
 
     let conn = test_app.db_pool.get().await?;
     let messages_result = conn

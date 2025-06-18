@@ -337,6 +337,7 @@
 
 		try {
 			const createChatResult = await apiClient.createChat({
+				chat_mode: 'Character', // Character mode for character-based chats
 				character_id: characterId,
 				title: `Chat with ${character.name}`,
 				system_prompt: character.system_prompt ?? null,

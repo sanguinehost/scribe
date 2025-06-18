@@ -25,7 +25,7 @@ pub async fn handle_delete_chat_session_action<H: IoHandler, C: HttpClient>(
             "  [{}] Session ID: {}, Character ID: {}, Last Updated: {}",
             index + 1,
             session.id,
-            session.character_id,
+            session.character_id.map_or("None".to_string(), |id| id.to_string()),
             updated_at_str
         ))?;
     }

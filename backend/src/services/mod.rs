@@ -1,3 +1,4 @@
+pub mod character_generation;
 pub mod character_parser;
 pub mod character_service;
 pub mod chat;

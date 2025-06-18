@@ -243,7 +243,7 @@ diesel::table! {
     chat_sessions (id) {
         id -> Uuid,
         user_id -> Uuid,
-        character_id -> Uuid,
+        character_id -> Nullable<Uuid>,
         temperature -> Nullable<Numeric>,
         max_output_tokens -> Nullable<Int4>,
         created_at -> Timestamptz,
@@ -272,6 +272,7 @@ diesel::table! {
         title_ciphertext -> Nullable<Bytea>,
         title_nonce -> Nullable<Bytea>,
         stop_sequences -> Nullable<Array<Nullable<Text>>>,
+        chat_mode -> Varchar,
     }
 }
 

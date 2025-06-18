@@ -19,6 +19,7 @@
 		stopGeneration: () => void;
 		chatId?: string; // Add chatId for impersonate/expand features
 		onImpersonate?: (response: string) => void; // Callback for impersonate results
+		placeholder?: string; // Custom placeholder text
 		class?: string;
 	};
 
@@ -29,6 +30,7 @@
 		stopGeneration,
 		chatId,
 		onImpersonate,
+		placeholder = "Send a message...", // Default placeholder
 		class: c
 	}: Props = $props();
 
@@ -147,7 +149,7 @@
 		<!-- Using a native textarea with use directive for element binding -->
 		<textarea
 			use:bindTextarea
-			placeholder="Send a message..."
+			{placeholder}
 			bind:value
 			class={cn(
 				'max-h-[calc(37.5dvh)] min-h-[24px] resize-none overflow-y-auto rounded-2xl bg-muted pb-10 pl-4 pr-4 !text-base dark:border-zinc-700',

@@ -18,7 +18,7 @@ use diesel::prelude::*;
 use scribe_backend::models::character_card::NewCharacter;
 use scribe_backend::models::characters::Character as DbCharacter;
 use scribe_backend::models::chats::{
-    Chat as DbChat, ChatSettingsResponse, NewChat, UpdateChatSettingsRequest,
+    Chat as DbChat, ChatMode, ChatSettingsResponse, NewChat, UpdateChatSettingsRequest,
 };
 use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::services::chat::session_management::create_session_and_maybe_first_message;
@@ -564,7 +564,8 @@ async fn get_chat_settings_defaults() {
     let created_chat_session = create_session_and_maybe_first_message(
         app_state_for_service,
         session.user_id, // Use user ID from the session created by helper
-        character.id,
+        Some(character.id), // character_id is now Option<Uuid>
+        ChatMode::Character, // chat_mode
         None,                              // active_custom_persona_id
         None,                              // lorebook_ids
         user_dek_for_service_call.clone(), // Pass the created DEK

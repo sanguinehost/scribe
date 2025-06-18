@@ -75,8 +75,9 @@ export interface BackendAuthResponse {
 export interface ScribeChatSession {
 	id: string;
 	title: string;
-	character_id: string;
+	character_id: string | null; // CHANGED: Now nullable for non-character modes
 	character_name?: string | null; // Added character_name
+	chat_mode: ChatMode; // NEW: Required chat mode field
 	user_id: string;
 	created_at: string;
 	updated_at: string;
@@ -111,6 +112,9 @@ export type VisibilityType = 'public' | 'private';
 
 // Message role type for Scribe messages
 export type MessageRole = 'User' | 'Assistant' | 'System';
+
+// Chat Mode type - matches backend ChatMode enum
+export type ChatMode = 'Character' | 'ScribeAssistant' | 'Rpg';
 
 // Placeholder for Lorebook type - Define based on expected fields from backend
 export interface Lorebook {
@@ -371,7 +375,8 @@ export interface MessageAttachment {
 // Type definitions for API requests
 export type CreateChatRequest = {
 	title: string;
-	character_id: string;
+	chat_mode: ChatMode; // NEW: Required chat mode field
+	character_id?: string | null; // CHANGED: Optional for non-character modes
 	system_prompt?: string | null;
 	personality?: string | null;
 	scenario?: string | null;
@@ -583,4 +588,160 @@ export interface ImpersonateRequest {
 
 export interface ImpersonateResponse {
 	generated_response: string;
+}
+
+// ============================================================================
+// AI Generation Types
+// ============================================================================
+
+export type GenerationMode = 'create' | 'enhance' | 'rewrite' | 'expand';
+
+export interface CharacterContext {
+	name?: string;
+	description?: string;
+	personality?: string;
+	scenario?: string;
+	first_mes?: string;
+	tags?: string[];
+	mes_example?: string;
+	system_prompt?: string;
+	depth_prompt?: string;
+	alternate_greetings?: string[];
+	lorebook_entries?: LorebookEntry[];
+	associated_persona?: string;
+	selectedLorebooks?: string[]; // Array of lorebook IDs to query for context (frontend-only)
+}
+
+// Backend LorebookEntry for character context
+export interface LorebookEntry {
+	id: string;
+	keys: string[];
+	content: string;
+	priority?: number;
+	enabled: boolean;
+}
+
+// Character field generation
+export interface GenerateCharacterFieldRequest {
+	field_name: string; // "description", "personality", "scenario", etc.
+	field_context?: string; // Existing content to enhance
+	character_context?: CharacterContext; // Existing character data for context
+	generation_prompt?: string; // User's specific instructions
+	generation_mode: GenerationMode;
+}
+
+export interface GenerateCharacterFieldResponse {
+	content: string;
+	style_used: string;
+	metadata: {
+		tokens_used: number;
+		generation_time_ms: number;
+		style_detected?: string | null;
+		model_used: string;
+		timestamp: string;
+		debug_info?: {
+			system_prompt: string;
+			user_message: string;
+			lorebook_context_included: boolean;
+			lorebook_entries_count?: number | null;
+			query_text_used?: string | null;
+		} | null;
+	};
+}
+
+// Complete character generation
+export interface GenerateCompleteCharacterRequest {
+	character_prompt: string; // High-level description or concept
+	generation_style?: string; // Style preferences
+	include_fields?: string[]; // Which fields to generate
+}
+
+export interface GenerateCompleteCharacterResponse {
+	character: {
+		name?: string;
+		description?: string;
+		personality?: string;
+		scenario?: string;
+		first_mes?: string;
+		mes_example?: string;
+		tags?: string[];
+	};
+	suggestions?: {
+		alternative_names?: string[];
+		alternative_concepts?: string[];
+	};
+}
+
+// Character enhancement
+export interface EnhanceCharacterRequest {
+	character_data: CharacterContext;
+	enhancement_prompt: string; // What to improve or focus on
+	target_fields?: string[]; // Specific fields to enhance
+}
+
+export interface EnhanceCharacterResponse {
+	enhanced_character: CharacterContext;
+	changes_summary: string; // Description of what was changed
+}
+
+// Lorebook generation
+export interface GenerateLorebookEntryRequest {
+	entry_prompt: string;
+	existing_entries_context?: string; // Context from existing lorebook
+	character_context?: CharacterContext; // Related character context
+	entry_type?: string; // "character", "location", "item", "event", etc.
+}
+
+export interface GenerateLorebookEntryResponse {
+	entry: {
+		name: string;
+		content: string;
+		keys: string[];
+		priority?: number;
+	};
+	suggestions?: {
+		related_entries?: string[];
+		additional_keys?: string[];
+	};
+}
+
+export interface GenerateLorebookEntriesRequest {
+	entries_prompt: string; // Overall theme or world concept
+	entry_count?: number; // How many entries to generate
+	existing_lorebook_context?: string;
+	character_context?: CharacterContext;
+}
+
+export interface GenerateLorebookEntriesResponse {
+	entries: Array<{
+		name: string;
+		content: string;
+		keys: string[];
+		priority?: number;
+	}>;
+	world_summary?: string; // Overall description of the generated content
+}
+
+// Scribe Assistant (Chat mode for content creation)
+export interface ScribeAssistantRequest {
+	message: string; // User's message/request
+	context?: {
+		character_data?: CharacterContext;
+		lorebook_data?: string;
+		session_history?: Array<{
+			role: 'user' | 'assistant';
+			content: string;
+		}>;
+	};
+	mode?: 'character_creation' | 'character_editing' | 'lorebook_creation' | 'general';
+}
+
+export interface ScribeAssistantResponse {
+	response: string; // Assistant's response
+	actions?: Array<{
+		type: 'generate_field' | 'create_character' | 'create_lorebook_entry';
+		payload: any; // Specific action data
+		description: string;
+	}>;
+	suggestions?: string[]; // Follow-up suggestions
 }
