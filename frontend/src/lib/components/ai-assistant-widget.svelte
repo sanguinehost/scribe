@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from './ui/button';
 	import { Bot } from 'lucide-svelte';
-	import AiAssistantDialog from './ai-assistant-dialog-v2.svelte';
+	import AiAssistantDialog from './ai-assistant-dialog.svelte';
 	import type { CharacterContext } from '$lib/types';
 
 	type Props = {
