@@ -150,6 +150,7 @@ async fn create_test_chat_session(
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -719,6 +720,7 @@ async fn create_real_client_test_session(
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -783,7 +785,7 @@ async fn perform_real_client_stream_test_and_verify(
     }];
     let payload = GenerateChatRequest {
         history,
-        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
+        model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
     };
 

@@ -254,7 +254,7 @@ async fn main() -> Result<()> {
         io_handler.write_line("Welcome to Scribe CLI! (Interactive Mode)")?;
         io_handler.write_line(&format!("Connecting to: {}", cli_args.base_url))?;
 
-        let mut current_model = "gemini-2.5-flash-preview-05-20".to_string();
+        let mut current_model = "gemini-2.5-flash".to_string();
 
         // Main application loop
         loop {

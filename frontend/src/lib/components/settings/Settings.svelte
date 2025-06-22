@@ -25,7 +25,7 @@
 	let isLoading = $state(false);
 	let settings = $state({
 		// Model & Basic Generation
-		model_name: 'gemini-2.5-flash-preview-05-20', // System default from backend config
+		model_name: 'gemini-2.5-flash', // System default from backend config
 		temperature: 1.0,
 		max_output_tokens: 1000,
 		top_p: 0.95 as number | null,
@@ -117,7 +117,7 @@
 				// Map the user settings to our local state
 				settings = {
 					// Model & Basic Generation
-					model_name: userSettings.default_model_name || 'gemini-2.5-flash-preview-05-20',
+					model_name: userSettings.default_model_name || 'gemini-2.5-flash',
 					temperature: parseFloat(String(userSettings.default_temperature ?? 1.0)),
 					max_output_tokens: userSettings.default_max_output_tokens || 1000,
 					top_p: parseFloat(parseFloat(String(userSettings.default_top_p ?? 0.95)).toFixed(2)),
@@ -156,7 +156,7 @@
 
 	function resetToDefaults() {
 		settings = {
-			model_name: 'gemini-2.5-flash-preview-05-20', // System default from backend config
+			model_name: 'gemini-2.5-flash', // System default from backend config
 			temperature: 1.0,
 			max_output_tokens: 1000,
 			top_p: 0.95,

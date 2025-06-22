@@ -78,6 +78,7 @@ export interface ScribeChatSession {
 	character_id: string | null; // CHANGED: Now nullable for non-character modes
 	character_name?: string | null; // Added character_name
 	chat_mode: ChatMode; // NEW: Required chat mode field
+	chronicle_id?: string | null; // Chronicle association for organizing related chats (backend API uses chronicle_id)
 	user_id: string;
 	created_at: string;
 	updated_at: string;
@@ -474,6 +475,7 @@ export type SuggestedActionsResponse = {
 // Types for Chat Session Settings
 export interface UpdateChatSessionSettingsRequest {
 	title?: string | null;
+	chronicle_id?: string | null; // Associate chat with chronicle (backend API uses chronicle_id)
 	temperature?: number | null;
 	max_output_tokens?: number | null;
 	frequency_penalty?: number | null;
@@ -509,6 +511,7 @@ export interface ChatSessionSettingsResponse {
 	stop_sequences?: (string | null)[] | null;
 	gemini_thinking_budget?: number | null;
 	gemini_enable_code_execution?: boolean | null;
+	chronicle_id?: string | null; // Chronicle association (backend API returns chronicle_id)
 	// Context fields that don't exist in backend but are expected by frontend components
 	context_total_token_limit?: number | null;
 	context_recent_history_budget?: number | null;
@@ -745,3 +748,58 @@ export interface ScribeAssistantResponse {
 	}>;
 	suggestions?: string[]; // Follow-up suggestions
 }
+
+// Chronicle types
+export interface PlayerChronicle {
+	id: string;
+	user_id: string;
+	name: string;
+	description: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface PlayerChronicleWithCounts extends PlayerChronicle {
+	event_count: number;
+	chat_session_count: number;
+}
+
+export interface CreateChronicleRequest {
+	name: string;
+	description?: string | null;
+}
+
+export interface UpdateChronicleRequest {
+	name?: string | null;
+	description?: string | null;
+}
+
+export interface ChronicleEvent {
+	id: string;
+	chronicle_id: string;
+	event_type: string;
+	summary: string;
+	source: EventSource;
+	event_data: any | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export type EventSource = 'USER_ADDED' | 'AI_EXTRACTED' | 'GAME_API' | 'SYSTEM';
+
+export interface CreateEventRequest {
+	event_type: string;
+	summary: string;
+	source: EventSource;
+	event_data?: any | null;
+}
+
+export interface EventFilter {
+	event_type?: string | null;
+	source?: EventSource | null;
+	order_by?: EventOrderBy | null;
+	limit?: number | null;
+	offset?: number | null;
+}
+
+export type EventOrderBy = 'created_at_asc' | 'created_at_desc' | 'updated_at_asc' | 'updated_at_desc';

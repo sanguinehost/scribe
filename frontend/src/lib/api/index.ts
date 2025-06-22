@@ -51,7 +51,14 @@ import type {
 	GenerateLorebookEntryRequest,
 	GenerateLorebookEntryResponse,
 	ScribeAssistantRequest,
-	ScribeAssistantResponse
+	ScribeAssistantResponse,
+	PlayerChronicle,
+	PlayerChronicleWithCounts,
+	CreateChronicleRequest,
+	UpdateChronicleRequest,
+	ChronicleEvent,
+	CreateEventRequest,
+	EventFilter
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -66,6 +73,7 @@ import { env } from '$env/dynamic/public';
 // Actual API client
 class ApiClient {
 	private baseUrl: string;
+	private fetchFn: typeof fetch = globalThis.fetch;
 
 	constructor(baseUrl: string = '') {
 		// Use PUBLIC_API_URL if available, otherwise fall back to relative paths
@@ -73,11 +81,16 @@ class ApiClient {
 		this.baseUrl = (baseUrl || env.PUBLIC_API_URL || '').trim();
 	}
 
+	// Method to set custom fetch function (useful for server-side rendering)
+	setFetch(fetchFn: typeof fetch) {
+		this.fetchFn = fetchFn;
+	}
+
 	// Generic fetch method with error handling
 	private async fetch<T>(
 		endpoint: string,
 		options: RequestInit = {},
-		fetchFn: typeof fetch = globalThis.fetch
+		fetchFn: typeof fetch = this.fetchFn
 	): Promise<Result<T, ApiError>> {
 		// Add debug logging for production debugging
 		const fullUrl = `${this.baseUrl}${endpoint}`;
@@ -930,6 +943,100 @@ class ApiClient {
 			method: 'POST',
 			body: JSON.stringify(request)
 		});
+	}
+
+	// ============================================================================
+	// Chronicle Methods
+	// ============================================================================
+
+	// Get all chronicles for the current user
+	async getChronicles(): Promise<Result<PlayerChronicleWithCounts[], ApiError>> {
+		return this.fetch<PlayerChronicleWithCounts[]>('/api/chronicles');
+	}
+
+	// Get a specific chronicle by ID
+	async getChronicle(id: string): Promise<Result<PlayerChronicle, ApiError>> {
+		return this.fetch<PlayerChronicle>(`/api/chronicles/${id}`);
+	}
+
+	// Create a new chronicle
+	async createChronicle(data: CreateChronicleRequest): Promise<Result<PlayerChronicle, ApiError>> {
+		return this.fetch<PlayerChronicle>('/api/chronicles', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	// Update an existing chronicle
+	async updateChronicle(
+		id: string,
+		data: UpdateChronicleRequest
+	): Promise<Result<PlayerChronicle, ApiError>> {
+		return this.fetch<PlayerChronicle>(`/api/chronicles/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
+	}
+
+	// Delete a chronicle
+	async deleteChronicle(id: string): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/chronicles/${id}`, {
+			method: 'DELETE'
+		});
+	}
+
+	// Get events for a chronicle
+	async getChronicleEvents(
+		chronicleId: string,
+		filter?: EventFilter
+	): Promise<Result<ChronicleEvent[], ApiError>> {
+		const params = new URLSearchParams();
+		if (filter) {
+			if (filter.event_type) params.append('event_type', filter.event_type);
+			if (filter.source) params.append('source', filter.source);
+			if (filter.order_by) params.append('order_by', filter.order_by);
+			if (filter.limit) params.append('limit', filter.limit.toString());
+			if (filter.offset) params.append('offset', filter.offset.toString());
+		}
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.fetch<ChronicleEvent[]>(`/api/chronicles/${chronicleId}/events${query}`);
+	}
+
+	// Create a new event in a chronicle
+	async createChronicleEvent(
+		chronicleId: string,
+		data: CreateEventRequest
+	): Promise<Result<ChronicleEvent, ApiError>> {
+		return this.fetch<ChronicleEvent>(`/api/chronicles/${chronicleId}/events`, {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	// Delete an event from a chronicle
+	async deleteChronicleEvent(chronicleId: string, eventId: string): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/chronicles/${chronicleId}/events/${eventId}`, {
+			method: 'DELETE'
+		});
+	}
+
+	// Extract events from a chat session
+	async extractEventsFromChat(
+		chronicleId: string,
+		data: {
+			chat_session_id: string;
+			start_message_index?: number;
+			end_message_index?: number;
+			extraction_model?: string;
+		}
+	): Promise<Result<{ events_extracted: number; events: ChronicleEvent[] }, ApiError>> {
+		return this.fetch<{ events_extracted: number; events: ChronicleEvent[] }>(
+			`/api/chronicles/${chronicleId}/extract-events`,
+			{
+				method: 'POST',
+				body: JSON.stringify(data)
+			}
+		);
 	}
 }
 

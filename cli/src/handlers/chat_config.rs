@@ -4,7 +4,7 @@ use crate::io::IoHandler;
 use scribe_backend::models::chats::{ChatSettingsResponse, UpdateChatSettingsRequest};
 
 // Placeholder for system defaults
-const SYSTEM_DEFAULT_MODEL: &str = "gemini-2.5-flash-preview-05-20";
+const SYSTEM_DEFAULT_MODEL: &str = "gemini-2.5-flash";
 // Define other system defaults if needed, e.g.,
 // const SYSTEM_DEFAULT_TEMPERATURE: f32 = 1.0;
 

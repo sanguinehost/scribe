@@ -5,11 +5,21 @@ use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
 use std::sync::Arc;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
+use chrono::{DateTime, Utc};
+
+#[derive(Debug, Clone)]
+pub struct ChronicleEventMetadata {
+    pub event_id: Uuid,
+    pub event_type: String,
+    pub chronicle_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
 
 #[derive(Debug, Clone)]
 pub enum RetrievedMetadata {
     Chat(ChatMessageChunkMetadata),
     Lorebook(LorebookChunkMetadata),
+    Chronicle(ChronicleEventMetadata),
     // Add other types as needed
 }
 

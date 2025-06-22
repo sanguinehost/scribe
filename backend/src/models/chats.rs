@@ -38,6 +38,8 @@ pub type SettingsTuple = (
     // -- Gemini Specific Options --
     Option<i32>,  // gemini_thinking_budget
     Option<bool>, // gemini_enable_code_execution
+    // -- Chronicle Support --
+    Option<Uuid>, // player_chronicle_id
 ); // Close the tuple definition
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_sessions)]
@@ -69,6 +71,7 @@ pub struct Chat {
     pub title_nonce: Option<Vec<u8>>,
     pub stop_sequences: Option<Vec<Option<String>>>,
     pub chat_mode: ChatMode,
+    pub player_chronicle_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -162,6 +165,7 @@ pub struct NewChat {
     pub gemini_enable_code_execution: Option<bool>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
+    pub player_chronicle_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -1294,6 +1298,7 @@ pub struct ChatForClient {
     pub active_custom_persona_id: Option<Uuid>,
     pub active_impersonated_character_id: Option<Uuid>,
     pub chat_mode: ChatMode,
+    pub chronicle_id: Option<Uuid>, // Chronicle association (maps to player_chronicle_id in database)
 }
 
 impl Chat {
@@ -1416,6 +1421,7 @@ impl Chat {
             active_custom_persona_id: self.active_custom_persona_id,
             active_impersonated_character_id: self.active_impersonated_character_id,
             chat_mode: self.chat_mode,
+            chronicle_id: self.player_chronicle_id, // Map database field to API field
         })
     }
 }
@@ -1442,6 +1448,8 @@ pub struct ChatSettingsResponse {
     // Gemini-specific options
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
+    // Chronicle association
+    pub chronicle_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -1470,6 +1478,7 @@ impl std::fmt::Debug for ChatSettingsResponse {
                 "gemini_enable_code_execution",
                 &self.gemini_enable_code_execution,
             )
+            .field("chronicle_id", &self.chronicle_id)
             .finish()
     }
 }
@@ -1491,6 +1500,7 @@ impl From<Chat> for ChatSettingsResponse {
             model_name: chat.model_name,
             gemini_thinking_budget: chat.gemini_thinking_budget,
             gemini_enable_code_execution: chat.gemini_enable_code_execution,
+            chronicle_id: chat.player_chronicle_id,
         }
     }
 }
@@ -1524,6 +1534,8 @@ pub struct UpdateChatSettingsRequest {
     // Gemini-specific options
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
+    // Chronicle association
+    pub chronicle_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -1552,6 +1564,7 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
                 "gemini_enable_code_execution",
                 &self.gemini_enable_code_execution,
             )
+            .field("chronicle_id", &self.chronicle_id)
             .finish()
     }
 }
@@ -1907,12 +1920,13 @@ mod tests {
             stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
-            model_name: "gemini-2.5-flash-preview-05-20".to_string(),
+            model_name: "gemini-2.5-flash".to_string(),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
+            player_chronicle_id: None,
         }
     }
 
@@ -2149,9 +2163,10 @@ mod tests {
             stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
-            model_name: "gemini-2.5-flash-preview-05-20".to_string(),
+            model_name: "gemini-2.5-flash".to_string(),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
+            chronicle_id: None,
         }
     }
 
@@ -2201,9 +2216,10 @@ mod tests {
             stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: Some("sliding_window_tokens".to_string()),
             history_management_limit: Some(2000),
-            model_name: Some("gemini-2.5-pro-preview-03-25".to_string()),
+            model_name: Some("gemini-2.5-pro".to_string()),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
+            chronicle_id: None,
         }
     }
 
@@ -2285,7 +2301,7 @@ mod tests {
     fn test_new_chat_message_request_serde() {
         let original = NewChatMessageRequest {
             content: "Hello AI".to_string(),
-            model: Some("gemini-2.5-flash-preview-05-20".to_string()),
+            model: Some("gemini-2.5-flash".to_string()),
         };
 
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
@@ -2300,7 +2316,7 @@ mod tests {
     fn test_generate_response_payload_serde() {
         let original = GenerateResponsePayload {
             content: "Hello human".to_string(),
-            model: Some("gemini-2.5-flash-preview-05-20".to_string()),
+            model: Some("gemini-2.5-flash".to_string()),
         };
 
         let serialized = serde_json::to_string(&original).expect("Serialization failed");

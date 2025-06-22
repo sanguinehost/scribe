@@ -118,6 +118,7 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let session = conn_pool_obj
@@ -172,11 +173,11 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         .set_response(Ok(genai::chat::ChatResponse {
             model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-05-20",
+                "gemini-2.5-flash",
             ),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-05-20",
+                "gemini-2.5-flash",
             ),
             contents: vec![genai::chat::MessageContent::Text(
                 mock_suggestions.to_string(),
@@ -346,6 +347,7 @@ async fn create_test_chat_session_for_suggested_actions(
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     pool.get()
@@ -468,11 +470,11 @@ async fn run_suggested_actions_logic(
         .set_response(Ok(genai::chat::ChatResponse {
             model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-05-20", // Consistent model
+                "gemini-2.5-flash", // Consistent model
             ),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-05-20",
+                "gemini-2.5-flash",
             ),
             contents: vec![genai::chat::MessageContent::Text(
                 mock_suggestions.to_string(),
@@ -711,11 +713,11 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
         .set_response(Ok(genai::chat::ChatResponse {
             model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-05-20",
+                "gemini-2.5-flash",
             ),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash-preview-05-20",
+                "gemini-2.5-flash",
             ),
             contents: vec![genai::chat::MessageContent::Text(
                 malformed_json_string.to_string(),

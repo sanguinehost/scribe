@@ -9,6 +9,8 @@
 		SidebarMenu
 	} from './ui/sidebar';
 	import ChevronLeft from './icons/chevron-left.svelte';
+	import { Users, UserCircle, BookOpen, ScrollText } from 'lucide-svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import SidebarUserNav from './sidebar-user-nav.svelte';
@@ -16,11 +18,13 @@
 	import CharacterUploader from './CharacterUploader.svelte'; // Import the uploader component
 	import PersonaList from './PersonaList.svelte'; // Import the PersonaList component
 	import LorebooksSidebarList from './LorebooksSidebarList.svelte'; // Import the LorebooksSidebarList component
+	import ChroniclesSidebarList from './ChroniclesSidebarList.svelte'; // Import the ChroniclesSidebarList component
 	import SettingsIcon from './icons/settings.svelte'; // Import the new SettingsIcon
 	import { SettingsStore } from '$lib/stores/settings.svelte'; // Import SettingsStore
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SelectedLorebookStore } from '$lib/stores/selected-lorebook.svelte';
+	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
 	import { SidebarStore } from '$lib/stores/sidebar.svelte';
 	import { getCurrentUser, getIsAuthenticated } from '$lib/auth.svelte';
 
@@ -29,11 +33,13 @@
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 	const selectedLorebookStore = SelectedLorebookStore.fromContext();
+	const selectedChronicleStore = SelectedChronicleStore.fromContext();
 	const sidebarStore = SidebarStore.fromContext();
 	let isUploaderOpen = $state(false); // State for dialog visibility (Changed to $state)
 	let characterListComp = $state<CharacterList | undefined>(undefined); // Reference to CharacterList component instance
 	let personaListComp = $state<PersonaList | undefined>(undefined); // Reference to PersonaList component instance
 	let lorebookListComp = $state<LorebooksSidebarList | undefined>(undefined); // Reference to LorebooksSidebarList component instance
+	let chronicleListComp = $state<ChroniclesSidebarList | undefined>(undefined); // Reference to ChroniclesSidebarList component instance
 
 	// Character handlers
 	async function handleSelectCharacter(event: CustomEvent<{ characterId: string }>) {
@@ -121,7 +127,7 @@
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
 
-	function switchTab(tab: 'characters' | 'personas' | 'lorebooks') {
+	function switchTab(tab: 'characters' | 'personas' | 'lorebooks' | 'chronicles') {
 		sidebarStore.setActiveTab(tab);
 		// Don't clear selections when switching tabs - let users browse sidebar
 		// while maintaining their current view (character overview, chat, etc.)
@@ -136,6 +142,7 @@
 		selectedCharacterStore.clear();
 		selectedPersonaStore.clear();
 		selectedLorebookStore.clear();
+		selectedChronicleStore.clear();
 		
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
@@ -182,6 +189,69 @@
 
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
+
+	// Chronicle handlers
+	async function handleSelectChronicle(event: CustomEvent<{ chronicleId: string }>) {
+		const chronicleId = event.detail.chronicleId;
+		console.log('Chronicle selected:', chronicleId);
+
+		// Clear any selected character, persona, and lorebook, then set selected chronicle
+		selectedCharacterStore.clear();
+		selectedPersonaStore.clear();
+		selectedLorebookStore.clear();
+		selectedChronicleStore.selectChronicle(chronicleId);
+
+		// Hide settings if visible to show chronicle detail immediately
+		if (settingsStore.isVisible) {
+			settingsStore.hide();
+		}
+
+		// Only navigate if we're not on the home page already
+		// This prevents unnecessary page reloads that break transitions
+		if ($page.url.pathname !== '/') {
+			goto('/', { replaceState: true });
+		}
+		context.setOpenMobile(false); // Close mobile sidebar on selection
+	}
+
+	function handleViewAllChronicles() {
+		console.log('View all chronicles triggered');
+
+		// Clear any selected character, persona, and lorebook, then show chronicle list
+		selectedCharacterStore.clear();
+		selectedPersonaStore.clear();
+		selectedLorebookStore.clear();
+		selectedChronicleStore.showList();
+
+		// Hide settings if visible to show chronicle list immediately
+		if (settingsStore.isVisible) {
+			settingsStore.hide();
+		}
+
+		// Only navigate if we're not on the home page already
+		// This prevents unnecessary page reloads that break transitions
+		if ($page.url.pathname !== '/') {
+			goto('/', { replaceState: true });
+		}
+		context.setOpenMobile(false); // Close mobile sidebar
+	}
+
+	function handleCreateChronicle() {
+		console.log('Create chronicle triggered');
+
+		// Clear any selections and set chronicle store to creating mode
+		selectedCharacterStore.clear();
+		selectedPersonaStore.clear();
+		selectedLorebookStore.clear();
+		selectedChronicleStore.showCreating();
+
+		// Only navigate if we're not on the home page already
+		// This prevents unnecessary page reloads that break transitions
+		if ($page.url.pathname !== '/') {
+			goto('/', { replaceState: true });
+		}
+		context.setOpenMobile(false); // Close mobile sidebar
+	}
 </script>
 
 <Sidebar class="group-data-[side=left]:border-r-0">
@@ -195,6 +265,7 @@
 						selectedCharacterStore.clear(); // Clear any selected character
 						selectedPersonaStore.clear(); // Clear any selected persona
 						selectedLorebookStore.clear(); // Clear any selected lorebook
+						selectedChronicleStore.clear(); // Clear any selected chronicle
 					}}
 					class="flex flex-row items-center gap-3"
 				>
@@ -216,35 +287,69 @@
 	</SidebarHeader>
 	<SidebarContent class="p-0">
 		<!-- Tab Navigation -->
-		<div class="flex border-b">
-			<button
-				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab ===
-				'characters'
-					? 'border-b-2 border-primary bg-background text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => switchTab('characters')}
-			>
-				Characters
-			</button>
-			<button
-				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab ===
-				'personas'
-					? 'border-b-2 border-primary bg-background text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => switchTab('personas')}
-			>
-				Personas
-			</button>
-			<button
-				class="flex-1 px-3 py-2 text-xs font-medium transition-colors {sidebarStore.activeTab ===
-				'lorebooks'
-					? 'border-b-2 border-primary bg-background text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => switchTab('lorebooks')}
-			>
-				Lorebooks
-			</button>
-		</div>
+		<Tooltip.Provider>
+			<div class="flex border-b min-w-0">
+				<Tooltip.Root>
+					<Tooltip.Trigger 
+						class="flex-1 flex items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+						'characters'
+							? 'border-b-2 border-primary bg-background text-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => switchTab('characters')}
+					>
+						<Users class="h-4 w-4" />
+					</Tooltip.Trigger>
+					<Tooltip.Content side="bottom">
+						<p>Characters</p>
+					</Tooltip.Content>
+				</Tooltip.Root>
+
+				<Tooltip.Root>
+					<Tooltip.Trigger 
+						class="flex-1 flex items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+						'personas'
+							? 'border-b-2 border-primary bg-background text-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => switchTab('personas')}
+					>
+						<UserCircle class="h-4 w-4" />
+					</Tooltip.Trigger>
+					<Tooltip.Content side="bottom">
+						<p>Personas</p>
+					</Tooltip.Content>
+				</Tooltip.Root>
+
+				<Tooltip.Root>
+					<Tooltip.Trigger 
+						class="flex-1 flex items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+						'lorebooks'
+							? 'border-b-2 border-primary bg-background text-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => switchTab('lorebooks')}
+					>
+						<BookOpen class="h-4 w-4" />
+					</Tooltip.Trigger>
+					<Tooltip.Content side="bottom">
+						<p>Lorebooks</p>
+					</Tooltip.Content>
+				</Tooltip.Root>
+
+				<Tooltip.Root>
+					<Tooltip.Trigger 
+						class="flex-1 flex items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+						'chronicles'
+							? 'border-b-2 border-primary bg-background text-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => switchTab('chronicles')}
+					>
+						<ScrollText class="h-4 w-4" />
+					</Tooltip.Trigger>
+					<Tooltip.Content side="bottom">
+						<p>Chronicles</p>
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</div>
+		</Tooltip.Provider>
 
 		<!-- Tab Content - Keep all components mounted but show/hide them to prevent re-initialization -->
 		<div class="relative h-full">
@@ -279,6 +384,18 @@
 					bind:this={lorebookListComp}
 					on:selectLorebook={handleSelectLorebook}
 					on:viewAllLorebooks={handleViewAllLorebooks}
+				/>
+			</div>
+			<div
+				class="tab-content"
+				class:active={sidebarStore.activeTab === 'chronicles'}
+				class:inactive={sidebarStore.activeTab !== 'chronicles'}
+			>
+				<ChroniclesSidebarList
+					bind:this={chronicleListComp}
+					on:selectChronicle={handleSelectChronicle}
+					on:viewAllChronicles={handleViewAllChronicles}
+					on:createChronicle={handleCreateChronicle}
 				/>
 			</div>
 		</div>

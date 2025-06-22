@@ -130,7 +130,7 @@ async fn create_test_character_and_session(
                 updated_at: Utc::now(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "gemini-2.5-flash-preview-05-20".to_string(),
+                model_name: "gemini-2.5-flash".to_string(),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -146,6 +146,7 @@ async fn create_test_character_and_session(
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -416,6 +417,7 @@ async fn test_first_mes_included_in_history() {
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

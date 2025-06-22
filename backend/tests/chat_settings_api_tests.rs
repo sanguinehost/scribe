@@ -207,6 +207,7 @@ async fn create_test_chat_session(
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let chat_session = conn_pool
@@ -323,6 +324,7 @@ async fn setup_chat_settings_test_env(
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
+            player_chronicle_id: None,
         },
     };
 
@@ -375,7 +377,7 @@ async fn get_chat_settings_success() {
                     chat_sessions::top_k.eq(Some(40_i32)),
                     chat_sessions::top_p.eq(Some(BigDecimal::from_str("0.95").unwrap())),
                     chat_sessions::seed.eq(Some(12345_i32)),
-                    chat_sessions::model_name.eq("gemini-2.5-flash-preview-05-20".to_string()),
+                    chat_sessions::model_name.eq("gemini-2.5-flash".to_string()),
                     chat_sessions::history_management_strategy.eq("truncate_summary".to_string()),
                     chat_sessions::history_management_limit.eq(20),
                     chat_sessions::gemini_thinking_budget.eq(Some(30_i32)),
@@ -423,7 +425,7 @@ async fn get_chat_settings_success() {
     assert_eq!(settings_resp.seed, Some(12345_i32));
     assert_eq!(
         settings_resp.model_name,
-        "gemini-2.5-flash-preview-05-20".to_string()
+        "gemini-2.5-flash".to_string()
     );
     assert_eq!(
         settings_resp.history_management_strategy,
@@ -532,6 +534,7 @@ async fn get_chat_settings_defaults() {
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
+            player_chronicle_id: None,
         }),
     )
     .await
@@ -595,7 +598,7 @@ async fn get_chat_settings_defaults() {
     assert_eq!(settings_resp.top_p, None);
     assert_eq!(settings_resp.seed, None);
 
-    assert_eq!(settings_resp.model_name, "gemini-2.5-flash-preview-05-20");
+    assert_eq!(settings_resp.model_name, "gemini-2.5-flash");
     assert_eq!(settings_resp.history_management_strategy, "message_window");
     assert_eq!(settings_resp.history_management_limit, 20);
 
@@ -792,6 +795,7 @@ async fn setup_update_test_env(
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
     let session: DbChat = test_app
         .db_pool
@@ -841,6 +845,7 @@ async fn update_chat_settings_success_full() {
         history_management_limit: Some(100),
         gemini_thinking_budget: Some(60_i32),
         gemini_enable_code_execution: Some(false),
+        chronicle_id: None,
     };
 
     let request = Request::builder()
@@ -930,6 +935,7 @@ async fn update_chat_settings_success_partial() {
         history_management_limit: None,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
+        chronicle_id: None,
     };
 
     let request = Request::builder()
@@ -1040,6 +1046,7 @@ async fn update_chat_settings_forbidden() {
         model_name: None,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
+        chronicle_id: None,
     };
 
     // User2 tries to update user1's chat session settings
@@ -1105,6 +1112,7 @@ async fn update_chat_settings_not_found() {
         history_management_limit: None,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
+        chronicle_id: None,
     };
 
     let request = Request::builder()
@@ -1157,6 +1165,7 @@ async fn update_chat_settings_unauthorized() {
         history_management_limit: None,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
+        chronicle_id: None,
     };
 
     let request = Request::builder()
@@ -1238,7 +1247,7 @@ async fn debug_system_prompt_encryption_decryption() {
                 updated_at: Utc::now(),
                 history_management_strategy: "message_window".to_string(),
                 history_management_limit: 20,
-                model_name: "gemini-2.5-flash-preview-05-20".to_string(),
+                model_name: "gemini-2.5-flash".to_string(),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -1254,6 +1263,7 @@ async fn debug_system_prompt_encryption_decryption() {
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
 
             diesel::insert_into(chat_sessions::table)
@@ -1284,6 +1294,7 @@ async fn debug_system_prompt_encryption_decryption() {
         history_management_limit: None,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
+        chronicle_id: None,
     };
 
     println!(
@@ -1465,7 +1476,7 @@ async fn test_actual_api_route_for_system_prompt() {
                 updated_at: Utc::now(),
                 history_management_strategy: "message_window".to_string(),
                 history_management_limit: 20,
-                model_name: "gemini-2.5-flash-preview-05-20".to_string(),
+                model_name: "gemini-2.5-flash".to_string(),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -1481,6 +1492,7 @@ async fn test_actual_api_route_for_system_prompt() {
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
 
             diesel::insert_into(chat_sessions::table)
@@ -1509,6 +1521,7 @@ async fn test_actual_api_route_for_system_prompt() {
         history_management_limit: None,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
+        chronicle_id: None,
     };
 
     println!(
@@ -1587,4 +1600,139 @@ async fn test_actual_api_route_for_system_prompt() {
         system_prompt_text,
         "GET response system prompt should match original text"
     );
+}
+
+#[tokio::test]
+async fn test_chat_chronicle_association() {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let (_user, auth_cookie, _character, session) = setup_update_test_env(
+        &test_app,
+        "chronicle_assoc_user",
+        "Chronicle Association Test Char",
+        "test_chat_chronicle_association",
+        "initial-model",
+        "token_limit",
+        10,
+    )
+    .await
+    .expect("Failed to setup test environment");
+
+    // First, create a chronicle
+    let chronicle_payload = serde_json::json!({
+        "name": "Test Chronicle",
+        "description": "A test chronicle for association testing"
+    });
+
+    let create_chronicle_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/chronicles")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, auth_cookie.clone())
+        .body(Body::from(serde_json::to_string(&chronicle_payload).unwrap()))
+        .unwrap();
+
+    let chronicle_response = test_app
+        .router
+        .clone()
+        .oneshot(create_chronicle_request)
+        .await
+        .unwrap();
+    assert_eq!(chronicle_response.status(), StatusCode::CREATED);
+
+    let chronicle_body = chronicle_response.into_body().collect().await.unwrap().to_bytes();
+    let chronicle_data: serde_json::Value = serde_json::from_slice(&chronicle_body).unwrap();
+    let chronicle_id = chronicle_data["id"].as_str().unwrap();
+    let chronicle_uuid = Uuid::parse_str(chronicle_id).unwrap();
+
+    // Now update the chat session to associate it with the chronicle
+    let update_data = UpdateChatSettingsRequest {
+        system_prompt: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        model_name: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        chronicle_id: Some(chronicle_uuid),
+    };
+
+    let update_request = Request::builder()
+        .method(Method::PUT)
+        .uri(format!("/api/chat/{}/settings", session.id))
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, auth_cookie.clone())
+        .body(Body::from(serde_json::to_string(&update_data).unwrap()))
+        .unwrap();
+
+    let update_response = test_app.router.clone().oneshot(update_request).await.unwrap();
+    assert_eq!(update_response.status(), StatusCode::OK);
+
+    let update_body = update_response.into_body().collect().await.unwrap().to_bytes();
+    let settings_resp: ChatSettingsResponse =
+        serde_json::from_slice(&update_body).expect("Failed to deserialize settings response");
+
+    // Verify the chronicle association was saved
+    assert_eq!(settings_resp.chronicle_id, Some(chronicle_uuid));
+
+    // Now get the settings again to verify persistence
+    let get_request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/api/chat/{}/settings", session.id))
+        .header(header::COOKIE, auth_cookie.clone())
+        .body(Body::empty())
+        .unwrap();
+
+    let get_response = test_app.router.clone().oneshot(get_request).await.unwrap();
+    assert_eq!(get_response.status(), StatusCode::OK);
+
+    let get_body = get_response.into_body().collect().await.unwrap().to_bytes();
+    let get_settings_resp: ChatSettingsResponse =
+        serde_json::from_slice(&get_body).expect("Failed to deserialize get settings response");
+
+    // Verify the chronicle association persisted
+    assert_eq!(get_settings_resp.chronicle_id, Some(chronicle_uuid));
+
+    // Test removing the association by setting chronicle_id to None
+    let remove_update_data = UpdateChatSettingsRequest {
+        system_prompt: None,
+        temperature: None,
+        max_output_tokens: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        top_k: None,
+        top_p: None,
+        seed: None,
+        stop_sequences: None,
+        model_name: None,
+        history_management_strategy: None,
+        history_management_limit: None,
+        gemini_thinking_budget: None,
+        gemini_enable_code_execution: None,
+        chronicle_id: None, // This should clear the association
+    };
+
+    let remove_request = Request::builder()
+        .method(Method::PUT)
+        .uri(format!("/api/chat/{}/settings", session.id))
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, auth_cookie.clone())
+        .body(Body::from(serde_json::to_string(&remove_update_data).unwrap()))
+        .unwrap();
+
+    let remove_response = test_app.router.clone().oneshot(remove_request).await.unwrap();
+    assert_eq!(remove_response.status(), StatusCode::OK);
+
+    let remove_body = remove_response.into_body().collect().await.unwrap().to_bytes();
+    let remove_settings_resp: ChatSettingsResponse =
+        serde_json::from_slice(&remove_body).expect("Failed to deserialize remove settings response");
+
+    // Verify the chronicle association was removed - should be None
+    assert_eq!(remove_settings_resp.chronicle_id, None);
 }

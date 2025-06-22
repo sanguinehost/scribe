@@ -29,6 +29,7 @@ use scribe_backend::routes::{
     characters::characters_router, // Use the router function import
     chat::chat_routes,
     chats,
+    chronicles,
     documents::document_routes,
     lorebook_routes::lorebook_routes, // Added for lorebook routes
     user_persona_routes::user_personas_router, // Added for user persona routes
@@ -423,6 +424,7 @@ fn build_router(
         ) // 10MB limit for character uploads
         .nest("/chat", chat_routes(app_state.clone()))
         .nest("/chats", chats::chat_routes())
+        .nest("/chronicles", chronicles::create_chronicles_router(app_state.clone()))
         .nest("/documents", document_routes())
         .nest("/personas", user_personas_router(app_state.clone()))
         .nest("/user-settings", user_settings_routes(app_state.clone()))

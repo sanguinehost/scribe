@@ -101,6 +101,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
     let session_a: Chat = test_app
         .db_pool

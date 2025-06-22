@@ -232,6 +232,7 @@ async fn create_test_chat_session(
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
 
             diesel::insert_into(schema::chat_sessions::table)
@@ -350,8 +351,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
     // Mock the AI response
     let mock_ai_content = "Response to trigger embedding.";
     let mock_response = ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         contents: vec![MessageContent::Text(mock_ai_content.to_string())],
         reasoning_content: None,
         usage: Usage::default(),
@@ -747,6 +748,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1132,6 +1134,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1157,8 +1160,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     let mock_ai_content = "Response without RAG context.";
     let mock_response = ChatResponse {
         /* ... */ contents: vec![MessageContent::Text(mock_ai_content.to_string())],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
         usage: Usage::default(),
     };
@@ -1488,6 +1491,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1503,8 +1507,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
     let mock_ai_content = "Response to trigger embedding.";
     let mock_response = ChatResponse {
         /* ... */ contents: vec![MessageContent::Text(mock_ai_content.to_string())],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
         usage: Usage::default(),
     };
@@ -1623,8 +1627,8 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
         usage: genai::chat::Usage::default(),
     };
@@ -1650,7 +1654,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
             role: "user".to_string(),
             content: user_query.clone(),
         }],
-        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
+        model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
     };
 
@@ -1760,8 +1764,8 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
         usage: genai::chat::Usage::default(),
     };
@@ -1787,7 +1791,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
             role: "user".to_string(),
             content: user_query_empty_hist.clone(),
         }],
-        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
+        model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
     };
 
@@ -1889,8 +1893,8 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
         usage: genai::chat::Usage::default(),
     };
@@ -1913,7 +1917,7 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
             role: "user".to_string(),
             content: user_query_no_chunks.clone(),
         }],
-        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
+        model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
     };
 
@@ -2014,8 +2018,8 @@ async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
         usage: genai::chat::Usage::default(),
     };
@@ -2056,8 +2060,8 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
         contents: vec![MessageContent::Text(
             "Mock AI response to RAG query".to_string(),
         )],
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-preview-05-20"),
+        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
         usage: genai::chat::Usage::default(),
     };
@@ -2081,7 +2085,7 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
             role: "user".to_string(),
             content: "Another query".to_string(),
         }],
-        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
+        model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
     };
 

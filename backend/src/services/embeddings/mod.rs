@@ -11,7 +11,7 @@ pub mod tests;
 
 // Re-export the main types and traits for easy access
 pub use metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
-pub use retrieval::{RetrievedChunk, RetrievedMetadata};
+pub use retrieval::{RetrievedChunk, RetrievedMetadata, ChronicleEventMetadata};
 pub use service::EmbeddingPipelineService;
 pub use trait_def::EmbeddingPipelineServiceTrait;
 pub use utils::{

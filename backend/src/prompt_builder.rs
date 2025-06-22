@@ -693,55 +693,93 @@ async fn build_final_prompt_strings(
     // Prepend RAG context to the current user message
     let mut rag_context_for_user_message = String::new();
     if !calculation.rag_items_with_tokens.is_empty() {
-        // Start with lorebook_entries XML tag as promised in system prompt
-        rag_context_for_user_message.push_str("<lorebook_entries>\n");
-
-        for (rag_item, _) in &calculation.rag_items_with_tokens {
+        // Separate chronicle events and other RAG items
+        let mut chronicle_events = Vec::new();
+        let mut other_rag_items = Vec::new();
+        
+        for (rag_item, tokens) in &calculation.rag_items_with_tokens {
             match &rag_item.metadata {
-                crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
-                    writeln!(
-                        rag_context_for_user_message,
-                        "<chat_history speaker=\"{}\">{}</chat_history>",
-                        escape_xml(&chat_meta.speaker),
-                        escape_xml(rag_item.text.trim())
-                    )
-                    .unwrap();
+                crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
+                    chronicle_events.push((rag_item, tokens));
                 }
-                crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) => {
-                    write!(rag_context_for_user_message, "<lorebook_entry").unwrap();
-
-                    if let Some(title) = &lorebook_meta.entry_title {
-                        write!(
-                            rag_context_for_user_message,
-                            " title=\"{}\"",
-                            escape_xml(title)
-                        )
-                        .unwrap();
-                    }
-
-                    if let Some(keywords) = &lorebook_meta.keywords {
-                        if !keywords.is_empty() {
-                            let keywords_str = keywords.join(", ");
-                            write!(
-                                rag_context_for_user_message,
-                                " keywords=\"{}\"",
-                                escape_xml(&keywords_str)
-                            )
-                            .unwrap();
-                        }
-                    }
-
+                _ => {
+                    other_rag_items.push((rag_item, tokens));
+                }
+            }
+        }
+        
+        // Add chronicle events in a long_term_memory section
+        if !chronicle_events.is_empty() {
+            rag_context_for_user_message.push_str("<long_term_memory>\n");
+            for (rag_item, _) in &chronicle_events {
+                if let crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_meta) = &rag_item.metadata {
                     writeln!(
                         rag_context_for_user_message,
-                        ">{}</lorebook_entry>",
+                        "<chronicle_event type=\"{}\" timestamp=\"{}\">{}</chronicle_event>",
+                        escape_xml(&chronicle_meta.event_type),
+                        chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
                         escape_xml(rag_item.text.trim())
                     )
                     .unwrap();
                 }
             }
+            rag_context_for_user_message.push_str("</long_term_memory>\n\n");
         }
+        
+        // Add regular RAG items (lorebooks and chat history) in lorebook_entries section
+        if !other_rag_items.is_empty() {
+            rag_context_for_user_message.push_str("<lorebook_entries>\n");
+            
+            for (rag_item, _) in &other_rag_items {
+                match &rag_item.metadata {
+                    crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
+                        writeln!(
+                            rag_context_for_user_message,
+                            "<chat_history speaker=\"{}\">{}</chat_history>",
+                            escape_xml(&chat_meta.speaker),
+                            escape_xml(rag_item.text.trim())
+                        )
+                        .unwrap();
+                    }
+                    crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) => {
+                        write!(rag_context_for_user_message, "<lorebook_entry").unwrap();
 
-        rag_context_for_user_message.push_str("</lorebook_entries>\n\n");
+                        if let Some(title) = &lorebook_meta.entry_title {
+                            write!(
+                                rag_context_for_user_message,
+                                " title=\"{}\"",
+                                escape_xml(title)
+                            )
+                            .unwrap();
+                        }
+
+                        if let Some(keywords) = &lorebook_meta.keywords {
+                            if !keywords.is_empty() {
+                                let keywords_str = keywords.join(", ");
+                                write!(
+                                    rag_context_for_user_message,
+                                    " keywords=\"{}\"",
+                                    escape_xml(&keywords_str)
+                                )
+                                .unwrap();
+                            }
+                        }
+
+                        writeln!(
+                            rag_context_for_user_message,
+                            ">{}</lorebook_entry>",
+                            escape_xml(rag_item.text.trim())
+                        )
+                        .unwrap();
+                    }
+                    crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
+                        // Already handled above
+                    }
+                }
+            }
+            
+            rag_context_for_user_message.push_str("</lorebook_entries>\n\n");
+        }
     }
 
     // Combine RAG context with the current user message

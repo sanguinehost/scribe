@@ -5,6 +5,7 @@
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SelectedLorebookStore } from '$lib/stores/selected-lorebook.svelte';
+	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { SidebarStore } from '$lib/stores/sidebar.svelte';
 	import { toast } from 'svelte-sonner';
@@ -24,6 +25,9 @@
 
 	const selectedLorebookStore = new SelectedLorebookStore();
 	selectedLorebookStore.setContext();
+
+	const selectedChronicleStore = new SelectedChronicleStore();
+	selectedChronicleStore.setInContext();
 
 	const settingsStore = SettingsStore.toContext(new SettingsStore());
 

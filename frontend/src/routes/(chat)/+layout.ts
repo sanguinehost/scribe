@@ -7,6 +7,8 @@ export async function load({ data, fetch }) {
 	let chatsError = false; // Flag to indicate fetch failure
 	if (user) {
 		try {
+			// Initialize API client with server-side fetch
+			apiClient.setFetch(fetch);
 			const result = await apiClient.getChats();
 
 			if (result.isOk()) {

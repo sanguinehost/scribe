@@ -161,7 +161,7 @@ fn default_tokenizer_model_path() -> String {
     model_path.to_string_lossy().into_owned()
 } // Path relative to crate root (backend/)
 fn default_token_counter_default_model() -> String {
-    "gemini-2.5-flash-preview-05-20".to_string()
+    "gemini-2.5-flash".to_string()
 } // Added
 
 // Defaults for context token limits
