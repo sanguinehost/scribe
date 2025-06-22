@@ -217,6 +217,7 @@ async fn generate_chat_response_streaming_forbidden() {
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
+                player_chronicle_id: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

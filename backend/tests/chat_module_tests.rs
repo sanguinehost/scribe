@@ -431,6 +431,7 @@ mod get_session_data_for_generation_tests {
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
+            player_chronicle_id: None,
         };
 
         conn.interact(move |conn_insert| {
@@ -1073,6 +1074,7 @@ mod get_session_data_for_generation_tests {
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
+            player_chronicle_id: None,
         };
         conn.interact(move |conn_insert| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1338,6 +1340,7 @@ mod get_session_data_for_generation_tests {
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
+            player_chronicle_id: None,
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1720,6 +1723,7 @@ mod get_session_data_for_generation_tests {
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
+            player_chronicle_id: None,
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)

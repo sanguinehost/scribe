@@ -273,6 +273,26 @@ diesel::table! {
         title_nonce -> Nullable<Bytea>,
         stop_sequences -> Nullable<Array<Nullable<Text>>>,
         chat_mode -> Varchar,
+        player_chronicle_id -> Nullable<Uuid>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    chronicle_events (id) {
+        id -> Uuid,
+        chronicle_id -> Uuid,
+        user_id -> Uuid,
+        #[max_length = 100]
+        event_type -> Varchar,
+        summary -> Text,
+        #[max_length = 50]
+        source -> Varchar,
+        event_data -> Nullable<Jsonb>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -393,6 +413,21 @@ diesel::table! {
         chat_id -> Uuid,
         message_id -> Uuid,
         is_upvoted -> Bool,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    player_chronicles (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        #[max_length = 255]
+        name -> Varchar,
+        description -> Nullable<Text>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -533,8 +568,11 @@ diesel::joinable!(chat_messages -> users (user_id));
 diesel::joinable!(chat_session_lorebooks -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_session_lorebooks -> lorebooks (lorebook_id));
 diesel::joinable!(chat_session_lorebooks -> users (user_id));
+diesel::joinable!(chat_sessions -> player_chronicles (player_chronicle_id));
 diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
+diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
+diesel::joinable!(chronicle_events -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
 diesel::joinable!(lorebook_entries -> users (user_id));
@@ -545,6 +583,7 @@ diesel::joinable!(old_documents -> users (user_id));
 diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
 diesel::joinable!(old_votes -> chat_sessions (chat_id));
+diesel::joinable!(player_chronicles -> users (user_id));
 diesel::joinable!(user_assets -> user_personas (persona_id));
 diesel::joinable!(user_assets -> users (user_id));
 diesel::joinable!(user_settings -> users (user_id));
@@ -558,6 +597,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_messages,
     chat_session_lorebooks,
     chat_sessions,
+    chronicle_events,
     email_verification_tokens,
     lorebook_entries,
     lorebooks,
@@ -565,6 +605,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     old_documents,
     old_suggestions,
     old_votes,
+    player_chronicles,
     sessions,
     user_assets,
     user_personas,

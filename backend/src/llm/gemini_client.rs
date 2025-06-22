@@ -258,7 +258,7 @@ mod tests {
         let client_wrapper =
             build_gemini_client(&api_key, base_url).expect("Failed to build Gemini client wrapper");
         let user_message = "Test Wrapper: Say hello!".to_string();
-        let model_name_for_test = "gemini-2.5-flash-preview-05-20";
+        let model_name_for_test = "gemini-2.5-flash";
         let result =
             generate_simple_response(&*client_wrapper, user_message, model_name_for_test).await;
         match result {
@@ -276,7 +276,7 @@ mod tests {
         let client_wrapper =
             build_gemini_client(&api_key, base_url).expect("Failed to build Gemini client wrapper");
         let user_message = "Test Stream Wrapper: Say hello stream!".to_string();
-        let model_name_for_test = "gemini-2.5-flash-preview-05-20";
+        let model_name_for_test = "gemini-2.5-flash";
         let chat_request = ChatRequest::from_user(user_message);
         let stream_result = client_wrapper
             .stream_chat(model_name_for_test, chat_request, None)
@@ -318,7 +318,7 @@ mod tests {
             build_gemini_client(&api_key, base_url).expect("Failed to build Gemini client wrapper");
         let models_to_test = vec![
             "gemini-2.5-pro-preview-06-05",
-            "gemini-2.5-flash-preview-05-20",
+            "gemini-2.5-flash",
         ];
         let max_retries = 3; // Define a maximum number of retries
 

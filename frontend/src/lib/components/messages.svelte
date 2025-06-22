@@ -6,6 +6,9 @@
 	import PersonaEditor from './messages/persona-editor.svelte';
 	import LorebookOverview from './messages/lorebook-overview.svelte';
 	import LorebookDetailOverview from './messages/lorebook-detail-overview.svelte';
+	import ChronicleOverview from './messages/chronicle-overview.svelte';
+	import ChroniclesListOverview from './messages/chronicles-list-overview.svelte';
+	import ChronicleCreation from './messages/chronicle-creation.svelte';
 	import Settings from './settings/Settings.svelte';
 	import { createEventDispatcher, onMount } from 'svelte';
 	import PreviewMessage from './messages/preview-message.svelte';
@@ -14,6 +17,7 @@
 	import { getLock } from '$lib/hooks/lock';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SelectedLorebookStore } from '$lib/stores/selected-lorebook.svelte';
+	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { fly, fade } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -57,6 +61,7 @@
 	const dispatch = createEventDispatcher();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 	const selectedLorebookStore = SelectedLorebookStore.fromContext();
+	const selectedChronicleStore = SelectedChronicleStore.fromContext();
 	const settingsStore = SettingsStore.fromContext();
 
 	// State for managing alternate greetings
@@ -246,21 +251,74 @@
 				</div>
 				<div
 					class="main-content-view"
-					class:active={selectedPersonaStore.viewMode === 'creating'}
-					class:inactive={selectedPersonaStore.viewMode !== 'creating'}
+					class:active={selectedChronicleStore.selectedChronicleId &&
+						!selectedCharacterId}
+					class:inactive={!selectedChronicleStore.selectedChronicleId ||
+						selectedCharacterId}
 				>
-					{#if selectedPersonaStore.viewMode === 'creating'}
+					{#if selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
+						<ChronicleOverview chronicleId={selectedChronicleStore.selectedChronicleId} />
+					{/if}
+				</div>
+				<div
+					class="main-content-view"
+					class:active={selectedChronicleStore.isShowingList &&
+						!selectedChronicleStore.selectedChronicleId &&
+						!selectedCharacterId}
+					class:inactive={!selectedChronicleStore.isShowingList ||
+						selectedChronicleStore.selectedChronicleId ||
+						selectedCharacterId}
+				>
+					{#if selectedChronicleStore.isShowingList && !selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
+						<ChroniclesListOverview />
+					{/if}
+				</div>
+				<div
+					class="main-content-view"
+					class:active={selectedChronicleStore.isCreating &&
+						!selectedChronicleStore.selectedChronicleId &&
+						!selectedCharacterId}
+					class:inactive={!selectedChronicleStore.isCreating ||
+						selectedChronicleStore.selectedChronicleId ||
+						selectedCharacterId}
+				>
+					{#if selectedChronicleStore.isCreating && !selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
+						<ChronicleCreation />
+					{/if}
+				</div>
+				<div
+					class="main-content-view"
+					class:active={selectedPersonaStore.viewMode === 'creating' &&
+						!selectedCharacterId &&
+						!selectedChronicleStore.selectedChronicleId &&
+						!selectedChronicleStore.isShowingList &&
+						!selectedChronicleStore.isCreating}
+					class:inactive={selectedPersonaStore.viewMode !== 'creating' ||
+						selectedCharacterId ||
+						selectedChronicleStore.selectedChronicleId ||
+						selectedChronicleStore.isShowingList ||
+						selectedChronicleStore.isCreating}
+				>
+					{#if selectedPersonaStore.viewMode === 'creating' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating}
 						<PersonaEditor on:personaCreated={handlePersonaCreated} />
 					{/if}
 				</div>
 				<div
 					class="main-content-view"
 					class:active={selectedPersonaStore.personaId &&
-						selectedPersonaStore.viewMode !== 'creating'}
+						selectedPersonaStore.viewMode !== 'creating' &&
+						!selectedCharacterId &&
+						!selectedChronicleStore.selectedChronicleId &&
+						!selectedChronicleStore.isShowingList &&
+						!selectedChronicleStore.isCreating}
 					class:inactive={!selectedPersonaStore.personaId ||
-						selectedPersonaStore.viewMode === 'creating'}
+						selectedPersonaStore.viewMode === 'creating' ||
+						selectedCharacterId ||
+						selectedChronicleStore.selectedChronicleId ||
+						selectedChronicleStore.isShowingList ||
+						selectedChronicleStore.isCreating}
 				>
-					{#if selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					{#if selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating}
 						<PersonaOverview personaId={selectedPersonaStore.personaId} />
 					{/if}
 				</div>
@@ -269,15 +327,21 @@
 					class:active={selectedLorebookStore.viewMode === 'detail' &&
 						selectedLorebookStore.lorebookId &&
 						!selectedCharacterId &&
+						!selectedChronicleStore.selectedChronicleId &&
+						!selectedChronicleStore.isShowingList &&
+						!selectedChronicleStore.isCreating &&
 						!selectedPersonaStore.personaId &&
 						selectedPersonaStore.viewMode !== 'creating'}
 					class:inactive={selectedLorebookStore.viewMode !== 'detail' ||
 						!selectedLorebookStore.lorebookId ||
 						selectedCharacterId ||
+						selectedChronicleStore.selectedChronicleId ||
+						selectedChronicleStore.isShowingList ||
+						selectedChronicleStore.isCreating ||
 						selectedPersonaStore.personaId ||
 						selectedPersonaStore.viewMode === 'creating'}
 				>
-					{#if selectedLorebookStore.viewMode === 'detail' && selectedLorebookStore.lorebookId && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					{#if selectedLorebookStore.viewMode === 'detail' && selectedLorebookStore.lorebookId && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
 						<LorebookDetailOverview lorebookId={selectedLorebookStore.lorebookId} />
 					{/if}
 				</div>
@@ -285,29 +349,41 @@
 					class="main-content-view"
 					class:active={selectedLorebookStore.viewMode === 'list' &&
 						!selectedCharacterId &&
+						!selectedChronicleStore.selectedChronicleId &&
+						!selectedChronicleStore.isShowingList &&
+						!selectedChronicleStore.isCreating &&
 						!selectedPersonaStore.personaId &&
 						selectedPersonaStore.viewMode !== 'creating'}
 					class:inactive={selectedLorebookStore.viewMode !== 'list' ||
 						selectedCharacterId ||
+						selectedChronicleStore.selectedChronicleId ||
+						selectedChronicleStore.isShowingList ||
+						selectedChronicleStore.isCreating ||
 						selectedPersonaStore.personaId ||
 						selectedPersonaStore.viewMode === 'creating'}
 				>
-					{#if selectedLorebookStore.viewMode === 'list' && !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					{#if selectedLorebookStore.viewMode === 'list' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
 						<LorebookOverview />
 					{/if}
 				</div>
 				<div
 					class="main-content-view"
 					class:active={!selectedCharacterId &&
+						!selectedChronicleStore.selectedChronicleId &&
+						!selectedChronicleStore.isShowingList &&
+						!selectedChronicleStore.isCreating &&
 						!selectedPersonaStore.personaId &&
 						selectedPersonaStore.viewMode !== 'creating' &&
 						selectedLorebookStore.viewMode === 'none'}
 					class:inactive={selectedCharacterId ||
+						selectedChronicleStore.selectedChronicleId ||
+						selectedChronicleStore.isShowingList ||
+						selectedChronicleStore.isCreating ||
 						selectedPersonaStore.personaId ||
 						selectedPersonaStore.viewMode === 'creating' ||
 						selectedLorebookStore.viewMode !== 'none'}
 				>
-					{#if !selectedCharacterId && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && selectedLorebookStore.viewMode === 'none'}
+					{#if !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && selectedLorebookStore.viewMode === 'none'}
 						<Overview />
 					{/if}
 				</div>

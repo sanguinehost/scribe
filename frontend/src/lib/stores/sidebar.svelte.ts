@@ -1,9 +1,9 @@
 import { getContext, setContext } from 'svelte';
 
 export class SidebarStore {
-	activeTab = $state<'characters' | 'personas' | 'lorebooks'>('characters');
+	activeTab = $state<'characters' | 'personas' | 'lorebooks' | 'chronicles'>('characters');
 
-	setActiveTab(tab: 'characters' | 'personas' | 'lorebooks') {
+	setActiveTab(tab: 'characters' | 'personas' | 'lorebooks' | 'chronicles') {
 		this.activeTab = tab;
 	}
 

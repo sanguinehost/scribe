@@ -25,13 +25,15 @@ use crate::{
         chat_override::ChatCharacterOverride,
         chats::DbInsertableChatMessage, // ChatMessage and MessageRole will be from super::types
         lorebooks::ChatSessionLorebook, // User is used by get_session_data_for_generation
+        chronicle_event::{EventFilter, EventOrderBy}, // For chronicle event retrieval
     },
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::{
-        embeddings::RetrievedChunk, // Corrected struct name
+        embeddings::{RetrievedChunk, ChronicleEventMetadata}, // For RAG chunks and chronicle metadata
         // history_manager::HistoryManager, // Removed, manage_history is a free function
         hybrid_token_counter::CountingMode,
         tokenizer_service::TokenEstimate,
+        ChronicleService, // For chronicle event retrieval
     },
 };
 // Corrected QdrantClient import
@@ -65,6 +67,7 @@ type SessionDataTuple = (
     Vec<ChatCharacterOverride>,  // overrides
     Option<String>,              // effective_system_prompt
     Option<String>,              // raw_character_system_prompt
+    Option<Uuid>,                // player_chronicle_id
 );
 
 // These functions/types will be in sibling modules
@@ -226,6 +229,7 @@ pub async fn get_session_data_for_generation(
         character_overrides_for_first_mes, // Overrides for first_mes logic
         final_effective_system_prompt, // This is the system_prompt for the builder (persona/override only)
         raw_character_system_prompt,   // This is the raw system_prompt from the character itself
+        player_chronicle_id_from_session, // The chronicle ID for RAG retrieval
     ): SessionDataTuple = {
         let conn = state
             .pool
@@ -254,6 +258,7 @@ pub async fn get_session_data_for_generation(
                 model_n,
                 gem_think_budget,
                 gem_enable_code_exec,
+                player_chronicle_id,
             ) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
@@ -274,6 +279,7 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::model_name,
                     chat_sessions::gemini_thinking_budget,
                     chat_sessions::gemini_enable_code_execution,
+                    chat_sessions::player_chronicle_id,
                 ))
                 .first::<(
                     String,
@@ -292,6 +298,7 @@ pub async fn get_session_data_for_generation(
                     String,
                     Option<i32>,
                     Option<bool>,
+                    Option<Uuid>,
                 )>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
@@ -438,6 +445,7 @@ pub async fn get_session_data_for_generation(
                 overrides_db,
                 current_effective_system_prompt, // This is the one for the builder (persona/override only)
                 raw_character_system_prompt_from_db, // The new one
+                player_chronicle_id,
             ))
         })
         .await
@@ -671,6 +679,56 @@ pub async fn get_session_data_for_generation(
             }
         }
 
+        // Retrieve Chronicle Events (if chronicle is linked to this session)
+        if let Some(chronicle_id) = player_chronicle_id_from_session {
+            info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG.");
+            
+            // Create chronicle service
+            let chronicle_service = ChronicleService::new(state.pool.clone());
+            
+            // Create event filter for recent events
+            let event_filter = EventFilter {
+                event_type: None, // Get all event types
+                source: None, // Get events from all sources
+                limit: Some(10), // Limit to 10 most recent events for RAG
+                offset: Some(0),
+                order_by: Some(EventOrderBy::CreatedAtDesc), // Most recent first
+            };
+            
+            match chronicle_service.get_chronicle_events(user_id, chronicle_id, event_filter).await {
+                Ok(chronicle_events) => {
+                    info!(%session_id, num_chronicle_events = chronicle_events.len(), "Retrieved chronicle events.");
+                    
+                    // Convert chronicle events to RetrievedChunk format for RAG pipeline
+                    for event in chronicle_events {
+                        // Create a synthetic RetrievedChunk for the chronicle event
+                        let chunk_text = format!("[{}] {}", event.event_type, event.summary);
+                        
+                        // Create synthetic metadata for chronicle events
+                        let chronicle_metadata = ChronicleEventMetadata {
+                            event_id: event.id,
+                            event_type: event.event_type.clone(),
+                            chronicle_id: event.chronicle_id,
+                            created_at: event.created_at,
+                        };
+                        
+                        let chronicle_chunk = RetrievedChunk {
+                            text: chunk_text,
+                            score: 0.8, // Give chronicle events high relevance score
+                            metadata: crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_metadata),
+                        };
+                        
+                        combined_rag_candidates.push(chronicle_chunk);
+                    }
+                }
+                Err(e) => {
+                    warn!(%session_id, %chronicle_id, error = %e, "Failed to retrieve chronicle events for RAG. Proceeding without them.");
+                }
+            }
+        } else {
+            debug!(%session_id, "No chronicle linked to this session, skipping chronicle event retrieval.");
+        }
+
         // Retrieve Older Chat History Chunks (only if using database history)
         if frontend_history.is_none() {
             info!(%session_id, "Retrieving older chat history chunks for RAG (database mode).");
@@ -720,11 +778,11 @@ pub async fn get_session_data_for_generation(
                             warn!(target: "rag_debug", %session_id, lorebook_id = %lore_meta.lorebook_id, entry_id = %lore_meta.original_lorebook_entry_id, "Encountered unexpected Lorebook metadata when filtering older CHAT HISTORY RAG chunks. Keeping it by default.");
                             true
                         }
-                        // Consider adding other specific metadata types if they exist and need special handling
-                        // _ => {
-                        //     warn!(target: "rag_debug", %session_id, metadata = ?chunk.metadata, "Encountered unknown metadata type when filtering older CHAT HISTORY RAG chunks. Keeping it by default.");
-                        //     true
-                        // }
+                        crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_meta) => {
+                            // Chronicle events should not appear in older chat history chunks since they're retrieved separately
+                            warn!(target: "rag_debug", %session_id, event_id = %chronicle_meta.event_id, event_type = %chronicle_meta.event_type, "Encountered unexpected Chronicle metadata when filtering older CHAT HISTORY RAG chunks. Keeping it by default.");
+                            true
+                        }
                     }
                 });
                     debug!(target: "rag_debug", %session_id, %initial_older_chunk_count, final_older_chunk_count = older_chat_chunks.len(), "Older chat RAG chunks filtering complete.");

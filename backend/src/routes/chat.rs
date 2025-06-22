@@ -1179,7 +1179,7 @@ pub async fn generate_suggested_actions(
     }
 
     // Model for suggestions - can be from settings or fixed. Using fixed for now.
-    let model_for_suggestions = "gemini-2.5-flash-preview-05-20".to_string(); // Or use gen_model_name_from_service if desired
+    let model_for_suggestions = "gemini-2.5-flash".to_string(); // Or use gen_model_name_from_service if desired
 
     let (final_system_prompt_for_suggestions, final_messages_for_suggestions_llm) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {

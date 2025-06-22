@@ -10,7 +10,8 @@
 	import { Badge } from '../ui/badge';
 	import { Checkbox } from '../ui/checkbox';
 	import { toast } from 'svelte-sonner';
-	import type { ScribeChatSession, EnhancedChatSessionLorebookAssociation } from '$lib/types';
+	import type { ScribeChatSession, EnhancedChatSessionLorebookAssociation, PlayerChronicleWithCounts } from '$lib/types';
+	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { apiClient } from '$lib/api';
 	import type {
 		UserPersona,
@@ -68,6 +69,7 @@
 	let expandedSections = $state({
 		persona: true,
 		lorebooks: true,
+		chronicles: true,
 		generation: false,
 		advanced: false
 	});
@@ -76,6 +78,11 @@
 	let chatLorebookAssociations = $state<EnhancedChatSessionLorebookAssociation[]>([]);
 	let isLorebookDialogOpen = $state(false);
 	let isLoadingLorebooks = $state(false);
+
+	// Chronicle state
+	let currentChronicleId = $state<string | null>(null);
+	let availableChronicles = $state<PlayerChronicleWithCounts[]>([]);
+	let isLoadingChronicles = $state(false);
 
 	// Override tracking
 	let hasOverrides = $derived(() => {
@@ -111,6 +118,9 @@
 		if (chat) {
 			loadChatSettings();
 			loadLorebookAssociations();
+			loadChronicles();
+			// Initialize current chronicle from chat data
+			currentChronicleId = chat.chronicle_id || null;
 		} else {
 			// If no chat is active (new chat), initialize with global defaults
 			localSettings = {
@@ -183,6 +193,10 @@
 					globalUserSettings?.default_context_rag_budget ??
 					DEFAULT_CONTEXT_RAG_BUDGET
 			};
+
+			// IMPORTANT: Update currentChronicleId from the fresh backend settings
+			// This ensures the UI shows the correct chronicle association from the database
+			currentChronicleId = settings.chronicle_id || null;
 		} else {
 			console.error('Failed to load chat settings:', result.error);
 			toast.error(`Failed to load chat settings: ${result.error.message}`);
@@ -244,6 +258,54 @@
 		isLoadingLorebooks = false;
 	}
 
+	async function loadChronicles() {
+		isLoadingChronicles = true;
+		try {
+			const result = await apiClient.getChronicles();
+			if (result.isOk()) {
+				availableChronicles = result.value;
+			} else {
+				console.error('Error loading chronicles:', result.error);
+				toast.error('Failed to load chronicles');
+			}
+		} catch (error) {
+			console.error('Error loading chronicles:', error);
+			toast.error('Failed to load chronicles');
+		}
+		isLoadingChronicles = false;
+	}
+
+	async function updateChronicleAssociation(chronicleId: string | null) {
+		if (!chat?.id) return;
+
+		isLoading = true;
+		try {
+			const updateRequest: UpdateChatSessionSettingsRequest = {
+				chronicle_id: chronicleId
+			};
+
+			const result = await apiClient.updateChatSessionSettings(chat.id, updateRequest);
+			if (result.isOk()) {
+				currentChronicleId = chronicleId;
+				// Update the chat object to reflect the change
+				if (chat) {
+					chat.chronicle_id = chronicleId;
+				}
+				// Refresh chronicle store to update chat counts
+				await chronicleStore.refresh();
+				toast.success(chronicleId ? 'Chat linked to chronicle' : 'Chat unlinked from chronicle');
+				dispatch('settingsUpdated', { chronicle_id: chronicleId });
+			} else {
+				toast.error('Failed to update chronicle association');
+				console.error('Error updating chronicle association:', result.error);
+			}
+		} catch (error) {
+			console.error('Error updating chronicle association:', error);
+			toast.error('Failed to update chronicle association');
+		}
+		isLoading = false;
+	}
+
 	async function saveSettings() {
 		if (!chat?.id) return;
 
@@ -263,12 +325,23 @@
 				gemini_enable_code_execution: localSettings.gemini_enable_code_execution,
 				context_total_token_limit: localSettings.context_total_token_limit,
 				context_recent_history_budget: localSettings.context_recent_history_budget,
-				context_rag_budget: localSettings.context_rag_budget
+				context_rag_budget: localSettings.context_rag_budget,
+				chronicle_id: currentChronicleId
 			};
 
 			const result = await apiClient.updateChatSessionSettings(chat.id, updateRequest);
 
 			if (result.isOk()) {
+				// Update the chat object to reflect the chronicle association change
+				if (chat) {
+					chat.chronicle_id = result.value.chronicle_id || null;
+				}
+				// Update local state to match the response
+				currentChronicleId = result.value.chronicle_id || null;
+				// Refresh chronicle store to update chat counts if chronicle was changed
+				if (result.value.chronicle_id) {
+					await chronicleStore.refresh();
+				}
 				toast.success('Chat settings updated');
 				dispatch('settingsUpdated', result.value);
 			} else {
@@ -525,6 +598,70 @@
 								</select>
 								<p class="text-xs text-muted-foreground">Override the user persona for this chat</p>
 							</div>
+						</CardContent>
+					{/if}
+				</Card>
+
+				<!-- Chronicle Association -->
+				<Card>
+					<CardHeader
+						onclick={() => (expandedSections.chronicles = !expandedSections.chronicles)}
+						class="cursor-pointer {expandedSections.chronicles ? '' : 'pb-6'}"
+					>
+						<div class="flex items-center justify-between">
+							<CardTitle class="text-base">
+								Chronicle
+								{#if currentChronicleId}
+									<Badge variant="secondary" class="ml-2">Linked</Badge>
+								{/if}
+							</CardTitle>
+							{#if expandedSections.chronicles}
+								<ChevronUp />
+							{:else}
+								<ChevronDown />
+							{/if}
+						</div>
+					</CardHeader>
+					{#if expandedSections.chronicles}
+						<CardContent class="space-y-3">
+							{#if isLoadingChronicles}
+								<div class="space-y-2">
+									<Skeleton class="h-8 w-full" />
+									<Skeleton class="h-4 w-3/4" />
+								</div>
+							{:else}
+								<div class="space-y-2">
+									<Label for="chronicle-select">Link to Chronicle</Label>
+									<select
+										id="chronicle-select"
+										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+										bind:value={currentChronicleId}
+										onchange={(e) => updateChronicleAssociation(e.currentTarget.value || null)}
+									>
+										<option value={null}>No chronicle (unlinked)</option>
+										{#each availableChronicles as chronicle}
+											<option value={chronicle.id}>{chronicle.name}</option>
+										{/each}
+									</select>
+									<p class="text-xs text-muted-foreground">
+										Link this chat to a chronicle to organize related conversations and make them available for RAG queries.
+									</p>
+									{#if currentChronicleId}
+										{@const linkedChronicle = availableChronicles.find(c => c.id === currentChronicleId)}
+										{#if linkedChronicle}
+											<div class="rounded-md bg-muted p-3">
+												<div class="font-medium text-sm">{linkedChronicle.name}</div>
+												{#if linkedChronicle.description}
+													<div class="text-xs text-muted-foreground mt-1">{linkedChronicle.description}</div>
+												{/if}
+												<div class="text-xs text-muted-foreground mt-2">
+													{linkedChronicle.event_count} events • {linkedChronicle.chat_session_count} chats
+												</div>
+											</div>
+										{/if}
+									{/if}
+								</div>
+							{/if}
 						</CardContent>
 					{/if}
 				</Card>

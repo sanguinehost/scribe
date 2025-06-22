@@ -1,131 +1,148 @@
 # Scribe Chronicle: Feature Specification & Implementation Plan
+# Version 2.0
 
 ## 1. Introduction & Project Goal
 
-### 1.1. The Problem: Limited AI Memory
+### 1.1. The Problem: Limited AI Memory & Disconnected Context
 
-Currently, the Scribe AI's ability to recall past events is limited to its immediate chat history (the context window). While effective for short-term conversations, this prevents the AI from maintaining long-term narrative consistency. Key plot points, character developments, and significant world events from earlier in a long-running story can be "forgotten," leading to a degraded user experience where the narrative loses coherence over time.
+Currently, the Scribe AI's ability to recall past events is limited to its immediate chat history (the context window). This prevents long-term narrative consistency. Furthermore, context is siloed within individual chat sessions. Events from one chat or an external source (like a game) are completely unknown to others, preventing the creation of a unified, persistent story world.
 
-### 1.2. The Solution: The Player Chronicle
+### 1.2. The Solution: The Chronicle as a "Story Hub"
 
-The Player Chronicle is a new feature designed to give the Scribe AI a persistent, long-term memory. It functions as an intelligent, time-ordered journal that automatically logs significant events during a user's story or gameplay session.
+The Chronicle is a new feature designed to give the Scribe AI a persistent, unified, long-term memory. It functions as a central **Story Hub**—an intelligent, time-ordered journal that can be linked to multiple chat sessions and can ingest events from external sources.
 
-By creating this structured memory, the AI can reference key past events long after they have fallen out of the immediate chat history, ensuring that the narrative remains consistent, characters "remember" past interactions, and the story's world feels stable and coherent.
+By creating this structured, cross-session memory, the AI can reference key past events long after they have fallen out of any single chat's history. This ensures the narrative remains consistent, characters "remember" interactions across different scenes (chats), and the story's world feels stable and coherent, whether the user is writing a story, roleplaying, or playing an integrated game.
 
 ### 1.3. Key Terminology
 
-For clarity, here are definitions of key terms used in this document:
-
-*   **LLM (Large Language Model):** The underlying AI engine that generates text and understands language (e.g., Gemini Pro).
-*   **RAG (Retrieval-Augmented Generation):** A technique where the LLM's knowledge is augmented by retrieving relevant information from an external knowledge base (like a database) before it generates a response. This is how we give the AI access to specific lore or chronicle events.
-*   **Vector Database (Qdrant):** A specialized database that stores information (text) as numerical representations called "vectors." It allows for incredibly fast and efficient "semantic search," finding text that is conceptually similar, not just text that matches keywords.
+*   **Chronicle:** A container for a single, continuous story or campaign. It holds all associated events and chat sessions.
+*   **Event:** A single, discrete "memory" within a Chronicle. Events can be generated automatically from chat, added manually by the user, or pushed from an external game client.
+*   **LLM (Large Language Model):** The underlying AI engine that generates text and understands language (e.g., Gemini).
+*   **RAG (Retrieval-Augmented Generation):** The core technique used to retrieve relevant Chronicle Events and inject them into the LLM's context before it generates a response.
+*   **Vector Database (Qdrant):** A specialized database that stores text as numerical "vectors," enabling fast and accurate semantic search to find conceptually similar events.
 
 ## 2. System Architecture & High-Level Flow
 
-The Chronicle system is composed of several key components that work together:
+The Chronicle system integrates deeply into the existing Scribe architecture, touching everything from the frontend UI to the backend services and external clients.
 
-*   **Data Storage:** A PostgreSQL database will store the chronicles and their associated events in a structured format. A Qdrant vector database will store the searchable "memories" for fast retrieval.
-*   **User Interface (UI):** A new section in the Scribe web app will allow users to create, manage, and link chronicles to their chat sessions.
-*   **Event Extraction Service:** An asynchronous (background) service that uses a secondary, smaller LLM to analyze conversations and automatically identify and record significant events.
-*   **RAG Pipeline:** The core logic that retrieves the most relevant chronicle events in real-time to provide context to the main LLM during a conversation.
+```mermaid
+graph TD
+    subgraph "User Experience (Frontend)"
+        UIMain[Scribe Web App] -->|Manages| ChronicleView[Chronicles Page]
+        UIMain -->|Uses| ChatView[Chat Interface]
+        
+        ChronicleView -->|Create/View| ChronicleAPI[Chronicle API]
+        ChatView -->|Link/Create In| ChronicleAPI
+        ChatView -->|Sends/Receives Msgs| ChatAPI[Chat API]
+    end
 
-## 3. Phased Implementation Plan
+    subgraph "External Integrations"
+        GameClient[Game Client e.g., OpenMW] -->|POST Game Events| ChronicleAPI
+    end
 
-We will implement the Player Chronicle in three distinct phases to manage complexity and deliver value incrementally.
+    subgraph "Backend Services (Axum)"
+        Router[Axum Router]
+        Router --> ChatAPI
+        Router --> ChronicleAPI
 
-### Phase 1: Foundational Infrastructure & Data Management
+        ChatAPI --> RAGService[RAG Service]
+        ChatAPI --> AsyncExtractor[Async Event Extractor]
 
-**Goal:** Establish the core database schema and the data processing pipeline for storing and vectorizing chronicle events.
+        ChronicleAPI --> ChronicleService[Chronicle Service]
+        
+        RAGService -->|Queries| Qdrant & PostgreSQL
+        AsyncExtractor -->|Creates Events| ChronicleService
+        ChronicleService -->|Writes| PostgreSQL & EmbeddingPipeline[Embedding Pipeline]
+        EmbeddingPipeline -->|Embeds & Writes| Qdrant
+    end
 
-### 3.1. Database Schema
+    subgraph "Data Stores"
+        PostgreSQL[(PostgreSQL)]
+        Qdrant[(Qdrant)]
+    end
 
-We will create two new tables in the PostgreSQL database.
+    style GameClient fill:#ffcc00,stroke:#333,stroke-width:2px
+```
 
-**`player_chronicles` Table:** This table defines the "journal" itself.
+### 2.1. End-to-End Flow Example
 
-*   `id (UUID)`: Primary Key.
-*   `user_id (UUID)`: Foreign Key to `users.id`, linking the chronicle to its owner.
-*   `name (Varchar)`: A user-defined name for the story (e.g., "The Sunstone Quest").
-*   `description (Text)`: An optional, longer description.
-*   `created_at`, `updated_at (Timestamps)`: Standard timestamps for record management.
+1.  **Setup:** A user creates a "Dragon's Fall" Chronicle and links two chats to it: "Tavern Introduction" and "Cave Exploration."
+2.  **External Event:** The user, playing an integrated game, completes a quest. The game client calls the Scribe API (`POST /api/chronicles/{id}/events`), creating a `GAME_API` event: "Player defeated the goblin shaman."
+3.  **RAG in Action:** In the "Cave Exploration" chat, the user asks, "What was that shaman's name again?" The `RAGService` queries the "Dragon's Fall" chronicle, finds the `GAME_API` event, and injects it into the prompt. The AI correctly answers, "You defeated the goblin shaman, but his name was never mentioned."
+4.  **AI-Driven Event Extraction:** The conversation continues, and the AI reveals a major plot twist. After the message is sent, the `AsyncExtractor` service processes the conversation and creates a new `AI_EXTRACTED` event: "The cave's treasure was revealed to be a dragon's egg."
+5.  **Unified Memory:** This new event is now part of the "Dragon's Fall" chronicle, available to all linked chats and future queries within that story.
 
-**`game_events` Table:** This table stores each individual "memory" or event within a chronicle.
+## 3. User Experience (UI) & API Design
 
-*   `id (UUID)`: Primary Key.
-*   `chronicle_id (UUID)`: Foreign Key to `player_chronicles.id`, linking the event to its chronicle.
-*   `timestamp (Timestamp)`: Records when the event occurred.
-*   `event_type (Varchar)`: A category for the event (e.g., "PlotTwist", "ItemAcquired").
-*   `summary (Text)`: A concise, human-readable summary of the event. This is the text that will be searched.
-*   `source (Varchar)`: Tracks how the event was created (e.g., 'AI_EXTRACTED', 'GAME_API', 'USER_ADDED').
-*   `event_data (JSONB)`: A flexible field for storing additional structured data about the event.
-*   `vector_id (UUID)`: A reference to the corresponding searchable vector in our Qdrant database.
+### 3.1. Frontend UI Flow
 
-We will also modify the `chat_sessions` table to include a nullable `player_chronicle_id (UUID)` column, allowing each chat to be associated with a specific chronicle.
+To support the Story Hub concept, the UI will be updated as follows:
 
-### 3.2. Advanced Data Ingestion & Chunking
+*   **"Chronicles" Page:** A new top-level navigation item will lead to a page listing all user-created Chronicles.
+*   **Chronicle Management:** From this page, users can create, edit, or delete Chronicles. Each Chronicle will be displayed as a card showing its name, description, and icons for the chat sessions and external games linked to it.
+*   **Chronicle Detail View:** Clicking a Chronicle card opens a detailed view with two tabs:
+    *   **Chats:** A list of all `ScribeChatSession`s linked to this chronicle.
+    *   **Events:** A filterable, time-ordered log of all `GameEvent`s. Users can filter by `event_type` (e.g., "PlotTwist", "QuestStatusChanged") and `source` (`AI_EXTRACTED`, `USER_ADDED`, `GAME_API`). A manual "Add Event" button will also be present here.
+*   **Chat Integration:**
+    *   **Creation:** The "New Chat" modal will feature an optional "Add to Chronicle" dropdown, listing existing Chronicles or allowing the creation of a new one.
+    *   **Linking:** The settings panel for any existing chat will allow it to be linked to a Chronicle at any time.
 
-The `EmbeddingPipelineService` will be responsible for processing event summaries before they are stored for retrieval. This is a critical step for ensuring high-quality search results.
+### 3.2. Backend API Endpoints
 
-**Rationale:** Simply storing entire event summaries is inefficient. We need to break them down into semantically meaningful "chunks" for our vector search to be effective.
+The following endpoints will be created to support the UI and external integrations.
 
-**Implementation:**
+*   **Chronicle Management:**
+    *   `GET /api/chronicles`: Get all chronicles for the authenticated user.
+    *   `POST /api/chronicles`: Create a new chronicle.
+    *   `GET /api/chronicles/{id}`: Get a single chronicle with its associated chats and events.
+    *   `PUT /api/chronicles/{id}`: Update a chronicle's name or description.
+    *   `DELETE /api/chronicles/{id}`: Delete a chronicle and its associated events.
+*   **Chat & Event Linking:**
+    *   `PUT /api/chat_sessions/{id}`: Update a chat session, including linking/unlinking it via `player_chronicle_id`.
+    *   `POST /api/chronicles/{id}/events`: **The key endpoint for external clients and manual additions.** Allows an authenticated client (or the frontend) to post a structured `GameEvent`. Authentication will be handled via API keys generated per-user or per-chronicle.
 
-*   **Semantic Chunking:** We will use an advanced chunking strategy that analyzes the text to find natural thematic breaks. This ensures that a single "chunk" contains a complete, coherent thought, rather than being arbitrarily cut off.
-*   **Small-to-Big Retrieval:** For very long events, we will create smaller, searchable chunks (the "small" part) that link back to the full event text (the "big" part). Our system will search the small chunks for relevance but provide the full context to the LLM, giving it the best of both worlds: search precision and contextual depth.
+## 4. Phased Implementation Plan
 
-### Phase 2: Intelligent Event Extraction & Retrieval
+### Phase 1: Foundational Infrastructure & Core Functionality
 
-**Goal:** Implement the AI-powered services that automatically create events and the RAG pipeline that uses them.
+**Goal:** Establish the database schema, core services, and the essential UI/API for creating and managing Chronicles and linking them to chats.
 
-### 3.1. Asynchronous Event Extractor (Dual-LLM Architecture)
+1.  **Database Schema (Diesel Migration):**
+    *   Create `player_chronicles` and `game_events` tables as defined previously.
+    *   The `game_events` table is key to the system's flexibility, with its `event_type`, `summary`, `source`, and `event_data (JSONB)` columns.
+    *   Add a nullable `player_chronicle_id` foreign key to the `chat_sessions` table.
+2.  **Backend Models & Services:**
+    *   Create `models/chronicle.rs` and `models/game_event.rs`.
+    *   Create `services/chronicle.rs` to handle all database CRUD logic.
+3.  **API Implementation (`routes/chronicles.rs`):**
+    *   Implement all the Chronicle Management and Linking endpoints defined in section 3.2.
+4.  **Frontend UI Implementation:**
+    *   Build the "Chronicles" page and the detailed view (without event filtering initially).
+    *   Update the "New Chat" modal and Chat Settings panel to support linking.
+5.  **Basic RAG Integration:**
+    *   Update the `PromptBuilder` to accept and inject chronicle events into a new `<long_term_memory>` prompt section.
+    *   Update the `RAGService` to perform a basic semantic search for events within the active chat's linked chronicle.
 
-**Rationale:** We need to extract events from conversations without slowing down the user's chat experience. Using a separate, smaller, and faster LLM for this background task is more efficient and cost-effective than using our main, more powerful LLM.
+### Phase 2: Intelligent Event Extraction & Advanced RAG
 
-**Implementation:**
+**Goal:** Implement the AI-powered services that automatically create events and the advanced RAG pipeline that uses them intelligently.
 
-*   **Trigger:** After the main AI sends its response to the user, a background job will be triggered if the chat is linked to a chronicle.
-*   **Process:** This job sends the last few turns of the conversation to a smaller LLM (e.g., Gemini Flash or Claude 3 Haiku).
-*   **Extraction:** The small LLM will be prompted specifically to identify significant events and use a function-calling tool named `record_event()`. This forces the LLM to return structured data (event type, summary), which is far more reliable than parsing plain text.
-*   **Storage:** If the `record_event()` function is called, our system creates a new record in the `game_events` table and sends the summary to the `EmbeddingPipelineService` for processing and vectorization.
-
-### 3.2. Advanced RAG Pipeline for Generation
-
-This is where the chronicle's memory is put to use. The main generation service (`generation.rs`) will be updated to perform a multi-step retrieval process before generating a response.
-
-**Query Transformation:**
-
-**Rationale:** User questions are often not phrased in the same way as the information is stored. We can improve search by first transforming the query into an "ideal" answer.
-
-**Implementation (HyDE):** We will use the main LLM to generate a hypothetical chronicle event that would perfectly answer the user's query. We then search for stored events that are semantically similar to this hypothetical event, which yields more relevant results.
-
-**Hybrid Retrieval & Re-ranking:**
-
-**Rationale:** Combining different search methods gives better results. We need to find events that are both semantically related (conceptual match) and contain the right keywords (exact match). We also need to ensure the results are not redundant.
-
-**Implementation:**
-
-*   The system will perform a Hybrid Search, using both vector search (for semantic meaning) and traditional keyword search.
-*   It will initially retrieve a large number of candidate events (e.g., top 50).
-*   These candidates will then be re-ranked using an algorithm called Maximal Marginal Relevance (MMR). This algorithm prioritizes events that are not only highly relevant to the query but also distinct from each other, preventing repetitive information.
-
-**Strategic Prompt Injection:**
-
-**Rationale:** LLMs pay more attention to information at the beginning and end of their context window (the "lost in the middle" problem).
-
-**Implementation:** The `PromptBuilder` will intelligently assemble the final prompt for the LLM. It will place the single most relevant event from the re-ranked list at the very end of the context section to ensure it receives maximum attention from the AI.
+*   **Asynchronous Event Extractor:** Implement the dual-LLM architecture to analyze conversations and automatically create `AI_EXTRACTED` events using function-calling.
+*   **Advanced RAG Pipeline:**
+    *   **Query Transformation (HyDE):** Use the LLM to generate a hypothetical answer to the user's query and search for events similar to that answer.
+    *   **Hybrid Search & Re-ranking (MMR):** Combine vector and keyword search, then re-rank results to prioritize relevance and diversity, avoiding repetitive context.
+    *   **Strategic Prompt Injection:** Place the most relevant event at the end of the context section to combat the "lost in the middle" problem.
+*   **Frontend Enhancements:** Add filtering and searching to the Chronicle Events tab.
 
 ### Phase 3: External Integration & Self-Correction (Post-MVP)
 
-**Goal:** Expand the Chronicle system to be more robust and integrate with external game clients.
+**Goal:** Expand the Chronicle system to be more robust and fully integrate with external game clients.
 
-*   **Game-Driven Event API:**
-    *   **Action:** Implement a secure `POST /api/chronicle/{chronicle_id}/events` endpoint.
-    *   **Purpose:** This will allow authenticated game clients (like Sanguine Ascend) to directly push significant gameplay events (e.g., "Player completed the 'Whispering Caves' quest") into the chronicle. These events will be processed by the same advanced ingestion pipeline.
-*   **Corrective RAG (CRAG) Elements:**
-    *   **Action:** Introduce a "confidence score" for retrieved events.
-    *   **Purpose:** If the system retrieves events but the relevance scores are all very low, it indicates the chronicle has no useful memory for the current query. Instead of feeding the AI irrelevant information, the system will take an alternative action, such as explicitly stating in the prompt, "The chronicle has no specific memory of this," or performing a broader search across the user's other lorebooks.
+*   **Game-Driven Event API Hardening:** Finalize the authentication scheme (e.g., API keys) for the `POST /api/chronicles/{id}/events` endpoint. Provide documentation for third-party developers.
+*   **Corrective RAG (CRAG):** Introduce a confidence score for retrieved events. If relevance is low, the system will explicitly state that the chronicle has no memory of the topic, rather than feeding the AI irrelevant information.
+*   **Semantic Chunking & Small-to-Big Retrieval:** Implement the advanced ingestion pipeline described in the original plan to improve search precision and contextual depth for long event summaries.
 
-## 4. Long-Term Vision: The Future is a Knowledge Graph
+## 5. Long-Term Vision: The Future is a Knowledge Graph
 
 Beyond this implementation, the ultimate evolution of the Chronicle system is to move from a simple log of events to a fully interconnected Knowledge Graph.
 

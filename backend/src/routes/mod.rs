@@ -4,6 +4,7 @@ pub mod avatars;
 pub mod characters;
 pub mod chat;
 pub mod chats;
+pub mod chronicles;
 pub mod documents;
 pub mod health;
 pub mod lorebook_routes;

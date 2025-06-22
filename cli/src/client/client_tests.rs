@@ -1145,7 +1145,7 @@ fn test_generate_chat_request_serde() {
             role: "user".to_string(),
             content: "Hello AI".to_string(),
         }],
-        model: Some("gemini-2.5-flash-preview-05-20".to_string()),
+        model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
     };
 

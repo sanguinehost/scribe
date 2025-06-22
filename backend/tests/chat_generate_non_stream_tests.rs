@@ -352,7 +352,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         title_nonce: None,
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20,                                // Default
-        model_name: "gemini-2.5-flash-preview-05-20".to_string(),    // Default
+        model_name: "gemini-2.5-flash".to_string(),    // Default
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),
@@ -370,6 +370,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     info!(
@@ -675,7 +676,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     assert_eq!(db_chat_settings.history_management_limit, 20);
     assert_eq!(
         Some(db_chat_settings.model_name.as_str()),
-        Some("gemini-2.5-flash-preview-05-20")
+        Some("gemini-2.5-flash")
     );
 
     // Add a short delay to ensure database operations have completed
@@ -933,7 +934,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         title_nonce: None,
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20,                                // Default
-        model_name: "gemini-2.5-flash-preview-05-20".to_string(),    // Default
+        model_name: "gemini-2.5-flash".to_string(),    // Default
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),
@@ -951,6 +952,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
     let session: DbChat = {
         let interact_result = conn
@@ -1192,7 +1194,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     assert_eq!(db_chat_settings.history_management_limit, 20);
     assert_eq!(
         Some(db_chat_settings.model_name.as_str()),
-        Some("gemini-2.5-flash-preview-05-20")
+        Some("gemini-2.5-flash")
     );
 
     let messages: Vec<ChatMessage> = {
@@ -1401,6 +1403,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let result = conn
@@ -1745,6 +1748,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let result = conn
@@ -2073,6 +2077,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let result = conn
@@ -2464,6 +2469,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let result = conn
@@ -2757,6 +2763,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let result = conn
@@ -3062,6 +3069,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let create_session_result = conn
@@ -3341,6 +3349,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let conn_clone = test_app.db_pool.get().await?; // Re-acquire connection as it was moved
@@ -3503,6 +3512,7 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
+        player_chronicle_id: None,
     };
 
     let session: DbChat = {

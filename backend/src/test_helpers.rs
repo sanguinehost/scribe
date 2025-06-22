@@ -25,6 +25,7 @@ use crate::{
         characters,
         chat::chat_routes,
         chats,
+        chronicles,
         documents::document_routes,
         health::health_check,
         lorebook_routes, // Added lorebook_routes
@@ -134,6 +135,24 @@ impl MockAiClient {
                 contents: vec![genai::chat::MessageContent::Text(
                     "Mock AI response".to_string(),
                 )],
+                reasoning_content: None,
+                usage: Usage::default(),
+            }))),
+            stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// Create a new MockAiClient with a specific response text
+    #[must_use]
+    pub fn new_with_response(response_text: String) -> Self {
+        Self {
+            last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
+                model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
+                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
+                contents: vec![genai::chat::MessageContent::Text(response_text)],
                 reasoning_content: None,
                 usage: Usage::default(),
             }))),
@@ -1397,6 +1416,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         )
         .nest("/chat", chat_routes(app_state_inner.clone()))
         .nest("/chats", chats::chat_routes()) // Assuming this returns Router<AppState> or is already stateful
+        .nest("/chronicles", chronicles::create_chronicles_router(app_state_inner.clone())) // Add chronicles routes
         .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest(
             "/personas",
@@ -2558,6 +2578,7 @@ pub async fn set_history_settings(
         model_name: None,
         gemini_enable_code_execution: None,
         gemini_thinking_budget: None,
+        chronicle_id: None,
     };
 
     let client = reqwest::Client::new();
