@@ -13,6 +13,7 @@ pub mod gemini_token_client;
 pub mod history_manager;
 pub mod hybrid_token_counter;
 pub mod lorebook;
+pub mod rag_budget_manager;
 pub mod tokenizer_service;
 pub mod user_persona_service;
 pub mod user_settings_service;

@@ -32,6 +32,7 @@ use crate::{
         embeddings::{RetrievedChunk, ChronicleEventMetadata}, // For RAG chunks and chronicle metadata
         // history_manager::HistoryManager, // Removed, manage_history is a free function
         hybrid_token_counter::CountingMode,
+        rag_budget_manager::{ContextBudgetPlanner, DynamicRagSelector}, // For unified RAG budget management
         tokenizer_service::TokenEstimate,
         ChronicleService, // For chronicle event retrieval
     },
@@ -797,57 +798,45 @@ pub async fn get_session_data_for_generation(
             info!(%session_id, "Skipping older chat history RAG retrieval (frontend mode - preventing orphaned message contamination).");
         }
 
-        // Assemble and Budget RAG Context
-        debug!(target: "test_debug", %session_id, num_combined_candidates = combined_rag_candidates.len(), "Combined RAG candidates before assembly loop.");
+        // Unified RAG Context Selection with Dynamic Budget Management
+        debug!(target: "test_debug", %session_id, num_combined_candidates = combined_rag_candidates.len(), "Combined RAG candidates before dynamic selection.");
+        
         if combined_rag_candidates.is_empty() {
             debug!(target: "test_debug", %session_id, "No combined RAG candidates to process.");
         } else {
-            info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Assembling and budgeting RAG context.");
-            combined_rag_candidates.sort_by(|a, b| {
-                b.score
-                    .partial_cmp(&a.score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            debug!(target: "test_debug", %session_id, "Combined RAG candidates after sorting (first 5 texts): {:?}", combined_rag_candidates.iter().take(5).map(|c| c.text.chars().take(50).collect::<String>() ).collect::<Vec<_>>());
-
-            for chunk in combined_rag_candidates {
-                debug!(target: "test_debug", %session_id, chunk_text_preview = chunk.text.chars().take(50).collect::<String>(), chunk_score = chunk.score, "Processing RAG candidate chunk.");
-                if current_rag_tokens_used >= available_rag_tokens {
-                    debug!(target: "test_debug", %session_id, %current_rag_tokens_used, %available_rag_tokens, "RAG token budget reached during assembly. Stopping for chunk: {:?}", chunk.text.chars().take(50).collect::<String>());
-                    break;
-                }
-
-                match state
-                    .token_counter
-                    .count_tokens(
-                        &chunk.text,
-                        CountingMode::LocalOnly,
-                        Some(&session_model_name_db),
-                    )
-                    .await
-                {
-                    Ok(token_estimate) => {
-                        let chunk_tokens = token_estimate.total;
-                        debug!(target: "test_debug", %session_id, %chunk_tokens, current_rag_tokens_before_add = %current_rag_tokens_used, %available_rag_tokens, "RAG chunk tokens calculated. Checking budget for chunk: {:?}", chunk.text.chars().take(50).collect::<String>());
-                        if current_rag_tokens_used.saturating_add(chunk_tokens)
-                            <= available_rag_tokens
-                        {
-                            rag_context_items.push(chunk);
-                            current_rag_tokens_used =
-                                current_rag_tokens_used.saturating_add(chunk_tokens);
-                            debug!(target: "test_debug", %session_id, "RAG Chunk ADDED. New current_rag_tokens_used: {}. Items count: {}", current_rag_tokens_used, rag_context_items.len());
-                        } else {
-                            debug!(target: "test_debug", %session_id, %chunk_tokens, %current_rag_tokens_used, %available_rag_tokens, "Chunk too large for remaining RAG budget. SKIPPING chunk: {:?}", chunk.text.chars().take(50).collect::<String>());
-                            trace!(%session_id, %chunk_tokens, %current_rag_tokens_used, %available_rag_tokens, "Chunk too large for remaining RAG budget. Skipping.");
+            info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting unified RAG selection with dynamic budget management.");
+            
+            // Create pricing-aware context budget planner for the current model
+            let budget_planner = ContextBudgetPlanner::new_for_model(&session_model_name_db, Some(available_rag_tokens));
+            debug!(%session_id, model = %session_model_name_db, rag_budget = budget_planner.available_rag_budget(), "Created context budget planner for RAG selection.");
+            
+            // Create dynamic RAG selector using existing token counter
+            let rag_selector = DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
+            
+            // Use the unified RAG selector to choose content within budget
+            match rag_selector.select_rag_content(combined_rag_candidates, Some(chrono::Utc::now())).await {
+                Ok(selected_chunks) => {
+                    rag_context_items = selected_chunks;
+                    info!(%session_id, num_selected_items = rag_context_items.len(), "Dynamic RAG selection completed successfully.");
+                    
+                    // Calculate actual tokens used for debugging
+                    let mut actual_tokens_used = 0;
+                    for chunk in &rag_context_items {
+                        if let Ok(estimate) = state.token_counter.count_tokens(&chunk.text, CountingMode::LocalOnly, Some(&session_model_name_db)).await {
+                            actual_tokens_used += estimate.total;
                         }
                     }
-                    Err(e) => {
-                        warn!(%session_id, error = %e, chunk_text_len = chunk.text.len(), "Failed to count tokens for RAG chunk. Skipping chunk.");
-                    }
+                    current_rag_tokens_used = actual_tokens_used;
+                    
+                    debug!(target: "test_debug", %session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, %available_rag_tokens, "Unified RAG selection finished.");
+                    info!(%session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, budget_utilization = format!("{:.1}%", (current_rag_tokens_used as f32 / available_rag_tokens as f32) * 100.0), "Unified RAG context selection complete.");
+                }
+                Err(e) => {
+                    warn!(%session_id, error = %e, "Dynamic RAG selection failed. Proceeding without RAG context.");
+                    rag_context_items = Vec::new();
+                    current_rag_tokens_used = 0;
                 }
             }
-            info!(target: "test_debug", %session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, "RAG context assembly loop finished.");
-            info!(%session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, "RAG context assembly complete.");
         }
     } else {
         debug!(target: "test_debug", %session_id, %available_rag_tokens, "Skipping RAG context assembly as available_rag_tokens is not > 0.");

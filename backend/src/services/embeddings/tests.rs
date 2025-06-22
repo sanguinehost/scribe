@@ -1589,6 +1589,7 @@ mod tests {
                 assert_eq!(meta.source_type, "chat_message");
             }
             RetrievedMetadata::Lorebook(_) => panic!("Expected Chat metadata"),
+            RetrievedMetadata::Chronicle(_) => panic!("Expected Chat metadata"),
         }
 
         let search_call_count = mock_qdrant.get_search_call_count();
@@ -1768,6 +1769,7 @@ mod tests {
                 assert!(meta.is_enabled);
             }
             RetrievedMetadata::Chat(_) => panic!("Expected Lorebook metadata"),
+            RetrievedMetadata::Chronicle(_) => panic!("Expected Lorebook metadata"),
         }
 
         let search_call_count = mock_qdrant.get_search_call_count();
@@ -2230,6 +2232,7 @@ mod tests {
         match &chunks[0].metadata {
             RetrievedMetadata::Lorebook(_) => {} // Correct
             RetrievedMetadata::Chat(_) => panic!("Expected Lorebook metadata"),
+            RetrievedMetadata::Chronicle(_) => panic!("Expected Lorebook metadata"),
         }
 
         let search_call_count = mock_qdrant.get_search_call_count();
