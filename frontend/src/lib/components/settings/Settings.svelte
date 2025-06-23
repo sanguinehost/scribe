@@ -29,7 +29,7 @@
 		temperature: 1.0,
 		max_output_tokens: 1000,
 		top_p: 0.95 as number | null,
-		top_k: 40,
+		top_k: 0,
 
 		// Advanced Generation
 		frequency_penalty: 0.0,
@@ -121,7 +121,7 @@
 					temperature: parseFloat(String(userSettings.default_temperature ?? 1.0)),
 					max_output_tokens: userSettings.default_max_output_tokens || 1000,
 					top_p: parseFloat(parseFloat(String(userSettings.default_top_p ?? 0.95)).toFixed(2)),
-					top_k: userSettings.default_top_k ?? 40,
+					top_k: userSettings.default_top_k ?? 0,
 
 					// Advanced Generation
 					frequency_penalty: userSettings.default_frequency_penalty || 0.0,
@@ -160,7 +160,7 @@
 			temperature: 1.0,
 			max_output_tokens: 1000,
 			top_p: 0.95,
-			top_k: 40,
+			top_k: 0,
 			frequency_penalty: 0.0,
 			presence_penalty: 0.0,
 			seed: null,
