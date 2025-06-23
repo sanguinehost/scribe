@@ -239,37 +239,37 @@
 				variant="outline"
 				size="sm"
 				onclick={() => {
+					total_token_limit = 64000;
+					recent_history_budget = 40000;
+					rag_budget = 20000;
+				}}
+				class="h-7 flex-1 text-xs"
+			>
+				Efficient
+			</Button>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={() => {
 					total_token_limit = 200000;
-					recent_history_budget = 110000;
-					rag_budget = 80000;
+					recent_history_budget = 120000;
+					rag_budget = 70000;
 				}}
 				class="h-7 flex-1 text-xs"
 			>
-				200k
+				Balanced
 			</Button>
 			<Button
 				variant="outline"
 				size="sm"
 				onclick={() => {
-					total_token_limit = 500000;
-					recent_history_budget = 275000;
-					rag_budget = 200000;
+					total_token_limit = 400000;
+					recent_history_budget = 240000;
+					rag_budget = 140000;
 				}}
 				class="h-7 flex-1 text-xs"
 			>
-				500k
-			</Button>
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={() => {
-					total_token_limit = 100000;
-					recent_history_budget = 60000;
-					rag_budget = 35000;
-				}}
-				class="h-7 flex-1 text-xs"
-			>
-				100k
+				Large
 			</Button>
 		</div>
 	</div>

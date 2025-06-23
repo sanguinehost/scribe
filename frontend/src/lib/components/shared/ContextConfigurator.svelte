@@ -296,9 +296,21 @@
 						variant="outline"
 						size="sm"
 						onclick={() => {
+							total_token_limit = 64000;
+							recent_history_budget = 40000;
+							rag_budget = 20000; // Budget-friendly
+						}}
+					>
+						Efficient<br />
+						<span class="text-xs text-muted-foreground">64k total</span>
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => {
 							total_token_limit = 200000;
-							recent_history_budget = 110000;
-							rag_budget = 80000; // Leaves 10k buffer
+							recent_history_budget = 120000;
+							rag_budget = 70000; // Cost-effective maximum
 						}}
 					>
 						Balanced<br />
@@ -308,25 +320,13 @@
 						variant="outline"
 						size="sm"
 						onclick={() => {
-							total_token_limit = 500000;
-							recent_history_budget = 275000;
-							rag_budget = 200000; // Leaves 25k buffer
+							total_token_limit = 400000;
+							recent_history_budget = 240000;
+							rag_budget = 140000; // High cost, complex tasks
 						}}
 					>
 						Large<br />
-						<span class="text-xs text-muted-foreground">500k total</span>
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={() => {
-							total_token_limit = 100000;
-							recent_history_budget = 60000;
-							rag_budget = 35000; // Leaves 5k buffer
-						}}
-					>
-						Efficient<br />
-						<span class="text-xs text-muted-foreground">100k total</span>
+						<span class="text-xs text-muted-foreground">400k total</span>
 					</Button>
 				</div>
 			</div>
