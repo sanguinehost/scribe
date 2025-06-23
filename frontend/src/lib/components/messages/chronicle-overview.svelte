@@ -2,7 +2,16 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { apiClient } from '$lib/api';
-	import type { PlayerChronicle, ChronicleEvent, CreateEventRequest, UpdateChronicleRequest, EventFilter, EventSource } from '$lib/types';
+	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
+	import { chronicleStore } from '$lib/stores/chronicle.svelte';
+	import type {
+		PlayerChronicle,
+		ChronicleEvent,
+		CreateEventRequest,
+		UpdateChronicleRequest,
+		EventFilter,
+		EventSource
+	} from '$lib/types';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -36,13 +45,13 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { 
-		ScrollText, 
-		Plus, 
-		Calendar, 
-		MessageSquare, 
-		FileText, 
-		Trash2, 
+	import {
+		ScrollText,
+		Plus,
+		Calendar,
+		MessageSquare,
+		FileText,
+		Trash2,
 		Edit,
 		ArrowLeft,
 		Clock,
@@ -62,13 +71,13 @@
 	let events = $state<ChronicleEvent[]>([]);
 	let isLoadingChronicle = $state(true);
 	let isLoadingEvents = $state(true);
-	
+
 	// Edit chronicle state
 	let isEditingChronicle = $state(false);
 	let editName = $state('');
 	let editDescription = $state('');
 	let isSavingChronicle = $state(false);
-	
+
 	// Create event state
 	let createEventDialogOpen = $state(false);
 	let eventType = $state('');
@@ -76,12 +85,19 @@
 	let eventSource = $state<EventSource>('USER_ADDED');
 	let eventData = $state('{}');
 	let isCreatingEvent = $state(false);
-	
+
 	// Delete confirmation state
 	let deleteEventDialogOpen = $state(false);
 	let eventToDelete = $state<ChronicleEvent | null>(null);
 	let isDeletingEvent = $state(false);
-	
+
+	// Delete chronicle state
+	let deleteChronicleDialogOpen = $state(false);
+	let isDeletingChronicle = $state(false);
+
+	// Store context
+	const selectedChronicleStore = SelectedChronicleStore.fromContext();
+
 	// Filter state
 	let filterEventType = $state<string>('');
 	let filterSource = $state<string>('');
@@ -114,7 +130,7 @@
 			if (filterEventType) filter.event_type = filterEventType;
 			if (filterSource) filter.source = filterSource as EventSource;
 			filter.order_by = 'created_at_desc';
-			
+
 			const result = await apiClient.getChronicleEvents(chronicleId, filter);
 			if (result.isOk()) {
 				events = result.value;
@@ -137,14 +153,14 @@
 
 	async function saveChronicleChanges() {
 		if (!chronicle) return;
-		
+
 		isSavingChronicle = true;
 		try {
 			const data: UpdateChronicleRequest = {
 				name: editName.trim() || undefined,
 				description: editDescription.trim() || undefined
 			};
-			
+
 			const result = await apiClient.updateChronicle(chronicleId, data);
 			if (result.isOk()) {
 				chronicle = result.value;
@@ -165,7 +181,7 @@
 			toast.error('Event type and summary are required');
 			return;
 		}
-		
+
 		isCreatingEvent = true;
 		try {
 			let parsedEventData = null;
@@ -177,14 +193,14 @@
 					return;
 				}
 			}
-			
+
 			const data: CreateEventRequest = {
 				event_type: eventType.trim(),
 				summary: eventSummary.trim(),
 				source: eventSource,
 				event_data: parsedEventData
 			};
-			
+
 			const result = await apiClient.createChronicleEvent(chronicleId, data);
 			if (result.isOk()) {
 				toast.success('Event created successfully');
@@ -211,7 +227,7 @@
 
 	async function confirmDeleteEvent() {
 		if (!eventToDelete) return;
-		
+
 		isDeletingEvent = true;
 		try {
 			const result = await apiClient.deleteChronicleEvent(chronicleId, eventToDelete.id);
@@ -227,6 +243,34 @@
 			isDeletingEvent = false;
 			deleteEventDialogOpen = false;
 			eventToDelete = null;
+		}
+	}
+
+	function handleDeleteChronicleClick() {
+		deleteChronicleDialogOpen = true;
+	}
+
+	async function confirmDeleteChronicle() {
+		if (!chronicle) return;
+
+		isDeletingChronicle = true;
+		try {
+			const result = await apiClient.deleteChronicle(chronicleId);
+			if (result.isOk()) {
+				toast.success('Chronicle deleted successfully');
+				// Refresh the chronicle store to update all components
+				await chronicleStore.refresh();
+				// Navigate back to chronicles list by showing the list view
+				selectedChronicleStore.showList();
+				goto('/');
+			} else {
+				toast.error('Failed to delete chronicle', {
+					description: result.error.message
+				});
+			}
+		} finally {
+			isDeletingChronicle = false;
+			deleteChronicleDialogOpen = false;
 		}
 	}
 
@@ -258,13 +302,13 @@
 
 	// Get unique event types for filtering
 	const uniqueEventTypes = $derived.by(() => {
-		const types = new Set(events.map(e => e.event_type));
+		const types = new Set(events.map((e) => e.event_type));
 		return Array.from(types).sort();
 	});
 </script>
 
-<div class="mx-auto max-w-7xl px-4 h-[90vh] flex flex-col gap-6">
-	<div class="flex-1 min-h-0 flex flex-col gap-6">
+<div class="mx-auto flex h-[90vh] max-w-7xl flex-col gap-6 px-4">
+	<div class="flex min-h-0 flex-1 flex-col gap-6">
 		{#if isLoadingChronicle}
 			<Card class="border-0 shadow-sm">
 				<CardHeader class="py-4">
@@ -333,16 +377,31 @@
 									</div>
 								</div>
 							</div>
-							<Button variant="ghost" size="icon" onclick={startEditingChronicle} title="Edit chronicle">
-								<Edit class="h-4 w-4" />
-							</Button>
+							<div class="flex gap-1">
+								<Button
+									variant="ghost"
+									size="icon"
+									onclick={startEditingChronicle}
+									title="Edit chronicle"
+								>
+									<Edit class="h-4 w-4" />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon"
+									onclick={handleDeleteChronicleClick}
+									title="Delete chronicle"
+								>
+									<Trash2 class="h-4 w-4 text-destructive" />
+								</Button>
+							</div>
 						</div>
 					{/if}
 				</CardHeader>
 			</Card>
 
 			<!-- Events section -->
-			<div class="space-y-6 flex-1 min-h-0">
+			<div class="min-h-0 flex-1 space-y-6">
 				<div class="flex items-center justify-between">
 					<h2 class="text-xl font-semibold">Chronicle Events</h2>
 					<div class="flex gap-2">
@@ -376,7 +435,7 @@
 					</div>
 				</div>
 
-				<div class="flex-1 min-h-0 overflow-y-auto">
+				<div class="min-h-0 flex-1 overflow-y-auto">
 					{#if isLoadingEvents}
 						<div class="space-y-4">
 							{#each Array(3) as _}
@@ -429,7 +488,9 @@
 												<CardDescription class="mt-2">{event.summary}</CardDescription>
 												{#if event.event_data}
 													<details class="mt-2">
-														<summary class="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+														<summary
+															class="cursor-pointer text-sm text-muted-foreground hover:text-foreground"
+														>
 															View data
 														</summary>
 														<pre class="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
@@ -467,9 +528,7 @@
 	<DialogContent class="sm:max-w-lg">
 		<DialogHeader>
 			<DialogTitle>Add Chronicle Event</DialogTitle>
-			<DialogDescription>
-				Record an important moment or detail in your chronicle
-			</DialogDescription>
+			<DialogDescription>Record an important moment or detail in your chronicle</DialogDescription>
 		</DialogHeader>
 
 		<div class="space-y-4 py-4">
@@ -481,7 +540,7 @@
 					placeholder="e.g., COMBAT, DISCOVERY, CHARACTER_DEATH"
 				/>
 			</div>
-			
+
 			<div class="space-y-2">
 				<Label for="event-summary">Summary</Label>
 				<Textarea
@@ -491,7 +550,7 @@
 					rows={3}
 				/>
 			</div>
-			
+
 			<div class="space-y-2">
 				<Label for="event-source">Source</Label>
 				<select
@@ -505,7 +564,7 @@
 					<option value="SYSTEM">System</option>
 				</select>
 			</div>
-			
+
 			<div class="space-y-2">
 				<Label for="event-data">
 					Additional Data (JSON) <span class="text-muted-foreground">(optional)</span>
@@ -521,10 +580,17 @@
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={() => (createEventDialogOpen = false)} disabled={isCreatingEvent}>
+			<Button
+				variant="outline"
+				onclick={() => (createEventDialogOpen = false)}
+				disabled={isCreatingEvent}
+			>
 				Cancel
 			</Button>
-			<Button onclick={createEvent} disabled={isCreatingEvent || !eventType.trim() || !eventSummary.trim()}>
+			<Button
+				onclick={createEvent}
+				disabled={isCreatingEvent || !eventType.trim() || !eventSummary.trim()}
+			>
 				{isCreatingEvent ? 'Creating...' : 'Create Event'}
 			</Button>
 		</DialogFooter>
@@ -554,6 +620,37 @@
 				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 			>
 				{isDeletingEvent ? 'Deleting...' : 'Delete'}
+			</AlertDialogAction>
+		</AlertDialogFooter>
+	</AlertDialogContent>
+</AlertDialog>
+
+<!-- Delete Chronicle Confirmation Dialog -->
+<AlertDialog bind:open={deleteChronicleDialogOpen}>
+	<AlertDialogContent>
+		<AlertDialogHeader>
+			<AlertDialogTitle>Delete Chronicle</AlertDialogTitle>
+			<AlertDialogDescription>
+				Are you sure you want to delete this chronicle? This action cannot be undone and will
+				permanently delete all events associated with this chronicle.
+				{#if chronicle}
+					<div class="mt-4 rounded-md bg-muted p-3">
+						<div class="font-medium">{chronicle.name}</div>
+						{#if chronicle.description}
+							<div class="text-sm text-muted-foreground">{chronicle.description}</div>
+						{/if}
+					</div>
+				{/if}
+			</AlertDialogDescription>
+		</AlertDialogHeader>
+		<AlertDialogFooter>
+			<AlertDialogCancel disabled={isDeletingChronicle}>Cancel</AlertDialogCancel>
+			<AlertDialogAction
+				onclick={confirmDeleteChronicle}
+				disabled={isDeletingChronicle}
+				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+			>
+				{isDeletingChronicle ? 'Deleting...' : 'Delete Chronicle'}
 			</AlertDialogAction>
 		</AlertDialogFooter>
 	</AlertDialogContent>
