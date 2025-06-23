@@ -13,7 +13,7 @@ use genai::chat::MessageContent; // This is an enum from the genai crate
 use secrecy::ExposeSecret;
 use std::fmt::Write;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 /// Escapes text for safe inclusion in XML
 fn escape_xml(text: &str) -> String {
@@ -426,7 +426,8 @@ async fn calculate_content_tokens(
     Ok((rag_items_with_tokens, recent_history_with_tokens))
 }
 
-struct TokenCalculation {
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) struct TokenCalculation {
     meta_system_prompt_tokens: usize,
     persona_override_prompt_str: String,
     persona_override_prompt_tokens: usize,
@@ -553,7 +554,8 @@ fn log_initial_token_calculation(
 }
 
 /// Truncates RAG items to reduce token count
-fn truncate_rag_context(
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn truncate_rag_context(
     calculation: &mut TokenCalculation,
     current_total_tokens: &mut usize,
     max_allowed_tokens: usize,
@@ -576,59 +578,163 @@ fn truncate_rag_context(
     );
 }
 
-/// Truncates recent history to reduce token count
-fn truncate_recent_history(
+/// Strategically truncates recent history using middle-out approach:
+/// - Preserves HEAD: system prompt, character info, persona (already protected)
+/// - Preserves TAIL: recent N conversation turns for continuity
+/// - Removes MIDDLE: older history that's less critical for immediate context
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn truncate_recent_history_strategically(
     calculation: &mut TokenCalculation,
     current_total_tokens: &mut usize,
     max_allowed_tokens: usize,
+    min_tail_messages_to_preserve: usize,
 ) {
     if *current_total_tokens <= max_allowed_tokens {
         return;
     }
 
-    debug!("Attempting to reduce tokens by truncating recent history.");
+    let total_messages = calculation.recent_history_with_tokens.len();
+    debug!(
+        total_messages,
+        min_tail_messages_to_preserve,
+        "Starting strategic middle-out truncation of recent history."
+    );
+
+    // If we have fewer messages than the minimum tail, we can only truncate all or nothing
+    if total_messages <= min_tail_messages_to_preserve {
+        debug!(
+            "Total messages ({}) <= min_tail_to_preserve ({}). Cannot use strategic truncation.",
+            total_messages, min_tail_messages_to_preserve
+        );
+        
+        // Fallback: try removing from oldest first, but warn
+        warn!(
+            "Falling back to oldest-first truncation due to insufficient message count for strategic truncation."
+        );
+        while !calculation.recent_history_with_tokens.is_empty()
+            && *current_total_tokens > max_allowed_tokens
+        {
+            let (_, tokens) = calculation.recent_history_with_tokens.remove(0);
+            *current_total_tokens -= tokens;
+        }
+        return;
+    }
+
+    // Strategic middle-out truncation:
+    // Keep the last min_tail_messages_to_preserve messages
+    // Remove messages from the middle (oldest messages before the tail)
+    
+    let tail_start_index = total_messages.saturating_sub(min_tail_messages_to_preserve);
+    
+    debug!(
+        tail_start_index,
+        "Preserving tail messages from index {} to end", tail_start_index
+    );
+
+    // Remove messages from the middle (working backwards from tail_start_index - 1)
+    let mut removal_index = tail_start_index.saturating_sub(1);
+    
+    while *current_total_tokens > max_allowed_tokens && removal_index > 0 {
+        // Make sure we don't go out of bounds due to previous removals
+        if removal_index >= calculation.recent_history_with_tokens.len() {
+            removal_index = calculation.recent_history_with_tokens.len().saturating_sub(1);
+        }
+        
+        if removal_index == 0 {
+            break; // Don't remove the very first message if we can help it
+        }
+        
+        let (_, tokens) = calculation.recent_history_with_tokens.remove(removal_index);
+        *current_total_tokens -= tokens;
+        
+        debug!(
+            removal_index,
+            tokens,
+            current_total_tokens = *current_total_tokens,
+            "Removed middle message at index {} ({} tokens)", removal_index, tokens
+        );
+        
+        // Update removal_index for next iteration (move towards beginning)
+        removal_index = removal_index.saturating_sub(1);
+    }
+    
+    // If still over limit, remove from the very beginning (oldest messages)
+    // This preserves the tail but sacrifices the earliest conversation context
     while !calculation.recent_history_with_tokens.is_empty()
         && *current_total_tokens > max_allowed_tokens
     {
-        // Remove from the oldest (front of the vector)
+        // Only remove from front if we still have more than min_tail_messages_to_preserve
+        if calculation.recent_history_with_tokens.len() <= min_tail_messages_to_preserve {
+            warn!(
+                "Reached minimum tail preservation limit. Cannot truncate further without breaking continuity."
+            );
+            break;
+        }
+        
         let (_, tokens) = calculation.recent_history_with_tokens.remove(0);
         *current_total_tokens -= tokens;
+        
+        debug!(
+            tokens,
+            current_total_tokens = *current_total_tokens,
+            "Removed oldest message ({} tokens) as final resort", tokens
+        );
     }
+
     debug!(
+        final_message_count = calculation.recent_history_with_tokens.len(),
         current_total_tokens = *current_total_tokens,
-        max_allowed_tokens, "Recent history truncated."
+        max_allowed_tokens,
+        "Strategic history truncation completed."
     );
 }
 
-/// Logs a warning if token limit is still exceeded after truncation
-fn warn_if_over_limit(current_total_tokens: usize, max_allowed_tokens: usize) {
+/// Enforces hard token limit by returning an error if limit is still exceeded after truncation
+fn enforce_hard_token_limit(current_total_tokens: usize, max_allowed_tokens: usize) -> Result<(), AppError> {
     if current_total_tokens > max_allowed_tokens {
-        warn!(
+        let excess_tokens = current_total_tokens - max_allowed_tokens;
+        error!(
             current_total_tokens,
-            max_allowed_tokens, "Token limit exceeded even after truncation."
+            max_allowed_tokens,
+            excess_tokens,
+            "Hard token limit exceeded even after strategic truncation. This should not happen."
         );
+        return Err(AppError::BadRequest(format!(
+            "Request too large: {} tokens exceeds maximum limit of {} tokens (excess: {} tokens). \
+            Even after removing context and truncating history, the request is still too large. \
+            Please try with shorter messages or reduce character complexity.",
+            current_total_tokens, max_allowed_tokens, excess_tokens
+        )));
     }
+    Ok(())
 }
 
-fn apply_token_limits(mut calculation: TokenCalculation, config: &Arc<Config>) -> TokenCalculation {
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn apply_token_limits(mut calculation: TokenCalculation, config: &Arc<Config>) -> Result<TokenCalculation, AppError> {
     let mut current_total_tokens = calculate_total_tokens(&calculation);
     let max_allowed_tokens = config.context_total_token_limit;
 
     log_initial_token_calculation(&calculation, current_total_tokens, max_allowed_tokens);
 
+    // Step 1: First try truncating RAG context (less critical for conversation continuity)
     truncate_rag_context(
         &mut calculation,
         &mut current_total_tokens,
         max_allowed_tokens,
     );
-    truncate_recent_history(
+
+    // Step 2: If still over limit, apply strategic middle-out truncation to history
+    truncate_recent_history_strategically(
         &mut calculation,
         &mut current_total_tokens,
         max_allowed_tokens,
+        config.min_tail_messages_to_preserve,
     );
-    warn_if_over_limit(current_total_tokens, max_allowed_tokens);
 
-    calculation
+    // Step 3: Hard enforcement - return error if still over limit
+    enforce_hard_token_limit(current_total_tokens, max_allowed_tokens)?;
+
+    Ok(calculation)
 }
 
 async fn build_final_prompt_strings(
@@ -814,8 +920,8 @@ pub async fn build_final_llm_prompt(
     // Perform initial token calculations for all components
     let mut calculation = perform_initial_token_calculation(&params).await?;
 
-    // Apply token limits by truncating RAG and history if necessary
-    calculation = apply_token_limits(calculation, &params.config);
+    // Apply token limits by truncating RAG and history if necessary (with hard enforcement)
+    calculation = apply_token_limits(calculation, &params.config)?;
 
     // Build final prompt strings
     let (final_system_prompt, final_message_list) = build_final_prompt_strings(
@@ -1007,5 +1113,319 @@ mod tests {
         // Test empty string
         let result = super::replace_template_variables("", Some("Alice"), Some("Bob"));
         assert_eq!(result, "");
+    }
+
+    mod strategic_truncation_tests {
+        use super::*;
+        use crate::config::Config;
+        use crate::errors::AppError;
+        use crate::services::embeddings::{RetrievedChunk, RetrievedMetadata, ChatMetadata};
+        use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent};
+        use std::sync::Arc;
+        
+        fn create_test_message(role: ChatRole, content: &str, tokens: usize) -> (GenAiChatMessage, usize) {
+            (
+                GenAiChatMessage {
+                    role,
+                    content: MessageContent::Text(content.to_string()),
+                    options: None,
+                },
+                tokens,
+            )
+        }
+
+        fn create_test_calculation(
+            meta_tokens: usize,
+            persona_tokens: usize,
+            character_tokens: usize,
+            details_tokens: usize,
+            current_user_tokens: usize,
+            rag_items: Vec<(RetrievedChunk, usize)>,
+            history_messages: Vec<(GenAiChatMessage, usize)>,
+        ) -> TokenCalculation {
+            TokenCalculation {
+                meta_system_prompt_tokens: meta_tokens,
+                persona_override_prompt_str: if persona_tokens > 0 { "persona".to_string() } else { String::new() },
+                persona_override_prompt_tokens: persona_tokens,
+                character_definition_str: if character_tokens > 0 { "character".to_string() } else { String::new() },
+                character_definition_tokens: character_tokens,
+                character_details_str: if details_tokens > 0 { "details".to_string() } else { String::new() },
+                character_details_tokens: details_tokens,
+                current_user_message_tokens: current_user_tokens,
+                rag_items_with_tokens: rag_items,
+                recent_history_with_tokens: history_messages,
+            }
+        }
+
+        #[test]
+        fn test_strategic_truncation_preserves_tail() {
+            // Create 10 messages, each 1000 tokens
+            let mut history_messages = Vec::new();
+            for i in 0..10 {
+                history_messages.push(create_test_message(
+                    if i % 2 == 0 { ChatRole::User } else { ChatRole::Assistant },
+                    &format!("Message {}", i),
+                    1000,
+                ));
+            }
+
+            let mut calculation = create_test_calculation(
+                5000,  // meta_tokens
+                1000,  // persona_tokens  
+                2000,  // character_tokens
+                1000,  // details_tokens
+                500,   // current_user_tokens
+                vec![], // no RAG items
+                history_messages,
+            );
+
+            // Total: 5000 + 1000 + 2000 + 1000 + 500 + (10 * 1000) = 19,500 tokens
+            // Limit: 15,000 tokens (need to remove 4,500 tokens = ~4-5 messages)
+            // Min tail: 4 messages to preserve
+            let mut current_total = 19_500;
+            let max_allowed = 15_000;
+            let min_tail = 4;
+
+            super::truncate_recent_history_strategically(
+                &mut calculation,
+                &mut current_total,
+                max_allowed,
+                min_tail,
+            );
+
+            // Should preserve the last 4 messages (tail)
+            assert_eq!(calculation.recent_history_with_tokens.len(), 6); // Started with 10, should have 6 left
+            assert!(current_total <= max_allowed, "Token count should be within limit");
+
+            // Verify tail preservation: the last messages should be preserved
+            let preserved_messages = &calculation.recent_history_with_tokens;
+            for (i, (message, _)) in preserved_messages.iter().enumerate() {
+                if let MessageContent::Text(content) = &message.content {
+                    // The remaining messages should be the later ones (some from middle + tail)
+                    // Due to middle-out truncation, we can't predict exact indices, but we know
+                    // the last 4 should definitely be preserved
+                    if i >= preserved_messages.len() - min_tail {
+                        // These are the tail messages - verify they're the latest
+                        let expected_index = 10 - (preserved_messages.len() - i);
+                        assert!(content.contains(&format!("Message {}", expected_index)));
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn test_strategic_truncation_insufficient_messages_fallback() {
+            // Test with fewer messages than min_tail
+            let history_messages = vec![
+                create_test_message(ChatRole::User, "Message 1", 5000),
+                create_test_message(ChatRole::Assistant, "Message 2", 5000),
+            ];
+
+            let mut calculation = create_test_calculation(
+                5000,  // meta_tokens
+                1000,  // persona_tokens  
+                2000,  // character_tokens
+                1000,  // details_tokens
+                500,   // current_user_tokens
+                vec![], // no RAG items
+                history_messages,
+            );
+
+            // Total: 5000 + 1000 + 2000 + 1000 + 500 + (2 * 5000) = 19,500 tokens
+            // Limit: 15,000 tokens
+            // Min tail: 4 messages (but we only have 2 messages)
+            let mut current_total = 19_500;
+            let max_allowed = 15_000;
+            let min_tail = 4;
+
+            super::truncate_recent_history_strategically(
+                &mut calculation,
+                &mut current_total,
+                max_allowed,
+                min_tail,
+            );
+
+            // Should fall back to oldest-first truncation
+            // Since we have 2 messages, should remove 1 message (5000 tokens) to get under limit
+            assert_eq!(calculation.recent_history_with_tokens.len(), 1);
+            assert!(current_total <= max_allowed);
+        }
+
+        #[test]
+        fn test_strategic_truncation_exact_limit() {
+            // Test when we're exactly at the limit
+            let history_messages = vec![
+                create_test_message(ChatRole::User, "Message 1", 1000),
+                create_test_message(ChatRole::Assistant, "Message 2", 1000),
+            ];
+
+            let mut calculation = create_test_calculation(
+                5000,  // meta_tokens
+                1000,  // persona_tokens  
+                2000,  // character_tokens
+                1000,  // details_tokens
+                500,   // current_user_tokens
+                vec![], // no RAG items
+                history_messages,
+            );
+
+            // Total: 5000 + 1000 + 2000 + 1000 + 500 + (2 * 1000) = 11,500 tokens
+            let mut current_total = 11_500;
+            let max_allowed = 11_500; // Exactly at limit
+            let min_tail = 2;
+
+            super::truncate_recent_history_strategically(
+                &mut calculation,
+                &mut current_total,
+                max_allowed,
+                min_tail,
+            );
+
+            // Should not remove anything since we're at the limit
+            assert_eq!(calculation.recent_history_with_tokens.len(), 2);
+            assert_eq!(current_total, max_allowed);
+        }
+
+        #[test]
+        fn test_strategic_truncation_middle_removal() {
+            // Test that middle messages are removed while preserving tail
+            let mut history_messages = Vec::new();
+            for i in 0..8 {
+                history_messages.push(create_test_message(
+                    if i % 2 == 0 { ChatRole::User } else { ChatRole::Assistant },
+                    &format!("Message {}", i),
+                    1000,
+                ));
+            }
+
+            let mut calculation = create_test_calculation(
+                1000,  // meta_tokens
+                500,   // persona_tokens  
+                500,   // character_tokens
+                500,   // details_tokens
+                500,   // current_user_tokens
+                vec![], // no RAG items
+                history_messages,
+            );
+
+            // Total: 1000 + 500 + 500 + 500 + 500 + (8 * 1000) = 11,000 tokens
+            // Limit: 8,000 tokens (need to remove 3,000 tokens = 3 messages)
+            // Min tail: 3 messages to preserve
+            let mut current_total = 11_000;
+            let max_allowed = 8_000;
+            let min_tail = 3;
+
+            super::truncate_recent_history_strategically(
+                &mut calculation,
+                &mut current_total,
+                max_allowed,
+                min_tail,
+            );
+
+            // Should have 5 messages left (removed 3)
+            assert_eq!(calculation.recent_history_with_tokens.len(), 5);
+            assert!(current_total <= max_allowed);
+
+            // Verify that the last 3 messages are preserved (tail)
+            let preserved_messages = &calculation.recent_history_with_tokens;
+            let tail_start = preserved_messages.len() - min_tail;
+            
+            for (i, (message, _)) in preserved_messages[tail_start..].iter().enumerate() {
+                if let MessageContent::Text(content) = &message.content {
+                    // These should be messages 5, 6, 7 (the tail)
+                    let expected_index = 8 - min_tail + i;
+                    assert!(content.contains(&format!("Message {}", expected_index)));
+                }
+            }
+        }
+
+        #[test]
+        fn test_hard_limit_enforcement() {
+            use crate::config::Config;
+            
+            // Create a scenario where even after truncation, we're still over limit
+            let history_messages = vec![
+                create_test_message(ChatRole::User, "Huge message", 100_000),
+            ];
+
+            let calculation = create_test_calculation(
+                50_000,  // meta_tokens
+                10_000,  // persona_tokens  
+                20_000,  // character_tokens
+                10_000,  // details_tokens
+                5_000,   // current_user_tokens
+                vec![], // no RAG items
+                history_messages,
+            );
+
+            // Total: 50_000 + 10_000 + 20_000 + 10_000 + 5_000 + 100_000 = 195,000 tokens
+            // Even if we remove all history, we still have 95,000 from head components
+            
+            let mut config = Config::default();
+            config.context_total_token_limit = 80_000; // Lower than head components alone
+            config.min_tail_messages_to_preserve = 1;
+            
+            let config_arc = Arc::new(config);
+            
+            // This should return an error due to hard limit enforcement
+            let result = super::apply_token_limits(calculation, &config_arc);
+            
+            assert!(result.is_err(), "Should return error when hard limit is exceeded");
+            
+            if let Err(AppError::BadRequest(msg)) = result {
+                assert!(msg.contains("Request too large"));
+                assert!(msg.contains("tokens exceeds maximum limit"));
+            } else {
+                panic!("Expected BadRequest error with specific message");
+            }
+        }
+
+        #[test]
+        fn test_rag_truncation_before_history() {
+            // Create RAG items that will be truncated first
+            let rag_chunk = RetrievedChunk {
+                text: "Some context".to_string(),
+                metadata: RetrievedMetadata::Chat(ChatMetadata {
+                    speaker: "user".to_string(),
+                }),
+                score: 0.9,
+            };
+            
+            let rag_items = vec![
+                (rag_chunk.clone(), 3000),
+                (rag_chunk.clone(), 3000),
+            ];
+
+            let history_messages = vec![
+                create_test_message(ChatRole::User, "Important message 1", 1000),
+                create_test_message(ChatRole::Assistant, "Important message 2", 1000),
+            ];
+
+            let mut calculation = create_test_calculation(
+                5000,  // meta_tokens
+                1000,  // persona_tokens  
+                2000,  // character_tokens
+                1000,  // details_tokens
+                500,   // current_user_tokens
+                rag_items,
+                history_messages,
+            );
+
+            // Total: 5000 + 1000 + 2000 + 1000 + 500 + (2 * 3000) + (2 * 1000) = 17,500 tokens
+            // Limit: 12,000 tokens (need to remove 5,500 tokens)
+            let mut current_total = 17_500;
+            let max_allowed = 12_000;
+
+            // First truncate RAG (should remove all 6000 tokens of RAG)
+            super::truncate_rag_context(&mut calculation, &mut current_total, max_allowed);
+            
+            // After RAG truncation: 17,500 - 6,000 = 11,500 tokens (under limit)
+            assert_eq!(calculation.rag_items_with_tokens.len(), 0);
+            assert_eq!(current_total, 11_500);
+            assert!(current_total <= max_allowed);
+            
+            // History should be preserved since RAG truncation was sufficient
+            assert_eq!(calculation.recent_history_with_tokens.len(), 2);
+        }
     }
 }

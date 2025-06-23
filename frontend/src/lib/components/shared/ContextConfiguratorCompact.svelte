@@ -17,33 +17,37 @@
 		description?: string;
 	}>();
 
-	// Ensure budgets don't exceed total or cause negative buffer
+	// Strategic token allocation with conservative limits to account for backend enforcement
 	$effect(() => {
-		// Calculate minimum buffer based on context size (larger contexts get bigger buffers)
-		const min_buffer = Math.min(Math.max(Math.floor(total_token_limit * 0.05), 500), 5000);
-		const min_history = Math.min(Math.max(Math.floor(total_token_limit * 0.2), 1000), 10000);
-		const min_rag = Math.min(Math.max(Math.floor(total_token_limit * 0.1), 500), 5000);
+		// More conservative buffer calculations to account for strategic truncation overhead
+		// Backend uses middle-out truncation and preserves 8 messages by default
+		const min_buffer = Math.min(Math.max(Math.floor(total_token_limit * 0.08), 1000), 8000);
+		const min_history = Math.min(Math.max(Math.floor(total_token_limit * 0.25), 2000), 15000);
+		const min_rag = Math.min(Math.max(Math.floor(total_token_limit * 0.15), 1000), 8000);
 
-		// Ensure history budget doesn't leave too little for RAG
-		if (recent_history_budget > total_token_limit - min_buffer) {
-			recent_history_budget = total_token_limit - min_buffer;
+		// Conservative validation: ensure budgets leave adequate buffer for strategic processing
+		if (recent_history_budget > total_token_limit - min_buffer - 1000) {
+			recent_history_budget = total_token_limit - min_buffer - 1000;
 		}
-		
-		// Ensure RAG budget fits within remaining space
-		if (rag_budget > total_token_limit - recent_history_budget) {
-			rag_budget = total_token_limit - recent_history_budget;
+
+		// Ensure RAG budget accounts for potential compression overhead
+		if (rag_budget > total_token_limit - recent_history_budget - min_buffer) {
+			rag_budget = total_token_limit - recent_history_budget - min_buffer;
 		}
-		
-		// Set reasonable minimums based on context size
-		if (recent_history_budget < min_history && total_token_limit >= min_history + min_rag + min_buffer) {
+
+		// Set conservative minimums that work well with strategic truncation
+		if (
+			recent_history_budget < min_history &&
+			total_token_limit >= min_history + min_rag + min_buffer
+		) {
 			recent_history_budget = min_history;
 		}
 		if (rag_budget < min_rag && total_token_limit >= min_history + min_rag + min_buffer) {
 			rag_budget = min_rag;
 		}
 
-		// Prevent total from being less than sum of parts
-		const required_total = recent_history_budget + rag_budget + min_buffer;
+		// Prevent total from being less than sum of parts (with extra safety margin)
+		const required_total = recent_history_budget + rag_budget + min_buffer + 500;
 		if (total_token_limit < required_total) {
 			total_token_limit = required_total;
 		}
@@ -73,7 +77,7 @@
 			></div>
 			{#if buffer_budget > 0}
 				<div
-					class="bg-gray-300 dark:bg-gray-600 transition-all duration-300 ease-in-out"
+					class="bg-gray-300 transition-all duration-300 ease-in-out dark:bg-gray-600"
 					style="width: {(buffer_budget / total_token_limit) * 100}%"
 					title="Buffer: {buffer_budget.toLocaleString()} tokens"
 				></div>
@@ -96,7 +100,9 @@
 						variant="ghost"
 						size="sm"
 						class="h-5 px-1 text-xs"
-						onclick={() => { total_token_limit = 8192; }}
+						onclick={() => {
+							total_token_limit = 8192;
+						}}
 					>
 						8K
 					</Button>
@@ -104,7 +110,9 @@
 						variant="ghost"
 						size="sm"
 						class="h-5 px-1 text-xs"
-						onclick={() => { total_token_limit = 32768; }}
+						onclick={() => {
+							total_token_limit = 32768;
+						}}
 					>
 						32K
 					</Button>
@@ -112,7 +120,9 @@
 						variant="ghost"
 						size="sm"
 						class="h-5 px-1 text-xs"
-						onclick={() => { total_token_limit = 131072; }}
+						onclick={() => {
+							total_token_limit = 131072;
+						}}
 					>
 						128K
 					</Button>
@@ -120,7 +130,9 @@
 						variant="ghost"
 						size="sm"
 						class="h-5 px-1 text-xs"
-						onclick={() => { total_token_limit = 200000; }}
+						onclick={() => {
+							total_token_limit = 200000;
+						}}
 					>
 						200K
 					</Button>
@@ -175,8 +187,8 @@
 				size="sm"
 				onclick={() => {
 					total_token_limit = 200000;
-					recent_history_budget = 150000;
-					rag_budget = 40000;
+					recent_history_budget = 120000;
+					rag_budget = 60000;
 				}}
 				class="h-7 flex-1 text-xs"
 			>
@@ -187,8 +199,8 @@
 				size="sm"
 				onclick={() => {
 					total_token_limit = 500000;
-					recent_history_budget = 350000;
-					rag_budget = 100000;
+					recent_history_budget = 300000;
+					rag_budget = 150000;
 				}}
 				class="h-7 flex-1 text-xs"
 			>
@@ -199,8 +211,8 @@
 				size="sm"
 				onclick={() => {
 					total_token_limit = 100000;
-					recent_history_budget = 75000;
-					rag_budget = 15000;
+					recent_history_budget = 60000;
+					rag_budget = 25000;
 				}}
 				class="h-7 flex-1 text-xs"
 			>
@@ -209,7 +221,12 @@
 		</div>
 	</div>
 
-	<div class="rounded-md bg-amber-50 p-2 text-xs text-muted-foreground dark:bg-amber-950">
-		<strong>⚠️</strong> Larger contexts use more resources and may increase costs.
+	<div class="space-y-1">
+		<div class="rounded-md bg-blue-50 p-2 text-xs text-muted-foreground dark:bg-blue-950">
+			<strong>🧠</strong> Strategic memory: preserves key context with middle-out truncation.
+		</div>
+		<div class="rounded-md bg-amber-50 p-2 text-xs text-muted-foreground dark:bg-amber-950">
+			<strong>⚠️</strong> Larger contexts use more resources and may increase costs.
+		</div>
 	</div>
 </div>
