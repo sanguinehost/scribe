@@ -10,10 +10,10 @@
 	import ChroniclesListOverview from './messages/chronicles-list-overview.svelte';
 	import ChronicleCreation from './messages/chronicle-creation.svelte';
 	import Settings from './settings/Settings.svelte';
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import PreviewMessage from './messages/preview-message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
-	import type { ScribeChatMessage, User } from '$lib/types';
+	import type { ScribeChatMessage, User, ScribeChatSession } from '$lib/types';
 	import { getLock } from '$lib/hooks/lock';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SelectedLorebookStore } from '$lib/stores/selected-lorebook.svelte';
@@ -32,6 +32,7 @@
 		messages,
 		selectedCharacterId = null,
 		character = null,
+		chat = undefined,
 		user = undefined, // Add user prop here
 		onRetryMessage,
 		onRetryFailedMessage,
@@ -40,13 +41,15 @@
 		onPreviousVariant,
 		onNextVariant,
 		messageVariants,
-		currentVariantIndex
+		currentVariantIndex,
+		onGreetingChanged
 	}: {
 		readonly: boolean;
 		loading: boolean;
 		messages: ScribeChatMessage[];
 		selectedCharacterId?: string | null;
 		character?: any | null; // Will be properly typed
+		chat?: ScribeChatSession | undefined;
 		user?: User | undefined; // Type for user prop
 		onRetryMessage?: (messageId: string) => void;
 		onRetryFailedMessage?: (messageId: string) => void;
@@ -56,9 +59,9 @@
 		onNextVariant?: (messageId: string) => void;
 		messageVariants?: Map<string, { content: string; timestamp: string }[]>;
 		currentVariantIndex?: Map<string, number>;
+		onGreetingChanged?: (detail: { index: number; content: string }) => void;
 	} = $props();
 
-	const dispatch = createEventDispatcher();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 	const selectedLorebookStore = SelectedLorebookStore.fromContext();
 	const selectedChronicleStore = SelectedChronicleStore.fromContext();
@@ -85,15 +88,10 @@
 		);
 	}
 
-	function handlePersonaCreated(event: CustomEvent) {
-		// Forward the event up to parent components
-		dispatch('personaCreated', event.detail);
-	}
-
 	function handleGreetingChanged(event: CustomEvent) {
 		const { index, content } = event.detail;
 		currentGreetingIndex = index;
-		dispatch('greetingChanged', { index, content });
+		onGreetingChanged?.({ index, content });
 	}
 
 	let mounted = $state(false);
@@ -300,7 +298,7 @@
 						selectedChronicleStore.isCreating}
 				>
 					{#if selectedPersonaStore.viewMode === 'creating' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating}
-						<PersonaEditor on:personaCreated={handlePersonaCreated} />
+						<PersonaEditor />
 					{/if}
 				</div>
 				<div
@@ -404,16 +402,17 @@
 				/>
 			{:else}
 				{@const variants = messageVariants?.get(message.id)}
-				{@const currentIndex = currentVariantIndex?.get(message.id) ?? ((variants?.length ?? 0) > 0 ? variants.length - 1 : 0)}
+				{@const currentIndex = currentVariantIndex?.get(message.id) ?? ((variants?.length ?? 0) > 0 ? (variants?.length ?? 1) - 1 : 0)}
 				{@const hasVariants = (variants?.length ?? 0) > 0 || currentIndex > 0}
 				{@const variantInfo = hasVariants ? { current: currentIndex, total: (variants?.length ?? 1) - 1 } : null}
 				
 				<PreviewMessage 
 					{message} 
-					{readonly} 
-					{loading} 
-					{user} 
+					{readonly}
+					{loading}
+					{user}
 					{character}
+					{chat}
 					{hasVariants}
 					{variantInfo}
 					{onRetryMessage}

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils/shadcn';
 	import SparklesIcon from '../icons/sparkles.svelte';
-	import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 	import { Button } from '../ui/button';
 	import { Textarea } from '../ui/textarea';
 	import PencilEditIcon from '../icons/pencil-edit.svelte';
@@ -9,8 +8,14 @@
 	import { Markdown } from '../markdown';
 	import MessageReasoning from '../message-reasoning.svelte';
 	import MessageActions from './message-actions.svelte';
+	import TokenUsageDisplay from '../token-usage-display.svelte';
 	import { fly } from 'svelte/transition';
-	import type { ScribeChatMessage, User, ScribeCharacter } from '$lib/types'; // Import User and ScribeCharacter
+	import type {
+		ScribeChatMessage,
+		User,
+		ScribeCharacter,
+		ScribeChatSession
+	} from '$lib/types'; // Import User and ScribeCharacter
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
 	import { env } from '$env/dynamic/public';
 	import { getLock } from '$lib/hooks/lock';
@@ -21,6 +26,7 @@
 		loading,
 		user, // Add user prop
 		character, // Add character prop
+		chat,
 		onRetryMessage,
 		onRetryFailedMessage,
 		onEditMessage,
@@ -35,6 +41,7 @@
 		loading: boolean;
 		user: User | undefined; // Define type for user
 		character: ScribeCharacter | null | undefined; // Define type for character
+		chat: ScribeChatSession | undefined;
 		onRetryMessage?: (messageId: string) => void;
 		onRetryFailedMessage?: (messageId: string) => void;
 		onEditMessage?: (messageId: string) => void;
@@ -154,35 +161,38 @@
 			// }
 		)}
 	>
-		{#if message.message_type === 'Assistant'}
-			<Avatar class="size-8 shrink-0">
-				{#if characterAvatarSrc}
-					<AvatarImage src={characterAvatarSrc} alt={character.name} />
-				{/if}
-				<AvatarFallback>
-					{getInitials(character?.name)}
-				</AvatarFallback>
-			</Avatar>
-		{:else if message.message_type === 'User'}
-			<Avatar class="size-8 shrink-0">
-				{#if user?.avatar}
-					<!-- Assuming user.avatar will be a URL -->
-					<AvatarImage src={user.avatar} alt={user.username} />
-				{/if}
-				<AvatarFallback>
-					{getInitials(user?.username)}
-				</AvatarFallback>
-			</Avatar>
-		{:else}
-			<!-- Default icon for System messages or other types -->
-			<div
-				class="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border"
-			>
-				<div class="translate-y-px">
-					<SparklesIcon size={14} />
+		<!-- Avatar container (simplified) -->
+		<div class="size-8 shrink-0">
+			{#if message.message_type === 'Assistant'}
+				<Avatar class="size-8">
+					{#if characterAvatarSrc && character}
+						<AvatarImage src={characterAvatarSrc} alt={character.name} />
+					{/if}
+					<AvatarFallback>
+						{getInitials(character?.name)}
+					</AvatarFallback>
+				</Avatar>
+			{:else if message.message_type === 'User'}
+				<Avatar class="size-8">
+					{#if user?.avatar}
+						<!-- Assuming user.avatar will be a URL -->
+						<AvatarImage src={user.avatar} alt={user.username} />
+					{/if}
+					<AvatarFallback>
+						{getInitials(user?.username)}
+					</AvatarFallback>
+				</Avatar>
+			{:else}
+				<!-- Default icon for System messages or other types -->
+				<div
+					class="flex size-8 items-center justify-center rounded-full bg-background ring-1 ring-border"
+				>
+					<div class="translate-y-px">
+						<SparklesIcon size={14} />
+					</div>
 				</div>
-			</div>
-		{/if}
+			{/if}
+		</div>
 
 		<div class="flex w-full flex-col gap-4">
 			<!-- TODO: Re-evaluate attachment handling based on Scribe backend -->
@@ -221,7 +231,7 @@
 					<!-- Normal message display -->
 					<div
 						class={cn(
-							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8',
+							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8 relative group',
 							{
 								'border-primary/10 bg-primary/10': message.message_type === 'User',
 								'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20': message.error
@@ -275,14 +285,49 @@
 					</div>
 				{/if}
 
+				<!-- Per-message token indicator on hover with cost (only for Assistant messages) -->
+				{#if !message.loading && message.message_type === 'Assistant' && (message.prompt_tokens || message.completion_tokens)}
+					{@const model = message.model_name || chat?.model_name || 'gemini-2.5-pro'}
+					{@const pricing = {
+						'gemini-2.5-flash': { input: 0.30, output: 2.50 },
+						'gemini-2.5-pro': { input: 1.25, output: 10.00 },
+						'gemini-2.5-flash-lite-preview': { input: 0.10, output: 0.40 }
+					}[model] || { input: 1.25, output: 10.00 }}
+					{@const inputCost = (message.prompt_tokens || 0) / 1_000_000 * pricing.input}
+					{@const outputCost = (message.completion_tokens || 0) / 1_000_000 * pricing.output}
+					{@const totalCost = inputCost + outputCost}
+					{@const formatCost = (cost: number) => cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`}
+					
+					<div 
+						class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+						title={`Model: ${model}${'\n'}Input: ${message.prompt_tokens || 0} tokens (${formatCost(inputCost)})${'\n'}Output: ${message.completion_tokens || 0} tokens (${formatCost(outputCost)})${'\n'}Total cost: ${formatCost(totalCost)}`}
+					>
+						<div class="flex items-center gap-1 px-2 py-1 bg-background/90 backdrop-blur-sm border border-border rounded-md text-xs text-muted-foreground shadow-sm">
+							{#if message.prompt_tokens && message.prompt_tokens > 0}
+								<span class="text-blue-600 dark:text-blue-400">
+									↑{message.prompt_tokens >= 1000 ? `${(message.prompt_tokens / 1000).toFixed(1)}k` : message.prompt_tokens}
+								</span>
+							{/if}
+							{#if message.completion_tokens && message.completion_tokens > 0}
+								<span class="text-green-600 dark:text-green-400">
+									↓{message.completion_tokens >= 1000 ? `${(message.completion_tokens / 1000).toFixed(1)}k` : message.completion_tokens}
+								</span>
+							{/if}
+							<span class="text-amber-600 dark:text-amber-400 font-mono text-[10px]">
+								{formatCost(totalCost)}
+							</span>
+						</div>
+					</div>
+				{/if}
+
 				<!-- Modern message actions - positioned at bottom-right -->
 				{#if !isEditing}
-					<div class="absolute bottom-2 right-2 transition-opacity duration-200" 
+					<div class="absolute bottom-2 right-2 transition-opacity duration-200"
 						 class:opacity-0={message.loading || readonly}
 						 class:opacity-100={!message.loading && !readonly}
 						 class:pointer-events-none={message.loading || readonly}>
-						<MessageActions 
-							{message} 
+						<MessageActions
+							{message}
 							{readonly}
 							loading={message.loading}
 							{hasVariants}
@@ -301,6 +346,7 @@
 					</div>
 				{/if}
 			</div>
+
 		</div>
 	</div>
 </div>

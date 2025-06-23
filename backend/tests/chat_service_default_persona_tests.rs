@@ -9,6 +9,7 @@ use uuid::Uuid;
 use scribe_backend::{
     models::{
         // characters::Character, // Character is used from test_helpers::db or directly via schema
+        chats::ChatMode,
         user_personas::{CreateUserPersonaDto, UserPersonaDataForClient}, // Changed UserPersona to UserPersonaDataForClient
         users::{User, UserDbQuery},
     },
@@ -210,7 +211,8 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
     let created_chat_session = create_session_and_maybe_first_message(
         setup.app_state_arc.clone(),
         setup.user_db.id,
-        character.id,
+        Some(character.id),
+        ChatMode::Character,
         None,
         None,
         setup.user_dek_secret_box.clone(),
@@ -282,7 +284,8 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
     let created_chat_session = create_session_and_maybe_first_message(
         setup.app_state_arc.clone(),
         setup.user_db.id,
-        character.id,
+        Some(character.id),
+        ChatMode::Character,
         None,
         None,
         setup.user_dek_secret_box.clone(),
@@ -425,7 +428,8 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
     let created_chat_session = create_session_and_maybe_first_message(
         setup.app_state_arc.clone(),
         setup.user_db.id,
-        character.id,
+        Some(character.id),
+        ChatMode::Character,
         None,
         None,
         setup.user_dek_secret_box.clone(),

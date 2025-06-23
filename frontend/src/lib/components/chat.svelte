@@ -14,6 +14,8 @@
 	import ChatConfigSidebar from './chat-config-sidebar.svelte';
 	// Removed untrack import as we no longer use it
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
+	import TokenUsageDisplay from './token-usage-display.svelte';
+	import { useTokenCounter } from '$lib/hooks/token-counter.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { env } from '$env/dynamic/public';
@@ -105,6 +107,88 @@
 
 	// --- Chat Config Sidebar State ---
 	let isChatConfigOpen = $state(false);
+
+	// --- Token Counter State ---
+	const tokenCounter = useTokenCounter();
+	let showTokenUsage = $state(false);
+	
+	// --- Cumulative Usage Tracking ---
+	let cumulativeTokens = $state({
+		input: 0,
+		output: 0,
+		total: 0,
+		cost: 0 // Added cumulative cost
+	});
+
+	// Track suggested actions token usage
+	let suggestedActionsTokens = $state({
+		input: 0,
+		output: 0,
+		total: 0,
+		cost: 0
+	});
+
+	// Pricing per model (per 1M tokens)
+	const modelPricing = {
+		'gemini-2.5-flash': { input: 0.30, output: 2.50 },
+		'gemini-2.5-pro': { input: 1.25, output: 10.00 },
+		'gemini-2.5-flash-lite-preview': { input: 0.10, output: 0.40 }
+	};
+
+	// Calculate cumulative usage from messages (backend already includes system context)
+	// Exclude first messages since they're pre-written content, not AI-generated
+	$effect(() => {
+		let inputTokens = 0;
+		let outputTokens = 0;
+		let totalCost = 0;
+		
+		messages.forEach(message => {
+			// Skip first messages (character greetings) - they shouldn't count toward usage
+			const isFirstMessage = message.id.startsWith('first-message-') || 
+				(message.message_type === 'Assistant' && message.content === character?.first_mes);
+			
+			if (!isFirstMessage) {
+				const messageInputTokens = message.prompt_tokens || 0;
+				const messageOutputTokens = message.completion_tokens || 0;
+				
+				if (messageInputTokens > 0 || messageOutputTokens > 0) {
+					inputTokens += messageInputTokens;
+					outputTokens += messageOutputTokens;
+					
+					// Calculate cost using the model used for THIS specific message
+					const messageModel = message.model_name || chat?.model_name || 'gemini-2.5-pro';
+					const pricing = modelPricing[messageModel as keyof typeof modelPricing] || { input: 1.25, output: 10.00 };
+					
+					const messageCost = (messageInputTokens / 1_000_000 * pricing.input) + 
+									   (messageOutputTokens / 1_000_000 * pricing.output);
+					totalCost += messageCost;
+				}
+			}
+		});
+		
+		cumulativeTokens = {
+			input: inputTokens + suggestedActionsTokens.input,
+			output: outputTokens + suggestedActionsTokens.output,
+			total: inputTokens + outputTokens + suggestedActionsTokens.total,
+			cost: totalCost + suggestedActionsTokens.cost
+		};
+		
+		// Debug logging to see what's happening with token counts
+		console.log('Token calculation update:', {
+			totalMessages: messages.length,
+			inputTokens,
+			outputTokens,
+			totalCost,
+			messagesWithTokens: messages.filter(m => m.prompt_tokens || m.completion_tokens).map(m => ({
+				id: m.id.substring(0, 8),
+				prompt_tokens: m.prompt_tokens,
+				completion_tokens: m.completion_tokens,
+				type: m.message_type,
+				model_name: m.model_name,
+				isFirstMessage: m.id.startsWith('first-message-') || (m.message_type === 'Assistant' && m.content === character?.first_mes)
+			}))
+		});
+	});
 	let availablePersonas = $state<UserPersona[]>([]);
 
 	// --- State for chat interface visibility ---
@@ -229,6 +313,33 @@
 		loadAvailablePersonas();
 	});
 
+	// --- Token Counting Effect ---
+	let tokenCountTimeout: NodeJS.Timeout | null = null;
+
+	$effect(() => {
+		// Debounce token counting to avoid excessive API calls
+		if (tokenCountTimeout) {
+			clearTimeout(tokenCountTimeout);
+		}
+
+		if (chatInput.trim().length > 0) {
+			tokenCountTimeout = setTimeout(async () => {
+				try {
+					const model = await getCurrentChatModel();
+					const result = await tokenCounter.countTokensSimple(chatInput.trim(), model || undefined, false);
+					// Only show if we actually got a meaningful result
+					showTokenUsage = !!(result && result.total > 0);
+				} catch (error) {
+					console.error('Token counting failed:', error);
+					showTokenUsage = false;
+				}
+			}, 500); // 500ms debounce
+		} else {
+			tokenCounter.reset();
+			showTokenUsage = false;
+		}
+	});
+
 	// --- Scribe Backend Interaction Logic ---
 
 	async function fetchSuggestedActions() {
@@ -250,13 +361,36 @@
 			const result = await apiClient.fetchSuggestedActions(chat.id);
 
 			if (result.isOk()) {
-				const responseData = result.value; // This is { suggestions: [...] }
+				const responseData = result.value; // This is { suggestions: [...], token_usage?: {...} }
 				if (responseData.suggestions && responseData.suggestions.length > 0) {
 					dynamicSuggestedActions = responseData.suggestions;
 					console.log('Successfully fetched suggested actions:', dynamicSuggestedActions);
 				} else {
 					console.log('No suggestions returned or suggestions array is empty.');
 					dynamicSuggestedActions = [];
+				}
+
+				// Track token usage for suggested actions
+				if (responseData.token_usage) {
+					const tokenUsage = responseData.token_usage;
+					// Use Flash pricing since suggested actions always use gemini-2.5-flash
+					const flashPricing = modelPricing['gemini-2.5-flash'];
+					const cost = (tokenUsage.input_tokens / 1_000_000 * flashPricing.input) + 
+								(tokenUsage.output_tokens / 1_000_000 * flashPricing.output);
+
+					suggestedActionsTokens = {
+						input: tokenUsage.input_tokens,
+						output: tokenUsage.output_tokens,
+						total: tokenUsage.total_tokens,
+						cost
+					};
+
+					console.log('Suggested actions token usage:', {
+						input: tokenUsage.input_tokens,
+						output: tokenUsage.output_tokens,
+						total: tokenUsage.total_tokens,
+						cost: cost.toFixed(4)
+					});
 				}
 			} else {
 				const error = result.error;
@@ -494,10 +628,18 @@
 							cleanErrorMessage = currentData; // Already user-friendly
 						}
 						
-						error = cleanErrorMessage;
-						toast.error(error);
-						reader.cancel('SSE error event received');
-						throw new Error(error); // Stop processing
+						// For PropertyNotFound errors, don't immediately fail - wait to see if content follows
+						// This handles a backend bug where error events are sent but content still streams
+						if (currentData.includes('PropertyNotFound("/content/parts")') || currentData.includes('PropertyNotFound("/candidates")')) {
+							console.warn('Received PropertyNotFound error but continuing to listen for content (backend bug workaround)');
+							// Set a flag to potentially show error later if no content arrives
+							// Don't throw error immediately - continue processing
+						} else {
+							error = cleanErrorMessage;
+							toast.error(error);
+							reader.cancel('SSE error event received');
+							throw new Error(error); // Stop processing for other errors
+						}
 					} else if (currentEvent === 'content') {
 						if (currentData) {
 							messages = messages.map((msg) => {
@@ -745,7 +887,9 @@
 												typeof matchingBackendMessage.created_at === 'string'
 													? matchingBackendMessage.created_at
 													: matchingBackendMessage.created_at.toISOString(),
-											session_id: matchingBackendMessage.session_id || msg.session_id
+											session_id: matchingBackendMessage.session_id || msg.session_id,
+											prompt_tokens: matchingBackendMessage.prompt_tokens,
+											completion_tokens: matchingBackendMessage.completion_tokens
 										};
 									}
 									return msg;
@@ -1042,7 +1186,9 @@
 												typeof matchingBackendMessage.created_at === 'string'
 													? matchingBackendMessage.created_at
 													: matchingBackendMessage.created_at.toISOString(),
-											session_id: matchingBackendMessage.session_id || msg.session_id
+											session_id: matchingBackendMessage.session_id || msg.session_id,
+											prompt_tokens: matchingBackendMessage.prompt_tokens,
+											completion_tokens: matchingBackendMessage.completion_tokens
 										};
 									}
 									return msg;
@@ -1111,16 +1257,36 @@
 		const assistantMessageId = originalMessageId || crypto.randomUUID();
 		console.log('Using assistant message ID:', assistantMessageId, 'Original:', originalMessageId);
 
-		let assistantMessage: ScribeChatMessage = {
-			id: assistantMessageId,
-			session_id: chat.id,
-			message_type: 'Assistant',
-			content: '',
-			created_at: new Date().toISOString(),
-			user_id: '',
-			loading: true
-		};
-		messages = [...messages, assistantMessage];
+		// Check if the message already exists (for retries)
+		const existingMessageIndex = messages.findIndex(msg => msg.id === assistantMessageId);
+		
+		if (existingMessageIndex !== -1) {
+			// Message exists, update it to loading state
+			messages = messages.map((msg) => {
+				if (msg.id === assistantMessageId) {
+					return { 
+						...msg, 
+						loading: true, 
+						error: null,
+						retryable: false,
+						content: '' // Clear content for fresh generation
+					};
+				}
+				return msg;
+			});
+		} else {
+			// Message doesn't exist, create a new one
+			let assistantMessage: ScribeChatMessage = {
+				id: assistantMessageId,
+				session_id: chat.id,
+				message_type: 'Assistant',
+				content: '',
+				created_at: new Date().toISOString(),
+				user_id: '',
+				loading: true
+			};
+			messages = [...messages, assistantMessage];
+		}
 
 		let fetchError: any = null;
 
@@ -1220,10 +1386,17 @@
 						console.log('SSE stream finished with [DONE] signal.');
 					} else if (currentEvent === 'error') {
 						console.error('SSE Error Event:', currentData);
-						error = `Stream error: ${currentData}`;
-						toast.error(error);
-						reader.cancel('SSE error event received');
-						throw new Error(error);
+						// For PropertyNotFound errors, don't immediately fail - wait to see if content follows
+						// This handles a backend bug where error events are sent but content still streams
+						if (currentData.includes('PropertyNotFound("/content/parts")') || currentData.includes('PropertyNotFound("/candidates")')) {
+							console.warn('Received PropertyNotFound error but continuing to listen for content (backend bug workaround)');
+							// Don't throw error immediately - continue processing
+						} else {
+							error = `Stream error: ${currentData}`;
+							toast.error(error);
+							reader.cancel('SSE error event received');
+							throw new Error(error);
+						}
 					} else if (currentEvent === 'content') {
 						if (currentData) {
 							messages = messages.map((msg) => {
@@ -1325,13 +1498,45 @@
 			if (err.name === 'AbortError') {
 				console.log('Regeneration aborted by user.');
 				toast.info('Generation stopped.');
-				messages = messages.filter((msg) => msg.id !== assistantMessageId);
+				// For aborted operations, only remove the message if we created it new (not retrying existing)
+				if (existingMessageIndex === -1) {
+					messages = messages.filter((msg) => msg.id !== assistantMessageId);
+				} else {
+					// Reset the existing message to its previous state
+					messages = messages.map((msg) => {
+						if (msg.id === assistantMessageId) {
+							return { 
+								...msg, 
+								loading: false, 
+								error: 'Generation was stopped',
+								retryable: true
+							};
+						}
+						return msg;
+					});
+				}
 			} else {
 				if (!error) {
 					error = err.message || 'An unexpected error occurred.';
 					toast.error(error ?? 'Unknown error');
 				}
-				messages = messages.filter((msg) => msg.id !== assistantMessageId);
+				// For errors, only remove the message if we created it new (not retrying existing)
+				if (existingMessageIndex === -1) {
+					messages = messages.filter((msg) => msg.id !== assistantMessageId);
+				} else {
+					// Mark the existing message as failed again
+					messages = messages.map((msg) => {
+						if (msg.id === assistantMessageId) {
+							return { 
+								...msg, 
+								loading: false, 
+								error: error || 'Generation failed',
+								retryable: true
+							};
+						}
+						return msg;
+					});
+				}
 			}
 		} finally {
 			isLoading = false;
@@ -1378,7 +1583,9 @@
 												typeof matchingBackendMessage.created_at === 'string'
 													? matchingBackendMessage.created_at
 													: matchingBackendMessage.created_at.toISOString(),
-											session_id: matchingBackendMessage.session_id || msg.session_id
+											session_id: matchingBackendMessage.session_id || msg.session_id,
+											prompt_tokens: matchingBackendMessage.prompt_tokens,
+											completion_tokens: matchingBackendMessage.completion_tokens
 										};
 									}
 									return msg;
@@ -1416,8 +1623,8 @@
 	}
 
 	// Handle greeting changes from alternate greetings
-	function handleGreetingChanged(event: CustomEvent) {
-		const { content } = event.detail;
+	function handleGreetingChanged(detail: { index: number; content: string }) {
+		const { content } = detail;
 
 		// Update the first message content in the messages array
 		const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
@@ -1670,6 +1877,7 @@
 		{messages}
 		selectedCharacterId={selectedCharacterStore.characterId}
 		{character}
+		{chat}
 		{user}
 		{messageVariants}
 		{currentVariantIndex}
@@ -1679,8 +1887,7 @@
 		onSaveEditedMessage={handleSaveEditedMessage}
 		onPreviousVariant={handlePreviousVariant}
 		onNextVariant={handleNextVariant}
-		on:personaCreated
-		on:greetingChanged={handleGreetingChanged}
+		onGreetingChanged={handleGreetingChanged}
 	/>
 
 	<!-- Show Chat Interface (Get Suggestions + Input) Only When Inside Active Chat -->
@@ -1807,6 +2014,50 @@
 							chatInput = response;
 						}}
 					/>
+					
+					<!-- Token Usage Display -->
+					{#if showTokenUsage && tokenCounter.data}
+						<div class="mt-2 flex justify-end">
+							<TokenUsageDisplay 
+								promptTokens={tokenCounter.data.total}
+								completionTokens={0}
+								modelName={chat?.model_name}
+								loading={tokenCounter.loading}
+								isEstimate={true}
+							/>
+						</div>
+					{/if}
+					
+					<!-- Cumulative Session Usage Display -->
+					{#if cumulativeTokens.total > 0}
+						{@const formatSessionCost = (cost: number) => cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`}
+						
+						<div class="mt-2 space-y-1 text-xs text-muted-foreground border-t pt-2">
+							<!-- Main breakdown -->
+							<div class="flex justify-between items-center">
+								<span class="font-medium">Session Usage:</span>
+								<div class="flex items-center gap-2">
+									<span class="text-blue-600 dark:text-blue-400">
+										↑{cumulativeTokens.input} input
+									</span>
+									<span class="text-green-600 dark:text-green-400">
+										↓{cumulativeTokens.output} output
+									</span>
+									<span class="font-medium">
+										{cumulativeTokens.total} total
+									</span>
+									<span class="text-amber-600 dark:text-amber-400 font-mono font-medium">
+										{formatSessionCost(cumulativeTokens.cost)}
+									</span>
+								</div>
+							</div>
+							
+							<!-- Note about system context -->
+							<div class="text-center text-xs opacity-75">
+								Hover messages for individual token counts & costs • Using per-message model pricing
+							</div>
+						</div>
+					{/if}
 				{/if}
 			</form>
 		</div>

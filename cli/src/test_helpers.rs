@@ -1104,6 +1104,7 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         gemini_enable_code_execution: None,
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        player_chronicle_id: None, // Not used in CLI tests
     }
 }
 
@@ -1134,6 +1135,7 @@ pub fn mock_chat_session_for_client(id: Uuid, character_id: Uuid) -> ChatForClie
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        chronicle_id: None, // Not used in CLI tests
     }
 }
 

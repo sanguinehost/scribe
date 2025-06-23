@@ -190,7 +190,7 @@ async fn test_create_chat_session_success() {
     let session: DbChatSession =
         serde_json::from_slice(&body).expect("Failed to deserialize response");
     assert_eq!(session.user_id, user.id);
-    assert_eq!(session.character_id, character.id);
+    assert_eq!(session.character_id, Some(character.id));
 }
 
 #[tokio::test]

@@ -662,7 +662,7 @@ async fn test_list_chat_sessions_success() {
         ChatForClient {
             id: session1_id,
             user_id: user_id_mock,
-            character_id: char_id_mock,
+            character_id: Some(char_id_mock),
             title: Some("First Chat".to_string()),
             created_at: now,
             updated_at: now,
@@ -683,11 +683,13 @@ async fn test_list_chat_sessions_success() {
             gemini_enable_code_execution: None,
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
+            chat_mode: scribe_backend::models::chats::ChatMode::Character,
+            chronicle_id: None,
         },
         ChatForClient {
             id: session2_id,
             user_id: user_id_mock,
-            character_id: Uuid::new_v4(),
+            character_id: Some(Uuid::new_v4()),
             title: Some("Second Chat".to_string()),
             created_at: now,
             updated_at: now,
@@ -708,6 +710,8 @@ async fn test_list_chat_sessions_success() {
             gemini_enable_code_execution: None,
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
+            chat_mode: scribe_backend::models::chats::ChatMode::Character,
+            chronicle_id: None,
         },
     ];
 
@@ -917,7 +921,7 @@ async fn test_create_chat_session_success() {
     let mock_session = Chat {
         id: session_id,
         user_id: user_id_mock,
-        character_id,
+        character_id: Some(character_id),
         // title: Some("New Chat".to_string()), // This was the old field
         title_ciphertext: Some(b"New Chat".to_vec()), // Mocking as if "New Chat" was encrypted
         title_nonce: Some(vec![0u8; 12]),             // Mock nonce
@@ -942,6 +946,8 @@ async fn test_create_chat_session_success() {
         gemini_enable_code_execution: None,
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
+        chat_mode: scribe_backend::models::chats::ChatMode::Character,
+        player_chronicle_id: None,
     };
 
     let request_payload = json!({
@@ -964,7 +970,7 @@ async fn test_create_chat_session_success() {
     assert!(result.is_ok());
     let created_session = result.unwrap();
     assert_eq!(created_session.id, mock_session.id);
-    assert_eq!(created_session.character_id, character_id);
+    assert_eq!(created_session.character_id, Some(character_id));
 
     server.verify_and_clear();
 }

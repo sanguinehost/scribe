@@ -34,6 +34,7 @@ use crate::{
         hybrid_token_counter::CountingMode,
         rag_budget_manager::{ContextBudgetPlanner, DynamicRagSelector}, // For unified RAG budget management
         tokenizer_service::TokenEstimate,
+        user_settings_service::UserSettingsService, // For retrieving user context settings
         ChronicleService, // For chronicle event retrieval
     },
 };
@@ -545,6 +546,7 @@ pub async fn get_session_data_for_generation(
                     completion_tokens: None,
                     raw_prompt_ciphertext: None,
                     raw_prompt_nonce: None,
+                    model_name: session_model_name_db.clone(), // Use session model for frontend-provided history
                 }
             })
             .collect()
@@ -553,8 +555,30 @@ pub async fn get_session_data_for_generation(
         existing_messages_db_raw
     };
 
+    // --- Retrieve User Settings for Context Management ---
+    let user_settings = UserSettingsService::get_user_settings(&state.pool, user_id, &state.config).await?;
+    debug!(%session_id, %user_id, "Retrieved user settings for context management");
+    
+    // Use user-configured values or fall back to config defaults
+    let context_total_token_limit = user_settings.default_context_total_token_limit
+        .map(|v| v as usize)
+        .unwrap_or(state.config.context_total_token_limit);
+    let recent_history_token_budget = user_settings.default_context_recent_history_budget
+        .map(|v| v as usize)
+        .unwrap_or(state.config.context_recent_history_token_budget);
+    let context_rag_budget = user_settings.default_context_rag_budget
+        .map(|v| v as usize)
+        .unwrap_or(state.config.context_rag_token_budget);
+    
+    info!(
+        %session_id,
+        %context_total_token_limit,
+        %recent_history_token_budget,
+        %context_rag_budget,
+        "Using context token budgets (user settings or defaults)"
+    );
+
     // --- Token-based Recent History Management (Async) ---
-    let recent_history_token_budget = state.config.context_recent_history_token_budget;
     debug!(target: "test_debug", %session_id, %recent_history_token_budget, "Starting recent history processing.");
     let mut managed_recent_history: Vec<DbChatMessage> = Vec::new();
     let mut actual_recent_history_tokens: usize = 0; // CHANGED to usize
@@ -639,10 +663,8 @@ pub async fn get_session_data_for_generation(
 
     // --- RAG Context Budgeting and Assembly ---
     let available_rag_tokens = min(
-        state.config.context_rag_token_budget,
-        state
-            .config
-            .context_total_token_limit
+        context_rag_budget,
+        context_total_token_limit
             .saturating_sub(actual_recent_history_tokens),
     );
     info!(%session_id, %actual_recent_history_tokens, %available_rag_tokens, "Calculated RAG token budget.");
@@ -807,11 +829,24 @@ pub async fn get_session_data_for_generation(
             info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting unified RAG selection with dynamic budget management.");
             
             // Create pricing-aware context budget planner for the current model
-            let budget_planner = ContextBudgetPlanner::new_for_model(&session_model_name_db, Some(available_rag_tokens));
-            debug!(%session_id, model = %session_model_name_db, rag_budget = budget_planner.available_rag_budget(), "Created context budget planner for RAG selection.");
+            // Use the user-configured total limit but cap it at available RAG tokens
+            let effective_total_limit = min(context_total_token_limit, available_rag_tokens + actual_recent_history_tokens);
+            let budget_planner = ContextBudgetPlanner::new_for_model(&session_model_name_db, Some(effective_total_limit));
+            
+            // Override the RAG budget with our calculated available tokens
+            let mut budget_planner_adjusted = budget_planner;
+            budget_planner_adjusted.rag_budget = available_rag_tokens;
+            
+            debug!(
+                %session_id, 
+                model = %session_model_name_db, 
+                total_limit = effective_total_limit,
+                rag_budget = budget_planner_adjusted.available_rag_budget(), 
+                "Created context budget planner for RAG selection with user settings."
+            );
             
             // Create dynamic RAG selector using existing token counter
-            let rag_selector = DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
+            let rag_selector = DynamicRagSelector::new((*state.token_counter).clone(), budget_planner_adjusted);
             
             // Use the unified RAG selector to choose content within budget
             match rag_selector.select_rag_content(combined_rag_candidates, Some(chrono::Utc::now())).await {
@@ -913,6 +948,7 @@ pub async fn get_session_data_for_generation(
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
+                model_name: session_model_name_db.clone(), // Use session model for character first message
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
@@ -926,6 +962,7 @@ pub async fn get_session_data_for_generation(
         MessageRole::User,
         user_message_content_for_closure.into_bytes(),
         None,
+        session_model_name_db.clone(),
     );
 
     user_db_message_to_save = user_db_message_to_save

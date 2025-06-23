@@ -910,6 +910,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     let speaker_from_meta = match &mock_retrieved_chunk.metadata {
         RetrievedMetadata::Chat(chat_meta) => chat_meta.speaker.as_str(),
         RetrievedMetadata::Lorebook(_) => "Unknown", // Should not happen in this test based on mock_retrieved_chunk setup
+        RetrievedMetadata::Chronicle(_) => "Unknown", // Should not happen in this test based on mock_retrieved_chunk setup
     };
     let expected_rag_chunk_text = format!(
         "<chat_history speaker=\"{}\">{}</chat_history>",
