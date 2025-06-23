@@ -4,6 +4,7 @@
 use std::sync::Arc;
 use anyhow::Result as AnyhowResult;
 use scribe_backend::{
+    auth::session_dek::SessionDek,
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle_event::EventSource,
@@ -21,6 +22,7 @@ use scribe_backend::{
 use uuid::Uuid;
 use chrono::Utc;
 use serde_json::json;
+use secrecy::SecretBox;
 
 // Helper to create test messages
 fn create_test_messages(count: usize, user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
@@ -89,8 +91,13 @@ mod unit_tests {
         
         // Test the chunking (this calls a private method, so we'll test the full extraction)
         let chronicle_id = Uuid::new_v4();
+        
+        // Create a mock SessionDek
+        let mock_dek = SecretBox::new(Box::new([0u8; 32].to_vec()));
+        let session_dek = SessionDek(mock_dek);
+        
         let result = extraction_service
-            .extract_events_from_messages(user_id, chronicle_id, messages, config)
+            .extract_events_from_messages(user_id, chronicle_id, messages, &session_dek, config)
             .await;
         
         // Should succeed without errors
@@ -140,7 +147,7 @@ mod unit_tests {
         let chronicle_id = Uuid::new_v4();
         
         let result = extraction_service
-            .extract_events_from_messages(user_id, chronicle_id, messages, config)
+            .extract_events_from_messages(user_id, chronicle_id, messages, &SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec()))), config)
             .await;
         
         assert!(result.is_ok());
@@ -176,7 +183,7 @@ mod unit_tests {
         let chronicle_id = Uuid::new_v4();
         
         let result = extraction_service
-            .extract_events_from_messages(user_id, chronicle_id, messages, config)
+            .extract_events_from_messages(user_id, chronicle_id, messages, &SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec()))), config)
             .await;
         
         assert!(result.is_ok());
@@ -212,7 +219,7 @@ mod unit_tests {
         let chronicle_id = Uuid::new_v4();
         
         let result = extraction_service
-            .extract_events_from_messages(user_id, chronicle_id, messages, config)
+            .extract_events_from_messages(user_id, chronicle_id, messages, &SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec()))), config)
             .await;
         
         assert!(result.is_ok());
@@ -318,7 +325,7 @@ mod integration_tests {
         
         // Run full extraction
         let result = extraction_service
-            .extract_events_from_messages(user_id, chronicle.id, messages, config)
+            .extract_events_from_messages(user_id, chronicle.id, messages, &SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec()))), config)
             .await;
         
         assert!(result.is_ok());

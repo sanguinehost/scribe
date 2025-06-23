@@ -58,7 +58,9 @@ import type {
 	UpdateChronicleRequest,
 	ChronicleEvent,
 	CreateEventRequest,
-	EventFilter
+	EventFilter,
+	TokenCountRequest,
+	TokenCountResponse
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -1037,6 +1039,18 @@ class ApiClient {
 				body: JSON.stringify(data)
 			}
 		);
+	}
+
+	// ============================================================================
+	// Token Counting Methods
+	// ============================================================================
+
+	// Count tokens for text using the hybrid token counter
+	async countTokens(request: TokenCountRequest): Promise<Result<TokenCountResponse, ApiError>> {
+		return this.fetch<TokenCountResponse>('/api/chat/count-tokens', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
 	}
 }
 

@@ -20,19 +20,33 @@
 
 	// Ensure budgets don't exceed total or cause negative buffer
 	$effect(() => {
-		if (recent_history_budget > total_token_limit - 5000) {
-			// Keep at least 5k for RAG/Buffer
-			recent_history_budget = total_token_limit - 5000;
+		// Calculate minimum buffer based on context size (larger contexts get bigger buffers)
+		const min_buffer = Math.min(Math.max(Math.floor(total_token_limit * 0.05), 500), 5000);
+		const min_history = Math.min(Math.max(Math.floor(total_token_limit * 0.2), 1000), 10000);
+		const min_rag = Math.min(Math.max(Math.floor(total_token_limit * 0.1), 500), 5000);
+
+		// Ensure history budget doesn't leave too little for RAG
+		if (recent_history_budget > total_token_limit - min_buffer) {
+			recent_history_budget = total_token_limit - min_buffer;
 		}
+		
+		// Ensure RAG budget fits within remaining space
 		if (rag_budget > total_token_limit - recent_history_budget) {
 			rag_budget = total_token_limit - recent_history_budget;
 		}
-		if (recent_history_budget < 10000 && total_token_limit >= 20000) recent_history_budget = 10000;
-		if (rag_budget < 5000 && total_token_limit >= 15000) rag_budget = 5000;
+		
+		// Set reasonable minimums based on context size
+		if (recent_history_budget < min_history && total_token_limit >= min_history + min_rag + min_buffer) {
+			recent_history_budget = min_history;
+		}
+		if (rag_budget < min_rag && total_token_limit >= min_history + min_rag + min_buffer) {
+			rag_budget = min_rag;
+		}
 
-		// Prevent total from being less than sum of parts if parts are reduced first
-		if (total_token_limit < recent_history_budget + rag_budget) {
-			total_token_limit = recent_history_budget + rag_budget + 10000; // Add a small buffer
+		// Prevent total from being less than sum of parts
+		const required_total = recent_history_budget + rag_budget + min_buffer;
+		if (total_token_limit < required_total) {
+			total_token_limit = required_total;
 		}
 	});
 
@@ -47,13 +61,89 @@
 	<CardContent class="space-y-4">
 		<div class="space-y-4">
 			<div class="space-y-2">
-				<Label for="total-context-limit">Total Context Window (tokens)</Label>
+				<div class="flex items-center justify-between">
+					<Label for="total-context-limit">Total Context Window (tokens)</Label>
+					<div class="flex flex-wrap gap-1">
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 px-2 text-xs"
+							title="Ultra-low cost, minimal context"
+							onclick={() => { total_token_limit = 4096; }}
+						>
+							4K
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 px-2 text-xs"
+							title="Low cost, basic conversations"
+							onclick={() => { total_token_limit = 8192; }}
+						>
+							8K
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 px-2 text-xs"
+							title="Budget-friendly, moderate context"
+							onclick={() => { total_token_limit = 16384; }}
+						>
+							16K
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 px-2 text-xs"
+							title="Balanced cost/performance"
+							onclick={() => { total_token_limit = 32768; }}
+						>
+							32K
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 px-2 text-xs"
+							title="Good for medium conversations"
+							onclick={() => { total_token_limit = 65536; }}
+						>
+							64K
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 px-2 text-xs"
+							title="Large context for complex tasks"
+							onclick={() => { total_token_limit = 131072; }}
+						>
+							128K
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 px-2 text-xs"
+							title="Gemini cost threshold (optimal)"
+							onclick={() => { total_token_limit = 200000; }}
+						>
+							200K
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 px-2 text-xs"
+							title="Maximum context (expensive)"
+							onclick={() => { total_token_limit = 1000000; }}
+						>
+							1M
+						</Button>
+					</div>
+				</div>
 				<Input
 					id="total-context-limit"
 					type="number"
-					min={50000}
+					min={4096}
 					max={2000000}
-					step={10000}
+					step={1000}
 					bind:value={total_token_limit}
 				/>
 				<p class="text-xs text-muted-foreground">
@@ -67,9 +157,9 @@
 					<Input
 						id="recent-history-budget"
 						type="number"
-						min={10000}
-						max={total_token_limit - 5000}
-						step={5000}
+						min={1000}
+						max={total_token_limit - 1000}
+						step={500}
 						bind:value={recent_history_budget}
 					/>
 					<p class="text-xs text-muted-foreground">Tokens for recent chat messages</p>
@@ -80,9 +170,9 @@
 					<Input
 						id="rag-budget"
 						type="number"
-						min={5000}
+						min={500}
 						max={total_token_limit - recent_history_budget}
-						step={5000}
+						step={500}
 						bind:value={rag_budget}
 					/>
 					<p class="text-xs text-muted-foreground">Tokens for lorebooks + older messages</p>

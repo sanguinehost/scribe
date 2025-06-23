@@ -686,7 +686,7 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
     Chat {
         id,
         user_id: Uuid::new_v4(),
-        character_id,
+        character_id: Some(character_id),
         temperature: Some(BigDecimal::from_str("0.7").unwrap()),
         max_output_tokens: Some(1024),
         created_at: Utc::now(),
@@ -709,6 +709,8 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         title_ciphertext: None,
         title_nonce: None,
         stop_sequences: None,
+        chat_mode: scribe_backend::models::chats::ChatMode::Character,
+        player_chronicle_id: None,
     }
 }
 

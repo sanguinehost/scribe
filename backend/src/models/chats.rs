@@ -345,6 +345,7 @@ pub struct ChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub model_name: String,
 }
 
 impl std::fmt::Debug for ChatMessage {
@@ -362,6 +363,8 @@ impl std::fmt::Debug for ChatMessage {
             .field("user_id", &self.user_id)
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field("model_name", &self.model_name)
+            .field("model_name", &self.model_name)
             .field(
                 "raw_prompt_ciphertext",
                 &self
@@ -619,6 +622,7 @@ impl ChatMessage {
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             raw_prompt,
+            model_name: self.model_name,
         })
     }
 }
@@ -644,6 +648,7 @@ pub struct Message {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub model_name: String,
 }
 
 impl std::fmt::Debug for Message {
@@ -669,6 +674,7 @@ impl std::fmt::Debug for Message {
             )
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field("model_name", &self.model_name)
             .field(
                 "raw_prompt_ciphertext",
                 &self
@@ -901,6 +907,7 @@ impl Message {
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             raw_prompt,
+            model_name: self.model_name,
         })
     }
 }
@@ -943,6 +950,7 @@ pub struct ChatMessageForClient {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub raw_prompt: Option<String>,
+    pub model_name: String,
 }
 
 impl std::fmt::Debug for ChatMessageForClient {
@@ -956,6 +964,7 @@ impl std::fmt::Debug for ChatMessageForClient {
             .field("user_id", &self.user_id)
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field("model_name", &self.model_name)
             .field(
                 "raw_prompt",
                 &self.raw_prompt.as_ref().map(|_| "[REDACTED]"),
@@ -983,6 +992,7 @@ pub struct NewChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub model_name: String, // Added model_name field for consistency
 }
 
 impl std::fmt::Debug for NewChatMessage {
@@ -1007,6 +1017,7 @@ impl std::fmt::Debug for NewChatMessage {
             )
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field("model_name", &self.model_name)
             .field(
                 "raw_prompt_ciphertext",
                 &self
@@ -1040,6 +1051,7 @@ pub struct DbInsertableChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub model_name: String,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1061,6 +1073,7 @@ impl std::fmt::Debug for DbInsertableChatMessage {
             )
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field("model_name", &self.model_name)
             .field(
                 "raw_prompt_ciphertext",
                 &self
@@ -1079,12 +1092,13 @@ impl std::fmt::Debug for DbInsertableChatMessage {
 impl DbInsertableChatMessage {
     /// Create a new chat message with required fields only
     #[must_use]
-    pub const fn new(
+    pub fn new(
         chat_id: Uuid,
         user_id: Uuid,
         msg_type: MessageRole,
         content: Vec<u8>,
         content_nonce: Option<Vec<u8>>,
+        model_name: String,
     ) -> Self {
         Self {
             chat_id,
@@ -1092,6 +1106,7 @@ impl DbInsertableChatMessage {
             msg_type,
             content,
             content_nonce,
+            model_name,
             role: None,
             parts: None,
             attachments: None,
@@ -1677,10 +1692,19 @@ impl std::fmt::Debug for SuggestedActionItem {
     }
 }
 
+/// Token usage information for suggested actions
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct SuggestedActionsTokenUsage {
+    pub input_tokens: usize,
+    pub output_tokens: usize,
+    pub total_tokens: usize,
+}
+
 /// Response structure for suggested actions API
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SuggestedActionsResponse {
     pub suggestions: Vec<SuggestedActionItem>,
+    pub token_usage: Option<SuggestedActionsTokenUsage>,
 }
 
 impl std::fmt::Debug for SuggestedActionsResponse {
@@ -1694,6 +1718,7 @@ impl std::fmt::Debug for SuggestedActionsResponse {
                     .map(|_| "[REDACTED_SuggestedActionItem]")
                     .collect::<Vec<_>>(),
             )
+            .field("token_usage", &self.token_usage)
             .finish()
     }
 }
@@ -1709,6 +1734,9 @@ pub struct MessageResponse {
     pub attachments: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub raw_prompt: Option<String>, // Debug field containing the full prompt sent to AI
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
+    pub model_name: Option<String>, // Optional for backward compatibility with existing messages
 }
 
 impl std::fmt::Debug for MessageResponse {
@@ -2142,7 +2170,7 @@ mod tests {
         let content_vec = content_str.as_bytes().to_vec();
 
         let message =
-            DbInsertableChatMessage::new(chat_id, user_id, role, content_vec.clone(), None);
+            DbInsertableChatMessage::new(chat_id, user_id, role, content_vec.clone(), None, "test-model".to_string());
         assert_eq!(message.chat_id, chat_id);
         assert_eq!(message.user_id, user_id);
         assert_eq!(message.msg_type, role);

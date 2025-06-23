@@ -578,6 +578,9 @@ fn process_messages_for_response(
             attachments: response_attachments,
             created_at: decrypted_client_message.created_at,
             raw_prompt: decrypted_client_message.raw_prompt,
+            prompt_tokens: msg_db.prompt_tokens,
+            completion_tokens: msg_db.completion_tokens,
+            model_name: Some(msg_db.model_name), // Added model_name from database record
         });
     }
 
@@ -711,6 +714,7 @@ pub async fn create_message_handler(
         completion_tokens: saved_db_message.completion_tokens,
         raw_prompt_ciphertext: saved_db_message.raw_prompt_ciphertext,
         raw_prompt_nonce: saved_db_message.raw_prompt_nonce,
+        model_name: saved_db_message.model_name.clone(),
     };
     let client_message =
         message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;
@@ -730,6 +734,9 @@ pub async fn create_message_handler(
         attachments: response_attachments,
         created_at: client_message.created_at,
         raw_prompt: client_message.raw_prompt,
+        prompt_tokens: saved_db_message.prompt_tokens,
+        completion_tokens: saved_db_message.completion_tokens,
+        model_name: Some(saved_db_message.model_name), // Added model_name from database record
     };
 
     Ok((StatusCode::CREATED, Json(response)))
@@ -886,6 +893,9 @@ pub async fn get_message_by_id_handler(
         attachments: message_db.attachments.unwrap_or_else(|| json!([])),
         created_at: message_db.created_at,
         raw_prompt: decrypted_raw_prompt,
+        prompt_tokens: message_db.prompt_tokens,
+        completion_tokens: message_db.completion_tokens,
+        model_name: Some(message_db.model_name), // Added model_name from database record
     };
 
     Ok(Json(response))

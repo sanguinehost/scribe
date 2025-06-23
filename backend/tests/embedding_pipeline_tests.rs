@@ -1598,6 +1598,10 @@ async fn test_rag_context_injection_with_qdrant() {
                 );
                 found_lore_chunk = true;
             }
+            RetrievedMetadata::Chronicle(_) => {
+                // Chronicle metadata is not expected in this test case
+                panic!("Unexpected Chronicle metadata in embedding pipeline test");
+            }
         }
     }
 

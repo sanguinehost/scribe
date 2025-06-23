@@ -23,6 +23,9 @@ export interface Message {
 	attachments: MessageAttachment[]; // serde_json::Value from backend
 	created_at: Date;
 	raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
+	prompt_tokens?: number | null; // Token count for user messages
+	completion_tokens?: number | null; // Token count for AI responses
+	model_name?: string; // Model used for this specific message (optional for backward compatibility)
 }
 
 // Placeholder for Vote type - Define based on expected fields from backend
@@ -444,6 +447,9 @@ export interface ScribeChatMessage {
 	error?: string | null; // Error message if generation failed
 	retryable?: boolean; // Whether this message can be retried
 	raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
+	prompt_tokens?: number | null; // Token count for user messages
+	completion_tokens?: number | null; // Token count for AI responses
+	model_name?: string; // Model used for this specific message
 }
 
 export type DocumentResponse = {
@@ -468,8 +474,15 @@ export interface SuggestedActionItem {
 	action: string;
 }
 
+export interface SuggestedActionsTokenUsage {
+	input_tokens: number;
+	output_tokens: number;
+	total_tokens: number;
+}
+
 export type SuggestedActionsResponse = {
 	suggestions: SuggestedActionItem[];
+	token_usage?: SuggestedActionsTokenUsage;
 };
 
 // Types for Chat Session Settings
@@ -803,3 +816,21 @@ export interface EventFilter {
 }
 
 export type EventOrderBy = 'created_at_asc' | 'created_at_desc' | 'updated_at_asc' | 'updated_at_desc';
+
+// Token counting types
+export interface TokenCountRequest {
+	text: string;
+	model?: string;
+	use_api_counting?: boolean;
+}
+
+export interface TokenCountResponse {
+	total: number;
+	text: number;
+	images: number;
+	video: number;
+	audio: number;
+	is_estimate: boolean;
+	model_used: string;
+	counting_method: string;
+}

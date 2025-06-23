@@ -163,7 +163,7 @@
 			onkeydown={(event: KeyboardEvent) => {
 				if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
 					event.preventDefault();
-					// Trigger form submission instead of internal submitForm
+					// Trigger form submission
 					textareaElement?.form?.requestSubmit();
 				}
 			}}

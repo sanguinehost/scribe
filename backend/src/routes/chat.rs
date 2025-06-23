@@ -27,6 +27,7 @@ use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handl
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
+use crate::services::hybrid_token_counter::CountingMode;
 use secrecy::ExposeSecret; // Added for ExposeSecret
 // RetrievedMetadata is no longer directly used in this file for RAG string construction
 // use crate::services::embedding_pipeline::RetrievedMetadata;
@@ -83,6 +84,26 @@ pub struct ChatSessionWithDekResponse {
     pub character_id: Option<Uuid>,
     pub title: Option<String>,
     pub dek_present: bool, // Simpler representation of DEK presence
+}
+
+#[derive(Deserialize, Validate, Debug)]
+pub struct TokenCountRequest {
+    pub text: String,
+    pub model: Option<String>,
+    #[serde(default)]
+    pub use_api_counting: bool,
+}
+
+#[derive(Serialize, Debug)]
+pub struct TokenCountResponse {
+    pub total: usize,
+    pub text: usize,
+    pub images: usize,
+    pub video: usize,
+    pub audio: usize,
+    pub is_estimate: bool,
+    pub model_used: String,
+    pub counting_method: String,
 }
 
 #[instrument(skip_all, fields(user_id = field::Empty, character_id = field::Empty))]
@@ -809,6 +830,7 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
         )
         .route("/:session_id/expand", post(expand_text_handler))
         .route("/:session_id/impersonate", post(impersonate_handler))
+        .route("/count-tokens", post(count_tokens_handler))
         .route("/ping", get(ping_handler))
         .route(
             "/:chat_id/settings",
@@ -833,6 +855,71 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
             get(get_variant_count_handler),
         )
         .with_state(state)
+}
+
+/// Count tokens for a given text using the hybrid token counter
+#[instrument(skip_all)]
+pub async fn count_tokens_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Json(payload): Json<TokenCountRequest>,
+) -> Result<Json<TokenCountResponse>, AppError> {
+    // Ensure user is authenticated
+    let _user = auth_session.user.as_ref().ok_or_else(|| {
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    // Validate the payload
+    payload.validate().map_err(|e| {
+        AppError::BadRequest(format!("Invalid token count request: {}", e))
+    })?;
+
+    let model_to_use = payload.model.unwrap_or_else(|| state.config.token_counter_default_model.clone());
+
+    // Determine counting mode based on request preference
+    let counting_mode = if payload.use_api_counting {
+        CountingMode::HybridPreferApi
+    } else {
+        CountingMode::HybridPreferLocal
+    };
+
+    // Use the hybrid token counter from app state
+    let token_estimate = state
+        .token_counter
+        .count_tokens(&payload.text, counting_mode, Some(&model_to_use))
+        .await
+        .map_err(|e| {
+            error!("Token counting failed: {}", e);
+            AppError::AiServiceError(format!("Token counting failed: {}", e))
+        })?;
+
+    // Determine counting method used
+    let counting_method = if payload.use_api_counting {
+        "api_preferred".to_string()
+    } else {
+        "local_preferred".to_string()
+    };
+
+    let response = TokenCountResponse {
+        total: token_estimate.total,
+        text: token_estimate.text,
+        images: token_estimate.images,
+        video: token_estimate.video,
+        audio: token_estimate.audio,
+        is_estimate: token_estimate.is_estimate,
+        model_used: model_to_use,
+        counting_method,
+    };
+
+    info!(
+        total_tokens = token_estimate.total,
+        text_tokens = token_estimate.text,
+        model = %response.model_used,
+        method = %response.counting_method,
+        "Token count completed"
+    );
+
+    Ok(Json(response))
 }
 
 async fn ping_handler() -> &'static str {
@@ -1033,7 +1120,7 @@ pub async fn generate_suggested_actions(
         _gen_top_k,
         _gen_top_p,
         _gen_seed,
-        _gen_model_name_from_service, // We might use a fixed model for suggestions
+        _gen_model_name_from_service, // We use a fixed model for suggestions
         _gen_gemini_thinking_budget,
         _gen_gemini_enable_code_execution,
         _user_message_struct_to_save, // Not saving a user message here
@@ -1178,8 +1265,8 @@ pub async fn generate_suggested_actions(
         });
     }
 
-    // Model for suggestions - can be from settings or fixed. Using fixed for now.
-    let model_for_suggestions = "gemini-2.5-flash".to_string(); // Or use gen_model_name_from_service if desired
+    // Use Flash for suggestions - it's fast and cheap for simple action generation
+    let model_for_suggestions = "gemini-2.5-flash".to_string();
 
     let (final_system_prompt_for_suggestions, final_messages_for_suggestions_llm) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
@@ -1283,7 +1370,29 @@ pub async fn generate_suggested_actions(
 
     info!(%session_id, "Successfully generated {} suggested actions via JsonSchemaSpec (parsed from text)", suggestions.len());
 
-    Ok(Json(SuggestedActionsResponse { suggestions }))
+    // Extract token usage from Gemini response
+    let token_usage = Some(crate::models::chats::SuggestedActionsTokenUsage {
+        input_tokens: gemini_response.usage.prompt_tokens.unwrap_or(0) as usize,
+        output_tokens: gemini_response.usage.completion_tokens.unwrap_or(0) as usize,
+        total_tokens: gemini_response.usage.total_tokens.unwrap_or(0) as usize,
+    });
+
+    if let Some(ref token_info) = token_usage {
+        info!(
+            %session_id,
+            input_tokens = token_info.input_tokens,
+            output_tokens = token_info.output_tokens,
+            total_tokens = token_info.total_tokens,
+            "Token usage for suggested actions"
+        );
+    } else {
+        warn!(%session_id, "No token usage information available in Gemini response for suggested actions");
+    }
+
+    Ok(Json(SuggestedActionsResponse { 
+        suggestions,
+        token_usage,
+    }))
 }
 
 #[instrument(skip_all, err)]

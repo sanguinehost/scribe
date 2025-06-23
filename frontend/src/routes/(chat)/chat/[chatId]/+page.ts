@@ -5,21 +5,9 @@ import type {
 	ScribeChatSession,
 	ScribeCharacter,
 	MessageRole,
-	BackendAuthResponse
+	BackendAuthResponse,
+	Message
 } from '$lib/types.ts';
-
-// Define an interim type for the raw message structure from the API if it uses parts
-interface RawApiMessage {
-	id: string;
-	session_id: string;
-	message_type: MessageRole;
-	parts?: Array<{ text?: string }>; // text is optional, no other properties needed from parts for this transform
-	content?: string;
-	created_at: string;
-	user_id: string;
-	loading?: boolean;
-	raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
-}
 
 export async function load({ params: { chatId }, parent }) {
 	try {
@@ -43,7 +31,7 @@ export async function load({ params: { chatId }, parent }) {
 			console.error('Failed to fetch messages:', messagesResult.error);
 			error(500, 'Failed to load chat messages');
 		}
-		const messagesResponseJson: RawApiMessage[] = messagesResult.value;
+		const messagesResponseJson: Message[] = messagesResult.value;
 		const messages: ScribeChatMessage[] = messagesResponseJson.map(
 			(rawMsg): ScribeChatMessage => ({
 				id: rawMsg.id, // For existing messages, use backend ID as main ID
@@ -51,15 +39,16 @@ export async function load({ params: { chatId }, parent }) {
 				session_id: rawMsg.session_id,
 				message_type: rawMsg.message_type,
 				content:
-					rawMsg.parts && rawMsg.parts.length > 0 && typeof rawMsg.parts[0].text === 'string'
+					rawMsg.parts && rawMsg.parts.length > 0 && 'text' in rawMsg.parts[0] && typeof rawMsg.parts[0].text === 'string'
 						? rawMsg.parts[0].text
-						: typeof rawMsg.content === 'string'
-							? rawMsg.content
-							: '',
-				created_at: rawMsg.created_at,
-				user_id: rawMsg.user_id,
-				loading: rawMsg.loading || false,
-				raw_prompt: rawMsg.raw_prompt
+						: '',
+				created_at: typeof rawMsg.created_at === 'string' ? rawMsg.created_at : rawMsg.created_at.toISOString(),
+				user_id: '', // ScribeChatMessage doesn't need user_id in the same way
+				loading: false, // Messages from API are never loading
+				raw_prompt: rawMsg.raw_prompt,
+				prompt_tokens: rawMsg.prompt_tokens,
+				completion_tokens: rawMsg.completion_tokens,
+				model_name: rawMsg.model_name // Added model_name for per-message pricing
 			})
 		);
 

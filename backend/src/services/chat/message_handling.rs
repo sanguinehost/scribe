@@ -143,15 +143,12 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     let mut prompt_tokens_val: Option<i32> = None;
     let mut completion_tokens_val: Option<i32> = None;
 
-    // Use the main content string for token counting for now.
-    // TODO: More accurate token counting if `parts` is complex.
-    let content_for_token_counting = content;
-
     if message_type_enum == MessageRole::User {
+        // For user messages, count tokens for just the user's input content
         match state
             .token_counter
             .count_tokens(
-                content_for_token_counting,
+                content,
                 CountingMode::LocalOnly,
                 Some(&model_name),
             )
@@ -163,10 +160,11 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             Err(e) => warn!("Failed to count prompt tokens for user message: {}", e), // Log and continue
         }
     } else if message_type_enum == MessageRole::Assistant {
+        // For assistant messages, count tokens for the assistant's response content
         match state
             .token_counter
             .count_tokens(
-                content_for_token_counting,
+                content,
                 CountingMode::LocalOnly,
                 Some(&model_name),
             )
@@ -179,6 +177,31 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 "Failed to count completion tokens for assistant message: {}",
                 e
             ), // Log and continue
+        }
+
+        // For assistant messages, if raw_prompt_debug is provided, count tokens for the full prompt
+        // that was sent to the AI (including system prompt, RAG context, history, etc.)
+        if let Some(raw_prompt) = raw_prompt_debug {
+            info!(%session_id, raw_prompt_length = raw_prompt.len(), 
+                  "Counting tokens for full AI prompt (system + RAG + history + user input)");
+            
+            match state
+                .token_counter
+                .count_tokens(
+                    raw_prompt,
+                    CountingMode::LocalOnly,
+                    Some(&model_name),
+                )
+                .await
+            {
+                Ok(estimate) => {
+                    // Override the prompt_tokens with the full prompt token count
+                    prompt_tokens_val = Some(i32::try_from(estimate.total).unwrap_or(i32::MAX));
+                    info!(%session_id, prompt_tokens = estimate.total, 
+                          "Counted tokens for full AI prompt (system + RAG + history + user input)");
+                }
+                Err(e) => warn!("Failed to count full prompt tokens for assistant message: {}", e),
+            }
         }
     }
 
@@ -204,6 +227,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         message_type_enum, // msg_type field in DbInsertableChatMessage
         content_to_save,   // content field
         nonce_to_save,     // content_nonce field
+        model_name,        // model_name field
     );
 
     if let Some(role) = role_str {
