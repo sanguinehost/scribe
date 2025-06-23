@@ -52,6 +52,10 @@ pub struct Config {
     pub context_recent_history_token_budget: usize,
     #[serde(default = "default_context_rag_token_budget")]
     pub context_rag_token_budget: usize,
+    
+    // Strategic Truncation Settings
+    #[serde(default = "default_min_tail_messages_to_preserve")]
+    pub min_tail_messages_to_preserve: usize,
 
     // File Storage Config
     #[serde(default = "default_upload_storage_path")]
@@ -174,6 +178,9 @@ const fn default_context_recent_history_token_budget() -> usize {
 const fn default_context_rag_token_budget() -> usize {
     50_000
 }
+const fn default_min_tail_messages_to_preserve() -> usize {
+    8 // Preserve last 8 messages to maintain conversation continuity
+}
 fn default_upload_storage_path() -> String {
     "./uploads".to_string()
 }
@@ -239,6 +246,7 @@ impl Default for Config {
             context_total_token_limit: default_context_total_token_limit(),
             context_recent_history_token_budget: default_context_recent_history_token_budget(),
             context_rag_token_budget: default_context_rag_token_budget(),
+            min_tail_messages_to_preserve: default_min_tail_messages_to_preserve(),
             upload_storage_path: default_upload_storage_path(),
             frontend_base_url: default_frontend_base_url(),
             app_env: default_app_env(),
