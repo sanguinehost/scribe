@@ -17,43 +17,71 @@
 		description?: string;
 	}>();
 
-	// Strategic token allocation with conservative limits to account for backend enforcement
+	// Constraint validation
 	$effect(() => {
-		// More conservative buffer calculations to account for strategic truncation overhead
-		// Backend uses middle-out truncation and preserves 8 messages by default
-		const min_buffer = Math.min(Math.max(Math.floor(total_token_limit * 0.08), 1000), 8000);
-		const min_history = Math.min(Math.max(Math.floor(total_token_limit * 0.25), 2000), 15000);
-		const min_rag = Math.min(Math.max(Math.floor(total_token_limit * 0.15), 1000), 8000);
+		// Ensure budgets don't exceed total
+		const max_allowed = total_token_limit;
 
-		// Conservative validation: ensure budgets leave adequate buffer for strategic processing
-		if (recent_history_budget > total_token_limit - min_buffer - 1000) {
-			recent_history_budget = total_token_limit - min_buffer - 1000;
+		// Clamp recent history budget
+		if (recent_history_budget > max_allowed) {
+			recent_history_budget = max_allowed;
 		}
 
-		// Ensure RAG budget accounts for potential compression overhead
-		if (rag_budget > total_token_limit - recent_history_budget - min_buffer) {
-			rag_budget = total_token_limit - recent_history_budget - min_buffer;
+		// Clamp RAG budget to remaining space
+		if (rag_budget > max_allowed - recent_history_budget) {
+			rag_budget = max_allowed - recent_history_budget;
 		}
 
-		// Set conservative minimums that work well with strategic truncation
-		if (
-			recent_history_budget < min_history &&
-			total_token_limit >= min_history + min_rag + min_buffer
-		) {
-			recent_history_budget = min_history;
+		// Ensure minimum budgets
+		if (recent_history_budget < 1000) {
+			recent_history_budget = 1000;
 		}
-		if (rag_budget < min_rag && total_token_limit >= min_history + min_rag + min_buffer) {
-			rag_budget = min_rag;
+		if (rag_budget < 500) {
+			rag_budget = 500;
 		}
 
-		// Prevent total from being less than sum of parts (with extra safety margin)
-		const required_total = recent_history_budget + rag_budget + min_buffer + 500;
-		if (total_token_limit < required_total) {
-			total_token_limit = required_total;
+		// Ensure total is at least the sum of the two budgets
+		const min_total = recent_history_budget + rag_budget;
+		if (total_token_limit < min_total) {
+			total_token_limit = min_total;
 		}
 	});
 
-	const buffer_budget = $derived(total_token_limit - recent_history_budget - rag_budget);
+	const buffer_budget = $derived(
+		Math.max(0, total_token_limit - recent_history_budget - rag_budget)
+	);
+
+	// Smart preset calculation based on total tokens
+	function calculatePresetBudgets(total: number) {
+		// Backend defaults suggest 75% for recent history, 20% for RAG, 5% buffer
+		// But we'll use more balanced allocations
+		let history_ratio = 0.75;
+		let rag_ratio = 0.2;
+
+		// Adjust ratios based on context size
+		if (total <= 8192) {
+			// Small context: prioritize recent history
+			history_ratio = 0.7;
+			rag_ratio = 0.25;
+		} else if (total <= 32768) {
+			// Medium context: balanced
+			history_ratio = 0.65;
+			rag_ratio = 0.3;
+		} else if (total <= 128000) {
+			// Large context: more RAG
+			history_ratio = 0.6;
+			rag_ratio = 0.35;
+		} else {
+			// Very large context: even more RAG
+			history_ratio = 0.55;
+			rag_ratio = 0.4;
+		}
+
+		return {
+			history: Math.floor(total * history_ratio),
+			rag: Math.floor(total * rag_ratio)
+		};
+	}
 </script>
 
 <div class="space-y-3">
@@ -101,7 +129,23 @@
 						size="sm"
 						class="h-5 px-1 text-xs"
 						onclick={() => {
-							total_token_limit = 8192;
+							total_token_limit = 4096;
+							const budgets = calculatePresetBudgets(4096);
+							recent_history_budget = budgets.history;
+							rag_budget = budgets.rag;
+						}}
+					>
+						4K
+					</Button>
+					<Button
+						variant="ghost"
+						size="sm"
+						class="h-5 px-1 text-xs"
+						onclick={() => {
+							total_token_limit = 8000;
+							const budgets = calculatePresetBudgets(8000);
+							recent_history_budget = budgets.history;
+							rag_budget = budgets.rag;
 						}}
 					>
 						8K
@@ -111,7 +155,10 @@
 						size="sm"
 						class="h-5 px-1 text-xs"
 						onclick={() => {
-							total_token_limit = 32768;
+							total_token_limit = 32000;
+							const budgets = calculatePresetBudgets(32000);
+							recent_history_budget = budgets.history;
+							rag_budget = budgets.rag;
 						}}
 					>
 						32K
@@ -121,7 +168,10 @@
 						size="sm"
 						class="h-5 px-1 text-xs"
 						onclick={() => {
-							total_token_limit = 131072;
+							total_token_limit = 128000;
+							const budgets = calculatePresetBudgets(128000);
+							recent_history_budget = budgets.history;
+							rag_budget = budgets.rag;
 						}}
 					>
 						128K
@@ -132,6 +182,9 @@
 						class="h-5 px-1 text-xs"
 						onclick={() => {
 							total_token_limit = 200000;
+							const budgets = calculatePresetBudgets(200000);
+							recent_history_budget = budgets.history;
+							rag_budget = budgets.rag;
 						}}
 					>
 						200K
@@ -141,7 +194,7 @@
 			<Input
 				id="total-context-limit-compact"
 				type="number"
-				min={4096}
+				min={4000}
 				max={2000000}
 				step={1000}
 				bind:value={total_token_limit}
@@ -155,9 +208,9 @@
 				<Input
 					id="recent-history-budget-compact"
 					type="number"
-					min={10000}
-					max={total_token_limit - 5000}
-					step={5000}
+					min={1000}
+					max={total_token_limit - 500}
+					step={1000}
 					bind:value={recent_history_budget}
 					class="h-8 text-xs"
 				/>
@@ -168,9 +221,9 @@
 				<Input
 					id="rag-budget-compact"
 					type="number"
-					min={5000}
+					min={500}
 					max={total_token_limit - recent_history_budget}
-					step={5000}
+					step={500}
 					bind:value={rag_budget}
 					class="h-8 text-xs"
 				/>
@@ -187,8 +240,8 @@
 				size="sm"
 				onclick={() => {
 					total_token_limit = 200000;
-					recent_history_budget = 120000;
-					rag_budget = 60000;
+					recent_history_budget = 110000;
+					rag_budget = 80000;
 				}}
 				class="h-7 flex-1 text-xs"
 			>
@@ -199,8 +252,8 @@
 				size="sm"
 				onclick={() => {
 					total_token_limit = 500000;
-					recent_history_budget = 300000;
-					rag_budget = 150000;
+					recent_history_budget = 275000;
+					rag_budget = 200000;
 				}}
 				class="h-7 flex-1 text-xs"
 			>
@@ -212,7 +265,7 @@
 				onclick={() => {
 					total_token_limit = 100000;
 					recent_history_budget = 60000;
-					rag_budget = 25000;
+					rag_budget = 35000;
 				}}
 				class="h-7 flex-1 text-xs"
 			>
