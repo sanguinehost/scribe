@@ -1119,9 +1119,10 @@ mod tests {
         use super::*;
         use crate::config::Config;
         use crate::errors::AppError;
-        use crate::services::embeddings::{RetrievedChunk, RetrievedMetadata, ChatMetadata};
+        use crate::services::embeddings::{RetrievedChunk, RetrievedMetadata, ChatMessageChunkMetadata};
         use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent};
         use std::sync::Arc;
+        use crate::prompt_builder::{TokenCalculation, truncate_recent_history_strategically, apply_token_limits, truncate_rag_context};
         
         fn create_test_message(role: ChatRole, content: &str, tokens: usize) -> (GenAiChatMessage, usize) {
             (
@@ -1186,7 +1187,7 @@ mod tests {
             let max_allowed = 15_000;
             let min_tail = 4;
 
-            super::truncate_recent_history_strategically(
+            truncate_recent_history_strategically(
                 &mut calculation,
                 &mut current_total,
                 max_allowed,
@@ -1238,7 +1239,7 @@ mod tests {
             let max_allowed = 15_000;
             let min_tail = 4;
 
-            super::truncate_recent_history_strategically(
+            truncate_recent_history_strategically(
                 &mut calculation,
                 &mut current_total,
                 max_allowed,
@@ -1274,7 +1275,7 @@ mod tests {
             let max_allowed = 11_500; // Exactly at limit
             let min_tail = 2;
 
-            super::truncate_recent_history_strategically(
+            truncate_recent_history_strategically(
                 &mut calculation,
                 &mut current_total,
                 max_allowed,
@@ -1315,7 +1316,7 @@ mod tests {
             let max_allowed = 8_000;
             let min_tail = 3;
 
-            super::truncate_recent_history_strategically(
+            truncate_recent_history_strategically(
                 &mut calculation,
                 &mut current_total,
                 max_allowed,
@@ -1368,7 +1369,7 @@ mod tests {
             let config_arc = Arc::new(config);
             
             // This should return an error due to hard limit enforcement
-            let result = super::apply_token_limits(calculation, &config_arc);
+            let result = apply_token_limits(calculation, &config_arc);
             
             assert!(result.is_err(), "Should return error when hard limit is exceeded");
             
@@ -1385,8 +1386,14 @@ mod tests {
             // Create RAG items that will be truncated first
             let rag_chunk = RetrievedChunk {
                 text: "Some context".to_string(),
-                metadata: RetrievedMetadata::Chat(ChatMetadata {
+                metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
+                    message_id: uuid::Uuid::new_v4(),
+                    session_id: uuid::Uuid::new_v4(),
+                    user_id: uuid::Uuid::new_v4(),
                     speaker: "user".to_string(),
+                    timestamp: chrono::Utc::now(),
+                    text: "Some context".to_string(),
+                    source_type: "chat".to_string(),
                 }),
                 score: 0.9,
             };
@@ -1417,7 +1424,7 @@ mod tests {
             let max_allowed = 12_000;
 
             // First truncate RAG (should remove all 6000 tokens of RAG)
-            super::truncate_rag_context(&mut calculation, &mut current_total, max_allowed);
+            truncate_rag_context(&mut calculation, &mut current_total, max_allowed);
             
             // After RAG truncation: 17,500 - 6,000 = 11,500 tokens (under limit)
             assert_eq!(calculation.rag_items_with_tokens.len(), 0);

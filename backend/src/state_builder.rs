@@ -4,6 +4,7 @@ use crate::{
     llm::{AiClient, EmbeddingClient},
     services::{
         chat_override_service::ChatOverrideService,
+        chronicle_service::ChronicleService,
         email_service::{EmailService, create_email_service},
         embeddings::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait},
         encryption_service::EncryptionService,
@@ -11,6 +12,7 @@ use crate::{
         gemini_token_client::GeminiTokenClient,
         hybrid_token_counter::HybridTokenCounter,
         lorebook::LorebookService,
+        narrative_intelligence_service::NarrativeIntelligenceService,
         tokenizer_service::TokenizerService,
         user_persona_service::UserPersonaService,
     },
@@ -226,6 +228,22 @@ impl AppStateServicesBuilder {
             ))
         });
 
+        // Create chronicle service for narrative intelligence
+        let chronicle_service = Arc::new(ChronicleService::new(
+            self.db_pool.clone(),
+        ));
+
+        // Create narrative intelligence service
+        let narrative_intelligence_service = Arc::new(
+            NarrativeIntelligenceService::for_development_with_deps(
+                ai_client.clone(),
+                chronicle_service,
+                lorebook_service.clone(),
+                qdrant_service.clone(),
+                embedding_client.clone(),
+            )
+        );
+
         Ok(AppStateServices {
             ai_client,
             embedding_client,
@@ -239,6 +257,7 @@ impl AppStateServicesBuilder {
             auth_backend,
             file_storage_service,
             email_service,
+            narrative_intelligence_service,
         })
     }
 }

@@ -2,6 +2,9 @@
 
 use serde::Deserialize;
 
+pub mod feature_flags;
+pub use feature_flags::*;
+
 // Renamed from Settings to Config
 #[derive(Deserialize, Clone)]
 pub struct Config {
@@ -69,6 +72,10 @@ pub struct Config {
     #[serde(default = "default_app_env")]
     pub app_env: String,
     pub from_email: Option<String>,
+    
+    // Narrative Feature Flags
+    #[serde(default)]
+    pub narrative_flags: NarrativeFeatureFlags,
 }
 
 impl std::fmt::Debug for Config {
@@ -251,6 +258,7 @@ impl Default for Config {
             frontend_base_url: default_frontend_base_url(),
             app_env: default_app_env(),
             from_email: None,
+            narrative_flags: NarrativeFeatureFlags::default(),
         }
     }
 }

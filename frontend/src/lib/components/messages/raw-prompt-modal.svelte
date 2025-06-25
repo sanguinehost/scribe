@@ -16,20 +16,21 @@
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let hasFetched = $state(false);
+	let retryCount = $state(0);
+	let retryTimeout = $state<NodeJS.Timeout | null>(null);
 
-	// Fetch raw prompt when modal opens (only once per open)
+	// Fetch raw prompt when modal opens
 	$effect(() => {
-		if (open && !hasFetched && !isLoading) {
+		if (open && !hasFetched && !isLoading && !rawPrompt) {
 			fetchRawPrompt();
 		}
 	});
 
 	async function fetchRawPrompt() {
-		if (isLoading || hasFetched) return;
+		if (isLoading) return;
 
 		isLoading = true;
 		error = null;
-		hasFetched = true;
 
 		try {
 			const result = await apiClient.getMessageById(messageId);
@@ -38,22 +39,53 @@
 
 				if (message.raw_prompt) {
 					rawPrompt = message.raw_prompt;
+					retryCount = 0; // Reset retry count on success
+					hasFetched = true;
 				} else {
 					error = 'Raw prompt not available for this message';
+					hasFetched = true;
 				}
 			} else {
 				console.error('Failed to fetch message:', result.error);
 				if ('statusCode' in result.error && result.error.statusCode === 404) {
-					error = 'Message not found - it may still be processing';
+					// Message not found - likely still being saved
+					retryCount++;
+					if (retryCount <= 5) { // Max 5 retries
+						const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 8000); // Exponential backoff, max 8s
+						error = `Message still processing, retrying in ${Math.ceil(delay / 1000)}s... (${retryCount}/5)`;
+						
+						// Clear any existing timeout
+						if (retryTimeout) {
+							clearTimeout(retryTimeout);
+						}
+						
+						// Schedule retry
+						retryTimeout = setTimeout(() => {
+							if (open) { // Only retry if modal is still open
+								isLoading = true; // Ensure loading state is maintained
+								fetchRawPrompt();
+							}
+						}, delay);
+						isLoading = false; // Show error message during wait
+						return;
+					} else {
+						error = 'Message not found after multiple retries - it may have failed to save';
+						hasFetched = true;
+					}
 				} else {
 					error = `Failed to fetch message: ${result.error.message}`;
+					hasFetched = true;
 				}
 			}
 		} catch (err) {
 			console.error('Error fetching raw prompt:', err);
 			error = 'Network error occurred';
+			hasFetched = true;
 		} finally {
-			isLoading = false;
+			// Only set loading to false if we're not retrying
+			if (!retryTimeout) {
+				isLoading = false;
+			}
 		}
 	}
 
@@ -75,6 +107,11 @@
 			error = null;
 			isLoading = false;
 			hasFetched = false;
+			retryCount = 0;
+			if (retryTimeout) {
+				clearTimeout(retryTimeout);
+				retryTimeout = null;
+			}
 		}
 	}
 </script>
@@ -105,7 +142,11 @@
 						<div
 							class="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent"
 						></div>
-						Loading debug information...
+						{#if retryCount > 0}
+							Loading debug information... (attempt {retryCount + 1})
+						{:else}
+							Loading debug information...
+						{/if}
 					</div>
 				</div>
 			{:else if error}
@@ -118,6 +159,11 @@
 						variant="outline"
 						onclick={() => {
 							hasFetched = false;
+							retryCount = 0;
+							if (retryTimeout) {
+								clearTimeout(retryTimeout);
+								retryTimeout = null;
+							}
 							fetchRawPrompt();
 						}}
 						disabled={isLoading}

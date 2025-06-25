@@ -878,6 +878,12 @@ pub async fn get_session_data_for_generation(
     }
     // --- End of RAG Context ---
 
+    // --- Narrative Intelligence Processing ---
+    // NOTE: Narrative intelligence processing has been moved to AFTER message saving
+    // to ensure all messages are properly stored in the database before analysis.
+    // This prevents "Record not found" errors when the service tries to analyze
+    // messages that haven't been saved yet.
+
     // --- First Message Logic (applied to token-managed history) ---
     if managed_recent_history.is_empty() {
         info!(%session_id, "Managed recent history is empty. Checking for character's first_mes.");
@@ -996,6 +1002,7 @@ pub async fn get_session_data_for_generation(
         history_management_strategy_db_val, // 18: history_management_strategy (String) - MOVED
         history_management_limit_db_val,    // 19: history_management_limit (i32) - MOVED
         user_persona_name,                  // 20: user_persona_name (Option<String>) - NEW
+        player_chronicle_id_from_session,   // 21: player_chronicle_id (Option<Uuid>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.
@@ -1019,6 +1026,7 @@ pub struct StreamAiParams {
     pub request_thinking: bool,                    // New parameter
     pub user_dek: Option<Arc<SecretBox<Vec<u8>>>>, // Changed to Option<Arc<SecretBox>>
     pub character_name: Option<String>,            // For prefill generation
+    pub player_chronicle_id: Option<Uuid>,        // For narrative processing
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -1234,6 +1242,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             request_thinking: params.request_thinking,
             user_dek: params.user_dek.clone(),
             character_name: params.character_name.clone(),
+            player_chronicle_id: params.player_chronicle_id,
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
@@ -1298,6 +1307,7 @@ pub async fn stream_ai_response_and_save_message(
         request_thinking,
         user_dek,
         character_name: _, // Ignore character_name in the actual generation function
+        player_chronicle_id,
     } = params;
 
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
@@ -1443,6 +1453,9 @@ pub async fn stream_ai_response_and_save_message(
     let sse_stream = async_stream::stream! {
         let mut accumulated_content = String::new();
         let mut stream_error_occurred = false;
+        
+        // Create a channel to receive token usage data from the spawned task
+        let (token_sender, mut token_receiver) = tokio::sync::mpsc::unbounded_channel::<ScribeSseEvent>();
 
         // Pin the stream from the AI client
         futures::pin_mut!(genai_stream);
@@ -1562,10 +1575,10 @@ pub async fn stream_ai_response_and_save_message(
             }
         }
 
-        trace!("Exited SSE processing loop in chat_service. stream_error_occurred={}", stream_error_occurred);
+        info!(session_id = %stream_session_id, stream_error_occurred = stream_error_occurred, accumulated_content_len = accumulated_content.len(), "NARRATIVE_DEBUG: Exited SSE processing loop in chat_service");
 
         if !stream_error_occurred && !accumulated_content.is_empty() {
-            debug!("Attempting to save full successful AI response (chat_service)");
+            info!(session_id = %stream_session_id, accumulated_content_len = accumulated_content.len(), "NARRATIVE_DEBUG: Stream completed successfully, attempting to save full AI response");
 
             let full_session_id_clone = stream_session_id;
             let full_user_id_clone = stream_user_id;
@@ -1573,38 +1586,148 @@ pub async fn stream_ai_response_and_save_message(
             let user_dek_arc_clone_full = user_dek.clone(); // Clone Option<Arc<SecretBox>> for the spawned task
             let state_for_full_save = stream_state.clone(); // Use the already cloned state
             let service_model_name_clone_full = service_model_name.clone(); // Clone model name for this task
+            let token_sender_clone = token_sender.clone(); // Clone the sender for the spawned task
+            let accumulated_content_clone = accumulated_content.clone(); // Clone content for the spawned task
+            let player_chronicle_id_clone = player_chronicle_id; // Move chronicle ID into the spawned task
 
             tokio::spawn(async move {
+                info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Entering tokio::spawn block for message save and narrative processing");
+                
                 let dek_ref_full = user_dek_arc_clone_full.clone();
+                info!(session_id = %full_session_id_clone, dek_available = dek_ref_full.is_some(), "NARRATIVE_DEBUG: About to save message");
+                
                 match save_message(SaveMessageParams {
-                    state: state_for_full_save,
+                    state: state_for_full_save.clone(),
                     session_id: full_session_id_clone,
                     user_id: full_user_id_clone,
                     message_type_enum: MessageRole::Assistant,
-                    content: &accumulated_content,
+                    content: &accumulated_content_clone,
                     role_str: Some("assistant".to_string()),
-                    parts: Some(serde_json::json!([{"text": accumulated_content}])),
+                    parts: Some(serde_json::json!([{"text": accumulated_content_clone}])),
                     attachments: None,
-                    user_dek_secret_box: dek_ref_full,
-                    model_name: service_model_name_clone_full,
+                    user_dek_secret_box: dek_ref_full.clone(),
+                    model_name: service_model_name_clone_full.clone(),
                     raw_prompt_debug: Some(&raw_prompt_debug),
                 }).await {
                     Ok(saved_message) => {
-                        debug!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Successfully saved full AI response via save_message (chat_service)");
+                        info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");
+                        
+                        // Send message ID first (for raw prompt modal)
+                        info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Sending message ID through channel");
+                        let _ = token_sender_clone.send(ScribeSseEvent::MessageSaved {
+                            message_id: saved_message.id.to_string(),
+                        });
+                        
+                        // Send token usage data through the channel
+                        if let (Some(prompt_tokens), Some(completion_tokens)) = (saved_message.prompt_tokens, saved_message.completion_tokens) {
+                            info!(session_id = %full_session_id_clone, prompt_tokens = prompt_tokens, completion_tokens = completion_tokens, "Sending token usage through channel");
+                            let _ = token_sender_clone.send(ScribeSseEvent::TokenUsage {
+                                prompt_tokens,
+                                completion_tokens,
+                                model_name: service_model_name_clone_full.clone(),
+                            });
+                        } else {
+                            warn!(session_id = %full_session_id_clone, "Token data not available in saved message");
+                        }
+                        
+                        // --- Narrative Intelligence Processing (After Message Save) ---
+                        // Process narrative intelligence now that the assistant message has been saved
+                        info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to check DEK availability for narrative processing");
+                        
+                        if let Some(dek_arc) = &dek_ref_full {
+                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: DEK available, starting narrative intelligence processing");
+                            
+                            // Convert user_dek_secret_box to SessionDek for narrative processing
+                            let secret_bytes = dek_arc.expose_secret().clone();
+                            let session_dek_for_narrative = crate::auth::session_dek::SessionDek(secrecy::SecretBox::new(Box::new(secret_bytes)));
+                            
+                            // Retrieve the latest messages from the database for narrative analysis
+                            // This ensures we're analyzing the complete conversation including the just-saved assistant response
+                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Processing narrative intelligence context after message save");
+                            
+                            // Get recent messages from the database for narrative analysis
+                            let recent_messages = match crate::services::chat::message_handling::get_messages_for_session(
+                                &state_for_full_save.pool,
+                                full_user_id_clone,
+                                full_session_id_clone,
+                            ).await {
+                                Ok(messages) => {
+                                    info!(session_id = %full_session_id_clone, message_count = messages.len(), "NARRATIVE_DEBUG: Retrieved messages for narrative analysis");
+                                    messages
+                                }
+                                Err(e) => {
+                                    error!(session_id = %full_session_id_clone, error = %e, "NARRATIVE_DEBUG: Failed to retrieve messages for narrative analysis, using empty context");
+                                    Vec::new()
+                                }
+                            };
+                            
+                            // For now, use empty RAG context - this could be enhanced later to include relevant lorebook entries
+                            let empty_rag_context: Vec<crate::services::embeddings::RetrievedChunk> = Vec::new();
+                            
+                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to call narrative_intelligence_service.process_conversation_context");
+                            
+                            match state_for_full_save.narrative_intelligence_service.process_conversation_context(
+                                full_user_id_clone,
+                                full_session_id_clone,
+                                player_chronicle_id_clone,
+                                &recent_messages,
+                                &empty_rag_context,
+                                &session_dek_for_narrative,
+                            ).await {
+                                Ok(narrative_result) => {
+                                    info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Narrative intelligence processing returned successfully");
+                                    if narrative_result.is_significant {
+                                        info!(
+                                            session_id = %full_session_id_clone,
+                                            confidence = narrative_result.confidence,
+                                            events_created = narrative_result.events_created,
+                                            entries_created = narrative_result.entries_created,
+                                            processing_time_ms = narrative_result.processing_time_ms,
+                                            "NARRATIVE_DEBUG: Narrative intelligence processing completed successfully after message save"
+                                        );
+                                    } else {
+                                        info!(session_id = %full_session_id_clone, confidence = narrative_result.confidence, "NARRATIVE_DEBUG: Conversation not deemed significant for narrative processing");
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(session_id = %full_session_id_clone, error = %e, "NARRATIVE_DEBUG: Failed to process narrative intelligence context after message save");
+                                }
+                            }
+                        } else {
+                            warn!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Skipping narrative intelligence processing: no user DEK available for decryption");
+                        }
+                        
+                        info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Completed narrative processing attempt");
                     }
                     Err(e) => {
-                        error!(error = ?e, session_id = %full_session_id_clone, "Error saving full AI response via save_message (chat_service)");
+                        error!(error = ?e, session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Error saving full AI response via save_message (chat_service)");
                     }
                 }
+                
+                info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Exiting tokio::spawn block");
             });
         } else if stream_error_occurred {
-            trace!("[DONE] not sent due to stream_error_occurred=true in chat_service");
+            warn!(session_id = %stream_session_id, "NARRATIVE_DEBUG: [DONE] not sent due to stream_error_occurred=true in chat_service");
         } else if accumulated_content.is_empty() && !stream_error_occurred {
             // If the stream ended successfully but produced no content,
             // let the chat route handle this by sending [DONE_EMPTY]
             // Do not send an error event here as this is a successful completion
-            warn!(session_id = %stream_session_id, "AI stream finished successfully but produced no content - letting chat route handle [DONE_EMPTY]");
+            warn!(session_id = %stream_session_id, "NARRATIVE_DEBUG: AI stream finished successfully but produced no content - letting chat route handle [DONE_EMPTY]");
+        } else {
+            warn!(session_id = %stream_session_id, stream_error_occurred = stream_error_occurred, accumulated_content_len = accumulated_content.len(), "NARRATIVE_DEBUG: Unexpected condition - neither success nor error case matched");
         }
+        
+        // Wait for token usage data from the spawned task and yield it
+        if !stream_error_occurred && !accumulated_content.is_empty() {
+            info!(session_id = %stream_session_id, "Waiting for token usage data from spawned task");
+            if let Some(token_event) = token_receiver.recv().await {
+                info!(session_id = %stream_session_id, "Received token usage data, yielding to stream");
+                yield Ok(token_event);
+            } else {
+                warn!(session_id = %stream_session_id, "No token usage data received from spawned task");
+            }
+        }
+        
         trace!("Finished SSE async_stream! block in chat_service");
     };
 

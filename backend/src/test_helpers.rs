@@ -34,10 +34,12 @@ use crate::{
     },
     schema,
     services::chat_override_service::ChatOverrideService, // <<< ENSURED IMPORT
+    services::chronicle_service::ChronicleService,        // <<< ADDED THIS IMPORT
     services::encryption_service::EncryptionService,      // <<< ENSURED IMPORT
     services::file_storage_service::FileStorageService,   // <<< ADDED THIS IMPORT
     services::gemini_token_client::GeminiTokenClient,
     services::hybrid_token_counter::HybridTokenCounter,
+    services::narrative_intelligence_service::NarrativeIntelligenceService, // <<< ADDED THIS IMPORT
     services::tokenizer_service::TokenizerService,
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
     state::{AppState, AppStateServices},
@@ -1066,6 +1068,22 @@ impl TestAppStateBuilder {
             ))
         });
 
+        // Create chronicle service for narrative intelligence
+        let chronicle_service = Arc::new(ChronicleService::new(
+            self.db_pool.clone(),
+        ));
+
+        // Create narrative intelligence service for testing
+        let narrative_intelligence_service = Arc::new(
+            NarrativeIntelligenceService::for_development_with_deps(
+                self.ai_client.clone(),
+                chronicle_service,
+                lorebook_service.clone(),
+                self.qdrant_service.clone(),
+                self.embedding_client.clone(),
+            )
+        );
+
         let services = AppStateServices {
             ai_client: self.ai_client,
             embedding_client: self.embedding_client,
@@ -1084,6 +1102,7 @@ impl TestAppStateBuilder {
                 None,
             )
             .await?,
+            narrative_intelligence_service,
         };
 
         Ok(AppState::new(self.db_pool, self.config, services))

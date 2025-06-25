@@ -4,12 +4,20 @@
 	import ModelSelector from './model-selector.svelte';
 	import { Badge } from './ui/badge';
 	import { Button } from './ui/button';
-	import { ScrollText, History } from 'lucide-svelte';
+	import { ScrollText, History, BookOpen } from 'lucide-svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import type { User } from '$lib/types'; // Updated import path
+	import type { User, Lorebook } from '$lib/types'; // Updated import path
 	import type { ScribeChatSession } from '$lib/types'; // Use Scribe type
+	import {
+		Dialog,
+		DialogContent,
+		DialogDescription,
+		DialogFooter,
+		DialogHeader,
+		DialogTitle
+	} from './ui/dialog';
 
 	let {
 		user,
@@ -70,6 +78,16 @@
 
 	// State for extraction
 	let isExtracting = $state(false);
+	
+	// State for chronicle creation
+	let isCreatingChronicle = $state(false);
+
+	// State for lorebook extraction
+	let isExtractingLorebook = $state(false);
+	let lorebookExtractionDialogOpen = $state(false);
+	let availableLorebooks = $state<Lorebook[]>([]);
+	let selectedLorebookId = $state<string | null>(null);
+	let isLoadingLorebooks = $state(false);
 
 	// Function to trigger event extraction
 	async function extractEvents() {
@@ -128,6 +146,148 @@
 			console.log('[Extract Events] Finished');
 		}
 	}
+
+	// Function to create chronicle from chat
+	async function createChronicleFromChat() {
+		if (!chat?.id || !user?.id) {
+			toast.error('Cannot create chronicle: Missing chat session or user information');
+			return;
+		}
+
+		isCreatingChronicle = true;
+
+		try {
+			// Generate a default chronicle name based on chat title or character name
+			const defaultName = chat.title || `Chat Chronicle ${new Date().toLocaleDateString()}`;
+
+			const result = await apiClient.createChronicleFromChat({
+				chat_session_id: chat.id,
+				chronicle_name: defaultName,
+				chronicle_description: `Chronicle created from chat session on ${new Date().toLocaleDateString()}`
+			});
+
+			if (result.isOk()) {
+				const response = result.value;
+				toast.success(`Created chronicle "${response.chronicle.name}" with ${response.events_extracted} events!`);
+				
+				// Update the current chronicle ID to reflect the new association
+				currentChronicleId = response.chronicle.id;
+				
+				// Refresh chronicle store to update the list
+				await chronicleStore.refresh();
+				
+				console.log('Chronicle created successfully:', response.chronicle);
+			} else {
+				const error = result.error;
+				console.error('Error creating chronicle from chat:', error.message);
+				
+				// Clean up error message for user display
+				let cleanErrorMessage = error.message;
+				if (error.message.includes('PropertyNotFound') || error.message.includes('safety filters')) {
+					cleanErrorMessage = 'AI safety filters blocked the chronicle creation. Please try again or continue chatting.';
+				} else if (error.message.includes('Failed to parse stream data')) {
+					cleanErrorMessage = 'AI service returned malformed data. Please try again.';
+				}
+				
+				toast.error(`Could not create chronicle: ${cleanErrorMessage}`);
+			}
+		} catch (err: any) {
+			console.error('Error creating chronicle from chat:', err);
+			
+			let cleanErrorMessage = err.message || 'An unexpected error occurred.';
+			toast.error(`Could not create chronicle: ${cleanErrorMessage}`);
+		} finally {
+			isCreatingChronicle = false;
+		}
+	}
+
+	// Function to open lorebook extraction dialog
+	async function openLorebookExtractionDialog() {
+		if (!chat?.id) {
+			toast.error('No active chat session');
+			return;
+		}
+
+		lorebookExtractionDialogOpen = true;
+		await loadAvailableLorebooks();
+	}
+
+	// Function to load available lorebooks
+	async function loadAvailableLorebooks() {
+		isLoadingLorebooks = true;
+		try {
+			const result = await apiClient.getLorebooks();
+			if (result.isOk()) {
+				availableLorebooks = result.value;
+				// Auto-select first lorebook if only one exists
+				if (availableLorebooks.length === 1) {
+					selectedLorebookId = availableLorebooks[0].id;
+				}
+			} else {
+				console.error('Failed to load lorebooks:', result.error);
+				toast.error('Failed to load lorebooks', {
+					description: result.error.message
+				});
+			}
+		} catch (error) {
+			console.error('Error loading lorebooks:', error);
+			toast.error('An unexpected error occurred while loading lorebooks');
+		} finally {
+			isLoadingLorebooks = false;
+		}
+	}
+
+	// Function to extract lorebook entries from chat
+	async function extractLorebookFromChat() {
+		if (!chat?.id || !selectedLorebookId) {
+			toast.error('Please select a lorebook');
+			return;
+		}
+
+		isExtractingLorebook = true;
+
+		try {
+			const result = await apiClient.extractLorebookEntriesFromChat(selectedLorebookId, {
+				chat_session_id: chat.id,
+				extraction_model: 'gemini-2.5-flash-lite-preview-06-17'
+			});
+
+			if (result.isOk()) {
+				const response = result.value;
+				toast.success(
+					`Successfully extracted ${response.entries_extracted} lorebook entries!`,
+					{
+						description: response.entries_extracted > 0 
+							? 'New entries have been added to your lorebook'
+							: 'No significant world-building information was found'
+					}
+				);
+				
+				// Close dialog on success
+				lorebookExtractionDialogOpen = false;
+				selectedLorebookId = null;
+			} else {
+				console.error('Error extracting lorebook entries:', result.error);
+				
+				// Clean up error message for user display
+				let cleanErrorMessage = result.error.message;
+				if (result.error.message.includes('PropertyNotFound') || result.error.message.includes('safety filters')) {
+					cleanErrorMessage = 'AI safety filters blocked the extraction. Please try again or continue chatting.';
+				} else if (result.error.message.includes('Failed to parse stream data')) {
+					cleanErrorMessage = 'AI service returned malformed data. Please try again.';
+				}
+				
+				toast.error(`Could not extract lorebook entries: ${cleanErrorMessage}`);
+			}
+		} catch (err: any) {
+			console.error('Error extracting lorebook entries:', err);
+			
+			let cleanErrorMessage = err.message || 'An unexpected error occurred.';
+			toast.error(`Could not extract lorebook entries: ${cleanErrorMessage}`);
+		} finally {
+			isExtractingLorebook = false;
+		}
+	}
 </script>
 
 <header class="sticky top-0 flex items-center gap-2 bg-background p-2">
@@ -163,18 +323,35 @@
 				<History class="h-3 w-3" />
 				{isExtracting ? 'Extracting...' : 'Extract Events'}
 			</Button>
+			<Button
+				variant="ghost"
+				size="sm"
+				onclick={openLorebookExtractionDialog}
+				disabled={isExtractingLorebook || isLoadingSettings}
+				title="Extract world-building information to a lorebook"
+				class="gap-1 cursor-pointer hover:bg-accent"
+			>
+				<BookOpen class="h-3 w-3" />
+				{isExtractingLorebook ? 'Extracting...' : 'Extract Lore'}
+			</Button>
 		{/if}
 	{:else if !readonly && chat}
-		<!-- Show placeholder when no chronicle is associated -->
+		<!-- Show Create Chronicle button when no chronicle is associated -->
 		<Button
 			variant="outline"
 			size="sm"
-			disabled
-			title="This chat is not associated with a chronicle. Associate with a chronicle to extract events."
-			class="gap-1 opacity-60 cursor-not-allowed"
+			onclick={createChronicleFromChat}
+			disabled={isCreatingChronicle || isLoadingSettings}
+			title="Create a new chronicle from this chat and extract events"
+			class="gap-1"
 		>
-			<History class="h-3 w-3" />
-			Extract Events (No Chronicle)
+			{#if isCreatingChronicle}
+				<ScrollText class="h-3 w-3 animate-spin" />
+				Creating...
+			{:else}
+				<ScrollText class="h-3 w-3" />
+				Create Chronicle
+			{/if}
 		</Button>
 	{/if}
 
@@ -184,3 +361,73 @@
 		</div>
 	{/if}
 </header>
+
+<!-- Lorebook Extraction Dialog -->
+<Dialog bind:open={lorebookExtractionDialogOpen}>
+	<DialogContent class="sm:max-w-lg">
+		<DialogHeader>
+			<DialogTitle>Extract Lorebook Entries</DialogTitle>
+			<DialogDescription>
+				Extract world-building information from this conversation and add it to a lorebook.
+				This will analyze character descriptions, locations, lore, items, and other important details.
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="space-y-4 py-4">
+			{#if isLoadingLorebooks}
+				<div class="text-center text-muted-foreground">
+					Loading lorebooks...
+				</div>
+			{:else if availableLorebooks.length === 0}
+				<div class="text-center text-muted-foreground">
+					No lorebooks found. Please create a lorebook first.
+				</div>
+			{:else}
+				<div class="space-y-2">
+					<label for="lorebook-select" class="text-sm font-medium">Select Lorebook</label>
+					<select
+						id="lorebook-select"
+						class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+						bind:value={selectedLorebookId}
+					>
+						<option value={null}>Choose a lorebook...</option>
+						{#each availableLorebooks as lorebook}
+							<option value={lorebook.id}>{lorebook.name}</option>
+						{/each}
+					</select>
+				</div>
+				
+				<div class="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+					<strong>What will be extracted:</strong>
+					<ul class="mt-2 space-y-1">
+						<li>• Character descriptions and backgrounds</li>
+						<li>• Locations and settings</li>
+						<li>• World lore and mythology</li>
+						<li>• Items and artifacts</li>
+						<li>• Organizations and factions</li>
+						<li>• Important concepts and rules</li>
+					</ul>
+				</div>
+			{/if}
+		</div>
+
+		<DialogFooter>
+			<Button
+				variant="outline"
+				onclick={() => {
+					lorebookExtractionDialogOpen = false;
+					selectedLorebookId = null;
+				}}
+				disabled={isExtractingLorebook}
+			>
+				Cancel
+			</Button>
+			<Button
+				onclick={extractLorebookFromChat}
+				disabled={isExtractingLorebook || !selectedLorebookId || availableLorebooks.length === 0}
+			>
+				{isExtractingLorebook ? 'Extracting...' : 'Extract Entries'}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>

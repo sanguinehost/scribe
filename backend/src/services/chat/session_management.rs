@@ -883,3 +883,50 @@ pub async fn get_chat_session_by_id(
     })
     .await?
 }
+
+/// Associate a chat session with a chronicle
+#[instrument(skip(pool), err)]
+pub async fn associate_chat_with_chronicle(
+    pool: &DbPool,
+    user_id: Uuid,
+    session_id: Uuid,
+    chronicle_id: Uuid,
+) -> Result<(), AppError> {
+    info!(
+        %session_id, %user_id, %chronicle_id,
+        "Associating chat session with chronicle"
+    );
+
+    let conn = pool.get().await?;
+    conn.interact(move |conn| {
+        // First, verify the session belongs to the user
+        let session = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .filter(chat_sessions::user_id.eq(user_id))
+            .select(Chat::as_select())
+            .first::<Chat>(conn)
+            .optional()?;
+
+        match session {
+            Some(_) => {
+                // Update the session to associate it with the chronicle
+                diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
+                    .set(chat_sessions::player_chronicle_id.eq(Some(chronicle_id)))
+                    .execute(conn)?;
+                
+                info!(
+                    %session_id, %chronicle_id,
+                    "Successfully associated chat session with chronicle"
+                );
+                Ok(())
+            }
+            None => {
+                warn!(%session_id, %user_id, "Chat session not found or permission denied");
+                Err(AppError::NotFound(
+                    "Chat session not found or permission denied".into(),
+                ))
+            }
+        }
+    })
+    .await?
+}

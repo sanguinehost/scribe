@@ -81,7 +81,7 @@ export interface ScribeChatSession {
 	character_id: string | null; // CHANGED: Now nullable for non-character modes
 	character_name?: string | null; // Added character_name
 	chat_mode: ChatMode; // NEW: Required chat mode field
-	chronicle_id?: string | null; // Chronicle association for organizing related chats (backend API uses chronicle_id)
+	player_chronicle_id?: string | null; // Chronicle association (backend field name: player_chronicle_id)
 	user_id: string;
 	created_at: string;
 	updated_at: string;

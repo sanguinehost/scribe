@@ -40,6 +40,7 @@ pub type GenerationDataWithUnsavedUserMessage = (
     String,         // 18: history_management_strategy (was 21)
     i32,            // 19: history_management_limit (was 22)
     Option<String>, // 20: user_persona_name (NEW - for template substitution)
+    Option<Uuid>,   // 21: player_chronicle_id (NEW - for narrative processing)
 );
 
 #[derive(Debug)]
@@ -47,4 +48,12 @@ pub enum ScribeSseEvent {
     Content(String),
     Thinking(String),
     Error(String),
+    TokenUsage {
+        prompt_tokens: i32,
+        completion_tokens: i32,
+        model_name: String,
+    },
+    MessageSaved {
+        message_id: String,
+    },
 }

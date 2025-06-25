@@ -415,10 +415,10 @@ impl ChatMessage {
 
         let nonce = self.content_nonce.as_ref().ok_or_else(|| {
             tracing::error!(
-                "ChatMessage ID {} content is present but nonce is missing. Cannot decrypt.",
+                "ENCRYPTION VIOLATION: ChatMessage ID {} has content but missing nonce. This violates encryption-at-rest requirements and indicates data corruption or migration issues.",
                 self.id
             );
-            AppError::DecryptionError("Missing nonce for content decryption".to_string())
+            AppError::DecryptionError("ENCRYPTION VIOLATION: Missing nonce for content decryption - all data must be encrypted at rest".to_string())
         })?;
 
         if nonce.is_empty() {
@@ -2013,6 +2013,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         }
     }
 
@@ -2137,6 +2138,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         }
     }
 
