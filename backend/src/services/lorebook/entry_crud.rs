@@ -1,5 +1,6 @@
 use super::get_user_from_session;
 use super::*;
+use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
 
 impl LorebookService {
     #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
@@ -1111,5 +1112,271 @@ AppError::InternalServerErrorGeneric(format!(
             })
             .await
             .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {e}")))?
+    }
+
+    /// Create a lorebook entry for narrative intelligence processing
+    /// This method bypasses auth session requirements but maintains full encryption and data integrity
+    #[instrument(skip(self, user_dek_bytes), fields(user_id = %user_id, entry_title = %entry_title))]
+    pub async fn create_entry_for_narrative_intelligence(
+        &self,
+        user_id: Uuid,
+        lorebook_id: Option<Uuid>,
+        entry_title: String,
+        content: String,
+        keys_text: Option<String>,
+        user_dek_bytes: &[u8],
+    ) -> Result<LorebookEntryResponse, AppError> {
+        debug!("Creating lorebook entry for narrative intelligence");
+
+        let conn = self.pool.get().await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+
+        // 1. Find or create a default "AI Extracted" lorebook for this user
+        let target_lorebook_id = if let Some(lb_id) = lorebook_id {
+            // Verify the provided lorebook belongs to the user
+            let user_id_clone = user_id;
+            let lorebook_exists = conn
+                .interact(move |conn_sync| {
+                    lorebooks::table
+                        .filter(lorebooks::id.eq(lb_id))
+                        .filter(lorebooks::user_id.eq(user_id_clone))
+                        .select(lorebooks::id)
+                        .first::<Uuid>(conn_sync)
+                        .optional()
+                })
+                .await
+                .map_err(|e| {
+                    error!("Interaction error while checking lorebook ownership: {:?}", e);
+                    AppError::InternalServerErrorGeneric(format!(
+                        "Database interaction failed while checking lorebook: {e}"
+                    ))
+                })?
+                .map_err(|e| {
+                    error!("Failed to query lorebook ownership: {:?}", e);
+                    AppError::DatabaseQueryError(format!("Failed to query lorebook: {e}"))
+                })?;
+
+            match lorebook_exists {
+                Some(existing_id) => existing_id,
+                None => {
+                    return Err(AppError::NotFound(format!(
+                        "Lorebook with ID {lb_id} not found or access denied."
+                    )));
+                }
+            }
+        } else {
+            // Find or create default "AI Extracted" lorebook
+            self.find_or_create_ai_extracted_lorebook(user_id).await?
+        };
+
+        // 2. Encrypt all fields using the provided user DEK
+        let (entry_title_ciphertext, entry_title_nonce) = self
+            .encryption_service
+            .encrypt(&entry_title, user_dek_bytes)?;
+
+        let text_to_encrypt_for_keys = keys_text.as_deref().unwrap_or("");
+        let (keys_text_ciphertext, keys_text_nonce) = self
+            .encryption_service
+            .encrypt(text_to_encrypt_for_keys, user_dek_bytes)?;
+
+        let (content_ciphertext, content_nonce) = self
+            .encryption_service
+            .encrypt(&content, user_dek_bytes)?;
+
+        // No comment for AI-generated entries
+        let (comment_ciphertext, comment_nonce) = (None, None);
+
+        let current_time = Utc::now();
+        let new_entry_id = Uuid::new_v4();
+
+        let new_entry_db = NewLorebookEntry {
+            id: new_entry_id,
+            lorebook_id: target_lorebook_id,
+            user_id,
+            original_sillytavern_uid: None,
+            entry_title_ciphertext,
+            entry_title_nonce,
+            keys_text_ciphertext: keys_text_ciphertext.clone(),
+            keys_text_nonce: keys_text_nonce.clone(),
+            content_ciphertext,
+            content_nonce,
+            comment_ciphertext: comment_ciphertext.clone(),
+            comment_nonce: comment_nonce.clone(),
+            is_enabled: true, // AI entries are enabled by default
+            is_constant: false,
+            insertion_order: 100, // Default order
+            placement_hint: None,
+            sillytavern_metadata_ciphertext: None,
+            sillytavern_metadata_nonce: None,
+            name: None, // Deprecated
+            created_at: Some(current_time),
+            updated_at: Some(current_time),
+        };
+
+        // 3. Save to database
+        let inserted_entry_db = new_entry_db.clone();
+        let inserted_entry = conn
+            .interact(move |conn_sync| {
+                diesel::insert_into(lorebook_entries::table)
+                    .values(&inserted_entry_db)
+                    .returning(LorebookEntry::as_returning())
+                    .get_result::<LorebookEntry>(conn_sync)
+            })
+            .await
+            .map_err(|e| {
+                error!("Interaction error while inserting AI lorebook entry: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Database interaction failed while creating AI lorebook entry: {e}"
+                ))
+            })?
+            .map_err(|e| {
+                error!("Failed to insert AI lorebook entry into DB: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to create AI lorebook entry: {e}"
+                ))
+            })?;
+
+        // 4. Build response with decrypted fields (for verification)
+        let decrypted_entry_title_bytes = self
+            .encryption_service
+            .decrypt(
+                &inserted_entry.entry_title_ciphertext,
+                &inserted_entry.entry_title_nonce,
+                user_dek_bytes,
+            )
+            .map_err(|e| {
+                error!("Failed to decrypt entry title for verification: {:?}", e);
+                AppError::DecryptionError("Failed to decrypt entry title".to_string())
+            })?;
+        let decrypted_entry_title = String::from_utf8_lossy(&decrypted_entry_title_bytes).into_owned();
+
+        let decrypted_keys_text = if !inserted_entry.keys_text_ciphertext.is_empty() {
+            let decrypted_bytes = self
+                .encryption_service
+                .decrypt(
+                    &inserted_entry.keys_text_ciphertext,
+                    &inserted_entry.keys_text_nonce,
+                    user_dek_bytes,
+                )
+                .map_err(|e| {
+                    error!("Failed to decrypt keys text: {:?}", e);
+                    AppError::DecryptionError("Failed to decrypt keys text".to_string())
+                })?;
+            let decrypted_string = String::from_utf8_lossy(&decrypted_bytes).into_owned();
+            if decrypted_string.is_empty() { None } else { Some(decrypted_string) }
+        } else {
+            None
+        };
+
+        let decrypted_content_bytes = self
+            .encryption_service
+            .decrypt(
+                &inserted_entry.content_ciphertext,
+                &inserted_entry.content_nonce,
+                user_dek_bytes,
+            )
+            .map_err(|e| {
+                error!("Failed to decrypt content: {:?}", e);
+                AppError::DecryptionError("Failed to decrypt content".to_string())
+            })?;
+        let decrypted_content = String::from_utf8_lossy(&decrypted_content_bytes).into_owned();
+
+        info!(
+            "Successfully created AI-generated lorebook entry '{}' in lorebook {}",
+            decrypted_entry_title, target_lorebook_id
+        );
+
+        Ok(LorebookEntryResponse {
+            id: inserted_entry.id,
+            lorebook_id: inserted_entry.lorebook_id,
+            user_id: inserted_entry.user_id,
+            entry_title: decrypted_entry_title,
+            keys_text: decrypted_keys_text,
+            content: decrypted_content,
+            comment: None, // AI entries don't have comments
+            is_enabled: inserted_entry.is_enabled,
+            is_constant: inserted_entry.is_constant,
+            insertion_order: inserted_entry.insertion_order,
+            placement_hint: inserted_entry.placement_hint.unwrap_or_else(|| "after_prompt".to_string()),
+            created_at: inserted_entry.created_at,
+            updated_at: inserted_entry.updated_at,
+        })
+    }
+
+    /// Find or create a default "AI Extracted" lorebook for the user
+    async fn find_or_create_ai_extracted_lorebook(&self, user_id: Uuid) -> Result<Uuid, AppError> {
+        let conn = self.pool.get().await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+
+        let ai_lorebook_name = "AI Extracted Knowledge";
+        let user_id_clone = user_id;
+
+        // First, try to find existing AI lorebook
+        let existing_lorebook = conn
+            .interact(move |conn_sync| {
+                lorebooks::table
+                    .filter(lorebooks::user_id.eq(user_id_clone))
+                    .filter(lorebooks::name.eq(ai_lorebook_name))
+                    .select(lorebooks::id)
+                    .first::<Uuid>(conn_sync)
+                    .optional()
+            })
+            .await
+            .map_err(|e| {
+                error!("Interaction error while finding AI lorebook: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Database interaction failed while finding AI lorebook: {e}"
+                ))
+            })?
+            .map_err(|e| {
+                error!("Failed to query AI lorebook: {:?}", e);
+                AppError::DatabaseQueryError(format!("Failed to query AI lorebook: {e}"))
+            })?;
+
+        if let Some(existing_id) = existing_lorebook {
+            debug!("Found existing AI lorebook: {}", existing_id);
+            return Ok(existing_id);
+        }
+
+        // Create new AI lorebook
+        let new_lorebook_id = Uuid::new_v4();
+        let current_time = Utc::now();
+
+        let new_lorebook = crate::models::NewLorebook {
+            id: new_lorebook_id,
+            user_id,
+            name: ai_lorebook_name.to_string(),
+            description: Some("Automatically generated lorebook entries from AI narrative intelligence. This contains world-building information extracted from your roleplay conversations.".to_string()),
+            source_format: "scribe_ai_v1".to_string(),
+            is_public: false,
+            created_at: Some(current_time),
+            updated_at: Some(current_time),
+        };
+
+        let created_lorebook = conn
+            .interact(move |conn_sync| {
+                diesel::insert_into(lorebooks::table)
+                    .values(&new_lorebook)
+                    .returning(Lorebook::as_returning())
+                    .get_result::<Lorebook>(conn_sync)
+            })
+            .await
+            .map_err(|e| {
+                error!("Interaction error while creating AI lorebook: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Database interaction failed while creating AI lorebook: {e}"
+                ))
+            })?
+            .map_err(|e| {
+                error!("Failed to create AI lorebook: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to create AI lorebook: {e}"
+                ))
+            })?;
+
+        info!("Created new AI lorebook: {}", created_lorebook.id);
+        Ok(created_lorebook.id)
     }
 }

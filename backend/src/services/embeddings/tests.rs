@@ -203,6 +203,22 @@ mod tests {
                 .expect("Failed to create test file storage service"),
         );
 
+        // Create chronicle service for narrative intelligence
+        let chronicle_service = Arc::new(crate::services::chronicle_service::ChronicleService::new(
+            pool.clone(),
+        ));
+
+        // Create narrative intelligence service
+        let narrative_intelligence_service = Arc::new(
+            crate::services::narrative_intelligence_service::NarrativeIntelligenceService::for_development_with_deps(
+                ai_client.clone(),
+                chronicle_service,
+                lorebook_service.clone(),
+                mock_qdrant.clone(),
+                mock_embed_client.clone(),
+            )
+        );
+
         let services = AppStateServices {
             ai_client,
             embedding_client: mock_embed_client.clone(),
@@ -218,6 +234,7 @@ mod tests {
             email_service: Arc::new(crate::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
             )),
+            narrative_intelligence_service,
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));
@@ -243,6 +260,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         // Mock Embedding Client to return a dummy vector
@@ -281,6 +299,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2])); // Needs to be called for each chunk
@@ -320,6 +339,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         let result = state
@@ -354,6 +374,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -396,6 +417,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         mock_embed_client.set_response(Ok(vec![0.3, 0.4]));
@@ -566,6 +588,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         mock_qdrant.set_search_response(Ok(vec![]));
@@ -599,6 +622,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -628,6 +652,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -659,6 +684,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -694,6 +720,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_qdrant.set_upsert_response(Err(AppError::VectorDbError(
@@ -737,6 +764,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -787,6 +815,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -845,6 +874,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -897,6 +927,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -945,6 +976,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));

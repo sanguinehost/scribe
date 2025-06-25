@@ -15,7 +15,6 @@ use validator::Validate;
 
 use crate::{
     auth::{
-        session_dek::SessionDek,
         user_store::Backend as AuthBackend,
     },
     errors::AppError,
@@ -26,11 +25,7 @@ use crate::{
         chronicle_event::{ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, EventSource},
     },
     services::{
-        ChronicleService, 
-        EventExtractionService,
-        event_extraction_service::ExtractionConfig,
-        tokenizer_service::TokenizerService,
-        chat::message_handling::get_messages_for_session,
+        ChronicleService,
     },
     state::AppState,
 };
@@ -45,27 +40,6 @@ pub struct EventQuery {
     pub offset: Option<i64>,
 }
 
-/// Request for extracting events from a chat session
-#[derive(Debug, Deserialize, Validate)]
-pub struct ExtractEventsRequest {
-    /// The chat session ID to extract events from
-    pub chat_session_id: Uuid,
-    /// Starting message index (optional, defaults to 0)
-    pub start_message_index: Option<usize>,
-    /// Ending message index (optional, extracts from start to end if not provided)
-    pub end_message_index: Option<usize>,
-    /// Model to use for extraction (defaults to gemini-2.5-flash-lite-preview-06-17)
-    pub extraction_model: Option<String>,
-}
-
-/// Response for event extraction
-#[derive(Debug, serde::Serialize)]
-pub struct ExtractEventsResponse {
-    /// Number of events extracted
-    pub events_extracted: usize,
-    /// List of extracted events
-    pub events: Vec<ChronicleEvent>,
-}
 
 impl From<EventQuery> for EventFilter {
     fn from(query: EventQuery) -> Self {
@@ -87,7 +61,6 @@ pub fn create_chronicles_router(state: AppState) -> Router<AppState> {
         .route("/:chronicle_id", get(get_chronicle).put(update_chronicle).delete(delete_chronicle))
         .route("/:chronicle_id/events", post(create_event).get(list_events))
         .route("/:chronicle_id/events/:event_id", delete(delete_event))
-        .route("/:chronicle_id/extract-events", post(extract_events_from_chat))
         .with_state(state)
 }
 
@@ -275,100 +248,4 @@ async fn delete_event(
 
     info!("Successfully deleted event {}", event_id);
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// Extract events from a chat session
-#[instrument(skip(auth_session, state, session_dek))]
-async fn extract_events_from_chat(
-    auth_session: AuthSession<AuthBackend>,
-    State(state): State<AppState>,
-    Path(chronicle_id): Path<Uuid>,
-    session_dek: SessionDek,
-    Json(request): Json<ExtractEventsRequest>,
-) -> Result<Json<ExtractEventsResponse>, AppError> {
-    // Validate the request
-    request.validate()?;
-    
-    let user = auth_session.user.ok_or_else(|| {
-        error!("No authenticated user found in session");
-        AppError::Unauthorized("Authentication required".to_string())
-    })?;
-
-    info!(
-        "Extracting events from chat {} for chronicle {} for user {}",
-        request.chat_session_id, chronicle_id, user.id
-    );
-
-    // Create services
-    let chronicle_service = ChronicleService::new(state.pool.clone());
-    let tokenizer_service = TokenizerService::new(&state.config.tokenizer_model_path)?;
-    let extraction_service = EventExtractionService::new(
-        state.ai_client.clone(),
-        tokenizer_service,
-        chronicle_service,
-    );
-
-    // Configure extraction
-    let config = ExtractionConfig {
-        model_name: request.extraction_model.unwrap_or_else(|| {
-            "gemini-2.5-flash-lite-preview-06-17".to_string()
-        }),
-        ..Default::default()
-    };
-
-    // Fetch messages from the chat session
-    info!("Fetching messages for chat session {}...", request.chat_session_id);
-    let messages = get_messages_for_session(
-        &state.pool,
-        user.id,
-        request.chat_session_id
-    ).await?;
-
-    let total_message_count = messages.len();
-    info!("Retrieved {} total messages from chat session", total_message_count);
-
-    // Apply message range filtering if specified
-    let filtered_messages = if let (Some(start), Some(end)) = (request.start_message_index, request.end_message_index) {
-        if start >= total_message_count || end >= total_message_count || start > end {
-            return Err(AppError::BadRequest(format!(
-                "Invalid message range: {}-{} for {} total messages",
-                start, end, total_message_count
-            )));
-        }
-        info!("Applying message range filter: {}..{}", start, end);
-        messages[start..=end].to_vec()
-    } else if let Some(start) = request.start_message_index {
-        if start >= total_message_count {
-            return Err(AppError::BadRequest(format!(
-                "Invalid start index: {} for {} total messages",
-                start, total_message_count
-            )));
-        }
-        info!("Applying start index filter: {}..", start);
-        messages[start..].to_vec()
-    } else {
-        info!("Using all messages (no filtering applied)");
-        messages
-    };
-
-    info!(
-        "Prepared {} messages for extraction (filtered from {} total)", 
-        filtered_messages.len(),
-        total_message_count
-    );
-    
-    // Extract events
-    info!("Starting event extraction process...");
-    let extracted_events = extraction_service
-        .extract_events_from_messages(user.id, chronicle_id, filtered_messages, &session_dek, config)
-        .await?;
-
-    info!("Event extraction completed successfully");
-    let response = ExtractEventsResponse {
-        events_extracted: extracted_events.len(),
-        events: extracted_events,
-    };
-
-    info!("Successfully extracted {} events, returning response", response.events_extracted);
-    Ok(Json(response))
 }

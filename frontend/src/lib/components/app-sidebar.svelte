@@ -46,9 +46,10 @@
 		const characterId = event.detail.characterId;
 		console.log('Character selected:', characterId);
 
-		// Clear any selected persona, lorebook and set the selected character
+		// Clear any selected persona, lorebook, chronicle and set the selected character
 		selectedPersonaStore.clear();
 		selectedLorebookStore.clear();
+		selectedChronicleStore.clear();
 		selectedCharacterStore.select(characterId);
 
 		// Hide settings if visible to show character overview immediately
@@ -93,9 +94,10 @@
 		const personaId = event.detail.personaId;
 		console.log('Persona selected:', personaId);
 
-		// Clear any selected character, lorebook and set the selected persona
+		// Clear any selected character, lorebook, chronicle and set the selected persona
 		selectedCharacterStore.clear();
 		selectedLorebookStore.clear();
+		selectedChronicleStore.clear();
 		selectedPersonaStore.selectPersona(personaId);
 
 		// Hide settings if visible to show persona overview immediately
@@ -114,9 +116,10 @@
 	function handleCreatePersona() {
 		console.log('Create persona triggered');
 
-		// Clear any selected character, lorebook and set the persona store to creating mode
+		// Clear any selected character, lorebook, chronicle and set the persona store to creating mode
 		selectedCharacterStore.clear();
 		selectedLorebookStore.clear();
+		selectedChronicleStore.clear();
 		selectedPersonaStore.showCreating();
 
 		// Only navigate if we're not on the home page already
@@ -161,9 +164,10 @@
 		const lorebookId = event.detail.lorebookId;
 		console.log('Lorebook selected:', lorebookId);
 
-		// Clear any selected character and persona, then set selected lorebook
+		// Clear any selected character, persona, chronicle and set selected lorebook
 		selectedCharacterStore.clear();
 		selectedPersonaStore.clear();
+		selectedChronicleStore.clear();
 		selectedLorebookStore.selectLorebook(lorebookId);
 
 		// Hide settings if visible to show lorebook detail immediately
@@ -177,9 +181,10 @@
 	function handleViewAllLorebooks() {
 		console.log('View all lorebooks triggered');
 
-		// Clear any selected character and persona, then show lorebook list
+		// Clear any selected character, persona, chronicle and show lorebook list
 		selectedCharacterStore.clear();
 		selectedPersonaStore.clear();
+		selectedChronicleStore.clear();
 		selectedLorebookStore.showList();
 
 		// Hide settings if visible to show lorebook list immediately

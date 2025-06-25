@@ -782,6 +782,25 @@ class ApiClient {
 		});
 	}
 
+	// Extract lorebook entries from a chat session
+	async extractLorebookEntriesFromChat(
+		lorebookId: string,
+		data: {
+			chat_session_id: string;
+			start_message_index?: number;
+			end_message_index?: number;
+			extraction_model?: string;
+		}
+	): Promise<Result<{ entries_extracted: number; entries: LorebookEntry[] }, ApiError>> {
+		return this.fetch<{ entries_extracted: number; entries: LorebookEntry[] }>(
+			`/api/lorebooks/${lorebookId}/extract-from-chat`,
+			{
+				method: 'POST',
+				body: JSON.stringify(data)
+			}
+		);
+	}
+
 	// Chat-Lorebook association methods
 	async associateLorebookToChat(
 		chatId: string,
@@ -1034,6 +1053,24 @@ class ApiClient {
 	): Promise<Result<{ events_extracted: number; events: ChronicleEvent[] }, ApiError>> {
 		return this.fetch<{ events_extracted: number; events: ChronicleEvent[] }>(
 			`/api/chronicles/${chronicleId}/extract-events`,
+			{
+				method: 'POST',
+				body: JSON.stringify(data)
+			}
+		);
+	}
+
+	// Create a chronicle from a chat session
+	async createChronicleFromChat(data: {
+		chat_session_id: string;
+		chronicle_name: string;
+		chronicle_description?: string;
+		start_message_index?: number;
+		end_message_index?: number;
+		extraction_model?: string;
+	}): Promise<Result<{ chronicle: PlayerChronicle; events_extracted: number; events: ChronicleEvent[] }, ApiError>> {
+		return this.fetch<{ chronicle: PlayerChronicle; events_extracted: number; events: ChronicleEvent[] }>(
+			'/api/chronicles/from-chat',
 			{
 				method: 'POST',
 				body: JSON.stringify(data)

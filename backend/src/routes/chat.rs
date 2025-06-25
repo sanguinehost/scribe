@@ -262,6 +262,7 @@ pub async fn generate_chat_response(
         _hist_management_strategy, // 18: String (was 21)
         _hist_management_limit,    // 19: i32 (was 22)
         user_persona_name,         // 20: Option<String> (NEW)
+        player_chronicle_id,       // 21: Option<Uuid> (NEW) - Add this field
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -480,6 +481,7 @@ pub async fn generate_chat_response(
                     request_thinking,
                     user_dek: Some(dek_for_stream_service),
                     character_name: Some(character_db_model.name.clone()),
+                    player_chronicle_id,
                 },
             )
             .await
@@ -505,6 +507,20 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::Error(data) => {
                                             error_from_service_stream = true;
                                             Event::default().event("error").data(data)
+                                        }
+                                        ScribeSseEvent::TokenUsage { prompt_tokens, completion_tokens, model_name } => {
+                                            let token_data = serde_json::json!({
+                                                "prompt_tokens": prompt_tokens,
+                                                "completion_tokens": completion_tokens,
+                                                "model_name": model_name
+                                            });
+                                            Event::default().event("token_usage").data(token_data.to_string())
+                                        }
+                                        ScribeSseEvent::MessageSaved { message_id } => {
+                                            let message_data = serde_json::json!({
+                                                "message_id": message_id
+                                            });
+                                            Event::default().event("message_saved").data(message_data.to_string())
                                         }
                                     };
                                     yield Ok(axum_sse_event);
@@ -756,6 +772,7 @@ pub async fn generate_chat_response(
                     request_thinking,
                     user_dek: Some(dek_for_fallback_stream_service),
                     character_name: Some(character_db_model.name.clone()),
+                    player_chronicle_id,
                 },
             )
             .await
@@ -781,6 +798,20 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::Error(data) => {
                                             error_from_service_stream = true;
                                             Event::default().event("error").data(data)
+                                        }
+                                        ScribeSseEvent::TokenUsage { prompt_tokens, completion_tokens, model_name } => {
+                                            let token_data = serde_json::json!({
+                                                "prompt_tokens": prompt_tokens,
+                                                "completion_tokens": completion_tokens,
+                                                "model_name": model_name
+                                            });
+                                            Event::default().event("token_usage").data(token_data.to_string())
+                                        }
+                                        ScribeSseEvent::MessageSaved { message_id } => {
+                                            let message_data = serde_json::json!({
+                                                "message_id": message_id
+                                            });
+                                            Event::default().event("message_saved").data(message_data.to_string())
                                         }
                                     };
                                     yield Ok(axum_sse_event);
@@ -1129,6 +1160,7 @@ pub async fn generate_suggested_actions(
         _hist_management_strategy,
         _hist_management_limit,
         user_persona_name, // NEW - for template substitution
+        _player_chronicle_id, // We don't use this for suggestions
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id,
@@ -1762,6 +1794,7 @@ pub async fn expand_text_handler(
         request_thinking: false,
         user_dek: Some(user_dek_arc),
         character_name: None, // Text expansion doesn't have a character
+        player_chronicle_id: None, // Text expansion doesn't involve chronicle processing
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -1781,6 +1814,9 @@ pub async fn expand_text_handler(
                     chat::types::ScribeSseEvent::Error(error_msg) => {
                         error!("Error in expansion stream: {}", error_msg);
                         return Err(AppError::BadGateway("Failed to expand text".to_string()));
+                    }
+                    chat::types::ScribeSseEvent::TokenUsage { .. } => {
+                        // For expansion, we don't need to handle token usage
                     }
                     _ => {
                         // Skip other event types (thinking, etc.)
@@ -2062,6 +2098,7 @@ pub async fn impersonate_handler(
         request_thinking: false,
         user_dek: Some(user_dek_arc),
         character_name: None, // Impersonation doesn't have a character
+        player_chronicle_id: None, // Impersonation doesn't involve chronicle processing
     };
 
     // Generate the response using the full pipeline
@@ -2083,6 +2120,9 @@ pub async fn impersonate_handler(
                         return Err(AppError::BadGateway(
                             "Failed to generate response".to_string(),
                         ));
+                    }
+                    chat::types::ScribeSseEvent::TokenUsage { .. } => {
+                        // For impersonation, we don't need to handle token usage
                     }
                     _ => {
                         // Skip other event types (thinking, etc.)

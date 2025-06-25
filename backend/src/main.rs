@@ -52,6 +52,7 @@ use scribe_backend::config::Config; // Import Config instead
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
 use scribe_backend::services::chat_override_service::ChatOverrideService;
+use scribe_backend::services::chronicle_service::ChronicleService;
 use scribe_backend::services::embeddings::{
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
 };
@@ -60,6 +61,7 @@ use scribe_backend::services::file_storage_service::FileStorageService; // Added
 use scribe_backend::services::gemini_token_client::GeminiTokenClient; // Added
 use scribe_backend::services::hybrid_token_counter::HybridTokenCounter; // Added
 use scribe_backend::services::lorebook::LorebookService;
+use scribe_backend::services::narrative_intelligence_service::NarrativeIntelligenceService;
 use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
@@ -237,6 +239,11 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         qdrant_service.clone(),
     ));
 
+    // --- Initialize Chronicle Service ---
+    let chronicle_service = Arc::new(ChronicleService::new(
+        pool.clone(),
+    ));
+
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
     // --- Initialize File Storage Service ---
@@ -250,6 +257,17 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         .init()
         .await
         .context("Failed to initialize file storage directories")?;
+
+    // --- Initialize Narrative Intelligence Service ---
+    let narrative_intelligence_service = Arc::new(
+        NarrativeIntelligenceService::for_production_with_deps(
+            ai_client_arc.clone(),
+            chronicle_service.clone(),
+            lorebook_service.clone(),
+            qdrant_service.clone(),
+            embedding_client_arc.clone(),
+        )
+    );
 
     Ok(AppStateServices {
         ai_client: ai_client_arc,
@@ -273,6 +291,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
             )
             .await?
         },
+        narrative_intelligence_service,
     })
 }
 
@@ -443,8 +462,8 @@ fn build_router(
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
                 GovernorConfigBuilder::default()
-                    .per_second(500) // Increased from 100
-                    .burst_size(1000) // Increased from 200
+                    .per_second(2000) // Increased from 500 to allow more requests
+                    .burst_size(5000) // Increased from 1000 to handle rapid bursts
                     .key_extractor(GlobalKeyExtractor)
                     .finish()
                     .unwrap(),

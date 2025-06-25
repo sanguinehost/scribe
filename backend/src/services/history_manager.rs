@@ -227,6 +227,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "test-model".to_string(),
         }
     }
 

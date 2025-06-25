@@ -24,6 +24,7 @@ use crate::services::file_storage_service::FileStorageService; // Added for File
 use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
 use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
+use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
@@ -45,6 +46,7 @@ pub struct AppStateServices {
     pub auth_backend: Arc<AuthBackend>,
     pub file_storage_service: Arc<FileStorageService>,
     pub email_service: Arc<dyn EmailService + Send + Sync>,
+    pub narrative_intelligence_service: Arc<NarrativeIntelligenceService>,
 }
 
 // --- Shared application state ---
@@ -73,6 +75,7 @@ pub struct AppState {
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
     pub file_storage_service: Arc<FileStorageService>, // Added for file storage
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
+    pub narrative_intelligence_service: Arc<NarrativeIntelligenceService>, // Added for agentic narrative processing
 }
 
 // Manual Debug implementation for AppState
@@ -97,6 +100,7 @@ impl fmt::Debug for AppState {
             .field("auth_backend", &"<Arc<AuthBackend>>") // Added
             .field("file_storage_service", &"<Arc<FileStorageService>>") // Added
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
+            .field("narrative_intelligence_service", &"<Arc<NarrativeIntelligenceService>>") // Added for agentic narrative processing
             .finish()
     }
 }
@@ -121,6 +125,7 @@ impl AppState {
             auth_backend: services.auth_backend,
             file_storage_service: services.file_storage_service,
             email_service: services.email_service,
+            narrative_intelligence_service: services.narrative_intelligence_service,
         }
     }
 }

@@ -102,6 +102,7 @@
 	let suggestionsError = $state<string | null>(null);
 	let suggestionsRetryable = $state(false);
 
+
 	// --- Impersonate Response State ---
 	// Removed - impersonate now directly sets input text
 
@@ -342,6 +343,8 @@
 
 	// --- Scribe Backend Interaction Logic ---
 
+	// --- Chronicle Creation Logic ---
+
 	async function fetchSuggestedActions() {
 		console.log('fetchSuggestedActions: Entered function.');
 
@@ -483,7 +486,7 @@
 		const signal = currentAbortController.signal;
 
 		// Add placeholder for assistant message
-		const assistantMessageId = crypto.randomUUID();
+		let assistantMessageId = crypto.randomUUID();
 		console.log('Created assistant message with ID:', assistantMessageId);
 		console.log(
 			'Current messages before adding assistant message:',
@@ -673,6 +676,53 @@
 							// 		? { ...msg, reasoning: (msg.reasoning || '') + currentData }
 							// 		: msg
 							// );
+						}
+					} else if (currentEvent === 'message_saved') {
+						if (currentData) {
+							console.log('SSE Message Saved:', currentData);
+							try {
+								const messageData = JSON.parse(currentData);
+								const actualMessageId = messageData.message_id;
+								console.log('Updating assistant message ID from', assistantMessageId, 'to', actualMessageId);
+								
+								// Update the assistant message with the actual database ID
+								messages = messages.map((msg) => {
+									if (msg.id === assistantMessageId) {
+										console.log('Updating message ID for assistant message:', msg.id, '->', actualMessageId);
+										return { 
+											...msg, 
+											id: actualMessageId // Update with actual database ID
+										};
+									}
+									return msg;
+								});
+								
+								// Update the assistantMessageId variable for subsequent events
+								assistantMessageId = actualMessageId;
+							} catch (e) {
+								console.error('Failed to parse message saved data:', e);
+							}
+						}
+					} else if (currentEvent === 'token_usage') {
+						if (currentData) {
+							console.log('SSE Token Usage:', currentData);
+							try {
+								const tokenData = JSON.parse(currentData);
+								messages = messages.map((msg) => {
+									if (msg.id === assistantMessageId) {
+										console.log('Updating token usage for assistant message:', msg.id, tokenData);
+										return { 
+											...msg, 
+											prompt_tokens: tokenData.prompt_tokens,
+											completion_tokens: tokenData.completion_tokens,
+											model_name: tokenData.model_name
+										};
+									}
+									return msg;
+								});
+							} catch (e) {
+								console.error('Failed to parse token usage data:', e);
+							}
 						}
 					} else if (currentEvent === 'message' && currentData) {
 						// This is the default event if no 'event:' line is present.
@@ -936,7 +986,7 @@
 		const signal = currentAbortController.signal;
 
 		// Add placeholder for assistant message
-		const assistantMessageId = crypto.randomUUID();
+		let assistantMessageId = crypto.randomUUID();
 		console.log('Created assistant message with ID:', assistantMessageId);
 
 		let assistantMessage: ScribeChatMessage = {
@@ -1942,6 +1992,7 @@
 				/>
 			</div>
 		{/if}
+
 
 		<!-- Suggested Actions Error -->
 		{#if suggestionsError && !isLoading && !isLoadingSuggestions}
