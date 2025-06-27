@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     llm::{EmbeddingClient, AiClient},
     services::{
-        embeddings::{ChatMessageChunkMetadata, LorebookChunkMetadata},
+        embeddings::{ChatMessageChunkMetadata, LorebookChunkMetadata, ChronicleEventMetadata},
         ChronicleService, LorebookService,
     },
     state::AppState,
@@ -244,11 +244,23 @@ impl ScribeTool for CreateChronicleEventTool {
             chronicle_uuid
         );
 
-        // Execute the atomic creation
+        // Extract session_dek for encryption (SECURITY CRITICAL!)
+        let session_dek = params.get("session_dek")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams("session_dek is required for encryption".to_string()))?;
+        
+        // Decode the hex-encoded session_dek back to SecretBox
+        let session_dek_bytes = hex::decode(session_dek)
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid session_dek hex encoding: {}", e)))?;
+        let session_dek_secret = secrecy::SecretBox::new(Box::new(session_dek_bytes));
+        let session_dek_wrapper = crate::auth::session_dek::SessionDek(session_dek_secret);
+
+        // Execute the atomic creation with proper encryption
         match self.chronicle_service.create_event(
             user_uuid,
             chronicle_uuid,
             create_request,
+            Some(&session_dek_wrapper), // Pass SessionDek for AI-generated events encryption
         ).await {
             Ok(event) => {
                 info!("Successfully created chronicle event: {}", event.id);
@@ -854,9 +866,26 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                         "speaker": chat_meta.speaker
                     }));
                 }
+            } else if let Ok(chronicle_meta) = ChronicleEventMetadata::try_from(payload_map.clone()) {
+                let should_include = matches!(search_type, "all" | "chronicles");
+                if should_include {
+                    results.push(json!({
+                        "type": "chronicle_event", 
+                        "id": chronicle_meta.event_id,
+                        "title": format!("Chronicle Event: {}", chronicle_meta.event_type),
+                        "content": format!("Event type: {}, Chronicle: {}, Created: {}", 
+                                         chronicle_meta.event_type, 
+                                         chronicle_meta.chronicle_id,
+                                         chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S")),
+                        "relevance_score": scored_point.score,
+                        "snippet": format!("Event type: {}", chronicle_meta.event_type),
+                        "event_type": chronicle_meta.event_type,
+                        "chronicle_id": chronicle_meta.chronicle_id.to_string(),
+                        "created_at": chronicle_meta.created_at.to_rfc3339()
+                    }));
+                }
             } else {
-                // Try parsing as chronicle metadata if we had the type
-                // For now, skip unknown payload types
+                // Skip unknown payload types with debug info
                 warn!(
                     point_id = %scored_point.id.as_ref().map(|id| format!("{id:?}")).unwrap_or_default(),
                     "Failed to parse payload as any known metadata type"

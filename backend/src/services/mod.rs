@@ -4,6 +4,7 @@ pub mod character_parser;
 pub mod character_service;
 pub mod chat;
 pub mod chat_override_service;
+pub mod chronicle_deduplication_service;
 pub mod chronicle_service;
 pub mod email_service;
 pub mod embeddings;
@@ -29,6 +30,7 @@ pub use agentic::{
 
 pub use character_service::CharacterService;
 pub use chat_override_service::ChatOverrideService;
+pub use chronicle_deduplication_service::{ChronicleDeduplicationService, DeduplicationConfig, DuplicateDetectionResult};
 pub use chronicle_service::ChronicleService;
 pub use email_service::{EmailService, create_email_service};
 pub use encryption_service::EncryptionService;

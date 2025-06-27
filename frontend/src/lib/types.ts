@@ -556,6 +556,7 @@ export interface UpdateUserSettingsRequest {
 	auto_save_chats?: boolean | null;
 	theme?: string | null;
 	notifications_enabled?: boolean | null;
+	typing_speed?: number | null;
 }
 
 export interface UserSettingsResponse {
@@ -582,6 +583,7 @@ export interface UserSettingsResponse {
 	auto_save_chats?: boolean | null;
 	theme?: string | null;
 	notifications_enabled?: boolean | null;
+	typing_speed?: number | null;
 
 	// Timestamps
 	created_at: string;

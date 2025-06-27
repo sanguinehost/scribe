@@ -28,6 +28,7 @@ use serde_json::json;
 use secrecy::{SecretString, SecretBox, ExposeSecret};
 use diesel::{RunQueryDsl, prelude::*};
 use bcrypt;
+use hex;
 
 /// Helper to create a test user in the database
 async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)> {
@@ -248,7 +249,7 @@ async fn test_agentic_tools_with_mock_ai() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
-    let (user_id, _session_dek) = create_test_user(&test_app).await.unwrap();
+    let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
     let _session_id = Uuid::new_v4();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
     
@@ -303,11 +304,18 @@ async fn test_agentic_tools_with_mock_ai() {
         Arc::new(ChronicleService::new(test_app.db_pool.clone()))
     );
     
+    // Hex-encode the session_dek for the tool parameter
+    let session_dek_hex = hex::encode(session_dek.0.expose_secret());
+    
     let event_params = json!({
         "user_id": user_id.to_string(),
         "chronicle_id": chronicle_id.to_string(),
-        "event_type": "DISCOVERY",
+        "event_category": "WORLD",
+        "event_type": "DISCOVERY", 
+        "event_subtype": "ITEM_ACQUISITION",
         "summary": "Found the legendary sword of testing",
+        "subject": "Test Hero",
+        "session_dek": session_dek_hex,
         "event_data": {
             "participants": ["Test Hero"],
             "location": "Test Dungeon",

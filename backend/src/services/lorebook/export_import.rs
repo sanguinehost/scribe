@@ -214,10 +214,23 @@ impl LorebookService {
         let mut embedding_tasks = Vec::new();
 
         for (uid, entry) in payload.entries {
-            let keys_text = if entry.key.as_ref().map_or(true, |k| k.is_empty()) {
+            // Merge both 'key' and 'keys' fields from SillyTavern format
+            let mut all_keys = Vec::new();
+            if let Some(key_list) = &entry.key {
+                all_keys.extend(key_list.iter().cloned());
+            }
+            if let Some(keys_list) = &entry.keys {
+                all_keys.extend(keys_list.iter().cloned());
+            }
+            // Remove duplicates and empty strings
+            all_keys.sort();
+            all_keys.dedup();
+            all_keys.retain(|k| !k.trim().is_empty());
+
+            let keys_text = if all_keys.is_empty() {
                 None
             } else {
-                Some(entry.key.as_ref().unwrap().join(", "))
+                Some(all_keys.join(", "))
             };
 
             let placement_hint = match entry.position {
@@ -240,7 +253,7 @@ impl LorebookService {
                     .or_else(|| entry.disable.map(|d| !d))
                     .or(Some(true)), // Use enabled if present, otherwise invert disable, default to true
                 is_constant: entry.constant,
-                insertion_order: entry.order,
+                insertion_order: entry.order.or(entry.insertion_order),
                 placement_hint: Some(placement_hint),
             };
 

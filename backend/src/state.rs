@@ -46,7 +46,6 @@ pub struct AppStateServices {
     pub auth_backend: Arc<AuthBackend>,
     pub file_storage_service: Arc<FileStorageService>,
     pub email_service: Arc<dyn EmailService + Send + Sync>,
-    pub narrative_intelligence_service: Arc<NarrativeIntelligenceService>,
 }
 
 // --- Shared application state ---
@@ -75,7 +74,7 @@ pub struct AppState {
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
     pub file_storage_service: Arc<FileStorageService>, // Added for file storage
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
-    pub narrative_intelligence_service: Arc<NarrativeIntelligenceService>, // Added for agentic narrative processing
+    pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
 }
 
 // Manual Debug implementation for AppState
@@ -100,7 +99,7 @@ impl fmt::Debug for AppState {
             .field("auth_backend", &"<Arc<AuthBackend>>") // Added
             .field("file_storage_service", &"<Arc<FileStorageService>>") // Added
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
-            .field("narrative_intelligence_service", &"<Arc<NarrativeIntelligenceService>>") // Added for agentic narrative processing
+            .field("narrative_intelligence_service", &"<Option<Arc<NarrativeIntelligenceService>>>") // Added for agentic narrative processing
             .finish()
     }
 }
@@ -125,7 +124,13 @@ impl AppState {
             auth_backend: services.auth_backend,
             file_storage_service: services.file_storage_service,
             email_service: services.email_service,
-            narrative_intelligence_service: services.narrative_intelligence_service,
+            narrative_intelligence_service: None, // Will be set later after AppState is fully constructed
         }
+    }
+
+    /// Set the narrative intelligence service after AppState construction
+    /// This is needed to break the circular dependency during construction
+    pub fn set_narrative_intelligence_service(&mut self, service: Arc<NarrativeIntelligenceService>) {
+        self.narrative_intelligence_service = Some(service);
     }
 }

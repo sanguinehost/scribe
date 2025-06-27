@@ -498,6 +498,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
+                model_name: "gemini-2.5-pro".to_string(),
             };
             diesel::insert_into(chat_messages::table)
                 .values(&new_message)
@@ -848,6 +849,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         query_text: called_query_text,
         limit: _, // Not asserting limit for now
         active_lorebook_ids_for_search: called_lorebook_ids,
+        chronicle_id_for_search: _, // Not asserting chronicle_id for now
     }) = retrieve_calls.first()
     {
         assert_eq!(called_user_id, &user.id);

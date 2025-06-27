@@ -295,6 +295,17 @@ diesel::table! {
         event_data -> Nullable<Jsonb>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        summary_encrypted -> Nullable<Bytea>,
+        summary_nonce -> Nullable<Bytea>,
+        timestamp_iso8601 -> Timestamptz,
+        actors -> Nullable<Jsonb>,
+        #[max_length = 100]
+        action -> Nullable<Varchar>,
+        context_data -> Nullable<Jsonb>,
+        causality -> Nullable<Jsonb>,
+        valence -> Nullable<Jsonb>,
+        #[max_length = 50]
+        modality -> Nullable<Varchar>,
     }
 }
 
@@ -525,6 +536,7 @@ diesel::table! {
         notifications_enabled -> Nullable<Bool>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        typing_speed -> Nullable<Int4>,
     }
 }
 

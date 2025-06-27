@@ -47,7 +47,8 @@
 		// Application Preferences
 		auto_save_chats: true,
 		theme: 'system',
-		notifications_enabled: true
+		notifications_enabled: true,
+		typing_speed: 30 // milliseconds between characters for streaming text
 	});
 
 	// Expandable sections state
@@ -86,7 +87,8 @@
 				// Application Preferences
 				auto_save_chats: settings.auto_save_chats,
 				theme: settings.theme || null,
-				notifications_enabled: settings.notifications_enabled
+				notifications_enabled: settings.notifications_enabled,
+				typing_speed: settings.typing_speed
 			};
 
 			const result = await apiClient.updateUserSettings(updateRequest);
@@ -140,7 +142,8 @@
 					// Application Preferences
 					auto_save_chats: userSettings.auto_save_chats ?? true,
 					theme: userSettings.theme || 'system',
-					notifications_enabled: userSettings.notifications_enabled ?? true
+					notifications_enabled: userSettings.notifications_enabled ?? true,
+					typing_speed: userSettings.typing_speed ?? 30
 				};
 			} else {
 				console.error('Failed to load user settings:', userSettingsResult.error);
@@ -170,7 +173,8 @@
 			context_rag_budget: 50000, // Updated to match backend default
 			auto_save_chats: true,
 			theme: 'system',
-			notifications_enabled: true
+			notifications_enabled: true,
+			typing_speed: 30
 		};
 		toast.info('Settings reset to system defaults');
 	}
@@ -476,6 +480,21 @@
 							<div class="flex items-center space-x-2">
 								<Checkbox id="notifications" bind:checked={settings.notifications_enabled} />
 								<Label for="notifications">Enable notifications</Label>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="typing-speed">Text Streaming Speed</Label>
+								<Input
+									id="typing-speed"
+									type="number"
+									min="1"
+									max="200"
+									step="1"
+									bind:value={settings.typing_speed}
+								/>
+								<p class="text-xs text-muted-foreground">
+									Milliseconds between characters (lower = faster). Common values: 10 (very fast), 30 (default), 50 (slow)
+								</p>
 							</div>
 						</CardContent>
 					</Card>

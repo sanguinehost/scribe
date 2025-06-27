@@ -15,15 +15,18 @@ use crate::{
     auth::session_dek::SessionDek,
     errors::AppError,
     llm::{AiClient, EmbeddingClient},
-    models::chats::ChatMessage,
+    models::{chats::ChatMessage, users::{User, UserDbQuery}},
+    schema::users::dsl as users_dsl,
     services::{
-        agentic::{NarrativeAgentRunner, AgenticNarrativeFactory, NarrativeWorkflowConfig},
+        agentic::{NarrativeAgentRunner, AgenticNarrativeFactory, UserPersonaContext},
         ChronicleService, LorebookService,
         embeddings::RetrievedChunk,
     },
     state::AppState,
     vector_db::qdrant_client::QdrantClientServiceTrait,
 };
+
+use diesel::{QueryDsl, RunQueryDsl, OptionalExtension, ExpressionMethods};
 
 /// Result of narrative intelligence processing
 #[derive(Debug, Clone)]
@@ -94,7 +97,8 @@ pub struct NarrativeIntelligenceService {
     narrative_runner: NarrativeAgentRunner,
     /// Configuration for processing behavior
     config: NarrativeProcessingConfig,
-    // For future: could include event queues, batch processors, etc.
+    /// App state for accessing services like UserPersonaService
+    app_state: Arc<AppState>,
 }
 
 impl NarrativeIntelligenceService {
@@ -105,6 +109,7 @@ impl NarrativeIntelligenceService {
         lorebook_service: Arc<LorebookService>,
         qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
+        app_state: Arc<AppState>,
         config: Option<NarrativeProcessingConfig>,
     ) -> Self {
         let config = config.unwrap_or_default();
@@ -127,6 +132,7 @@ impl NarrativeIntelligenceService {
         Self {
             narrative_runner,
             config,
+            app_state,
         }
     }
 
@@ -152,7 +158,7 @@ impl NarrativeIntelligenceService {
             ai_client,
             chronicle_service,
             lorebook_service,
-            app_state,
+            app_state.clone(),
             workflow_config,
         );
         
@@ -161,6 +167,7 @@ impl NarrativeIntelligenceService {
         Self {
             narrative_runner,
             config,
+            app_state,
         }
     }
 
@@ -205,6 +212,9 @@ impl NarrativeIntelligenceService {
             existing_rag_context.len()
         );
         
+        // Retrieve user's persona context for narrative intelligence
+        let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
+        
         // Execute the agentic workflow
         match self.narrative_runner.process_narrative_event(
             user_id,
@@ -212,6 +222,7 @@ impl NarrativeIntelligenceService {
             chronicle_id,
             messages_to_analyze,
             session_dek,
+            persona_context,
         ).await {
             Ok(workflow_result) => {
                 let processing_time = start_time.elapsed().as_millis() as u64;
@@ -330,6 +341,7 @@ impl NarrativeIntelligenceService {
         lorebook_service: Arc<LorebookService>,
         qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
+        app_state: Arc<AppState>,
     ) -> Self {
         let config = NarrativeProcessingConfig {
             enabled: true,
@@ -339,7 +351,7 @@ impl NarrativeIntelligenceService {
             batch_size: 10,
         };
         
-        Self::new_with_deps(ai_client, chronicle_service, lorebook_service, qdrant_service, embedding_client, Some(config))
+        Self::new_with_deps(ai_client, chronicle_service, lorebook_service, qdrant_service, embedding_client, app_state, Some(config))
     }
     
     /// Create service for production with individual dependencies
@@ -349,9 +361,10 @@ impl NarrativeIntelligenceService {
         lorebook_service: Arc<LorebookService>,
         qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
+        app_state: Arc<AppState>,
     ) -> Self {
         let config = NarrativeProcessingConfig::default();
-        Self::new_with_deps(ai_client, chronicle_service, lorebook_service, qdrant_service, embedding_client, Some(config))
+        Self::new_with_deps(ai_client, chronicle_service, lorebook_service, qdrant_service, embedding_client, app_state, Some(config))
     }
 
     /// Create service for development/testing
@@ -381,5 +394,50 @@ impl NarrativeIntelligenceService {
     ) -> Self {
         let config = NarrativeProcessingConfig::default();
         Self::new(ai_client, chronicle_service, lorebook_service, app_state, Some(config))
+    }
+
+    /// Retrieve the user's current persona context for narrative intelligence
+    async fn get_user_persona_context(
+        &self,
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<UserPersonaContext, AppError> {
+        // Get the user from the database to access their default_persona_id
+        let pool = self.app_state.pool.clone();
+        let conn = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+            
+        let user_db = conn
+            .interact(move |db_conn| {
+                users_dsl::users
+                    .filter(users_dsl::id.eq(user_id))
+                    .first::<UserDbQuery>(db_conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "DB interact join error for get_user_persona_context: {e}"
+                ))
+            })??;
+            
+        let user = match user_db {
+            Some(user_db) => User::from(user_db),
+            None => return Err(AppError::NotFound(format!("User with ID {user_id} not found"))),
+        };
+        
+        // If the user has a default persona, retrieve it
+        if let Some(default_persona_id) = user.default_persona_id {
+            let persona_data = self.app_state.user_persona_service
+                .get_user_persona(&user, Some(&session_dek.0), default_persona_id)
+                .await?;
+            
+            Ok(UserPersonaContext::from(persona_data))
+        } else {
+            // User has no default persona set
+            Err(AppError::NotFound("User has no default persona set".to_string()))
+        }
     }
 }

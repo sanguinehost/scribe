@@ -594,6 +594,12 @@ class ApiClient {
 		});
 	}
 
+	async deleteMessage(id: string): Promise<Result<void, ApiError>> {
+		return this.fetch<void>(`/api/chats/messages/${id}`, {
+			method: 'DELETE'
+		});
+	}
+
 	// Vote methods
 	async getVotesByChatId(chatId: string): Promise<Result<Vote[], ApiError>> {
 		return this.fetch<Vote[]>(`/api/chats/${chatId}/votes`);

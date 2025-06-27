@@ -64,6 +64,7 @@ impl UserSettingsService {
                         auto_save_chats: Some(true),
                         theme: Some("system".to_string()),
                         notifications_enabled: Some(true),
+                        typing_speed: Some(30), // Default typing speed
                     };
 
                     let created_settings = diesel::insert_into(user_settings::table)
@@ -125,6 +126,7 @@ impl UserSettingsService {
                         auto_save_chats: Some(true),
                         theme: Some("system".to_string()),
                         notifications_enabled: Some(true),
+                        typing_speed: Some(30), // Default typing speed
                     };
 
                     diesel::insert_into(user_settings::table)
@@ -180,6 +182,9 @@ impl UserSettingsService {
                         user_settings::notifications_enabled.eq(update_request
                             .notifications_enabled
                             .or(settings.notifications_enabled)),
+                        user_settings::typing_speed.eq(update_request
+                            .typing_speed
+                            .or(settings.typing_speed)),
                     ))
                     .get_result::<UserSettings>(conn)
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;

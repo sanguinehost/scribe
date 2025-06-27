@@ -9,6 +9,7 @@
 	import MessageReasoning from '../message-reasoning.svelte';
 	import MessageActions from './message-actions.svelte';
 	import TokenUsageDisplay from '../token-usage-display.svelte';
+	import TypewriterMessage from '../TypewriterMessage.svelte';
 	import { fly } from 'svelte/transition';
 	import type {
 		ScribeChatMessage,
@@ -19,6 +20,10 @@
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
 	import { env } from '$env/dynamic/public';
 	import { getLock } from '$lib/hooks/lock';
+	import { streamingService } from '$lib/services/StreamingService.svelte';
+
+	// Make reactive to streaming service state
+	let streamingState = $derived(streamingService.getState());
 
 	let {
 		message,
@@ -31,6 +36,7 @@
 		onRetryFailedMessage,
 		onEditMessage,
 		onSaveEditedMessage,
+		onDeleteMessage,
 		onPreviousVariant,
 		onNextVariant,
 		hasVariants = false,
@@ -46,6 +52,7 @@
 		onRetryFailedMessage?: (messageId: string) => void;
 		onEditMessage?: (messageId: string) => void;
 		onSaveEditedMessage?: (messageId: string, newContent: string) => void;
+		onDeleteMessage?: (messageId: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
 		onNextVariant?: (messageId: string) => void;
 		hasVariants?: boolean;
@@ -58,6 +65,8 @@
 	
 	// Get scroll lock during component initialization
 	const scrollLock = getLock('messages-scroll');
+	
+	// Get streaming state to check for typewriter animation - using the one defined at top
 
 	// Function to get initials for fallback avatar
 	function getInitials(name: string | undefined | null): string {
@@ -231,10 +240,12 @@
 					<!-- Normal message display -->
 					<div
 						class={cn(
-							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8 relative group',
+							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 relative group',
 							{
 								'border-primary/10 bg-primary/10': message.message_type === 'User',
-								'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20': message.error
+								'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20': message.error,
+								'pb-8': !message.loading && !readonly, // Only add bottom padding when actions are visible
+								'pb-2': message.loading || readonly // Less padding when actions are hidden
 							}
 						)}
 					>
@@ -277,9 +288,18 @@
 							{/if}
 						{:else}
 							<!-- Normal content display -->
-							<Markdown md={message.content} />
 							{#if message.message_type === 'Assistant' && message.loading}
-								<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
+								<!-- Use TypewriterMessage for Assistant messages that are still loading -->
+								<TypewriterMessage
+									message={message as any}
+									showTypewriter={true}
+									className="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
+								/>
+							{:else}
+								<!-- All other messages (including completed Assistant messages) use regular markdown -->
+								<div class="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words">
+									<Markdown md={message.content} />
+								</div>
 							{/if}
 						{/if}
 					</div>
@@ -340,6 +360,7 @@
 									onEditMessage?.(message.id);
 								}
 							}}
+							onDelete={() => onDeleteMessage?.(message.id)}
 							onPreviousVariant={() => onPreviousVariant?.(message.id)}
 							onNextVariant={() => onNextVariant?.(message.id)}
 						/>

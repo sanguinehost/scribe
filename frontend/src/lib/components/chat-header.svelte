@@ -44,11 +44,47 @@
 	// Check if chat has chronicle ID
 	let hasChronicleId = $derived(!!currentChronicleId);
 
+	// Track previous chronicle ID to detect when a new one is assigned
+	let previousChronicleId = $state<string | null>(null);
+	
+	// Track previous event count to detect when new events are added
+	let previousEventCount = $state<number>(0);
+
 	// Load settings on chat change (same as ChatConfigPanel)
 	$effect(() => {
 		if (chat?.id) {
 			loadChatSettings();
 		}
+	});
+
+	// Refresh chronicle store when a new chronicle is automatically created
+	$effect(() => {
+		if (currentChronicleId && previousChronicleId === null) {
+			console.log('[Chat Header] New chronicle detected, refreshing chronicle store and notifying UI');
+			chronicleStore.refresh();
+			
+			// Dispatch event to notify other components
+			window.dispatchEvent(new CustomEvent('chronicle-created', {
+				detail: { chronicleId: currentChronicleId }
+			}));
+		}
+		previousChronicleId = currentChronicleId;
+	});
+
+	// Track event count changes to detect when new events are added
+	$effect(() => {
+		if (currentChronicle && currentChronicle.event_count > previousEventCount) {
+			console.log('[Chat Header] New events detected, notifying UI');
+			
+			// Dispatch event to notify other components
+			window.dispatchEvent(new CustomEvent('chronicle-events-updated', {
+				detail: { 
+					chronicleId: currentChronicleId,
+					eventCount: currentChronicle.event_count
+				}
+			}));
+		}
+		previousEventCount = currentChronicle?.event_count || 0;
 	});
 
 	async function loadChatSettings() {
@@ -80,7 +116,7 @@
 	let isExtracting = $state(false);
 	
 	// State for chronicle creation
-	let isCreatingChronicle = $state(false);
+	// Note: isCreatingChronicle removed as chronicles are now automatic
 
 	// State for lorebook extraction
 	let isExtractingLorebook = $state(false);
@@ -147,59 +183,7 @@
 		}
 	}
 
-	// Function to create chronicle from chat
-	async function createChronicleFromChat() {
-		if (!chat?.id || !user?.id) {
-			toast.error('Cannot create chronicle: Missing chat session or user information');
-			return;
-		}
-
-		isCreatingChronicle = true;
-
-		try {
-			// Generate a default chronicle name based on chat title or character name
-			const defaultName = chat.title || `Chat Chronicle ${new Date().toLocaleDateString()}`;
-
-			const result = await apiClient.createChronicleFromChat({
-				chat_session_id: chat.id,
-				chronicle_name: defaultName,
-				chronicle_description: `Chronicle created from chat session on ${new Date().toLocaleDateString()}`
-			});
-
-			if (result.isOk()) {
-				const response = result.value;
-				toast.success(`Created chronicle "${response.chronicle.name}" with ${response.events_extracted} events!`);
-				
-				// Update the current chronicle ID to reflect the new association
-				currentChronicleId = response.chronicle.id;
-				
-				// Refresh chronicle store to update the list
-				await chronicleStore.refresh();
-				
-				console.log('Chronicle created successfully:', response.chronicle);
-			} else {
-				const error = result.error;
-				console.error('Error creating chronicle from chat:', error.message);
-				
-				// Clean up error message for user display
-				let cleanErrorMessage = error.message;
-				if (error.message.includes('PropertyNotFound') || error.message.includes('safety filters')) {
-					cleanErrorMessage = 'AI safety filters blocked the chronicle creation. Please try again or continue chatting.';
-				} else if (error.message.includes('Failed to parse stream data')) {
-					cleanErrorMessage = 'AI service returned malformed data. Please try again.';
-				}
-				
-				toast.error(`Could not create chronicle: ${cleanErrorMessage}`);
-			}
-		} catch (err: any) {
-			console.error('Error creating chronicle from chat:', err);
-			
-			let cleanErrorMessage = err.message || 'An unexpected error occurred.';
-			toast.error(`Could not create chronicle: ${cleanErrorMessage}`);
-		} finally {
-			isCreatingChronicle = false;
-		}
-	}
+	// Note: Chronicle creation is now automatic through the narrative intelligence system
 
 	// Function to open lorebook extraction dialog
 	async function openLorebookExtractionDialog() {
@@ -336,23 +320,7 @@
 			</Button>
 		{/if}
 	{:else if !readonly && chat}
-		<!-- Show Create Chronicle button when no chronicle is associated -->
-		<Button
-			variant="outline"
-			size="sm"
-			onclick={createChronicleFromChat}
-			disabled={isCreatingChronicle || isLoadingSettings}
-			title="Create a new chronicle from this chat and extract events"
-			class="gap-1"
-		>
-			{#if isCreatingChronicle}
-				<ScrollText class="h-3 w-3 animate-spin" />
-				Creating...
-			{:else}
-				<ScrollText class="h-3 w-3" />
-				Create Chronicle
-			{/if}
-		</Button>
+		<!-- Space reserved for future chronicle UI -->
 	{/if}
 
 	{#if !readonly && chat}

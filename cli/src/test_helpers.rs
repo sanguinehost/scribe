@@ -558,6 +558,7 @@ impl HttpClient for MockHttpClient {
         mock_result.map_err(Into::into)
     }
 
+
     async fn delete_chat(&self, chat_id: Uuid) -> Result<(), CliError> {
         // Record the endpoint call with the expected format
         self.record_endpoint_call(&format!("/api/chats/remove/{chat_id}"));
@@ -1158,5 +1159,6 @@ pub fn mock_chat_message(
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-2.5-flash".to_string(),
     }
 }

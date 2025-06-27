@@ -274,7 +274,7 @@ mod integration_tests {
         };
 
         let created_event = chronicle_service
-            .create_event(user.id, chronicle.id, create_event_request.clone())
+            .create_event(user.id, chronicle.id, create_event_request.clone(), None)
             .await
             .unwrap();
 
@@ -294,7 +294,7 @@ mod integration_tests {
         };
 
         let event2 = chronicle_service
-            .create_event(user.id, chronicle.id, event2_request)
+            .create_event(user.id, chronicle.id, event2_request, None)
             .await
             .unwrap();
 
@@ -392,7 +392,7 @@ mod integration_tests {
             };
 
             chronicle_service
-                .create_event(user.id, chronicle.id, event_request)
+                .create_event(user.id, chronicle.id, event_request, None)
                 .await
                 .unwrap();
         }
@@ -493,7 +493,7 @@ mod integration_tests {
         };
 
         let result = chronicle_service
-            .create_event(user.id, nonexistent_id, event_request)
+            .create_event(user.id, nonexistent_id, event_request, None)
             .await;
 
         assert!(result.is_err());
@@ -529,7 +529,7 @@ mod integration_tests {
         };
 
         let event = chronicle_service
-            .create_event(user.id, chronicle.id, event_request)
+            .create_event(user.id, chronicle.id, event_request, None)
             .await
             .unwrap();
 
@@ -546,5 +546,82 @@ mod integration_tests {
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), scribe_backend::errors::AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_chronicle_event_encryption() {
+        use scribe_backend::auth::session_dek::SessionDek;
+
+        let test_app = test_helpers::spawn_app(false, false, false).await;
+        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+
+        // Setup test user and chronicle
+        let user = setup_test_user(&test_app).await.unwrap();
+        _guard.add_user(user.id);
+
+        let create_chronicle_request = CreateChronicleRequest {
+            name: "Encryption Test Chronicle".to_string(),
+            description: Some("Testing event summary encryption".to_string()),
+        };
+
+        let chronicle = chronicle_service
+            .create_chronicle(user.id, create_chronicle_request)
+            .await
+            .unwrap();
+
+        // Create a SessionDek using the user's DEK
+        let session_dek = SessionDek::new(user.dek.as_ref().unwrap().0.expose_secret().clone());
+
+        // Test: Create Event with Encryption (SessionDek provided)
+        let encrypted_event_request = CreateEventRequest {
+            event_type: "ENCRYPTED_EVENT".to_string(),
+            summary: "This is a secret summary that should be encrypted".to_string(),
+            source: EventSource::UserAdded,
+            event_data: Some(json!({
+                "secret_info": "This contains sensitive information",
+                "location": "Hidden Cave"
+            })),
+        };
+
+        let encrypted_event = chronicle_service
+            .create_event(user.id, chronicle.id, encrypted_event_request.clone(), Some(&session_dek))
+            .await
+            .unwrap();
+
+        // Verify the event was created and has encrypted fields
+        assert_eq!(encrypted_event.event_type, encrypted_event_request.event_type);
+        assert_eq!(encrypted_event.summary, encrypted_event_request.summary); // Legacy field still has plaintext
+        assert!(encrypted_event.has_encrypted_summary()); // Should have encrypted data
+        assert!(encrypted_event.summary_encrypted.is_some());
+        assert!(encrypted_event.summary_nonce.is_some());
+
+        // Test: Decrypt the summary using the SessionDek
+        let decrypted_summary = encrypted_event.get_decrypted_summary(&session_dek.0).unwrap();
+        assert_eq!(decrypted_summary, encrypted_event_request.summary);
+
+        // Test: Create Event without Encryption (SessionDek not provided)
+        let unencrypted_event_request = CreateEventRequest {
+            event_type: "UNENCRYPTED_EVENT".to_string(),
+            summary: "This is a public summary".to_string(),
+            source: EventSource::UserAdded,
+            event_data: None,
+        };
+
+        let unencrypted_event = chronicle_service
+            .create_event(user.id, chronicle.id, unencrypted_event_request.clone(), None)
+            .await
+            .unwrap();
+
+        // Verify the event was created without encrypted fields
+        assert_eq!(unencrypted_event.event_type, unencrypted_event_request.event_type);
+        assert_eq!(unencrypted_event.summary, unencrypted_event_request.summary);
+        assert!(!unencrypted_event.has_encrypted_summary()); // Should NOT have encrypted data
+        assert!(unencrypted_event.summary_encrypted.is_none());
+        assert!(unencrypted_event.summary_nonce.is_none());
+
+        // Test: Fallback to legacy plaintext when no encrypted version exists
+        let fallback_summary = unencrypted_event.get_decrypted_summary(&session_dek.0).unwrap();
+        assert_eq!(fallback_summary, unencrypted_event_request.summary);
     }
 }

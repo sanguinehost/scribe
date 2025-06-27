@@ -229,20 +229,13 @@ impl AppStateServicesBuilder {
         });
 
         // Create chronicle service for narrative intelligence
-        let chronicle_service = Arc::new(ChronicleService::new(
+        let _chronicle_service = Arc::new(ChronicleService::new(
             self.db_pool.clone(),
         ));
 
-        // Create narrative intelligence service
-        let narrative_intelligence_service = Arc::new(
-            NarrativeIntelligenceService::for_development_with_deps(
-                ai_client.clone(),
-                chronicle_service,
-                lorebook_service.clone(),
-                qdrant_service.clone(),
-                embedding_client.clone(),
-            )
-        );
+        // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
+        // due to circular dependency (service needs AppState, but AppState is built from services)
+        // We'll create a placeholder for now and set it properly after AppState construction
 
         Ok(AppStateServices {
             ai_client,
@@ -257,7 +250,7 @@ impl AppStateServicesBuilder {
             auth_backend,
             file_storage_service,
             email_service,
-            narrative_intelligence_service,
+            // narrative_intelligence_service will be added after AppState is built
         })
     }
 }
@@ -377,6 +370,23 @@ impl AppStateBuilder {
     /// Build the AppState
     pub async fn build(self) -> Result<AppState, Box<dyn std::error::Error + Send + Sync>> {
         let services = self.services_builder.build().await?;
-        Ok(AppState::new(self.pool, self.config, services))
+        let mut app_state = AppState::new(self.pool, self.config, services);
+        
+        // Now create the narrative intelligence service with the fully constructed AppState
+        let narrative_intelligence_service = Arc::new(
+            NarrativeIntelligenceService::for_development_with_deps(
+                app_state.ai_client.clone(),
+                Arc::new(ChronicleService::new(app_state.pool.clone())),
+                app_state.lorebook_service.clone(),
+                app_state.qdrant_service.clone(),
+                app_state.embedding_client.clone(),
+                Arc::new(app_state.clone()),
+            )
+        );
+        
+        // Set the narrative intelligence service
+        app_state.set_narrative_intelligence_service(narrative_intelligence_service);
+        
+        Ok(app_state)
     }
 }

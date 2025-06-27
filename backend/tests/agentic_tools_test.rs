@@ -2,11 +2,22 @@ use scribe_backend::services::agentic::{
     AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
     ScribeTool,
 };
+use scribe_backend::test_helpers::MockAiClient;
 use serde_json::json;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_analyze_text_significance_basic() {
-    let tool = AnalyzeTextSignificanceTool::new();
+    // Configure mock AI client to return valid JSON response
+    let mock_response = json!({
+        "is_significant": true,
+        "confidence": 0.8,
+        "reason": "Test conversation contains greeting",
+        "suggested_categories": ["lorebook_entries"]
+    });
+    
+    let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
+    let tool = AnalyzeTextSignificanceTool::new(mock_ai_client);
     
     // Test schema
     let schema = tool.input_schema();
@@ -31,7 +42,21 @@ async fn test_analyze_text_significance_basic() {
 
 #[tokio::test]
 async fn test_extract_temporal_events_basic() {
-    let tool = ExtractTemporalEventsTool::new();
+    // Configure mock AI client to return valid JSON response
+    let mock_response = json!({
+        "events": [
+            {
+                "event_type": "COMBAT",
+                "summary": "Dragon battle",
+                "participants": ["Player", "Dragon"],
+                "location": "Unknown",
+                "timestamp": "now"
+            }
+        ]
+    });
+    
+    let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
+    let tool = ExtractTemporalEventsTool::new(mock_ai_client);
     
     let params = json!({
         "messages": [
@@ -49,7 +74,20 @@ async fn test_extract_temporal_events_basic() {
 
 #[tokio::test]
 async fn test_extract_world_concepts_basic() {
-    let tool = ExtractWorldConceptsTool::new();
+    // Configure mock AI client to return valid JSON response
+    let mock_response = json!({
+        "concepts": [
+            {
+                "name": "Gandalf",
+                "type": "character",
+                "description": "A wise wizard",
+                "tags": ["wizard", "wise"]
+            }
+        ]
+    });
+    
+    let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
+    let tool = ExtractWorldConceptsTool::new(mock_ai_client);
     
     let params = json!({
         "messages": [
@@ -67,21 +105,40 @@ async fn test_extract_world_concepts_basic() {
 
 #[tokio::test]
 async fn test_tool_error_handling() {
-    let tool = AnalyzeTextSignificanceTool::new();
+    // Configure mock AI client to return valid JSON response
+    let mock_response = json!({
+        "is_significant": false,
+        "confidence": 0.1,
+        "reason": "Test error handling",
+        "suggested_categories": []
+    });
     
-    // Missing required field
+    let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
+    let tool = AnalyzeTextSignificanceTool::new(mock_ai_client);
+    
+    // Missing required field should return error
     let invalid_params = json!({});
     let result = tool.execute(&invalid_params).await;
     assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("messages array is required"));
     
-    // Wrong type for messages
+    // Wrong type for messages should return error
     let wrong_type_params = json!({
         "messages": "not an array"
     });
     let result = tool.execute(&wrong_type_params).await;
-    // Currently this passes because we don't validate types in the mock
-    // In a real implementation, this would fail
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("messages array is required"));
+    
+    // Empty messages array should work (returns not significant)
+    let empty_messages_params = json!({
+        "messages": []
+    });
+    let result = tool.execute(&empty_messages_params).await;
     assert!(result.is_ok());
+    let output = result.unwrap();
+    assert_eq!(output["is_significant"], false);
+    assert!(output["reason"].as_str().unwrap().contains("No content to analyze"));
 }
 
 #[tokio::test]
@@ -89,7 +146,15 @@ async fn test_workflow_simulation() {
     // Simulate the 4-step workflow with our atomic tools
     
     // Step 1: Triage
-    let triage_tool = AnalyzeTextSignificanceTool::new();
+    let triage_response = json!({
+        "is_significant": true,
+        "confidence": 0.9,
+        "reason": "Temple exploration with artifact discovery is significant",
+        "suggested_categories": ["chronicle_events", "lorebook_entries"]
+    });
+    
+    let mock_ai_client_triage = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
+    let triage_tool = AnalyzeTextSignificanceTool::new(mock_ai_client_triage);
     let messages = json!({
         "messages": [
             {"role": "user", "content": "The party entered the ancient temple"},
@@ -107,8 +172,33 @@ async fn test_workflow_simulation() {
     
     // Step 3: Extract information
     if is_significant {
-        let events_tool = ExtractTemporalEventsTool::new();
-        let concepts_tool = ExtractWorldConceptsTool::new();
+        let events_response = json!({
+            "events": [
+                {
+                    "event_type": "EXPLORATION",
+                    "summary": "Temple exploration",
+                    "participants": ["Party"],
+                    "location": "Ancient Temple",
+                    "timestamp": "now"
+                }
+            ]
+        });
+        
+        let concepts_response = json!({
+            "concepts": [
+                {
+                    "name": "Ancient Temple",
+                    "type": "location",
+                    "description": "A temple with mystical artifacts",
+                    "tags": ["temple", "ancient", "mystical"]
+                }
+            ]
+        });
+        
+        let mock_ai_client_events = Arc::new(MockAiClient::new_with_response(events_response.to_string()));
+        let mock_ai_client_concepts = Arc::new(MockAiClient::new_with_response(concepts_response.to_string()));
+        let events_tool = ExtractTemporalEventsTool::new(mock_ai_client_events);
+        let concepts_tool = ExtractWorldConceptsTool::new(mock_ai_client_concepts);
         
         let events_result = events_tool.execute(&messages).await.unwrap();
         let concepts_result = concepts_tool.execute(&messages).await.unwrap();

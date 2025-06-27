@@ -66,7 +66,7 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             "/:id/settings",
             get(get_chat_settings_handler).put(update_chat_settings_handler),
         )
-        .route("/messages/:id", get(get_message_by_id_handler))
+        .route("/messages/:id", get(get_message_by_id_handler).delete(delete_message_handler))
         .route("/messages/:id/vote", post(vote_message_handler))
         .route(
             "/messages/:id/trailing",
@@ -514,7 +514,7 @@ fn fetch_chat_with_ownership_check(
     Ok(chat)
 }
 
-/// Helper function to fetch messages for a chat session
+/// Helper function to fetch messages for a chat session with variant-aware content
 async fn fetch_chat_messages(pool: PgPool, chat_id: Uuid) -> Result<Vec<Message>, AppError> {
     pool.get()
         .await
@@ -549,35 +549,96 @@ async fn fetch_chat_messages(pool: PgPool, chat_id: Uuid) -> Result<Vec<Message>
         })?
 }
 
-/// Helper function to decrypt and transform messages for client response
-fn process_messages_for_response(
+/// Helper function to get the default variant content for a message (variant index 0)
+async fn get_default_variant_content(
+    pool: PgPool,
+    message_id: Uuid,
+    user_id: Uuid,
+    dek: &crate::auth::session_dek::SessionDek,
+) -> Result<Option<String>, AppError> {
+    use crate::schema::message_variants;
+    use crate::models::chats::MessageVariant;
+    use diesel::OptionalExtension; // Add this import for .optional()
+
+    let conn = pool.get().await?;
+    
+    let variant_opt = conn
+        .interact(move |conn| {
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .filter(message_variants::user_id.eq(user_id))
+                .filter(message_variants::variant_index.eq(0)) // Always get variant 0 (original)
+                .select(MessageVariant::as_select())
+                .first::<MessageVariant>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+    if let Some(variant) = variant_opt {
+        // Decrypt the variant content
+        let content = variant.decrypt_content(&dek.0)?;
+        Ok(Some(content))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Helper function to decrypt and transform messages for client response with variant support
+async fn process_messages_for_response(
     messages_db: Vec<Message>,
     dek: &crate::auth::session_dek::SessionDek,
+    pool: PgPool,
+    user_id: Uuid,
 ) -> Result<Vec<MessageResponse>, AppError> {
     let mut responses = Vec::new();
 
     for msg_db in messages_db {
-        let decrypted_client_message = msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
+        // First try to get variant 0 content, fall back to original message content
+        let content = match get_default_variant_content(pool.clone(), msg_db.id, user_id, dek).await? {
+            Some(variant_content) => variant_content,
+            None => {
+                // No variants exist, use original message content
+                let decrypted_client_message = msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
+                decrypted_client_message.content
+            }
+        };
 
-        // Construct response parts and attachments from original msg_db
+        // Update parts to use the variant content or original content
         let response_parts = msg_db
             .parts
-            .unwrap_or_else(|| json!([{"text": decrypted_client_message.content}]));
+            .unwrap_or_else(|| json!([{"text": content.clone()}]));
         let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]));
 
         let response_role = msg_db
             .role
-            .unwrap_or_else(|| decrypted_client_message.message_type.to_string());
+            .unwrap_or_else(|| msg_db.message_type.to_string());
+
+        // For raw_prompt, still decrypt from the original message
+        let raw_prompt = match (
+            &msg_db.raw_prompt_ciphertext,
+            &msg_db.raw_prompt_nonce,
+        ) {
+            (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                crate::crypto::decrypt_gcm(ciphertext, nonce, &dek.0)
+                    .ok()
+                    .and_then(|secret_bytes| {
+                        String::from_utf8(secret_bytes.expose_secret().clone()).ok()
+                    })
+            }
+            _ => None,
+        };
 
         responses.push(MessageResponse {
-            id: decrypted_client_message.id,
-            session_id: decrypted_client_message.session_id,
-            message_type: decrypted_client_message.message_type,
+            id: msg_db.id,
+            session_id: msg_db.session_id,
+            message_type: msg_db.message_type,
             role: response_role,
             parts: response_parts,
             attachments: response_attachments,
-            created_at: decrypted_client_message.created_at,
-            raw_prompt: decrypted_client_message.raw_prompt,
+            created_at: msg_db.created_at,
+            raw_prompt,
             prompt_tokens: msg_db.prompt_tokens,
             completion_tokens: msg_db.completion_tokens,
             model_name: Some(msg_db.model_name), // Added model_name from database record
@@ -616,8 +677,8 @@ pub async fn get_messages_by_chat_id_handler(
     // Fetch messages for the chat
     let messages_db = fetch_chat_messages(state.pool.clone(), chat_id).await?;
 
-    // Decrypt and transform messages for response
-    let responses = process_messages_for_response(messages_db, &dek)?;
+    // Decrypt and transform messages for response with variant support
+    let responses = process_messages_for_response(messages_db, &dek, state.pool.clone(), user.id).await?;
 
     Ok(Json(responses))
 }
@@ -1174,6 +1235,111 @@ pub async fn delete_trailing_messages_handler(
             .await
             .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
     }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Deletes a single message by ID.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Authentication fails  
+/// - Message not found or access denied
+/// - Database operation fails
+pub async fn delete_message_handler(
+    auth_session: CurrentAuthSession,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+    let pool = state.pool.clone();
+
+    // First get the message to verify ownership
+    let message = pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            chat_messages::table
+                .filter(chat_messages::id.eq(id))
+                .select(Message::as_select())
+                .first::<Message>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+    // Check if user owns the chat
+    let chat = pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(message.session_id))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+    if chat.user_id != user.id {
+        return Err(AppError::Forbidden(
+            "Access denied to delete message".to_string(),
+        ));
+    }
+
+    let message_id = message.id;
+    let chat_id = message.session_id;
+
+    // Delete associated votes first
+    pool.get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            diesel::delete(
+                crate::schema::old_votes::table
+                    .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id))
+                    .filter(crate::schema::old_votes::dsl::message_id.eq(message_id))
+            )
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+    // Delete embeddings from Qdrant
+    if let Err(e) = state
+        .embedding_pipeline_service
+        .delete_message_chunks(
+            Arc::new(state.clone()),
+            vec![message_id],
+            user.id,
+        )
+        .await
+    {
+        // Log error but don't fail the whole operation
+        tracing::warn!("Failed to delete message embeddings from Qdrant: {}", e);
+    }
+
+    // Delete the message from PostgreSQL
+    pool.get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            diesel::delete(
+                chat_messages::table
+                    .filter(chat_messages::id.eq(message_id))
+            )
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     Ok(StatusCode::NO_CONTENT)
 }

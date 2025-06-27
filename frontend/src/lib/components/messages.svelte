@@ -38,6 +38,7 @@
 		onRetryFailedMessage,
 		onEditMessage,
 		onSaveEditedMessage,
+		onDeleteMessage,
 		onPreviousVariant,
 		onNextVariant,
 		messageVariants,
@@ -55,6 +56,7 @@
 		onRetryFailedMessage?: (messageId: string) => void;
 		onEditMessage?: (messageId: string) => void;
 		onSaveEditedMessage?: (messageId: string, newContent: string) => void;
+		onDeleteMessage?: (messageId: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
 		onNextVariant?: (messageId: string) => void;
 		messageVariants?: Map<string, { content: string; timestamp: string }[]>;
@@ -201,12 +203,28 @@
 	$effect(() => {
 		if (!containerRef || !mounted) return;
 
-		// For new chats with just a greeting message, scroll to top
+		// For truly new chats with just a greeting message, scroll to top
 		// instead of bottom to show the character info and start of conversation
-		if (messages.length === 1 && messages[0]?.message_type === 'Assistant') {
+		const isNewChat = chat && new Date().getTime() - new Date(chat.created_at).getTime() < 5000; // Less than 5 seconds old
+		if (messages.length === 1 && messages[0]?.message_type === 'Assistant' && isNewChat) {
 			setTimeout(() => {
 				if (containerRef) {
 					containerRef.scrollTo({ top: 0, behavior: 'smooth' });
+				}
+			}, 100);
+		}
+	});
+
+	// Scroll to bottom when loading existing chats with messages
+	$effect(() => {
+		if (!containerRef || !mounted || !endRef) return;
+
+		// For existing chats with messages, scroll to bottom (most recent message)
+		const isNewChat = chat && new Date().getTime() - new Date(chat.created_at).getTime() < 5000;
+		if (messages.length > 0 && !isNewChat) {
+			setTimeout(() => {
+				if (endRef) {
+					endRef.scrollIntoView({ behavior: 'smooth' });
 				}
 			}, 100);
 		}
@@ -419,6 +437,7 @@
 					{onRetryFailedMessage}
 					{onEditMessage}
 					{onSaveEditedMessage}
+					{onDeleteMessage}
 					{onPreviousVariant}
 					{onNextVariant}
 				/>

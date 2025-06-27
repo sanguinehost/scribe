@@ -40,7 +40,7 @@ impl AgenticNarrativeFactory {
         Self::register_core_tools(
             &mut registry,
             ai_client.clone(),
-            chronicle_service,
+            chronicle_service.clone(),
             lorebook_service,
             app_state,
         );
@@ -55,7 +55,7 @@ impl AgenticNarrativeFactory {
             config.planning_model
         );
 
-        NarrativeAgentRunner::new(ai_client, registry, config)
+        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service)
     }
 
     /// Create agentic narrative system with individual dependencies (no circular dependency)
@@ -78,7 +78,7 @@ impl AgenticNarrativeFactory {
         Self::register_core_tools_with_deps(
             &mut registry,
             ai_client.clone(),
-            chronicle_service,
+            chronicle_service.clone(),
             lorebook_service,
             qdrant_service,
             embedding_client,
@@ -93,7 +93,7 @@ impl AgenticNarrativeFactory {
             config.planning_model
         );
         
-        NarrativeAgentRunner::new(ai_client, registry, config)
+        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service)
     }
 
     /// Register all core tools in the registry

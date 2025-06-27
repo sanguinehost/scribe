@@ -226,6 +226,8 @@ pub trait HttpClient: Send + Sync {
     async fn admin_lock_user(&self, user_id: Uuid) -> Result<(), CliError>;
     async fn admin_unlock_user(&self, user_id: Uuid) -> Result<(), CliError>;
 
+    // Migration management APIs
+
     // Legacy - Keep for compatibility but mark unused
 
     async fn generate_response(

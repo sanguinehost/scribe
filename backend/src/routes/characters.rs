@@ -497,7 +497,6 @@ pub async fn upload_character_handler(
                                 let uid = entry
                                     .uid
                                     .map(|u| u.to_string())
-                                    .or_else(|| entry.id.map(|i| i.to_string()))
                                     .unwrap_or_else(|| idx.to_string());
                                 tracing::info!(
                                     "Successfully parsed array entry {}: content length={}",

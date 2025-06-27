@@ -5,37 +5,94 @@
 // during chat sessions, automatically detecting and recording significant narrative events.
 
 use std::sync::Arc;
+use anyhow::Result as AnyhowResult;
 use scribe_backend::{
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle_event::EventSource,
         chronicle::{CreateChronicleRequest},
+        users::{NewUser, UserRole, AccountStatus, UserDbQuery},
     },
     services::{
         agentic::factory::AgenticNarrativeFactory,
     },
-    test_helpers::{TestDataGuard, MockAiClient},
+    test_helpers::{TestDataGuard, MockAiClient, TestApp},
     auth::session_dek::SessionDek,
+    schema::users,
 };
 use serde_json::json;
 use uuid::Uuid;
 use chrono::Utc;
-use secrecy::SecretBox;
+use secrecy::{SecretBox, SecretString, ExposeSecret};
+use diesel::{RunQueryDsl, prelude::*};
+use bcrypt;
 
-// Helper to create a chat message
+/// Helper to create a test user in the database
+async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)> {
+    let conn = test_app.db_pool.get().await?;
+    
+    let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
+    let username = format!("realtime_test_user_{}", Uuid::new_v4().simple());
+    let email = format!("{}@test.com", username);
+    
+    // Generate proper crypto keys
+    let kek_salt = scribe_backend::crypto::generate_salt()?;
+    let dek = scribe_backend::crypto::generate_dek()?;
+    
+    let secret_password = secrecy::SecretString::new("testpassword".to_string().into());
+    let kek = scribe_backend::crypto::derive_kek(&secret_password, &kek_salt)?;
+    
+    let (encrypted_dek, dek_nonce) = scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
+    
+    let new_user = NewUser {
+        username,
+        password_hash: hashed_password,
+        email,
+        kek_salt,
+        encrypted_dek,
+        encrypted_dek_by_recovery: None,
+        role: UserRole::User,
+        recovery_kek_salt: None,
+        dek_nonce,
+        recovery_dek_nonce: None,
+        account_status: AccountStatus::Active,
+    };
+    
+    let user_db: UserDbQuery = conn
+        .interact(move |conn| {
+            diesel::insert_into(users::table)
+                .values(&new_user)
+                .returning(UserDbQuery::as_returning())
+                .get_result(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
+    
+    let session_dek = SessionDek(SecretBox::new(Box::new(dek.expose_secret().to_vec())));
+    Ok((user_db.id, session_dek))
+}
+
+// Helper to create a chat message with proper encryption
 fn create_chat_message(
     user_id: Uuid,
     session_id: Uuid,
     role: MessageRole,
     content: &str,
     model_name: &str,
-) -> ChatMessage {
-    ChatMessage {
+    session_dek: &SessionDek,
+) -> AnyhowResult<ChatMessage> {
+    // Encrypt the content properly
+    let (encrypted_content, nonce) = scribe_backend::crypto::encrypt_gcm(
+        content.as_bytes(),
+        &session_dek.0,
+    )?;
+    
+    Ok(ChatMessage {
         id: Uuid::new_v4(),
         session_id,
         message_type: role,
-        content: content.as_bytes().to_vec(),
-        content_nonce: Some(vec![1, 2, 3, 4]),
+        content: encrypted_content,
+        content_nonce: Some(nonce),
         created_at: Utc::now(),
         user_id,
         prompt_tokens: Some(content.len() as i32 / 4), // Rough estimate
@@ -43,7 +100,7 @@ fn create_chat_message(
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: model_name.to_string(),
-    }
+    })
 }
 
 mod realtime_extraction_tests {
@@ -54,7 +111,7 @@ mod realtime_extraction_tests {
         let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-        let user_id = Uuid::new_v4();
+        let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();
 
         // Create a chronicle for the ongoing adventure
@@ -74,7 +131,26 @@ mod realtime_extraction_tests {
             "narrative_action": "DISCOVERED",
             "primary_agent": "Hero",
             "primary_patient": "Ancient Treasure",
-            "confidence": 0.85
+            "confidence": 0.85,
+            "reasoning": "Treasure discovery is a significant narrative event that should be recorded",
+            "actions": [
+                {
+                    "tool_name": "create_chronicle_event",
+                    "parameters": {
+                        "event_category": "WORLD",
+                        "event_type": "DISCOVERY",
+                        "event_subtype": "ITEM_ACQUISITION",
+                        "subject": "Hero",
+                        "summary": "Hero discovers ancient treasure in dungeon chest",
+                        "event_data": {
+                            "location": "Dungeon",
+                            "action": "Treasure discovery",
+                            "items": ["golden amulet", "ancient coins"]
+                        }
+                    },
+                    "reasoning": "Document treasure discovery event"
+                }
+            ]
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
@@ -96,23 +172,21 @@ mod realtime_extraction_tests {
             None, // Use default config
         );
 
-        let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
-
         // Simulate a progressive chat session with multiple message exchanges
         let messages = vec![
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "I carefully examine the ancient chest I found in the dungeon.", "gemini-2.5-pro"),
+                "I carefully examine the ancient chest I found in the dungeon.", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "The chest is ornate, covered in mystical runes that glow faintly blue. As you touch it, you hear a soft click - it's unlocked!", "gemini-2.5-pro"),
+                "The chest is ornate, covered in mystical runes that glow faintly blue. As you touch it, you hear a soft click - it's unlocked!", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "I open the chest to see what's inside.", "gemini-2.5-pro"),
+                "I open the chest to see what's inside.", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "Inside, you discover a magnificent golden amulet and a pouch of ancient coins. But suddenly, you hear footsteps echoing through the dungeon!", "gemini-2.5-pro"),
+                "Inside, you discover a magnificent golden amulet and a pouch of ancient coins. But suddenly, you hear footsteps echoing through the dungeon!", "gemini-2.5-pro", &session_dek).unwrap(),
         ];
 
         // Run the agentic workflow - should detect significant events in real-time
         let result = agent_runner
-            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &messages, &session_dek)
+            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &messages, &session_dek, None)
             .await;
 
         // Verify the workflow succeeded
@@ -142,7 +216,7 @@ mod realtime_extraction_tests {
         let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-        let user_id = Uuid::new_v4();
+        let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();
 
         // Create a chronicle for tracking
@@ -162,7 +236,9 @@ mod realtime_extraction_tests {
             "narrative_action": "DISCUSSED",
             "primary_agent": "Player",
             "primary_patient": "Assistant",
-            "confidence": 0.2
+            "confidence": 0.2,
+            "reasoning": "Simple movement and casual conversation lacks narrative significance",
+            "actions": []
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
@@ -184,18 +260,16 @@ mod realtime_extraction_tests {
             None, // Use default config
         );
 
-        let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
-
         // Simulate mundane chat progression
         let mundane_messages = vec![
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "I walk down the corridor.", "gemini-2.5-pro"),
+                "I walk down the corridor.", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "You walk down the stone corridor. The walls are lined with torches.", "gemini-2.5-pro"),
+                "You walk down the stone corridor. The walls are lined with torches.", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "What do I see ahead?", "gemini-2.5-pro"),
+                "What do I see ahead?", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "The corridor continues straight ahead. You can see more torches lighting the way.", "gemini-2.5-pro"),
+                "The corridor continues straight ahead. You can see more torches lighting the way.", "gemini-2.5-pro", &session_dek).unwrap(),
         ];
 
         // Get initial event count
@@ -204,7 +278,7 @@ mod realtime_extraction_tests {
 
         // Run the agentic workflow on mundane content
         let result = agent_runner
-            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &mundane_messages, &session_dek)
+            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &mundane_messages, &session_dek, None)
             .await;
 
         // Verify the workflow succeeded but took no action
@@ -228,7 +302,7 @@ mod realtime_extraction_tests {
         let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-        let user_id = Uuid::new_v4();
+        let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();
 
         // Create a chronicle for the combat scenario
@@ -248,7 +322,28 @@ mod realtime_extraction_tests {
             "narrative_action": "ATTACKED",
             "primary_agent": "Hero",
             "primary_patient": "Dragon",
-            "confidence": 0.9
+            "confidence": 0.9,
+            "reasoning": "Epic dragon combat with spell casting and weapon strikes is highly significant",
+            "actions": [
+                {
+                    "tool_name": "create_chronicle_event",
+                    "parameters": {
+                        "event_category": "CHARACTER",
+                        "event_type": "STATE_CHANGE",
+                        "event_subtype": "COMBAT_ENCOUNTER",
+                        "subject": "Hero",
+                        "summary": "Hero defeats mighty dragon in epic battle using sword and lightning magic",
+                        "event_data": {
+                            "location": "Dragon's Lair",
+                            "action": "Combat sequence",
+                            "opponent": "Dragon",
+                            "methods": ["sword strike", "lightning spell"],
+                            "outcome": "Victory"
+                        }
+                    },
+                    "reasoning": "Record the epic dragon battle outcome"
+                }
+            ]
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
@@ -270,27 +365,25 @@ mod realtime_extraction_tests {
             None, // Use default config
         );
 
-        let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
-
         // Simulate rapid-fire combat sequence
         let rapid_messages = vec![
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "I draw my sword and attack the dragon!", "gemini-2.5-pro"),
+                "I draw my sword and attack the dragon!", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "Your blade strikes true! The dragon roars in fury and breathes fire at you!", "gemini-2.5-pro"),
+                "Your blade strikes true! The dragon roars in fury and breathes fire at you!", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "I dodge and cast a lightning spell!", "gemini-2.5-pro"),
+                "I dodge and cast a lightning spell!", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "Lightning crackles through the air! The dragon staggers, wounded but still dangerous!", "gemini-2.5-pro"),
+                "Lightning crackles through the air! The dragon staggers, wounded but still dangerous!", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "I press the attack with a final strike!", "gemini-2.5-pro"),
+                "I press the attack with a final strike!", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "With a mighty blow, you defeat the dragon! It crashes to the ground, defeated!", "gemini-2.5-pro"),
+                "With a mighty blow, you defeat the dragon! It crashes to the ground, defeated!", "gemini-2.5-pro", &session_dek).unwrap(),
         ];
 
         // Run the agentic workflow on rapid sequence
         let result = agent_runner
-            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &rapid_messages, &session_dek)
+            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &rapid_messages, &session_dek, None)
             .await;
 
         // Verify the workflow handled rapid sequence successfully
@@ -316,7 +409,7 @@ mod realtime_extraction_tests {
         let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-        let user_id = Uuid::new_v4();
+        let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();
 
         // Create a chronicle for the story
@@ -336,7 +429,28 @@ mod realtime_extraction_tests {
             "narrative_action": "REVEALED",
             "primary_agent": "Sage",
             "primary_patient": "Hero's Identity",
-            "confidence": 0.95
+            "confidence": 0.95,
+            "reasoning": "Major character identity revelation is a crucial plot turning point",
+            "actions": [
+                {
+                    "tool_name": "create_chronicle_event",
+                    "parameters": {
+                        "event_category": "PLOT",
+                        "event_type": "REVELATION",
+                        "event_subtype": "SECRET_REVELATION",
+                        "subject": "Hero",
+                        "summary": "Hero learns from wise sage that they are the lost prince of Eldoria",
+                        "event_data": {
+                            "location": "Sage's dwelling",
+                            "action": "Identity revelation",
+                            "revealed_identity": "Lost Prince of Eldoria",
+                            "revealer": "Wise Sage",
+                            "implications": "Rightful claim to throne"
+                        }
+                    },
+                    "reasoning": "Document this major plot revelation about the hero's true identity"
+                }
+            ]
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
@@ -358,27 +472,25 @@ mod realtime_extraction_tests {
             None, // Use default config
         );
 
-        let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
-
         // Simulate a conversation that builds up to a revelation
         let context_building_messages = vec![
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "I've been having strange dreams about a castle I've never seen before.", "gemini-2.5-pro"),
+                "I've been having strange dreams about a castle I've never seen before.", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "The wise sage looks at you with knowing eyes. 'Tell me more about these dreams, child.'", "gemini-2.5-pro"),
+                "The wise sage looks at you with knowing eyes. 'Tell me more about these dreams, child.'", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "In the dreams, I see myself as a child in royal robes, but I was raised as a peasant.", "gemini-2.5-pro"),
+                "In the dreams, I see myself as a child in royal robes, but I was raised as a peasant.", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "The sage nods slowly. 'The time has come for you to learn the truth about your birth.'", "gemini-2.5-pro"),
+                "The sage nods slowly. 'The time has come for you to learn the truth about your birth.'", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "What truth? Who am I really?", "gemini-2.5-pro"),
+                "What truth? Who am I really?", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                "'You are the lost prince of Eldoria, hidden away to protect you from those who usurped the throne!'", "gemini-2.5-pro"),
+                "'You are the lost prince of Eldoria, hidden away to protect you from those who usurped the throne!'", "gemini-2.5-pro", &session_dek).unwrap(),
         ];
 
         // Run the agentic workflow on the revelation sequence
         let result = agent_runner
-            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &context_building_messages, &session_dek)
+            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &context_building_messages, &session_dek, None)
             .await;
 
         // Verify the workflow succeeded
@@ -407,7 +519,7 @@ mod realtime_extraction_tests {
         let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-        let user_id = Uuid::new_v4();
+        let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();
 
         // Create a chronicle
@@ -427,7 +539,28 @@ mod realtime_extraction_tests {
             "narrative_action": "BATTLED",
             "primary_agent": "Alliance Forces",
             "primary_patient": "Dark Army",
-            "confidence": 0.88
+            "confidence": 0.88,
+            "reasoning": "Massive battlefield conflict with kingdom's fate at stake is a major turning point",
+            "actions": [
+                {
+                    "tool_name": "create_chronicle_event",
+                    "parameters": {
+                        "event_category": "PLOT",
+                        "event_type": "TURNING_POINT",
+                        "event_subtype": "PLOT_DEVELOPMENT",
+                        "subject": "Alliance Forces",
+                        "summary": "Epic battle unfolds with alliance forces clashing against dark army in climactic confrontation",
+                        "event_data": {
+                            "location": "Massive Battlefield",
+                            "action": "Epic battle",
+                            "participants": ["Sir Gareth", "Lady Elara", "Captain Marcus", "Player"],
+                            "enemies": ["Dark creatures", "Massive troll"],
+                            "stakes": "Kingdom's fate"
+                        }
+                    },
+                    "reasoning": "Record the climactic battle that determines the kingdom's fate"
+                }
+            ]
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
@@ -449,23 +582,21 @@ mod realtime_extraction_tests {
             None, // Use default config
         );
 
-        let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
-
         // Create long detailed messages (simulating verbose RP)
         let long_content = "The massive battlefield stretches before you, with thousands of warriors clashing in epic combat. Knights in shining armor clash with dark creatures emerging from shadow portals. Magic crackles through the air as wizards on both sides cast powerful spells. You see your allies fighting valiantly - Sir Gareth defending a group of villagers, Lady Elara weaving protective barriers around the wounded, and Captain Marcus leading a charge against a massive troll. The fate of the kingdom hangs in the balance as you prepare to make your move in this climactic battle.".repeat(3);
 
         let long_messages = vec![
             create_chat_message(user_id, chat_session_id, MessageRole::User, 
-                "I survey the battlefield and prepare for the final confrontation.", "gemini-2.5-pro"),
+                "I survey the battlefield and prepare for the final confrontation.", "gemini-2.5-pro", &session_dek).unwrap(),
             create_chat_message(user_id, chat_session_id, MessageRole::Assistant, 
-                &long_content, "gemini-2.5-pro"),
+                &long_content, "gemini-2.5-pro", &session_dek).unwrap(),
         ];
 
         // Measure extraction time
         let start_time = std::time::Instant::now();
         
         let result = agent_runner
-            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &long_messages, &session_dek)
+            .process_narrative_event(user_id, chat_session_id, Some(chronicle.id), &long_messages, &session_dek, None)
             .await;
         
         let extraction_time = start_time.elapsed();

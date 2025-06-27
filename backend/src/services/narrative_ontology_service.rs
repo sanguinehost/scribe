@@ -35,17 +35,18 @@ impl NarrativeOntologyService {
     ) -> Result<NewChronicleEvent, AppError> {
         debug!("Converting NarrativeEvent {} to ChronicleEvent", narrative_event.event_id);
 
-        // Convert the event to our existing chronicle event format
+        // Serialize the full event data for preservation
         let event_data = self.serialize_narrative_event_data(narrative_event)?;
 
-        let new_event = NewChronicleEvent {
+        let mut new_event = NewChronicleEvent::from_narrative_event(
             chronicle_id,
             user_id,
-            event_type: narrative_event.event_type.clone(),
-            summary: narrative_event.summary.clone(),
-            source: EventSource::AiExtracted.to_string(),
-            event_data: Some(event_data),
-        };
+            narrative_event,
+            EventSource::AiExtracted,
+        ).map_err(|e| AppError::SerializationError(format!("Failed to convert NarrativeEvent to NewChronicleEvent: {}", e)))?;
+
+        // Override event_data with our serialized version to ensure all data is preserved
+        new_event.event_data = Some(event_data);
 
         info!(
             "Converted NarrativeEvent {} of type {} to ChronicleEvent", 

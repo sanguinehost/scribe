@@ -19,6 +19,8 @@ use tracing_subscriber::{EnvFilter, fmt};
 use clap::Parser;
 use scribe_backend::models::users::User; // Corrected User import
 use scribe_cli::{
+    AdminArgs,
+    AdminCommand,
     CharacterCommand,
     ChatCommand,
     CliArgs,
@@ -30,6 +32,7 @@ use scribe_cli::{
     client::{HttpClient, ReqwestClientWrapper}, // Client Abstraction
     error::CliError,                            // Use our specific error type
     handlers::{
+        // Admin handlers
         // New character handlers
         characters::{
             handle_character_create_oneliner, handle_character_create_wizard,
@@ -246,6 +249,11 @@ async fn main() -> Result<()> {
                     {
                         io_handler.write_line(&format!("Error clearing default persona: {}", e))?;
                     }
+                }
+            },
+            Commands::Admin(admin_args) => match admin_args.command {
+                AdminCommand::Users => {
+                    io_handler.write_line("Admin user management - feature not yet implemented")?;
                 }
             },
         }

@@ -11,14 +11,26 @@
 		createChronicle: void;
 	}>();
 
-	// Only fetch on mount, not on every re-render
-	let hasFetched = false;
-
+	// Load chronicles on mount
 	onMount(async () => {
-		if (!hasFetched) {
+		// Always load if we don't have any chronicles yet
+		if (chronicleStore.chronicles.length === 0 && !chronicleStore.isLoading) {
 			await chronicleStore.loadChronicles();
-			hasFetched = true;
 		}
+	});
+
+	// Listen for chronicle creation events
+	onMount(() => {
+		const handleChronicleCreated = async (event: CustomEvent) => {
+			console.log('[Chronicles Sidebar] New chronicle created, refreshing list');
+			await chronicleStore.loadChronicles();
+		};
+		
+		window.addEventListener('chronicle-created', handleChronicleCreated as EventListener);
+		
+		return () => {
+			window.removeEventListener('chronicle-created', handleChronicleCreated as EventListener);
+		};
 	});
 
 	// Expose a refresh function for the parent component

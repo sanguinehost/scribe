@@ -10,7 +10,11 @@ use crate::{
     auth::session_dek::SessionDek,
     errors::AppError,
     llm::AiClient,
-    models::chats::ChatMessage,
+    models::{
+        chats::ChatMessage,
+        chronicle::CreateChronicleRequest,
+    },
+    services::ChronicleService,
 };
 
 use super::{
@@ -71,6 +75,7 @@ pub struct NarrativeAgentRunner {
     ai_client: Arc<dyn AiClient>,
     tool_registry: Arc<ToolRegistry>,
     config: NarrativeWorkflowConfig,
+    chronicle_service: Arc<ChronicleService>,
 }
 
 impl NarrativeAgentRunner {
@@ -78,11 +83,13 @@ impl NarrativeAgentRunner {
         ai_client: Arc<dyn AiClient>,
         tool_registry: Arc<ToolRegistry>,
         config: NarrativeWorkflowConfig,
+        chronicle_service: Arc<ChronicleService>,
     ) -> Self {
         Self {
             ai_client,
             tool_registry,
             config,
+            chronicle_service,
         }
     }
 
@@ -91,9 +98,10 @@ impl NarrativeAgentRunner {
         &self,
         user_id: Uuid,
         chat_session_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        mut chronicle_id: Option<Uuid>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
+        persona_context: Option<super::UserPersonaContext>,
     ) -> Result<NarrativeWorkflowResult, AppError> {
         info!(
             "Starting narrative workflow for chat {} with {} messages",
@@ -102,7 +110,7 @@ impl NarrativeAgentRunner {
         );
 
         // Step 1: Triage - Is this significant?
-        let triage_result = self.perform_triage(messages, session_dek).await?;
+        let triage_result = self.perform_triage(user_id, chronicle_id, messages, session_dek, persona_context.as_ref()).await?;
         
         if !triage_result.is_significant {
             info!("Triage determined event is not significant, skipping workflow");
@@ -116,6 +124,46 @@ impl NarrativeAgentRunner {
 
         info!("Event deemed significant: {}", triage_result.summary);
 
+        // Track whether we just created a new chronicle
+        let mut chronicle_was_just_created = false;
+
+        // Auto-create and link chronicle if this is the first significant event for this chat
+        if chronicle_id.is_none() {
+            info!("Auto-creating chronicle for chat session {}", chat_session_id);
+            
+            // Generate a meaningful chronicle name based on the chat context
+            let chronicle_name = self.generate_chronicle_name_from_messages(messages, session_dek).await?;
+            let chronicle_description = format!(
+                "Automatically created chronicle for chat session on {}",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
+            );
+            
+            let chronicle_request = CreateChronicleRequest {
+                name: chronicle_name,
+                description: Some(chronicle_description),
+            };
+            
+            match self.chronicle_service.create_chronicle(user_id, chronicle_request).await {
+                Ok(created_chronicle) => {
+                    chronicle_id = Some(created_chronicle.id);
+                    chronicle_was_just_created = true;
+                    info!("Auto-created chronicle '{}': {}", created_chronicle.name, created_chronicle.id);
+                    
+                    // Link the chat session to the chronicle
+                    if let Err(e) = self.chronicle_service.link_chat_session(user_id, chat_session_id, created_chronicle.id).await {
+                        error!("Failed to link chronicle {} to chat session {}: {}", created_chronicle.id, chat_session_id, e);
+                        // Continue anyway - the chronicle exists
+                    } else {
+                        info!("Successfully linked chronicle {} to chat session {}", created_chronicle.id, chat_session_id);
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to auto-create chronicle for chat session {}: {}", chat_session_id, e);
+                    // Continue without chronicle - events will be skipped but workflow continues
+                }
+            }
+        }
+
         // Step 2: Knowledge Retrieval - What do we already know?
         let knowledge_context = self.retrieve_knowledge_context(&triage_result).await?;
 
@@ -124,12 +172,14 @@ impl NarrativeAgentRunner {
             &triage_result,
             &knowledge_context,
             chronicle_id,
+            chronicle_was_just_created, // Pass this information to the planner
+            persona_context.as_ref(),
         ).await?;
 
         info!("Generated action plan with {} actions", action_plan.actions.len());
 
         // Step 4: Execution - Execute the planned actions
-        let execution_results = self.execute_action_plan(&action_plan, user_id, chronicle_id, session_dek).await?;
+        let execution_results = self.execute_action_plan(&action_plan, user_id, chronicle_id, session_dek, persona_context.as_ref()).await?;
 
         Ok(NarrativeWorkflowResult {
             triage_result,
@@ -142,18 +192,38 @@ impl NarrativeAgentRunner {
     /// Step 1: Analyze if the conversation contains significant narrative events
     async fn perform_triage(
         &self,
+        user_id: Uuid,
+        chronicle_id: Option<Uuid>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
+        persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<TriageResult, AppError> {
         debug!("Performing narrative triage on {} messages", messages.len());
 
         // Build conversation text
         let conversation_text = self.build_conversation_text(messages, session_dek).await?;
+
+        // Get recent chronicle context for deduplication and temporal awareness
+        let recent_chronicles_context = if let Some(chron_id) = chronicle_id {
+            self.get_recent_chronicle_context(user_id, chron_id).await.unwrap_or_default()
+        } else {
+            String::new()
+        };
         
+        // Build persona context section
+        let persona_section = if let Some(persona) = persona_context {
+            format!("\n{}\n", persona.to_prompt_context())
+        } else {
+            String::new()
+        };
+
         let triage_prompt = format!(
             r#"Analyze this roleplay conversation and determine if it contains narratively significant events.
-
+{}
 CONVERSATION:
+{}
+
+RECENT CHRONICLE EVENTS (last 10 events for deduplication):
 {}
 
 You are analyzing according to the Ars Fabula narrative ontology. Respond with a JSON object:
@@ -200,8 +270,28 @@ Consider NOT significant:
 - Routine conversation without impact
 - Movement without discovery or consequence  
 - Minor interactions without relationship change
-- Repeated/redundant information"#,
-            conversation_text
+- Events already covered in recent chronicle entries (check RECENT CHRONICLE EVENTS above)
+- Scene details that don't advance the plot or change world state
+- Sexual content without narrative significance or character development
+- Repetitive interactions already documented
+
+TEMPORAL SCOPE PRIORITIZATION:
+- Prioritize MAJOR PLOT EVENTS over scene details
+- Focus on actions with lasting consequences over momentary interactions  
+- Divine interventions, world-changing events, and character arcs take precedence
+- Distinguish between story beats (significant) vs flavor text (insignificant)
+- Events spanning longer time periods (months, years) are typically more significant than minute-by-minute actions
+- Global consequences and governmental responses indicate high significance
+
+DEDUPLICATION RULES:
+- If a similar event is already in RECENT CHRONICLE EVENTS, mark as NOT significant
+- Look for redundant themes, locations, or character interactions
+- Avoid chronicling the same type of event multiple times in a short period
+
+IMPORTANT: When identifying characters in the conversation, use the persona context above to properly identify who is who. Do not refer to characters generically as "the user" or "the character" when you have specific persona information available."#,
+            persona_section,
+            conversation_text,
+            recent_chronicles_context
         );
 
         // Call AI for triage
@@ -267,6 +357,8 @@ Consider NOT significant:
         triage_result: &TriageResult,
         knowledge_context: &Value,
         chronicle_id: Option<Uuid>,
+        chronicle_was_just_created: bool,
+        persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<ActionPlan, AppError> {
         debug!("Generating action plan for event: {}", triage_result.event_type);
 
@@ -294,9 +386,16 @@ Consider NOT significant:
             }
         }
 
+        // Build persona context section
+        let persona_section = if let Some(persona) = persona_context {
+            format!("\n{}\n", persona.to_prompt_context())
+        } else {
+            String::new()
+        };
+
         let planning_prompt = format!(
             r#"You are an Ars Fabula narrative intelligence agent. Based on the event analysis, create a plan to update the narrative knowledge base.
-
+{}
 EVENT ANALYSIS:
 - Type: {}
 - Summary: {}
@@ -309,6 +408,9 @@ AVAILABLE TOOLS:
 {}
 
 CHRONICLE ID: {}
+CHRONICLE JUST CREATED: {}
+
+{}
 
 Create a JSON plan following Ars Fabula principles:
 {{
@@ -324,47 +426,51 @@ Create a JSON plan following Ars Fabula principles:
 
 ARS FABULA NARRATIVE ONTOLOGY RULES:
 
-1. TEMPORAL EVENTS (for create_chronicle_event):
-   - Use dot-notation event types: CATEGORY.TYPE.SUBTYPE
-   - Include entity roles: subject (agent), object (patient), involved_entities
-   - Add causality links when events are related
-   - Include emotional/relational valence when relationships are affected
-   - Examples:
-     * Character death: "CHARACTER.STATE_CHANGE.DEATH" with subject=victim, object=killer
-     * Discovery: "WORLD.DISCOVERY.LOCATION" with subject=discoverer, object=location
-     * Betrayal: "RELATIONSHIP.MODIFICATION.NEGATIVE" with valence impacts
+1.  **TEMPORAL EVENTS (for create_chronicle_event):**
+    *   **Structure:** Events must be atomic and capture a single, significant moment.
+    *   **`event_type`:** Use dot-notation: `CATEGORY.TYPE.SUBTYPE` (e.g., `CHARACTER.STATE_CHANGE.DEATH`).
+    *   **`actors`:** A JSON array detailing all participants and their roles (`Agent`, `Patient`, `Beneficiary`, `Instrument`, `Witness`).
+    *   **`action`:** The core verb of the event (e.g., `Betrayed`, `Discovered`, `Killed`).
+    *   **`causality`:** A JSON object with `causedBy` (an array of event IDs that led to this one) and `causes` (an array of event IDs this one leads to). Use this to link events into a causal chain. If an event in EXISTING KNOWLEDGE is a direct cause, reference its ID.
+    *   **`valence`:** A JSON array quantifying emotional/relational impact. Each object needs a `target` (entity ID), `type` (`Trust`, `Fear`, `Health`, `Power`), and `change` (float from -1.0 to 1.0).
+    *   **`context_data`:** A JSON object for situational context like `location_id`, `time_of_day`, etc.
 
-2. PERSISTENT CONCEPTS (for create_lorebook_entry):
-   - Create entries for new entities (characters, locations, items, organizations)
-   - Focus on timeless information and world-building
-   - Use descriptive titles and comprehensive content
-   - Include relevant keywords for retrieval
+2.  **PERSISTENT CONCEPTS (for create_lorebook_entry):**
+    *   Create entries for **new, persistent entities** (characters, locations, items, organizations) that are likely to be mentioned again.
+    *   Focus on timeless, factual information.
 
-3. KNOWLEDGE INTEGRATION:
-   - Review EXISTING KNOWLEDGE to avoid duplication
-   - Link related events through causality
-   - Update relationship states through valence
-   - Maintain narrative coherence
+3.  **KNOWLEDGE INTEGRATION:**
+    *   **CRITICAL:** Review EXISTING KNOWLEDGE to avoid creating duplicate events or lorebook entries.
+    *   If a similar event exists, consider if this is new information that should **update** an existing lorebook entry instead of creating a new event.
+    *   Use the `causality` field to explicitly link new events to existing ones.
 
-4. TOOL PARAMETERS:
-   - event_category: WORLD, CHARACTER, PLOT, RELATIONSHIP
-   - event_type: DISCOVERY, ALTERATION, STATE_CHANGE, DEVELOPMENT, REVELATION, etc.
-   - event_subtype: Specific classification (DEATH, LOCATION_DISCOVERY, SECRET_REVELATION, etc.)
-   - subject: Primary agent/entity initiating action
-   - object: Primary patient/entity being acted upon  
-   - involved_entities: Other relevant participants
-   - event_data: Context, location, emotional impacts. Use 'description' field for detailed narrative
-   - summary: Brief overview (optional - can be auto-generated from event_data.description)
+4.  **TOOL PARAMETERS for `create_chronicle_event`:**
+    *   `event_type` (string): e.g., "PLOT.REVELATION.SECRET"
+    *   `action` (string): e.g., "Revealed"
+    *   `actors` (JSON array): `[{{\"id\": \"...\", \"role\": \"Agent\"}}, ...]`
+    *   `summary` (string): A brief, one-sentence summary.
+    *   `causality` (JSON object): `{{"causedBy": ["..."], "causes": []}}`
+    *   `valence` (JSON array): `[{{"target": "...", "type": "Trust", "change": -0.5}}]`
+    *   `context_data` (JSON object): `{{"location_id": "..."}}`
 
-5. ONLY use tools listed in AVAILABLE TOOLS above
-6. Prioritize narrative significance and causal coherence
-7. Ensure events contribute meaningfully to the emergent Fabula"#,
+5.  ONLY use tools listed in AVAILABLE TOOLS above.
+6.  Prioritize narrative significance and causal coherence.
+7.  Ensure events contribute meaningfully to the emergent Fabula.
+
+IMPORTANT: When creating chronicle events, use the persona context above to properly identify who is who. Do not refer to characters generically as "the user" or "the character" when you have specific persona information available. Use actual character names in the subject, object, and involved_entities fields."#,
+            persona_section,
             triage_result.event_type,
             triage_result.summary,
             triage_result.confidence,
             serde_json::to_string_pretty(knowledge_context).unwrap_or_default(),
             tools_description,
-            chronicle_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string())
+            chronicle_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string()),
+            chronicle_was_just_created,
+            if chronicle_was_just_created {
+                "IMPORTANT: A new chronicle was JUST created for this significant event. You MUST create at least one chronicle_event to record this founding moment that triggered the chronicle's creation. This is the FIRST event in a new chronicle!"
+            } else {
+                ""
+            }
         );
 
         let response = self.call_ai_structured(&self.config.planning_model, &planning_prompt).await?;
@@ -406,8 +512,11 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
         user_id: Uuid,
         chronicle_id: Option<Uuid>,
         session_dek: &SessionDek,
+        _persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<Vec<ToolResult>, AppError> {
         info!("Executing action plan with {} actions", plan.actions.len());
+
+        // Chronicle should already be created at workflow level if needed
 
         let mut results = Vec::new();
 
@@ -439,8 +548,8 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
                                 }
                             }
                             
-                            // Add session_dek for lorebook entry creation
-                            if action.tool_name == "create_lorebook_entry" && !obj.contains_key("session_dek") {
+                            // Add session_dek for both lorebook and chronicle event creation (encryption required!)
+                            if (action.tool_name == "create_lorebook_entry" || action.tool_name == "create_chronicle_event") && !obj.contains_key("session_dek") {
                                 let session_dek_hex = hex::encode(session_dek.0.expose_secret());
                                 obj.insert("session_dek".to_string(), serde_json::Value::String(session_dek_hex));
                             }
@@ -455,7 +564,7 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
                                 }
                             }
                             
-                            if action.tool_name == "create_lorebook_entry" {
+                            if action.tool_name == "create_lorebook_entry" || action.tool_name == "create_chronicle_event" {
                                 let session_dek_hex = hex::encode(session_dek.0.expose_secret());
                                 obj.insert("session_dek".to_string(), serde_json::Value::String(session_dek_hex));
                             }
@@ -524,6 +633,325 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
         }
 
         Ok(conversation)
+    }
+
+    /// Generate a meaningful chronicle name based on chat messages  
+    async fn generate_chronicle_name_from_messages(
+        &self,
+        messages: &[ChatMessage],
+        session_dek: &SessionDek,
+    ) -> Result<String, AppError> {
+        // Build a sample of the conversation for analysis
+        let conversation_sample = self.build_conversation_text(messages, session_dek).await?;
+        
+        // Use AI to generate a meaningful chronicle name based on the conversation
+        let name_prompt = format!(
+            r#"Based on this roleplay conversation, generate a short, descriptive chronicle name (max 60 characters).
+Focus on the main characters, setting, or central theme. Make it engaging and specific.
+
+Examples of good names:
+- "Thorin's Quest for Erebor"
+- "The Dragon's Last Stand" 
+- "Adventures in the Feywild"
+- "Detective Sarah's Case Files"
+
+Conversation:
+{}
+
+Respond with ONLY the chronicle name, no quotes or explanation:"#,
+            conversation_sample.chars().take(2000).collect::<String>()
+        );
+
+        match self.call_ai_for_simple_task(&name_prompt).await {
+            Ok(generated_name) => {
+                let clean_name = generated_name.trim().trim_matches('"').trim_matches('\'');
+                if clean_name.len() > 3 && clean_name.len() <= 60 {
+                    Ok(clean_name.to_string())
+                } else {
+                    // Fallback if AI generated something weird
+                    Ok(format!("Chronicle {}", chrono::Utc::now().format("%Y-%m-%d %H:%M")))
+                }
+            },
+            Err(_) => {
+                // Fallback if AI call fails
+                Ok(format!("Chronicle {}", chrono::Utc::now().format("%Y-%m-%d %H:%M")))
+            }
+        }
+    }
+
+    /// Generate a meaningful chronicle name based on the planned actions
+    fn generate_chronicle_name(&self, actions: &[PlannedAction]) -> String {
+        // Look for chronicle events and extract meaningful subjects/themes
+        let mut subjects = Vec::new();
+        let mut event_types = Vec::new();
+        
+        for action in actions {
+            if action.tool_name == "create_chronicle_event" {
+                // Try to extract subject and event type from parameters
+                if let Some(subject) = action.parameters.get("subject").and_then(|v| v.as_str()) {
+                    if !subjects.contains(&subject.to_string()) {
+                        subjects.push(subject.to_string());
+                    }
+                }
+                
+                if let Some(event_subtype) = action.parameters.get("event_subtype").and_then(|v| v.as_str()) {
+                    if !event_types.contains(&event_subtype.to_string()) {
+                        event_types.push(event_subtype.to_string());
+                    }
+                }
+            }
+        }
+        
+        // Generate name based on content
+        if !subjects.is_empty() {
+            let primary_subject = &subjects[0];
+            
+            if !event_types.is_empty() {
+                let primary_event = &event_types[0];
+                // Convert event type to readable format
+                let readable_event = primary_event
+                    .replace("_", " ")
+                    .to_lowercase();
+                
+                if subjects.len() == 1 {
+                    format!("{}: {}", primary_subject, readable_event)
+                } else {
+                    format!("{} & {} others: {}", primary_subject, subjects.len() - 1, readable_event)
+                }
+            } else {
+                if subjects.len() == 1 {
+                    format!("{}'s Chronicle", primary_subject)
+                } else {
+                    format!("{} & {} others", primary_subject, subjects.len() - 1)
+                }
+            }
+        } else if !event_types.is_empty() {
+            let primary_event = &event_types[0];
+            let readable_event = primary_event
+                .replace("_", " ")
+                .to_lowercase();
+            
+            if event_types.len() == 1 {
+                format!("Chronicle of {}", readable_event)
+            } else {
+                format!("Chronicle of {} & more", readable_event)
+            }
+        } else {
+            // Fallback with timestamp to ensure uniqueness
+            format!("Chronicle {}", chrono::Utc::now().format("%Y-%m-%d %H:%M"))
+        }
+    }
+    
+    /// Helper method to call AI for simple text generation tasks
+    async fn call_ai_for_simple_task(&self, prompt: &str) -> Result<String, AppError> {
+        use genai::chat::{
+            ChatOptions as GenAiChatOptions, ChatRole, MessageContent, ChatMessage as GenAiChatMessage
+        };
+        
+        let user_message = GenAiChatMessage {
+            role: ChatRole::User,
+            content: MessageContent::Text(prompt.to_string()),
+            options: None,
+        };
+
+        let mut genai_chat_options = GenAiChatOptions::default();
+        genai_chat_options = genai_chat_options.with_temperature(0.7); // Creative but focused
+        genai_chat_options = genai_chat_options.with_max_tokens(100); // Short response
+        
+        let system_prompt = "You are a creative assistant that generates engaging, concise chronicle names for roleplay stories.";
+        let chat_req = genai::chat::ChatRequest::new(vec![user_message]).with_system(system_prompt);
+        
+        let response = self.ai_client
+            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_req, Some(genai_chat_options))
+            .await
+            .map_err(|e| AppError::LlmClientError(format!("AI call failed: {}", e)))?;
+
+        Ok(response.first_content_text_as_str().unwrap_or_default().to_string())
+    }
+
+    /// Helper: Get comprehensive chronicle context for deduplication and temporal awareness
+    /// 
+    /// Implements Ars Fabula's Temporal Event Graph architecture (Part V, Section 5.1):
+    /// This performs graph-based traversal of the chronicle's causal and temporal structure
+    /// to provide comprehensive context spanning years of narrative history at scale.
+    /// 
+    /// Strategy:
+    /// 1. Recent temporal window (chronological recency)
+    /// 2. Causal chain traversal (following causality links)
+    /// 3. Semantic similarity for thematic relevance
+    /// 4. Temporal sampling across narrative epochs
+    async fn get_recent_chronicle_context(
+        &self,
+        _user_id: Uuid,
+        chronicle_id: Uuid,
+    ) -> Result<String, AppError> {
+        let search_tool = self.tool_registry.get_tool("search_knowledge_base")
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Search tool not available: {}", e)))?;
+
+        let mut context_sections = Vec::new();
+        
+        // === ARS FABULA TEMPORAL EVENT GRAPH IMPLEMENTATION ===
+        // Following Part V, Section 5.1: "complete, chronologically-ordered log of all Narrative Events"
+        // This implements proper graph-based retrieval for massive scale (millions of events)
+        
+        // LAYER 1: Recent Temporal Window (Chronological Priority)
+        // Get the most recent 50 events by timestamp for immediate deduplication
+        let recent_params = json!({
+            "query": "chronicle events",
+            "search_type": "chronicles",
+            "limit": 50,
+            "chronicle_filter": chronicle_id.to_string(),
+            "sort": "temporal_desc", // Most recent first by timestamp
+            "temporal_window": "recent" // Hint for chronological priority over semantic similarity
+        });
+
+        if let Ok(recent_results) = search_tool.execute(&recent_params).await {
+            if let Some(events) = recent_results.get("results").and_then(|r| r.as_array()) {
+                if !events.is_empty() {
+                    let mut recent_context = String::from("RECENT TEMPORAL WINDOW (last 30 events):\n");
+                    for (i, event) in events.iter().take(30).enumerate() {
+                        if let (Some(summary), Some(event_type), Some(timestamp)) = (
+                            event.get("content").and_then(|c| c.as_str()),
+                            event.get("metadata").and_then(|m| m.get("event_type")).and_then(|t| t.as_str()),
+                            event.get("metadata").and_then(|m| m.get("timestamp")).and_then(|t| t.as_str())
+                        ) {
+                            recent_context.push_str(&format!(
+                                "{}. [{}] {}: {}\n", 
+                                i + 1,
+                                timestamp.split('T').next().unwrap_or("unknown"),
+                                event_type,
+                                summary.chars().take(100).collect::<String>()
+                            ));
+                        }
+                    }
+                    context_sections.push(recent_context);
+                }
+            }
+        }
+
+        // LAYER 2: Causal Chain Traversal (Following causality links)
+        // This implements the DAG traversal mentioned in Part I for causal reasoning
+        let causal_params = json!({
+            "query": "causal relationships",
+            "search_type": "chronicles",
+            "limit": 30,
+            "chronicle_filter": chronicle_id.to_string(),
+            "graph_traversal": "causal_chains", // Follow causedBy/causes links
+            "causality_depth": 3 // Traverse 3 levels of causal connections
+        });
+
+        if let Ok(causal_results) = search_tool.execute(&causal_params).await {
+            if let Some(events) = causal_results.get("results").and_then(|r| r.as_array()) {
+                if !events.is_empty() {
+                    let mut causal_context = String::from("CAUSAL CHAIN CONTEXT (connected events):\n");
+                    for (i, event) in events.iter().take(20).enumerate() {
+                        if let (Some(summary), Some(event_type)) = (
+                            event.get("content").and_then(|c| c.as_str()),
+                            event.get("metadata").and_then(|m| m.get("event_type")).and_then(|t| t.as_str())
+                        ) {
+                            causal_context.push_str(&format!(
+                                "{}. {}: {}\n", 
+                                i + 1,
+                                event_type,
+                                summary.chars().take(90).collect::<String>()
+                            ));
+                        }
+                    }
+                    context_sections.push(causal_context);
+                }
+            }
+        }
+
+        // LAYER 3: Semantic Similarity for Thematic Relevance
+        // Targeted semantic search for thematically related events across the timeline
+        let semantic_params = json!({
+            "query": "narrative themes relationships characters world changes", // Broad thematic query
+            "search_type": "chronicles",
+            "limit": 40,
+            "chronicle_filter": chronicle_id.to_string(),
+            "score_threshold": 0.75, // High relevance threshold
+            "temporal_distribution": true // Sample across different time periods
+        });
+
+        if let Ok(semantic_results) = search_tool.execute(&semantic_params).await {
+            if let Some(events) = semantic_results.get("results").and_then(|r| r.as_array()) {
+                if !events.is_empty() {
+                    let mut semantic_context = String::from("THEMATIC CONTEXT (related across time):\n");
+                    let mut seen_ids = std::collections::HashSet::new();
+                    let mut count = 0;
+
+                    for event in events.iter().take(25) {
+                        if let Some(event_id) = event.get("id") {
+                            if seen_ids.insert(event_id.clone()) && count < 15 {
+                                if let (Some(summary), Some(event_type), Some(score)) = (
+                                    event.get("content").and_then(|c| c.as_str()),
+                                    event.get("metadata").and_then(|m| m.get("event_type")).and_then(|t| t.as_str()),
+                                    event.get("score").and_then(|s| s.as_f64())
+                                ) {
+                                    count += 1;
+                                    semantic_context.push_str(&format!(
+                                        "{}. {} (rel: {:.2}): {}\n", 
+                                        count,
+                                        event_type,
+                                        score,
+                                        summary.chars().take(85).collect::<String>()
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    if count > 0 {
+                        context_sections.push(semantic_context);
+                    }
+                }
+            }
+        }
+
+        // LAYER 4: Temporal Epochal Sampling (Historical Depth)
+        // Sample significant events across different narrative epochs for 5+ year context
+        let epochal_params = json!({
+            "query": "major historical significant events",
+            "search_type": "chronicles", 
+            "limit": 60,
+            "chronicle_filter": chronicle_id.to_string(),
+            "temporal_sampling": "epochal", // Sample across different time periods
+            "significance_threshold": 0.85, // Only very significant events
+            "max_age": "unlimited" // Include ancient events
+        });
+
+        if let Ok(epochal_results) = search_tool.execute(&epochal_params).await {
+            if let Some(events) = epochal_results.get("results").and_then(|r| r.as_array()) {
+                if !events.is_empty() {
+                    let mut epochal_context = String::from("HISTORICAL EPOCHS (major events across years):\n");
+                    for (i, event) in events.iter().take(12).enumerate() {
+                        if let (Some(summary), Some(event_type), Some(timestamp)) = (
+                            event.get("content").and_then(|c| c.as_str()),
+                            event.get("metadata").and_then(|m| m.get("event_type")).and_then(|t| t.as_str()),
+                            event.get("metadata").and_then(|m| m.get("timestamp")).and_then(|t| t.as_str())
+                        ) {
+                            epochal_context.push_str(&format!(
+                                "{}. [{}] {}: {}\n", 
+                                i + 1,
+                                timestamp.split('T').next().unwrap_or("ancient"),
+                                event_type,
+                                summary.chars().take(70).collect::<String>()
+                            ));
+                        }
+                    }
+                    context_sections.push(epochal_context);
+                }
+            }
+        }
+
+        // Assemble comprehensive context according to Ars Fabula principles
+        if context_sections.is_empty() {
+            Ok("No existing chronicle events found. This appears to be the beginning of the narrative.".to_string())
+        } else {
+            Ok(format!(
+                "ARS FABULA TEMPORAL EVENT GRAPH CONTEXT:\n\n{}\n\n== DEDUPLICATION INSTRUCTIONS ==\nCarefully review ALL sections above. Do NOT create chronicle events that are:\n- Already covered in recent temporal window\n- Redundant with causally connected events\n- Thematically repetitive with existing context\n- Minor scene details when major historical events exist\n\nPrioritize NEW narrative developments that advance the Fabula without redundancy.",
+                context_sections.join("\n")
+            ))
+        }
     }
 
     /// Helper: Make a structured AI call with JSON schema
@@ -600,27 +1028,88 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
         
         // The response might be wrapped in markdown or be raw JSON
         let cleaned_content = if content.trim().starts_with("```json") {
-            // Extract content between ```json and ```
-            let start = content.find("```json").unwrap() + 7;
-            let end = content.rfind("```").unwrap_or(content.len());
-            content[start..end].trim()
+            // Extract content between ```json and closing ```
+            let start_marker = "```json";
+            if let Some(start_pos) = content.find(start_marker) {
+                let start = start_pos + start_marker.len();
+                // Find closing ``` after the opening marker
+                if let Some(end_pos) = content[start..].find("```") {
+                    let end = start + end_pos;
+                    if end > start {
+                        content[start..end].trim()
+                    } else {
+                        content.trim()
+                    }
+                } else {
+                    // No closing ```, take everything after ```json
+                    content[start..].trim()
+                }
+            } else {
+                content.trim()
+            }
         } else if content.trim().starts_with("```") {
-            // Extract content between ``` and ```
-            let start = content.find("```").unwrap() + 3;
-            let end = content.rfind("```").unwrap_or(content.len());
-            content[start..end].trim()
+            // Extract content between ``` and closing ```
+            let start_marker = "```";
+            if let Some(start_pos) = content.find(start_marker) {
+                let start = start_pos + start_marker.len();
+                // Find closing ``` after the opening marker
+                if let Some(end_pos) = content[start..].find("```") {
+                    let end = start + end_pos;
+                    if end > start {
+                        content[start..end].trim()
+                    } else {
+                        content.trim()
+                    }
+                } else {
+                    // No closing ```, take everything after ```
+                    content[start..].trim()
+                }
+            } else {
+                content.trim()
+            }
         } else {
             content.trim()
         };
 
-        // Parse as JSON
-        serde_json::from_str(cleaned_content)
-            .map_err(|e| {
+        // Try to parse as JSON
+        match serde_json::from_str(cleaned_content) {
+            Ok(value) => Ok(value),
+            Err(e) => {
                 error!("Failed to parse structured response as JSON: {}", e);
-                debug!("Raw response content: {}", content);
-                debug!("Cleaned content: {}", cleaned_content);
-                AppError::InternalServerErrorGeneric(format!("Failed to parse structured response: {}", e))
-            })
+                error!("Raw response content (first 500 chars): {}", &content[..content.len().min(500)]);
+                error!("Cleaned content (first 500 chars): {}", &cleaned_content[..cleaned_content.len().min(500)]);
+                
+                // Log the problematic line and column
+                let line = e.line();
+                let column = e.column();
+                let lines: Vec<&str> = cleaned_content.lines().collect();
+                if let Some(error_line) = lines.get(line.saturating_sub(1)) {
+                    error!("Error at line {}, column {}: '{}'", line, column, error_line);
+                    error!("Character at error position: '{}'", 
+                        error_line.chars().nth(column.saturating_sub(1)).unwrap_or(' '));
+                }
+
+                // Try to find JSON object boundaries and recover
+                if let Some(start_brace) = cleaned_content.find('{') {
+                    if let Some(end_brace) = cleaned_content.rfind('}') {
+                        if end_brace > start_brace {
+                            let potential_json = &cleaned_content[start_brace..=end_brace];
+                            match serde_json::from_str(potential_json) {
+                                Ok(value) => {
+                                    warn!("Successfully recovered JSON after initial parsing failure");
+                                    return Ok(value);
+                                }
+                                Err(_) => {
+                                    error!("JSON recovery attempt also failed");
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Err(AppError::InternalServerErrorGeneric(format!("Failed to parse structured response: {}", e)))
+            }
+        }
     }
 }
 

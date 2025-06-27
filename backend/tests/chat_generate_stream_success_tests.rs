@@ -521,7 +521,7 @@ async fn test_first_mes_included_in_history() {
     .expect("Failed to get session data for generation");
 
     // Extract the managed history from the generation data
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
         generation_data;
 
     // Assert that the history contains the character's first_mes

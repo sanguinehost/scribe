@@ -9,7 +9,8 @@ use axum::{
 };
 use axum_login::AuthSession;
 use serde::Deserialize;
-use tracing::{error, info, instrument};
+use std::sync::Arc;
+use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -46,6 +47,11 @@ impl From<EventQuery> for EventFilter {
         Self {
             event_type: query.event_type,
             source: query.source,
+            action: None,
+            modality: None,
+            involves_entity: None,
+            after_timestamp: None,
+            before_timestamp: None,
             order_by: query.order_by,
             limit: query.limit,
             offset: query.offset,
@@ -185,6 +191,7 @@ async fn delete_chronicle(
 #[instrument(skip(auth_session, state))]
 async fn create_event(
     auth_session: AuthSession<AuthBackend>,
+    session_dek: crate::auth::session_dek::SessionDek,
     State(state): State<AppState>,
     Path(chronicle_id): Path<Uuid>,
     Json(request): Json<CreateEventRequest>,
@@ -200,7 +207,19 @@ async fn create_event(
     info!("Creating event in chronicle {} for user {}: {}", chronicle_id, user.id, request.event_type);
 
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    let event = chronicle_service.create_event(user.id, chronicle_id, request).await?;
+    let event = chronicle_service.create_event(user.id, chronicle_id, request, Some(&session_dek)).await?;
+
+    // Embed the chronicle event for semantic search
+    if let Err(e) = state
+        .embedding_pipeline_service
+        .process_and_embed_chronicle_event(Arc::new(state.clone()), event.clone(), Some(&session_dek))
+        .await
+    {
+        warn!(event_id = %event.id, error = %e, "Failed to embed chronicle event, but event was created successfully");
+        // Don't fail the request if embedding fails
+    } else {
+        info!(event_id = %event.id, "Successfully embedded chronicle event for semantic search");
+    }
 
     info!("Successfully created event {}", event.id);
     Ok((StatusCode::CREATED, Json(event)))
@@ -245,6 +264,18 @@ async fn delete_event(
 
     let chronicle_service = ChronicleService::new(state.pool.clone());
     chronicle_service.delete_event(user.id, event_id).await?;
+
+    // Clean up embeddings for the deleted event
+    if let Err(e) = state
+        .embedding_pipeline_service
+        .delete_chronicle_event_chunks(Arc::new(state.clone()), event_id, user.id)
+        .await
+    {
+        warn!(event_id = %event_id, error = %e, "Failed to delete chronicle event embeddings, but event was deleted successfully");
+        // Don't fail the request if embedding cleanup fails
+    } else {
+        info!(event_id = %event_id, "Successfully cleaned up chronicle event embeddings");
+    }
 
     info!("Successfully deleted event {}", event_id);
     Ok(StatusCode::NO_CONTENT)

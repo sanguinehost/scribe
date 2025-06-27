@@ -120,6 +120,7 @@ async fn test_chat_session_uses_user_default_model() {
         auto_save_chats: None,
         theme: None,
         notifications_enabled: None,
+        typing_speed: None,
     };
 
     // Insert user settings in database using interact

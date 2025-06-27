@@ -13,6 +13,7 @@ pub use clap::{Args as ClapArgs, Parser, Subcommand};
 pub use error::CliError;
 pub use uuid::Uuid; // Ensure CliError is available for MenuResult
 
+
 // --- Menu Navigation Enums and Types ---
 
 /// Enum to manage the current state of the interactive menu in main.rs
@@ -66,6 +67,8 @@ pub enum Commands {
     Chat(ChatArgs),
     /// Manage user personas
     Persona(PersonaArgs),
+    /// Administrative commands (admin role required)
+    Admin(AdminArgs),
 }
 
 #[derive(ClapArgs, Debug)]
@@ -311,6 +314,20 @@ pub struct PersonaSetDefaultArgs {
 #[derive(ClapArgs, Debug, Default, Clone)]
 pub struct PersonaClearDefaultArgs {
     // No arguments needed for clearing the default
+}
+
+// --- Admin Commands ---
+
+#[derive(ClapArgs, Debug)]
+pub struct AdminArgs {
+    #[clap(subcommand)]
+    pub command: AdminCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AdminCommand {
+    /// User management commands
+    Users,
 }
 
 // Helper function for parsing comma-separated lists

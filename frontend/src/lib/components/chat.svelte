@@ -18,7 +18,11 @@
 	import { useTokenCounter } from '$lib/hooks/token-counter.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
-	import { env } from '$env/dynamic/public';
+	import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
+
+	// Get reactive state from streaming service
+	// By directly accessing the $state properties of the service, we ensure reactivity.
+	// const streamingState = $derived(streamingService.getState());
 
 	let {
 		user,
@@ -45,6 +49,13 @@
 
 	const chatHistory = ChatHistory.fromContext();
 
+	// Load typing speed from user settings and sync with StreamingService
+	$effect(() => {
+		settingsStore.loadTypingSpeed();
+		// Update StreamingService with user's typing speed preference
+		streamingService.setTypingSpeed(settingsStore.typingSpeed);
+	});
+
 	// Clear selected character and persona when we have a chat
 	$effect(() => {
 		if (chat?.id) {
@@ -53,48 +64,140 @@
 		}
 	});
 
-	// Scribe chat state management
-	let messages = $state<ScribeChatMessage[]>([]); // Start with a truly empty array
-	let initialMessagesSet = $state(false); // Flag to ensure we only set initial messages once
+	// --- Scribe Chat State Management ---
+	// The StreamingService is now the single source of truth for messages.
+	// This component will populate the service with initial messages on load,
+	// and derive its display messages directly from the service's state.
+
 
 	// Message variants storage: messageId -> array of variant contents
 	let messageVariants = $state<Map<string, { content: string; timestamp: string }[]>>(new Map());
 	let currentVariantIndex = $state<Map<string, number>>(new Map());
 
+	// This single effect handles both populating messages for the current chat
+	// and cleaning them up when the chat changes or the component is destroyed.
+	let previousChatId = $state<string | null>(null);
+	
 	$effect(() => {
-		if (!initialMessagesSet) {
-			let newInitialMessages: ScribeChatMessage[];
-			if (initialMessages.length === 0 && character?.first_mes) {
-				const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
-				newInitialMessages = [
-					{
-						id: firstMessageId,
-						session_id: chat?.id ?? 'unknown-session',
-						message_type: 'Assistant',
-						content: character.first_mes,
-						created_at: chat?.created_at ?? new Date().toISOString(),
-						user_id: '',
-						loading: false
-					}
-				];
-			} else {
-				// Ensure any existing initial messages don't have loading=true
-				newInitialMessages = initialMessages.map((msg) => ({
-					...msg,
-					loading: false
-				}));
+		const currentChatId = chat?.id;
+		console.log('CHAT EFFECT RUNNING. Chat ID:', currentChatId, 'Previous Chat ID:', previousChatId, 'Initial Messages Count:', initialMessages.length);
+
+		// Only proceed if the chat ID has actually changed AND we have meaningful data
+		// Avoid running on initial undefined states
+		if (currentChatId !== previousChatId && (currentChatId || previousChatId)) {
+			// Clear messages for previous chat if switching chats
+			if (previousChatId && currentChatId !== previousChatId) {
+				console.log(`Clearing messages for previous chat: ${previousChatId}`);
+				streamingService.clearMessages();
 			}
-			messages = newInitialMessages;
-			initialMessagesSet = true;
+			
+			if (currentChatId) {
+				console.log('Populating messages for chat:', currentChatId);
+				let newInitialMessages: StreamingMessage[];
+
+				if (initialMessages.length === 0 && character?.first_mes) {
+					const firstMessageId = `first-message-${currentChatId}`;
+					newInitialMessages = [
+						{
+							id: firstMessageId,
+							sender: 'assistant',
+							content: character.first_mes,
+							created_at: chat.created_at ?? new Date().toISOString(),
+							loading: false
+						}
+					];
+					console.log('Populating with character first message.');
+				} else {
+					newInitialMessages = initialMessages.map(
+						(msg) =>
+							({
+								id: msg.id,
+								sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
+								content: msg.content,
+								created_at: msg.created_at ?? new Date().toISOString(),
+								loading: false,
+								error: msg.error,
+								retryable: msg.retryable,
+								prompt_tokens: msg.prompt_tokens,
+								completion_tokens: msg.completion_tokens,
+								model_name: msg.model_name,
+								backend_id: msg.backend_id
+							}) as StreamingMessage
+					);
+					console.log(`Populating with ${newInitialMessages.length} initial messages.`);
+				}
+				// Clear and populate messages to ensure reactivity
+				streamingService.clearMessages();
+				for (const message of newInitialMessages) {
+					streamingService.messages.push(message);
+				}
+				console.log('streamingService.messages populated. Count:', streamingService.messages.length);
+				console.log('Verifying - streamingService.messages.length after assignment:', streamingService.messages.length);
+			}
+			
+			// Update the previous chat ID
+			previousChatId = currentChatId || null;
+		}
+	});
+	
+	// Separate effect for cleanup when component unmounts
+	// This needs to track the chat ID to prevent clearing on every render
+	$effect(() => {
+		const currentChatId = chat?.id;
+		
+		return () => {
+			// Only clear if we actually had a chat
+			if (currentChatId) {
+				console.log('COMPONENT CLEANUP: Clearing messages on unmount for chat:', currentChatId);
+				streamingService.clearMessages();
+			}
+		};
+	});
+
+	// Sync loading state with StreamingService
+	let isLoading = $derived(
+		streamingService.connectionStatus === 'connecting' ||
+			streamingService.connectionStatus === 'open'
+	);
+	
+	// Watch for streaming completion
+	$effect(() => {
+		if (streamingService.connectionStatus === 'closed') {
+			console.log('✅ StreamingService connection completed (status: closed)');
+			// Force a re-render by updating the displayMessages derivation
+			// The messages should already have loading: false set by finalizeMessage
+			console.log('Current messages loading states:', streamingService.messages.map(m => ({ id: m.id, loading: m.loading })));
 		}
 	});
 
-	let isLoading = $state(false);
-	let error = $state<string | null>(null); // Add error state
+	// Create a single, reactive source of truth for display messages
+	let displayMessages = $derived.by(() => {
+		const streamingMessages = streamingService.messages;
+		console.log('DERIVED `displayMessages` RECALCULATING. Message count:', streamingMessages.length);
+		
+		const messages = streamingMessages.map(
+			(msg): ScribeChatMessage => ({
+				id: msg.id,
+				session_id: chat?.id ?? 'unknown-session',
+				message_type: msg.sender === 'user' ? 'User' : 'Assistant',
+				content: msg.content,
+				created_at: msg.created_at,
+				user_id: msg.sender === 'user' ? user?.id ?? '' : '',
+				loading: msg.loading ?? false,
+				error: msg.error,
+				retryable: msg.retryable ?? false,
+				prompt_tokens: msg.prompt_tokens,
+				completion_tokens: msg.completion_tokens,
+				model_name: msg.model_name,
+				backend_id: msg.backend_id
+			})
+		);
+		console.log('DERIVED `displayMessages` RECALCULATED. Count:', messages.length);
+		return messages;
+	});
 
 	// Removed attachments state as feature is disabled/not supported
 	let chatInput = $state(initialChatInputValue || ''); // Initialize with prop
-	let currentAbortController = $state<AbortController | null>(null); // For cancelling stream
 
 	// --- Suggested Actions State ---
 	let dynamicSuggestedActions = $state<Array<{ action: string }>>([]);
@@ -143,7 +246,7 @@
 		let outputTokens = 0;
 		let totalCost = 0;
 		
-		messages.forEach(message => {
+		displayMessages.forEach(message => {
 			// Skip first messages (character greetings) - they shouldn't count toward usage
 			const isFirstMessage = message.id.startsWith('first-message-') || 
 				(message.message_type === 'Assistant' && message.content === character?.first_mes);
@@ -174,21 +277,7 @@
 			cost: totalCost + suggestedActionsTokens.cost
 		};
 		
-		// Debug logging to see what's happening with token counts
-		console.log('Token calculation update:', {
-			totalMessages: messages.length,
-			inputTokens,
-			outputTokens,
-			totalCost,
-			messagesWithTokens: messages.filter(m => m.prompt_tokens || m.completion_tokens).map(m => ({
-				id: m.id.substring(0, 8),
-				prompt_tokens: m.prompt_tokens,
-				completion_tokens: m.completion_tokens,
-				type: m.message_type,
-				model_name: m.model_name,
-				isFirstMessage: m.id.startsWith('first-message-') || (m.message_type === 'Assistant' && m.content === character?.first_mes)
-			}))
-		});
+		// Token calculation completed
 	});
 	let availablePersonas = $state<UserPersona[]>([]);
 
@@ -439,834 +528,79 @@
 	async function sendMessage(content: string) {
 		dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
 
-		// Use user.user_id instead of user.id
 		if (!chat?.id || !user?.id) {
-			error = 'Chat session or user information is missing.';
-			toast.error(error);
+			toast.error('Chat session or user information is missing.');
 			return;
 		}
 
-		isLoading = true;
-		error = null; // Reset error state at the beginning
-
-		// Add user message optimistically
-		const userMessage: ScribeChatMessage = {
-			id: crypto.randomUUID(),
-			session_id: chat.id,
-			message_type: 'User',
-			content: content,
-			created_at: new Date().toISOString(),
-			user_id: user.id, // Use user.id
-			loading: false
-		};
-		messages = [...messages, userMessage];
-
-		// --- Determine history to send ---
-		// Check if this is the first user message *before* adding the optimistic message
-		const isFirstUserMessage = messages.filter((m) => m.message_type === 'User').length === 0;
-
-		// Map existing messages (excluding loading placeholders) to the API format
-		// Assuming backend expects { role: 'user' | 'assistant', content: string }
-		const existingHistoryForApi = messages
-			.filter((m) => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant'))
+		// Build history from the single source of truth
+		const existingHistoryForApi = (streamingService.messages as StreamingMessage[])
+			.filter((m) => !m.loading)
 			.map((m) => ({
-				role: m.message_type === 'Assistant' ? 'assistant' : 'user',
+				role: m.sender,
 				content: m.content
 			}));
 
-		// Create the new user message object for the API history
-		const userMessageForApi = { role: 'user', content: content };
-
-		// Construct the final history to send
-		// The existingHistoryForApi already includes the character's first_mes if it was added by the $effect
-		const historyToSend = [...existingHistoryForApi, userMessageForApi];
-
-		// --- SSE Handling using Fetch API ---
-		currentAbortController = new AbortController();
-		const signal = currentAbortController.signal;
-
-		// Add placeholder for assistant message
-		let assistantMessageId = crypto.randomUUID();
-		console.log('Created assistant message with ID:', assistantMessageId);
-		console.log(
-			'Current messages before adding assistant message:',
-			messages.map((m) => ({ id: m.id, loading: m.loading }))
-		);
-
-		let assistantMessage: ScribeChatMessage = {
-			id: assistantMessageId,
-			session_id: chat.id,
-			message_type: 'Assistant',
-			content: '', // Start empty, fill with stream
-			created_at: new Date().toISOString(), // Placeholder, backend might send final
-			user_id: '', // Assistant messages don't have a user_id in the same way
-			loading: true
-		};
-		messages = [...messages, assistantMessage];
-
-		console.log(
-			'Current messages after adding assistant message:',
-			messages.map((m) => ({ id: m.id, loading: m.loading }))
-		);
-
-		let fetchError: any = null; // Variable to store error from fetch/parsing
-
 		try {
-			// Use the same environment variable logic as apiClient
-			const baseUrl = (env.PUBLIC_API_URL || '').trim();
-			const apiUrl = `${baseUrl}/api/chat/${chat.id}/generate`;
-
-			console.log('[sendMessage] Environment check:', {
-				'env.PUBLIC_API_URL': env.PUBLIC_API_URL,
-				baseUrl: baseUrl,
-				apiUrl: apiUrl
+			// Use StreamingService for the connection
+			const currentModel = await getCurrentChatModel();
+			console.log('🚀 Starting StreamingService connection:', {
+				chatId: chat.id,
+				userMessage: content,
+				historyLength: existingHistoryForApi.length,
+				model: currentModel
 			});
-
-			const response = await fetch(apiUrl, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Accept: 'text/event-stream' // Indicate we want SSE
-				},
-				credentials: 'include', // Include cookies for authentication
-				// Send the constructed history. The backend expects a 'history' field (Vec<ApiChatMessage>)
-				// and an optional 'model' field.
-				body: JSON.stringify({
-					history: historyToSend,
-					model: await getCurrentChatModel()
-				}), // Include current model selection
-				signal: signal // Pass the abort signal
+			await streamingService.connect({
+				chatId: chat.id,
+				userMessage: content,
+				history: existingHistoryForApi,
+				model: currentModel || undefined
 			});
-
-			if (!response.ok) {
-				// Check for auth error
-				if (response.status === 401) {
-					// Emit auth invalidation event
-					window.dispatchEvent(new CustomEvent('auth:session-expired'));
-					throw new Error('Session expired. Please sign in again.');
-				}
-
-				const errorData = await response.json().catch(() => {
-					// If we can't parse the error response, provide a better message based on status
-					if (response.status >= 500) {
-						return {
-							message:
-								'Server error - the backend may be temporarily unavailable. Please try again.'
-						};
-					}
-					return { message: 'Failed to generate response' };
-				});
-				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-			}
-
-			if (!response.body) {
-				throw new Error('Response body is null');
-			}
-
-			// Process the stream
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let currentEvent = 'message'; // Default SSE event type
-			let currentData = '';
-
-			while (true) {
-				const { value, done } = await reader.read();
-				if (done) {
-					break; // Exit loop when stream is done
-				}
-				buffer += decoder.decode(value, { stream: true });
-
-				// Process buffer line by line for SSE messages
-				// An SSE message block ends with double newline (\n\n)
-				let eventEndIndex;
-				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
-					const messageBlock = buffer.substring(0, eventEndIndex);
-					buffer = buffer.substring(eventEndIndex + 2); // Consume block + \n\n
-
-					// Reset for each block
-					currentEvent = 'message'; // Default if no event line
-					currentData = '';
-
-					for (const line of messageBlock.split('\n')) {
-						if (line.startsWith('event:')) {
-							currentEvent = line.substring(6).trim();
-						} else if (line.startsWith('data:')) {
-							const dataLineContent = line.substring(5); // Remove "data:" prefix
-							// If currentData is not empty, it means this is a subsequent data line for the same event.
-							// Prepend a newline. SSE spec implies data lines are concatenated with a newline.
-							// The .trimStart() on the original line.substring(5).trimStart() was too aggressive.
-							// We should respect leading spaces if the data content itself has them,
-							// but the SSE spec says "If the field value is empty, dispatch the event."
-							// and "Otherwise, append the field value to a buffer for the field name,
-							// then append a single U+000A LINE FEED (LF) character to the buffer."
-							// This implies the data from `data: ` lines are effectively newline-separated.
-							if (currentData.length > 0) {
-								currentData += '\n';
-							}
-							currentData += dataLineContent.startsWith(' ')
-								? dataLineContent.substring(1)
-								: dataLineContent;
-						} else if (line.startsWith('id:')) {
-							// Optional: handle message ID if backend sends it
-							// console.log('SSE Message ID:', line.substring(3).trim());
-						}
-						// Ignore empty lines or lines that are not event, data, or id.
-					}
-					// currentData is now the complete data for the event.
-
-					// Process the completed event data based on event type
-					if (currentEvent === 'done' && currentData === '[DONE]') {
-						console.log('SSE stream finished with [DONE] signal.');
-						// Finalization happens after the loop
-					} else if (currentEvent === 'error') {
-						console.error('SSE Error Event:', currentData);
-						// Clean up error message for user display
-						let cleanErrorMessage = currentData;
-						if (currentData.includes('PropertyNotFound("/candidates")') || currentData.includes('PropertyNotFound("/content/parts")')) {
-							cleanErrorMessage = 'AI safety filters blocked the request. Please try rephrasing your message.';
-						} else if (currentData.includes('Failed to parse stream data') || currentData.includes('trailing characters')) {
-							cleanErrorMessage = 'AI service returned malformed data. Please try again.';
-						} else if (currentData.startsWith('LLM API error:')) {
-							cleanErrorMessage = currentData; // Already user-friendly
-						}
-						
-						// For PropertyNotFound errors, don't immediately fail - wait to see if content follows
-						// This handles a backend bug where error events are sent but content still streams
-						if (currentData.includes('PropertyNotFound("/content/parts")') || currentData.includes('PropertyNotFound("/candidates")')) {
-							console.warn('Received PropertyNotFound error but continuing to listen for content (backend bug workaround)');
-							// Set a flag to potentially show error later if no content arrives
-							// Don't throw error immediately - continue processing
-						} else {
-							error = cleanErrorMessage;
-							toast.error(error);
-							reader.cancel('SSE error event received');
-							throw new Error(error); // Stop processing for other errors
-						}
-					} else if (currentEvent === 'content') {
-						if (currentData) {
-							messages = messages.map((msg) => {
-								if (msg.id === assistantMessageId) {
-									console.log(
-										'Updating content for assistant message:',
-										msg.id,
-										'current loading:',
-										msg.loading
-									);
-									return { ...msg, content: msg.content + currentData };
-								}
-								// Ensure first messages never get loading state during streaming
-								if (msg.id.startsWith('first-message-')) {
-									if (msg.loading) {
-										console.error('FOUND FIRST MESSAGE WITH LOADING=TRUE, FIXING:', msg.id);
-									}
-									return { ...msg, loading: false };
-								}
-								return msg;
-							});
-						}
-					} else if (currentEvent === 'reasoning_chunk') {
-						if (currentData) {
-							console.log('SSE Reasoning Chunk:', currentData);
-							// TODO: Decide how to display reasoning chunks if needed.
-							// For now, we can append it to a separate field or log it.
-							// Example:
-							// messages = messages.map(msg =>
-							// 	msg.id === assistantMessageId
-							// 		? { ...msg, reasoning: (msg.reasoning || '') + currentData }
-							// 		: msg
-							// );
-						}
-					} else if (currentEvent === 'message_saved') {
-						if (currentData) {
-							console.log('SSE Message Saved:', currentData);
-							try {
-								const messageData = JSON.parse(currentData);
-								const actualMessageId = messageData.message_id;
-								console.log('Updating assistant message ID from', assistantMessageId, 'to', actualMessageId);
-								
-								// Update the assistant message with the actual database ID
-								messages = messages.map((msg) => {
-									if (msg.id === assistantMessageId) {
-										console.log('Updating message ID for assistant message:', msg.id, '->', actualMessageId);
-										return { 
-											...msg, 
-											id: actualMessageId // Update with actual database ID
-										};
-									}
-									return msg;
-								});
-								
-								// Update the assistantMessageId variable for subsequent events
-								assistantMessageId = actualMessageId;
-							} catch (e) {
-								console.error('Failed to parse message saved data:', e);
-							}
-						}
-					} else if (currentEvent === 'token_usage') {
-						if (currentData) {
-							console.log('SSE Token Usage:', currentData);
-							try {
-								const tokenData = JSON.parse(currentData);
-								messages = messages.map((msg) => {
-									if (msg.id === assistantMessageId) {
-										console.log('Updating token usage for assistant message:', msg.id, tokenData);
-										return { 
-											...msg, 
-											prompt_tokens: tokenData.prompt_tokens,
-											completion_tokens: tokenData.completion_tokens,
-											model_name: tokenData.model_name
-										};
-									}
-									return msg;
-								});
-							} catch (e) {
-								console.error('Failed to parse token usage data:', e);
-							}
-						}
-					} else if (currentEvent === 'message' && currentData) {
-						// This is the default event if no 'event:' line is present.
-						// The backend now explicitly names events, so this might be less common,
-						// but good to handle as a fallback for simple text content.
-						console.warn('Received SSE data with default "message" event:', currentData);
-						// Try to parse JSON if the data looks like JSON
-						let messageContent = currentData;
-						try {
-							if (currentData.trim() === '[DONE]') {
-								// This is a control message, not content
-								console.log('SSE stream finished with [DONE] signal.');
-								continue; // Skip updating message content for [DONE]
-							} else if (currentData.trim().startsWith('{')) {
-								const parsedData = JSON.parse(currentData);
-								if (parsedData.text) {
-									messageContent = parsedData.text;
-								}
-							}
-						} catch (e) {
-							console.error('Failed to parse SSE message data as JSON:', e);
-							// Continue with the original data on parse error
-						}
-
-						// Assuming it's content if not otherwise specified by a known event
-						messages = messages.map((msg) =>
-							msg.id === assistantMessageId
-								? { ...msg, content: msg.content + messageContent }
-								: msg
-						);
-					}
-					// else: ignore unknown events or empty data for known events
-				}
-			}
-
-			// Handle any remaining data in the buffer after the loop
-			// The stream may have ended but there could still be unprocessed SSE events in the buffer
-			if (buffer.trim().length > 0) {
-				console.log('Processing remaining buffer data after stream end:', buffer);
-				
-				// Process any remaining complete SSE messages
-				let eventEndIndex;
-				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
-					const messageBlock = buffer.substring(0, eventEndIndex);
-					buffer = buffer.substring(eventEndIndex + 2);
-
-					currentEvent = 'message';
-					currentData = '';
-
-					for (const line of messageBlock.split('\n')) {
-						if (line.startsWith('event:')) {
-							currentEvent = line.substring(6).trim();
-						} else if (line.startsWith('data:')) {
-							const dataLineContent = line.substring(5);
-							if (currentData.length > 0) {
-								currentData += '\n';
-							}
-							currentData += dataLineContent.startsWith(' ')
-								? dataLineContent.substring(1)
-								: dataLineContent;
-						}
-					}
-
-					// Process the final buffered event
-					if (currentEvent === 'done' && currentData === '[DONE]') {
-						console.log('SSE stream finished with [DONE] signal from remaining buffer.');
-					} else if (currentEvent === 'error') {
-						console.error('SSE Error Event from remaining buffer:', currentData);
-						error = `Stream error: ${currentData}`;
-						toast.error(error);
-					} else if (currentEvent === 'content') {
-						if (currentData) {
-							messages = messages.map((msg) => {
-								if (msg.id === assistantMessageId) {
-									console.log('Updating content from remaining buffer for assistant message:', msg.id);
-									return { ...msg, content: msg.content + currentData };
-								}
-								if (msg.id.startsWith('first-message-')) {
-									return { ...msg, loading: false };
-								}
-								return msg;
-							});
-						}
-					} else if (currentEvent === 'reasoning_chunk') {
-						if (currentData) {
-							console.log('SSE Reasoning Chunk from remaining buffer:', currentData);
-						}
-					}
-				}
-
-				// Log any truly incomplete data left in buffer
-				if (buffer.trim().length > 0) {
-					console.warn('Incomplete SSE data left in buffer after processing:', buffer);
-				}
-			}
-
-			// Finalize assistant message state only if no error occurred during fetch/parsing
-			messages = messages.map((msg) => {
-				if (msg.id === assistantMessageId) {
-					return { ...msg, loading: false };
-				}
-				// Ensure first messages never have loading=true
-				if (msg.id.startsWith('first-message-')) {
-					return { ...msg, loading: false };
-				}
-				return msg;
-			});
-		} catch (err: any) {
-			fetchError = err; // Store the error
-			if (err.name === 'AbortError') {
-				console.log('Fetch aborted by user.');
-				toast.info('Generation stopped.');
-				// Remove the placeholder assistant message if aborted early
-				messages = messages.filter((msg) => msg.id !== assistantMessageId);
-			} else {
-				// Check if this might be an auth error by validating session
-				if (err.message?.includes('Session expired') || err.message?.includes('401')) {
-					// Auth error already handled by event emission
-					console.log('Auth error during chat generation');
-				} else {
-					// For other errors, validate session to check if it's an indirect auth issue
-					import('$lib/api').then(({ apiClient }) => {
-						apiClient.getSession().then((result) => {
-							if (result.isErr() || !result.value.user) {
-								window.dispatchEvent(new CustomEvent('auth:session-expired'));
-							}
-						});
-					});
-				}
-
-				// Error might have been set by the 'error' event handler already
-				let errorMessage = error || err.message || 'An unexpected error occurred.';
-				
-				// Clean up error message for better user experience
-				if (errorMessage.includes('PropertyNotFound("/candidates")') || errorMessage.includes('PropertyNotFound("/content/parts")')) {
-					errorMessage = 'AI safety filters blocked the request. Please try rephrasing your message.';
-				} else if (errorMessage.includes('Failed to parse stream data') || errorMessage.includes('trailing characters')) {
-					errorMessage = 'AI service returned malformed data. Please try again.';
-				} else if (errorMessage.includes('LLM API error:')) {
-					// Keep the LLM API error as is, it's already user-friendly
-				} else {
-					errorMessage = `AI generation failed: ${errorMessage}`;
-				}
-				
-				if (!error) {
-					// Only show toast if not already set by SSE 'error' event
-					toast.error(errorMessage);
-				}
-				
-				// Mark assistant message as failed instead of removing it
-				messages = messages.map((msg) => {
-					if (msg.id === assistantMessageId) {
-						return { 
-							...msg, 
-							loading: false, 
-							error: errorMessage,
-							retryable: true 
-						};
-					}
-					return msg;
-				});
-				// Optionally remove optimistic user message on error
-				// messages = messages.filter(m => m.id !== userMessage.id);
-			}
-		} finally {
-			isLoading = false;
-			currentAbortController = null; // Clear the controller
-
-			// Only refetch history if the operation wasn't aborted and didn't end in an error
-			let shouldRefetch = true;
-			if (fetchError && fetchError.name === 'AbortError') {
-				shouldRefetch = false;
-			}
-			// Check if 'error' state was set (either by catch or SSE event)
-			if (error) {
-				shouldRefetch = false;
-			}
-			if (shouldRefetch) {
-				// Get the latest messages to find the backend message ID for this assistant message
-				try {
-					const messagesResult = await apiClient.getMessagesByChatId(chat.id);
-					if (messagesResult.isOk()) {
-						const backendMessages = messagesResult.value;
-
-						// Find the most recent assistant message that matches our content
-						const completedAssistantMessage = messages.find(
-							(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
-						);
-
-						if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
-							// Find matching backend message by content (most recent first)
-							const matchingBackendMessage = backendMessages
-								.filter((msg: any) => msg.message_type === 'Assistant')
-								.sort(
-									(a: any, b: any) =>
-										new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-								)
-								.find((msg: any) => {
-									const backendContent =
-										msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
-									return backendContent.trim() === completedAssistantMessage.content.trim();
-								});
-
-							if (matchingBackendMessage) {
-								// Update the frontend message with the real backend ID
-								messages = messages.map((msg) => {
-									if (msg.id === assistantMessageId) {
-										return {
-											...msg,
-											backend_id: matchingBackendMessage.id, // Store backend ID separately
-											created_at:
-												typeof matchingBackendMessage.created_at === 'string'
-													? matchingBackendMessage.created_at
-													: matchingBackendMessage.created_at.toISOString(),
-											session_id: matchingBackendMessage.session_id || msg.session_id,
-											prompt_tokens: matchingBackendMessage.prompt_tokens,
-											completion_tokens: matchingBackendMessage.completion_tokens
-										};
-									}
-									return msg;
-								});
-								console.log(
-									'Updated assistant message with backend ID:',
-									matchingBackendMessage.id
-								);
-							}
-
-							// Update chat preview in sidebar without triggering full reload
-							const preview = completedAssistantMessage.content.trim().substring(0, 100);
-							chatHistory.updateChatPreview(chat.id, preview);
-						}
-					}
-				} catch (err) {
-					console.warn('Failed to fetch backend message data after streaming:', err);
-				}
-			}
+			console.log('✅ StreamingService.connect() called (streaming in progress)');
+		} catch (error) {
+			console.error('❌ Failed to send message:', error);
+			toast.error('Failed to send message. Please try again.');
 		}
 	}
 
 	// Generate AI response based on current messages (used for edited messages)
 	async function generateAIResponse() {
 		if (!chat?.id || !user?.id) {
-			error = 'Chat session or user information is missing.';
-			toast.error(error);
+			toast.error('Chat session or user information is missing.');
 			return;
 		}
 
-		isLoading = true;
-		error = null;
-
 		// Build history from current messages
-		const historyToSend = messages
-			.filter((m) => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant'))
+		const historyToSend = (streamingService.messages as StreamingMessage[])
+			.filter((m) => !m.loading)
 			.map((m) => ({
-				role: m.message_type === 'Assistant' ? 'assistant' : 'user',
+				role: m.sender,
 				content: m.content
 			}));
 
-		// Use the same streaming logic as sendMessage but skip user message creation
-		currentAbortController = new AbortController();
-		const signal = currentAbortController.signal;
-
-		// Add placeholder for assistant message
-		let assistantMessageId = crypto.randomUUID();
-		console.log('Created assistant message with ID:', assistantMessageId);
-
-		let assistantMessage: ScribeChatMessage = {
-			id: assistantMessageId,
-			session_id: chat.id,
-			message_type: 'Assistant',
-			content: '',
-			created_at: new Date().toISOString(),
-			user_id: '',
-			loading: true
-		};
-		messages = [...messages, assistantMessage];
-
-		let fetchError: any = null;
-
 		try {
-			const baseUrl = (env.PUBLIC_API_URL || '').trim();
-			const apiUrl = `${baseUrl}/api/chat/${chat.id}/generate`;
+			// Use StreamingService - it will handle the last user message from history
+			const lastUserMessage = historyToSend.filter(h => h.role === 'user').pop();
+			if (!lastUserMessage) {
+				toast.error('No user message found to generate response.');
+				return;
+			}
 
-			console.log('[generateAIResponse] Environment check:', {
-				'env.PUBLIC_API_URL': env.PUBLIC_API_URL,
-				baseUrl: baseUrl,
-				apiUrl: apiUrl
+			const currentModel = await getCurrentChatModel();
+			await streamingService.connect({
+				chatId: chat.id,
+				userMessage: lastUserMessage.content,
+				history: historyToSend.slice(0, -1), // Exclude the last user message since it's passed separately
+				model: currentModel || undefined
 			});
-
-			const response = await fetch(apiUrl, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Accept: 'text/event-stream'
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					history: historyToSend,
-					model: await getCurrentChatModel()
-				}),
-				signal: signal
-			});
-
-			console.log('[generateAIResponse] Response status:', response.status, 'ok:', response.ok);
-
-			if (!response.ok) {
-				if (response.status === 401) {
-					window.dispatchEvent(new CustomEvent('auth:session-expired'));
-					throw new Error('Session expired. Please sign in again.');
-				}
-
-				const errorData = await response.json().catch(() => {
-					if (response.status >= 500) {
-						return {
-							message:
-								'Server error - the backend may be temporarily unavailable. Please try again.'
-						};
-					}
-					return { message: 'Failed to generate response' };
-				});
-				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-			}
-
-			if (!response.body) {
-				throw new Error('Response body is null');
-			}
-
-			// Process the stream (same logic as sendMessage)
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let currentEvent = 'message';
-			let currentData = '';
-
-			while (true) {
-				const { value, done } = await reader.read();
-				if (done) {
-					break;
-				}
-				const chunk = decoder.decode(value, { stream: true });
-				buffer += chunk;
-
-				let eventEndIndex;
-				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
-					const messageBlock = buffer.substring(0, eventEndIndex);
-					buffer = buffer.substring(eventEndIndex + 2);
-
-					currentEvent = 'message';
-					currentData = '';
-
-					for (const line of messageBlock.split('\n')) {
-						if (line.startsWith('event:')) {
-							currentEvent = line.substring(6).trim();
-						} else if (line.startsWith('data:')) {
-							const dataLineContent = line.substring(5);
-							if (currentData.length > 0) {
-								currentData += '\n';
-							}
-							currentData += dataLineContent.startsWith(' ')
-								? dataLineContent.substring(1)
-								: dataLineContent;
-						}
-					}
-
-					if (currentEvent === 'done' && currentData === '[DONE]') {
-						console.log('SSE stream finished with [DONE] signal.');
-					} else if (currentEvent === 'error') {
-						console.error('SSE Error Event:', currentData);
-						error = `Stream error: ${currentData}`;
-						toast.error(error);
-						reader.cancel('SSE error event received');
-						throw new Error(error);
-					} else if (currentEvent === 'content') {
-						if (currentData) {
-							messages = messages.map((msg) => {
-								if (msg.id === assistantMessageId) {
-									return { ...msg, content: msg.content + currentData };
-								}
-								if (msg.id.startsWith('first-message-')) {
-									return { ...msg, loading: false };
-								}
-								return msg;
-							});
-						}
-					}
-				}
-			}
-
-			// Handle any remaining data in the buffer after the loop  
-			// The stream may have ended but there could still be unprocessed SSE events in the buffer
-			if (buffer.trim().length > 0) {
-				console.log('[generateAIResponse] Processing remaining buffer data after stream end:', buffer);
-				
-				// Process any remaining complete SSE messages
-				let eventEndIndex;
-				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
-					const messageBlock = buffer.substring(0, eventEndIndex);
-					buffer = buffer.substring(eventEndIndex + 2);
-
-					currentEvent = 'message';
-					currentData = '';
-
-					for (const line of messageBlock.split('\n')) {
-						if (line.startsWith('event:')) {
-							currentEvent = line.substring(6).trim();
-						} else if (line.startsWith('data:')) {
-							const dataLineContent = line.substring(5);
-							if (currentData.length > 0) {
-								currentData += '\n';
-							}
-							currentData += dataLineContent.startsWith(' ')
-								? dataLineContent.substring(1)
-								: dataLineContent;
-						}
-					}
-
-					// Process the final buffered event
-					if (currentEvent === 'done' && currentData === '[DONE]') {
-						console.log('[generateAIResponse] SSE stream finished with [DONE] signal from remaining buffer.');
-					} else if (currentEvent === 'error') {
-						console.error('[generateAIResponse] SSE Error Event from remaining buffer:', currentData);
-						error = `Stream error: ${currentData}`;
-						toast.error(error);
-					} else if (currentEvent === 'content') {
-						if (currentData) {
-							messages = messages.map((msg) => {
-								if (msg.id === assistantMessageId) {
-									console.log('[generateAIResponse] Updating content from remaining buffer for assistant message:', msg.id);
-									return { ...msg, content: msg.content + currentData };
-								}
-								if (msg.id.startsWith('first-message-')) {
-									return { ...msg, loading: false };
-								}
-								return msg;
-							});
-						}
-					}
-				}
-
-				// Log any truly incomplete data left in buffer
-				if (buffer.trim().length > 0) {
-					console.warn('[generateAIResponse] Incomplete SSE data left in buffer after processing:', buffer);
-				}
-			}
-
-			// Finalize assistant message
-			messages = messages.map((msg) => {
-				if (msg.id === assistantMessageId) {
-					return { ...msg, loading: false };
-				}
-				if (msg.id.startsWith('first-message-')) {
-					return { ...msg, loading: false };
-				}
-				return msg;
-			});
-		} catch (err: any) {
-			fetchError = err;
-			if (err.name === 'AbortError') {
-				console.log('Generation aborted by user.');
-				toast.info('Generation stopped.');
-				messages = messages.filter((msg) => msg.id !== assistantMessageId);
-			} else {
-				if (!error) {
-					error = err.message || 'An unexpected error occurred.';
-					toast.error(error ?? 'Unknown error');
-				}
-				messages = messages.filter((msg) => msg.id !== assistantMessageId);
-			}
-		} finally {
-			isLoading = false;
-			currentAbortController = null;
-
-			// Update chat preview and message ID as in sendMessage
-			let shouldRefetch = true;
-			if (fetchError && fetchError.name === 'AbortError') {
-				shouldRefetch = false;
-			}
-			if (error) {
-				shouldRefetch = false;
-			}
-			if (shouldRefetch) {
-				try {
-					const messagesResult = await apiClient.getMessagesByChatId(chat.id);
-					if (messagesResult.isOk()) {
-						const backendMessages = messagesResult.value;
-
-						const completedAssistantMessage = messages.find(
-							(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
-						);
-
-						if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
-							const matchingBackendMessage = backendMessages
-								.filter((msg: any) => msg.message_type === 'Assistant')
-								.sort(
-									(a: any, b: any) =>
-										new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-								)
-								.find((msg: any) => {
-									const backendContent =
-										msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
-									return backendContent.trim() === completedAssistantMessage.content.trim();
-								});
-
-							if (matchingBackendMessage) {
-								messages = messages.map((msg) => {
-									if (msg.id === assistantMessageId) {
-										return {
-											...msg,
-											backend_id: matchingBackendMessage.id,
-											created_at:
-												typeof matchingBackendMessage.created_at === 'string'
-													? matchingBackendMessage.created_at
-													: matchingBackendMessage.created_at.toISOString(),
-											session_id: matchingBackendMessage.session_id || msg.session_id,
-											prompt_tokens: matchingBackendMessage.prompt_tokens,
-											completion_tokens: matchingBackendMessage.completion_tokens
-										};
-									}
-									return msg;
-								});
-								console.log(
-									'Updated generated assistant message with backend ID:',
-									matchingBackendMessage.id
-								);
-							}
-
-							const preview = completedAssistantMessage.content.trim().substring(0, 100);
-							chatHistory.updateChatPreview(chat.id, preview);
-						}
-					}
-				} catch (err) {
-					console.warn('Failed to fetch backend message data after generation:', err);
-				}
-			}
+		} catch (error) {
+			console.error('Failed to generate AI response:', error);
+			toast.error('Failed to generate response. Please try again.');
 		}
 	}
 
 	function stopGeneration() {
-		if (currentAbortController) {
-			currentAbortController.abort();
-		} else {
-			console.warn('Stop generation called but no active request found.');
-		}
-		// isLoading will be set to false in the finally block of sendMessage
+		streamingService.disconnect();
 	}
 
 	// Input submission handler
@@ -1275,400 +609,55 @@
 		if (chatInput.trim() && !isLoading) {
 			sendMessage(chatInput.trim());
 			chatInput = ''; // Clear input after sending
-			// TODO: Reset textarea height in MultimodalInput (might need refactor there)
 		}
 	}
 
-	// Regenerate AI response without adding a new user message
-	async function regenerateResponse(userMessageContent: string, originalMessageId?: string) {
+	// Regenerate AI response without adding a new user message - using StreamingService
+	async function regenerateResponse(_userMessageContent: string, _originalMessageId?: string) {
 		if (!chat?.id || !user?.id) {
-			error = 'Chat session or user information is missing.';
-			toast.error(error);
+			toast.error('Chat session or user information is missing.');
 			return;
 		}
 
-		isLoading = true;
-		error = null;
+		// Check if currently loading
+		if (isLoading) {
+			toast.warning('Please wait for the current message to complete.');
+			return;
+		}
 
 		// Build the history - messages array already has the right messages after we removed the assistant message
 		// Just convert to API format
-		const historyToSend = messages
-			.filter((m) => !m.loading && (m.message_type === 'User' || m.message_type === 'Assistant'))
+		const historyToSend = (streamingService.messages as StreamingMessage[])
+			.filter((m) => !m.loading)
 			.map((m) => ({
-				role: m.message_type === 'Assistant' ? 'assistant' : 'user',
+				role: m.sender,
 				content: m.content
 			}));
 
-		// Continue with the same streaming logic as sendMessage but skip user message creation
-		currentAbortController = new AbortController();
-		const signal = currentAbortController.signal;
-
-		// Use the original message ID if provided (for variants), otherwise create a new one
-		const assistantMessageId = originalMessageId || crypto.randomUUID();
-		console.log('Using assistant message ID:', assistantMessageId, 'Original:', originalMessageId);
-
-		// Check if the message already exists (for retries)
-		const existingMessageIndex = messages.findIndex(msg => msg.id === assistantMessageId);
-		
-		if (existingMessageIndex !== -1) {
-			// Message exists, update it to loading state
-			messages = messages.map((msg) => {
-				if (msg.id === assistantMessageId) {
-					return { 
-						...msg, 
-						loading: true, 
-						error: null,
-						retryable: false,
-						content: '' // Clear content for fresh generation
-					};
-				}
-				return msg;
-			});
-		} else {
-			// Message doesn't exist, create a new one
-			let assistantMessage: ScribeChatMessage = {
-				id: assistantMessageId,
-				session_id: chat.id,
-				message_type: 'Assistant',
-				content: '',
-				created_at: new Date().toISOString(),
-				user_id: '',
-				loading: true
-			};
-			messages = [...messages, assistantMessage];
+		// Find the last user message to regenerate response for
+		const lastUserMessage = historyToSend.filter(h => h.role === 'user').pop();
+		if (!lastUserMessage) {
+			toast.error('No user message found to regenerate response.');
+			return;
 		}
 
-		let fetchError: any = null;
-
 		try {
-			const baseUrl = (env.PUBLIC_API_URL || '').trim();
-			const apiUrl = `${baseUrl}/api/chat/${chat.id}/generate`;
-
-			console.log('[regenerateResponse] Environment check:', {
-				'env.PUBLIC_API_URL': env.PUBLIC_API_URL,
-				baseUrl: baseUrl,
-				apiUrl: apiUrl
+			// Use StreamingService for regeneration - it will handle the streaming
+			const currentModel = await getCurrentChatModel();
+			await streamingService.connect({
+				chatId: chat.id,
+				userMessage: lastUserMessage.content,
+				history: historyToSend.slice(0, -1), // Exclude the last user message since it's passed separately
+				model: currentModel || undefined
 			});
 
-			const response = await fetch(apiUrl, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Accept: 'text/event-stream'
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					history: historyToSend,
-					model: await getCurrentChatModel()
-				}),
-				signal: signal
-			});
-
-			console.log('[regenerateResponse] Response status:', response.status, 'ok:', response.ok);
-			console.log('[regenerateResponse] Response headers:', response.headers);
-
-			if (!response.ok) {
-				if (response.status === 401) {
-					window.dispatchEvent(new CustomEvent('auth:session-expired'));
-					throw new Error('Session expired. Please sign in again.');
-				}
-
-				const errorData = await response.json().catch(() => {
-					if (response.status >= 500) {
-						return {
-							message:
-								'Server error - the backend may be temporarily unavailable. Please try again.'
-						};
-					}
-					return { message: 'Failed to generate response' };
-				});
-				throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-			}
-
-			if (!response.body) {
-				throw new Error('Response body is null');
-			}
-
-			console.log('[regenerateResponse] Response body exists, starting to read stream');
-
-			// Process the stream (same logic as sendMessage)
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let currentEvent = 'message';
-			let currentData = '';
-
-			while (true) {
-				const { value, done } = await reader.read();
-				if (done) {
-					console.log('[regenerateResponse] Stream reading done');
-					break;
-				}
-				const chunk = decoder.decode(value, { stream: true });
-				console.log('[regenerateResponse] Received chunk:', chunk);
-				buffer += chunk;
-
-				let eventEndIndex;
-				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
-					const messageBlock = buffer.substring(0, eventEndIndex);
-					buffer = buffer.substring(eventEndIndex + 2);
-
-					currentEvent = 'message';
-					currentData = '';
-
-					for (const line of messageBlock.split('\n')) {
-						if (line.startsWith('event:')) {
-							currentEvent = line.substring(6).trim();
-						} else if (line.startsWith('data:')) {
-							const dataLineContent = line.substring(5);
-							if (currentData.length > 0) {
-								currentData += '\n';
-							}
-							currentData += dataLineContent.startsWith(' ')
-								? dataLineContent.substring(1)
-								: dataLineContent;
-						}
-					}
-
-					console.log('[regenerateResponse] Processing event:', currentEvent, 'data:', currentData);
-
-					if (currentEvent === 'done' && currentData === '[DONE]') {
-						console.log('SSE stream finished with [DONE] signal.');
-					} else if (currentEvent === 'error') {
-						console.error('SSE Error Event:', currentData);
-						// For PropertyNotFound errors, don't immediately fail - wait to see if content follows
-						// This handles a backend bug where error events are sent but content still streams
-						if (currentData.includes('PropertyNotFound("/content/parts")') || currentData.includes('PropertyNotFound("/candidates")')) {
-							console.warn('Received PropertyNotFound error but continuing to listen for content (backend bug workaround)');
-							// Don't throw error immediately - continue processing
-						} else {
-							error = `Stream error: ${currentData}`;
-							toast.error(error);
-							reader.cancel('SSE error event received');
-							throw new Error(error);
-						}
-					} else if (currentEvent === 'content') {
-						if (currentData) {
-							messages = messages.map((msg) => {
-								if (msg.id === assistantMessageId) {
-									console.log(
-										'[regenerateResponse] Updating message content for:',
-										assistantMessageId
-									);
-									return { ...msg, content: msg.content + currentData };
-								}
-								if (msg.id.startsWith('first-message-')) {
-									return { ...msg, loading: false };
-								}
-								return msg;
-							});
-						}
-					} else if (currentEvent === 'reasoning_chunk') {
-						// Handle reasoning chunks like in sendMessage
-						if (currentData) {
-							console.log('SSE Reasoning Chunk:', currentData);
-						}
-					}
-				}
-			}
-
-			// Handle any remaining data in the buffer after the loop  
-			// The stream may have ended but there could still be unprocessed SSE events in the buffer
-			if (buffer.trim().length > 0) {
-				console.log('[regenerateResponse] Processing remaining buffer data after stream end:', buffer);
-				
-				// Process any remaining complete SSE messages
-				let eventEndIndex;
-				while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
-					const messageBlock = buffer.substring(0, eventEndIndex);
-					buffer = buffer.substring(eventEndIndex + 2);
-
-					currentEvent = 'message';
-					currentData = '';
-
-					for (const line of messageBlock.split('\n')) {
-						if (line.startsWith('event:')) {
-							currentEvent = line.substring(6).trim();
-						} else if (line.startsWith('data:')) {
-							const dataLineContent = line.substring(5);
-							if (currentData.length > 0) {
-								currentData += '\n';
-							}
-							currentData += dataLineContent.startsWith(' ')
-								? dataLineContent.substring(1)
-								: dataLineContent;
-						}
-					}
-
-					// Process the final buffered event
-					if (currentEvent === 'done' && currentData === '[DONE]') {
-						console.log('[regenerateResponse] SSE stream finished with [DONE] signal from remaining buffer.');
-					} else if (currentEvent === 'error') {
-						console.error('[regenerateResponse] SSE Error Event from remaining buffer:', currentData);
-						error = `Stream error: ${currentData}`;
-						toast.error(error);
-					} else if (currentEvent === 'content') {
-						if (currentData) {
-							messages = messages.map((msg) => {
-								if (msg.id === assistantMessageId) {
-									console.log('[regenerateResponse] Updating content from remaining buffer for assistant message:', msg.id);
-									return { ...msg, content: msg.content + currentData };
-								}
-								if (msg.id.startsWith('first-message-')) {
-									return { ...msg, loading: false };
-								}
-								return msg;
-							});
-						}
-					} else if (currentEvent === 'reasoning_chunk') {
-						if (currentData) {
-							console.log('[regenerateResponse] SSE Reasoning Chunk from remaining buffer:', currentData);
-						}
-					}
-				}
-
-				// Log any truly incomplete data left in buffer
-				if (buffer.trim().length > 0) {
-					console.warn('[regenerateResponse] Incomplete SSE data left in buffer after processing:', buffer);
-				}
-			}
-
-			// Finalize assistant message
-			messages = messages.map((msg) => {
-				if (msg.id === assistantMessageId) {
-					return { ...msg, loading: false };
-				}
-				if (msg.id.startsWith('first-message-')) {
-					return { ...msg, loading: false };
-				}
-				return msg;
-			});
-		} catch (err: any) {
-			fetchError = err;
-			if (err.name === 'AbortError') {
-				console.log('Regeneration aborted by user.');
-				toast.info('Generation stopped.');
-				// For aborted operations, only remove the message if we created it new (not retrying existing)
-				if (existingMessageIndex === -1) {
-					messages = messages.filter((msg) => msg.id !== assistantMessageId);
-				} else {
-					// Reset the existing message to its previous state
-					messages = messages.map((msg) => {
-						if (msg.id === assistantMessageId) {
-							return { 
-								...msg, 
-								loading: false, 
-								error: 'Generation was stopped',
-								retryable: true
-							};
-						}
-						return msg;
-					});
-				}
-			} else {
-				if (!error) {
-					error = err.message || 'An unexpected error occurred.';
-					toast.error(error ?? 'Unknown error');
-				}
-				// For errors, only remove the message if we created it new (not retrying existing)
-				if (existingMessageIndex === -1) {
-					messages = messages.filter((msg) => msg.id !== assistantMessageId);
-				} else {
-					// Mark the existing message as failed again
-					messages = messages.map((msg) => {
-						if (msg.id === assistantMessageId) {
-							return { 
-								...msg, 
-								loading: false, 
-								error: error || 'Generation failed',
-								retryable: true
-							};
-						}
-						return msg;
-					});
-				}
-			}
-		} finally {
-			isLoading = false;
-			currentAbortController = null;
-
-			// Update chat preview and message ID as in sendMessage
-			let shouldRefetch = true;
-			if (fetchError && fetchError.name === 'AbortError') {
-				shouldRefetch = false;
-			}
-			if (error) {
-				shouldRefetch = false;
-			}
-			if (shouldRefetch) {
-				try {
-					const messagesResult = await apiClient.getMessagesByChatId(chat.id);
-					if (messagesResult.isOk()) {
-						const backendMessages = messagesResult.value;
-
-						const completedAssistantMessage = messages.find(
-							(m) => m.id === assistantMessageId && m.message_type === 'Assistant' && !m.loading
-						);
-
-						if (completedAssistantMessage && completedAssistantMessage.content.trim()) {
-							const matchingBackendMessage = backendMessages
-								.filter((msg: any) => msg.message_type === 'Assistant')
-								.sort(
-									(a: any, b: any) =>
-										new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-								)
-								.find((msg: any) => {
-									const backendContent =
-										msg.parts && msg.parts.length > 0 && msg.parts[0].text ? msg.parts[0].text : '';
-									return backendContent.trim() === completedAssistantMessage.content.trim();
-								});
-
-							if (matchingBackendMessage) {
-								messages = messages.map((msg) => {
-									if (msg.id === assistantMessageId) {
-										return {
-											...msg,
-											backend_id: matchingBackendMessage.id, // Store backend ID separately
-											created_at:
-												typeof matchingBackendMessage.created_at === 'string'
-													? matchingBackendMessage.created_at
-													: matchingBackendMessage.created_at.toISOString(),
-											session_id: matchingBackendMessage.session_id || msg.session_id,
-											prompt_tokens: matchingBackendMessage.prompt_tokens,
-											completion_tokens: matchingBackendMessage.completion_tokens
-										};
-									}
-									return msg;
-								});
-								console.log(
-									'Updated regenerated assistant message with backend ID:',
-									matchingBackendMessage.id
-								);
-							}
-
-							// If this was a regeneration (variant), save the new content
-							if (originalMessageId && completedAssistantMessage) {
-								const variants = messageVariants.get(originalMessageId) || [];
-
-								// Save the new variant
-								variants.push({
-									content: completedAssistantMessage.content,
-									timestamp: completedAssistantMessage.created_at || new Date().toISOString()
-								});
-								messageVariants.set(originalMessageId, variants);
-
-								// Now update the current index to point to the newly created variant
-								currentVariantIndex.set(originalMessageId, variants.length - 1);
-							}
-
-							const preview = completedAssistantMessage.content.trim().substring(0, 100);
-							chatHistory.updateChatPreview(chat.id, preview);
-						}
-					}
-				} catch (err) {
-					console.warn('Failed to fetch backend message data after regeneration:', err);
-				}
-			}
+			// Update chat preview after successful regeneration
+			// Note: StreamingService will handle message creation and updates
+			const preview = lastUserMessage.content.substring(0, 100);
+			chatHistory.updateChatPreview(chat.id, preview);
+		} catch (error) {
+			console.error('Failed to regenerate response:', error);
+			toast.error('Failed to regenerate response. Please try again.');
 		}
 	}
 
@@ -1678,7 +667,9 @@
 
 		// Update the first message content in the messages array
 		const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
-		messages = messages.map((msg) => (msg.id === firstMessageId ? { ...msg, content } : msg));
+		streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) =>
+			msg.id === firstMessageId ? { ...msg, content } : msg
+		);
 	}
 
 	// Message action handlers
@@ -1688,11 +679,11 @@
 		console.log('Retry message:', messageId);
 
 		// Find the assistant message to retry
-		const messageIndex = messages.findIndex((msg) => msg.id === messageId);
+		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex((msg) => msg.id === messageId);
 		if (messageIndex === -1) return;
 
-		const targetMessage = messages[messageIndex];
-		if (targetMessage.message_type !== 'Assistant') return;
+		const targetMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
+		if (targetMessage.sender !== 'assistant') return;
 
 		// Initialize variants array if this is the first retry
 		let variants = messageVariants.get(messageId) || [];
@@ -1713,12 +704,13 @@
 		const userMessageIndex = messageIndex - 1;
 		if (userMessageIndex < 0) return;
 
-		const userMessage = messages[userMessageIndex];
-		if (userMessage.message_type !== 'User') return;
+		const userMessage = (streamingService.messages as StreamingMessage[])[userMessageIndex];
+		if (userMessage.sender !== 'user') return;
 
 		// Remove the assistant message and any messages after it
-		const removedMessages = messages.slice(messageIndex);
-		messages = messages.slice(0, messageIndex);
+		const allMessages = [...(streamingService.messages as StreamingMessage[])];
+		const removedMessages = allMessages.slice(messageIndex);
+		streamingService.messages = allMessages.slice(0, messageIndex);
 
 		// Clean up variant data for any messages that will be removed (except the one we're regenerating)
 		for (const removedMsg of removedMessages) {
@@ -1757,31 +749,24 @@
 		if (!chat?.id || isLoading) return;
 
 		// Find the message index
-		const messageIndex = messages.findIndex((msg) => msg.id === messageId);
+		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex((msg) => msg.id === messageId);
 		if (messageIndex === -1) return;
 
-		const targetMessage = messages[messageIndex];
-		if (targetMessage.message_type !== 'User') return;
+		const targetMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
+		if (targetMessage.sender !== 'user') return;
 
 		// Update the message content
-		messages = messages.map((msg) => {
-			if (msg.id === messageId) {
-				return {
-					...msg,
-					content: newContent
-				};
-			}
-			return msg;
-		});
+		const allMessages = [...(streamingService.messages as StreamingMessage[])];
+		allMessages[messageIndex].content = newContent;
 
 		// Get messages that will be removed for backend cleanup
-		const removedMessages = messages.slice(messageIndex + 1);
+		const removedMessages = allMessages.slice(messageIndex + 1);
 
 		// Clear all subsequent messages (everything after this user message)
-		messages = messages.slice(0, messageIndex + 1);
+		streamingService.messages = allMessages.slice(0, messageIndex + 1);
 
 		// Clear any variant data for removed messages
-		const keptMessageIds = new Set(messages.map((m) => m.id));
+		const keptMessageIds = new Set(streamingService.messages.map((m: StreamingMessage) => m.id));
 		for (const [variantMessageId] of messageVariants) {
 			if (!keptMessageIds.has(variantMessageId)) {
 				messageVariants.delete(variantMessageId);
@@ -1818,12 +803,9 @@
 
 		// Update the message content with the previous variant
 		if (variants && newIndex < variants.length) {
-			messages = messages.map((msg) => {
+			streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) => {
 				if (msg.id === messageId) {
-					return {
-						...msg,
-						content: variants[newIndex].content
-					};
+					return { ...msg, content: variants[newIndex].content };
 				}
 				return msg;
 			});
@@ -1842,12 +824,9 @@
 			const newIndex = currentIndex + 1;
 			currentVariantIndex.set(messageId, newIndex);
 
-			messages = messages.map((msg) => {
+			streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) => {
 				if (msg.id === messageId) {
-					return {
-						...msg,
-						content: variants[newIndex].content
-					};
+					return { ...msg, content: variants[newIndex].content };
 				}
 				return msg;
 			});
@@ -1864,37 +843,32 @@
 		console.log('Retry failed message:', messageId);
 
 		// Find the failed assistant message
-		const messageIndex = messages.findIndex((msg) => msg.id === messageId);
+		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex((msg) => msg.id === messageId);
 		if (messageIndex === -1) return;
 
-		const failedMessage = messages[messageIndex];
-		if (failedMessage.message_type !== 'Assistant' || !failedMessage.error) return;
+		const failedMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
+		if (failedMessage.sender !== 'assistant' || !failedMessage.error) return;
 
 		// Find the previous user message to regenerate from
 		const userMessageIndex = messageIndex - 1;
 		if (userMessageIndex < 0) return;
 
-		const userMessage = messages[userMessageIndex];
-		if (userMessage.message_type !== 'User') return;
+		const userMessage = (streamingService.messages as StreamingMessage[])[userMessageIndex];
+		if (userMessage.sender !== 'user') return;
 
 		// Clear the error state and set to loading
-		messages = messages.map((msg) => {
-			if (msg.id === messageId) {
-				return { 
-					...msg, 
-					loading: true, 
-					error: null,
-					retryable: false,
-					content: '' // Clear content for fresh generation
-				};
-			}
-			return msg;
-		});
+		const allMessages = [...(streamingService.messages as StreamingMessage[])];
+		allMessages[messageIndex] = {
+			...allMessages[messageIndex],
+			loading: true,
+			error: undefined,
+			retryable: false,
+			content: ''
+		};
 
 		// Remove any messages after the failed one (they were dependent on the failed generation)
-		const messagesToKeep = messages.slice(0, messageIndex + 1);
-		const messagesToRemove = messages.slice(messageIndex + 1);
-		messages = messagesToKeep;
+		const messagesToRemove = allMessages.slice(messageIndex + 1);
+		streamingService.messages = allMessages.slice(0, messageIndex + 1);
 
 		// Clean up variant data for removed messages
 		for (const removedMsg of messagesToRemove) {
@@ -1916,6 +890,40 @@
 		// Use the existing regenerateResponse function
 		regenerateResponse(userMessage.content, messageId);
 	}
+
+	async function handleDeleteMessage(messageId: string) {
+		if (!chat?.id || isLoading) return;
+
+		console.log('Delete message:', messageId);
+
+		// Find the message to delete
+		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex((msg) => msg.id === messageId);
+		if (messageIndex === -1) return;
+
+		// Get the message before removing it
+		const messageToDelete = (streamingService.messages as StreamingMessage[])[messageIndex];
+
+		// Remove the message from the UI immediately
+		const allMessages = [...(streamingService.messages as StreamingMessage[])];
+		allMessages.splice(messageIndex, 1);
+		streamingService.messages = allMessages;
+
+		// Clean up variant data for deleted message
+		messageVariants.delete(messageId);
+		currentVariantIndex.delete(messageId);
+
+		// Delete from backend if it has a backend ID
+		if (messageToDelete?.backend_id || messageToDelete?.id) {
+			try {
+				await apiClient.deleteMessage(messageToDelete.backend_id || messageToDelete.id);
+				console.log('Message deleted from backend successfully');
+			} catch (err) {
+				console.error('Failed to delete message from backend:', err);
+				// Note: We don't revert the UI change since the user intended to delete it
+				// They can refresh to see the actual state if needed
+			}
+		}
+	}
 </script>
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
@@ -1924,7 +932,7 @@
 	<Messages
 		{readonly}
 		loading={isLoading}
-		{messages}
+		messages={displayMessages}
 		selectedCharacterId={selectedCharacterStore.characterId}
 		{character}
 		{chat}
@@ -1935,6 +943,7 @@
 		onRetryFailedMessage={handleRetryFailedMessage}
 		onEditMessage={handleEditMessage}
 		onSaveEditedMessage={handleSaveEditedMessage}
+		onDeleteMessage={handleDeleteMessage}
 		onPreviousVariant={handlePreviousVariant}
 		onNextVariant={handleNextVariant}
 		onGreetingChanged={handleGreetingChanged}

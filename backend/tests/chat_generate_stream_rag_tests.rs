@@ -157,6 +157,7 @@ async fn setup_rag_test_context() -> TestContext {
                 attachments: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
+                model_name: "gemini-2.5-pro".to_string(),
             };
             diesel::insert_into(chat_messages_dsl::chat_messages)
                 .values(&new_message)

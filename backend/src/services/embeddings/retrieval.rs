@@ -1,7 +1,10 @@
 use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata};
+use super::utils::{extract_string_from_payload, extract_uuid_from_payload};
 use crate::errors::AppError;
 use crate::llm::EmbeddingClient;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
+use qdrant_client::qdrant::Value as QdrantValue;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
@@ -13,6 +16,32 @@ pub struct ChronicleEventMetadata {
     pub event_type: String,
     pub chronicle_id: Uuid,
     pub created_at: DateTime<Utc>,
+}
+
+impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
+    type Error = AppError;
+
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
+        let event_id = extract_uuid_from_payload(&payload, "event_id", "ChronicleEventMetadata")?;
+        let event_type = extract_string_from_payload(&payload, "event_type", "ChronicleEventMetadata")?;
+        let chronicle_id = extract_uuid_from_payload(&payload, "chronicle_id", "ChronicleEventMetadata")?;
+        let created_at_str = extract_string_from_payload(&payload, "created_at", "ChronicleEventMetadata")?;
+        
+        let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
+            .map_err(|e| {
+                AppError::SerializationError(format!(
+                    "Failed to parse 'created_at' in ChronicleEventMetadata: {e}"
+                ))
+            })
+            .map(|dt| dt.with_timezone(&chrono::Utc))?;
+
+        Ok(Self {
+            event_id,
+            event_type,
+            chronicle_id,
+            created_at,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]

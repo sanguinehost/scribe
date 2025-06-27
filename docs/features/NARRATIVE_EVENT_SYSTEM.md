@@ -1,114 +1,105 @@
-# Narrative Event System Design
+# The Scribe Narrative Event Schema
+# Version 3.0
 
-## 1. Overview
+## 1. Overview: The Quantum of Story
 
-This document details the design for a robust, hierarchical narrative event system for Scribe. The goal is to create a semantically rich and abstract system that allows an AI to comprehend, analyze, and generate narrative developments with greater accuracy and utility. This system evolves from simple event strings (e.g., `plot.twist.revealed`) to a structured, multi-level taxonomy.
+This document provides the technical specification for the Scribe Narrative Event, the foundational data structure of the **Ars Fabula** narrative intelligence system. This schema is a direct implementation of the "Quantum of Story" concept, designed to capture the full semantic context of any narrative development.
 
-This design is based on the principle of providing both high-level summaries for broad analysis and detailed, specific event types for granular logging and reasoning.
+Each event is a rich, multi-faceted data object stored in the `chronicle_events` table. This structure allows the system to move beyond simple logging to perform complex querying, causal reasoning, and sophisticated de-duplication.
 
-## 2. A Hierarchical Approach to Narrative Events
+## 2. The Event Schema
 
-A hierarchical structure provides both high-level summaries and detailed, specific event logging. This allows for more flexible and powerful narrative analysis.
+The following table details the fields of the `chronicle_events` table, which defines the structure of every narrative event in Scribe.
 
-### 2.1. Level 1: Core Narrative Pillars (The "Why")
+| Field | SQL Type | Rust Type | Description | Example |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `UUID` | `Uuid` | A unique, immutable identifier for the event instance. Primary Key. | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
+| `chronicle_id` | `UUID` | `Uuid` | Foreign key linking the event to its parent chronicle. | `a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6` |
+| `user_id` | `UUID` | `Uuid` | Foreign key linking the event to the user who owns it. | `b2c3d4e5-f6a7-b8c9-d0e1-f2a3b4c5d6e7` |
+| `timestamp_iso8601` | `TIMESTAMPTZ` | `DateTime<Utc>` | The precise in-world time the event occurred. Essential for temporal reasoning and sorting. | `2251-08-15T14:30:00Z` |
+| `event_type` | `VARCHAR(100)` | `String` | A hierarchical, dot-notation classification of the event. | `CHARACTER.STATE_CHANGE.DEATH` |
+| `action` | `VARCHAR(100)` | `String` | The core verb of the event, representing the fundamental act that occurred. | `Betrayed` |
+| `actors` | `JSONB` | `Vec<EventActor>` | A list of all entities participating in the event and their specific narrative roles. | `[{"role": "Agent", "id": "char_A"}, {"role": "Patient", "id": "char_B"}]` |
+| `context_data` | `JSONB` | `JsonValue` | Spatio-temporal and situational information (Labov's "Orientation"). | `{"location_id": "loc_ThroneRoom", "time_of_day": "Night"}` |
+| `causality` | `JSONB` | `EventCausality` | Links to other event IDs, forming a directed acyclic graph (DAG) of cause and effect. | `{"causedBy": ["evt_123"], "causes": ["evt_456"]}` |
+| `valence` | `JSONB` | `Vec<EventValence>` | A vector representing the emotional or relational impact of the event. | `[{"target": "char_B", "type": "Trust", "change": -0.8}]` |
+| `modality` | `VARCHAR(50)` | `String` | The reality status of the event, distinguishing objective truth from subjective belief. | `ACTUAL` or `BELIEVED_BY:char_C` |
+| `summary` | `TEXT` | `String` | **[Legacy]** The original plaintext summary of the event. Will be deprecated. | `Lucas cleansed Mount Everest.` |
+| `summary_encrypted` | `BYTEA` | `Vec<u8>` | The encrypted summary of the event, ensuring data privacy at rest. | `\xABC123...` |
+| `summary_nonce` | `BYTEA` | `Vec<u8>` | The nonce used for the GCM encryption of the summary. | `\xDEF456...` |
+| `source` | `VARCHAR(50)` | `String` | The origin of the event (`AI_EXTRACTED`, `USER_ADDED`, `GAME_API`). | `AI_EXTRACTED` |
+| `event_data` | `JSONB` | `JsonValue` | **[Legacy]** An unstructured field for additional data. Will be deprecated. | `{"old_field": "old_value"}` |
 
-This level represents the highest-level categories of narrative change. Almost all significant events can be broadly classified into one of these pillars.
+## 3. Detailed Field Specifications
 
-*   **`WORLD`**: Events that alter the state of the game world, its lore, or its physical properties.
-*   **`CHARACTER`**: Events that primarily affect a specific character's internal or external state.
-*   **`PLOT`**: Events that drive the main narrative or a significant side-narrative forward.
-*   **`RELATIONSHIP`**: Events that change the dynamics between two or more entities (characters, factions, etc.).
+### 3.1. `actors` (`JSONB`)
 
-### 2.2. Level 2: Abstract Event Categories (The "What")
+Based on Propp's *dramatis personae*, this field captures the function of each participant.
 
-This level provides a good balance of detail and abstraction, grouped under the Level 1 pillars.
+*   **Structure:** An array of `EventActor` objects.
+*   **`EventActor` Object:**
+    *   `id` (UUID): The ID of the entity (character, item, location).
+    *   `role` (String): The narrative role of the actor.
+*   **Standard Roles:** `Agent`, `Patient`, `Beneficiary`, `Instrument`, `Helper`, `Opponent`, `Witness`.
 
-*   **`WORLD`**
-    *   **`DISCOVERY`**: The uncovering of new information or tangible things within the world.
-        *   *Examples*: `LOCATION_DISCOVERY`, finding a new recipe, learning a new crafting technique.
-    *   **`ALTERATION`**: A fundamental change to the world itself.
-        *   *Examples*: `WORLD_CHANGE` (cleansing Mount Everest), a magical cataclysm, the political collapse of a kingdom.
-    *   **`LORE_EXPANSION`**: The revelation of new knowledge about the world's history, mechanics, or inhabitants.
-        *   *Examples*: `WORLD_KNOWLEDGE`, discovering the origin of a species, learning about a past war.
+**Example JSON:**
+```json
+[
+  {
+    "id": "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6",
+    "role": "Agent"
+  },
+  {
+    "id": "b2c3d4e5-f6a7-b8c9-d0e1-f2a3b4c5d6e7",
+    "role": "Patient"
+  }
+]
+```
 
-*   **`CHARACTER`**
-    *   **`STATE_CHANGE`**: A change in a character's physical or mental condition.
-        *   *Examples*: `CHARACTER_DEATH`, `CHARACTER_INJURY`, gaining a temporary buff, being afflicted by a curse.
-    *   **`DEVELOPMENT`**: A change in a character's skills, abilities, or personality.
-        *   *Examples*: `CHARACTER_GROWTH`, `POWER_GAINED`, `TRANSFORMATION`, learning a new skill, a change in alignment.
-    *   **`INVENTORY_CHANGE`**: The acquisition or loss of items.
-        *   *Examples*: `ITEM_ACQUISITION`, an item being stolen, an item being consumed.
+### 3.2. `causality` (`JSONB`)
 
-*   **`PLOT`**
-    *   **`PROGRESSION`**: The advancement of a known objective or storyline.
-        *   *Examples*: `QUEST_PROGRESS`, completing a milestone in a larger plan.
-    *   **`REVELATION`**: The uncovering of information that directly impacts the plot.
-        *   *Examples*: `SECRET_REVELATION`, a major plot twist.
-    *   **`TURNING_POINT`**: A critical moment of choice or a pivotal event that changes the direction of the plot.
-        *   *Examples*: `DECISION_POINT`, an unexpected betrayal, the introduction of a new antagonist.
+This field transforms the event log into a causal graph.
 
-*   **`RELATIONSHIP`**
-    *   **`FORMATION`**: The beginning of a new relationship.
-        *   *Examples*: Meeting a new character for the first time (`CHARACTER_MET`), forming an alliance.
-    *   **`MODIFICATION`**: A change in the nature of an existing relationship.
-        *   *Examples*: `RELATIONSHIP_CHANGE` (friends becoming rivals), a shift in faction reputation.
-    *   **`INTERACTION`**: A significant social exchange that has the potential to affect relationships or the plot.
-        *   *Examples*: `SOCIAL_INTERACTION`, a key piece of dialogue, a successful negotiation.
+*   **Structure:** An `EventCausality` object.
+*   **`EventCausality` Object:**
+    *   `causedBy` (Array of UUIDs): A list of `event_id`s that were necessary preconditions for this event.
+    *   `causes` (Array of UUIDs): A list of `event_id`s for which this event is a direct cause.
 
-### 2.3. Level 3: Specific Event Types (The "How")
+**Example JSON:**
+```json
+{
+  "causedBy": ["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+  "causes": []
+}
+```
 
-This level consists of more specific event types, which can be mapped to the Level 2 categories. This allows for detailed analysis while still being able to roll up to the more abstract layers.
+### 3.3. `valence` (`JSONB`)
 
-*   `PLOT_DEVELOPMENT` (Level 2: `PROGRESSION` or `TURNING_POINT`)
-*   `CHARACTER_GROWTH` (Level 2: `DEVELOPMENT`)
-*   `CHARACTER_DEATH` (Level 2: `STATE_CHANGE`)
-*   `CHARACTER_INJURY` (Level 2: `STATE_CHANGE`)
-*   `LOCATION_DISCOVERY` (Level 2: `DISCOVERY`)
-*   `QUEST_PROGRESS` (Level 2: `PROGRESSION`)
-*   `ITEM_ACQUISITION` (Level 2: `INVENTORY_CHANGE`)
-*   `SECRET_REVELATION` (Level 2: `REVELATION`)
-*   `RELATIONSHIP_CHANGE` (Level 2: `MODIFICATION`)
-*   `WORLD_KNOWLEDGE` (Level 2: `LORE_EXPANSION`)
-*   `SOCIAL_INTERACTION` (Level 2: `INTERACTION`)
-*   `DECISION_POINT` (Level 2: `TURNING_POINT`)
-*   `WORLD_CHANGE` (Level 2: `ALTERATION`)
-*   `POWER_GAINED` (Level 2: `DEVELOPMENT`)
-*   `TRANSFORMATION` (Level 2: `DEVELOPMENT`)
+This field quantifies the emotional or relational impact of the event.
 
-Further granularity can be introduced as sub-types. For example:
-*   **`RELATIONSHIP_CHANGE`**
-    *   `POSITIVE`: An improvement in the relationship (e.g., becoming friends, gaining trust).
-    *   `NEGATIVE`: A degradation in the relationship (e.g., an argument, a betrayal).
-    *   `NEUTRAL`: A change in the nature of the relationship without a clear positive or negative leaning (e.g., a professional relationship becoming personal).
+*   **Structure:** An array of `EventValence` objects.
+*   **`EventValence` Object:**
+    *   `target` (UUID): The ID of the entity whose state is being affected.
+    *   `type` (String): The type of value being changed (e.g., `Trust`, `Fear`, `Health`, `Power`).
+    *   `change` (Float): A numerical value representing the change (e.g., `-0.8` for a large negative change).
 
-## 3. Action vs. Outcome Duality
+**Example JSON:**
+```json
+[
+  {
+    "target": "b2c3d4e5-f6a7-b8c9-d0e1-f2a3b4c5d6e7",
+    "type": "Trust",
+    "change": -0.8
+  }
+]
+```
 
-Events can also be structured by distinguishing between the action taken and its outcome.
+### 3.4. `modality` (`VARCHAR`)
 
-*   **Action-Based Events**: Describe what a character or the world *does*.
-    *   `COMBAT_ENCOUNTER`
-    *   `EXPLORATION`
-    *   `SOCIAL_INTERACTION`
-    *   `DECISION_POINT`
+This field specifies the reality status of the event, which is critical for modeling belief vs. reality.
 
-*   **Outcome-Based Events**: Describe the result of an action.
-    *   `CHARACTER_DEATH` (the outcome of a `COMBAT_ENCOUNTER` or a failed `DECISION_POINT`)
-    *   `LOCATION_DISCOVERY` (the outcome of `EXPLORATION`)
-    *   `RELATIONSHIP_CHANGE` (the outcome of a `SOCIAL_INTERACTION`)
-    *   `CONSEQUENCE` (this is inherently an outcome)
-
-The system can blend these, which is often more practical. For instance, `COMBAT_ENCOUNTER` can be a wrapper for a series of smaller outcome events.
-
-## 4. Recommendations for Scribe
-
-1.  **Adopt a Two-Level Hierarchy:** For immediate practical use, a two-level system is recommended.
-    *   **`event_category`**: A high-level category like `WORLD`, `CHARACTER`, `PLOT`, or `RELATIONSHIP`.
-    *   **`event_type`**: The detailed list (`PLOT_DEVELOPMENT`, `CHARACTER_DEATH`, etc.).
-    This allows the AI to tag an event with both a broad category and a specific type, enabling more nuanced queries.
-
-2.  **Refine "CONSEQUENCE":** The event type `CONSEQUENCE` is a meta-category. It could be handled as a flag or a link between a `DECISION_POINT` and its resulting events, where a `DECISION_POINT` event has a list of subsequent event IDs that are its direct consequences.
-
-3.  **Consider Event Subjects and Objects:** To make the system truly abstract, each event should be associated with the entities involved.
-    *   **`subject`**: The primary entity initiating or experiencing the event.
-    *   **`object`**: The entity being acted upon.
-    *   **`involved_entities`**: A list of other characters, items, or locations relevant to the event.
+*   **Possible Values:**
+    *   `ACTUAL`: The event is part of the ground-truth `Fabula`.
+    *   `HYPOTHETICAL`: The event is part of a plan or "what if" scenario.
+    *   `COUNTERFACTUAL`: The event describes what could have happened but didn't.
+    *   `BELIEVED_BY:{agent_id}`: The event is believed to be true by a specific agent, regardless of its actual status.

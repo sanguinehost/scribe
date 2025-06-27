@@ -590,6 +590,7 @@ mod get_session_data_for_generation_tests {
                 *role_enum,
                 content_bytes_for_db,
                 nonce_for_db,
+                "gemini-1.5-pro".to_string(),
             )
             .with_role(role_str_val)
             .with_parts(json!({"type": "text", "text": *plain_content_str}))
@@ -715,6 +716,7 @@ mod get_session_data_for_generation_tests {
             _,                    // 18: history_management_strategy
             _,                    // 19: history_management_limit
             _,                    // 20: user_persona_name
+            _,                    // 21: player_chronicle_id
         ) = result.unwrap();
 
         assert_eq!(
@@ -889,6 +891,7 @@ mod get_session_data_for_generation_tests {
             _,                    // 18: history_management_strategy
             _,                    // 19: history_management_limit
             _,                    // 20: user_persona_name
+            _,                    // 21: player_chronicle_id
         ) = result.unwrap();
 
         assert_eq!(
@@ -1128,6 +1131,7 @@ mod get_session_data_for_generation_tests {
                 *role_enum,
                 content_bytes_for_db,
                 nonce_for_db,
+                "gemini-1.5-pro".to_string(),
             )
             .with_role(role_str_val)
             .with_parts(json!({"type": "text", "text": *plain_content_str}))
@@ -1179,6 +1183,7 @@ mod get_session_data_for_generation_tests {
             _,                    // 18: history_management_strategy
             _,                    // 19: history_management_limit
             _,                    // 20: user_persona_name
+            _,                    // 21: player_chronicle_id
         ) = result.unwrap();
 
         // Token counts with Gemma for "Okay then." (3) and "See you." (2) = 5. Budget is 8.
@@ -1459,6 +1464,7 @@ mod get_session_data_for_generation_tests {
                 *role_enum,
                 content_bytes_for_db,
                 nonce_for_db,
+                "gemini-1.5-pro".to_string(),
             )
             .with_role(role_str_val)
             .with_parts(json!({"type": "text", "text": plain_content_str}))
@@ -1594,6 +1600,7 @@ mod get_session_data_for_generation_tests {
             _,                                // 18: history_management_strategy
             _,                                // 19: history_management_limit
             _,                                // 20: user_persona_name
+            _,                                // 21: player_chronicle_id
         ) = result.unwrap();
 
         // Verify actual_recent_history_tokens is what we set up (around 140)
@@ -1777,6 +1784,7 @@ mod get_session_data_for_generation_tests {
                 *role,
                 content_bytes,
                 nonce_bytes,
+                "gemini-1.5-pro".to_string(),
             )
             .with_role(role.to_string())
             .with_parts(json!({"type": "text", "text": *content}))
@@ -1929,6 +1937,7 @@ mod get_session_data_for_generation_tests {
                 *role,
                 content_bytes,
                 nonce_bytes,
+                "gemini-1.5-pro".to_string(),
             )
             .with_role(role.to_string())
             .with_parts(json!({"type": "text", "text": *content}))
@@ -2008,6 +2017,7 @@ mod get_session_data_for_generation_tests {
             _,                    // 18: history_management_strategy
             _,                    // 19: history_management_limit
             _,                    // 20: user_persona_name
+            _,                    // 21: player_chronicle_id
         ) = result.unwrap();
 
         assert_eq!(

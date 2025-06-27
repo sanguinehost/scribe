@@ -460,9 +460,10 @@ pub enum PipelineCall {
     RetrieveRelevantChunks {
         user_id: Uuid,                             // Renamed from chat_id
         session_id_for_chat_history: Option<Uuid>, // New field - Updated to Option<Uuid>
+        active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New field
+        chronicle_id_for_search: Option<Uuid>, // New field for chronicle search
         query_text: String,
         limit: u64,
-        active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New field
     },
     ProcessAndEmbedMessage {
         message_id: Uuid,
@@ -477,6 +478,13 @@ pub enum PipelineCall {
         decrypted_keywords: Option<Vec<String>>,
         is_enabled: bool,
         is_constant: bool,
+    },
+    ProcessAndEmbedChronicleEvent {
+        event_id: Uuid,
+    },
+    DeleteChronicleEventChunks {
+        event_id: Uuid,
+        user_id: Uuid,
     },
 }
 
@@ -609,6 +617,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         user_id: Uuid,                                     // New parameter
         session_id_for_chat_history: Option<Uuid>, // New parameter - Updated to Option<Uuid>
         active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New parameter
+        chronicle_id_for_search: Option<Uuid>, // New parameter for chronicle search
         query_text: &str,
         limit: u64,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
@@ -619,9 +628,10 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             .push(PipelineCall::RetrieveRelevantChunks {
                 user_id,
                 session_id_for_chat_history, // This is Option<Uuid>
+                active_lorebook_ids_for_search, // Corrected order
+                chronicle_id_for_search,
                 query_text: query_text.to_string(), // Corrected order
                 limit,                       // Corrected order
-                active_lorebook_ids_for_search, // Corrected order
             });
 
         // Return the next response from the queue
@@ -666,6 +676,43 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         // In a real scenario, this would interact with Qdrant via QdrantClientService
         // For the mock, we just log and return Ok.
         // If tests need to verify this was called, they can check logs or add to `self.calls`.
+        Ok(())
+    }
+
+    async fn process_and_embed_chronicle_event(
+        &self,
+        _state: Arc<AppState>,
+        event: crate::models::chronicle_event::ChronicleEvent,
+        _session_dek: Option<&crate::auth::session_dek::SessionDek>,
+    ) -> Result<(), AppError> {
+        tracing::info!(
+            target: "mock_embedding_pipeline",
+            "MockEmbeddingPipelineService::process_and_embed_chronicle_event called for event_id: {}",
+            event.id
+        );
+        // Record the call
+        self.calls.lock().unwrap().push(PipelineCall::ProcessAndEmbedChronicleEvent {
+            event_id: event.id,
+        });
+        Ok(())
+    }
+
+    async fn delete_chronicle_event_chunks(
+        &self,
+        _state: Arc<AppState>,
+        event_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        tracing::info!(
+            target: "mock_embedding_pipeline",
+            "MockEmbeddingPipelineService::delete_chronicle_event_chunks called for event_id: {}, user_id: {}",
+            event_id, user_id
+        );
+        // Record the call
+        self.calls.lock().unwrap().push(PipelineCall::DeleteChronicleEventChunks {
+            event_id,
+            user_id,
+        });
         Ok(())
     }
 }
@@ -1073,16 +1120,8 @@ impl TestAppStateBuilder {
             self.db_pool.clone(),
         ));
 
-        // Create narrative intelligence service for testing
-        let narrative_intelligence_service = Arc::new(
-            NarrativeIntelligenceService::for_development_with_deps(
-                self.ai_client.clone(),
-                chronicle_service,
-                lorebook_service.clone(),
-                self.qdrant_service.clone(),
-                self.embedding_client.clone(),
-            )
-        );
+        // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
+        // due to circular dependency (service needs AppState, but AppState is built from services)
 
         let services = AppStateServices {
             ai_client: self.ai_client,
@@ -1102,10 +1141,27 @@ impl TestAppStateBuilder {
                 None,
             )
             .await?,
-            narrative_intelligence_service,
+            // narrative_intelligence_service will be added after AppState is built
         };
 
-        Ok(AppState::new(self.db_pool, self.config, services))
+        let mut app_state = AppState::new(self.db_pool, self.config, services);
+        
+        // Now create the narrative intelligence service with the fully constructed AppState
+        let narrative_intelligence_service = Arc::new(
+            NarrativeIntelligenceService::for_development_with_deps(
+                app_state.ai_client.clone(),
+                chronicle_service,
+                app_state.lorebook_service.clone(),
+                app_state.qdrant_service.clone(),
+                app_state.embedding_client.clone(),
+                Arc::new(app_state.clone()),
+            )
+        );
+        
+        // Set the narrative intelligence service
+        app_state.set_narrative_intelligence_service(narrative_intelligence_service);
+        
+        Ok(app_state)
     }
 }
 
