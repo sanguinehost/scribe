@@ -761,6 +761,7 @@ async fn add_real_client_test_user_message(
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
+                model_name: "gemini-1.5-pro".to_string(),
             };
             diesel::insert_into(chat_messages_dsl::chat_messages)
                 .values(&new_message)

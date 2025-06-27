@@ -1195,7 +1195,8 @@ mod tests {
             );
 
             // Should preserve the last 4 messages (tail)
-            assert_eq!(calculation.recent_history_with_tokens.len(), 6); // Started with 10, should have 6 left
+            // Need to remove 4500 tokens = 5 messages, so should have 5 left
+            assert_eq!(calculation.recent_history_with_tokens.len(), 5); // Started with 10, should have 5 left
             assert!(current_total <= max_allowed, "Token count should be within limit");
 
             // Verify tail preservation: the last messages should be preserved

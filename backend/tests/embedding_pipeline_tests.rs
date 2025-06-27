@@ -246,6 +246,7 @@ async fn test_process_and_embed_message_integration() {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-1.5-pro".to_string(),
     };
 
     let embedding_dimension = 768;
@@ -304,6 +305,7 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-1.5-pro".to_string(),
     };
 
     // Configure mock embedding client to always return an error
@@ -503,6 +505,7 @@ async fn test_retrieve_relevant_chunks_success_with_real_execution() {
             test_user_id,
             Some(test_session_id),
             None,
+            None, // chronicle_id_for_search
             query,
             5,
         )
@@ -569,6 +572,7 @@ async fn test_retrieve_relevant_chunks_no_results() {
             Uuid::new_v4(),       // user_id
             Some(Uuid::new_v4()), // session_id_for_chat_history
             None,                 // active_lorebook_ids_for_search
+            None,                 // chronicle_id_for_search
             "A query that finds nothing",
             5,
         )
@@ -671,6 +675,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
             Uuid::new_v4(),
             Some(Uuid::new_v4()),
             None,
+            None, // chronicle_id_for_search
             "Query leading to Qdrant error",
             2,
         )
@@ -865,6 +870,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             Uuid::new_v4(),                      // user_id
             Some(session_id),                    // session_id_for_chat_history
             None,                                // active_lorebook_ids_for_search
+            None,                                // chronicle_id_for_search
             query_text,
             limit,
         )
@@ -1026,6 +1032,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             Uuid::new_v4(),
             Some(session_id),
             None,
+            None, // chronicle_id_for_search
             query_text,
             limit,
         )
@@ -1174,6 +1181,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             Uuid::new_v4(),
             Some(session_id),
             None,
+            None, // chronicle_id_for_search
             query_text,
             limit,
         )
@@ -1326,6 +1334,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             Uuid::new_v4(),
             Some(session_id),
             None,
+            None, // chronicle_id_for_search
             query_text,
             limit,
         )
@@ -1406,6 +1415,7 @@ async fn test_rag_context_injection_with_qdrant() {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-1.5-pro".to_string(),
     };
 
     // Configure mock embedding client for a sequence of calls
@@ -1525,6 +1535,7 @@ async fn test_rag_context_injection_with_qdrant() {
             user_id,                 // user_id
             Some(chat_session_id),   // session_id_for_chat_history
             Some(vec![lorebook_id]), // active_lorebook_ids_for_search
+            None,                    // chronicle_id_for_search
             query_text,              // query_text
             limit_per_source,        // limit_per_source
         )
@@ -1855,6 +1866,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-1.5-pro".to_string(),
     };
 
     let content_a2 = "User A Session 2 confidential cat strategies";
@@ -1871,6 +1883,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-1.5-pro".to_string(),
     };
 
     let content_b1 = "User B Session 1 private alien agenda";
@@ -1887,6 +1900,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-1.5-pro".to_string(),
     };
 
     // 4. Configure Mock Embeddings (one for each message chunk, one for each query)
@@ -1940,6 +1954,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             user_a_id,
             Some(session_a1_id),
             None,
+            None, // chronicle_id_for_search
             query1_text,
             limit,
         )
@@ -1967,6 +1982,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             user_a_id,
             Some(session_a2_id),
             None,
+            None, // chronicle_id_for_search
             query2_text,
             limit,
         )
@@ -1994,6 +2010,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             user_a_id,
             Some(session_b1_id),
             None,
+            None, // chronicle_id_for_search
             query3_text,
             limit,
         )
@@ -2013,6 +2030,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             user_b_id,
             Some(session_b1_id),
             None,
+            None, // chronicle_id_for_search
             query4_text,
             limit,
         )
@@ -2040,6 +2058,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             user_b_id,
             Some(session_a1_id),
             None,
+            None, // chronicle_id_for_search
             query5_text,
             limit,
         )
@@ -2256,6 +2275,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             user_c_id,
             None,
             Some(vec![lorebook_c1_id]),
+            None, // chronicle_id_for_search
             query1_text,
             limit,
         )
@@ -2283,6 +2303,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             user_c_id,
             None,
             Some(vec![lorebook_c2_id]),
+            None, // chronicle_id_for_search
             query2_text,
             limit,
         )
@@ -2310,6 +2331,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             user_c_id,
             None,
             Some(vec![lorebook_d1_id]),
+            None, // chronicle_id_for_search
             query3_text,
             limit,
         )
@@ -2329,6 +2351,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             user_d_id,
             None,
             Some(vec![lorebook_d1_id]),
+            None, // chronicle_id_for_search
             query4_text,
             limit,
         )
@@ -2356,6 +2379,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             user_d_id,
             None,
             Some(vec![lorebook_c1_id]),
+            None, // chronicle_id_for_search
             query5_text,
             limit,
         )
@@ -2381,6 +2405,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             user_c_id,
             None,
             Some(vec![lorebook_c1_id, lorebook_c2_id]),
+            None,                    // chronicle_id_for_search
             query6_text,
             limit,
         )

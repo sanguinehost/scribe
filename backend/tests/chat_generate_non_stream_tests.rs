@@ -1436,6 +1436,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-2.5-pro".to_string(),
     };
 
     // Insert message 1 (User)
@@ -1781,6 +1782,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-2.5-pro".to_string(),
     };
 
     // Insert message 1 (User)
@@ -2110,6 +2112,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-2.5-pro".to_string(),
     };
 
     // Insert message 1 (User)
@@ -2502,6 +2505,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-2.5-pro".to_string(),
     };
 
     // Insert message 1 (User)
@@ -2796,6 +2800,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-2.5-pro".to_string(),
     };
 
     // Insert message 1 (User)
@@ -3108,6 +3113,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-2.5-pro".to_string(),
     };
 
     let create_message_result = conn

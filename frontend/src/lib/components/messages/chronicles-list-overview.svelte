@@ -35,6 +35,20 @@
 		}
 	});
 
+	// Listen for chronicle creation events
+	onMount(() => {
+		const handleChronicleCreated = async (event: CustomEvent) => {
+			console.log('[Chronicles List] New chronicle created, refreshing list');
+			await chronicleStore.loadChronicles();
+		};
+		
+		window.addEventListener('chronicle-created', handleChronicleCreated as EventListener);
+		
+		return () => {
+			window.removeEventListener('chronicle-created', handleChronicleCreated as EventListener);
+		};
+	});
+
 	function handleSelectChronicle(chronicleId: string) {
 		selectedChronicleStore.selectChronicle(chronicleId);
 	}

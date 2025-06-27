@@ -3,6 +3,10 @@ name = "scribe-backend"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "re_embed_chronicles"
+path = "src/bin/re_embed_chronicles.rs"
+
 [dependencies]
 axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Align with tonic and axum-login ^0.7.0, ADDED tokio feature
 axum-macros = "0.4.1" # Added for debug_handler
@@ -35,6 +39,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
 anyhow = "1.0.98"
 futures-util = "0.3.31"
 bigdecimal = { version = "0.4.8", features = ["serde"] }
+crc32fast = "1.4.2"
 
 deadpool = "0.12.2"
 deadpool-diesel = { version = "0.6.1", features = ["postgres", "rt_tokio_1", "serde"] }
@@ -97,6 +102,7 @@ utf8_iter = "1.0.0" # Corrected crate name (underscore vs hyphen)
 rustls-pemfile = "2.1.2"
 tokio-rustls = "0.26.0"
 rcgen = "0.13.1"  # For generating self-signed certificates
+clap = { version = "4.5.26", features = ["derive"] }
 
 tokio-stream = "0.1"
 
@@ -147,6 +153,7 @@ secrecy = { version = "0.10.3", features = ["serde"] } # Fix E0432: Add secrecy 
 [lib]
 name = "scribe_backend"
 path = "src/lib.rs"
+
 
 # Optional: If you have separate integration tests
 # [[test]]

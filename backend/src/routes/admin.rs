@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, put},
+    routing::{get, post, put},
 };
 use axum_login::AuthSession;
 use chrono::{DateTime, Utc};
@@ -46,6 +46,7 @@ pub struct AdminUserDetailResponse {
 pub struct UpdateUserRoleRequest {
     pub role: UserRole,
 }
+
 
 // Middleware to check if user is Admin
 fn require_admin(auth_session: &CurrentAuthSession) -> Result<(), AppError> {
@@ -320,6 +321,7 @@ async fn update_user_role_handler(
 
     Ok(Json(user_detail).into_response())
 }
+
 
 pub fn admin_routes() -> Router<AppState> {
     Router::new()

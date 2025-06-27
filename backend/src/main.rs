@@ -259,15 +259,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         .context("Failed to initialize file storage directories")?;
 
     // --- Initialize Narrative Intelligence Service ---
-    let narrative_intelligence_service = Arc::new(
-        NarrativeIntelligenceService::for_production_with_deps(
-            ai_client_arc.clone(),
-            chronicle_service.clone(),
-            lorebook_service.clone(),
-            qdrant_service.clone(),
-            embedding_client_arc.clone(),
-        )
-    );
+    // Note: Will be initialized after AppState is created due to circular dependency
 
     Ok(AppStateServices {
         ai_client: ai_client_arc,
@@ -291,7 +283,6 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
             )
             .await?
         },
-        narrative_intelligence_service,
     })
 }
 
@@ -426,7 +417,21 @@ fn setup_app_state_and_auth(
     let auth_layer =
         AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer).build();
 
-    let app_state = AppState::new(pool.clone(), config.clone(), services);
+    let mut app_state = AppState::new(pool.clone(), config.clone(), services);
+    
+    // Initialize narrative intelligence service after AppState creation to avoid circular dependency
+    let chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
+    let narrative_intelligence_service = Arc::new(
+        NarrativeIntelligenceService::for_production_with_deps(
+            app_state.ai_client.clone(),
+            chronicle_service,
+            app_state.lorebook_service.clone(),
+            app_state.qdrant_service.clone(),
+            app_state.embedding_client.clone(),
+            Arc::new(app_state.clone()),
+        )
+    );
+    app_state.set_narrative_intelligence_service(narrative_intelligence_service);
 
     Ok((app_state, auth_layer))
 }

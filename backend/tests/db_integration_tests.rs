@@ -1024,6 +1024,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     MessageRole::User,
                     b"Hello, character!".to_vec(),
                     None,
+                    "gemini-1.5-pro".to_string(),
                 )
                 .with_role("user".to_string())
                 .with_parts(json!({"type": "text", "text": "Hello, character!"}))
@@ -1037,6 +1038,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     MessageRole::Assistant,
                     b"Hello, user!".to_vec(),
                     None,
+                    "gemini-1.5-pro".to_string(),
                 )
                 .with_role("assistant".to_string())
                 .with_parts(json!({"type": "text", "text": "Hello, user!"}))
@@ -1214,6 +1216,7 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-2.5-pro".to_string(),
     };
 
     conn_setup

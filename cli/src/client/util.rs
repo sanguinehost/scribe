@@ -276,6 +276,7 @@ pub(super) async fn handle_non_streaming_chat_response(
                     completion_tokens: None,
                     raw_prompt_ciphertext: None,
                     raw_prompt_nonce: None,
+                    model_name: "gemini-2.5-flash".to_string(),
                 });
             }
 
@@ -299,6 +300,7 @@ pub(super) async fn handle_non_streaming_chat_response(
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            model_name: "gemini-2.5-flash".to_string(),
         });
     }
 
@@ -320,6 +322,7 @@ pub(super) async fn handle_non_streaming_chat_response(
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
+                model_name: "gemini-2.5-flash".to_string(),
             })
         }
         Err(e) => {

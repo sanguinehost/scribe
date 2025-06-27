@@ -1379,4 +1379,5 @@ AppError::InternalServerErrorGeneric(format!(
         info!("Created new AI lorebook: {}", created_lorebook.id);
         Ok(created_lorebook.id)
     }
+
 }

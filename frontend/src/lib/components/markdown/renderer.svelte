@@ -14,6 +14,7 @@
 	import H6 from './h6.svelte';
 	import P from './p.svelte';
 	import Code from './code.svelte';
+	import Hr from './hr.svelte';
 	let { md }: { md: string } = $props();
 
 	const renderer: ComponentsMap = {
@@ -29,7 +30,8 @@
 		h4: H4,
 		h5: H5,
 		h6: H6,
-		p: P
+		p: P,
+		hr: Hr
 	};
 </script>
 

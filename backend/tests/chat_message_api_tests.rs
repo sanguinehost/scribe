@@ -135,6 +135,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         completion_tokens: None,
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
+        model_name: "gemini-1.5-pro".to_string(),
     };
 
     test_app

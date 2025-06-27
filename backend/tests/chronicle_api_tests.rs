@@ -17,7 +17,6 @@ use scribe_backend::{
     },
     test_helpers::{self, TestDataGuard, TestApp},
     schema,
-    routes::chronicles::ExtractEventsResponse,
 };
 use serde_json::json;
 use tower::util::ServiceExt;

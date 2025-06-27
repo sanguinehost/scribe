@@ -19,6 +19,7 @@ pub mod narrative_tools;
 pub mod factory;
 pub mod registry;
 pub mod tools;
+pub mod persona_context;
 
 #[cfg(test)]
 mod narrative_tools_tests;
@@ -28,6 +29,7 @@ pub use agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig, NarrativeW
 pub use factory::AgenticNarrativeFactory;
 pub use registry::ToolRegistry;
 pub use tools::{ScribeTool, ToolError, ToolParams, ToolResult};
+pub use persona_context::UserPersonaContext;
 pub use narrative_tools::{
     CreateChronicleEventTool, CreateLorebookEntryTool, 
     AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,

@@ -772,6 +772,7 @@ pub async fn create_session_and_maybe_first_message(
             auto_save_chats: Some(true),
             theme: Some("system".to_string()),
             notifications_enabled: Some(true),
+            typing_speed: Some(30),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }

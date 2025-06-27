@@ -25,17 +25,15 @@ use crate::{
         chat_override::ChatCharacterOverride,
         chats::DbInsertableChatMessage, // ChatMessage and MessageRole will be from super::types
         lorebooks::ChatSessionLorebook, // User is used by get_session_data_for_generation
-        chronicle_event::{EventFilter, EventOrderBy}, // For chronicle event retrieval
     },
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::{
-        embeddings::{RetrievedChunk, ChronicleEventMetadata}, // For RAG chunks and chronicle metadata
+        embeddings::RetrievedChunk, // For RAG chunks
         // history_manager::HistoryManager, // Removed, manage_history is a free function
         hybrid_token_counter::CountingMode,
         rag_budget_manager::{ContextBudgetPlanner, DynamicRagSelector}, // For unified RAG budget management
         tokenizer_service::TokenEstimate,
         user_settings_service::UserSettingsService, // For retrieving user context settings
-        ChronicleService, // For chronicle event retrieval
     },
 };
 // Corrected QdrantClient import
@@ -686,6 +684,7 @@ pub async fn get_session_data_for_generation(
                         user_id,
                         None, // Not searching chat history here
                         Some(lorebook_ids.clone()),
+                        None, // Not searching chronicles here (done separately)
                         &user_message_content, // query_text
                         rag_query_limit_per_source,
                     )
@@ -702,50 +701,29 @@ pub async fn get_session_data_for_generation(
             }
         }
 
-        // Retrieve Chronicle Events (if chronicle is linked to this session)
+        // Retrieve Chronicle Events (if chronicle is linked to this session) using semantic search
         if let Some(chronicle_id) = player_chronicle_id_from_session {
-            info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG.");
+            info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG using semantic search.");
             
-            // Create chronicle service
-            let chronicle_service = ChronicleService::new(state.pool.clone());
-            
-            // Create event filter for recent events
-            let event_filter = EventFilter {
-                event_type: None, // Get all event types
-                source: None, // Get events from all sources
-                limit: Some(10), // Limit to 10 most recent events for RAG
-                offset: Some(0),
-                order_by: Some(EventOrderBy::CreatedAtDesc), // Most recent first
-            };
-            
-            match chronicle_service.get_chronicle_events(user_id, chronicle_id, event_filter).await {
-                Ok(chronicle_events) => {
-                    info!(%session_id, num_chronicle_events = chronicle_events.len(), "Retrieved chronicle events.");
-                    
-                    // Convert chronicle events to RetrievedChunk format for RAG pipeline
-                    for event in chronicle_events {
-                        // Create a synthetic RetrievedChunk for the chronicle event
-                        let chunk_text = format!("[{}] {}", event.event_type, event.summary);
-                        
-                        // Create synthetic metadata for chronicle events
-                        let chronicle_metadata = ChronicleEventMetadata {
-                            event_id: event.id,
-                            event_type: event.event_type.clone(),
-                            chronicle_id: event.chronicle_id,
-                            created_at: event.created_at,
-                        };
-                        
-                        let chronicle_chunk = RetrievedChunk {
-                            text: chunk_text,
-                            score: 0.8, // Give chronicle events high relevance score
-                            metadata: crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_metadata),
-                        };
-                        
-                        combined_rag_candidates.push(chronicle_chunk);
-                    }
+            match state
+                .embedding_pipeline_service
+                .retrieve_relevant_chunks(
+                    state.clone(),
+                    user_id,
+                    None,             // Not searching chat history here
+                    None,             // Not searching lorebooks here
+                    Some(chronicle_id), // Search this chronicle
+                    &user_message_content,
+                    10,               // Limit to top 10 chronicle events
+                )
+                .await
+            {
+                Ok(chronicle_chunks) => {
+                    info!(%session_id, %chronicle_id, num_chronicle_chunks = chronicle_chunks.len(), "Retrieved semantically relevant chronicle events for RAG.");
+                    combined_rag_candidates.extend(chronicle_chunks);
                 }
                 Err(e) => {
-                    warn!(%session_id, %chronicle_id, error = %e, "Failed to retrieve chronicle events for RAG. Proceeding without them.");
+                    warn!(%session_id, %chronicle_id, error = %e, "Failed to retrieve chronicle events for RAG using semantic search. Proceeding without them.");
                 }
             }
         } else {
@@ -762,6 +740,7 @@ pub async fn get_session_data_for_generation(
                     user_id,
                     Some(session_id), // Searching chat history for the current session
                     None,             // Not searching lorebooks here
+                    None,             // Not searching chronicles here (done separately above)
                     &user_message_content, // query_text
                     rag_query_limit_per_source,
                 )
@@ -1666,7 +1645,7 @@ pub async fn stream_ai_response_and_save_message(
                             
                             info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to call narrative_intelligence_service.process_conversation_context");
                             
-                            match state_for_full_save.narrative_intelligence_service.process_conversation_context(
+                            match state_for_full_save.narrative_intelligence_service.as_ref().unwrap().process_conversation_context(
                                 full_user_id_clone,
                                 full_session_id_clone,
                                 player_chronicle_id_clone,
@@ -1717,14 +1696,24 @@ pub async fn stream_ai_response_and_save_message(
             warn!(session_id = %stream_session_id, stream_error_occurred = stream_error_occurred, accumulated_content_len = accumulated_content.len(), "NARRATIVE_DEBUG: Unexpected condition - neither success nor error case matched");
         }
         
-        // Wait for token usage data from the spawned task and yield it
+        // Wait for token usage data from the spawned task and yield it with timeout
         if !stream_error_occurred && !accumulated_content.is_empty() {
             info!(session_id = %stream_session_id, "Waiting for token usage data from spawned task");
-            if let Some(token_event) = token_receiver.recv().await {
-                info!(session_id = %stream_session_id, "Received token usage data, yielding to stream");
-                yield Ok(token_event);
-            } else {
-                warn!(session_id = %stream_session_id, "No token usage data received from spawned task");
+            
+            // Use timeout to prevent indefinite blocking
+            match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
+                Ok(Some(token_event)) => {
+                    info!(session_id = %stream_session_id, "Received token usage data, yielding to stream");
+                    yield Ok(token_event);
+                }
+                Ok(None) => {
+                    warn!(session_id = %stream_session_id, "Token sender dropped without sending data");
+                    yield Ok(ScribeSseEvent::Error("Processing completed without token data".to_string()));
+                }
+                Err(_) => {
+                    error!(session_id = %stream_session_id, "Timeout waiting for token usage data from spawned task");
+                    yield Ok(ScribeSseEvent::Error("Processing timeout - message may be incomplete".to_string()));
+                }
             }
         }
         

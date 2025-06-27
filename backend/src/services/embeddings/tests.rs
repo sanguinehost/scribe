@@ -208,19 +208,9 @@ mod tests {
             pool.clone(),
         ));
 
-        // Create narrative intelligence service
-        let narrative_intelligence_service = Arc::new(
-            crate::services::narrative_intelligence_service::NarrativeIntelligenceService::for_development_with_deps(
-                ai_client.clone(),
-                chronicle_service,
-                lorebook_service.clone(),
-                mock_qdrant.clone(),
-                mock_embed_client.clone(),
-            )
-        );
-
+        // First create services without narrative intelligence service
         let services = AppStateServices {
-            ai_client,
+            ai_client: ai_client.clone(),
             embedding_client: mock_embed_client.clone(),
             qdrant_service: mock_qdrant.clone(),
             embedding_pipeline_service: embedding_pipeline_service_concrete,
@@ -228,13 +218,12 @@ mod tests {
             user_persona_service,
             token_counter: token_counter_service,
             encryption_service,
-            lorebook_service,
+            lorebook_service: lorebook_service.clone(),
             auth_backend,
             file_storage_service,
             email_service: Arc::new(crate::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
             )),
-            narrative_intelligence_service,
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));
@@ -535,6 +524,7 @@ mod tests {
                 user_id,
                 Some(session_id),
                 None,
+                None, // chronicle_id_for_search
                 query_text,
                 5,
             )
@@ -1602,6 +1592,7 @@ mod tests {
                 user_id,
                 Some(session_id),
                 None,
+                None, // chronicle_id_for_search
                 query_text,
                 limit,
             )
@@ -1781,6 +1772,7 @@ mod tests {
                 user_id,
                 None,
                 Some(active_lorebook_ids.clone()),
+                None, // chronicle_id_for_search
                 query_text,
                 limit,
             )
@@ -1871,6 +1863,7 @@ mod tests {
                 user_id,
                 Some(session_id),
                 Some(active_lorebook_ids.clone()),
+                None, // chronicle_id_for_search
                 query_text,
                 limit,
             )
@@ -1930,6 +1923,7 @@ mod tests {
                 user_id,
                 None, // No chat session
                 None, // No lorebooks
+                None, // chronicle_id_for_search
                 query_text,
                 limit,
             )
@@ -1969,6 +1963,7 @@ mod tests {
                 user_id,
                 None,         // No chat session
                 Some(vec![]), // Empty list of lorebook IDs
+                None, // chronicle_id_for_search
                 query_text,
                 limit,
             )
@@ -2024,6 +2019,7 @@ mod tests {
                 user_id,
                 Some(session_id), // Chat session provided
                 Some(vec![]),     // Empty list of lorebook IDs
+                None, // chronicle_id_for_search
                 query_text,
                 limit,
             )
@@ -2155,6 +2151,7 @@ mod tests {
                 user_id,
                 Some(session_id),
                 Some(vec![lorebook_id]),
+                None, // chronicle_id_for_search
                 query_text,
                 limit_per_source,
             )
@@ -2244,6 +2241,7 @@ mod tests {
                 user_id,
                 Some(session_id),
                 Some(vec![lorebook_id]),
+                None, // chronicle_id_for_search
                 query_text,
                 limit,
             )
@@ -2348,6 +2346,7 @@ mod tests {
                 user_id,
                 Some(session_id),
                 None,
+                None, // chronicle_id_for_search
                 query_text,
                 limit,
             )
@@ -2398,6 +2397,7 @@ mod tests {
                 user_id,
                 None,
                 Some(active_lorebook_ids.clone()),
+                None, // chronicle_id_for_search
                 query_text,
                 limit,
             )

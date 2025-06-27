@@ -583,6 +583,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
             user_id,
             None, // No chat session for character generation
             Some(vec![lorebook_id]), // Query the specific lorebook
+            None, // No chronicle search for character generation
             &query_text,
             10, // Limit to top 10 most relevant chunks
         ).await {
@@ -668,6 +669,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
             user_id,
             None, // No chat session for character generation
             Some(vec![lorebook_id]), // Query the specific lorebook
+            None, // No chronicle search for character generation
             &query_text,
             10, // Limit to top 10 most relevant chunks
         ).await {

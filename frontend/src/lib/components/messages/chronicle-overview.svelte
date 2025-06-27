@@ -107,6 +107,23 @@
 		await loadEvents();
 	});
 
+	// Listen for chronicle event updates
+	onMount(() => {
+		const handleEventsUpdated = async (event: CustomEvent) => {
+			const { chronicleId: eventChronicleId } = event.detail;
+			if (eventChronicleId === chronicleId) {
+				console.log('[Chronicle Overview] Events updated, refreshing');
+				await loadEvents();
+			}
+		};
+		
+		window.addEventListener('chronicle-events-updated', handleEventsUpdated as EventListener);
+		
+		return () => {
+			window.removeEventListener('chronicle-events-updated', handleEventsUpdated as EventListener);
+		};
+	});
+
 	async function loadChronicle() {
 		isLoadingChronicle = true;
 		try {

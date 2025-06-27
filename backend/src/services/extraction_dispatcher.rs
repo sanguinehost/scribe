@@ -145,12 +145,17 @@ impl ExtractionDispatcher {
         // Apply timeout if configured
         let timeout_duration = std::time::Duration::from_secs(self.feature_flags.agentic_extraction_timeout_secs);
         
+        // TODO: Retrieve user's persona context for extraction
+        // For now, pass None - this will be implemented when persona retrieval is added
+        let persona_context = None;
+        
         let extraction_future = agentic_runner.process_narrative_event(
             user_id,
             chat_session_id,
             chronicle_id,
             messages,
             session_dek,
+            persona_context,
         );
 
         let workflow_result = match tokio::time::timeout(timeout_duration, extraction_future).await {

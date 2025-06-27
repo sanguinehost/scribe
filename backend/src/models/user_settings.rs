@@ -39,6 +39,7 @@ pub struct UserSettings {
     // Timestamps
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub typing_speed: Option<i32>,
 }
 
 #[derive(Insertable, Debug)]
@@ -69,6 +70,7 @@ pub struct NewUserSettings {
     pub auto_save_chats: Option<bool>,
     pub theme: Option<String>,
     pub notifications_enabled: Option<bool>,
+    pub typing_speed: Option<i32>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -96,6 +98,7 @@ pub struct UpdateUserSettingsRequest {
     pub auto_save_chats: Option<bool>,
     pub theme: Option<String>,
     pub notifications_enabled: Option<bool>,
+    pub typing_speed: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)] // Added Deserialize
@@ -123,6 +126,7 @@ pub struct UserSettingsResponse {
     pub auto_save_chats: Option<bool>,
     pub theme: Option<String>,
     pub notifications_enabled: Option<bool>,
+    pub typing_speed: Option<i32>,
 
     // Timestamps
     pub created_at: DateTime<Utc>,
@@ -148,6 +152,7 @@ impl From<UserSettings> for UserSettingsResponse {
             auto_save_chats: settings.auto_save_chats,
             theme: settings.theme,
             notifications_enabled: settings.notifications_enabled,
+            typing_speed: settings.typing_speed,
             created_at: settings.created_at,
             updated_at: settings.updated_at,
         }

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, onMount } from 'svelte';
 	import { Button } from '../ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 	import { Input } from '../ui/input';
@@ -106,6 +106,20 @@
 	// Load global settings on component mount
 	$effect(() => {
 		loadGlobalSettings();
+	});
+
+	// Listen for chronicle creation events to refresh the chronicle list
+	onMount(() => {
+		const handleChronicleCreated = async (event: CustomEvent) => {
+			console.log('[Chat Config] New chronicle created, refreshing chronicles');
+			await loadChronicles();
+		};
+		
+		window.addEventListener('chronicle-created', handleChronicleCreated as EventListener);
+		
+		return () => {
+			window.removeEventListener('chronicle-created', handleChronicleCreated as EventListener);
+		};
 	});
 
 	// Load chat settings when chat prop changes and global settings are loaded

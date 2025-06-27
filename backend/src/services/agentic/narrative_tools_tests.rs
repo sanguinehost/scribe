@@ -4,11 +4,19 @@ mod tests {
     use super::super::tools::{ScribeTool, ToolParams};
     use serde_json::json;
     use uuid::Uuid;
+    use std::sync::Arc;
+    use crate::test_helpers::MockAiClient;
 
     #[tokio::test]
     async fn test_analyze_text_significance_tool() {
         // Arrange
-        let tool = AnalyzeTextSignificanceTool::new();
+        let mock_ai_client = Arc::new(MockAiClient::new_with_response(json!({
+            "is_significant": true,
+            "confidence": 0.9,
+            "reason": "Dragon attack is a significant combat event",
+            "suggested_categories": ["chronicle_events"]
+        }).to_string()));
+        let tool = AnalyzeTextSignificanceTool::new(mock_ai_client);
         
         let params = json!({
             "messages": [
@@ -31,7 +39,16 @@ mod tests {
     #[tokio::test]
     async fn test_extract_temporal_events_tool() {
         // Arrange
-        let tool = ExtractTemporalEventsTool::new();
+        let mock_ai_client = Arc::new(MockAiClient::new_with_response(json!({
+            "events": [
+                {
+                    "event_type": "COMBAT",
+                    "summary": "Goblin horde defeated in battle",
+                    "details": "Major combat encounter with casualties"
+                }
+            ]
+        }).to_string()));
+        let tool = ExtractTemporalEventsTool::new(mock_ai_client);
         
         let params = json!({
             "messages": [
@@ -58,7 +75,17 @@ mod tests {
     #[tokio::test]
     async fn test_extract_world_concepts_tool() {
         // Arrange
-        let tool = ExtractWorldConceptsTool::new();
+        let mock_ai_client = Arc::new(MockAiClient::new_with_response(json!({
+            "concepts": [
+                {
+                    "name": "Archmage Zephyr",
+                    "category": "character",
+                    "content": "Head of the Crystal Tower, master of elemental magic",
+                    "keywords": "archmage, crystal tower, elemental magic"
+                }
+            ]
+        }).to_string()));
+        let tool = ExtractWorldConceptsTool::new(mock_ai_client);
         
         let params = json!({
             "messages": [
@@ -89,7 +116,28 @@ mod tests {
         // This test demonstrates how tools can be composed in the workflow
         
         // Step 1: Analyze significance
-        let significance_tool = AnalyzeTextSignificanceTool::new();
+        let mock_ai_client = Arc::new(MockAiClient::new_with_response(json!({
+            "is_significant": true,
+            "confidence": 0.85,
+            "reason": "Discovery of ancient artifact is narratively significant",
+            "suggested_categories": ["chronicle_events", "lorebook_entries"],
+            "events": [
+                {
+                    "event_type": "DISCOVERY",
+                    "summary": "Ancient artifact discovered",
+                    "details": "The party found an ancient orb"
+                }
+            ],
+            "concepts": [
+                {
+                    "name": "Orb of Eternal Night",
+                    "category": "magical_item",
+                    "content": "Ancient magical artifact with dark powers",
+                    "keywords": "orb, artifact, dark magic"
+                }
+            ]
+        }).to_string()));
+        let significance_tool = AnalyzeTextSignificanceTool::new(mock_ai_client.clone());
         let messages = json!({
             "messages": [
                 {"role": "user", "content": "The party discovered an ancient artifact"},
@@ -105,13 +153,13 @@ mod tests {
             let categories = significance_result["suggested_categories"].as_array().unwrap();
             
             if categories.iter().any(|c| c.as_str() == Some("chronicle_events")) {
-                let events_tool = ExtractTemporalEventsTool::new();
+                let events_tool = ExtractTemporalEventsTool::new(mock_ai_client.clone());
                 let events_result = events_tool.execute(&messages).await.unwrap();
                 assert!(!events_result["events"].as_array().unwrap().is_empty());
             }
             
             if categories.iter().any(|c| c.as_str() == Some("lorebook_entries")) {
-                let concepts_tool = ExtractWorldConceptsTool::new();
+                let concepts_tool = ExtractWorldConceptsTool::new(mock_ai_client.clone());
                 let concepts_result = concepts_tool.execute(&messages).await.unwrap();
                 assert!(!concepts_result["concepts"].as_array().unwrap().is_empty());
             }
@@ -121,7 +169,8 @@ mod tests {
     #[tokio::test]
     async fn test_tool_input_validation() {
         // Test that tools properly validate input parameters
-        let tool = AnalyzeTextSignificanceTool::new();
+        let mock_ai_client = Arc::new(MockAiClient::new());
+        let tool = AnalyzeTextSignificanceTool::new(mock_ai_client);
         
         // Missing required field
         let invalid_params = json!({
@@ -149,7 +198,8 @@ mod tests {
         ];
         
         // Step 1: Triage
-        let triage_tool = AnalyzeTextSignificanceTool::new();
+        let mock_ai_client = Arc::new(MockAiClient::new());
+        let triage_tool = AnalyzeTextSignificanceTool::new(mock_ai_client.clone());
         let triage_result = triage_tool.execute(&json!({"messages": messages})).await.unwrap();
         
         if !triage_result["is_significant"].as_bool().unwrap() {
@@ -160,8 +210,8 @@ mod tests {
         // (currently has placeholder implementation)
         
         // Step 3: Extract information (no DB operations)
-        let extract_events_tool = ExtractTemporalEventsTool::new();
-        let extract_concepts_tool = ExtractWorldConceptsTool::new();
+        let extract_events_tool = ExtractTemporalEventsTool::new(mock_ai_client.clone());
+        let extract_concepts_tool = ExtractWorldConceptsTool::new(mock_ai_client.clone());
         
         let events = extract_events_tool.execute(&json!({"messages": messages})).await.unwrap();
         let concepts = extract_concepts_tool.execute(&json!({"messages": messages})).await.unwrap();

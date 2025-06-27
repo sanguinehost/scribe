@@ -471,6 +471,11 @@ impl NarrativeEventBuilder {
         self
     }
     
+    pub fn impacts_respect(mut self, target: Uuid, change: f32) -> Self {
+        self.event = self.event.add_valence(target, ValenceType::Respect, change);
+        self
+    }
+    
     pub fn believed_by(mut self, agent_id: Uuid) -> Self {
         self.event = self.event.with_modality(EventModality::BelievedBy(agent_id));
         self

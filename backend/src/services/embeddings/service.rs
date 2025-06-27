@@ -328,13 +328,14 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     /// Returns embedding client errors if query embedding fails,
     /// `AppError::SerializationError` if metadata deserialization fails,
     /// Qdrant service errors if vector search operations fail.
-    #[instrument(skip_all, fields(user_id = %user_id, query_length = query_text.len(), session_id_for_chat = ?session_id_for_chat_history, lorebook_ids = ?active_lorebook_ids_for_search))]
+    #[instrument(skip_all, fields(user_id = %user_id, query_length = query_text.len(), session_id_for_chat = ?session_id_for_chat_history, lorebook_ids = ?active_lorebook_ids_for_search, chronicle_id = ?chronicle_id_for_search))]
     async fn retrieve_relevant_chunks(
         &self,
         state: Arc<AppState>,
         user_id: Uuid,
         session_id_for_chat_history: Option<Uuid>,
         active_lorebook_ids_for_search: Option<Vec<Uuid>>,
+        chronicle_id_for_search: Option<Uuid>,
         query_text: &str,
         limit_per_source: u64,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
@@ -648,6 +649,97 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }
         }
 
+        // Search chronicle events if chronicle_id is provided
+        if let Some(chronicle_id) = chronicle_id_for_search {
+            debug!(%user_id, %chronicle_id, "Constructing chronicle filter for RAG");
+            let chronicle_filter = Filter {
+                must: vec![
+                    Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "user_id".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                            }),
+                            ..Default::default()
+                        })),
+                    },
+                    Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "source_type".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword("chronicle_event".to_string())),
+                            }),
+                            ..Default::default()
+                        })),
+                    },
+                    Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "chronicle_id".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword(chronicle_id.to_string())),
+                            }),
+                            ..Default::default()
+                        })),
+                    },
+                ],
+                ..Default::default()
+            };
+            debug!(?chronicle_filter, "Chronicle filter for RAG");
+
+            match qdrant_service
+                .search_points(
+                    query_embedding.clone(),
+                    limit_per_source,
+                    Some(chronicle_filter.clone()),
+                )
+                .await
+            {
+                Ok(search_results) => {
+                    debug!(
+                        num_results = search_results.len(),
+                        %user_id, %chronicle_id,
+                        "Raw Qdrant results for chronicle events (RAG)"
+                    );
+                    for scored_point in search_results {
+                        debug!(point_id = ?scored_point.id, score = scored_point.score, %user_id, %chronicle_id, "Processing chronicle point (RAG)");
+                        // Try to extract chunk_text from payload first, then fall back to metadata parsing
+                        let chunk_text = if let Some(text_value) = scored_point.payload.get("chunk_text") {
+                            match text_value {
+                                qdrant_client::qdrant::Value { kind: Some(qdrant_client::qdrant::value::Kind::StringValue(s)) } => s.clone(),
+                                _ => format!("[{}] Chronicle event", "Unknown"),
+                            }
+                        } else {
+                            format!("[{}] Chronicle event", "Unknown")
+                        };
+
+                        match super::retrieval::ChronicleEventMetadata::try_from(scored_point.payload.clone()) {
+                            Ok(chronicle_meta) => {
+                                debug!(?chronicle_meta, %user_id, %chronicle_id, "Successfully parsed chronicle metadata (RAG)");
+                                combined_results.push(RetrievedChunk {
+                                    score: scored_point.score,
+                                    text: chunk_text,
+                                    metadata: RetrievedMetadata::Chronicle(chronicle_meta),
+                                });
+                            }
+                            Err(e) => {
+                                warn!(
+                                    point_id = %scored_point.id.as_ref().map(|id| format!("{id:?}")).unwrap_or_default(),
+                                    error = %e,
+                                    payload = ?scored_point.payload,
+                                    %user_id, %chronicle_id,
+                                    "Failed to parse chronicle event payload during RAG search"
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(error = %e, filter = ?chronicle_filter, %user_id, %chronicle_id, "Failed to search chronicle events in Qdrant (RAG)");
+                    // Continue with other results even if chronicle search fails
+                }
+            }
+        }
+
         // Sort combined results by score in descending order
         combined_results.sort_by(|a, b| {
             b.score
@@ -823,6 +915,191 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         info!(
             "Successfully deleted chunks for lorebook entry {} for user {}",
             original_lorebook_entry_id, user_id
+        );
+        Ok(())
+    }
+
+    /// Processes a chronicle event by chunking its content and storing embeddings in the vector database.
+    ///
+    /// # Errors
+    ///
+    /// Returns chunking errors if content chunking fails,
+    /// embedding client errors if content embedding fails,
+    /// `AppError::SerializationError` if metadata serialization fails,
+    /// Qdrant service errors if vector storage operations fail.
+    #[instrument(skip_all, fields(event_id = %event.id, chronicle_id = %event.chronicle_id))]
+    async fn process_and_embed_chronicle_event(
+        &self,
+        state: Arc<AppState>,
+        event: crate::models::chronicle_event::ChronicleEvent,
+        session_dek: Option<&crate::auth::session_dek::SessionDek>,
+    ) -> Result<(), AppError> {
+        info!(event_id = %event.id, chronicle_id = %event.chronicle_id, "Processing and embedding chronicle event");
+        
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+
+        // Create content to embed: combine event type and summary
+        let content_to_embed = match session_dek {
+            Some(dek) => {
+                match event.get_decrypted_summary(&dek.0) {
+                    Ok(decrypted_summary) => {
+                        debug!(event_id = %event.id, "Successfully decrypted chronicle event summary for embedding");
+                        format!("[{}] {}", event.event_type, decrypted_summary)
+                    }
+                    Err(e) => {
+                        warn!(event_id = %event.id, error = %e, "Failed to decrypt chronicle event summary. Using legacy plaintext for embedding");
+                        format!("[{}] {}", event.event_type, event.summary)
+                    }
+                }
+            }
+            None => {
+                if event.has_encrypted_summary() {
+                    error!(event_id = %event.id, "Chronicle event has encrypted summary but no DEK provided for decryption. This is a security violation!");
+                    return Err(AppError::Forbidden("Cannot process encrypted chronicle event without decryption key".to_string()));
+                } else {
+                    debug!(event_id = %event.id, "Processing legacy plaintext chronicle event");
+                    format!("[{}] {}", event.event_type, event.summary)
+                }
+            }
+        };
+        
+        // 1. Chunk the content
+        let chunks = chunk_text(&content_to_embed, &self.chunk_config, Some(format!("chronicle_event_{}", event.id)), 0).map_err(|e| {
+            error!(error = %e, event_id = %event.id, "Failed to chunk chronicle event content");
+            AppError::ChunkingError(format!("Chronicle event chunking failed: {e}"))
+        })?;
+
+        if chunks.is_empty() {
+            warn!(event_id = %event.id, "No chunks generated for chronicle event");
+            return Ok(());
+        }
+
+        info!(event_id = %event.id, num_chunks = chunks.len(), "Generated {} chunks for chronicle event", chunks.len());
+
+        // 2. Process each chunk
+        let mut points_to_upsert = Vec::new();
+        for (index, chunk) in chunks.iter().enumerate() {
+            // 2a. Generate embedding
+            let embedding_vector = match embedding_client
+                .embed_content(&chunk.content, "RETRIEVAL_DOCUMENT", None)
+                .await
+            {
+                Ok(vec) => vec,
+                Err(e) => {
+                    error!(error = %e, chunk_index = index, event_id = %event.id, "Failed to embed chronicle event chunk");
+                    continue; // Skip this chunk
+                }
+            };
+
+            // Add a small delay to mitigate potential rate limiting
+            sleep(Duration::from_millis(6100)).await;
+
+            // 2b. Prepare metadata
+            let metadata = super::retrieval::ChronicleEventMetadata {
+                event_id: event.id,
+                event_type: event.event_type.clone(),
+                chronicle_id: event.chronicle_id,
+                created_at: event.created_at,
+            };
+
+            // 2c. Create Qdrant point with proper metadata structure
+            let point_id = Uuid::new_v4(); // Unique ID per chunk point
+            let point = match create_qdrant_point(
+                point_id,
+                embedding_vector,
+                Some(serde_json::json!({
+                    "event_id": metadata.event_id.to_string(),
+                    "event_type": metadata.event_type,
+                    "chronicle_id": metadata.chronicle_id.to_string(),
+                    "created_at": metadata.created_at.to_rfc3339(),
+                    "user_id": event.user_id.to_string(),
+                    "source_type": "chronicle_event",
+                    "chunk_text": chunk.content.clone(),
+                })),
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    error!(error = %e, chunk_index = index, event_id = %event.id, "Failed to create Qdrant point struct for chronicle event");
+                    continue; // Skip this chunk
+                }
+            };
+            points_to_upsert.push(point);
+        }
+
+        // 3. Upsert points to Qdrant in batch
+        if points_to_upsert.is_empty() {
+            info!(event_id = %event.id, "No valid points generated for chronicle event upserting.");
+        } else {
+            info!(event_id = %event.id, "Upserting {} points to Qdrant for chronicle event", points_to_upsert.len());
+            if let Err(e) = qdrant_service.store_points(points_to_upsert).await {
+                error!(error = %e, event_id = %event.id, "Failed to upsert chronicle event points to Qdrant");
+                return Err(e);
+            }
+            info!(event_id = %event.id, "Successfully upserted points for chronicle event");
+        }
+
+        Ok(())
+    }
+
+    /// Deletes all embedding chunks associated with a specific chronicle event.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::VectorDbError` if Qdrant deletion fails.
+    #[instrument(skip_all, fields(event_id = %event_id, user_id = %user_id))]
+    async fn delete_chronicle_event_chunks(
+        &self,
+        state: Arc<AppState>,
+        event_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        info!("Attempting to delete chunks for chronicle event {}", event_id);
+
+        let qdrant_service = &state.qdrant_service;
+
+        // Create filter to match the specific chronicle event and user
+        let filter = Filter {
+            must: vec![
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "user_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "source_type".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword("chronicle_event".to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "event_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(event_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+            ],
+            ..Default::default()
+        };
+        debug!(
+            ?filter,
+            "Constructed filter for deleting chronicle event chunks"
+        );
+
+        qdrant_service.delete_points_by_filter(filter).await?;
+        info!(
+            "Successfully deleted chunks for chronicle event {} for user {}",
+            event_id, user_id
         );
         Ok(())
     }

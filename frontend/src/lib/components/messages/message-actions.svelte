@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { ChevronLeft, ChevronRight, MoreHorizontal, Copy, Code, RotateCcw, Edit } from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight, MoreHorizontal, Copy, Code, RotateCcw, Edit, Trash2 } from 'lucide-svelte';
 	import { clickOutside } from '$lib/utils/click-outside';
 	import RawPromptModal from './raw-prompt-modal.svelte';
 	import type { ScribeChatMessage } from '$lib/types';
@@ -11,6 +11,7 @@
 		loading = false,
 		onRetry,
 		onEdit,
+		onDelete,
 		onPreviousVariant,
 		onNextVariant,
 		hasVariants = false,
@@ -21,6 +22,7 @@
 		loading?: boolean;
 		onRetry?: () => void;
 		onEdit?: () => void;
+		onDelete?: () => void;
 		onPreviousVariant?: () => void;
 		onNextVariant?: () => void;
 		hasVariants?: boolean;
@@ -118,6 +120,20 @@
 		<Copy size={10} />
 	</Button>
 
+	<!-- Delete button for user messages -->
+	{#if message.message_type === 'User' && !readonly}
+		<Button 
+			variant="ghost" 
+			size="sm" 
+			class="h-6 w-6 p-0 rounded-md bg-background/80 backdrop-blur-sm hover:bg-destructive/80 border border-border/40 shadow-sm text-destructive"
+			onclick={() => onDelete?.()}
+			disabled={loading}
+			title="Delete message"
+		>
+			<Trash2 size={10} />
+		</Button>
+	{/if}
+
 	<!-- More actions dropdown (custom implementation) - only for AI messages -->
 	{#if message.message_type === 'Assistant'}
 		<div class="relative" use:clickOutside={closeDropdown}>
@@ -155,6 +171,16 @@
 							>
 								<Code size={14} class="mr-2" />
 								Show raw prompt
+							</button>
+							<button 
+								class="flex w-full items-center px-3 py-2 text-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
+								onclick={() => {
+									onDelete?.();
+									closeDropdown();
+								}}
+							>
+								<Trash2 size={14} class="mr-2" />
+								Delete message
 							</button>
 						{/if}
 					{/if}

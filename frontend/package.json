@@ -76,7 +76,9 @@
 	},
 	"packageManager": "pnpm@10.10.0",
 	"dependencies": {
+		"@microsoft/fetch-event-source": "^2.0.1",
 		"@types/dompurify": "^3.2.0",
-		"dompurify": "^3.2.6"
+		"dompurify": "^3.2.6",
+		"eventsource-parser": "^3.0.3"
 	}
 }

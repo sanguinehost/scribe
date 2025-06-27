@@ -15,6 +15,7 @@ use crate::models::chronicle_event::{
     ChronicleEvent, NewChronicleEvent, EventFilter, EventOrderBy,
     CreateEventRequest,
 };
+use crate::services::{ChronicleDeduplicationService, DeduplicationConfig};
 use crate::schema::{player_chronicles, chronicle_events, chat_sessions};
 
 /// ChronicleService handles all Chronicle-related database operations
@@ -335,6 +336,7 @@ impl ChronicleService {
         user_id: Uuid,
         chronicle_id: Uuid,
         request: CreateEventRequest,
+        session_dek: Option<&crate::auth::session_dek::SessionDek>,
     ) -> Result<ChronicleEvent, AppError> {
         // First verify chronicle ownership
         self.get_chronicle(user_id, chronicle_id).await?;
@@ -342,6 +344,78 @@ impl ChronicleService {
         let mut new_event: NewChronicleEvent = request.into();
         new_event.chronicle_id = chronicle_id;
         new_event.user_id = user_id;
+
+        // Encrypt the summary if DEK is provided
+        if let Some(dek) = session_dek {
+            let summary_bytes = new_event.summary.as_bytes();
+            match crate::crypto::encrypt_gcm(summary_bytes, &dek.0) {
+                Ok((ciphertext, nonce)) => {
+                    new_event.summary_encrypted = Some(ciphertext);
+                    new_event.summary_nonce = Some(nonce);
+                    // Keep the plaintext summary for backward compatibility during migration
+                    tracing::debug!(event_type = %new_event.event_type, "Encrypted chronicle event summary");
+                }
+                Err(e) => {
+                    error!(error = %e, event_type = %new_event.event_type, "Failed to encrypt chronicle event summary");
+                    return Err(AppError::CryptoError(format!("Failed to encrypt event summary: {}", e)));
+                }
+            }
+        }
+
+        // Create temporary event for deduplication check
+        let temp_event = ChronicleEvent {
+            id: Uuid::new_v4(), // Temporary ID
+            chronicle_id: new_event.chronicle_id,
+            user_id: new_event.user_id,
+            event_type: new_event.event_type.clone(),
+            summary: new_event.summary.clone(),
+            source: new_event.source.clone(),
+            event_data: new_event.event_data.clone(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            summary_encrypted: new_event.summary_encrypted.clone(),
+            summary_nonce: new_event.summary_nonce.clone(),
+            timestamp_iso8601: new_event.timestamp_iso8601,
+            actors: new_event.actors.clone(),
+            action: new_event.action.clone(),
+            context_data: new_event.context_data.clone(),
+            causality: new_event.causality.clone(),
+            valence: new_event.valence.clone(),
+            modality: new_event.modality.clone(),
+        };
+
+        // Check for duplicates before inserting
+        let dedup_service = ChronicleDeduplicationService::new(self.db_pool.clone(), None);
+        // Removed debug output
+        match dedup_service.check_for_duplicates(&temp_event).await {
+            Ok(duplicate_result) => {
+                tracing::debug!(
+                    "Duplicate check result: is_duplicate={}, confidence={}, reasoning={}",
+                    duplicate_result.is_duplicate,
+                    duplicate_result.confidence,
+                    duplicate_result.reasoning
+                );
+                if duplicate_result.is_duplicate {
+                    tracing::warn!(
+                        event_id = %temp_event.id,
+                        duplicate_id = ?duplicate_result.duplicate_event_id,
+                        confidence = duplicate_result.confidence,
+                        reasoning = %duplicate_result.reasoning,
+                        "Duplicate event detected, skipping creation"
+                    );
+                    
+                    // Return the existing duplicate event instead of creating a new one
+                    if let Some(duplicate_id) = duplicate_result.duplicate_event_id {
+                        tracing::debug!("Returning existing duplicate event: {}", duplicate_id);
+                        return self.get_event(user_id, duplicate_id).await;
+                    }
+                }
+            }
+            Err(e) => {
+                // Log the error but don't fail the event creation
+                tracing::warn!(error = %e, "Failed to check for duplicates, proceeding with event creation");
+            }
+        }
 
         let conn = self.db_pool.get().await.map_err(|e| {
             error!("Failed to get database connection: {}", e);
