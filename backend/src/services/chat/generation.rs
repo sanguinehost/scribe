@@ -1432,6 +1432,7 @@ pub async fn stream_ai_response_and_save_message(
     let sse_stream = async_stream::stream! {
         let mut accumulated_content = String::new();
         let mut stream_error_occurred = false;
+        let mut chunk_index: u32 = 0;
         
         // Create a channel to receive token usage data from the spawned task
         let (token_sender, mut token_receiver) = tokio::sync::mpsc::unbounded_channel::<ScribeSseEvent>();
@@ -1465,8 +1466,35 @@ pub async fn stream_ai_response_and_save_message(
                             warn!(session_id = %stream_session_id, content = %chunk.content, "Detected potential safety refusal in AI response");
                         }
 
-                        accumulated_content.push_str(&chunk.content);
-                        yield Ok(ScribeSseEvent::Content(chunk.content.clone()));
+                        // Create structured chunk with integrity checking
+                        let checksum = crc32fast::hash(chunk.content.as_bytes());
+                        let structured_chunk = super::types::StreamedChunk {
+                            index: chunk_index,
+                            content: chunk.content.clone(),
+                            checksum,
+                        };
+                        
+                        // Serialize to JSON for transmission
+                        match serde_json::to_string(&structured_chunk) {
+                            Ok(json_payload) => {
+                                debug!(
+                                    chunk_index = chunk_index,
+                                    content_len = chunk.content.len(),
+                                    checksum = checksum,
+                                    "Sending structured chunk via SSE"
+                                );
+                                
+                                accumulated_content.push_str(&chunk.content);
+                                yield Ok(ScribeSseEvent::Content(json_payload));
+                                chunk_index += 1;
+                            }
+                            Err(e) => {
+                                error!(error = ?e, "Failed to serialize structured chunk");
+                                // Fallback to original behavior for this chunk
+                                accumulated_content.push_str(&chunk.content);
+                                yield Ok(ScribeSseEvent::Content(chunk.content.clone()));
+                            }
+                        }
                     }
                 }
                 Ok(GeminiResponseChunkAlias::ReasoningChunk(chunk)) => {
