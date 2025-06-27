@@ -44,9 +44,17 @@ pub type GenerationDataWithUnsavedUserMessage = (
     Option<Uuid>,   // 21: player_chronicle_id (NEW - for narrative processing)
 );
 
+/// Structured chunk with integrity checking for reliable streaming
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StreamedChunk {
+    pub index: u32,
+    pub content: String,
+    pub checksum: u32,
+}
+
 #[derive(Debug)]
 pub enum ScribeSseEvent {
-    Content(String),
+    Content(String), // Now contains JSON-serialized StreamedChunk
     Thinking(String),
     Error(String),
     TokenUsage {

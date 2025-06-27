@@ -5,6 +5,13 @@ import type { ScribeChatMessage, ScribeChatSession } from '$lib/types';
 
 // StreamingService loaded successfully
 
+// Structured chunk format matching backend
+interface StreamedChunk {
+  index: number;
+  content: string;
+  checksum: number;
+}
+
 // Define the shape of our streaming messages
 export interface StreamingMessage {
   id: string;
@@ -69,9 +76,51 @@ class StreamingService {
   private typingQueues = new Map<string, string[]>();
   private typingIntervals = new Map<string, NodeJS.Timeout>();
   private typingSpeed = 50; // ms between characters
+  
+  // Chunk buffering for reliable streaming
+  private chunkBuffers = new Map<string, { [index: number]: string }>();
+  private expectedChunkIndex = new Map<string, number>();
 
   constructor(config: Partial<StreamingConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  /**
+   * Simple CRC32 calculation for chunk verification
+   * Note: This should match the rust crc32fast implementation
+   */
+  private calculateChecksum(content: string): number {
+    // Simple implementation - in production, use a proper CRC32 library
+    let crc = 0xFFFFFFFF;
+    const bytes = new TextEncoder().encode(content);
+    
+    for (let i = 0; i < bytes.length; i++) {
+      crc ^= bytes[i];
+      for (let j = 0; j < 8; j++) {
+        crc = (crc & 1) ? (crc >>> 1) ^ 0xEDB88320 : crc >>> 1;
+      }
+    }
+    
+    return (crc ^ 0xFFFFFFFF) >>> 0; // Convert to unsigned 32-bit
+  }
+
+  /**
+   * Process chunk buffer to ensure ordered delivery
+   */
+  private processChunkBuffer(messageId: string): void {
+    const buffer = this.chunkBuffers.get(messageId);
+    let nextIndex = this.expectedChunkIndex.get(messageId) ?? 0;
+    
+    // Process all contiguous chunks from the buffer
+    while (buffer && buffer[nextIndex] !== undefined) {
+      const content = buffer[nextIndex];
+      this.addToTypingQueue(messageId, content);
+      delete buffer[nextIndex];
+      nextIndex++;
+    }
+    
+    // Update the index for the next expected chunk
+    this.expectedChunkIndex.set(messageId, nextIndex);
   }
 
   /**
@@ -225,9 +274,43 @@ class StreamingService {
       switch (event.event) {
         case 'content':
           if (event.data) {
-            // Use the tracked message ID for typing queue (may have been updated by message_saved)
-            const messageIdForTyping = this.currentAssistantMessageId || assistantMessageId;
-            this.addToTypingQueue(messageIdForTyping, event.data);
+            try {
+              // Parse structured chunk
+              const chunk: StreamedChunk = JSON.parse(event.data);
+              const { index, content, checksum } = chunk;
+
+              // Verify checksum
+              const calculatedChecksum = this.calculateChecksum(content);
+              if (calculatedChecksum !== checksum) {
+                console.error(`🔍 Checksum mismatch for chunk ${index}. Expected: ${checksum}, Got: ${calculatedChecksum}`);
+                // For now, we'll still process the chunk but log the error
+                // Future enhancement: Implement retry request mechanism
+              }
+
+              // Use the tracked message ID for chunk buffering
+              const messageIdForChunks = this.currentAssistantMessageId || assistantMessageId;
+
+              // Initialize buffer and expected index if they don't exist
+              if (!this.chunkBuffers.has(messageIdForChunks)) {
+                this.chunkBuffers.set(messageIdForChunks, {});
+                this.expectedChunkIndex.set(messageIdForChunks, 0);
+              }
+
+              // Store chunk in the buffer
+              const buffer = this.chunkBuffers.get(messageIdForChunks)!;
+              buffer[index] = content;
+
+              console.log(`📦 Received chunk ${index} for message ${messageIdForChunks}, content length: ${content.length}`);
+
+              // Process the buffer to render chunks in the correct order
+              this.processChunkBuffer(messageIdForChunks);
+
+            } catch (e) {
+              console.error("Failed to parse structured chunk, falling back to raw content:", e);
+              // Fallback to old behavior if structured parsing fails
+              const messageIdForTyping = this.currentAssistantMessageId || assistantMessageId;
+              this.addToTypingQueue(messageIdForTyping, event.data);
+            }
           }
           break;
 
@@ -400,8 +483,9 @@ class StreamingService {
       }
     }
     
-    // Clear any remaining typing queues
+    // Clear any remaining typing queues and chunk buffers
     this.clearTyping(assistantMessageId);
+    this.clearChunkBuffer(assistantMessageId);
     
     // Mark message as no longer loading
     let messageUpdated = false;
@@ -429,6 +513,14 @@ class StreamingService {
     }
     this.typingQueues.delete(messageId);
     this.isTyping = this.typingIntervals.size > 0;
+  }
+
+  /**
+   * Clear chunk buffer for a specific message
+   */
+  private clearChunkBuffer(messageId: string): void {
+    this.chunkBuffers.delete(messageId);
+    this.expectedChunkIndex.delete(messageId);
   }
 
   /**
@@ -564,9 +656,12 @@ class StreamingService {
    * Clear all messages
    */
   public clearMessages(): void {
-    // Clear typing animations
+    // Clear typing animations and chunk buffers
     for (const [messageId] of this.typingIntervals) {
       this.clearTyping(messageId);
+    }
+    for (const [messageId] of this.chunkBuffers.keys()) {
+      this.clearChunkBuffer(messageId);
     }
     
     this.messages = [];
