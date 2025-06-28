@@ -1,22 +1,46 @@
 //! Re-embed all existing chronicle events to ensure they have proper embeddings
 //! for semantic search after we improved the chronicle event retrieval system.
+//!
+//! Usage:
+//!   cargo run --bin re_embed_chronicles -- --username <username> --password <password>
+//!   
+//! This tool requires user credentials to decrypt encrypted chronicle events.
 
 use anyhow::{Result, Context};
 use scribe_backend::{
+    auth::session_dek::SessionDek,
     config::Config,
-    models::chronicle_event::ChronicleEvent,
-    schema::chronicle_events,
+    models::{chronicle_event::ChronicleEvent, users::{User, UserDbQuery}},
+    schema::{chronicle_events, users},
     state::AppState,
     logging::init_subscriber,
     llm::{gemini_client::build_gemini_client, gemini_embedding_client::build_gemini_embedding_client},
     vector_db::QdrantClientService,
 };
-use diesel::{QueryDsl, RunQueryDsl, SelectableHelper};
+use diesel::{QueryDsl, RunQueryDsl, SelectableHelper, ExpressionMethods};
 use std::sync::Arc;
-use tracing::{info, error, debug};
+use tracing::{info, error, warn};
 use tokio::time::{sleep, Duration, Instant};
 use tokio::sync::Semaphore;
 use futures::future::join_all;
+use clap::Parser;
+use secrecy::{SecretString, ExposeSecret};
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Username for authentication
+    #[arg(short, long)]
+    username: String,
+
+    /// Password for authentication
+    #[arg(short, long)]
+    password: String,
+
+    /// Process all users' chronicle events (admin only)
+    #[arg(long)]
+    all_users: bool,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -29,7 +53,11 @@ async fn main() -> Result<()> {
     // Initialize logging  
     init_subscriber();
     
+    // Parse command line arguments
+    let args = Args::parse();
+    
     info!("Starting chronicle event re-embedding process...");
+    info!("Authenticating user: {}", args.username);
     
     // Load configuration
     let config = Arc::new(Config::load().context("Failed to load configuration")?);
@@ -65,20 +93,47 @@ async fn main() -> Result<()> {
     
     let state = Arc::new(app_state);
     
-    // Get all chronicle events from the database
-    let events: Vec<ChronicleEvent> = state
-        .pool
-        .get()
-        .await
-        .context("Failed to get database connection")?
-        .interact(|conn| {
-            chronicle_events::table
-                .select(ChronicleEvent::as_select())
-                .load(conn)
-                .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))??;
+    // Authenticate user and get session DEK
+    let (user, session_dek) = authenticate_user(&state, &args.username, &args.password).await
+        .context("Failed to authenticate user")?;
+    
+    info!("Successfully authenticated user: {} ({})", user.username, user.id);
+    
+    // Get chronicle events for the user (or all if admin)
+    let events: Vec<ChronicleEvent> = if args.all_users {
+        warn!("Processing ALL users' chronicle events - this may take a long time!");
+        // Get all events (admin mode)
+        state
+            .pool
+            .get()
+            .await
+            .context("Failed to get database connection")?
+            .interact(|conn| {
+                chronicle_events::table
+                    .select(ChronicleEvent::as_select())
+                    .load(conn)
+                    .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))??
+    } else {
+        // Get events only for this user
+        let user_id = user.id;
+        state
+            .pool
+            .get()
+            .await
+            .context("Failed to get database connection")?
+            .interact(move |conn| {
+                chronicle_events::table
+                    .filter(chronicle_events::user_id.eq(user_id))
+                    .select(ChronicleEvent::as_select())
+                    .load(conn)
+                    .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))??
+    };
         
     info!("Found {} chronicle events to re-embed", events.len());
     
@@ -112,6 +167,7 @@ async fn main() -> Result<()> {
                 let state = state.clone();
                 let semaphore = semaphore.clone();
                 let event = event.clone();
+                let session_dek = session_dek.clone();
                 let global_idx = chunk_start + idx_in_chunk;
                 
                 tokio::spawn(async move {
@@ -138,10 +194,10 @@ async fn main() -> Result<()> {
                         // Continue anyway - we'll try to re-embed
                     }
                     
-                    // Re-embed the event
+                    // Re-embed the event with the user's session DEK for decryption
                     match state
                         .embedding_pipeline_service
-                        .process_and_embed_chronicle_event(state.clone(), event.clone(), None)
+                        .process_and_embed_chronicle_event(state.clone(), event.clone(), Some(&session_dek))
                         .await
                     {
                         Ok(()) => {
@@ -211,4 +267,60 @@ async fn main() -> Result<()> {
     
     info!("All chronicle events successfully re-embedded!");
     Ok(())
+}
+
+/// Authenticate a user and return their User object and SessionDek for decryption
+async fn authenticate_user(
+    state: &Arc<AppState>, 
+    username: &str, 
+    password: &str
+) -> Result<(User, SessionDek)> {
+    use diesel::OptionalExtension;
+    use scribe_backend::crypto;
+    
+    // Find user by username
+    let user_db_query: UserDbQuery = state
+        .pool
+        .get()
+        .await
+        .context("Failed to get database connection")?
+        .interact({
+            let username = username.to_string();
+            move |conn| {
+                users::table
+                    .filter(users::username.eq(&username))
+                    .select(UserDbQuery::as_select())
+                    .first(conn)
+                    .optional()
+            }
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))?
+        .ok_or_else(|| anyhow::anyhow!("User '{}' not found", username))?;
+    
+    let user = User::from(user_db_query);
+    
+    // Verify password using bcrypt directly
+    if !bcrypt::verify(password, &user.password_hash)
+        .map_err(|e| anyhow::anyhow!("Password verification failed: {}", e))? {
+        return Err(anyhow::anyhow!("Invalid password for user '{}'", username));
+    }
+    
+    // Derive session DEK from password (same way the login process does it)
+    let password_secret = SecretString::new(password.to_string().into_boxed_str());
+    let kek = crypto::derive_kek(&password_secret, &user.kek_salt)
+        .map_err(|e| anyhow::anyhow!("Failed to derive KEK: {}", e))?;
+    
+    // Decrypt the user's DEK using the derived KEK
+    let session_dek_bytes = crypto::decrypt_gcm(
+        &user.encrypted_dek,
+        &user.dek_nonce,
+        &kek
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to decrypt DEK: {}", e))?;
+    
+    let session_dek = SessionDek::new(session_dek_bytes.expose_secret().clone());
+    
+    Ok((user, session_dek))
 }

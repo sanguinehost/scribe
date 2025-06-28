@@ -118,6 +118,7 @@ impl AgenticNarrativeFactory {
         // Creation tools - atomic DB operations for Step 4
         let create_event_tool = Arc::new(CreateChronicleEventTool::new(
             chronicle_service.clone(),
+            app_state.clone(),
         ));
         registry.add_tool(create_event_tool);
 
@@ -163,11 +164,9 @@ impl AgenticNarrativeFactory {
         let world_tool = Arc::new(ExtractWorldConceptsTool::new(ai_client.clone()));
         registry.add_tool(world_tool);
 
-        // Creation tools - atomic DB operations for Step 4
-        let create_event_tool = Arc::new(CreateChronicleEventTool::new(
-            chronicle_service.clone(),
-        ));
-        registry.add_tool(create_event_tool);
+        // Note: CreateChronicleEventTool requires AppState for embedding, 
+        // so we skip it in this method to avoid circular dependencies.
+        // This method is used in tests that don't need embedding functionality.
 
         let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(
             lorebook_service.clone(),
