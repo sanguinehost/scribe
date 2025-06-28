@@ -21,12 +21,14 @@ use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 /// Tool for creating a single chronicle event (atomic operation)
 pub struct CreateChronicleEventTool {
     chronicle_service: Arc<ChronicleService>,
+    app_state: Arc<AppState>,
 }
 
 impl CreateChronicleEventTool {
-    pub fn new(chronicle_service: Arc<ChronicleService>) -> Self {
+    pub fn new(chronicle_service: Arc<ChronicleService>, app_state: Arc<AppState>) -> Self {
         Self {
             chronicle_service,
+            app_state,
         }
     }
 }
@@ -53,91 +55,90 @@ impl ScribeTool for CreateChronicleEventTool {
                     "type": "string",
                     "description": "The UUID of the chronicle to add the event to"
                 },
-                "event_category": {
-                    "type": "string",
-                    "enum": ["WORLD", "CHARACTER", "PLOT", "RELATIONSHIP"],
-                    "description": "High-level category representing the primary narrative pillar affected"
-                },
                 "event_type": {
                     "type": "string",
-                    "enum": [
-                        "DISCOVERY",
-                        "ALTERATION", 
-                        "LORE_EXPANSION",
-                        "STATE_CHANGE",
-                        "DEVELOPMENT",
-                        "INVENTORY_CHANGE",
-                        "PROGRESSION",
-                        "REVELATION",
-                        "TURNING_POINT",
-                        "FORMATION",
-                        "MODIFICATION",
-                        "INTERACTION"
-                    ],
-                    "description": "Abstract event category describing what type of change occurred"
+                    "description": "Hierarchical event classification using dot-notation: CATEGORY.TYPE.SUBTYPE",
+                    "examples": [
+                        "CHARACTER.STATE_CHANGE.DEATH",
+                        "CHARACTER.STATE_CHANGE.INJURY", 
+                        "CHARACTER.DEVELOPMENT.POWER_GAINED",
+                        "CHARACTER.DEVELOPMENT.CHARACTER_GROWTH",
+                        "WORLD.DISCOVERY.LOCATION_DISCOVERY",
+                        "WORLD.ALTERATION.WORLD_CHANGE",
+                        "WORLD.LORE_EXPANSION.WORLD_KNOWLEDGE",
+                        "PLOT.REVELATION.SECRET_REVELATION",
+                        "PLOT.TURNING_POINT.DECISION_POINT",
+                        "PLOT.PROGRESSION.QUEST_PROGRESS",
+                        "RELATIONSHIP.FORMATION.CHARACTER_MET",
+                        "RELATIONSHIP.MODIFICATION.RELATIONSHIP_CHANGE",
+                        "RELATIONSHIP.INTERACTION.SOCIAL_INTERACTION"
+                    ]
                 },
-                "event_subtype": {
+                "action": {
                     "type": "string",
-                    "enum": [
-                        "LOCATION_DISCOVERY",
-                        "WORLD_CHANGE",
-                        "WORLD_KNOWLEDGE",
-                        "CHARACTER_DEATH",
-                        "CHARACTER_INJURY",
-                        "CHARACTER_GROWTH",
-                        "POWER_GAINED",
-                        "TRANSFORMATION",
-                        "ITEM_ACQUISITION",
-                        "QUEST_PROGRESS",
-                        "PLOT_DEVELOPMENT",
-                        "SECRET_REVELATION",
-                        "DECISION_POINT",
-                        "CHARACTER_MET",
-                        "RELATIONSHIP_CHANGE",
-                        "SOCIAL_INTERACTION",
-                        "COMBAT_ENCOUNTER",
-                        "EXPLORATION"
-                    ],
-                    "description": "Specific event subtype providing detailed classification"
+                    "description": "The core verb representing the fundamental act that occurred",
+                    "examples": ["Betrayed", "Discovered", "Defeated", "Transformed", "Created"]
+                },
+                "actors": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "Entity identifier"},
+                            "role": {
+                                "type": "string", 
+                                "enum": ["Agent", "Patient", "Beneficiary", "Instrument", "Helper", "Opponent", "Witness"],
+                                "description": "Narrative role of the actor"
+                            }
+                        },
+                        "required": ["id", "role"]
+                    },
+                    "description": "All entities participating in the event and their narrative roles"
                 },
                 "summary": {
                     "type": "string",
-                    "description": "A concise summary of what happened (optional - can be auto-generated from event_data.description or other fields)"
+                    "description": "A concise summary of what happened"
                 },
-                "subject": {
-                    "type": "string",
-                    "description": "Primary entity initiating or experiencing the event"
-                },
-                "object": {
-                    "type": "string",
-                    "description": "Entity being acted upon (optional)"
-                },
-                "involved_entities": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Other characters, items, or locations relevant to the event"
-                },
-                "event_data": {
+                "context_data": {
                     "type": "object",
-                    "description": "Additional structured data about the event",
+                    "description": "Spatio-temporal and situational information",
                     "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "Where the event took place"
+                        "location_id": {"type": "string", "description": "Where the event took place"},
+                        "time_of_day": {"type": "string", "description": "Time context"},
+                        "details": {"type": "string", "description": "Additional context"}
+                    }
+                },
+                "causality": {
+                    "type": "object",
+                    "description": "Causal relationships with other events",
+                    "properties": {
+                        "causedBy": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Event IDs that caused this event"
                         },
-                        "details": {
-                            "type": "string",
-                            "description": "Additional context or details"
-                        },
-                        "intensity": {
-                            "type": "string",
-                            "enum": ["MINOR", "MODERATE", "MAJOR", "CRITICAL"],
-                            "description": "Significance level of the event"
+                        "causes": {
+                            "type": "array", 
+                            "items": {"type": "string"},
+                            "description": "Event IDs that this event causes"
                         }
                     }
+                },
+                "valence": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "target": {"type": "string", "description": "Entity affected"},
+                            "type": {"type": "string", "description": "Type of value (Trust, Fear, Health, Power, etc.)"},
+                            "change": {"type": "number", "description": "Numerical change (-1.0 to 1.0)"}
+                        },
+                        "required": ["target", "type", "change"]
+                    },
+                    "description": "Emotional or relational impact of the event"
                 }
             },
-            "required": ["user_id", "chronicle_id", "event_category", "event_type", "event_subtype", "subject"]
+            "required": ["user_id", "chronicle_id", "event_type", "action", "actors", "summary"]
         })
     }
 
@@ -153,49 +154,25 @@ impl ScribeTool for CreateChronicleEventTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParams("chronicle_id is required".to_string()))?;
 
-        let event_category = params.get("event_category")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ToolError::InvalidParams("event_category is required".to_string()))?;
-
         let event_type = params.get("event_type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParams("event_type is required".to_string()))?;
 
-        let event_subtype = params.get("event_subtype")
+        let action = params.get("action")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| ToolError::InvalidParams("event_subtype is required".to_string()))?;
+            .ok_or_else(|| ToolError::InvalidParams("action is required".to_string()))?;
 
-        // Try to get summary from params, or generate one from event_data or other fields
+        let actors = params.get("actors")
+            .ok_or_else(|| ToolError::InvalidParams("actors is required".to_string()))?;
+
         let summary = params.get("summary")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .or_else(|| {
-                // Try to extract from event_data.description
-                params.get("event_data")
-                    .and_then(|v| v.as_object())
-                    .and_then(|obj| obj.get("description"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-            })
-            .or_else(|| {
-                // Generate a basic summary from the event components
-                let subject = params.get("subject").and_then(|v| v.as_str()).unwrap_or("Someone");
-                let object = params.get("object").and_then(|v| v.as_str()).unwrap_or("something");
-                Some(format!("{} performed {} action on {}", subject, event_type.to_lowercase(), object))
-            })
-            .ok_or_else(|| ToolError::InvalidParams("summary is required (either directly or in event_data.description)".to_string()))?;
-
-        let subject = params.get("subject")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ToolError::InvalidParams("subject is required".to_string()))?;
+            .ok_or_else(|| ToolError::InvalidParams("summary is required".to_string()))?;
 
         // Optional parameters
-        let object = params.get("object").and_then(|v| v.as_str());
-        let involved_entities = params.get("involved_entities")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
-            .unwrap_or_default();
-        let event_data = params.get("event_data").cloned();
+        let context_data = params.get("context_data").cloned();
+        let causality = params.get("causality").cloned();
+        let valence = params.get("valence").cloned();
 
         // Parse UUIDs
         let user_uuid = Uuid::parse_str(user_id_str)
@@ -204,43 +181,34 @@ impl ScribeTool for CreateChronicleEventTool {
         let chronicle_uuid = Uuid::parse_str(chronicle_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid chronicle_id format".to_string()))?;
 
-        // Create hierarchical event type for storage (encode hierarchy in single field for now)
-        let hierarchical_event_type = format!("{}:{}:{}", event_category, event_type, event_subtype);
-
-        // Build enhanced event_data with entity information
-        let mut enhanced_event_data = if let Some(data) = event_data {
-            data.as_object().cloned().unwrap_or_default()
-        } else {
-            serde_json::Map::new()
-        };
-
-        // Add hierarchical metadata
-        enhanced_event_data.insert("category".to_string(), json!(event_category));
-        enhanced_event_data.insert("type".to_string(), json!(event_type)); 
-        enhanced_event_data.insert("subtype".to_string(), json!(event_subtype));
-        enhanced_event_data.insert("subject".to_string(), json!(subject));
+        // Build event_data with Ars Fabula structured data
+        let mut event_data_obj = serde_json::Map::new();
+        event_data_obj.insert("action".to_string(), json!(action));
+        event_data_obj.insert("actors".to_string(), actors.clone());
         
-        if let Some(obj) = object {
-            enhanced_event_data.insert("object".to_string(), json!(obj));
+        if let Some(context) = context_data {
+            event_data_obj.insert("context_data".to_string(), context);
         }
         
-        if !involved_entities.is_empty() {
-            enhanced_event_data.insert("involved_entities".to_string(), json!(involved_entities));
+        if let Some(causal) = causality {
+            event_data_obj.insert("causality".to_string(), causal);
+        }
+        
+        if let Some(val) = valence {
+            event_data_obj.insert("valence".to_string(), val);
         }
 
         let create_request = crate::models::CreateEventRequest {
-            event_type: hierarchical_event_type,
+            event_type: event_type.to_string(),
             summary: summary.to_string(),
             source: crate::models::EventSource::AiExtracted,
-            event_data: Some(json!(enhanced_event_data)),
+            event_data: Some(json!(event_data_obj)),
         };
 
         info!(
-            "Creating hierarchical chronicle event '{}' ({}:{}:{}) for chronicle {}",
+            "Creating chronicle event '{}' ({}) for chronicle {}",
             summary,
-            event_category,
-            event_type, 
-            event_subtype,
+            event_type,
             chronicle_uuid
         );
 
@@ -264,14 +232,38 @@ impl ScribeTool for CreateChronicleEventTool {
         ).await {
             Ok(event) => {
                 info!("Successfully created chronicle event: {}", event.id);
+                
+                // CRITICAL: Embed the chronicle event for semantic search
+                // This ensures events created by the narrative agent are searchable via RAG
+                if let Err(e) = self.app_state
+                    .embedding_pipeline_service
+                    .process_and_embed_chronicle_event(
+                        self.app_state.clone(), 
+                        event.clone(), 
+                        Some(&session_dek_wrapper)
+                    )
+                    .await
+                {
+                    warn!(
+                        event_id = %event.id, 
+                        error = %e, 
+                        "Failed to embed chronicle event created by narrative agent, but event was created successfully"
+                    );
+                    // Don't fail the event creation if embedding fails
+                } else {
+                    info!(
+                        event_id = %event.id, 
+                        "Successfully embedded chronicle event created by narrative agent for semantic search"
+                    );
+                }
+                
                 Ok(json!({
                     "success": true,
                     "event_id": event.id,
-                    "category": event_category,
-                    "type": event_type,
-                    "subtype": event_subtype,
-                    "subject": subject,
-                    "message": "Hierarchical chronicle event created successfully"
+                    "event_type": event_type,
+                    "action": action,
+                    "summary": summary,
+                    "message": "Chronicle event created and embedded successfully"
                 }))
             }
             Err(e) => {

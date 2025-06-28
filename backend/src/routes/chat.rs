@@ -534,7 +534,13 @@ pub async fn generate_chat_response(
                         if error_from_service_stream {
                             debug!(%session_id, "Service stream ended with an error or an error event was already sent. Not sending additional [DONE] event.");
                         } else if content_produced {
-                            debug!(%session_id, "Service stream ended, sending [DONE] event because content was produced.");
+                            debug!(%session_id, "Service stream ended, adding delay before [DONE] to ensure all chunks are transmitted.");
+                            
+                            // Critical: Add delay to ensure all chunks in the SSE pipeline are transmitted
+                            // This prevents the connection from closing while chunks are still in flight
+                            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                            
+                            debug!(%session_id, "Delay complete, now sending [DONE] event.");
                             yield Ok(Event::default().event("done").data("[DONE]"));
                         } else {
                             debug!(%session_id, "Service stream ended without producing content (and no error), sending [DONE_EMPTY] event.");
@@ -542,7 +548,11 @@ pub async fn generate_chat_response(
                         }
                     };
                     Ok(Sse::new(Box::pin(final_stream))
-                        .keep_alive(KeepAlive::default())
+                        .keep_alive(
+                            KeepAlive::new()
+                                .interval(std::time::Duration::from_secs(1))
+                                .text("keep-alive")
+                        )
                         .into_response())
                 }
                 Err(e) => {
@@ -833,7 +843,11 @@ pub async fn generate_chat_response(
                         }
                     };
                     Ok(Sse::new(Box::pin(final_stream))
-                        .keep_alive(KeepAlive::default())
+                        .keep_alive(
+                            KeepAlive::new()
+                                .interval(std::time::Duration::from_secs(1))
+                                .text("keep-alive")
+                        )
                         .into_response())
                 }
                 Err(e) => {

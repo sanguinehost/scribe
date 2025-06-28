@@ -1477,11 +1477,14 @@ pub async fn stream_ai_response_and_save_message(
                         // Serialize to JSON for transmission
                         match serde_json::to_string(&structured_chunk) {
                             Ok(json_payload) => {
-                                debug!(
+                                info!(
                                     chunk_index = chunk_index,
                                     content_len = chunk.content.len(),
                                     checksum = checksum,
-                                    "Sending structured chunk via SSE"
+                                    content_preview = &chunk.content.chars().take(50).collect::<String>(),
+                                    "🔥 BACKEND: Yielding chunk {} with content: '{}'",
+                                    chunk_index,
+                                    &chunk.content.chars().take(30).collect::<String>()
                                 );
                                 
                                 accumulated_content.push_str(&chunk.content);
@@ -1552,6 +1555,17 @@ pub async fn stream_ai_response_and_save_message(
                     });
 
                     let detailed_error = e.to_string();
+                    
+                    // Special case: If we got PropertyNotFound but have complete content, this is likely a final parsing error
+                    // that can be safely ignored. This commonly happens when Gemini sends complete responses but the final
+                    // API response structure is missing expected fields.
+                    if detailed_error.contains("PropertyNotFound(\"/content/parts\")") && !accumulated_content.is_empty() {
+                        warn!(session_id = %stream_session_id, content_length = accumulated_content.len(), 
+                              "PropertyNotFound error occurred but response appears complete. This may be a final API response parsing issue - treating as successful completion.");
+                        // Don't set error flag and don't send error event, let the stream complete normally
+                        break;
+                    }
+                    
                     let client_error_message = if detailed_error.contains("LLM API error:") {
                         detailed_error
                     } else if detailed_error.contains("Failed to parse stream data") {
@@ -1743,6 +1757,30 @@ pub async fn stream_ai_response_and_save_message(
                     yield Ok(ScribeSseEvent::Error("Processing timeout - message may be incomplete".to_string()));
                 }
             }
+        }
+        
+        // Add a significant delay to ensure all content chunks are flushed through the SSE pipeline
+        // This is critical to prevent the stream from ending before chunks reach the frontend
+        if !accumulated_content.is_empty() {
+            info!(
+                total_chunks = chunk_index,
+                total_content_len = accumulated_content.len(),
+                content_suffix = &accumulated_content.chars().rev().take(100).collect::<String>().chars().rev().collect::<String>(),
+                "🔥 BACKEND: Stream complete. Total chunks: {}, Final content ends with: '{}'",
+                chunk_index,
+                &accumulated_content.chars().rev().take(50).collect::<String>().chars().rev().collect::<String>()
+            );
+            
+            // More aggressive delay to ensure pipeline flush
+            // This gives time for all chunks to traverse the entire SSE pipeline
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            
+            // Send a final "flush" event to ensure the pipeline is clear
+            yield Ok(ScribeSseEvent::Content(serde_json::to_string(&super::types::StreamedChunk {
+                index: chunk_index,
+                content: String::new(), // Empty content as a flush marker
+                checksum: 0,
+            }).unwrap_or_default()));
         }
         
         trace!("Finished SSE async_stream! block in chat_service");
