@@ -891,7 +891,10 @@ class ApiClient {
 	}
 
 	// Text expansion method
-	async expandText(chatId: string, originalText: string): Promise<Result<ExpandTextResponse, ApiError>> {
+	async expandText(
+		chatId: string,
+		originalText: string
+	): Promise<Result<ExpandTextResponse, ApiError>> {
 		const payload: ExpandTextRequest = { original_text: originalText };
 		return this.fetch<ExpandTextResponse>(`/api/chat/${chatId}/expand`, {
 			method: 'POST',
@@ -1041,7 +1044,10 @@ class ApiClient {
 	}
 
 	// Delete an event from a chronicle
-	async deleteChronicleEvent(chronicleId: string, eventId: string): Promise<Result<void, ApiError>> {
+	async deleteChronicleEvent(
+		chronicleId: string,
+		eventId: string
+	): Promise<Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chronicles/${chronicleId}/events/${eventId}`, {
 			method: 'DELETE'
 		});
@@ -1074,14 +1080,53 @@ class ApiClient {
 		start_message_index?: number;
 		end_message_index?: number;
 		extraction_model?: string;
-	}): Promise<Result<{ chronicle: PlayerChronicle; events_extracted: number; events: ChronicleEvent[] }, ApiError>> {
-		return this.fetch<{ chronicle: PlayerChronicle; events_extracted: number; events: ChronicleEvent[] }>(
-			'/api/chronicles/from-chat',
+	}): Promise<
+		Result<
+			{ chronicle: PlayerChronicle; events_extracted: number; events: ChronicleEvent[] },
+			ApiError
+		>
+	> {
+		return this.fetch<{
+			chronicle: PlayerChronicle;
+			events_extracted: number;
+			events: ChronicleEvent[];
+		}>('/api/chronicles/from-chat', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	// Re-chronicle events from a chat session
+	async reChronicleFromChat(
+		chronicleId: string,
+		data: {
+			chat_session_id: string;
+			purge_existing?: boolean;
+			start_message_index?: number;
+			end_message_index?: number;
+			extraction_model?: string;
+			batch_size?: number;
+		}
+	): Promise<
+		Result<
 			{
-				method: 'POST',
-				body: JSON.stringify(data)
-			}
-		);
+				events_created: number;
+				messages_processed: number;
+				events_purged: number;
+				summary: string;
+			},
+			ApiError
+		>
+	> {
+		return this.fetch<{
+			events_created: number;
+			messages_processed: number;
+			events_purged: number;
+			summary: string;
+		}>(`/api/chronicles/${chronicleId}/re-chronicle`, {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
 	}
 
 	// ============================================================================

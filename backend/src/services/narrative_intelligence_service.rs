@@ -124,6 +124,7 @@ impl NarrativeIntelligenceService {
             lorebook_service,
             qdrant_service,
             embedding_client,
+            app_state.clone(),
             workflow_config,
         );
         
@@ -257,6 +258,75 @@ impl NarrativeIntelligenceService {
         }
     }
     
+    /// Process a batch of chat messages for re-chronicling
+    /// 
+    /// This method processes historical chat messages to extract chronicle events.
+    /// It's designed specifically for the re-chronicle feature.
+    pub async fn process_chat_history_batch(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        messages: Vec<ChatMessage>,
+        session_dek: &SessionDek,
+    ) -> Result<NarrativeProcessingResult, AppError> {
+        if messages.is_empty() {
+            return Ok(NarrativeProcessingResult::default());
+        }
+        
+        info!(
+            "Processing chat history batch for user {}: {} messages",
+            user_id,
+            messages.len()
+        );
+        
+        let start_time = std::time::Instant::now();
+        
+        // Retrieve user's persona context for narrative intelligence
+        let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
+        
+        // Execute the agentic workflow for this batch of messages
+        match self.narrative_runner.process_narrative_event(
+            user_id,
+            session_id,
+            chronicle_id,
+            &messages,
+            session_dek,
+            persona_context,
+        ).await {
+            Ok(workflow_result) => {
+                let processing_time = start_time.elapsed().as_millis() as u64;
+                
+                let result = NarrativeProcessingResult {
+                    is_significant: workflow_result.triage_result.is_significant,
+                    confidence: workflow_result.triage_result.confidence as f64,
+                    narrative_insights: self.extract_narrative_insights(&workflow_result.execution_results),
+                    additional_context: Vec::new(),
+                    events_created: self.count_successful_events(&workflow_result.execution_results),
+                    entries_created: self.count_successful_entries(&workflow_result.execution_results),
+                    processing_time_ms: processing_time,
+                };
+                
+                info!(
+                    "Chat history batch processing completed: significant={}, confidence={:.2}, events={}, entries={}, time={}ms",
+                    result.is_significant,
+                    result.confidence,
+                    result.events_created,
+                    result.entries_created,
+                    result.processing_time_ms
+                );
+                
+                Ok(result)
+            },
+            Err(e) => {
+                error!("Chat history batch processing failed: {}", e);
+                // Don't fail the re-chronicle operation entirely
+                warn!("Continuing with next batch despite failure");
+                Ok(NarrativeProcessingResult::default())
+            }
+        }
+    }
+
     /// Future method for batch processing (game events, etc.)
     /// 
     /// This demonstrates the scalable architecture - same tools, different orchestration

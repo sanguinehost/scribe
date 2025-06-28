@@ -65,6 +65,7 @@ impl AgenticNarrativeFactory {
         lorebook_service: Arc<LorebookService>,
         qdrant_service: Arc<dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync>,
         embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
+        app_state: Arc<AppState>,
         config: Option<NarrativeWorkflowConfig>,
     ) -> NarrativeAgentRunner {
         info!("Creating agentic narrative system with individual dependencies");
@@ -82,6 +83,7 @@ impl AgenticNarrativeFactory {
             lorebook_service,
             qdrant_service,
             embedding_client,
+            app_state,
         );
         
         let registry = Arc::new(registry);
@@ -152,6 +154,7 @@ impl AgenticNarrativeFactory {
         lorebook_service: Arc<LorebookService>,
         qdrant_service: Arc<dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync>,
         embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
+        app_state: Arc<AppState>,
     ) {
         // Triage tool - for Step 1 of the workflow
         let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(ai_client.clone()));
@@ -164,9 +167,12 @@ impl AgenticNarrativeFactory {
         let world_tool = Arc::new(ExtractWorldConceptsTool::new(ai_client.clone()));
         registry.add_tool(world_tool);
 
-        // Note: CreateChronicleEventTool requires AppState for embedding, 
-        // so we skip it in this method to avoid circular dependencies.
-        // This method is used in tests that don't need embedding functionality.
+        // Creation tools - atomic DB operations for Step 4
+        let create_event_tool = Arc::new(CreateChronicleEventTool::new(
+            chronicle_service.clone(),
+            app_state.clone(),
+        ));
+        registry.add_tool(create_event_tool);
 
         let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(
             lorebook_service.clone(),
@@ -179,11 +185,15 @@ impl AgenticNarrativeFactory {
             embedding_client,
         ));
         registry.add_tool(search_tool);
+        
+        // Lorebook management tools
+        let update_lorebook_tool = Arc::new(UpdateLorebookEntryTool::new(
+            lorebook_service.clone(),
+            app_state.clone(),
+        ));
+        registry.add_tool(update_lorebook_tool);
 
-        // Note: UpdateLorebookEntryTool requires full AppState, so we skip it in this method
-        // This is intentional - the update tool is less critical than the core workflow tools
-
-        info!("Registered {} core tools (without AppState-dependent tools)", registry.list_tools().len());
+        info!("Registered {} core tools", registry.list_tools().len());
     }
 
     /// Create a development/testing configuration
