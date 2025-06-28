@@ -11,7 +11,7 @@
 	import ChronicleCreation from './messages/chronicle-creation.svelte';
 	import Settings from './settings/Settings.svelte';
 	import { onMount } from 'svelte';
-	import PreviewMessage from './messages/preview-message.svelte';
+	import Message from './messages/message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
 	import type { ScribeChatMessage, User, ScribeChatSession } from '$lib/types';
 	import { getLock } from '$lib/hooks/lock';
@@ -63,6 +63,19 @@
 		currentVariantIndex?: Map<string, number>;
 		onGreetingChanged?: (detail: { index: number; content: string }) => void;
 	} = $props();
+
+	// Messages component logging to track re-renders
+	let messagesComponentId = `messages-${Math.random().toString(36).substr(2, 9)}`;
+	let lastMessageCount = 0;
+	console.log(`🆕 MESSAGES COMPONENT MOUNT: ${messagesComponentId} - ${messages.length} messages`);
+	
+	$effect(() => {
+		// Only log when not loading to avoid animation spam
+		if (!loading && messages.length !== lastMessageCount) {
+			console.log(`📋 MESSAGES LIST EFFECT: ${messagesComponentId} - count: ${messages.length}`);
+			lastMessageCount = messages.length;
+		}
+	});
 
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 	const selectedLorebookStore = SelectedLorebookStore.fromContext();
@@ -131,6 +144,10 @@
 
 		const observer = new MutationObserver((mutations) => {
 			if (!endRef || scrollLock.locked) return;
+			
+			// Don't auto-scroll during streaming to allow user to freely scroll
+			const hasAnimatingMessages = messages.some(m => m.loading || (m as any).isAnimating);
+			if (hasAnimatingMessages) return;
 			
 			// Only scroll for meaningful content changes, not button state changes
 			const shouldScroll = mutations.some(mutation => {
@@ -424,7 +441,7 @@
 				{@const hasVariants = (variants?.length ?? 0) > 0 || currentIndex > 0}
 				{@const variantInfo = hasVariants ? { current: currentIndex, total: (variants?.length ?? 1) - 1 } : null}
 				
-				<PreviewMessage 
+				<Message 
 					{message} 
 					{readonly}
 					{loading}

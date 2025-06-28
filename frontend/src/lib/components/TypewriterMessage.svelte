@@ -17,23 +17,39 @@
   	className?: string;
   } = $props();
 
-  // Reactive character count for CSS animation
-  let charCount = $derived(message.content.length);
+  // NEW ARCHITECTURE: Use displayedContent for the typewriter effect
+  let charCount = $derived(message.displayedContent?.length ?? message.content.length);
   
-  // Determine if we should show the typewriter effect
+  // NEW ARCHITECTURE: Determine if we should show the typewriter effect using isAnimating
   let shouldAnimate = $derived(
     showTypewriter && 
     message.sender === 'assistant' && 
-    message.loading && 
-    message.content.length > 0
+    (message.isAnimating ?? false) && // Use isAnimating for ChatGPT-style animation
+    (message.displayedContent?.length ?? message.content.length) > 0
   );
+
+  // Always use markdown rendering for consistency
+  let displayContent = $derived(message.displayedContent ?? message.content);
+  
+  // Show loading only when we truly have no meaningful content
+  let hasTextContent = $derived(displayContent.replace(/\s/g, '').length > 0);
 </script>
 
 <div 
   class="message-content {className}"
   class:typewriter={shouldAnimate}
   style="--char-count: {charCount}; --cursor-color: {cursorColor}; --animation-duration: {animationDuration}"
-><Markdown md={message.content} /></div>
+>
+  <!-- Show loading spinner when no actual text content -->
+  {#if !hasTextContent}
+    <div class="flex items-center gap-2 text-muted-foreground py-2">
+      <div class="loading-spinner"></div>
+      <span class="text-sm">Thinking...</span>
+    </div>
+  {:else}
+    <Markdown md={displayContent} />
+  {/if}
+</div>
 
 <style>
   .message-content {
@@ -50,7 +66,23 @@
     margin-bottom: 0;
   }
 
-  /* Simplified typewriter effect for markdown content */
+
+  /* Loading spinner */
+  .loading-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* Typewriter effect */
   .typewriter {
     position: relative;
   }
@@ -76,8 +108,7 @@
     }
   }
 
-  /* Remove cursor when not loading */
-  .typewriter:not(.loading)::after,
+  /* Remove cursor when not animating */
   .message-content:not(.typewriter)::after {
     display: none;
   }
