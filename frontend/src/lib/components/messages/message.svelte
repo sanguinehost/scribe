@@ -59,6 +59,17 @@
 		variantInfo?: { current: number; total: number } | null;
 	} = $props();
 
+	// Component lifecycle tracking (reduced logging)
+	let componentId = `preview-${message.id}-${Math.random().toString(36).substr(2, 9)}`;
+	console.log(`🆕 COMPONENT MOUNT: ${componentId} - Message ${message.id.slice(-8)} (${message.message_type}) loading: ${message.loading}`);
+	
+	// Track component destruction to catch unnecessary unmounting
+	$effect(() => {
+		return () => {
+			console.log(`❌ COMPONENT UNMOUNT: ${componentId} - Message ${message.id.slice(-8)} destroyed`);
+		};
+	});
+
 	// Edit mode state
 	let isEditing = $state(false);
 	let editedContent = $state('');
@@ -155,6 +166,22 @@
 	// let mode = $state<'view' | 'edit'>('view');
 </script>
 
+<style>
+	.loading-spinner {
+		width: 16px;
+		height: 16px;
+		border: 2px solid transparent;
+		border-top: 2px solid currentColor;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		0% { transform: rotate(0deg); }
+		100% { transform: rotate(360deg); }
+	}
+</style>
+
 <div
 	class="group/message mx-auto w-full max-w-3xl px-4"
 	data-role={message.message_type.toLowerCase()}
@@ -240,12 +267,10 @@
 					<!-- Normal message display -->
 					<div
 						class={cn(
-							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 relative group',
+							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8 relative group',
 							{
 								'border-primary/10 bg-primary/10': message.message_type === 'User',
-								'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20': message.error,
-								'pb-8': !message.loading && !readonly, // Only add bottom padding when actions are visible
-								'pb-2': message.loading || readonly // Less padding when actions are hidden
+								'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20': message.error
 							}
 						)}
 					>
@@ -288,15 +313,15 @@
 							{/if}
 						{:else}
 							<!-- Normal content display -->
-							{#if message.message_type === 'Assistant' && message.loading}
-								<!-- Use TypewriterMessage for Assistant messages that are still loading -->
+							{#if message.message_type === 'Assistant'}
+								<!-- FORCE TypewriterMessage for ALL Assistant messages to prevent transition -->
 								<TypewriterMessage
 									message={message as any}
-									showTypewriter={true}
+									showTypewriter={message.loading}
 									className="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
 								/>
 							{:else}
-								<!-- All other messages (including completed Assistant messages) use regular markdown -->
+								<!-- All other messages (including User messages) use regular markdown -->
 								<div class="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words">
 									<Markdown md={message.content} />
 								</div>
@@ -305,8 +330,8 @@
 					</div>
 				{/if}
 
-				<!-- Per-message token indicator on hover with cost (only for Assistant messages) -->
-				{#if !message.loading && message.message_type === 'Assistant' && (message.prompt_tokens || message.completion_tokens)}
+				<!-- Per-message token indicator - always reserve space for Assistant messages -->
+				{#if message.message_type === 'Assistant'}
 					{@const model = message.model_name || chat?.model_name || 'gemini-2.5-pro'}
 					{@const pricing = {
 						'gemini-2.5-flash': { input: 0.30, output: 2.50 },
@@ -317,39 +342,50 @@
 					{@const outputCost = (message.completion_tokens || 0) / 1_000_000 * pricing.output}
 					{@const totalCost = inputCost + outputCost}
 					{@const formatCost = (cost: number) => cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`}
+					{@const hasTokens = !!(message.prompt_tokens || message.completion_tokens)}
+					{@const isCompleted = !message.loading && !(message as any).isAnimating}
 					
+					<!-- Always render container, control visibility with opacity -->
 					<div 
-						class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-						title={`Model: ${model}${'\n'}Input: ${message.prompt_tokens || 0} tokens (${formatCost(inputCost)})${'\n'}Output: ${message.completion_tokens || 0} tokens (${formatCost(outputCost)})${'\n'}Total cost: ${formatCost(totalCost)}`}
+						class="absolute top-2 right-2 transition-opacity duration-200 {isCompleted && hasTokens ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'}"
+						title={isCompleted && hasTokens ? `Model: ${model}${'\n'}Input: ${message.prompt_tokens || 0} tokens (${formatCost(inputCost)})${'\n'}Output: ${message.completion_tokens || 0} tokens (${formatCost(outputCost)})${'\n'}Total cost: ${formatCost(totalCost)}` : (message.loading || (message as any).isAnimating) ? 'Generating...' : 'Tokens loading...'}
 					>
 						<div class="flex items-center gap-1 px-2 py-1 bg-background/90 backdrop-blur-sm border border-border rounded-md text-xs text-muted-foreground shadow-sm">
-							{#if message.prompt_tokens && message.prompt_tokens > 0}
-								<span class="text-blue-600 dark:text-blue-400">
-									↑{message.prompt_tokens >= 1000 ? `${(message.prompt_tokens / 1000).toFixed(1)}k` : message.prompt_tokens}
+							{#if isCompleted && hasTokens}
+								{#if message.prompt_tokens && message.prompt_tokens > 0}
+									<span class="text-blue-600 dark:text-blue-400">
+										↑{message.prompt_tokens >= 1000 ? `${(message.prompt_tokens / 1000).toFixed(1)}k` : message.prompt_tokens}
+									</span>
+								{/if}
+								{#if message.completion_tokens && message.completion_tokens > 0}
+									<span class="text-green-600 dark:text-green-400">
+										↓{message.completion_tokens >= 1000 ? `${(message.completion_tokens / 1000).toFixed(1)}k` : message.completion_tokens}
+									</span>
+								{/if}
+								<span class="text-amber-600 dark:text-amber-400 font-mono text-[10px]">
+									{formatCost(totalCost)}
+								</span>
+							{:else}
+								<!-- Placeholder content to maintain layout during loading/waiting -->
+								<span class="text-muted-foreground/30 text-[10px]">
+									{(message.loading || (message as any).isAnimating) ? '⋯' : '•••'}
 								</span>
 							{/if}
-							{#if message.completion_tokens && message.completion_tokens > 0}
-								<span class="text-green-600 dark:text-green-400">
-									↓{message.completion_tokens >= 1000 ? `${(message.completion_tokens / 1000).toFixed(1)}k` : message.completion_tokens}
-								</span>
-							{/if}
-							<span class="text-amber-600 dark:text-amber-400 font-mono text-[10px]">
-								{formatCost(totalCost)}
-							</span>
 						</div>
 					</div>
 				{/if}
 
-				<!-- Modern message actions - positioned at bottom-right -->
+				<!-- Modern message actions - always reserve space, show when ready -->
 				{#if !isEditing}
+					{@const isLoadingOrAnimating = message.loading || (message as any).isAnimating}
 					<div class="absolute bottom-2 right-2 transition-opacity duration-200"
-						 class:opacity-0={message.loading || readonly}
-						 class:opacity-100={!message.loading && !readonly}
-						 class:pointer-events-none={message.loading || readonly}>
+						 class:opacity-0={isLoadingOrAnimating || readonly}
+						 class:group-hover:opacity-100={!isLoadingOrAnimating && !readonly}
+						 class:pointer-events-none={isLoadingOrAnimating || readonly}>
 						<MessageActions
 							{message}
 							{readonly}
-							loading={message.loading}
+							loading={isLoadingOrAnimating}
 							{hasVariants}
 							{variantInfo}
 							onRetry={() => onRetryMessage?.(message.id)}

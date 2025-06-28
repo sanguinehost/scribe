@@ -102,8 +102,9 @@
 							id: firstMessageId,
 							sender: 'assistant',
 							content: character.first_mes,
+							displayedContent: character.first_mes, // Show immediately for initial message
 							created_at: chat.created_at ?? new Date().toISOString(),
-							loading: false
+							isAnimating: false // Initial messages don't animate
 						}
 					];
 					console.log('Populating with character first message.');
@@ -114,8 +115,9 @@
 								id: msg.id,
 								sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
 								content: msg.content,
+								displayedContent: msg.content, // Show immediately for existing messages
 								created_at: msg.created_at ?? new Date().toISOString(),
-								loading: false,
+								isAnimating: false, // Existing messages don't animate
 								error: msg.error,
 								retryable: msg.retryable,
 								prompt_tokens: msg.prompt_tokens,
@@ -160,39 +162,89 @@
 			streamingService.connectionStatus === 'open'
 	);
 	
-	// Watch for streaming completion
-	$effect(() => {
-		if (streamingService.connectionStatus === 'closed') {
-			console.log('✅ StreamingService connection completed (status: closed)');
-			// Force a re-render by updating the displayMessages derivation
-			// The messages should already have loading: false set by finalizeMessage
-			console.log('Current messages loading states:', streamingService.messages.map(m => ({ id: m.id, loading: m.loading })));
-		}
-	});
+	// Watch for streaming completion - DISABLED to prevent refresh issues
+	// $effect(() => {
+	// 	if (streamingService.connectionStatus === 'closed') {
+	// 		console.log('✅ StreamingService connection completed (status: closed) - REFRESH DISABLED');
+	// 		// DISABLED: Force a re-render by updating the displayMessages derivation
+	// 		// The messages should already have loading: false set by finalizeMessage
+	// 		console.log('Current messages loading states:', streamingService.messages.map(m => ({ id: m.id, loading: m.loading })));
+	// 	}
+	// });
 
-	// Create a single, reactive source of truth for display messages
+	// Object identity cache to prevent unnecessary component recreation
+	let messageCache = new Map<string, ScribeChatMessage>();
+	let lastStreamingMessages: any[] = [];
+
+	// Create a single, reactive source of truth for display messages with object identity preservation
 	let displayMessages = $derived.by(() => {
 		const streamingMessages = streamingService.messages;
-		console.log('DERIVED `displayMessages` RECALCULATING. Message count:', streamingMessages.length);
+		// Removed noisy derived log - this runs thousands of times during animation
 		
-		const messages = streamingMessages.map(
-			(msg): ScribeChatMessage => ({
-				id: msg.id,
-				session_id: chat?.id ?? 'unknown-session',
-				message_type: msg.sender === 'user' ? 'User' : 'Assistant',
-				content: msg.content,
-				created_at: msg.created_at,
-				user_id: msg.sender === 'user' ? user?.id ?? '' : '',
-				loading: msg.loading ?? false,
-				error: msg.error,
-				retryable: msg.retryable ?? false,
-				prompt_tokens: msg.prompt_tokens,
-				completion_tokens: msg.completion_tokens,
-				model_name: msg.model_name,
-				backend_id: msg.backend_id
-			})
-		);
-		console.log('DERIVED `displayMessages` RECALCULATED. Count:', messages.length);
+		// Check if messages array actually changed to avoid unnecessary work
+		if (streamingMessages === lastStreamingMessages) {
+			console.log(`⚡ SAME ARRAY REFERENCE - Skipping recalculation`);
+			return Array.from(messageCache.values());
+		}
+		
+		const messages: ScribeChatMessage[] = [];
+		const newCache = new Map<string, ScribeChatMessage>();
+		
+		streamingMessages.forEach((msg) => {
+			const cached = messageCache.get(msg.id);
+			
+			// Check if message content/state actually changed (NEW: using displayedContent and isAnimating)
+			const isAnimatingOrLoading = msg.isAnimating ?? false;
+			const displayContent = msg.displayedContent ?? msg.content; // Fallback to full content if no displayedContent
+			
+			const hasChanged = !cached || 
+				cached.loading !== isAnimatingOrLoading ||
+				cached.content !== displayContent ||
+				cached.prompt_tokens !== msg.prompt_tokens ||
+				cached.completion_tokens !== msg.completion_tokens ||
+				cached.error !== msg.error;
+			
+			if (hasChanged) {
+				// Only log when not animating to avoid spam
+				if (!msg.isAnimating) {
+					console.log(`🔄 Message ${msg.id.slice(-8)} changed - displayed: ${displayContent.length}chars, full: ${msg.content.length}chars, tokens: ${msg.prompt_tokens}/${msg.completion_tokens}`);
+				}
+				
+				// Create new message object only if changed (NEW: using displayedContent for UI)
+				const newMessage: ScribeChatMessage = {
+					id: msg.id,
+					session_id: chat?.id ?? 'unknown-session',
+					message_type: msg.sender === 'user' ? 'User' as const : 'Assistant' as const,
+					content: displayContent, // Use displayedContent for UI rendering
+					created_at: msg.created_at,
+					user_id: msg.sender === 'user' ? user?.id ?? '' : '',
+					loading: isAnimatingOrLoading, // Use isAnimating for loading state
+					error: msg.error,
+					retryable: msg.retryable ?? false,
+					prompt_tokens: msg.prompt_tokens,
+					completion_tokens: msg.completion_tokens,
+					model_name: msg.model_name,
+					backend_id: msg.backend_id
+				};
+				
+				newCache.set(msg.id, newMessage);
+				messages.push(newMessage);
+			} else {
+				// Reuse existing object to preserve identity
+				newCache.set(msg.id, cached);
+				messages.push(cached);
+			}
+		});
+		
+		// Update cache and reference
+		messageCache = newCache;
+		lastStreamingMessages = streamingMessages;
+		
+		// Only log when no messages are animating to avoid spam
+		const hasAnimatingMessages = streamingMessages.some(m => m.isAnimating);
+		if (!hasAnimatingMessages) {
+			console.log(`✅ Processed ${messages.length} messages (${streamingMessages.length - messageCache.size + newCache.size} new/changed)`);
+		}
 		return messages;
 	});
 
@@ -526,6 +578,11 @@
 	}
 
 	async function sendMessage(content: string) {
+		// DEBUG: Add stack trace to identify unwanted calls
+		console.log('🚨🚨🚨 SENDMESSAGE START - content:', content.slice(0, 50) + '...');
+		console.log('🚨 sendMessage called with content:', content.slice(0, 50) + '...');
+		console.log('🚨 sendMessage STACK TRACE:', new Error().stack);
+		
 		dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
 
 		if (!chat?.id || !user?.id) {
@@ -533,12 +590,12 @@
 			return;
 		}
 
-		// Build history from the single source of truth
+		// Build history from the single source of truth (NEW: use isAnimating instead of loading)
 		const existingHistoryForApi = (streamingService.messages as StreamingMessage[])
-			.filter((m) => !m.loading)
+			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
-				content: m.content
+				content: m.content // Use full content for API, not displayedContent
 			}));
 
 		try {
@@ -556,7 +613,7 @@
 				history: existingHistoryForApi,
 				model: currentModel || undefined
 			});
-			console.log('✅ StreamingService.connect() called (streaming in progress)');
+			console.log(`✅ StreamingService.connect() completed at ${Date.now()}`);
 		} catch (error) {
 			console.error('❌ Failed to send message:', error);
 			toast.error('Failed to send message. Please try again.');
@@ -565,14 +622,18 @@
 
 	// Generate AI response based on current messages (used for edited messages)
 	async function generateAIResponse() {
+		// DEBUG: Add stack trace to identify unwanted calls
+		console.log('🚨 generateAIResponse called');
+		console.log('🚨 generateAIResponse STACK TRACE:', new Error().stack);
+		
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
 			return;
 		}
 
-		// Build history from current messages
+		// Build history from current messages (NEW: use isAnimating instead of loading)
 		const historyToSend = (streamingService.messages as StreamingMessage[])
-			.filter((m) => !m.loading)
+			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
 				content: m.content
@@ -614,6 +675,10 @@
 
 	// Regenerate AI response without adding a new user message - using StreamingService
 	async function regenerateResponse(_userMessageContent: string, _originalMessageId?: string) {
+		// DEBUG: Add stack trace to identify unwanted calls
+		console.log('🚨 regenerateResponse called for message:', _originalMessageId);
+		console.log('🚨 regenerateResponse STACK TRACE:', new Error().stack);
+		
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
 			return;
@@ -626,9 +691,9 @@
 		}
 
 		// Build the history - messages array already has the right messages after we removed the assistant message
-		// Just convert to API format
+		// Just convert to API format (NEW: use isAnimating instead of loading)
 		const historyToSend = (streamingService.messages as StreamingMessage[])
-			.filter((m) => !m.loading)
+			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
 				content: m.content
@@ -674,6 +739,10 @@
 
 	// Message action handlers
 	async function handleRetryMessage(messageId: string) {
+		// DEBUG: Add stack trace to identify unwanted calls
+		console.log('🚨 handleRetryMessage called for:', messageId);
+		console.log('🚨 handleRetryMessage STACK TRACE:', new Error().stack);
+		
 		if (!chat?.id || isLoading) return;
 
 		console.log('Retry message:', messageId);
@@ -744,6 +813,10 @@
 	}
 
 	async function handleSaveEditedMessage(messageId: string, newContent: string) {
+		// DEBUG: Add stack trace to identify unwanted calls
+		console.log('🚨 handleSaveEditedMessage called for:', messageId, 'content:', newContent.slice(0, 50) + '...');
+		console.log('🚨 handleSaveEditedMessage STACK TRACE:', new Error().stack);
+		
 		console.log('Save edited message:', messageId, 'New content:', newContent);
 
 		if (!chat?.id || isLoading) return;
@@ -813,6 +886,10 @@
 	}
 
 	function handleNextVariant(messageId: string) {
+		// DEBUG: Add stack trace to identify unwanted calls
+		console.log('🚨 handleNextVariant called for:', messageId);
+		console.log('🚨 handleNextVariant STACK TRACE:', new Error().stack);
+		
 		console.log('Next variant / Regenerate:', messageId);
 
 		const variants = messageVariants.get(messageId) || [];
@@ -856,14 +933,15 @@
 		const userMessage = (streamingService.messages as StreamingMessage[])[userMessageIndex];
 		if (userMessage.sender !== 'user') return;
 
-		// Clear the error state and set to loading
+		// Clear the error state and set to animating (NEW: use isAnimating instead of loading)
 		const allMessages = [...(streamingService.messages as StreamingMessage[])];
 		allMessages[messageIndex] = {
 			...allMessages[messageIndex],
-			loading: true,
+			isAnimating: true,
 			error: undefined,
 			retryable: false,
-			content: ''
+			content: '',
+			displayedContent: '' // Reset displayed content for animation
 		};
 
 		// Remove any messages after the failed one (they were dependent on the failed generation)
@@ -1059,6 +1137,7 @@
 		<div class="mx-auto w-full px-4 pb-4 md:max-w-3xl md:pb-6">
 			<form
 				onsubmit={(e) => {
+					console.log('🚨🚨🚨 FORM ONSUBMIT TRIGGERED');
 					e.preventDefault();
 					handleInputSubmit(e);
 				}}
