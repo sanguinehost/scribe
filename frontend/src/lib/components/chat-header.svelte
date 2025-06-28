@@ -4,7 +4,7 @@
 	import ModelSelector from './model-selector.svelte';
 	import { Badge } from './ui/badge';
 	import { Button } from './ui/button';
-	import { ScrollText, History, BookOpen } from 'lucide-svelte';
+	import { ScrollText, History, BookOpen, RotateCcw } from 'lucide-svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
@@ -46,7 +46,7 @@
 
 	// Track previous chronicle ID to detect when a new one is assigned
 	let previousChronicleId = $state<string | null>(null);
-	
+
 	// Track previous event count to detect when new events are added
 	let previousEventCount = $state<number>(0);
 
@@ -60,13 +60,17 @@
 	// Refresh chronicle store when a new chronicle is automatically created
 	$effect(() => {
 		if (currentChronicleId && previousChronicleId === null) {
-			console.log('[Chat Header] New chronicle detected, refreshing chronicle store and notifying UI');
+			console.log(
+				'[Chat Header] New chronicle detected, refreshing chronicle store and notifying UI'
+			);
 			chronicleStore.refresh();
-			
+
 			// Dispatch event to notify other components
-			window.dispatchEvent(new CustomEvent('chronicle-created', {
-				detail: { chronicleId: currentChronicleId }
-			}));
+			window.dispatchEvent(
+				new CustomEvent('chronicle-created', {
+					detail: { chronicleId: currentChronicleId }
+				})
+			);
 		}
 		previousChronicleId = currentChronicleId;
 	});
@@ -75,14 +79,16 @@
 	$effect(() => {
 		if (currentChronicle && currentChronicle.event_count > previousEventCount) {
 			console.log('[Chat Header] New events detected, notifying UI');
-			
+
 			// Dispatch event to notify other components
-			window.dispatchEvent(new CustomEvent('chronicle-events-updated', {
-				detail: { 
-					chronicleId: currentChronicleId,
-					eventCount: currentChronicle.event_count
-				}
-			}));
+			window.dispatchEvent(
+				new CustomEvent('chronicle-events-updated', {
+					detail: {
+						chronicleId: currentChronicleId,
+						eventCount: currentChronicle.event_count
+					}
+				})
+			);
 		}
 		previousEventCount = currentChronicle?.event_count || 0;
 	});
@@ -114,7 +120,10 @@
 
 	// State for extraction
 	let isExtracting = $state(false);
-	
+
+	// State for re-chronicling
+	let isReChronicling = $state(false);
+
 	// State for chronicle creation
 	// Note: isCreatingChronicle removed as chronicles are now automatic
 
@@ -125,20 +134,20 @@
 	let selectedLorebookId = $state<string | null>(null);
 	let isLoadingLorebooks = $state(false);
 
-	// Function to trigger event extraction
+	// Function to trigger event extraction (legacy method - may not work with current backend)
 	async function extractEvents() {
-		console.log('[Extract Events] Button clicked', { 
-			chatId: chat?.id, 
+		console.log('[Extract Events] Button clicked', {
+			chatId: chat?.id,
 			currentChronicleId,
 			currentChronicle: currentChronicle?.id,
 			hasChronicleId,
-			isExtracting 
+			isExtracting
 		});
 
 		if (!chat?.id || !currentChronicleId) {
-			console.log('[Extract Events] Missing required data', { 
-				chatId: chat?.id, 
-				currentChronicleId 
+			console.log('[Extract Events] Missing required data', {
+				chatId: chat?.id,
+				currentChronicleId
 			});
 			toast.error('Cannot extract events: No active chat session or chronicle');
 			return;
@@ -146,7 +155,7 @@
 
 		isExtracting = true;
 		console.log('[Extract Events] Starting extraction...');
-		
+
 		try {
 			const result = await apiClient.extractEventsFromChat(currentChronicleId, {
 				chat_session_id: chat.id,
@@ -160,12 +169,13 @@
 				toast.success(
 					`Successfully extracted ${response.events_extracted} events from this conversation`,
 					{
-						description: response.events_extracted > 0 
-							? 'New events have been added to your chronicle'
-							: 'No significant events were found in this conversation'
+						description:
+							response.events_extracted > 0
+								? 'New events have been added to your chronicle'
+								: 'No significant events were found in this conversation'
 					}
 				);
-				
+
 				// Refresh chronicle store to update event counts
 				await chronicleStore.refresh();
 			} else {
@@ -180,6 +190,61 @@
 		} finally {
 			isExtracting = false;
 			console.log('[Extract Events] Finished');
+		}
+	}
+
+	// Function to re-chronicle events from chat history
+	async function reChronicleFromChat() {
+		console.log('[Re-Chronicle] Button clicked', {
+			chatId: chat?.id,
+			currentChronicleId,
+			currentChronicle: currentChronicle?.id,
+			hasChronicleId,
+			isReChronicling
+		});
+
+		if (!chat?.id || !currentChronicleId) {
+			console.log('[Re-Chronicle] Missing required data', {
+				chatId: chat?.id,
+				currentChronicleId
+			});
+			toast.error('Cannot re-chronicle: No active chat session or chronicle');
+			return;
+		}
+
+		isReChronicling = true;
+		console.log('[Re-Chronicle] Starting re-chronicling...');
+
+		try {
+			const result = await apiClient.reChronicleFromChat(currentChronicleId, {
+				chat_session_id: chat.id,
+				purge_existing: true, // Purge existing events by default
+				extraction_model: 'gemini-2.5-pro',
+				batch_size: 10
+			});
+
+			console.log('[Re-Chronicle] API response:', result);
+
+			if (result.isOk()) {
+				const response = result.value;
+				toast.success(`${response.summary}`, {
+					description: `Processed ${response.messages_processed} messages, created ${response.events_created} events${response.events_purged > 0 ? `, purged ${response.events_purged} old events` : ''}`
+				});
+
+				// Refresh chronicle store to update event counts
+				await chronicleStore.refresh();
+			} else {
+				console.error('[Re-Chronicle] API error:', result.error);
+				toast.error('Failed to re-chronicle events', {
+					description: result.error.message
+				});
+			}
+		} catch (error) {
+			console.error('[Re-Chronicle] Exception:', error);
+			toast.error('An unexpected error occurred during re-chronicling');
+		} finally {
+			isReChronicling = false;
+			console.log('[Re-Chronicle] Finished');
 		}
 	}
 
@@ -238,34 +303,36 @@
 
 			if (result.isOk()) {
 				const response = result.value;
-				toast.success(
-					`Successfully extracted ${response.entries_extracted} lorebook entries!`,
-					{
-						description: response.entries_extracted > 0 
+				toast.success(`Successfully extracted ${response.entries_extracted} lorebook entries!`, {
+					description:
+						response.entries_extracted > 0
 							? 'New entries have been added to your lorebook'
 							: 'No significant world-building information was found'
-					}
-				);
-				
+				});
+
 				// Close dialog on success
 				lorebookExtractionDialogOpen = false;
 				selectedLorebookId = null;
 			} else {
 				console.error('Error extracting lorebook entries:', result.error);
-				
+
 				// Clean up error message for user display
 				let cleanErrorMessage = result.error.message;
-				if (result.error.message.includes('PropertyNotFound') || result.error.message.includes('safety filters')) {
-					cleanErrorMessage = 'AI safety filters blocked the extraction. Please try again or continue chatting.';
+				if (
+					result.error.message.includes('PropertyNotFound') ||
+					result.error.message.includes('safety filters')
+				) {
+					cleanErrorMessage =
+						'AI safety filters blocked the extraction. Please try again or continue chatting.';
 				} else if (result.error.message.includes('Failed to parse stream data')) {
 					cleanErrorMessage = 'AI service returned malformed data. Please try again.';
 				}
-				
+
 				toast.error(`Could not extract lorebook entries: ${cleanErrorMessage}`);
 			}
 		} catch (err: any) {
 			console.error('Error extracting lorebook entries:', err);
-			
+
 			let cleanErrorMessage = err.message || 'An unexpected error occurred.';
 			toast.error(`Could not extract lorebook entries: ${cleanErrorMessage}`);
 		} finally {
@@ -294,15 +361,26 @@
 				Chronicle (Loading...)
 			</Badge>
 		{/if}
-		
+
 		{#if !readonly && chat}
 			<Button
 				variant="ghost"
 				size="sm"
+				onclick={reChronicleFromChat}
+				disabled={isReChronicling || isLoadingSettings || isExtractingLorebook}
+				title="Re-chronicle this entire conversation from beginning to end with improved context"
+				class="cursor-pointer gap-1 hover:bg-accent"
+			>
+				<RotateCcw class="h-3 w-3" />
+				{isReChronicling ? 'Re-chronicling...' : 'Re-Chronicle'}
+			</Button>
+			<Button
+				variant="ghost"
+				size="sm"
 				onclick={extractEvents}
-				disabled={isExtracting || isLoadingSettings}
-				title="Extract events from this conversation (Chronicle ID: {currentChronicleId})"
-				class="gap-1 cursor-pointer hover:bg-accent"
+				disabled={isExtracting || isLoadingSettings || isReChronicling || isExtractingLorebook}
+				title="Extract new events from recent messages (Legacy - may not work)"
+				class="cursor-pointer gap-1 hover:bg-accent"
 			>
 				<History class="h-3 w-3" />
 				{isExtracting ? 'Extracting...' : 'Extract Events'}
@@ -311,9 +389,9 @@
 				variant="ghost"
 				size="sm"
 				onclick={openLorebookExtractionDialog}
-				disabled={isExtractingLorebook || isLoadingSettings}
+				disabled={isExtractingLorebook || isLoadingSettings || isReChronicling}
 				title="Extract world-building information to a lorebook"
-				class="gap-1 cursor-pointer hover:bg-accent"
+				class="cursor-pointer gap-1 hover:bg-accent"
 			>
 				<BookOpen class="h-3 w-3" />
 				{isExtractingLorebook ? 'Extracting...' : 'Extract Lore'}
@@ -336,16 +414,14 @@
 		<DialogHeader>
 			<DialogTitle>Extract Lorebook Entries</DialogTitle>
 			<DialogDescription>
-				Extract world-building information from this conversation and add it to a lorebook.
-				This will analyze character descriptions, locations, lore, items, and other important details.
+				Extract world-building information from this conversation and add it to a lorebook. This
+				will analyze character descriptions, locations, lore, items, and other important details.
 			</DialogDescription>
 		</DialogHeader>
 
 		<div class="space-y-4 py-4">
 			{#if isLoadingLorebooks}
-				<div class="text-center text-muted-foreground">
-					Loading lorebooks...
-				</div>
+				<div class="text-center text-muted-foreground">Loading lorebooks...</div>
 			{:else if availableLorebooks.length === 0}
 				<div class="text-center text-muted-foreground">
 					No lorebooks found. Please create a lorebook first.
@@ -364,7 +440,7 @@
 						{/each}
 					</select>
 				</div>
-				
+
 				<div class="rounded-md bg-muted p-3 text-sm text-muted-foreground">
 					<strong>What will be extracted:</strong>
 					<ul class="mt-2 space-y-1">

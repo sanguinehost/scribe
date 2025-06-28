@@ -982,7 +982,7 @@ Respond with ONLY the chronicle name, no quotes or explanation:"#,
         genai_chat_options = genai_chat_options.with_temperature(temperature);
         
         // Set max tokens
-        genai_chat_options = genai_chat_options.with_max_tokens(4096);
+        genai_chat_options = genai_chat_options.with_max_tokens(8192);
         
         // Add safety settings to allow analysis of any content
         let safety_settings = vec![
@@ -1071,7 +1071,7 @@ Respond with ONLY the chronicle name, no quotes or explanation:"#,
             content.trim()
         };
 
-        // Try to parse as JSON
+        // Try to parse as JSON first
         match serde_json::from_str(cleaned_content) {
             Ok(value) => Ok(value),
             Err(e) => {
@@ -1089,18 +1089,34 @@ Respond with ONLY the chronicle name, no quotes or explanation:"#,
                         error_line.chars().nth(column.saturating_sub(1)).unwrap_or(' '));
                 }
 
-                // Try to find JSON object boundaries and recover
+                // Attempt to fix common JSON issues and retry parsing
+                info!("Attempting JSON repair and retry...");
+                let repaired_json = self.repair_json_string(cleaned_content);
+                
+                match serde_json::from_str(&repaired_json) {
+                    Ok(value) => {
+                        warn!("Successfully parsed JSON after repair");
+                        return Ok(value);
+                    }
+                    Err(repair_error) => {
+                        error!("JSON repair attempt failed: {}", repair_error);
+                        error!("Repaired content (first 500 chars): {}", &repaired_json[..repaired_json.len().min(500)]);
+                    }
+                }
+
+                // Try to find JSON object boundaries and recover as last resort
                 if let Some(start_brace) = cleaned_content.find('{') {
                     if let Some(end_brace) = cleaned_content.rfind('}') {
                         if end_brace > start_brace {
                             let potential_json = &cleaned_content[start_brace..=end_brace];
-                            match serde_json::from_str(potential_json) {
+                            let repaired_potential = self.repair_json_string(potential_json);
+                            match serde_json::from_str(&repaired_potential) {
                                 Ok(value) => {
-                                    warn!("Successfully recovered JSON after initial parsing failure");
+                                    warn!("Successfully recovered JSON after boundary extraction and repair");
                                     return Ok(value);
                                 }
                                 Err(_) => {
-                                    error!("JSON recovery attempt also failed");
+                                    error!("Final JSON recovery attempt also failed");
                                 }
                             }
                         }
@@ -1110,6 +1126,271 @@ Respond with ONLY the chronicle name, no quotes or explanation:"#,
                 Err(AppError::InternalServerErrorGeneric(format!("Failed to parse structured response: {}", e)))
             }
         }
+    }
+
+    /// Repair common JSON formatting issues, particularly unescaped quotes in string values
+    fn repair_json_string(&self, json_str: &str) -> String {
+        // Common repair strategies for AI-generated JSON
+        let mut repaired = json_str.to_string();
+        
+        // Strategy 1: Fix unescaped quotes within string values
+        // This is the most common issue where AI generates: "reasoning": "He said "hello" to me"
+        // We need to escape quotes that are inside string values but not the ones that are JSON delimiters
+        repaired = self.fix_unescaped_quotes_in_strings(&repaired);
+        
+        // Strategy 2: Remove any trailing commas before closing braces/brackets
+        repaired = regex::Regex::new(r",(\s*[}\]])").unwrap()
+            .replace_all(&repaired, "$1")
+            .to_string();
+        
+        // Strategy 3: Fix common newline issues within strings
+        repaired = repaired.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+        
+        // Strategy 4: Ensure proper boolean/null values (case sensitive)
+        repaired = regex::Regex::new(r":\s*(True|TRUE)\b").unwrap()
+            .replace_all(&repaired, ": true")
+            .to_string();
+        repaired = regex::Regex::new(r":\s*(False|FALSE)\b").unwrap()
+            .replace_all(&repaired, ": false")
+            .to_string();
+        repaired = regex::Regex::new(r":\s*(None|NULL)\b").unwrap()
+            .replace_all(&repaired, ": null")
+            .to_string();
+        
+        repaired
+    }
+    
+    /// Fix unescaped quotes within JSON string values
+    fn fix_unescaped_quotes_in_strings(&self, json_str: &str) -> String {
+        let mut result = String::with_capacity(json_str.len() * 2);
+        let mut chars = json_str.chars().peekable();
+        let mut in_string = false;
+        let mut escape_next = false;
+        
+        while let Some(ch) = chars.next() {
+            match ch {
+                '"' if !escape_next => {
+                    // This is either starting/ending a string or an unescaped quote inside a string
+                    if in_string {
+                        // Check if this is really the end of the string by looking ahead
+                        // Skip whitespace and see if we find a colon, comma, or closing brace/bracket
+                        let mut lookahead = chars.clone();
+                        let mut found_whitespace_only = true;
+                        
+                        while let Some(&next_ch) = lookahead.peek() {
+                            if next_ch.is_whitespace() {
+                                lookahead.next();
+                            } else {
+                                found_whitespace_only = false;
+                                break;
+                            }
+                        }
+                        
+                        if let Some(&next_non_ws) = lookahead.peek() {
+                            if matches!(next_non_ws, ':' | ',' | '}' | ']') || found_whitespace_only {
+                                // This is likely the end of the string
+                                in_string = false;
+                                result.push('"');
+                            } else {
+                                // This is likely an unescaped quote inside the string
+                                result.push_str("\\\"");
+                            }
+                        } else {
+                            // End of input, probably end of string
+                            in_string = false;
+                            result.push('"');
+                        }
+                    } else {
+                        // Starting a new string
+                        in_string = true;
+                        result.push('"');
+                    }
+                }
+                '\\' if !escape_next => {
+                    escape_next = true;
+                    result.push('\\');
+                }
+                _ => {
+                    escape_next = false;
+                    result.push(ch);
+                }
+            }
+        }
+        
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    // Helper struct to test JSON repair functions without full runner setup
+    struct JsonRepairer;
+    
+    impl JsonRepairer {
+        fn repair_json_string(&self, json_str: &str) -> String {
+            // Common repair strategies for AI-generated JSON
+            let mut repaired = json_str.to_string();
+            
+            // Strategy 1: Fix unescaped quotes within string values
+            repaired = self.fix_unescaped_quotes_in_strings(&repaired);
+            
+            // Strategy 2: Remove any trailing commas before closing braces/brackets
+            repaired = regex::Regex::new(r",(\s*[}\]])").unwrap()
+                .replace_all(&repaired, "$1")
+                .to_string();
+            
+            // Strategy 3: Fix common newline issues within strings
+            repaired = repaired.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+            
+            // Strategy 4: Ensure proper boolean/null values (case sensitive)
+            repaired = regex::Regex::new(r":\s*(True|TRUE)\b").unwrap()
+                .replace_all(&repaired, ": true")
+                .to_string();
+            repaired = regex::Regex::new(r":\s*(False|FALSE)\b").unwrap()
+                .replace_all(&repaired, ": false")
+                .to_string();
+            repaired = regex::Regex::new(r":\s*(None|NULL)\b").unwrap()
+                .replace_all(&repaired, ": null")
+                .to_string();
+            
+            repaired
+        }
+        
+        fn fix_unescaped_quotes_in_strings(&self, json_str: &str) -> String {
+            let mut result = String::with_capacity(json_str.len() * 2);
+            let mut chars = json_str.chars().peekable();
+            let mut in_string = false;
+            let mut escape_next = false;
+            
+            while let Some(ch) = chars.next() {
+                match ch {
+                    '"' if !escape_next => {
+                        // This is either starting/ending a string or an unescaped quote inside a string
+                        if in_string {
+                            // Check if this is really the end of the string by looking ahead
+                            // Skip whitespace and see if we find a colon, comma, or closing brace/bracket
+                            let mut lookahead = chars.clone();
+                            let mut found_whitespace_only = true;
+                            
+                            while let Some(&next_ch) = lookahead.peek() {
+                                if next_ch.is_whitespace() {
+                                    lookahead.next();
+                                } else {
+                                    found_whitespace_only = false;
+                                    break;
+                                }
+                            }
+                            
+                            if let Some(&next_non_ws) = lookahead.peek() {
+                                if matches!(next_non_ws, ':' | ',' | '}' | ']') || found_whitespace_only {
+                                    // This is likely the end of the string
+                                    in_string = false;
+                                    result.push('"');
+                                } else {
+                                    // This is likely an unescaped quote inside the string
+                                    result.push_str("\\\"");
+                                }
+                            } else {
+                                // End of input, probably end of string
+                                in_string = false;
+                                result.push('"');
+                            }
+                        } else {
+                            // Starting a new string
+                            in_string = true;
+                            result.push('"');
+                        }
+                    }
+                    '\\' if !escape_next => {
+                        escape_next = true;
+                        result.push('\\');
+                    }
+                    _ => {
+                        escape_next = false;
+                        result.push(ch);
+                    }
+                }
+            }
+            
+            result
+        }
+    }
+    
+    #[test]
+    fn test_json_repair_unescaped_quotes() {
+        let repairer = JsonRepairer;
+        
+        // Test case 1: Unescaped quotes in reasoning field
+        let broken_json = r#"{
+    "reasoning": "He said "hello" to me and I responded",
+    "actions": []
+}"#;
+        
+        println!("Original broken JSON:\n{}", broken_json);
+        let repaired = repairer.repair_json_string(broken_json);
+        println!("Repaired JSON:\n{}", repaired);
+        
+        let parsed: Result<Value, _> = serde_json::from_str(&repaired);
+        match &parsed {
+            Ok(value) => println!("Successfully parsed: {:?}", value),
+            Err(e) => println!("Parse error: {}", e),
+        }
+        assert!(parsed.is_ok(), "Failed to parse repaired JSON: {}", repaired);
+        
+        // Test case 2: Multiple unescaped quotes
+        let broken_json2 = r#"{
+    "reasoning": "The character "John" told "Mary" about the "secret"",
+    "actions": []
+}"#;
+        
+        let repaired2 = repairer.repair_json_string(broken_json2);
+        let parsed2: Result<Value, _> = serde_json::from_str(&repaired2);
+        assert!(parsed2.is_ok(), "Failed to parse repaired JSON with multiple quotes: {}", repaired2);
+        
+        // Test case 3: Mixed issues (trailing comma + unescaped quotes)
+        let broken_json3 = r#"{
+    "reasoning": "She said "no" but meant "yes"",
+    "actions": [],
+}"#;
+        
+        let repaired3 = repairer.repair_json_string(broken_json3);
+        let parsed3: Result<Value, _> = serde_json::from_str(&repaired3);
+        assert!(parsed3.is_ok(), "Failed to parse repaired JSON with mixed issues: {}", repaired3);
+        
+        // Test case 4: Already valid JSON should remain unchanged
+        let valid_json = r#"{
+    "reasoning": "This is properly escaped \"quote\" content",
+    "actions": []
+}"#;
+        
+        let repaired4 = repairer.repair_json_string(valid_json);
+        let parsed4: Result<Value, _> = serde_json::from_str(&repaired4);
+        assert!(parsed4.is_ok(), "Failed to parse already valid JSON: {}", repaired4);
+    }
+    
+    #[test]
+    fn test_fix_unescaped_quotes_in_strings() {
+        let repairer = JsonRepairer;
+        
+        // Test basic unescaped quote
+        let input = r#""He said "hello" to me""#;
+        let expected = r#""He said \"hello\" to me""#;
+        let result = repairer.fix_unescaped_quotes_in_strings(input);
+        assert_eq!(result, expected);
+        
+        // Test multiple quotes
+        let input2 = r#""The "big" "red" "apple"""#;
+        let expected2 = r#""The \"big\" \"red\" \"apple\"""#;
+        let result2 = repairer.fix_unescaped_quotes_in_strings(input2);
+        assert_eq!(result2, expected2);
+        
+        // Test quotes at the end
+        let input3 = r#""She said "yes"""#;
+        let expected3 = r#""She said \"yes\"""#;
+        let result3 = repairer.fix_unescaped_quotes_in_strings(input3);
+        assert_eq!(result3, expected3);
     }
 }
 
