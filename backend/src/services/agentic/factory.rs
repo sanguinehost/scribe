@@ -42,7 +42,7 @@ impl AgenticNarrativeFactory {
             ai_client.clone(),
             chronicle_service.clone(),
             lorebook_service,
-            app_state,
+            app_state.clone(),
         );
 
         let registry = Arc::new(registry);
@@ -55,7 +55,7 @@ impl AgenticNarrativeFactory {
             config.planning_model
         );
 
-        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service)
+        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service, app_state.token_counter.clone())
     }
 
     /// Create agentic narrative system with individual dependencies (no circular dependency)
@@ -83,7 +83,7 @@ impl AgenticNarrativeFactory {
             lorebook_service,
             qdrant_service,
             embedding_client,
-            app_state,
+            app_state.clone(),
         );
         
         let registry = Arc::new(registry);
@@ -95,7 +95,7 @@ impl AgenticNarrativeFactory {
             config.planning_model
         );
         
-        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service)
+        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service, app_state.token_counter.clone())
     }
 
     /// Register all core tools in the registry
