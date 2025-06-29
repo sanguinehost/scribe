@@ -24,6 +24,41 @@ use uuid::Uuid;
 use chrono::Utc;
 use secrecy::SecretBox;
 
+// Helper to create AppState for tests
+async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp, lorebook_service: Arc<scribe_backend::services::LorebookService>) -> Arc<scribe_backend::state::AppState> {
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        chat_override_service: Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            Arc::new(scribe_backend::services::EncryptionService::new())
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            Arc::new(scribe_backend::services::EncryptionService::new())
+        )),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+                panic!("Failed to create tokenizer for test")
+            }),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: Arc::new(scribe_backend::services::EncryptionService::new()),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
+        email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
+    };
+    Arc::new(scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services
+    ))
+}
+
 // Helper to create test messages
 fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
     vec![
@@ -118,6 +153,7 @@ mod agentic_chronicle_tests {
                         "event_category": "PLOT",
                         "event_type": "ADVENTURE_START",
                         "event_subtype": "JOURNEY_BEGINS",
+                        "action": "Arrived",
                         "subject": "Alex",
                         "summary": "Alex arrives at Starfall Academy to begin wizard training",
                         "event_data": {
@@ -142,12 +178,15 @@ mod agentic_chronicle_tests {
             test_app.qdrant_service.clone()
         ));
         
+        let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
+
         let agent_runner = AgenticNarrativeFactory::create_system_with_deps(
             mock_ai_client.clone(),
             chronicle_service.clone(),
             lorebook_service,
             test_app.qdrant_service.clone(),
             test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+            app_state,
             None, // Use default config
         );
 
@@ -229,6 +268,7 @@ mod agentic_chronicle_tests {
                         "event_category": "CHARACTER",
                         "event_type": "CHARACTER_INTERACTION",
                         "event_subtype": "FIRST_MEETING",
+                        "action": "Met",
                         "subject": "Alex",
                         "summary": "Alex meets Professor Willowshade at the academy entrance",
                         "event_data": {
@@ -253,12 +293,15 @@ mod agentic_chronicle_tests {
             test_app.qdrant_service.clone()
         ));
         
+        let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
+
         let agent_runner = AgenticNarrativeFactory::create_system_with_deps(
             mock_ai_client.clone(),
             chronicle_service.clone(),
             lorebook_service,
             test_app.qdrant_service.clone(),
             test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+            app_state,
             None, // Use default config
         );
 
@@ -325,12 +368,15 @@ mod agentic_chronicle_tests {
             test_app.qdrant_service.clone()
         ));
         
+        let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
+
         let agent_runner = AgenticNarrativeFactory::create_system_with_deps(
             mock_ai_client.clone(),
             chronicle_service,
             lorebook_service,
             test_app.qdrant_service.clone(),
             test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+            app_state,
             None, // Use default config
         );
 
@@ -416,12 +462,15 @@ mod agentic_chronicle_tests {
             test_app.qdrant_service.clone()
         ));
         
+        let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
+
         let agent_runner = AgenticNarrativeFactory::create_system_with_deps(
             mock_ai_client.clone(),
             chronicle_service,
             lorebook_service,
             test_app.qdrant_service.clone(),
             test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+            app_state,
             None, // Use default config
         );
 
