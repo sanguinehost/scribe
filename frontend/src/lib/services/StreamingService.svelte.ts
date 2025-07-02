@@ -942,7 +942,73 @@ class StreamingService {
   }
 
   /**
-   * Disconnect and clean up
+   * Interrupt all streaming operations (SSE + animations) immediately
+   */
+  public interrupt(): void {
+    console.log('🛑 Interrupting all streaming operations');
+    
+    // Stop SSE connection
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    // Stop all local animations immediately
+    for (const [messageId, intervalId] of this.animationIntervals) {
+      console.log(`🛑 Stopping animation for message ${messageId.slice(-8)}`);
+      clearInterval(intervalId);
+      
+      // Immediately show all buffered content without animation
+      const buffer = this.messageBuffers.get(messageId);
+      if (buffer && buffer.content) {
+        this.messages = this.messages.map(msg => {
+          if (msg.id === messageId) {
+            return {
+              ...msg,
+              content: buffer.content,
+              displayedContent: buffer.content, // Show full content immediately
+              isAnimating: false, // Stop animation
+              prompt_tokens: buffer.prompt_tokens,
+              completion_tokens: buffer.completion_tokens,
+              model_name: buffer.model_name,
+              backend_id: buffer.backend_id
+            };
+          }
+          return msg;
+        });
+      }
+    }
+    
+    // Clear all animation intervals
+    this.animationIntervals.clear();
+
+    // Clear all typing animations (legacy)
+    for (const [messageId] of this.typingIntervals) {
+      this.clearTyping(messageId);
+    }
+
+    // Clean up connection close state
+    if (this.connectionCloseState.closeTimeoutId) {
+      clearTimeout(this.connectionCloseState.closeTimeoutId);
+      this.connectionCloseState.closeTimeoutId = null;
+    }
+    this.connectionCloseState = {
+      doneReceived: false,
+      messageSavedReceived: false,
+      tokenUsageReceived: false,
+      closeTimeoutId: null,
+      shouldClose: false
+    };
+
+    if (this.connectionStatus !== 'idle' && this.connectionStatus !== 'closed') {
+      this.connectionStatus = 'closed';
+    }
+
+    this.currentChatId = null;
+  }
+
+  /**
+   * Disconnect and clean up (graceful shutdown)
    */
   public disconnect(): void {
     if (this.abortController) {
@@ -954,6 +1020,12 @@ class StreamingService {
     for (const [messageId] of this.typingIntervals) {
       this.clearTyping(messageId);
     }
+
+    // Clear all local animations
+    for (const [messageId, intervalId] of this.animationIntervals) {
+      clearInterval(intervalId);
+    }
+    this.animationIntervals.clear();
 
     // Clean up connection close state
     if (this.connectionCloseState.closeTimeoutId) {
