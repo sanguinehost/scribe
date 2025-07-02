@@ -17,9 +17,9 @@ use tracing::{debug, error, warn};
 
 /// Escapes text for safe inclusion in XML
 fn escape_xml(text: &str) -> String {
-    text.replace('&', "&")
-        .replace('<', "<")
-        .replace('>', ">")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
 }
@@ -944,12 +944,13 @@ async fn build_final_prompt_strings(
                         writeln!(rag_context_for_user_message, "</chronicle_event>").unwrap();
                     } else {
                         // Fallback to simple format if JSON parsing fails
+                        warn!("Failed to parse chronicle event JSON for event type: {}", chronicle_meta.event_type);
                         writeln!(
                             rag_context_for_user_message,
-                            "<chronicle_event type=\"{}\" timestamp=\"{}\">{}</chronicle_event>",
+                            "<chronicle_event type=\"{}\" timestamp=\"{}\" status=\"unparseable\">[Chronicle data corrupted or truncated - raw text length: {} chars]</chronicle_event>",
                             escape_xml(&chronicle_meta.event_type),
                             chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
-                            escape_xml(rag_item.text.trim())
+                            rag_item.text.len()
                         )
                         .unwrap();
                     }
@@ -1612,7 +1613,7 @@ mod tests {
         
         // Test that the escape_xml function works correctly for special characters
         let result = super::escape_xml("Test & <tag> \"quote\" 'apostrophe'");
-        assert_eq!(result, "Test & <tag> &quot;quote&quot; &apos;apostrophe&apos;");
+        assert_eq!(result, "Test &amp; &lt;tag&gt; &quot;quote&quot; &apos;apostrophe&apos;");
         
         // Test JSON parsing of the event data
         let parsed: serde_json::Value = serde_json::from_str(chronicle_event_json).unwrap();

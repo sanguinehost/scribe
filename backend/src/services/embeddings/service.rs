@@ -1014,8 +1014,15 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             AppError::SerializationError(format!("Chronicle event serialization failed: {e}"))
         })?;
         
-        // 1. Chunk the content
-        let chunks = chunk_text(&content_to_embed, &self.chunk_config, Some(format!("chronicle_event_{}", event.id)), 0).map_err(|e| {
+        // Chronicle events should be stored as single units to preserve JSON integrity
+        // Use a large chunk config to avoid breaking JSON structure
+        let chronicle_chunk_config = ChunkConfig {
+            max_size: 10000, // Very large to accommodate full JSON
+            overlap: 0,
+            metric: self.chunk_config.metric,
+        };
+        
+        let chunks = chunk_text(&content_to_embed, &chronicle_chunk_config, Some(format!("chronicle_event_{}", event.id)), 0).map_err(|e| {
             error!(error = %e, event_id = %event.id, "Failed to chunk chronicle event content");
             AppError::ChunkingError(format!("Chronicle event chunking failed: {e}"))
         })?;
@@ -1025,7 +1032,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             return Ok(());
         }
 
-        info!(event_id = %event.id, num_chunks = chunks.len(), "Generated {} chunks for chronicle event", chunks.len());
+        info!(event_id = %event.id, num_chunks = chunks.len(), content_length = content_to_embed.len(), "Chronicle event chunked with large config to preserve JSON structure");
 
         // 2. Process each chunk
         let mut points_to_upsert = Vec::new();

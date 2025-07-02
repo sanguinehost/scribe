@@ -166,9 +166,11 @@
 	});
 
 	// Sync loading state with StreamingService
+	// Include both SSE connection phase AND local animation phase
 	let isLoading = $derived(
 		streamingService.connectionStatus === 'connecting' ||
-			streamingService.connectionStatus === 'open'
+		streamingService.connectionStatus === 'open' ||
+		streamingService.messages.some(msg => msg.isAnimating === true)
 	);
 	
 	// Load more messages function for infinite scroll
@@ -855,7 +857,7 @@
 	}
 
 	function stopGeneration() {
-		streamingService.disconnect();
+		streamingService.interrupt();
 	}
 
 	// Input submission handler
