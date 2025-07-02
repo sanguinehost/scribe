@@ -151,10 +151,6 @@
 		const observer = new MutationObserver((mutations) => {
 			if (!endRef || scrollLock.locked) return;
 			
-			// Don't auto-scroll during streaming to allow user to freely scroll
-			const hasAnimatingMessages = messages.some(m => m.loading || (m as any).isAnimating);
-			if (hasAnimatingMessages) return;
-			
 			// Don't auto-scroll during infinite scroll loading or when suppressed
 			if (isLoadingMore || suppressAutoScroll) return;
 			

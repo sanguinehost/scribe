@@ -86,10 +86,44 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
 
     // Create agentic system with mock AI client using the same pattern as working tests
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let encryption_service = Arc::new(EncryptionService::new());
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(), 
-        Arc::new(EncryptionService::new()),
+        encryption_service.clone(),
         test_app.qdrant_service.clone()
+    ));
+    
+    // Create AppState for the test
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        chat_override_service: Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+                panic!("Failed to create tokenizer for test")
+            }),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: encryption_service.clone(),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
+        email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
+    };
+    let app_state = Arc::new(scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
     
     let agentic_runner = AgenticNarrativeFactory::create_system_with_deps(
@@ -98,6 +132,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+        app_state,
         None, // Use default config
     );
 
@@ -201,10 +236,44 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
 
     // Create agentic system using the same pattern as working tests
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let encryption_service = Arc::new(EncryptionService::new());
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(), 
-        Arc::new(EncryptionService::new()),
+        encryption_service.clone(),
         test_app.qdrant_service.clone()
+    ));
+    
+    // Create AppState for the test
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        chat_override_service: Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+                panic!("Failed to create tokenizer for test")
+            }),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: encryption_service.clone(),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
+        email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
+    };
+    let app_state = Arc::new(scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
     
     let agentic_runner = AgenticNarrativeFactory::create_system_with_deps(
@@ -213,6 +282,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+        app_state,
         None, // Use default config
     );
 
@@ -296,10 +366,44 @@ async fn test_dual_mode_extraction_comparison() {
 
     // Create agentic system using the same pattern as working tests
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let encryption_service = Arc::new(EncryptionService::new());
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(), 
-        Arc::new(EncryptionService::new()),
+        encryption_service.clone(),
         test_app.qdrant_service.clone()
+    ));
+    
+    // Create AppState for the test
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        chat_override_service: Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+                panic!("Failed to create tokenizer for test")
+            }),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: encryption_service.clone(),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
+        email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
+    };
+    let app_state = Arc::new(scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
     
     let agentic_runner = AgenticNarrativeFactory::create_system_with_deps(
@@ -308,6 +412,7 @@ async fn test_dual_mode_extraction_comparison() {
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+        app_state,
         None, // Use default config
     );
 
@@ -395,10 +500,44 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
 
     // Create agentic system using the same pattern as working tests
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let encryption_service = Arc::new(EncryptionService::new());
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(), 
-        Arc::new(EncryptionService::new()),
+        encryption_service.clone(),
         test_app.qdrant_service.clone()
+    ));
+    
+    // Create AppState for the test
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        chat_override_service: Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+                panic!("Failed to create tokenizer for test")
+            }),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: encryption_service.clone(),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
+        email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
+    };
+    let app_state = Arc::new(scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
     ));
     
     let agentic_runner = AgenticNarrativeFactory::create_system_with_deps(
@@ -407,6 +546,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+        app_state,
         None, // Use default config
     );
 
