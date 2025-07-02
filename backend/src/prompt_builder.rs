@@ -819,14 +819,140 @@ async fn build_final_prompt_strings(
             rag_context_for_user_message.push_str("<long_term_memory>\n");
             for (rag_item, _) in &chronicle_events {
                 if let crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_meta) = &rag_item.metadata {
-                    writeln!(
-                        rag_context_for_user_message,
-                        "<chronicle_event type=\"{}\" timestamp=\"{}\">{}</chronicle_event>",
-                        escape_xml(&chronicle_meta.event_type),
-                        chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
-                        escape_xml(rag_item.text.trim())
-                    )
-                    .unwrap();
+                    // Try to parse the text as JSON to extract rich chronicle data
+                    if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&rag_item.text) {
+                        write!(
+                            rag_context_for_user_message,
+                            "<chronicle_event type=\"{}\" timestamp=\"{}\"",
+                            escape_xml(&chronicle_meta.event_type),
+                            chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC")
+                        )
+                        .unwrap();
+                        
+                        // Add action if available
+                        if let Some(action) = event_data.get("action").and_then(|a| a.as_str()) {
+                            write!(rag_context_for_user_message, " action=\"{}\"", escape_xml(action)).unwrap();
+                        }
+                        
+                        // Add modality if available
+                        if let Some(modality) = event_data.get("modality").and_then(|m| m.as_str()) {
+                            write!(rag_context_for_user_message, " modality=\"{}\"", escape_xml(modality)).unwrap();
+                        }
+                        
+                        writeln!(rag_context_for_user_message, ">").unwrap();
+                        
+                        // Add actors if available
+                        if let Some(actors) = event_data.get("actors").and_then(|a| a.as_array()) {
+                            if !actors.is_empty() {
+                                writeln!(rag_context_for_user_message, "    <actors>").unwrap();
+                                for actor in actors {
+                                    if let (Some(id), Some(role)) = (
+                                        actor.get("id").and_then(|i| i.as_str()),
+                                        actor.get("role").and_then(|r| r.as_str())
+                                    ) {
+                                        let details = actor.get("details").and_then(|d| d.as_str()).unwrap_or("");
+                                        writeln!(
+                                            rag_context_for_user_message,
+                                            "        <actor id=\"{}\" role=\"{}\">{}</actor>",
+                                            escape_xml(id),
+                                            escape_xml(role),
+                                            escape_xml(details)
+                                        )
+                                        .unwrap();
+                                    }
+                                }
+                                writeln!(rag_context_for_user_message, "    </actors>").unwrap();
+                            }
+                        }
+                        
+                        // Add valence changes if available
+                        if let Some(valence) = event_data.get("valence").and_then(|v| v.as_array()) {
+                            if !valence.is_empty() {
+                                writeln!(rag_context_for_user_message, "    <valence>").unwrap();
+                                for change in valence {
+                                    if let (Some(target), Some(change_type), Some(delta)) = (
+                                        change.get("target").and_then(|t| t.as_str()),
+                                        change.get("type").and_then(|t| t.as_str()),
+                                        change.get("change").and_then(|c| c.as_f64())
+                                    ) {
+                                        writeln!(
+                                            rag_context_for_user_message,
+                                            "        <change target=\"{}\" type=\"{}\" delta=\"{:+.1}\"/>",
+                                            escape_xml(target),
+                                            escape_xml(change_type),
+                                            delta
+                                        )
+                                        .unwrap();
+                                    }
+                                }
+                                writeln!(rag_context_for_user_message, "    </valence>").unwrap();
+                            }
+                        }
+                        
+                        // Add context data if available
+                        if let Some(context) = event_data.get("context_data").and_then(|c| c.as_object()) {
+                            if !context.is_empty() {
+                                write!(rag_context_for_user_message, "    <context").unwrap();
+                                for (key, value) in context {
+                                    if let Some(val_str) = value.as_str() {
+                                        write!(rag_context_for_user_message, " {}=\"{}\"", escape_xml(key), escape_xml(val_str)).unwrap();
+                                    }
+                                }
+                                writeln!(rag_context_for_user_message, "/>").unwrap();
+                            }
+                        }
+                        
+                        // Add causality if available
+                        if let Some(causality) = event_data.get("causality").and_then(|c| c.as_object()) {
+                            let has_caused_by = causality.get("causedBy").and_then(|cb| cb.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
+                            let has_causes = causality.get("causes").and_then(|c| c.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
+                            
+                            if has_caused_by || has_causes {
+                                writeln!(rag_context_for_user_message, "    <causality>").unwrap();
+                                
+                                if let Some(caused_by) = causality.get("causedBy").and_then(|cb| cb.as_array()) {
+                                    for cause_id in caused_by {
+                                        if let Some(id_str) = cause_id.as_str() {
+                                            writeln!(rag_context_for_user_message, "        <caused_by>{}</caused_by>", escape_xml(id_str)).unwrap();
+                                        }
+                                    }
+                                }
+                                
+                                if let Some(causes) = causality.get("causes").and_then(|c| c.as_array()) {
+                                    for effect_id in causes {
+                                        if let Some(id_str) = effect_id.as_str() {
+                                            writeln!(rag_context_for_user_message, "        <causes>{}</causes>", escape_xml(id_str)).unwrap();
+                                        }
+                                    }
+                                }
+                                
+                                writeln!(rag_context_for_user_message, "    </causality>").unwrap();
+                            }
+                        }
+                        
+                        // Add summary - try to get it from the event data first, fall back to rag_item.text
+                        let summary = event_data.get("summary")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or_else(|| rag_item.text.trim());
+                        writeln!(
+                            rag_context_for_user_message,
+                            "    <summary>{}</summary>",
+                            escape_xml(summary)
+                        )
+                        .unwrap();
+                        
+                        writeln!(rag_context_for_user_message, "</chronicle_event>").unwrap();
+                    } else {
+                        // Fallback to simple format if JSON parsing fails
+                        writeln!(
+                            rag_context_for_user_message,
+                            "<chronicle_event type=\"{}\" timestamp=\"{}\">{}</chronicle_event>",
+                            escape_xml(&chronicle_meta.event_type),
+                            chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
+                            escape_xml(rag_item.text.trim())
+                        )
+                        .unwrap();
+                    }
                 }
             }
             rag_context_for_user_message.push_str("</long_term_memory>\n\n");
@@ -1435,5 +1561,65 @@ mod tests {
             // History should be preserved since RAG truncation was sufficient
             assert_eq!(calculation.recent_history_with_tokens.len(), 2);
         }
+    }
+    
+    #[test]
+    fn test_enhanced_chronicle_event_formatting() {
+        // Test that chronicle events with rich data are properly formatted
+        let chronicle_event_json = r#"{
+            "action": "Agreed",
+            "actors": [
+                {
+                    "id": "sol",
+                    "role": "Agent",
+                    "details": "Issued the command for accompaniment"
+                },
+                {
+                    "id": "lumiya",
+                    "role": "Patient",
+                    "details": "Accepted the command and committed to accompaniment"
+                }
+            ],
+            "causality": {
+                "causedBy": ["997a300f-1e05-42da-a906-08a2858be03a"],
+                "causes": []
+            },
+            "context_data": {
+                "future_implication": "shared_journey",
+                "location_id": "sol_private_quarters",
+                "relationship_status": "reinforced_and_committed"
+            },
+            "valence": [
+                {
+                    "change": 0.3,
+                    "target": "sol",
+                    "type": "Power"
+                },
+                {
+                    "change": 0.4,
+                    "target": "lumiya",
+                    "type": "Loyalty"
+                },
+                {
+                    "change": 0.5,
+                    "target": "lumiya",
+                    "type": "Commitment"
+                }
+            ],
+            "modality": "ACTUAL",
+            "summary": "In the intimate aftermath of their bond's profound reinforcement, Sol commanded Lumiya to accompany him."
+        }"#;
+        
+        // Test that the escape_xml function works correctly for special characters
+        let result = super::escape_xml("Test & <tag> \"quote\" 'apostrophe'");
+        assert_eq!(result, "Test & <tag> &quot;quote&quot; &apos;apostrophe&apos;");
+        
+        // Test JSON parsing of the event data
+        let parsed: serde_json::Value = serde_json::from_str(chronicle_event_json).unwrap();
+        assert_eq!(parsed["action"], "Agreed");
+        assert_eq!(parsed["actors"][0]["id"], "sol");
+        assert_eq!(parsed["valence"][0]["change"], 0.3);
+        assert_eq!(parsed["context_data"]["location_id"], "sol_private_quarters");
+        assert_eq!(parsed["causality"]["causedBy"][0], "997a300f-1e05-42da-a906-08a2858be03a");
     }
 }

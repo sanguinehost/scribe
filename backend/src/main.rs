@@ -446,7 +446,7 @@ fn build_router(
             "/characters",
             characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         ) // 10MB limit for character uploads
-        .nest("/chat", chat_routes(app_state.clone()))
+        .nest("/chat", chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024))) // 50MB limit for chat history
         .nest("/chats", chats::chat_routes())
         .nest("/chronicles", chronicles::create_chronicles_router(app_state.clone()))
         .nest("/documents", document_routes())

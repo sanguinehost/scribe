@@ -22,6 +22,8 @@
 	import { fly, fade } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import * as Tooltip from '$lib/components/ui/tooltip'; // Import Tooltip components
+	import { infiniteScroll } from '$lib/actions/infinite-scroll';
+	import { Loader2 } from 'lucide-svelte';
 
 	let containerRef = $state<HTMLDivElement | null>(null);
 	let endRef = $state<HTMLDivElement | null>(null);
@@ -43,7 +45,11 @@
 		onNextVariant,
 		messageVariants,
 		currentVariantIndex,
-		onGreetingChanged
+		onGreetingChanged,
+		onLoadMore,
+		isLoadingMore = false,
+		hasMoreMessages = false,
+		suppressAutoScroll = false
 	}: {
 		readonly: boolean;
 		loading: boolean;
@@ -62,17 +68,17 @@
 		messageVariants?: Map<string, { content: string; timestamp: string }[]>;
 		currentVariantIndex?: Map<string, number>;
 		onGreetingChanged?: (detail: { index: number; content: string }) => void;
+		onLoadMore?: () => void;
+		isLoadingMore?: boolean;
+		hasMoreMessages?: boolean;
+		suppressAutoScroll?: boolean;
 	} = $props();
 
-	// Messages component logging to track re-renders
-	let messagesComponentId = `messages-${Math.random().toString(36).substr(2, 9)}`;
+	// Track message count for performance optimization
 	let lastMessageCount = 0;
-	console.log(`🆕 MESSAGES COMPONENT MOUNT: ${messagesComponentId} - ${messages.length} messages`);
 	
 	$effect(() => {
-		// Only log when not loading to avoid animation spam
 		if (!loading && messages.length !== lastMessageCount) {
-			console.log(`📋 MESSAGES LIST EFFECT: ${messagesComponentId} - count: ${messages.length}`);
 			lastMessageCount = messages.length;
 		}
 	});
@@ -148,6 +154,9 @@
 			// Don't auto-scroll during streaming to allow user to freely scroll
 			const hasAnimatingMessages = messages.some(m => m.loading || (m as any).isAnimating);
 			if (hasAnimatingMessages) return;
+			
+			// Don't auto-scroll during infinite scroll loading or when suppressed
+			if (isLoadingMore || suppressAutoScroll) return;
 			
 			// Only scroll for meaningful content changes, not button state changes
 			const shouldScroll = mutations.some(mutation => {
@@ -237,8 +246,10 @@
 		if (!containerRef || !mounted || !endRef) return;
 
 		// For existing chats with messages, scroll to bottom (most recent message)
+		// Only on initial load (when message count is 20 or less = initial batch)
 		const isNewChat = chat && new Date().getTime() - new Date(chat.created_at).getTime() < 5000;
-		if (messages.length > 0 && !isNewChat) {
+		const isInitialLoad = messages.length <= 20;
+		if (messages.length > 0 && !isNewChat && !isLoadingMore && !suppressAutoScroll && isInitialLoad) {
 			setTimeout(() => {
 				if (endRef) {
 					endRef.scrollIntoView({ behavior: 'smooth' });
@@ -249,7 +260,13 @@
 </script>
 
 <Tooltip.Provider>
-	<div bind:this={containerRef} class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(mounted && messages.length === 0) || settingsStore.isVisible ? '' : 'pt-4'}">
+	<div 
+		bind:this={containerRef} 
+		class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(mounted && messages.length === 0) || settingsStore.isVisible ? '' : 'pt-4'}"
+		data-messages-container
+		use:infiniteScroll={{ threshold: 200, debounce: 300 }}
+		on:loadmore={() => onLoadMore?.()}
+	>
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
 		{#if settingsStore.isVisible || settingsStore.isTransitioning}
 			<div class="relative flex-1 flex items-center justify-center">
@@ -419,6 +436,16 @@
 					{#if !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && selectedLorebookStore.viewMode === 'none'}
 						<Overview />
 					{/if}
+				</div>
+			</div>
+		{/if}
+
+		<!-- Loading indicator for loading more messages -->
+		{#if isLoadingMore && hasMoreMessages}
+			<div class="flex justify-center py-4">
+				<div class="flex items-center gap-2 text-muted-foreground">
+					<Loader2 class="h-4 w-4 animate-spin" />
+					<span class="text-sm">Loading older messages...</span>
 				</div>
 			</div>
 		{/if}

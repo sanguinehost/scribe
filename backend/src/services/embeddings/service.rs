@@ -939,17 +939,17 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
 
-        // Create content to embed: combine event type and summary
-        let content_to_embed = match session_dek {
+        // Get the decrypted summary for the content
+        let decrypted_summary = match session_dek {
             Some(dek) => {
                 match event.get_decrypted_summary(&dek.0) {
-                    Ok(decrypted_summary) => {
+                    Ok(summary) => {
                         debug!(event_id = %event.id, "Successfully decrypted chronicle event summary for embedding");
-                        format!("[{}] {}", event.event_type, decrypted_summary)
+                        summary
                     }
                     Err(e) => {
                         warn!(event_id = %event.id, error = %e, "Failed to decrypt chronicle event summary. Using legacy plaintext for embedding");
-                        format!("[{}] {}", event.event_type, event.summary)
+                        event.summary.clone()
                     }
                 }
             }
@@ -959,10 +959,60 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                     return Err(AppError::Forbidden("Cannot process encrypted chronicle event without decryption key".to_string()));
                 } else {
                     debug!(event_id = %event.id, "Processing legacy plaintext chronicle event");
-                    format!("[{}] {}", event.event_type, event.summary)
+                    event.summary.clone()
                 }
             }
         };
+        
+        // Create a JSON representation of the full chronicle event data
+        let mut event_json = serde_json::json!({
+            "event_type": event.event_type,
+            "summary": decrypted_summary,
+            "timestamp_iso8601": event.timestamp_iso8601.to_rfc3339(),
+            "source": event.source,
+            "event_id": event.id.to_string(),
+        });
+        
+        // Add action if available
+        if let Some(action) = &event.action {
+            event_json["action"] = serde_json::Value::String(action.clone());
+        }
+        
+        // Add actors if available
+        if let Some(actors) = &event.actors {
+            event_json["actors"] = actors.clone();
+        }
+        
+        // Add valence if available
+        if let Some(valence) = &event.valence {
+            event_json["valence"] = valence.clone();
+        }
+        
+        // Add context_data if available
+        if let Some(context) = &event.context_data {
+            event_json["context_data"] = context.clone();
+        }
+        
+        // Add causality if available
+        if let Some(causality) = &event.causality {
+            event_json["causality"] = causality.clone();
+        }
+        
+        // Add modality if available
+        if let Some(modality) = &event.modality {
+            event_json["modality"] = serde_json::Value::String(modality.clone());
+        }
+        
+        // Add event_data if available (for additional metadata)
+        if let Some(event_data) = &event.event_data {
+            event_json["metadata"] = event_data.clone();
+        }
+        
+        // Serialize the JSON to string for storage
+        let content_to_embed = serde_json::to_string(&event_json).map_err(|e| {
+            error!(error = %e, event_id = %event.id, "Failed to serialize chronicle event to JSON");
+            AppError::SerializationError(format!("Chronicle event serialization failed: {e}"))
+        })?;
         
         // 1. Chunk the content
         let chunks = chunk_text(&content_to_embed, &self.chunk_config, Some(format!("chronicle_event_{}", event.id)), 0).map_err(|e| {
