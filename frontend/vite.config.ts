@@ -12,6 +12,7 @@ const certPath = path.resolve(__dirname, '../.certs/cert.pem');
 export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
+		host: true, // Listen on all network interfaces
 		https: {
 			key: fs.readFileSync(keyPath),
 			cert: fs.readFileSync(certPath)

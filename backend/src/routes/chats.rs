@@ -21,7 +21,7 @@ use crate::models::users::User; // Added User import
 use crate::schema::{chat_messages, chat_sessions};
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::{Path, Query, State}, // Added Query
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{delete, get, post, put},
@@ -37,9 +37,10 @@ use serde_json::json;
 use std::sync::Arc;
 use tracing::{error, info};
 // ExposeSecret already imported above
-use serde::Serialize;
+use serde::{Deserialize, Serialize}; // Added Deserialize
 use uuid::Uuid;
 use validator::Validate; // Remove unused Deserialize
+use chrono::{DateTime, Utc}; // Added for cursor-based pagination
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -431,17 +432,26 @@ pub async fn delete_chat_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// Get messages for a chat
-/// Retrieves all messages for a specific chat session.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - Authentication fails
-/// - Chat not found or access denied
-/// - Database operation fails
-/// - Decryption fails
-///
+// Query parameters for fetching messages
+#[derive(Debug, Deserialize)]
+pub struct GetMessagesQueryParams {
+    #[serde(default = "default_message_limit")]
+    pub limit: i64,
+    pub cursor: Option<DateTime<Utc>>, // Timestamp of the last message from previous batch
+}
+
+fn default_message_limit() -> i64 {
+    20
+}
+
+// Response structure for paginated messages
+#[derive(Debug, Serialize)]
+pub struct PaginatedMessagesResponse {
+    pub messages: Vec<MessageResponse>,
+    #[serde(rename = "nextCursor")]
+    pub next_cursor: Option<DateTime<Utc>>,
+}
+
 /// Helper function to validate and parse the chat ID
 ///
 /// # Errors
@@ -514,37 +524,58 @@ fn fetch_chat_with_ownership_check(
     Ok(chat)
 }
 
-/// Helper function to fetch messages for a chat session with variant-aware content
-async fn fetch_chat_messages(pool: PgPool, chat_id: Uuid) -> Result<Vec<Message>, AppError> {
+/// Helper function to fetch messages for a chat session with pagination
+async fn fetch_paginated_chat_messages(
+    pool: PgPool,
+    chat_id: Uuid,
+    limit: i64,
+    cursor: Option<DateTime<Utc>>,
+) -> Result<Vec<Message>, AppError> {
     pool.get()
         .await
         .map_err(|e| {
             tracing::error!(
-                "Failed to get connection from pool for messages query: {}",
+                "Failed to get connection from pool for paginated messages query: {}",
                 e
             );
             AppError::DbPoolError(e.to_string())
         })?
         .interact(move |conn| {
-            tracing::debug!("Fetching messages for session_id = {}", chat_id);
-            let result = chat_messages::table
+            tracing::debug!(
+                "Fetching paginated messages for session_id = {}, limit = {}, cursor = {:?}",
+                chat_id,
+                limit,
+                cursor
+            );
+            let mut query = chat_messages::table
                 .filter(chat_messages::session_id.eq(chat_id))
-                .order_by(chat_messages::created_at.asc())
+                .order_by(chat_messages::created_at.desc()) // Order by descending for reverse pagination
+                .limit(limit)
                 .select(Message::as_select())
-                .load::<Message>(conn);
+                .into_boxed(); // Use into_boxed to allow dynamic query building
+
+            if let Some(cursor_timestamp) = cursor {
+                query = query.filter(chat_messages::created_at.lt(cursor_timestamp));
+            }
+
+            let result = query.load::<Message>(conn);
 
             match &result {
                 Ok(messages) => {
-                    tracing::debug!("Found {} messages for chat {}", messages.len(), chat_id)
+                    tracing::debug!(
+                        "Found {} paginated messages for chat {}",
+                        messages.len(),
+                        chat_id
+                    )
                 }
-                Err(e) => tracing::error!("Error fetching messages: {}", e),
+                Err(e) => tracing::error!("Error fetching paginated messages: {}", e),
             }
 
             result.map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| {
-            tracing::error!("Join error in messages query: {}", e);
+            tracing::error!("Join error in paginated messages query: {}", e);
             AppError::InternalServerErrorGeneric(e.to_string())
         })?
 }
@@ -657,13 +688,28 @@ async fn process_messages_for_response(
 /// - Chat not found or access denied
 /// - Database operation fails
 /// - Decryption fails
+/// Retrieves paginated messages for a specific chat session.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
+/// - Decryption fails
 pub async fn get_messages_by_chat_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // ADDED SessionDek extractor
     Path(id): Path<String>,
+    Query(params): Query<GetMessagesQueryParams>, // Added query parameters
 ) -> Result<impl IntoResponse, AppError> {
-    tracing::debug!("get_messages_by_chat_id_handler: id (as String) = {}", id);
+    tracing::debug!(
+        "get_messages_by_chat_id_handler: id = {}, limit = {}, cursor = {:?}",
+        id,
+        params.limit,
+        params.cursor
+    );
 
     // Parse and validate input
     let chat_id = parse_chat_id(&id)?;
@@ -674,13 +720,25 @@ pub async fn get_messages_by_chat_id_handler(
     // Fetch chat session and verify ownership
     let _chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
 
-    // Fetch messages for the chat
-    let messages_db = fetch_chat_messages(state.pool.clone(), chat_id).await?;
+    // Fetch paginated messages for the chat
+    let messages_db =
+        fetch_paginated_chat_messages(state.pool.clone(), chat_id, params.limit, params.cursor)
+            .await?;
 
     // Decrypt and transform messages for response with variant support
-    let responses = process_messages_for_response(messages_db, &dek, state.pool.clone(), user.id).await?;
+    let mut responses =
+        process_messages_for_response(messages_db, &dek, state.pool.clone(), user.id).await?;
 
-    Ok(Json(responses))
+    // Determine the next cursor
+    let next_cursor = responses.last().map(|msg| msg.created_at);
+
+    // Reverse the order of messages to be chronological for the frontend
+    responses.reverse();
+
+    Ok(Json(PaginatedMessagesResponse {
+        messages: responses,
+        next_cursor,
+    }))
 }
 
 // Create a message

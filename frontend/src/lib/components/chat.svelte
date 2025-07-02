@@ -3,6 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { apiClient } from '$lib/api'; // Import apiClient
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
+	import { tick } from 'svelte';
 	import ChatHeader from './chat-header.svelte';
 	import type { User, ScribeCharacter } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
 	import type { ScribeChatSession, ScribeChatMessage, ChatMode } from '$lib/types'; // Import Scribe types
@@ -30,7 +31,8 @@
 		readonly,
 		initialMessages,
 		character,
-		initialChatInputValue
+		initialChatInputValue,
+		initialCursor
 	}: {
 		user: User | undefined;
 		chat: ScribeChatSession | undefined;
@@ -38,6 +40,7 @@
 		readonly: boolean;
 		character: ScribeCharacter | null | undefined;
 		initialChatInputValue?: string;
+		initialCursor?: string | null;
 	} = $props();
 
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
@@ -48,6 +51,13 @@
 	// Note: In Svelte 5, props are already reactive, so we can use them directly
 
 	const chatHistory = ChatHistory.fromContext();
+	
+	// Pagination state
+	let nextCursor = $state<string | null>(initialCursor || null);
+	let isLoadingMore = $state(false);
+	let hasMoreMessages = $state(initialCursor !== null);
+	let loadedMessagesBatches = $state<ScribeChatMessage[][]>([initialMessages]);
+	let suppressAutoScroll = $state(false);
 
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
@@ -80,19 +90,21 @@
 	
 	$effect(() => {
 		const currentChatId = chat?.id;
-		console.log('CHAT EFFECT RUNNING. Chat ID:', currentChatId, 'Previous Chat ID:', previousChatId, 'Initial Messages Count:', initialMessages.length);
 
-		// Only proceed if the chat ID has actually changed AND we have meaningful data
-		// Avoid running on initial undefined states
+		// Only react to chat ID changes, not batch count changes
 		if (currentChatId !== previousChatId && (currentChatId || previousChatId)) {
 			// Clear messages for previous chat if switching chats
 			if (previousChatId && currentChatId !== previousChatId) {
-				console.log(`Clearing messages for previous chat: ${previousChatId}`);
 				streamingService.clearMessages();
+				
+				// Reset pagination state when switching chats
+				loadedMessagesBatches = [initialMessages];
+				nextCursor = initialCursor || null;
+				hasMoreMessages = initialCursor !== null;
+				isLoadingMore = false;
 			}
 			
 			if (currentChatId) {
-				console.log('Populating messages for chat:', currentChatId);
 				let newInitialMessages: StreamingMessage[];
 
 				if (initialMessages.length === 0 && character?.first_mes) {
@@ -107,9 +119,10 @@
 							isAnimating: false // Initial messages don't animate
 						}
 					];
-					console.log('Populating with character first message.');
 				} else {
-					newInitialMessages = initialMessages.map(
+					// Flatten all loaded batches into a single array
+					const allLoadedMessages = loadedMessagesBatches.flat();
+					newInitialMessages = allLoadedMessages.map(
 						(msg) =>
 							({
 								id: msg.id,
@@ -126,15 +139,12 @@
 								backend_id: msg.backend_id
 							}) as StreamingMessage
 					);
-					console.log(`Populating with ${newInitialMessages.length} initial messages.`);
 				}
 				// Clear and populate messages to ensure reactivity
 				streamingService.clearMessages();
 				for (const message of newInitialMessages) {
 					streamingService.messages.push(message);
 				}
-				console.log('streamingService.messages populated. Count:', streamingService.messages.length);
-				console.log('Verifying - streamingService.messages.length after assignment:', streamingService.messages.length);
 			}
 			
 			// Update the previous chat ID
@@ -150,7 +160,6 @@
 		return () => {
 			// Only clear if we actually had a chat
 			if (currentChatId) {
-				console.log('COMPONENT CLEANUP: Clearing messages on unmount for chat:', currentChatId);
 				streamingService.clearMessages();
 			}
 		};
@@ -161,6 +170,177 @@
 		streamingService.connectionStatus === 'connecting' ||
 			streamingService.connectionStatus === 'open'
 	);
+	
+	// Load more messages function for infinite scroll
+	async function loadMoreMessages() {
+		if (!chat?.id || isLoadingMore || !hasMoreMessages || !nextCursor) {
+			return;
+		}
+		
+		isLoadingMore = true;
+		suppressAutoScroll = true;
+		
+		try {
+			const result = await apiClient.getMessagesByChatId(chat.id, { 
+				limit: 20, 
+				cursor: nextCursor 
+			});
+			
+			if (result.isErr()) {
+				console.error('Failed to load more messages:', result.error);
+				toast.error('Failed to load older messages');
+				return;
+			}
+			
+			// Handle paginated response
+			if (!Array.isArray(result.value) && 'messages' in result.value) {
+				const { messages: newMessages, nextCursor: newCursor } = result.value;
+				
+				console.log('📥 Loading more messages:', {
+					newMessagesCount: newMessages.length,
+					newCursor,
+					currentStreamingCount: streamingService.messages.length
+				});
+				
+				// Convert to ScribeChatMessage format
+				const convertedMessages: ScribeChatMessage[] = newMessages.map(
+					(rawMsg): ScribeChatMessage => ({
+						id: rawMsg.id,
+						backend_id: rawMsg.id,
+						session_id: rawMsg.session_id,
+						message_type: rawMsg.message_type,
+						content:
+							rawMsg.parts && rawMsg.parts.length > 0 && 'text' in rawMsg.parts[0] && typeof rawMsg.parts[0].text === 'string'
+								? rawMsg.parts[0].text
+								: '',
+						created_at: typeof rawMsg.created_at === 'string' ? rawMsg.created_at : rawMsg.created_at.toISOString(),
+						user_id: '',
+						loading: false,
+						raw_prompt: rawMsg.raw_prompt,
+						prompt_tokens: rawMsg.prompt_tokens,
+						completion_tokens: rawMsg.completion_tokens,
+						model_name: rawMsg.model_name
+					})
+				);
+				
+				// Get reference to messages container for scroll preservation
+				const messagesContainer = document.querySelector('[data-messages-container]') || 
+					document.querySelector('.overflow-y-scroll');
+					
+				if (messagesContainer) {
+					// Store current scroll position relative to bottom
+					const oldScrollTop = messagesContainer.scrollTop;
+					const oldScrollHeight = messagesContainer.scrollHeight;
+					const containerHeight = messagesContainer.clientHeight;
+					const distanceFromBottom = oldScrollHeight - oldScrollTop - containerHeight;
+					
+					console.log('📍 Scroll position before:', {
+						oldScrollTop,
+						oldScrollHeight,
+						containerHeight,
+						distanceFromBottom
+					});
+					
+					// Convert to StreamingMessage format and prepend to streaming service
+					const streamingMessages = convertedMessages.map(
+						(msg): StreamingMessage => ({
+							id: msg.id,
+							sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
+							content: msg.content,
+							displayedContent: msg.content,
+							created_at: msg.created_at,
+							isAnimating: false,
+							error: msg.error,
+							retryable: msg.retryable,
+							prompt_tokens: msg.prompt_tokens,
+							completion_tokens: msg.completion_tokens,
+							model_name: msg.model_name,
+							backend_id: msg.backend_id
+						})
+					);
+					
+					// Prepend the new messages to the beginning of the array (create new array reference)
+					streamingService.messages = [...streamingMessages, ...streamingService.messages];
+					
+					console.log('✅ Added messages to streaming service:', {
+						addedCount: streamingMessages.length,
+						newTotalCount: streamingService.messages.length,
+						firstNewMessage: streamingMessages[0]?.id,
+						lastNewMessage: streamingMessages[streamingMessages.length - 1]?.id
+					});
+					
+					// Add to loaded batches for tracking
+					loadedMessagesBatches.push(convertedMessages);
+					
+					// Use tick to wait for DOM update
+					await tick();
+					
+					// Calculate new scroll position to maintain same distance from bottom
+					const newScrollHeight = messagesContainer.scrollHeight;
+					const newContainerHeight = messagesContainer.clientHeight;
+					const targetScrollTop = newScrollHeight - distanceFromBottom - newContainerHeight;
+					
+					console.log('📍 Scroll position after:', {
+						newScrollHeight,
+						newContainerHeight,
+						targetScrollTop,
+						heightAdded: newScrollHeight - oldScrollHeight
+					});
+					
+					// Adjust scroll position to maintain the same relative position
+					messagesContainer.scrollTop = targetScrollTop;
+					
+					// Add another tick and delay to ensure scroll position sticks
+					await tick();
+					setTimeout(() => {
+						if (messagesContainer) {
+							messagesContainer.scrollTop = targetScrollTop;
+						}
+						// Re-enable auto-scroll after scroll position is set
+						suppressAutoScroll = false;
+					}, 150);
+					
+				} else {
+					// Fallback if we can't find the container
+					const streamingMessages = convertedMessages.map(
+						(msg): StreamingMessage => ({
+							id: msg.id,
+							sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
+							content: msg.content,
+							displayedContent: msg.content,
+							created_at: msg.created_at,
+							isAnimating: false,
+							error: msg.error,
+							retryable: msg.retryable,
+							prompt_tokens: msg.prompt_tokens,
+							completion_tokens: msg.completion_tokens,
+							model_name: msg.model_name,
+							backend_id: msg.backend_id
+						})
+					);
+					
+					streamingService.messages = [...streamingMessages, ...streamingService.messages];
+					loadedMessagesBatches.push(convertedMessages);
+				}
+				
+				// Update cursor and hasMore state
+				nextCursor = newCursor;
+				hasMoreMessages = newCursor !== null;
+				
+			}
+		} catch (error) {
+			console.error('Error loading more messages:', error);
+			toast.error('Failed to load older messages');
+		} finally {
+			isLoadingMore = false;
+			// Ensure suppressAutoScroll is cleared even if there's an error
+			if (suppressAutoScroll) {
+				setTimeout(() => {
+					suppressAutoScroll = false;
+				}, 200);
+			}
+		}
+	}
 	
 	// Watch for streaming completion - DISABLED to prevent refresh issues
 	// $effect(() => {
@@ -179,13 +359,19 @@
 	// Create a single, reactive source of truth for display messages with object identity preservation
 	let displayMessages = $derived.by(() => {
 		const streamingMessages = streamingService.messages;
-		// Removed noisy derived log - this runs thousands of times during animation
+		console.log('🔄 displayMessages derived:', {
+			streamingCount: streamingMessages.length,
+			firstMessage: streamingMessages[0]?.id,
+			lastMessage: streamingMessages[streamingMessages.length - 1]?.id
+		});
 		
 		// Check if messages array actually changed to avoid unnecessary work
 		if (streamingMessages === lastStreamingMessages) {
-			console.log(`⚡ SAME ARRAY REFERENCE - Skipping recalculation`);
+			console.log('⚠️ displayMessages: Using cached result, no change detected');
 			return Array.from(messageCache.values());
 		}
+		
+		console.log('🔄 displayMessages: Processing new messages array');
 		
 		const messages: ScribeChatMessage[] = [];
 		const newCache = new Map<string, ScribeChatMessage>();
@@ -240,11 +426,11 @@
 		messageCache = newCache;
 		lastStreamingMessages = streamingMessages;
 		
+		// Sort messages by timestamp (oldest first) for proper chronological display
+		messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+		
 		// Only log when no messages are animating to avoid spam
 		const hasAnimatingMessages = streamingMessages.some(m => m.isAnimating);
-		if (!hasAnimatingMessages) {
-			console.log(`✅ Processed ${messages.length} messages (${streamingMessages.length - messageCache.size + newCache.size} new/changed)`);
-		}
 		return messages;
 	});
 
@@ -459,12 +645,13 @@
 	let tokenCountTimeout: NodeJS.Timeout | null = null;
 
 	$effect(() => {
-		// Debounce token counting to avoid excessive API calls
+		// Clear existing timeout
 		if (tokenCountTimeout) {
 			clearTimeout(tokenCountTimeout);
 		}
 
 		if (chatInput.trim().length > 0) {
+			// Increased debounce to 3 seconds to prevent rate limiting
 			tokenCountTimeout = setTimeout(async () => {
 				try {
 					const model = await getCurrentChatModel();
@@ -475,11 +662,18 @@
 					console.error('Token counting failed:', error);
 					showTokenUsage = false;
 				}
-			}, 500); // 500ms debounce
+			}, 3000); // 3 second debounce to prevent rate limiting
 		} else {
 			tokenCounter.reset();
 			showTokenUsage = false;
 		}
+
+		// Cleanup function to clear timeout on unmount or when effect reruns
+		return () => {
+			if (tokenCountTimeout) {
+				clearTimeout(tokenCountTimeout);
+			}
+		};
 	});
 
 	// --- Scribe Backend Interaction Logic ---
@@ -1007,6 +1201,16 @@
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
 	<ChatHeader {user} {chat} {readonly} />
+	{#key displayMessages.length}
+		{console.log('🎯 About to render Messages component:', { 
+			displayMessagesCount: displayMessages.length, 
+			isLoadingMore, 
+			hasMoreMessages,
+			firstDisplayMessage: displayMessages[0]?.id,
+			lastDisplayMessage: displayMessages[displayMessages.length - 1]?.id 
+		})}
+	{/key}
+	
 	<Messages
 		{readonly}
 		loading={isLoading}
@@ -1025,6 +1229,10 @@
 		onPreviousVariant={handlePreviousVariant}
 		onNextVariant={handleNextVariant}
 		onGreetingChanged={handleGreetingChanged}
+		onLoadMore={loadMoreMessages}
+		{isLoadingMore}
+		{hasMoreMessages}
+		{suppressAutoScroll}
 	/>
 
 	<!-- Show Chat Interface (Get Suggestions + Input) Only When Inside Active Chat -->

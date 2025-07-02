@@ -28,6 +28,12 @@ export interface Message {
 	model_name?: string; // Model used for this specific message (optional for backward compatibility)
 }
 
+// Paginated messages response for infinite scroll
+export interface PaginatedMessagesResponse {
+	messages: Message[];
+	nextCursor: string | null; // ISO 8601 timestamp or null if no more messages
+}
+
 // Placeholder for Vote type - Define based on expected fields from backend
 export interface Vote {
 	id: string;

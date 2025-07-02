@@ -60,7 +60,8 @@ import type {
 	CreateEventRequest,
 	EventFilter,
 	TokenCountRequest,
-	TokenCountResponse
+	TokenCountResponse,
+	PaginatedMessagesResponse
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -563,8 +564,29 @@ class ApiClient {
 	}
 
 	// Message methods
-	async getMessagesByChatId(chatId: string): Promise<Result<Message[], ApiError>> {
-		return this.fetch<Message[]>(`/api/chats/${chatId}/messages`);
+	async getMessagesByChatId(
+		chatId: string,
+		options?: { limit?: number; cursor?: string }
+	): Promise<Result<PaginatedMessagesResponse | Message[], ApiError>> {
+		// Support both old and new API responses
+		const params = new URLSearchParams();
+		if (options?.limit) params.append('limit', options.limit.toString());
+		if (options?.cursor) params.append('cursor', options.cursor);
+		const query = params.toString() ? `?${params.toString()}` : '';
+		
+		// The backend now returns PaginatedMessagesResponse, but we maintain backwards compatibility
+		const result = await this.fetch<any>(`/api/chats/${chatId}/messages${query}`);
+		
+		if (result.isOk() && result.value) {
+			// Check if it's the new paginated response format
+			if ('messages' in result.value && 'nextCursor' in result.value) {
+				return ok(result.value as PaginatedMessagesResponse);
+			}
+			// Fallback to array format for backwards compatibility
+			return ok(result.value as Message[]);
+		}
+		
+		return result;
 	}
 
 	async getMessageById(messageId: string): Promise<Result<Message, ApiError>> {

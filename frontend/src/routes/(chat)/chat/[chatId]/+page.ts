@@ -25,13 +25,29 @@ export async function load({ params: { chatId }, parent }) {
 		}
 		const chat: ScribeChatSession = chatResult.value;
 
-		// Fetch chat messages
-		const messagesResult = await apiClient.getMessagesByChatId(chatId);
+		// Fetch initial batch of chat messages (first page)
+		const messagesResult = await apiClient.getMessagesByChatId(chatId, { limit: 20 });
 		if (messagesResult.isErr()) {
 			console.error('Failed to fetch messages:', messagesResult.error);
 			error(500, 'Failed to load chat messages');
 		}
-		const messagesResponseJson: Message[] = messagesResult.value;
+		
+		// Handle both old array format and new paginated format
+		let messagesResponseJson: Message[];
+		let initialCursor: string | null = null;
+		
+		if (Array.isArray(messagesResult.value)) {
+			// Old format: array of messages
+			messagesResponseJson = messagesResult.value;
+		} else if ('messages' in messagesResult.value) {
+			// New format: paginated response
+			messagesResponseJson = messagesResult.value.messages;
+			initialCursor = messagesResult.value.nextCursor;
+		} else {
+			console.error('Unexpected response format from getMessagesByChatId');
+			error(500, 'Invalid response format from server');
+		}
+		
 		const messages: ScribeChatMessage[] = messagesResponseJson.map(
 			(rawMsg): ScribeChatMessage => ({
 				id: rawMsg.id, // For existing messages, use backend ID as main ID
@@ -66,7 +82,7 @@ export async function load({ params: { chatId }, parent }) {
 			console.warn(`Chat session ${chatId} does not have an associated character_id.`);
 		}
 
-		return { chat, messages, character, user };
+		return { chat, messages, character, user, initialCursor };
 	} catch (e) {
 		console.error('Error loading chat data:', e);
 		error(500, 'An error occurred while processing your request');
