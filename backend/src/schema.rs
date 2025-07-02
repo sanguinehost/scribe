@@ -313,6 +313,47 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    ecs_components (id) {
+        id -> Uuid,
+        entity_id -> Uuid,
+        component_type -> Text,
+        component_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    ecs_entities (id) {
+        id -> Uuid,
+        archetype_signature -> Text,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    ecs_entity_relationships (id) {
+        id -> Uuid,
+        from_entity_id -> Uuid,
+        to_entity_id -> Uuid,
+        relationship_type -> Text,
+        relationship_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     email_verification_tokens (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -587,6 +628,7 @@ diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
+diesel::joinable!(ecs_components -> ecs_entities (entity_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
 diesel::joinable!(lorebook_entries -> users (user_id));
@@ -612,6 +654,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_session_lorebooks,
     chat_sessions,
     chronicle_events,
+    ecs_components,
+    ecs_entities,
+    ecs_entity_relationships,
     email_verification_tokens,
     lorebook_entries,
     lorebooks,
