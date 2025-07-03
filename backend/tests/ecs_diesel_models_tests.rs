@@ -20,6 +20,7 @@ async fn test_ecs_entity_diesel_model() {
     let entity_id = Uuid::new_v4();
     let new_entity = NewEcsEntity {
         id: entity_id,
+        user_id: Uuid::new_v4(), // Add required user_id field
         archetype_signature: "Character|Health|Position".to_string(),
     };
     
@@ -81,6 +82,7 @@ async fn test_ecs_component_diesel_model() {
     let entity_id = Uuid::new_v4();
     let new_entity = NewEcsEntity {
         id: entity_id,
+        user_id: Uuid::new_v4(), // Add required user_id field
         archetype_signature: "Character|Health".to_string(),
     };
     
@@ -107,6 +109,7 @@ async fn test_ecs_component_diesel_model() {
     let new_component = NewEcsComponent {
         id: component_id,
         entity_id,
+        user_id: Uuid::new_v4(), // Add required user_id field
         component_type: "Health".to_string(),
         component_data: health_data.clone(),
     };
@@ -178,6 +181,7 @@ async fn test_ecs_entity_relationship_diesel_model() {
     for (id, archetype) in [(entity1_id, "Character"), (entity2_id, "Item")] {
         let new_entity = NewEcsEntity {
             id,
+            user_id: Uuid::new_v4(), // Add required user_id field
             archetype_signature: archetype.to_string(),
         };
         
@@ -205,6 +209,7 @@ async fn test_ecs_entity_relationship_diesel_model() {
         id: relationship_id,
         from_entity_id: entity1_id,
         to_entity_id: entity2_id,
+        user_id: Uuid::new_v4(), // Add required user_id field
         relationship_type: "contains".to_string(),
         relationship_data: relationship_data.clone(),
     };

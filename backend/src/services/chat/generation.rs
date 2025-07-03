@@ -452,6 +452,8 @@ pub async fn get_session_data_for_generation(
         .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {e}")))??
     };
 
+    info!(session_id = %session_id, chronicle_id = ?player_chronicle_id_from_session, "NARRATIVE_DEBUG: Fetched player_chronicle_id from database in get_session_data_for_generation.");
+
     // --- Retrieve Comprehensive Active Lorebook IDs (now that character_id is available) ---
     let active_lorebook_ids_for_search: Option<Vec<Uuid>> = {
         let pool_clone_lore = state.pool.clone();
@@ -1612,6 +1614,7 @@ pub async fn stream_ai_response_and_save_message(
             let player_chronicle_id_clone = player_chronicle_id; // Move chronicle ID into the spawned task
 
             tokio::spawn(async move {
+                info!(session_id = %full_session_id_clone, chronicle_id = ?player_chronicle_id_clone, "NARRATIVE_DEBUG: Inside tokio::spawn, chronicle_id to be used for narrative processing.");
                 info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Entering tokio::spawn block for message save and narrative processing");
                 
                 let dek_ref_full = user_dek_arc_clone_full.clone();

@@ -8,6 +8,10 @@ pub mod chronicle_backfill_processor;
 pub mod chronicle_deduplication_service;
 pub mod chronicle_ecs_translator;
 pub mod chronicle_service;
+pub mod ecs_chronicle_event_handler;
+pub mod ecs_component_lifecycle_manager;
+pub mod ecs_entity_manager;
+pub mod ecs_outbox_processor;
 pub mod event_valence_processor;
 pub mod email_service;
 pub mod embeddings;
@@ -37,6 +41,13 @@ pub use chronicle_backfill_processor::{ChronicleBackfillProcessor, BackfillConfi
 pub use chronicle_deduplication_service::{ChronicleDeduplicationService, DeduplicationConfig, DuplicateDetectionResult};
 pub use chronicle_ecs_translator::ChronicleEcsTranslator;
 pub use chronicle_service::ChronicleService;
+pub use ecs_chronicle_event_handler::{EcsChronicleEventHandler, ChronicleEventHandlerConfig};
+pub use ecs_component_lifecycle_manager::{EcsComponentLifecycleManager, ComponentLifecycleConfig, ComponentValidationRule, LifecycleOperationResult, DependencyResolution};
+pub use ecs_entity_manager::{
+    EcsEntityManager, EntityManagerConfig, EntityQueryResult, ComponentUpdate, ComponentOperation, 
+    ComponentQuery, EntityQueryOptions, ComponentSort, SortDirection, QueryExecutionStats, AdvancedQueryResult
+};
+pub use ecs_outbox_processor::{EcsOutboxProcessor, OutboxProcessorConfig, OutboxEventHandler, EventProcessingResult, OutboxProcessingStats, LoggingEventHandler};
 pub use event_valence_processor::{EventValenceProcessor, ValenceProcessingResult, ValenceProcessingConfig};
 pub use email_service::{EmailService, create_email_service};
 pub use encryption_service::EncryptionService;

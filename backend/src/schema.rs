@@ -376,6 +376,34 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    ecs_outbox (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        sequence_number -> Int8,
+        #[max_length = 255]
+        event_type -> Varchar,
+        entity_id -> Nullable<Uuid>,
+        #[max_length = 255]
+        component_type -> Nullable<Varchar>,
+        event_data -> Jsonb,
+        aggregate_id -> Nullable<Uuid>,
+        #[max_length = 255]
+        aggregate_type -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+        processed_at -> Nullable<Timestamptz>,
+        #[max_length = 50]
+        delivery_status -> Varchar,
+        retry_count -> Int4,
+        max_retries -> Int4,
+        next_retry_at -> Nullable<Timestamptz>,
+        error_message -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     email_verification_tokens (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -657,6 +685,8 @@ diesel::joinable!(ecs_components -> ecs_entities (entity_id));
 diesel::joinable!(ecs_components -> users (user_id));
 diesel::joinable!(ecs_entities -> users (user_id));
 diesel::joinable!(ecs_entity_relationships -> users (user_id));
+diesel::joinable!(ecs_outbox -> ecs_entities (entity_id));
+diesel::joinable!(ecs_outbox -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
 diesel::joinable!(lorebook_entries -> users (user_id));
@@ -686,6 +716,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     ecs_components,
     ecs_entities,
     ecs_entity_relationships,
+    ecs_outbox,
     email_verification_tokens,
     lorebook_entries,
     lorebooks,

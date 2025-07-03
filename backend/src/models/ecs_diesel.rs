@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
-use crate::schema::{ecs_entities, ecs_components, ecs_entity_relationships};
+use crate::schema::{ecs_entities, ecs_components, ecs_entity_relationships, ecs_outbox};
 
 // ============================================================================
 // Entity Models
@@ -129,6 +129,58 @@ pub struct NewEcsEntityRelationship {
 #[diesel(table_name = ecs_entity_relationships)]
 pub struct UpdateEcsEntityRelationship {
     pub relationship_data: Option<JsonValue>,
+}
+
+// ============================================================================
+// Outbox Models
+// ============================================================================
+
+/// Represents an ECS outbox event in the database
+#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Identifiable)]
+#[diesel(table_name = ecs_outbox)]
+#[diesel(primary_key(id))]
+pub struct EcsOutboxEvent {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub sequence_number: i64,
+    pub event_type: String,
+    pub entity_id: Option<Uuid>,
+    pub component_type: Option<String>,
+    pub event_data: JsonValue,
+    pub aggregate_id: Option<Uuid>,
+    pub aggregate_type: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub processed_at: Option<DateTime<Utc>>,
+    pub delivery_status: String,
+    pub retry_count: i32,
+    pub max_retries: i32,
+    pub next_retry_at: Option<DateTime<Utc>>,
+    pub error_message: Option<String>,
+}
+
+/// Used to insert a new ECS outbox event
+#[derive(Debug, Clone, Serialize, Deserialize, Insertable)]
+#[diesel(table_name = ecs_outbox)]
+pub struct NewEcsOutboxEvent {
+    pub user_id: Uuid,
+    pub event_type: String,
+    pub entity_id: Option<Uuid>,
+    pub component_type: Option<String>,
+    pub event_data: JsonValue,
+    pub aggregate_id: Option<Uuid>,
+    pub aggregate_type: Option<String>,
+    pub max_retries: Option<i32>,
+}
+
+/// Used to update an existing ECS outbox event
+#[derive(Debug, Clone, AsChangeset)]
+#[diesel(table_name = ecs_outbox)]
+pub struct UpdateEcsOutboxEvent {
+    pub processed_at: Option<Option<DateTime<Utc>>>,
+    pub delivery_status: Option<String>,
+    pub retry_count: Option<i32>,
+    pub next_retry_at: Option<Option<DateTime<Utc>>>,
+    pub error_message: Option<Option<String>>,
 }
 
 // ============================================================================

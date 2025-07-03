@@ -586,7 +586,7 @@ impl NarrativeIntelligenceService {
             min_confidence_threshold: 0.5, // Lower threshold for dev
             max_messages_to_analyze: 5,
             async_processing: false,
-            batch_size: 10,
+            batch_size: 4,
         };
         
         Self::new_with_deps(ai_client, chronicle_service, lorebook_service, qdrant_service, embedding_client, app_state, Some(config))

@@ -420,7 +420,10 @@ async fn purge_existing_events(
     let existing_events = chronicle_service.get_chronicle_events(
         user_id,
         chronicle_id,
-        EventFilter::default()
+        EventFilter {
+            limit: None, // Remove limit to purge ALL events
+            ..EventFilter::default()
+        }
     ).await?;
     
     let events_count = existing_events.len();
@@ -469,7 +472,7 @@ async fn process_messages_with_streaming_pipeline(
     messages_to_process: Vec<ChatMessage>,
 ) -> Result<(usize, usize), AppError> {
     // Configuration for batching and concurrency
-    let batch_size = request.batch_size.min(50); // Cap at 50 for safety
+    // Configuration for batching and concurrency
     let max_concurrent_batches = 5; // Limit concurrency to avoid overwhelming AI service
     
     // Get the narrative intelligence service
@@ -499,7 +502,7 @@ async fn process_messages_with_streaming_pipeline(
     });
     
     // Process batches and send events to the channel (producers)
-    let batches: Vec<_> = messages_to_process.chunks(batch_size).enumerate().collect();
+    let batches: Vec<_> = messages_to_process.chunks(request.batch_size).enumerate().collect();
     
     for batch_chunk in batches.chunks(max_concurrent_batches) {
         let batch_futures: Vec<_> = batch_chunk

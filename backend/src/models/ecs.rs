@@ -243,6 +243,50 @@ impl Component for RelationshipsComponent {
     }
 }
 
+/// Domain model for ECS component (distinct from Diesel model)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EcsComponent {
+    pub id: Uuid,
+    pub entity_id: Uuid,
+    pub component_type: String,
+    pub component_data: JsonValue,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl EcsComponent {
+    /// Create a new ECS component
+    pub fn new(
+        entity_id: Uuid,
+        component_type: String,
+        component_data: JsonValue,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            entity_id,
+            component_type,
+            component_data,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// Deserialize the component data as a specific type
+    pub fn as_component<T>(&self) -> Result<T, EcsError>
+    where
+        T: Component,
+    {
+        T::from_json(&self.component_data)
+    }
+
+    /// Update the component data
+    pub fn update_data(&mut self, new_data: JsonValue) {
+        self.component_data = new_data;
+        self.updated_at = Utc::now();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
