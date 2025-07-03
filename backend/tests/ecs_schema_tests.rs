@@ -680,6 +680,7 @@ async fn test_ecs_entity_relationships_basic_crud() {
         .interact(move |conn| {
             ecs_entity_relationships::table
                 .filter(ecs_entity_relationships::id.eq(relationship_id))
+                .select(EcsEntityRelationship::as_select())
                 .first(conn)
         })
         .await
@@ -746,6 +747,7 @@ async fn test_ecs_entity_relationships_basic_crud() {
         .interact(move |conn| {
             ecs_entity_relationships::table
                 .filter(ecs_entity_relationships::id.eq(relationship_id))
+                .select(EcsEntityRelationship::as_select())
                 .first(conn)
                 .optional()
         })
