@@ -313,6 +313,23 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    ecs_backfill_checkpoints (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        chronicle_id -> Nullable<Uuid>,
+        last_processed_event_id -> Uuid,
+        last_processed_timestamp -> Timestamptz,
+        events_processed_count -> Int8,
+        status -> Text,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     ecs_components (id) {
         id -> Uuid,
         entity_id -> Uuid,
@@ -320,6 +337,9 @@ diesel::table! {
         component_data -> Jsonb,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        user_id -> Uuid,
+        encrypted_component_data -> Nullable<Bytea>,
+        component_data_nonce -> Nullable<Bytea>,
     }
 }
 
@@ -332,6 +352,7 @@ diesel::table! {
         archetype_signature -> Text,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        user_id -> Uuid,
     }
 }
 
@@ -347,6 +368,7 @@ diesel::table! {
         relationship_data -> Jsonb,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        user_id -> Uuid,
     }
 }
 
@@ -628,7 +650,13 @@ diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
+diesel::joinable!(ecs_backfill_checkpoints -> chronicle_events (last_processed_event_id));
+diesel::joinable!(ecs_backfill_checkpoints -> player_chronicles (chronicle_id));
+diesel::joinable!(ecs_backfill_checkpoints -> users (user_id));
 diesel::joinable!(ecs_components -> ecs_entities (entity_id));
+diesel::joinable!(ecs_components -> users (user_id));
+diesel::joinable!(ecs_entities -> users (user_id));
+diesel::joinable!(ecs_entity_relationships -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
 diesel::joinable!(lorebook_entries -> users (user_id));
@@ -654,6 +682,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_session_lorebooks,
     chat_sessions,
     chronicle_events,
+    ecs_backfill_checkpoints,
     ecs_components,
     ecs_entities,
     ecs_entity_relationships,

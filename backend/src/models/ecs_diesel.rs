@@ -19,6 +19,7 @@ use crate::schema::{ecs_entities, ecs_components, ecs_entity_relationships};
 #[diesel(primary_key(id))]
 pub struct EcsEntity {
     pub id: Uuid,
+    pub user_id: Uuid,
     pub archetype_signature: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -29,6 +30,7 @@ pub struct EcsEntity {
 #[diesel(table_name = ecs_entities)]
 pub struct NewEcsEntity {
     pub id: Uuid,
+    pub user_id: Uuid,
     pub archetype_signature: String,
 }
 
@@ -66,6 +68,7 @@ impl EcsEntity {
 pub struct EcsComponent {
     pub id: Uuid,
     pub entity_id: Uuid,
+    pub user_id: Uuid,
     pub component_type: String,
     pub component_data: JsonValue,
     pub created_at: DateTime<Utc>,
@@ -78,6 +81,7 @@ pub struct EcsComponent {
 pub struct NewEcsComponent {
     pub id: Uuid,
     pub entity_id: Uuid,
+    pub user_id: Uuid,
     pub component_type: String,
     pub component_data: JsonValue,
 }
@@ -101,6 +105,7 @@ pub struct EcsEntityRelationship {
     pub id: Uuid,
     pub from_entity_id: Uuid,
     pub to_entity_id: Uuid,
+    pub user_id: Uuid,
     pub relationship_type: String,
     pub relationship_data: JsonValue,
     pub created_at: DateTime<Utc>,
@@ -114,6 +119,7 @@ pub struct NewEcsEntityRelationship {
     pub id: Uuid,
     pub from_entity_id: Uuid,
     pub to_entity_id: Uuid,
+    pub user_id: Uuid,
     pub relationship_type: String,
     pub relationship_data: JsonValue,
 }
@@ -168,6 +174,7 @@ mod tests {
     fn test_entity_component_types_parsing() {
         let entity = EcsEntity {
             id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
             archetype_signature: "Character|Health|Position".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -184,6 +191,7 @@ mod tests {
     fn test_entity_has_component_type() {
         let entity = EcsEntity {
             id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
             archetype_signature: "Character|Health|Position".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),

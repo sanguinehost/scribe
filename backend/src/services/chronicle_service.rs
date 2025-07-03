@@ -474,6 +474,14 @@ impl ChronicleService {
                     query = query.filter(chronicle_events::source.eq(source.to_string()));
                 }
 
+                if let Some(timestamp) = filter.after_timestamp {
+                    query = query.filter(chronicle_events::created_at.gt(timestamp));
+                }
+
+                if let Some(timestamp) = filter.before_timestamp {
+                    query = query.filter(chronicle_events::created_at.lt(timestamp));
+                }
+
                 // Apply ordering
                 match filter.order_by.unwrap_or(EventOrderBy::CreatedAtDesc) {
                     EventOrderBy::CreatedAtAsc => query = query.order(chronicle_events::created_at.asc()),
