@@ -221,6 +221,7 @@ async fn test_ecs_entity_relationship_diesel_model() {
         .interact(move |conn| {
             diesel::insert_into(ecs_entity_relationships::table)
                 .values(&new_relationship)
+                .returning(EcsEntityRelationship::as_returning())
                 .get_result(conn)
         })
         .await

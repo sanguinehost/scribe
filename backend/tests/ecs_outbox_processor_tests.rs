@@ -447,8 +447,8 @@ async fn test_event_ordering_guarantees() {
         processed_order: processed_order.clone(),
     });
     
-    let processor = EcsOutboxProcessor::new(test_app.db_pool.clone().into(), config);
-    processor.register_handler("ordered_event".to_string(), handler.clone());
+    let mut processor = EcsOutboxProcessor::new(test_app.db_pool.clone().into(), Some(config));
+    processor.register_handler(handler.clone());
     
     // Process events
     let processor_handle = tokio::spawn(async move {

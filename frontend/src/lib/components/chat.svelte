@@ -402,7 +402,6 @@
 				chat_session_id: chat.id,
 				purge_existing: true,
 				extraction_model: 'gemini-2.5-pro',
-				batch_size: 10
 			});
 
 			if (result.isOk()) {

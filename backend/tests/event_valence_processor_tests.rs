@@ -9,7 +9,7 @@ use anyhow::Result as AnyhowResult;
 use scribe_backend::{
     models::{
         narrative_ontology::{EventValence, ValenceType},
-        ecs_diesel::{EcsEntity, NewEcsEntity, EcsComponent, NewEcsComponent, EcsEntityRelationship, NewEcsEntityRelationship},
+        ecs_diesel::{NewEcsEntity, EcsComponent, NewEcsComponent, EcsEntityRelationship, NewEcsEntityRelationship},
     },
     services::{
         event_valence_processor::{EventValenceProcessor, ValenceProcessingConfig},
@@ -20,13 +20,63 @@ use scribe_backend::{
 use uuid::Uuid;
 use serde_json::json;
 use diesel::{RunQueryDsl, prelude::*};
+use secrecy::{SecretString, ExposeSecret};
+use bcrypt;
+
+/// Helper to create a test user
+async fn create_test_user(test_app: &TestApp) -> anyhow::Result<Uuid> {
+    use scribe_backend::models::users::{NewUser, UserRole, AccountStatus, UserDbQuery};
+    use scribe_backend::schema::users;
+    
+    let conn = test_app.db_pool.get().await?;
+    
+    let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
+    let username = format!("valence_test_user_{}", Uuid::new_v4().simple());
+    let email = format!("{}@test.com", username);
+    
+    // Generate proper crypto keys
+    let kek_salt = scribe_backend::crypto::generate_salt()?;
+    let dek = scribe_backend::crypto::generate_dek()?;
+    
+    let secret_password = SecretString::new("testpassword".to_string().into());
+    let kek = scribe_backend::crypto::derive_kek(&secret_password, &kek_salt)?;
+    
+    let (encrypted_dek, dek_nonce) = scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
+    
+    let new_user = NewUser {
+        username,
+        password_hash: hashed_password,
+        email,
+        kek_salt,
+        encrypted_dek,
+        encrypted_dek_by_recovery: None,
+        role: UserRole::User,
+        recovery_kek_salt: None,
+        dek_nonce,
+        recovery_dek_nonce: None,
+        account_status: AccountStatus::Active,
+    };
+    
+    let user_db: UserDbQuery = conn
+        .interact(move |conn| {
+            diesel::insert_into(users::table)
+                .values(&new_user)
+                .returning(UserDbQuery::as_returning())
+                .get_result(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
+    
+    Ok(user_db.id)
+}
 
 /// Helper to create a test entity in the database
-async fn create_test_entity(test_app: &TestApp, entity_id: Uuid, archetype: &str) -> AnyhowResult<()> {
+async fn create_test_entity(test_app: &TestApp, user_id: Uuid, entity_id: Uuid, archetype: &str) -> AnyhowResult<()> {
     let conn = test_app.db_pool.get().await?;
     
     let new_entity = NewEcsEntity {
         id: entity_id,
+        user_id,
         archetype_signature: archetype.to_string(),
     };
     
@@ -44,6 +94,7 @@ async fn create_test_entity(test_app: &TestApp, entity_id: Uuid, archetype: &str
 /// Helper to create a test component in the database
 async fn create_test_component(
     test_app: &TestApp, 
+    user_id: Uuid,
     entity_id: Uuid, 
     component_type: &str, 
     data: serde_json::Value
@@ -53,6 +104,7 @@ async fn create_test_component(
     let new_component = NewEcsComponent {
         id: Uuid::new_v4(),
         entity_id,
+        user_id,
         component_type: component_type.to_string(),
         component_data: data,
     };
@@ -71,6 +123,7 @@ async fn create_test_component(
 /// Helper to create a test relationship in the database
 async fn create_test_relationship(
     test_app: &TestApp,
+    user_id: Uuid,
     from_entity_id: Uuid,
     to_entity_id: Uuid,
     relationship_type: &str,
@@ -82,6 +135,7 @@ async fn create_test_relationship(
         id: Uuid::new_v4(),
         from_entity_id,
         to_entity_id,
+        user_id,
         relationship_type: relationship_type.to_string(),
         relationship_data: data,
     };
@@ -103,11 +157,12 @@ async fn test_process_individual_valence_health_change() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
+    let user_id = create_test_user(&test_app).await.unwrap();
     let entity_id = Uuid::new_v4();
     
     // Create test entity and health component
-    create_test_entity(&test_app, entity_id, "Health|Position").await.unwrap();
-    create_test_component(&test_app, entity_id, "Health", json!({
+    create_test_entity(&test_app, user_id, entity_id, "Health|Position").await.unwrap();
+    create_test_component(&test_app, user_id, entity_id, "Health", json!({
         "current": 75.0,
         "max": 100.0
     })).await.unwrap();
@@ -131,7 +186,7 @@ async fn test_process_individual_valence_health_change() {
     
     // Process the valence changes
     let result = processor
-        .process_valence_changes(&valence_changes, None, Some(Uuid::new_v4()))
+        .process_valence_changes(&valence_changes, None, Some(Uuid::new_v4()), user_id)
         .await
         .expect("Valence processing should succeed");
     
@@ -156,15 +211,16 @@ async fn test_process_relational_valence_trust_change() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
+    let user_id = create_test_user(&test_app).await.unwrap();
     let character_a_id = Uuid::new_v4();
     let character_b_id = Uuid::new_v4();
     
     // Create test entities
-    create_test_entity(&test_app, character_a_id, "Health|Position|Relationships").await.unwrap();
-    create_test_entity(&test_app, character_b_id, "Health|Position|Relationships").await.unwrap();
+    create_test_entity(&test_app, user_id, character_a_id, "Health|Position|Relationships").await.unwrap();
+    create_test_entity(&test_app, user_id, character_b_id, "Health|Position|Relationships").await.unwrap();
     
     // Create existing trust relationship
-    create_test_relationship(&test_app, character_a_id, character_b_id, "trust", json!({
+    create_test_relationship(&test_app, user_id, character_a_id, character_b_id, "trust", json!({
         "trust": 0.3,
         "created_at": "2023-01-01T00:00:00Z"
     })).await.unwrap();
@@ -184,7 +240,7 @@ async fn test_process_relational_valence_trust_change() {
     
     // Process the valence changes
     let result = processor
-        .process_valence_changes(&valence_changes, Some(character_a_id), Some(Uuid::new_v4()))
+        .process_valence_changes(&valence_changes, Some(character_a_id), Some(Uuid::new_v4()), user_id)
         .await
         .expect("Valence processing should succeed");
     
@@ -210,15 +266,16 @@ async fn test_process_multiple_valence_changes() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
+    let user_id = create_test_user(&test_app).await.unwrap();
     let character_a_id = Uuid::new_v4();
     let character_b_id = Uuid::new_v4();
     
     // Create test entities
-    create_test_entity(&test_app, character_a_id, "Health|Position|Relationships").await.unwrap();
-    create_test_entity(&test_app, character_b_id, "Health|Position|Relationships").await.unwrap();
+    create_test_entity(&test_app, user_id, character_a_id, "Health|Position|Relationships").await.unwrap();
+    create_test_entity(&test_app, user_id, character_b_id, "Health|Position|Relationships").await.unwrap();
     
     // Create reputation component for character A
-    create_test_component(&test_app, character_a_id, "Reputation", json!({
+    create_test_component(&test_app, user_id, character_a_id, "Reputation", json!({
         "score": 0.5
     })).await.unwrap();
     
@@ -252,7 +309,7 @@ async fn test_process_multiple_valence_changes() {
     
     // Process the valence changes
     let result = processor
-        .process_valence_changes(&valence_changes, Some(character_a_id), Some(Uuid::new_v4()))
+        .process_valence_changes(&valence_changes, Some(character_a_id), Some(Uuid::new_v4()), user_id)
         .await
         .expect("Valence processing should succeed");
     
@@ -290,15 +347,16 @@ async fn test_valence_clamping_configuration() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
+    let user_id = create_test_user(&test_app).await.unwrap();
     let character_a_id = Uuid::new_v4();
     let character_b_id = Uuid::new_v4();
     
     // Create test entities
-    create_test_entity(&test_app, character_a_id, "Health|Position|Relationships").await.unwrap();
-    create_test_entity(&test_app, character_b_id, "Health|Position|Relationships").await.unwrap();
+    create_test_entity(&test_app, user_id, character_a_id, "Health|Position|Relationships").await.unwrap();
+    create_test_entity(&test_app, user_id, character_b_id, "Health|Position|Relationships").await.unwrap();
     
     // Create existing high trust relationship
-    create_test_relationship(&test_app, character_a_id, character_b_id, "trust", json!({
+    create_test_relationship(&test_app, user_id, character_a_id, character_b_id, "trust", json!({
         "trust": 0.9,
         "created_at": "2023-01-01T00:00:00Z"
     })).await.unwrap();
@@ -322,7 +380,7 @@ async fn test_valence_clamping_configuration() {
     
     // Process the valence changes
     let result = processor
-        .process_valence_changes(&valence_changes, Some(character_a_id), Some(Uuid::new_v4()))
+        .process_valence_changes(&valence_changes, Some(character_a_id), Some(Uuid::new_v4()), user_id)
         .await
         .expect("Valence processing should succeed");
     
@@ -342,10 +400,11 @@ async fn test_minimum_change_threshold() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
+    let user_id = create_test_user(&test_app).await.unwrap();
     let entity_id = Uuid::new_v4();
     
     // Create test entity
-    create_test_entity(&test_app, entity_id, "Health|Position").await.unwrap();
+    create_test_entity(&test_app, user_id, entity_id, "Health|Position").await.unwrap();
     
     // Create processor with higher minimum threshold
     let config = ValenceProcessingConfig {
@@ -372,7 +431,7 @@ async fn test_minimum_change_threshold() {
     
     // Process the valence changes
     let result = processor
-        .process_valence_changes(&valence_changes, None, Some(Uuid::new_v4()))
+        .process_valence_changes(&valence_changes, None, Some(Uuid::new_v4()), user_id)
         .await
         .expect("Valence processing should succeed");
     
@@ -393,10 +452,11 @@ async fn test_self_referential_valence_handling() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
+    let user_id = create_test_user(&test_app).await.unwrap();
     let entity_id = Uuid::new_v4();
     
     // Create test entity
-    create_test_entity(&test_app, entity_id, "Health|Position|Relationships").await.unwrap();
+    create_test_entity(&test_app, user_id, entity_id, "Health|Position|Relationships").await.unwrap();
     
     // Create processor
     let processor = EventValenceProcessor::new(Arc::new(test_app.db_pool.clone()));
@@ -413,7 +473,7 @@ async fn test_self_referential_valence_handling() {
     
     // Process the valence changes with same entity as source
     let result = processor
-        .process_valence_changes(&valence_changes, Some(entity_id), Some(Uuid::new_v4()))
+        .process_valence_changes(&valence_changes, Some(entity_id), Some(Uuid::new_v4()), user_id)
         .await
         .expect("Valence processing should succeed");
     
@@ -432,10 +492,11 @@ async fn test_new_component_creation() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
+    let user_id = create_test_user(&test_app).await.unwrap();
     let entity_id = Uuid::new_v4();
     
     // Create test entity (without any components initially)
-    create_test_entity(&test_app, entity_id, "Health|Position").await.unwrap();
+    create_test_entity(&test_app, user_id, entity_id, "Health|Position").await.unwrap();
     
     // Create processor with custom config to allow larger health changes
     let config = ValenceProcessingConfig {
@@ -456,7 +517,7 @@ async fn test_new_component_creation() {
     
     // Process the valence changes
     let result = processor
-        .process_valence_changes(&valence_changes, None, Some(Uuid::new_v4()))
+        .process_valence_changes(&valence_changes, None, Some(Uuid::new_v4()), user_id)
         .await
         .expect("Valence processing should succeed");
     
@@ -496,12 +557,13 @@ async fn test_new_relationship_creation() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
+    let user_id = create_test_user(&test_app).await.unwrap();
     let character_a_id = Uuid::new_v4();
     let character_b_id = Uuid::new_v4();
     
     // Create test entities (without any relationships initially)
-    create_test_entity(&test_app, character_a_id, "Health|Position|Relationships").await.unwrap();
-    create_test_entity(&test_app, character_b_id, "Health|Position|Relationships").await.unwrap();
+    create_test_entity(&test_app, user_id, character_a_id, "Health|Position|Relationships").await.unwrap();
+    create_test_entity(&test_app, user_id, character_b_id, "Health|Position|Relationships").await.unwrap();
     
     // Create processor
     let processor = EventValenceProcessor::new(Arc::new(test_app.db_pool.clone()));
@@ -518,7 +580,7 @@ async fn test_new_relationship_creation() {
     
     // Process the valence changes
     let result = processor
-        .process_valence_changes(&valence_changes, Some(character_a_id), Some(Uuid::new_v4()))
+        .process_valence_changes(&valence_changes, Some(character_a_id), Some(Uuid::new_v4()), user_id)
         .await
         .expect("Valence processing should succeed");
     
@@ -543,6 +605,7 @@ async fn test_new_relationship_creation() {
                 .filter(ecs_entity_relationships::from_entity_id.eq(from_entity_id))
                 .filter(ecs_entity_relationships::to_entity_id.eq(to_entity_id))
                 .filter(ecs_entity_relationships::relationship_type.eq("trust"))
+                .select(EcsEntityRelationship::as_select())
                 .first::<EcsEntityRelationship>(conn)
         }
     })

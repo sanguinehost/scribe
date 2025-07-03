@@ -77,6 +77,33 @@ pub enum ComponentOperation {
     Remove,
 }
 
+/// Cache warming statistics
+#[derive(Debug, Clone)]
+pub struct CacheWarmingStats {
+    pub entities_requested: usize,
+    pub entities_warmed: usize,
+    pub cache_hits: usize,
+    pub cache_misses: usize,
+    pub errors: usize,
+}
+
+/// Result of cache warming operations
+#[derive(Debug, Clone)]
+pub struct CacheWarmingResult {
+    pub stats: CacheWarmingStats,
+    pub duration_ms: u64,
+    pub success_rate: f64, // Percentage
+}
+
+/// Cache warming recommendations based on usage patterns
+#[derive(Debug, Clone)]
+pub struct CacheWarmingRecommendations {
+    pub high_priority_entities: Vec<Uuid>,
+    pub recent_entities: Vec<Uuid>,
+    pub recommended_queries: Vec<ComponentQuery>,
+    pub estimated_warming_time_ms: u64,
+}
+
 /// High-performance Entity Manager with Redis caching
 pub struct EcsEntityManager {
     db_pool: Arc<PgPool>,
@@ -658,6 +685,289 @@ impl EcsEntityManager {
 
         info!("Advanced query completed in {}ms, returned {} entities", execution_time, result.entities.len());
         Ok(result)
+    }
+
+    // Cache warming strategies for frequently accessed entities
+
+    /// Warm cache for specific entities (proactive caching)
+    #[instrument(skip(self, entity_ids), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id)), count = entity_ids.len()))]
+    pub async fn warm_entity_cache(&self, user_id: Uuid, entity_ids: &[Uuid]) -> Result<CacheWarmingResult, AppError> {
+        let start_time = std::time::Instant::now();
+        let mut warming_stats = CacheWarmingStats {
+            entities_requested: entity_ids.len(),
+            entities_warmed: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+            errors: 0,
+        };
+
+        info!("Starting cache warming for {} entities", entity_ids.len());
+
+        // Process entities in batches to avoid overwhelming the database
+        let batch_size = self.config.bulk_operation_batch_size;
+        for batch in entity_ids.chunks(batch_size) {
+            match self.warm_entity_batch(user_id, batch, &mut warming_stats).await {
+                Ok(_) => {}
+                Err(e) => {
+                    warn!("Failed to warm entity batch: {}", e);
+                    warming_stats.errors += batch.len();
+                }
+            }
+        }
+
+        let duration = start_time.elapsed();
+        
+        info!(
+            "Cache warming completed: {}/{} entities warmed, {} hits, {} misses, {} errors in {:?}",
+            warming_stats.entities_warmed,
+            warming_stats.entities_requested,
+            warming_stats.cache_hits,
+            warming_stats.cache_misses,
+            warming_stats.errors,
+            duration
+        );
+
+        let success_rate = if warming_stats.entities_requested > 0 {
+            (warming_stats.entities_warmed as f64 / warming_stats.entities_requested as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        Ok(CacheWarmingResult {
+            stats: warming_stats,
+            duration_ms: duration.as_millis() as u64,
+            success_rate,
+        })
+    }
+
+    /// Warm cache for recently accessed entities (smart warming based on access patterns)
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn warm_recent_entities_cache(&self, user_id: Uuid, limit: usize) -> Result<CacheWarmingResult, AppError> {
+        info!("Starting smart cache warming for {} most recent entities", limit);
+
+        // Get recently accessed entities from database
+        let recent_entities = self.get_recently_accessed_entities(user_id, limit).await?;
+        let entity_ids: Vec<Uuid> = recent_entities.into_iter().map(|e| e.id).collect();
+
+        if entity_ids.is_empty() {
+            info!("No recent entities found for cache warming");
+            return Ok(CacheWarmingResult {
+                stats: CacheWarmingStats {
+                    entities_requested: 0,
+                    entities_warmed: 0,
+                    cache_hits: 0,
+                    cache_misses: 0,
+                    errors: 0,
+                },
+                duration_ms: 0,
+                success_rate: 100.0,
+            });
+        }
+
+        self.warm_entity_cache(user_id, &entity_ids).await
+    }
+
+    /// Warm cache for entities matching common query patterns
+    #[instrument(skip(self, queries), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id)), query_count = queries.len()))]
+    pub async fn warm_query_pattern_cache(&self, user_id: Uuid, queries: &[ComponentQuery]) -> Result<CacheWarmingResult, AppError> {
+        let start_time = std::time::Instant::now();
+        let mut total_entities_warmed = 0;
+        let mut total_errors = 0;
+
+        info!("Starting cache warming for {} query patterns", queries.len());
+
+        for (i, query) in queries.iter().enumerate() {
+            let options = EntityQueryOptions {
+                criteria: vec![query.clone()],
+                limit: Some(100), // Limit warming to prevent excessive load
+                offset: Some(0),
+                sort_by: None,
+                min_components: None,
+                max_components: None,
+                cache_key: None,
+                cache_ttl: None,
+            };
+
+            match self.query_entities_advanced(user_id, options).await {
+                Ok(result) => {
+                    total_entities_warmed += result.entities.len();
+                    debug!("Warmed {} entities for query pattern {}", result.entities.len(), i + 1);
+                }
+                Err(e) => {
+                    warn!("Failed to warm cache for query pattern {}: {}", i + 1, e);
+                    total_errors += 1;
+                }
+            }
+        }
+
+        let duration = start_time.elapsed();
+        let success_rate = if queries.len() > 0 {
+            ((queries.len() - total_errors) as f64 / queries.len() as f64) * 100.0
+        } else {
+            100.0
+        };
+
+        info!(
+            "Query pattern cache warming completed: {} entities warmed, {} query errors in {:?}",
+            total_entities_warmed, total_errors, duration
+        );
+
+        Ok(CacheWarmingResult {
+            stats: CacheWarmingStats {
+                entities_requested: total_entities_warmed,
+                entities_warmed: total_entities_warmed,
+                cache_hits: 0, // These are all new cache entries
+                cache_misses: total_entities_warmed,
+                errors: total_errors,
+            },
+            duration_ms: duration.as_millis() as u64,
+            success_rate,
+        })
+    }
+
+    /// Get cache warming statistics and recommendations
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn get_cache_warming_recommendations(&self, user_id: Uuid) -> Result<CacheWarmingRecommendations, AppError> {
+        // Get entities that are frequently accessed but not cached
+        let frequent_entities = self.get_frequently_accessed_entities(user_id, 50).await?;
+        let recent_entities = self.get_recently_accessed_entities(user_id, 20).await?;
+
+        // Common query patterns that should be pre-warmed
+        let recommended_queries = vec![
+            ComponentQuery::HasAllComponents(vec!["Health".to_string(), "Position".to_string()]),
+            ComponentQuery::HasComponent("Relationships".to_string()),
+            ComponentQuery::HasComponent("Inventory".to_string()),
+        ];
+
+        let recommendations = CacheWarmingRecommendations {
+            high_priority_entities: frequent_entities.into_iter().map(|e| e.id).collect(),
+            recent_entities: recent_entities.into_iter().map(|e| e.id).collect(),
+            recommended_queries,
+            estimated_warming_time_ms: self.estimate_warming_time(user_id).await?,
+        };
+
+        info!("Generated cache warming recommendations: {} high priority, {} recent entities", 
+              recommendations.high_priority_entities.len(), recommendations.recent_entities.len());
+
+        Ok(recommendations)
+    }
+
+    /// Schedule automatic cache warming based on usage patterns
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn schedule_automatic_warming(&self, user_id: Uuid) -> Result<(), AppError> {
+        let recommendations = self.get_cache_warming_recommendations(user_id).await?;
+
+        // Warm high priority entities first
+        if !recommendations.high_priority_entities.is_empty() {
+            let result = self.warm_entity_cache(user_id, &recommendations.high_priority_entities).await?;
+            info!("Automatic warming completed for {} high priority entities with {:.1}% success rate", 
+                  result.stats.entities_requested, result.success_rate);
+        }
+
+        // Warm common query patterns
+        if !recommendations.recommended_queries.is_empty() {
+            let query_result = self.warm_query_pattern_cache(user_id, &recommendations.recommended_queries).await?;
+            info!("Automatic query pattern warming completed: {} entities warmed", 
+                  query_result.stats.entities_warmed);
+        }
+
+        Ok(())
+    }
+
+    // Private helper methods for cache warming
+
+    async fn warm_entity_batch(&self, user_id: Uuid, entity_ids: &[Uuid], stats: &mut CacheWarmingStats) -> Result<(), AppError> {
+        for entity_id in entity_ids {
+            let cache_key = self.entity_cache_key(user_id, *entity_id);
+            
+            // Check if already cached
+            match self.get_entity_from_cache(&cache_key).await {
+                Ok(Some(_)) => {
+                    stats.cache_hits += 1;
+                    continue; // Already cached, skip
+                }
+                Ok(None) => {
+                    stats.cache_misses += 1;
+                }
+                Err(_) => {
+                    stats.errors += 1;
+                    continue;
+                }
+            }
+
+            // Fetch from database and cache
+            match self.get_entity_from_db(user_id, *entity_id).await? {
+                Some(result) => {
+                    // Store in cache with hot cache TTL for frequently accessed entities
+                    let cache_result = self.store_entity_in_cache_with_ttl(&cache_key, &result, self.config.hot_cache_ttl).await;
+                    match cache_result {
+                        Ok(_) => {
+                            stats.entities_warmed += 1;
+                            debug!("Warmed entity {} in cache", entity_id);
+                        }
+                        Err(e) => {
+                            warn!("Failed to store entity {} in cache: {}", entity_id, e);
+                            stats.errors += 1;
+                        }
+                    }
+                }
+                None => {
+                    debug!("Entity {} not found during warming", entity_id);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn get_recently_accessed_entities(&self, user_id: Uuid, limit: usize) -> Result<Vec<EcsEntity>, AppError> {
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        conn.interact(move |conn| -> Result<Vec<EcsEntity>, AppError> {
+            let entities = ecs_entities::table
+                .filter(ecs_entities::user_id.eq(user_id))
+                .order(ecs_entities::updated_at.desc())
+                .limit(limit as i64)
+                .select(EcsEntity::as_select())
+                .load::<EcsEntity>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            Ok(entities)
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))?
+    }
+
+    async fn get_frequently_accessed_entities(&self, user_id: Uuid, limit: usize) -> Result<Vec<EcsEntity>, AppError> {
+        // For now, use recently updated as a proxy for frequently accessed
+        // In a real system, this would query access log tables
+        self.get_recently_accessed_entities(user_id, limit).await
+    }
+
+    async fn estimate_warming_time(&self, user_id: Uuid) -> Result<u64, AppError> {
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let entity_count = conn.interact(move |conn| -> Result<i64, AppError> {
+            let count = ecs_entities::table
+                .filter(ecs_entities::user_id.eq(user_id))
+                .count()
+                .get_result::<i64>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            Ok(count)
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))?;
+
+        // Estimate ~1ms per entity for warming
+        Ok((entity_count? as u64).saturating_mul(1))
+    }
+
+    async fn store_entity_in_cache_with_ttl(&self, cache_key: &str, result: &EntityQueryResult, ttl: u64) -> redis::RedisResult<()> {
+        let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
+        
+        let serialized = serde_json::to_string(result)
+            .map_err(|e| redis::RedisError::from((redis::ErrorKind::TypeError, "Serialization failed", e.to_string())))?;
+        
+        conn.set_ex(cache_key, serialized, ttl).await
     }
 
     // Private helper methods

@@ -19,10 +19,10 @@ use crate::schema::{ecs_entities, ecs_components, ecs_entity_relationships, ecs_
 #[diesel(primary_key(id))]
 pub struct EcsEntity {
     pub id: Uuid,
-    pub user_id: Uuid,
     pub archetype_signature: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub user_id: Uuid,
 }
 
 /// Used to insert a new ECS entity
@@ -68,11 +68,13 @@ impl EcsEntity {
 pub struct EcsComponent {
     pub id: Uuid,
     pub entity_id: Uuid,
-    pub user_id: Uuid,
     pub component_type: String,
     pub component_data: JsonValue,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub user_id: Uuid,
+    pub encrypted_component_data: Option<Vec<u8>>,
+    pub component_data_nonce: Option<Vec<u8>>,
 }
 
 /// Used to insert a new ECS component

@@ -45,7 +45,8 @@ pub use ecs_chronicle_event_handler::{EcsChronicleEventHandler, ChronicleEventHa
 pub use ecs_component_lifecycle_manager::{EcsComponentLifecycleManager, ComponentLifecycleConfig, ComponentValidationRule, LifecycleOperationResult, DependencyResolution};
 pub use ecs_entity_manager::{
     EcsEntityManager, EntityManagerConfig, EntityQueryResult, ComponentUpdate, ComponentOperation, 
-    ComponentQuery, EntityQueryOptions, ComponentSort, SortDirection, QueryExecutionStats, AdvancedQueryResult
+    ComponentQuery, EntityQueryOptions, ComponentSort, SortDirection, QueryExecutionStats, AdvancedQueryResult,
+    CacheWarmingStats, CacheWarmingResult, CacheWarmingRecommendations
 };
 pub use ecs_outbox_processor::{EcsOutboxProcessor, OutboxProcessorConfig, OutboxEventHandler, EventProcessingResult, OutboxProcessingStats, LoggingEventHandler};
 pub use event_valence_processor::{EventValenceProcessor, ValenceProcessingResult, ValenceProcessingConfig};

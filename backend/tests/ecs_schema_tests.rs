@@ -108,6 +108,7 @@ async fn test_ecs_entities_basic_crud() {
         .interact(move |conn| {
             ecs_entities::table
                 .filter(ecs_entities::id.eq(test_entity_id))
+                .select(EcsEntity::as_select())
                 .first(conn)
         })
         .await
@@ -165,6 +166,7 @@ async fn test_ecs_entities_basic_crud() {
         .interact(move |conn| {
             ecs_entities::table
                 .filter(ecs_entities::id.eq(test_entity_id))
+                .select(EcsEntity::as_select())
                 .first(conn)
                 .optional()
         })
@@ -247,6 +249,7 @@ async fn test_ecs_components_basic_crud() {
         .interact(move |conn| {
             ecs_components::table
                 .filter(ecs_components::id.eq(component_id))
+                .select(EcsComponent::as_select())
                 .first(conn)
         })
         .await
@@ -313,6 +316,7 @@ async fn test_ecs_components_basic_crud() {
         .interact(move |conn| {
             ecs_components::table
                 .filter(ecs_components::id.eq(component_id))
+                .select(EcsComponent::as_select())
                 .first(conn)
                 .optional()
         })
@@ -380,6 +384,7 @@ async fn test_ecs_entities_archetype_signature_indexing() {
         .interact(|conn| {
             ecs_entities::table
                 .filter(ecs_entities::archetype_signature.like("Character%"))
+                .select(EcsEntity::as_select())
                 .load(conn)
         })
         .await

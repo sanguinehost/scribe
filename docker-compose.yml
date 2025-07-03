@@ -15,6 +15,21 @@ services:
     restart: unless-stopped
     shm_size: 256m
 
+  redis:
+    image: redis:7.4-alpine # Use Alpine for smaller image size
+    container_name: scribe_redis
+    ports:
+      - "6379:6379" # Redis default port
+    volumes:
+      - redis_data:/data # Persistent volume for data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
   qdrant:
     # image: qdrant/qdrant:latest
     image: qdrant/qdrant:v1.14.0
@@ -39,4 +54,5 @@ services:
 
 volumes:
   postgres_data:
-  qdrant_data: 
+  qdrant_data:
+  redis_data: 

@@ -172,7 +172,7 @@ async fn test_translate_simple_character_meeting_event() {
     
     // Translate the event to ECS
     let translation_result = translator
-        .translate_event(&event)
+        .translate_event(&event, user_id)
         .await
         .expect("Translation should succeed");
     
@@ -249,7 +249,7 @@ async fn test_translate_valence_change_event() {
     
     // Translate the event to ECS
     let translation_result = translator
-        .translate_event(&event)
+        .translate_event(&event, user_id)
         .await
         .expect("Translation should succeed");
     
@@ -310,7 +310,7 @@ async fn test_translate_item_acquisition_event() {
     
     // Translate the event to ECS
     let translation_result = translator
-        .translate_event(&event)
+        .translate_event(&event, user_id)
         .await
         .expect("Translation should succeed");
     
@@ -369,7 +369,7 @@ async fn test_translate_multiple_events_preserves_state() {
         &test_app,
     ).await.unwrap();
     
-    let result1 = translator.translate_event(&meeting_event).await.unwrap();
+    let result1 = translator.translate_event(&meeting_event, user_id).await.unwrap();
     assert_eq!(result1.entities_created.len(), 2);
     
     // Event 2: Trust increases
@@ -404,7 +404,7 @@ async fn test_translate_multiple_events_preserves_state() {
         &test_app,
     ).await.unwrap();
     
-    let result2 = translator.translate_event(&trust_event).await.unwrap();
+    let result2 = translator.translate_event(&trust_event, user_id).await.unwrap();
     
     // Entities should not be recreated
     assert_eq!(result2.entities_created.len(), 0, "Entities should already exist");
