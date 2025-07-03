@@ -146,7 +146,7 @@
 			const filter: EventFilter = {};
 			if (filterEventType) filter.event_type = filterEventType;
 			if (filterSource) filter.source = filterSource as EventSource;
-			filter.order_by = 'created_at_desc';
+			filter.order_by = 'timestamp_asc';
 
 			const result = await apiClient.getChronicleEvents(chronicleId, filter);
 			if (result.isOk()) {

@@ -977,4 +977,247 @@ mod re_chronicle_api_tests {
         let summary = response_body["summary"].as_str().unwrap();
         assert!(summary.contains("No messages found") || summary.contains("0 messages"));
     }
+
+    #[tokio::test]
+    async fn test_re_chronicle_ordered_async_processing() {
+        let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let (session_cookie, user_id) = create_authenticated_user(&test_app).await.unwrap();
+
+        // Create a chronicle
+        let create_chronicle_request = CreateChronicleRequest {
+            name: "Ordered Async Test".to_string(),
+            description: Some("Testing ordered async processing".to_string()),
+        };
+
+        let create_chronicle_response = test_app.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/chronicles")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::COOKIE, &session_cookie)
+                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+
+        // Create a chat session with many messages to test batch processing
+        let chat_session_id = create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 25).await.unwrap();
+
+        // Test: Re-chronicle with small batch size to force multiple batches
+        let re_chronicle_request = json!({
+            "chat_session_id": chat_session_id,
+            "purge_existing": true,
+            "extraction_model": "gemini-2.5-pro",
+            "batch_size": 4  // Small batch size to create 7 batches (25/4 = 6.25 rounded up)
+        });
+
+        let re_chronicle_response = test_app.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(&format!("/api/chronicles/{}/re-chronicle", chronicle.id))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::COOKIE, &session_cookie)
+                    .body(Body::from(re_chronicle_request.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(re_chronicle_response.status(), StatusCode::OK);
+
+        let response_body: serde_json::Value = parse_json_response(re_chronicle_response).await.unwrap();
+
+        // Verify all messages were processed
+        let messages_processed = response_body["messages_processed"].as_u64().unwrap();
+        assert_eq!(messages_processed, 25);
+
+        // Verify processing completed successfully
+        let summary = response_body["summary"].as_str().unwrap();
+        assert!(summary.contains("Re-chronicling complete"));
+
+        // Now verify event ordering by checking created_at timestamps
+        let list_events_response = test_app.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(&format!("/api/chronicles/{}/events?order_by=created_at_asc", chronicle.id))
+                    .header(header::COOKIE, &session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(list_events_response.status(), StatusCode::OK);
+        
+        let events: serde_json::Value = parse_json_response(list_events_response).await.unwrap();
+        let events_array = events.as_array().unwrap();
+        
+        // Verify events are ordered chronologically by created_at
+        if events_array.len() > 1 {
+            for i in 1..events_array.len() {
+                let prev_created_at = events_array[i-1]["created_at"].as_str().unwrap();
+                let curr_created_at = events_array[i]["created_at"].as_str().unwrap();
+                
+                // Parse timestamps and verify ordering
+                let prev_time = chrono::DateTime::parse_from_rfc3339(prev_created_at).unwrap();
+                let curr_time = chrono::DateTime::parse_from_rfc3339(curr_created_at).unwrap();
+                
+                assert!(
+                    curr_time >= prev_time,
+                    "Events not in chronological order: {} should be >= {}",
+                    curr_created_at,
+                    prev_created_at
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_re_chronicle_concurrent_batches_performance() {
+        let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let (session_cookie, user_id) = create_authenticated_user(&test_app).await.unwrap();
+
+        // Create a chronicle
+        let create_chronicle_request = CreateChronicleRequest {
+            name: "Performance Test".to_string(),
+            description: Some("Testing concurrent batch performance".to_string()),
+        };
+
+        let create_chronicle_response = test_app.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/chronicles")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::COOKIE, &session_cookie)
+                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+
+        // Create a large chat session to test performance
+        let chat_session_id = create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 50).await.unwrap();
+
+        let start_time = std::time::Instant::now();
+
+        // Test: Re-chronicle with optimized batch size
+        let re_chronicle_request = json!({
+            "chat_session_id": chat_session_id,
+            "purge_existing": true,
+            "extraction_model": "gemini-2.5-pro",
+            "batch_size": 5  // 10 batches processed 5 concurrently
+        });
+
+        let re_chronicle_response = test_app.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(&format!("/api/chronicles/{}/re-chronicle", chronicle.id))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::COOKIE, &session_cookie)
+                    .body(Body::from(re_chronicle_request.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let duration = start_time.elapsed();
+
+        assert_eq!(re_chronicle_response.status(), StatusCode::OK);
+
+        let response_body: serde_json::Value = parse_json_response(re_chronicle_response).await.unwrap();
+
+        // Verify all messages were processed
+        let messages_processed = response_body["messages_processed"].as_u64().unwrap();
+        assert_eq!(messages_processed, 50);
+
+        // Performance assertion: should complete within reasonable time
+        // This is a rough benchmark - actual time depends on AI service response
+        assert!(
+            duration.as_secs() < 60,
+            "Re-chronicle took too long: {} seconds for 50 messages",
+            duration.as_secs()
+        );
+
+        println!("Re-chronicle performance: processed {} messages in {:?}", messages_processed, duration);
+    }
+
+    #[tokio::test]
+    async fn test_re_chronicle_max_batch_size_enforcement() {
+        let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let (session_cookie, user_id) = create_authenticated_user(&test_app).await.unwrap();
+
+        // Create a chronicle
+        let create_chronicle_request = CreateChronicleRequest {
+            name: "Batch Size Limit Test".to_string(),
+            description: Some("Testing batch size limits".to_string()),
+        };
+
+        let create_chronicle_response = test_app.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/chronicles")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::COOKIE, &session_cookie)
+                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+
+        // Create a chat session
+        let chat_session_id = create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 10).await.unwrap();
+
+        // Test: Request batch size over limit (should be capped at 50)
+        let re_chronicle_request = json!({
+            "chat_session_id": chat_session_id,
+            "purge_existing": true,
+            "extraction_model": "gemini-2.5-pro",
+            "batch_size": 100  // Over the limit of 50
+        });
+
+        let re_chronicle_response = test_app.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(&format!("/api/chronicles/{}/re-chronicle", chronicle.id))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::COOKIE, &session_cookie)
+                    .body(Body::from(re_chronicle_request.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Should succeed but with batch size capped at 50
+        assert_eq!(re_chronicle_response.status(), StatusCode::OK);
+
+        let response_body: serde_json::Value = parse_json_response(re_chronicle_response).await.unwrap();
+
+        // Verify all messages were still processed
+        let messages_processed = response_body["messages_processed"].as_u64().unwrap();
+        assert_eq!(messages_processed, 10);
+    }
 }

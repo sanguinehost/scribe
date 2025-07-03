@@ -87,7 +87,7 @@ impl ScribeTool for CreateChronicleEventTool {
                             "id": {"type": "string", "description": "Entity identifier"},
                             "role": {
                                 "type": "string", 
-                                "enum": ["Agent", "Patient", "Beneficiary", "Instrument", "Helper", "Opponent", "Witness"],
+                                "enum": ["AGENT", "PATIENT", "BENEFICIARY", "INSTRUMENT", "HELPER", "OPPONENT", "WITNESS"],
                                 "description": "Narrative role of the actor"
                             }
                         },

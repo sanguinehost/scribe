@@ -1,6 +1,6 @@
 use deadpool_diesel::postgres::Pool as DeadpoolPgPool;
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
+    BoolExpressionMethods, Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
     result::Error as DieselError,
 };
 use tracing::{error, info, instrument};
@@ -443,6 +443,77 @@ impl ChronicleService {
         Ok(event)
     }
 
+    /// Create multiple events in a chronicle efficiently using batch insert
+    #[instrument(skip(self), fields(user_id = %user_id, chronicle_id = %chronicle_id, event_count = events.len()))]
+    pub async fn create_events_batch(
+        &self,
+        user_id: Uuid,
+        chronicle_id: Uuid,
+        events: Vec<CreateEventRequest>,
+        session_dek: Option<&crate::auth::session_dek::SessionDek>,
+    ) -> Result<usize, AppError> {
+        if events.is_empty() {
+            return Ok(0);
+        }
+
+        // First verify chronicle ownership
+        self.get_chronicle(user_id, chronicle_id).await?;
+
+        // Convert all events to NewChronicleEvent with encryption
+        let mut new_events = Vec::with_capacity(events.len());
+        for request in events {
+            let mut new_event: NewChronicleEvent = request.into();
+            new_event.chronicle_id = chronicle_id;
+            new_event.user_id = user_id;
+
+            // Encrypt the summary if DEK is provided
+            if let Some(dek) = session_dek {
+                let summary_bytes = new_event.summary.as_bytes();
+                match crate::crypto::encrypt_gcm(summary_bytes, &dek.0) {
+                    Ok((ciphertext, nonce)) => {
+                        new_event.summary_encrypted = Some(ciphertext);
+                        new_event.summary_nonce = Some(nonce);
+                        // Keep the plaintext summary for backward compatibility during migration
+                        tracing::debug!(event_type = %new_event.event_type, "Encrypted chronicle event summary for batch");
+                    }
+                    Err(e) => {
+                        error!(error = %e, event_type = %new_event.event_type, "Failed to encrypt chronicle event summary for batch");
+                        return Err(AppError::CryptoError(format!("Failed to encrypt event summary: {}", e)));
+                    }
+                }
+            }
+
+            new_events.push(new_event);
+        }
+
+        let conn = self.db_pool.get().await.map_err(|e| {
+            error!("Failed to get database connection for batch insert: {}", e);
+            AppError::DbPoolError(format!("Connection pool error: {e}"))
+        })?;
+
+        // Perform batch insert in a single transaction
+        let inserted_count = conn
+            .interact(move |conn| {
+                conn.transaction::<usize, diesel::result::Error, _>(|conn| {
+                    diesel::insert_into(chronicle_events::table)
+                        .values(&new_events)
+                        .execute(conn)
+                })
+            })
+            .await
+            .map_err(|e| {
+                error!("Database interaction error during batch insert: {}", e);
+                AppError::DbInteractError(format!("Failed to batch insert events: {e}"))
+            })?
+            .map_err(|e| {
+                error!("Diesel error during batch insert: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to batch insert events: {e}"))
+            })?;
+
+        info!("Batch inserted {} events in chronicle {} for user {}", inserted_count, chronicle_id, user_id);
+        Ok(inserted_count)
+    }
+
     /// Get events for a chronicle with filtering
     #[instrument(skip(self), fields(user_id = %user_id, chronicle_id = %chronicle_id))]
     pub async fn get_chronicle_events(
@@ -483,11 +554,13 @@ impl ChronicleService {
                 }
 
                 // Apply ordering
-                match filter.order_by.unwrap_or(EventOrderBy::CreatedAtDesc) {
+                match filter.order_by.unwrap_or(EventOrderBy::TimestampAsc) {
                     EventOrderBy::CreatedAtAsc => query = query.order(chronicle_events::created_at.asc()),
                     EventOrderBy::CreatedAtDesc => query = query.order(chronicle_events::created_at.desc()),
                     EventOrderBy::UpdatedAtAsc => query = query.order(chronicle_events::updated_at.asc()),
                     EventOrderBy::UpdatedAtDesc => query = query.order(chronicle_events::updated_at.desc()),
+                    EventOrderBy::TimestampAsc => query = query.order(chronicle_events::timestamp_iso8601.asc()),
+                    EventOrderBy::TimestampDesc => query = query.order(chronicle_events::timestamp_iso8601.desc()),
                 }
 
                 // Apply pagination

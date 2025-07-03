@@ -130,11 +130,22 @@
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
 
-	function switchTab(tab: 'characters' | 'personas' | 'lorebooks' | 'chronicles') {
+	async function switchTab(tab: 'characters' | 'personas' | 'lorebooks' | 'chronicles') {
 		sidebarStore.setActiveTab(tab);
 		// Don't clear selections when switching tabs - let users browse sidebar
 		// while maintaining their current view (character overview, chat, etc.)
 		// This prevents unnecessary navigation and content flickering
+		
+		// Refresh data when switching to specific tabs to ensure latest content
+		if (tab === 'chronicles' && chronicleListComp) {
+			await chronicleListComp.refresh();
+		} else if (tab === 'characters' && characterListComp) {
+			await characterListComp.refresh();
+		} else if (tab === 'personas' && personaListComp) {
+			await personaListComp.refresh();
+		} else if (tab === 'lorebooks' && lorebookListComp) {
+			await lorebookListComp.refresh();
+		}
 	}
 
 	async function openSettings() {

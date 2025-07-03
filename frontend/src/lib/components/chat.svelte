@@ -13,6 +13,9 @@
 	import MultimodalInput from './multimodal-input.svelte';
 	import SuggestedActions from './suggested-actions.svelte'; // Import SuggestedActions
 	import ChatConfigSidebar from './chat-config-sidebar.svelte';
+	import { Button } from './ui/button';
+	import { RotateCcw } from 'lucide-svelte';
+	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	// Removed untrack import as we no longer use it
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import TokenUsageDisplay from './token-usage-display.svelte';
@@ -59,6 +62,12 @@
 	let loadedMessagesBatches = $state<ScribeChatMessage[][]>([initialMessages]);
 	let suppressAutoScroll = $state(false);
 
+	// Chronicle state management
+	let currentChronicleId = $state<string | null>(null);
+	let isLoadingSettings = $state(false);
+	let isReChronicling = $state(false);
+	let isCreatingChronicle = $state(false);
+
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
 		settingsStore.loadTypingSpeed();
@@ -71,6 +80,13 @@
 		if (chat?.id) {
 			selectedCharacterStore.clear();
 			selectedPersonaStore.clear();
+		}
+	});
+
+	// Load settings on chat change
+	$effect(() => {
+		if (chat?.id) {
+			loadChatSettings();
 		}
 	});
 
@@ -131,10 +147,10 @@
 								displayedContent: msg.content, // Show immediately for existing messages
 								created_at: msg.created_at ?? new Date().toISOString(),
 								isAnimating: false, // Existing messages don't animate
-								error: msg.error,
+								error: msg.error ?? undefined,
 								retryable: msg.retryable,
-								prompt_tokens: msg.prompt_tokens,
-								completion_tokens: msg.completion_tokens,
+								prompt_tokens: msg.prompt_tokens ?? undefined,
+								completion_tokens: msg.completion_tokens ?? undefined,
 								model_name: msg.model_name,
 								backend_id: msg.backend_id
 							}) as StreamingMessage
@@ -250,12 +266,12 @@
 							sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
 							content: msg.content,
 							displayedContent: msg.content,
-							created_at: msg.created_at,
+							created_at: msg.created_at ?? new Date().toISOString(),
 							isAnimating: false,
-							error: msg.error,
+							error: msg.error ?? undefined,
 							retryable: msg.retryable,
-							prompt_tokens: msg.prompt_tokens,
-							completion_tokens: msg.completion_tokens,
+							prompt_tokens: msg.prompt_tokens ?? undefined,
+							completion_tokens: msg.completion_tokens ?? undefined,
 							model_name: msg.model_name,
 							backend_id: msg.backend_id
 						})
@@ -310,12 +326,12 @@
 							sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
 							content: msg.content,
 							displayedContent: msg.content,
-							created_at: msg.created_at,
+							created_at: msg.created_at ?? new Date().toISOString(),
 							isAnimating: false,
-							error: msg.error,
+							error: msg.error ?? undefined,
 							retryable: msg.retryable,
-							prompt_tokens: msg.prompt_tokens,
-							completion_tokens: msg.completion_tokens,
+							prompt_tokens: msg.prompt_tokens ?? undefined,
+							completion_tokens: msg.completion_tokens ?? undefined,
 							model_name: msg.model_name,
 							backend_id: msg.backend_id
 						})
@@ -341,6 +357,145 @@
 					suppressAutoScroll = false;
 				}, 200);
 			}
+		}
+	}
+
+	async function loadChatSettings() {
+		if (!chat?.id) return;
+		isLoadingSettings = true;
+		try {
+			const result = await apiClient.getChatSessionSettings(chat.id);
+			if (result.isOk()) {
+				const settings = result.value;
+				currentChronicleId = settings.chronicle_id || null;
+				console.log('[Chat] Loaded settings:', { chronicleId: currentChronicleId });
+			} else {
+				console.error('[Chat] Failed to load chat settings:', result.error);
+				currentChronicleId = chat.chronicle_id || null;
+			}
+		} catch (error) {
+			console.error('[Chat] Error loading chat settings:', error);
+			currentChronicleId = chat.chronicle_id || null;
+		} finally {
+			isLoadingSettings = false;
+		}
+	}
+
+	// Function to re-chronicle events from chat history
+	async function reChronicleFromChat() {
+		console.log('[Re-Chronicle] Button clicked', {
+			chatId: chat?.id,
+			currentChronicleId,
+			isReChronicling
+		});
+
+		if (!chat?.id || !currentChronicleId) {
+			toast.error('Cannot re-chronicle: No active chat session or chronicle');
+			return;
+		}
+
+		isReChronicling = true;
+		console.log('[Re-Chronicle] Starting re-chronicling...');
+
+		try {
+			const result = await apiClient.reChronicleFromChat(currentChronicleId, {
+				chat_session_id: chat.id,
+				purge_existing: true,
+				extraction_model: 'gemini-2.5-pro',
+				batch_size: 10
+			});
+
+			if (result.isOk()) {
+				const response = result.value;
+				toast.success(`${response.summary}`, {
+					description: `Processed ${response.messages_processed} messages, created ${response.events_created} events${response.events_purged > 0 ? `, purged ${response.events_purged} old events` : ''}`
+				});
+				await chronicleStore.refresh();
+			} else {
+				console.error('[Re-Chronicle] API error:', result.error);
+				toast.error('Failed to re-chronicle events', {
+					description: result.error.message
+				});
+			}
+		} catch (error) {
+			console.error('[Re-Chronicle] Exception:', error);
+			toast.error('An unexpected error occurred during re-chronicling');
+		} finally {
+			isReChronicling = false;
+			console.log('[Re-Chronicle] Finished');
+		}
+	}
+
+	// Function to create a new chronicle from chat history
+	async function createChronicleFromChat() {
+		console.log('[Create Chronicle] Button clicked', {
+			chatId: chat?.id,
+			isCreatingChronicle
+		});
+
+		if (!chat?.id) {
+			toast.error('Cannot create chronicle: No active chat session');
+			return;
+		}
+
+		isCreatingChronicle = true;
+		console.log('[Create Chronicle] Starting chronicle creation...');
+
+		try {
+			// Step 1: Create a basic chronicle
+			const chatName = chat.title || `Chat ${new Date().toLocaleDateString()}`;
+			
+			const createResult = await apiClient.createChronicle({
+				name: `Chronicle: ${chatName}`,
+				description: `Chronicle created from chat session on ${new Date().toLocaleDateString()}`
+			});
+
+			if (createResult.isErr()) {
+				console.error('[Create Chronicle] Failed to create empty chronicle:', createResult.error);
+				toast.error('Failed to create chronicle', {
+					description: createResult.error.message
+				});
+				return;
+			}
+
+			const newChronicle = createResult.value;
+			console.log('[Create Chronicle] Created empty chronicle:', newChronicle);
+
+			// Step 2: Re-chronicle the chat into the new chronicle
+			const reChronicleResult = await apiClient.reChronicleFromChat(newChronicle.id, {
+				chat_session_id: chat.id,
+				purge_existing: true
+			});
+
+			if (reChronicleResult.isOk()) {
+				const response = reChronicleResult.value;
+				console.log('[Create Chronicle] Re-chronicle success:', response);
+				
+				// Update current chronicle ID
+				currentChronicleId = newChronicle.id;
+				
+				toast.success(`Chronicle created successfully!`, {
+					description: `Created "${newChronicle.name}" with ${response.events_created} events`
+				});
+				
+				// Refresh chronicle store
+				await chronicleStore.refresh();
+			} else {
+				console.error('[Create Chronicle] Re-chronicle failed:', reChronicleResult.error);
+				toast.error('Failed to populate chronicle with chat events', {
+					description: reChronicleResult.error.message
+				});
+				
+				// Still set the chronicle ID since the chronicle was created
+				currentChronicleId = newChronicle.id;
+				await chronicleStore.refresh();
+			}
+		} catch (error) {
+			console.error('[Create Chronicle] Exception:', error);
+			toast.error('An unexpected error occurred while creating chronicle');
+		} finally {
+			isCreatingChronicle = false;
+			console.log('[Create Chronicle] Finished');
 		}
 	}
 	
@@ -407,10 +562,10 @@
 					created_at: msg.created_at,
 					user_id: msg.sender === 'user' ? user?.id ?? '' : '',
 					loading: isAnimatingOrLoading, // Use isAnimating for loading state
-					error: msg.error,
+					error: msg.error ?? undefined,
 					retryable: msg.retryable ?? false,
-					prompt_tokens: msg.prompt_tokens,
-					completion_tokens: msg.completion_tokens,
+					prompt_tokens: msg.prompt_tokens ?? undefined,
+					completion_tokens: msg.completion_tokens ?? undefined,
 					model_name: msg.model_name,
 					backend_id: msg.backend_id
 				};
@@ -429,7 +584,10 @@
 		lastStreamingMessages = streamingMessages;
 		
 		// Sort messages by timestamp (oldest first) for proper chronological display
-		messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+		messages.sort(
+			(a, b) =>
+				new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
+		);
 		
 		// Only log when no messages are animating to avoid spam
 		const hasAnimatingMessages = streamingMessages.some(m => m.isAnimating);
@@ -1202,7 +1360,38 @@
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
-	<ChatHeader {user} {chat} {readonly} />
+	<ChatHeader {user} {chat} {readonly} {currentChronicleId} {isLoadingSettings} {isReChronicling} />
+
+	<!-- Re-Chronicle Button Bar -->
+	{#if !readonly && chat}
+		<div class="flex items-center justify-end gap-2 border-b bg-background p-2">
+			{#if currentChronicleId}
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={reChronicleFromChat}
+					disabled={isReChronicling || isLoadingSettings || isLoading}
+					title="Re-chronicle this entire conversation from beginning to end with improved context"
+					class="cursor-pointer gap-1 hover:bg-accent"
+				>
+					<RotateCcw class="h-3 w-3 {isReChronicling ? 'animate-spin' : ''}" />
+					{isReChronicling ? 'Re-chronicling...' : 'Re-Chronicle'}
+				</Button>
+			{:else}
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={createChronicleFromChat}
+					disabled={isCreatingChronicle || isLoadingSettings || isLoading}
+					title="Create a new chronicle from this conversation"
+					class="cursor-pointer gap-1 hover:bg-accent"
+				>
+					<RotateCcw class="h-3 w-3 {isCreatingChronicle ? 'animate-spin' : ''}" />
+					{isCreatingChronicle ? 'Creating...' : 'Create Chronicle'}
+				</Button>
+			{/if}
+		</div>
+	{/if}
 	{#key displayMessages.length}
 		{console.log('🎯 About to render Messages component:', { 
 			displayMessagesCount: displayMessages.length, 

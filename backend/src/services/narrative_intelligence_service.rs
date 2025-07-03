@@ -10,6 +10,8 @@ use std::sync::Arc;
 use tracing::{info, warn, error, instrument};
 use uuid::Uuid;
 use serde_json::Value;
+use tokio::sync::Semaphore;
+use backoff::{ExponentialBackoff, Error as BackoffError};
 
 use crate::{
     auth::session_dek::SessionDek,
@@ -44,6 +46,32 @@ pub struct NarrativeProcessingResult {
     /// Number of lorebook entries created (if any)
     pub entries_created: usize,
     /// Processing time for monitoring
+    pub processing_time_ms: u64,
+}
+
+/// Data for chronicle events that need to be inserted in chronological order
+#[derive(Debug, Clone)]
+pub struct EventDataToInsert {
+    /// Event type following Ars Fabula taxonomy
+    pub event_type: String,
+    /// Human-readable summary of the event
+    pub summary: String,
+    /// Structured event data including actors, causality, etc.
+    pub event_data: Option<Value>,
+}
+
+/// Result from processing a batch without inserting events
+#[derive(Debug, Clone)]
+pub struct BatchEventData {
+    /// Index of this batch in the overall sequence
+    pub batch_index: usize,
+    /// Events that should be created for this batch
+    pub events: Vec<EventDataToInsert>,
+    /// Whether this batch was deemed significant
+    pub is_significant: bool,
+    /// Confidence score
+    pub confidence: f64,
+    /// Processing time
     pub processing_time_ms: u64,
 }
 
@@ -99,6 +127,8 @@ pub struct NarrativeIntelligenceService {
     config: NarrativeProcessingConfig,
     /// App state for accessing services like UserPersonaService
     app_state: Arc<AppState>,
+    /// Semaphore to limit concurrent AI API calls globally
+    api_call_semaphore: Arc<Semaphore>,
 }
 
 impl NarrativeIntelligenceService {
@@ -134,6 +164,7 @@ impl NarrativeIntelligenceService {
             narrative_runner,
             config,
             app_state,
+            api_call_semaphore: Arc::new(Semaphore::new(50)), // Limit to 50 concurrent AI calls globally
         }
     }
 
@@ -169,6 +200,7 @@ impl NarrativeIntelligenceService {
             narrative_runner,
             config,
             app_state,
+            api_call_semaphore: Arc::new(Semaphore::new(50)), // Limit to 50 concurrent AI calls globally
         }
     }
 
@@ -216,15 +248,21 @@ impl NarrativeIntelligenceService {
         // Retrieve user's persona context for narrative intelligence
         let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
         
-        // Execute the agentic workflow
-        match self.narrative_runner.process_narrative_event(
-            user_id,
-            session_id,
-            chronicle_id,
-            messages_to_analyze,
-            session_dek,
-            persona_context,
-        ).await {
+        // Execute the agentic workflow with exponential backoff
+        match self.execute_with_backoff(|| async {
+            // Acquire AI permit before making any AI calls
+            let _ai_permit = self.api_call_semaphore.acquire().await
+                .map_err(|_| AppError::ServiceUnavailable("Too many concurrent AI calls".to_string()))?;
+            
+            self.narrative_runner.process_narrative_event(
+                user_id,
+                session_id,
+                chronicle_id,
+                messages_to_analyze,
+                session_dek,
+                persona_context.clone(),
+            ).await
+        }).await {
             Ok(workflow_result) => {
                 let processing_time = start_time.elapsed().as_millis() as u64;
                 
@@ -285,15 +323,21 @@ impl NarrativeIntelligenceService {
         // Retrieve user's persona context for narrative intelligence
         let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
         
-        // Execute the agentic workflow for this batch of messages
-        match self.narrative_runner.process_narrative_event(
-            user_id,
-            session_id,
-            chronicle_id,
-            &messages,
-            session_dek,
-            persona_context,
-        ).await {
+        // Execute the agentic workflow for this batch of messages with exponential backoff
+        match self.execute_with_backoff(|| async {
+            // Acquire AI permit before making any AI calls
+            let _ai_permit = self.api_call_semaphore.acquire().await
+                .map_err(|_| AppError::ServiceUnavailable("Too many concurrent AI calls".to_string()))?;
+            
+            self.narrative_runner.process_narrative_event(
+                user_id,
+                session_id,
+                chronicle_id,
+                &messages,
+                session_dek,
+                persona_context.clone(),
+            ).await
+        }).await {
             Ok(workflow_result) => {
                 let processing_time = start_time.elapsed().as_millis() as u64;
                 
@@ -323,6 +367,95 @@ impl NarrativeIntelligenceService {
                 // Don't fail the re-chronicle operation entirely
                 warn!("Continuing with next batch despite failure");
                 Ok(NarrativeProcessingResult::default())
+            }
+        }
+    }
+
+    /// Process a batch of chat messages and return event data without inserting into database
+    /// 
+    /// This method is designed for ordered async processing where we need to collect
+    /// event data from multiple batches and insert them in proper chronological order.
+    pub async fn process_chat_history_batch_dry_run(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        messages: Vec<ChatMessage>,
+        session_dek: &SessionDek,
+        batch_index: usize,
+    ) -> Result<BatchEventData, AppError> {
+        if messages.is_empty() {
+            return Ok(BatchEventData {
+                batch_index,
+                events: Vec::new(),
+                is_significant: false,
+                confidence: 0.0,
+                processing_time_ms: 0,
+            });
+        }
+        
+        info!(
+            "Processing chat history batch (dry-run) for user {}: {} messages, batch_index={}",
+            user_id,
+            messages.len(),
+            batch_index
+        );
+        
+        let start_time = std::time::Instant::now();
+        
+        // Retrieve user's persona context for narrative intelligence
+        let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
+        
+        // Execute the agentic workflow in dry-run mode with exponential backoff
+        match self.execute_with_backoff(|| async {
+            // Acquire AI permit before making any AI calls
+            let _ai_permit = self.api_call_semaphore.acquire().await
+                .map_err(|_| AppError::ServiceUnavailable("Too many concurrent AI calls".to_string()))?;
+            
+            self.narrative_runner.process_narrative_event_dry_run(
+                user_id,
+                session_id,
+                chronicle_id,
+                &messages,
+                session_dek,
+                persona_context.clone(),
+            ).await
+        }).await {
+            Ok(workflow_result) => {
+                let processing_time = start_time.elapsed().as_millis() as u64;
+                
+                // Extract event data from workflow results without inserting
+                let events = self.extract_event_data_from_workflow(&workflow_result.execution_results, user_id, chronicle_id, session_dek)?;
+                
+                let result = BatchEventData {
+                    batch_index,
+                    events,
+                    is_significant: workflow_result.triage_result.is_significant,
+                    confidence: workflow_result.triage_result.confidence as f64,
+                    processing_time_ms: processing_time,
+                };
+                
+                info!(
+                    "Chat history batch dry-run completed: batch_index={}, significant={}, confidence={:.2}, events={}, time={}ms",
+                    batch_index,
+                    result.is_significant,
+                    result.confidence,
+                    result.events.len(),
+                    result.processing_time_ms
+                );
+                
+                Ok(result)
+            },
+            Err(e) => {
+                error!("Chat history batch dry-run processing failed: {}", e);
+                // Return empty batch data on failure
+                Ok(BatchEventData {
+                    batch_index,
+                    events: Vec::new(),
+                    is_significant: false,
+                    confidence: 0.0,
+                    processing_time_ms: start_time.elapsed().as_millis() as u64,
+                })
             }
         }
     }
@@ -400,6 +533,41 @@ impl NarrativeIntelligenceService {
             })
             .count()
     }
+
+    /// Extract event data from workflow execution results without inserting into database
+    fn extract_event_data_from_workflow(
+        &self,
+        execution_results: &[Value],
+        _user_id: Uuid,
+        _chronicle_id: Option<Uuid>,
+        _session_dek: &SessionDek,
+    ) -> Result<Vec<EventDataToInsert>, AppError> {
+        let mut events = Vec::new();
+        
+        for result in execution_results {
+            // Only process successful chronicle event creations
+            if let Some(success) = result.get("success").and_then(|v| v.as_bool()) {
+                if success && result.get("event_type").is_some() {
+                    // Extract event data from the successful result
+                    if let (Some(event_type), Some(summary)) = (
+                        result.get("event_type").and_then(|v| v.as_str()),
+                        result.get("summary").and_then(|v| v.as_str())
+                    ) {
+                        // Extract additional event data if present
+                        let event_data = result.get("event_data").cloned();
+                        
+                        events.push(EventDataToInsert {
+                            event_type: event_type.to_string(),
+                            summary: summary.to_string(),
+                            event_data,
+                        });
+                    }
+                }
+            }
+        }
+        
+        Ok(events)
+    }
 }
 
 /// Factory functions for creating narrative intelligence service
@@ -464,6 +632,45 @@ impl NarrativeIntelligenceService {
     ) -> Self {
         let config = NarrativeProcessingConfig::default();
         Self::new(ai_client, chronicle_service, lorebook_service, app_state, Some(config))
+    }
+
+    /// Execute a function with exponential backoff retry logic
+    /// 
+    /// This wraps AI service calls to provide resiliency against transient failures.
+    async fn execute_with_backoff<F, Fut, T>(&self, operation: F) -> Result<T, AppError>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T, AppError>>,
+    {
+        let backoff_config = ExponentialBackoff {
+            max_elapsed_time: Some(std::time::Duration::from_secs(30)), // 30 second timeout
+            max_interval: std::time::Duration::from_secs(5), // Max 5 seconds between retries
+            ..ExponentialBackoff::default()
+        };
+        
+        let result = backoff::future::retry(backoff_config, || async {
+            match operation().await {
+                Ok(value) => Ok(value),
+                Err(e) => {
+                    // Determine if this error is retryable
+                    match &e {
+                        AppError::ServiceUnavailable(_) | 
+                        AppError::BadGateway(_) |
+                        AppError::InternalServerErrorGeneric(_) => {
+                            warn!("Retryable AI service error: {}", e);
+                            Err(BackoffError::transient(e))
+                        },
+                        _ => {
+                            // Non-retryable errors (authentication, validation, etc.)
+                            error!("Non-retryable AI service error: {}", e);
+                            Err(BackoffError::permanent(e))
+                        }
+                    }
+                }
+            }
+        }).await;
+
+        result
     }
 
     /// Retrieve the user's current persona context for narrative intelligence

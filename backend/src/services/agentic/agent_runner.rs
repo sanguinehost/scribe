@@ -192,6 +192,67 @@ impl NarrativeAgentRunner {
         })
     }
 
+    /// Execute the narrative intelligence workflow in dry-run mode (for ordered async processing)
+    /// 
+    /// This is identical to process_narrative_event but uses a dry-run action plan that
+    /// returns event data without inserting into the database.
+    pub async fn process_narrative_event_dry_run(
+        &self,
+        user_id: Uuid,
+        chat_session_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        messages: &[ChatMessage],
+        session_dek: &SessionDek,
+        persona_context: Option<super::UserPersonaContext>,
+    ) -> Result<NarrativeWorkflowResult, AppError> {
+        info!(
+            "Starting narrative workflow (dry-run) for chat {} with {} messages",
+            chat_session_id,
+            messages.len()
+        );
+
+        // Step 1: Triage - Is this significant?
+        let triage_result = self.perform_triage(user_id, chronicle_id, messages, session_dek, persona_context.as_ref()).await?;
+        
+        if !triage_result.is_significant {
+            info!("Triage determined event is not significant, skipping workflow");
+            return Ok(NarrativeWorkflowResult {
+                triage_result,
+                actions_taken: vec![],
+                execution_results: vec![],
+                cost_estimate: 0.0,
+            });
+        }
+
+        info!("Event deemed significant: {}", triage_result.summary);
+
+        // Skip auto-creating chronicle in dry-run mode - assume chronicle_id is provided
+        
+        // Step 2: Knowledge Retrieval - What do we already know?
+        let knowledge_context = self.retrieve_knowledge_context(&triage_result).await?;
+
+        // Step 3: Planning - What should we do? (dry-run mode)
+        let action_plan = self.generate_action_plan_dry_run(
+            &triage_result,
+            &knowledge_context,
+            chronicle_id,
+            false, // Chronicle not created in dry-run
+            persona_context.as_ref(),
+        ).await?;
+
+        info!("Generated dry-run action plan with {} actions", action_plan.actions.len());
+
+        // Step 4: Execution - Simulate the planned actions without inserting
+        let execution_results = self.execute_action_plan_dry_run(&action_plan, user_id, chronicle_id, session_dek, persona_context.as_ref()).await?;
+
+        Ok(NarrativeWorkflowResult {
+            triage_result,
+            actions_taken: action_plan.actions,
+            execution_results,
+            cost_estimate: 0.0, // TODO: Implement cost tracking
+        })
+    }
+
     /// Step 1: Analyze if the conversation contains significant narrative events
     async fn perform_triage(
         &self,
@@ -221,9 +282,9 @@ impl NarrativeAgentRunner {
         };
 
         let triage_prompt = format!(
-            r#"🚨 ANTI-DUPLICATION MISSION: Your primary job is to PREVENT creating chronicle events for things that are already chronicled.
+            r#"🎯 NARRATIVE CHRONICLE MISSION: Identify significant story moments while avoiding exact duplicates.
 
-🎯 CORE QUESTION: "Is this conversation describing NEW narrative developments that are NOT already covered in the existing chronicles shown below?"
+🎯 CORE QUESTION: "Does this conversation contain meaningful narrative developments that are NOT already recorded in existing chronicles?"
 
 📋 XML LABELING ACTIVE: Existing chronicle events are clearly marked below. You can see ALL relevant context but must NOT duplicate what already exists.
 
@@ -277,29 +338,27 @@ Examples:
 - Finding treasure: WORLD.DISCOVERY + DISCOVERED, agent=finder, object=treasure
 - Learning secret: PLOT.REVELATION + REVEALED, agent=revealer, patient=learner
 
-Consider NOT significant:
-- Routine conversation without impact
-- Movement without discovery or consequence  
-- Minor interactions without relationship change
-- Events already covered in recent chronicle entries (check RECENT CHRONICLE EVENTS above)
-- Scene details that don't advance the plot or change world state
-- Sexual content without narrative significance or character development
-- Repetitive interactions already documented
+Consider NOT significant if:
+- Events are directly duplicated in existing chronicles (check EXISTING_CHRONICLES section)
+- Pure system/mechanical messages with no roleplay content
+- Out-of-character (OOC) discussions about the game itself
+- Purely repetitive actions with identical outcomes already chronicled
+- Minor movements or transitions without narrative consequence
+- Brief acknowledgments or simple responses without development
 
-COALESCING RULE (Critical for Event Quality):
-- **AFTERMATH vs NEW EVENT**: Emotional reactions, satisfaction, pride, or contemplation following recent events should NOT be chronicled separately
-- **VALENCE DATA**: These emotional states belong as metadata in the original event, NOT as new chronicle entries
-- **FOLLOW-UP ACTIONS**: Minor actions immediately after significant events (moving to another room, etc.) are usually NOT significant
-- **CONVERSATION CONTINUATION**: If the content primarily describes ongoing or recent actions without new consequences, mark as NOT significant
-- **SPECIFIC EXAMPLE**: If chronicle context shows "Sol secured Executive Suite", then conversation about "Sol feeling satisfied with the security" or "Sol and Lumiya entering the room" should be marked NOT significant
+CHRONICLE GUIDELINE (Event Quality):
+- **MEANINGFUL MOMENTS**: Record character development, relationship changes, world discoveries, plot advancement
+- **EMOTIONAL DEPTH**: Significant character introspection, reactions, and emotional growth are chronicle-worthy
+- **DIALOGUE SIGNIFICANCE**: Important conversations, negotiations, confessions, revelations should be recorded
+- **CHARACTER AGENCY**: Decisions, actions, and their consequences are valuable chronicle content
+- **IMMEDIATE AFTERMATH**: Pure emotional reactions to recent events may be less significant than the original event
+- **MICRO vs MACRO**: Focus on substantial developments rather than minute-by-minute scene descriptions
 
-TEMPORAL SCOPE PRIORITIZATION:
-- Prioritize MAJOR PLOT EVENTS over scene details
-- Focus on actions with lasting consequences over momentary interactions  
-- Divine interventions, world-changing events, and character arcs take precedence
-- Distinguish between story beats (significant) vs flavor text (insignificant)
-- Events spanning longer time periods (months, years) are typically more significant than minute-by-minute actions
-- Global consequences and governmental responses indicate high significance
+SCOPE GUIDANCE:
+- Both major plot events AND substantial character moments are valuable
+- Meaningful character interactions, important dialogue, and development are chronicle-worthy
+- Scene details that reveal character depth or advance plot understanding should be recorded
+- Rich roleplay conversations often contain chronicle-worthy content, but not every exchange needs recording
 
 DEDUPLICATION RULES (CRITICAL - MUST FOLLOW):
 - **MANDATORY CHECK**: If ANY similar event is in <EXISTING_CHRONICLES> above, mark as NOT significant
@@ -307,7 +366,7 @@ DEDUPLICATION RULES (CRITICAL - MUST FOLLOW):
 - **REDUNDANCY CHECK**: If this conversation is just describing what was already chronicled, mark as NOT significant
 - **EMOTIONAL AFTERMATH**: If this is just emotional reaction to an existing chronicled event, mark as NOT significant
 - **SCENE TRANSITIONS**: Moving between locations or routine actions without new consequences are NOT significant
-- **WHEN IN DOUBT**: Choose NOT significant rather than risk duplication
+- **WHEN IN DOUBT**: Favor recording meaningful roleplay moments unless clearly redundant with existing chronicles
 - **XML CONTEXT**: Use the <EXISTING_CHRONICLES> section as your primary reference for what already exists
 
 IMPORTANT: When identifying characters in the conversation, use the persona context above to properly identify who is who. Do not refer to characters generically as "the user" or "the character" when you have specific persona information available."#,
@@ -751,6 +810,87 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
                         "error": format!("Tool not found: {}", action.tool_name)
                     }));
                 }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Generate action plan for dry-run mode (identical to regular planning)
+    async fn generate_action_plan_dry_run(
+        &self,
+        triage_result: &TriageResult,
+        knowledge_context: &Value,
+        chronicle_id: Option<Uuid>,
+        chronicle_was_just_created: bool,
+        persona_context: Option<&super::UserPersonaContext>,
+    ) -> Result<ActionPlan, AppError> {
+        // For now, dry-run planning is identical to regular planning
+        // The difference is in execution where we don't actually insert events
+        self.generate_action_plan(
+            triage_result,
+            knowledge_context,
+            chronicle_id,
+            chronicle_was_just_created,
+            persona_context,
+        ).await
+    }
+
+    /// Execute action plan in dry-run mode - simulate without inserting into database
+    async fn execute_action_plan_dry_run(
+        &self,
+        plan: &ActionPlan,
+        user_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        session_dek: &SessionDek,
+        _persona_context: Option<&super::UserPersonaContext>,
+    ) -> Result<Vec<ToolResult>, AppError> {
+        info!("Executing action plan (dry-run) with {} actions", plan.actions.len());
+
+        let mut results = Vec::new();
+
+        for (index, action) in plan.actions.iter().enumerate() {
+            if index >= self.config.max_tool_executions {
+                warn!("Reached maximum tool execution limit ({})", self.config.max_tool_executions);
+                break;
+            }
+
+            debug!("Simulating action {}: {} - {}", index + 1, action.tool_name, action.reasoning);
+
+            // For chronicle event creation, simulate the action without actually inserting
+            if action.tool_name == "create_chronicle_event" {
+                // Extract event parameters for simulation
+                if let Some(event_type) = action.parameters.get("event_type").and_then(|v| v.as_str()) {
+                    let summary = action.parameters.get("summary")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Event summary");
+                    
+                    info!("Simulating chronicle event creation: {} ({})", summary, event_type);
+                    
+                    // Return simulated success result with event data
+                    results.push(json!({
+                        "success": true,
+                        "event_type": event_type,
+                        "summary": summary,
+                        "event_data": action.parameters.get("actors"), // Include actors and other data
+                        "simulated": true,
+                        "message": "Chronicle event simulation successful"
+                    }));
+                } else {
+                    results.push(json!({
+                        "success": false,
+                        "error": "Missing event_type parameter",
+                        "simulated": true
+                    }));
+                }
+            } else {
+                // For other tools, just simulate success
+                results.push(json!({
+                    "success": true,
+                    "tool": action.tool_name,
+                    "simulated": true,
+                    "message": format!("Simulated execution of {}", action.tool_name)
+                }));
             }
         }
 

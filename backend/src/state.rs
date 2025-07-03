@@ -7,7 +7,7 @@ use crate::config::Config; // Use Config instead
 // use genai::Client as GeminiApiClient; // Remove Gemini client for now
 use std::sync::Arc;
 // Removed #[cfg(test)] - Mutex needed unconditionally now for tracker
-use tokio::sync::Mutex as TokioMutex; // Add Mutex for test tracking
+use tokio::sync::{Mutex as TokioMutex, Semaphore}; // Add Mutex for test tracking and Semaphore for concurrency control
 // Use the AiClient trait from our llm module
 use crate::llm::AiClient;
 use crate::llm::EmbeddingClient; // Add this
@@ -75,6 +75,7 @@ pub struct AppState {
     pub file_storage_service: Arc<FileStorageService>, // Added for file storage
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
     pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
+    pub rechronicle_semaphore: Arc<Semaphore>, // Global semaphore to limit concurrent re-chronicle jobs
 }
 
 // Manual Debug implementation for AppState
@@ -100,6 +101,7 @@ impl fmt::Debug for AppState {
             .field("file_storage_service", &"<Arc<FileStorageService>>") // Added
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
             .field("narrative_intelligence_service", &"<Option<Arc<NarrativeIntelligenceService>>>") // Added for agentic narrative processing
+            .field("rechronicle_semaphore", &"<Arc<Semaphore>>") // Added for re-chronicle concurrency control
             .finish()
     }
 }
@@ -125,6 +127,7 @@ impl AppState {
             file_storage_service: services.file_storage_service,
             email_service: services.email_service,
             narrative_intelligence_service: None, // Will be set later after AppState is fully constructed
+            rechronicle_semaphore: Arc::new(Semaphore::new(20)), // Allow 20 concurrent re-chronicle jobs globally
         }
     }
 

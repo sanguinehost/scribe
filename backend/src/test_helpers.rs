@@ -126,16 +126,44 @@ pub struct MockAiClient {
 impl MockAiClient {
     #[must_use]
     pub fn new() -> Self {
-        // Initialize fields with default values
+        Self::new_for_narrative_processing()
+    }
+    
+    /// Create a MockAiClient configured for narrative processing tests
+    pub fn new_for_narrative_processing() -> Self {
+        // Create a valid JSON response for narrative processing tests
+        // This will be used for both triage and planning phases
+        let narrative_json_response = r#"{
+            "is_significant": true,
+            "summary": "Mock narrative event for testing",
+            "event_type": "INTERACTION.DIALOGUE.CASUAL",
+            "confidence": 0.8,
+            "reasoning": "This is a mock event for testing chronicle generation",
+            "actions": [
+                {
+                    "tool_name": "create_chronicle_event",
+                    "parameters": {
+                        "event_type": "INTERACTION.DIALOGUE.CASUAL",
+                        "summary": "Mock characters had an important conversation",
+                        "actors": [
+                            {"id": "character_1", "role": "Agent"},
+                            {"id": "character_2", "role": "Patient"}
+                        ]
+                    },
+                    "reasoning": "This conversation contains significant character development"
+                }
+            ]
+        }"#;
+        
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            // Default to a simple OK response
+            // Default to a valid JSON response for narrative processing
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 contents: vec![genai::chat::MessageContent::Text(
-                    "Mock AI response".to_string(),
+                    narrative_json_response.to_string(),
                 )],
                 reasoning_content: None,
                 usage: Usage::default(),

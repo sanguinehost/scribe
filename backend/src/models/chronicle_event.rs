@@ -399,6 +399,10 @@ pub enum EventOrderBy {
     UpdatedAtAsc,
     #[serde(rename = "updated_at_desc")]
     UpdatedAtDesc,
+    #[serde(rename = "timestamp_asc")]
+    TimestampAsc,
+    #[serde(rename = "timestamp_desc")]
+    TimestampDesc,
 }
 
 impl Default for EventFilter {
@@ -413,7 +417,7 @@ impl Default for EventFilter {
             before_timestamp: None,
             limit: Some(50),
             offset: Some(0),
-            order_by: Some(EventOrderBy::CreatedAtDesc),
+            order_by: Some(EventOrderBy::TimestampAsc),
         }
     }
 }

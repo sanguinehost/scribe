@@ -163,6 +163,10 @@ pub enum AppError {
     #[error("API Rate Limit Exceeded{}", .0.map_or_else(|| "".to_string(), |d| format!(" Retrying in {} seconds.", d.as_secs())))]
     RateLimited(Option<std::time::Duration>),
 
+    // Added ServiceUnavailable variant for resource exhaustion (e.g., semaphore limits)
+    #[error("Service Unavailable: {0}")]
+    ServiceUnavailable(String),
+
     // Added NotImplemented variant
     #[error("Not Implemented: {0}")]
     NotImplemented(String),
@@ -339,6 +343,7 @@ impl AppError {
                 | Self::UsernameTaken
                 | Self::EmailTaken
                 | Self::RateLimited(_)
+                | Self::ServiceUnavailable(_)
                 | Self::FileUploadError(_)
                 | Self::CharacterParseError(_)
                 | Self::CharacterParsingError(_)
@@ -424,6 +429,7 @@ impl AppError {
                         .unwrap_or_default()
                 ),
             ),
+            Self::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
             _ => unreachable!("Non-simple client error passed to handle_simple_client_error"),
         }
     }

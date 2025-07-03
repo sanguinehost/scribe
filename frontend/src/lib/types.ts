@@ -88,6 +88,7 @@ export interface ScribeChatSession {
 	character_name?: string | null; // Added character_name
 	chat_mode: ChatMode; // NEW: Required chat mode field
 	player_chronicle_id?: string | null; // Chronicle association (backend field name: player_chronicle_id)
+	chronicle_id?: string | null; // Added for consistency with settings response
 	user_id: string;
 	created_at: string;
 	updated_at: string;
@@ -823,7 +824,7 @@ export interface EventFilter {
 	offset?: number | null;
 }
 
-export type EventOrderBy = 'created_at_asc' | 'created_at_desc' | 'updated_at_asc' | 'updated_at_desc';
+export type EventOrderBy = 'created_at_asc' | 'created_at_desc' | 'updated_at_asc' | 'updated_at_desc' | 'timestamp_asc' | 'timestamp_desc';
 
 // Token counting types
 export interface TokenCountRequest {

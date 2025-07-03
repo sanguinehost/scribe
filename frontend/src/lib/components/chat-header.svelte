@@ -4,7 +4,7 @@
 	import ModelSelector from './model-selector.svelte';
 	import { Badge } from './ui/badge';
 	import { Button } from './ui/button';
-	import { ScrollText, History, BookOpen, RotateCcw } from 'lucide-svelte';
+	import { ScrollText, History, BookOpen } from 'lucide-svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
@@ -22,18 +22,20 @@
 	let {
 		user,
 		chat,
-		readonly
+		readonly,
+		currentChronicleId,
+		isLoadingSettings,
+		isReChronicling
 	}: {
 		user: User | undefined;
 		chat: ScribeChatSession | undefined; // Use Scribe type
 		readonly: boolean;
+		currentChronicleId: string | null;
+		isLoadingSettings: boolean;
+		isReChronicling: boolean;
 	} = $props();
 
 	const sidebar = useSidebar();
-
-	// Chronicle state management (same pattern as ChatConfigPanel)
-	let currentChronicleId = $state<string | null>(null);
-	let isLoadingSettings = $state(false);
 
 	// Get chronicle info if this chat belongs to one
 	let currentChronicle = $derived.by(() => {
@@ -49,13 +51,6 @@
 
 	// Track previous event count to detect when new events are added
 	let previousEventCount = $state<number>(0);
-
-	// Load settings on chat change (same as ChatConfigPanel)
-	$effect(() => {
-		if (chat?.id) {
-			loadChatSettings();
-		}
-	});
 
 	// Refresh chronicle store when a new chronicle is automatically created
 	$effect(() => {
@@ -93,36 +88,8 @@
 		previousEventCount = currentChronicle?.event_count || 0;
 	});
 
-	async function loadChatSettings() {
-		if (!chat?.id) return;
-		isLoadingSettings = true;
-		try {
-			const result = await apiClient.getChatSessionSettings(chat.id);
-			if (result.isOk()) {
-				const settings = result.value;
-				// Update currentChronicleId from the fresh backend settings
-				// This ensures the UI shows the correct chronicle association from the database
-				currentChronicleId = settings.chronicle_id || null;
-				console.log('[Chat Header] Loaded settings:', { chronicleId: currentChronicleId });
-			} else {
-				console.error('[Chat Header] Failed to load chat settings:', result.error);
-				// Fallback to chat prop if API fails
-				currentChronicleId = chat.chronicle_id || null;
-			}
-		} catch (error) {
-			console.error('[Chat Header] Error loading chat settings:', error);
-			// Fallback to chat prop if error occurs
-			currentChronicleId = chat.chronicle_id || null;
-		} finally {
-			isLoadingSettings = false;
-		}
-	}
-
 	// State for extraction
 	let isExtracting = $state(false);
-
-	// State for re-chronicling
-	let isReChronicling = $state(false);
 
 	// State for chronicle creation
 	// Note: isCreatingChronicle removed as chronicles are now automatic
@@ -190,61 +157,6 @@
 		} finally {
 			isExtracting = false;
 			console.log('[Extract Events] Finished');
-		}
-	}
-
-	// Function to re-chronicle events from chat history
-	async function reChronicleFromChat() {
-		console.log('[Re-Chronicle] Button clicked', {
-			chatId: chat?.id,
-			currentChronicleId,
-			currentChronicle: currentChronicle?.id,
-			hasChronicleId,
-			isReChronicling
-		});
-
-		if (!chat?.id || !currentChronicleId) {
-			console.log('[Re-Chronicle] Missing required data', {
-				chatId: chat?.id,
-				currentChronicleId
-			});
-			toast.error('Cannot re-chronicle: No active chat session or chronicle');
-			return;
-		}
-
-		isReChronicling = true;
-		console.log('[Re-Chronicle] Starting re-chronicling...');
-
-		try {
-			const result = await apiClient.reChronicleFromChat(currentChronicleId, {
-				chat_session_id: chat.id,
-				purge_existing: true, // Purge existing events by default
-				extraction_model: 'gemini-2.5-pro',
-				batch_size: 10
-			});
-
-			console.log('[Re-Chronicle] API response:', result);
-
-			if (result.isOk()) {
-				const response = result.value;
-				toast.success(`${response.summary}`, {
-					description: `Processed ${response.messages_processed} messages, created ${response.events_created} events${response.events_purged > 0 ? `, purged ${response.events_purged} old events` : ''}`
-				});
-
-				// Refresh chronicle store to update event counts
-				await chronicleStore.refresh();
-			} else {
-				console.error('[Re-Chronicle] API error:', result.error);
-				toast.error('Failed to re-chronicle events', {
-					description: result.error.message
-				});
-			}
-		} catch (error) {
-			console.error('[Re-Chronicle] Exception:', error);
-			toast.error('An unexpected error occurred during re-chronicling');
-		} finally {
-			isReChronicling = false;
-			console.log('[Re-Chronicle] Finished');
 		}
 	}
 
@@ -363,17 +275,6 @@
 		{/if}
 
 		{#if !readonly && chat}
-			<Button
-				variant="ghost"
-				size="sm"
-				onclick={reChronicleFromChat}
-				disabled={isReChronicling || isLoadingSettings || isExtractingLorebook}
-				title="Re-chronicle this entire conversation from beginning to end with improved context"
-				class="cursor-pointer gap-1 hover:bg-accent"
-			>
-				<RotateCcw class="h-3 w-3" />
-				{isReChronicling ? 'Re-chronicling...' : 'Re-Chronicle'}
-			</Button>
 			<Button
 				variant="ghost"
 				size="sm"

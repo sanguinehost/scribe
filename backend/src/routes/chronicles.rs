@@ -8,8 +8,10 @@ use axum::{
     Router,
 };
 use axum_login::AuthSession;
+use futures::future::try_join_all;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 use validator::Validate;
@@ -29,6 +31,7 @@ use crate::{
     },
     services::{
         ChronicleService,
+        narrative_intelligence_service::EventDataToInsert,
     },
     state::AppState,
 };
@@ -63,7 +66,7 @@ pub struct ReChronicleRequest {
 }
 
 fn default_batch_size() -> usize {
-    10
+    4
 }
 
 /// Response from re-chronicling operation
@@ -345,44 +348,23 @@ async fn re_chronicle_from_chat(
         request.chat_session_id, chronicle_id, user.id
     );
 
+    // Acquire a permit from the global re-chronicle semaphore to limit concurrent jobs
+    let _permit = state.rechronicle_semaphore.clone().acquire_owned().await
+        .map_err(|_| AppError::ServiceUnavailable("Too many re-chronicle jobs running concurrently".to_string()))?;
+
+    // Validate chronicle ownership
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    
-    // Verify the chronicle exists and belongs to the user
     let _chronicle = chronicle_service.get_chronicle(user.id, chronicle_id).await?;
     
-    let mut events_purged = 0;
+    // Handle purging existing events if requested
+    let events_purged = if request.purge_existing {
+        purge_existing_events(&state, &chronicle_service, user.id, chronicle_id).await?
+    } else {
+        0
+    };
     
-    // Purge existing events if requested
-    if request.purge_existing {
-        info!("Purging existing chronicle events for chronicle {}", chronicle_id);
-        let existing_events = chronicle_service.get_chronicle_events(
-            user.id,
-            chronicle_id,
-            EventFilter::default()
-        ).await?;
-        
-        events_purged = existing_events.len();
-        
-        for event in existing_events {
-            // Delete the event
-            chronicle_service.delete_event(user.id, event.id).await?;
-            
-            // Clean up embeddings
-            if let Err(e) = state
-                .embedding_pipeline_service
-                .delete_chronicle_event_chunks(Arc::new(state.clone()), event.id, user.id)
-                .await
-            {
-                warn!(event_id = %event.id, error = %e, "Failed to delete chronicle event embeddings during purge");
-            }
-        }
-        
-        info!("Purged {} existing chronicle events", events_purged);
-    }
-    
-    // Get chat messages
+    // Get and filter chat messages
     let messages = get_chat_messages(&state, request.chat_session_id, user.id).await?;
-    
     if messages.is_empty() {
         return Ok(Json(ReChronicleResponse {
             events_created: 0,
@@ -392,76 +374,207 @@ async fn re_chronicle_from_chat(
         }));
     }
     
-    // Filter messages by index range if specified
-    let start_idx = request.start_message_index.unwrap_or(0);
-    let end_idx = request.end_message_index.unwrap_or(messages.len());
-    
-    let messages_to_process: Vec<_> = messages
-        .into_iter()
-        .enumerate()
-        .filter(|(idx, _)| *idx >= start_idx && *idx < end_idx)
-        .map(|(_, msg)| msg)
-        .collect();
+    let messages_to_process = filter_messages_by_range(
+        messages,
+        request.start_message_index.unwrap_or(0),
+        request.end_message_index
+    );
     
     info!(
         "Processing {} messages from indices {} to {}",
         messages_to_process.len(),
-        start_idx,
-        end_idx
+        request.start_message_index.unwrap_or(0),
+        request.end_message_index.unwrap_or(messages_to_process.len())
     );
     
-    let mut total_events_created = 0;
-    let mut messages_processed = 0;
+    // Process messages using the streaming pipeline
+    let (events_created, messages_processed) = process_messages_with_streaming_pipeline(
+        &state,
+        &user,
+        chronicle_id,
+        &session_dek,
+        &request,
+        messages_to_process,
+    ).await?;
     
-    // Process messages in batches to provide context
-    let batch_size = request.batch_size.min(50); // Cap at 50 for safety
-    
-    for (batch_idx, batch) in messages_to_process.chunks(batch_size).enumerate() {
-        info!(
-            "Processing batch {} with {} messages",
-            batch_idx,
-            batch.len()
-        );
-        
-        // Get the narrative intelligence service
-        let narrative_service = state.narrative_intelligence_service.as_ref()
-            .ok_or_else(|| AppError::InternalServerErrorGeneric("Narrative intelligence service not available".to_string()))?;
-        
-        // Process this batch of messages through the narrative intelligence system
-        let processing_result = narrative_service.process_chat_history_batch(
-            user.id,
-            request.chat_session_id,
-            Some(chronicle_id),
-            batch.to_vec(),
-            &session_dek,
-        ).await?;
-        
-        total_events_created += processing_result.events_created;
-        messages_processed += batch.len();
-        
-        info!(
-            "Batch {} complete: {} events created from {} messages",
-            batch_idx,
-            processing_result.events_created,
-            batch.len()
-        );
-    }
-    
-    let summary = format!(
-        "Re-chronicling complete: {} events created from {} messages{}",
-        total_events_created,
-        messages_processed,
-        if events_purged > 0 { format!(", {} existing events purged", events_purged) } else { String::new() }
-    );
-    
+    let summary = build_summary(events_created, messages_processed, events_purged);
     info!("{}", summary);
     
     Ok(Json(ReChronicleResponse {
-        events_created: total_events_created,
+        events_created,
         messages_processed,
         events_purged,
         summary,
     }))
+}
+
+/// Purge existing chronicle events for a chronicle
+async fn purge_existing_events(
+    state: &AppState,
+    chronicle_service: &ChronicleService,
+    user_id: Uuid,
+    chronicle_id: Uuid,
+) -> Result<usize, AppError> {
+    info!("Purging existing chronicle events for chronicle {}", chronicle_id);
+    
+    let existing_events = chronicle_service.get_chronicle_events(
+        user_id,
+        chronicle_id,
+        EventFilter::default()
+    ).await?;
+    
+    let events_count = existing_events.len();
+    
+    for event in existing_events {
+        // Delete the event
+        chronicle_service.delete_event(user_id, event.id).await?;
+        
+        // Clean up embeddings
+        if let Err(e) = state
+            .embedding_pipeline_service
+            .delete_chronicle_event_chunks(Arc::new(state.clone()), event.id, user_id)
+            .await
+        {
+            warn!(event_id = %event.id, error = %e, "Failed to delete chronicle event embeddings during purge");
+        }
+    }
+    
+    info!("Purged {} existing chronicle events", events_count);
+    Ok(events_count)
+}
+
+/// Filter messages by the specified index range
+fn filter_messages_by_range(
+    messages: Vec<ChatMessage>,
+    start_idx: usize,
+    end_idx: Option<usize>,
+) -> Vec<ChatMessage> {
+    let end_idx = end_idx.unwrap_or(messages.len());
+    
+    messages
+        .into_iter()
+        .enumerate()
+        .filter(|(idx, _)| *idx >= start_idx && *idx < end_idx)
+        .map(|(_, msg)| msg)
+        .collect()
+}
+
+/// Process messages using the streaming pipeline approach
+async fn process_messages_with_streaming_pipeline(
+    state: &AppState,
+    user: &crate::models::users::User,
+    chronicle_id: Uuid,
+    session_dek: &SessionDek,
+    request: &ReChronicleRequest,
+    messages_to_process: Vec<ChatMessage>,
+) -> Result<(usize, usize), AppError> {
+    // Configuration for batching and concurrency
+    let batch_size = request.batch_size.min(50); // Cap at 50 for safety
+    let max_concurrent_batches = 5; // Limit concurrency to avoid overwhelming AI service
+    
+    // Get the narrative intelligence service
+    let narrative_service = state.narrative_intelligence_service.as_ref()
+        .ok_or_else(|| AppError::InternalServerErrorGeneric("Narrative intelligence service not available".to_string()))?;
+    
+    // Create bounded channel for streaming pipeline (1024 capacity provides back-pressure)
+    let (tx, rx) = mpsc::channel::<EventDataToInsert>(1024);
+    
+    // Spawn the database writer task (consumer)
+    let db_writer_chronicle_service = ChronicleService::new(state.pool.clone());
+    let db_writer_embedding_service = state.embedding_pipeline_service.clone();
+    let db_writer_state = state.clone();
+    let db_writer_session_dek = session_dek.clone();
+    let user_id = user.id;
+    
+    let db_writer_handle = tokio::spawn(async move {
+        db_writer_task(
+            rx,
+            db_writer_chronicle_service,
+            user_id,
+            chronicle_id,
+            db_writer_session_dek,
+            db_writer_embedding_service,
+            Arc::new(db_writer_state),
+        ).await
+    });
+    
+    // Process batches and send events to the channel (producers)
+    let batches: Vec<_> = messages_to_process.chunks(batch_size).enumerate().collect();
+    
+    for batch_chunk in batches.chunks(max_concurrent_batches) {
+        let batch_futures: Vec<_> = batch_chunk
+            .iter()
+            .enumerate()
+            .map(|(_, (batch_idx, batch))| {
+                let narrative_service = narrative_service.clone();
+                let batch = batch.to_vec();
+                let session_dek = session_dek.clone();
+                let user_id = user.id;
+                let chat_session_id = request.chat_session_id;
+                let batch_idx = *batch_idx;
+                let producer_tx = tx.clone();
+                
+                async move {
+                    info!(
+                        "Processing batch {} (dry-run) with {} messages",
+                        batch_idx,
+                        batch.len()
+                    );
+                    
+                    let batch_result = narrative_service.process_chat_history_batch_dry_run(
+                        user_id,
+                        chat_session_id,
+                        Some(chronicle_id),
+                        batch.clone(),
+                        &session_dek,
+                        batch_idx,
+                    ).await?;
+                    
+                    info!(
+                        "Batch {} dry-run complete: {} events ready for streaming to DB writer from {} messages",
+                        batch_idx,
+                        batch_result.events.len(),
+                        batch.len()
+                    );
+                    
+                    // Send events to the streaming pipeline
+                    for event_data in batch_result.events {
+                        if producer_tx.send(event_data).await.is_err() {
+                            error!("DB writer task has shut down, cannot send event for batch {}", batch_idx);
+                            break;
+                        }
+                    }
+                    
+                    Ok::<_, AppError>(())
+                }
+            })
+            .collect();
+        
+        // Wait for this chunk of batches to complete
+        try_join_all(batch_futures).await?;
+    }
+    
+    // Drop the original sender to signal the end of producers
+    drop(tx);
+    
+    // Wait for the DB writer to finish processing all events
+    let (events_created, messages_processed) = match db_writer_handle.await {
+        Ok(Ok(result)) => result,
+        Ok(Err(e)) => return Err(e),
+        Err(_) => return Err(AppError::InternalServerErrorGeneric("DB writer task panicked".into())),
+    };
+    
+    Ok((events_created, messages_processed))
+}
+
+/// Build a summary string for the re-chronicle operation
+fn build_summary(events_created: usize, messages_processed: usize, events_purged: usize) -> String {
+    format!(
+        "Re-chronicling complete: {} events created from {} messages{}",
+        events_created,
+        messages_processed,
+        if events_purged > 0 { format!(", {} existing events purged", events_purged) } else { String::new() }
+    )
 }
 
 /// Helper function to get chat messages for a session
@@ -493,4 +606,59 @@ async fn get_chat_messages(
     .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch chat messages: {}", e)))?;
     
     Ok(messages)
+}
+
+/// Database writer task that consumes events from the channel and batches them for insertion
+async fn db_writer_task(
+    mut receiver: mpsc::Receiver<EventDataToInsert>,
+    chronicle_service: ChronicleService,
+    user_id: Uuid,
+    chronicle_id: Uuid,
+    session_dek: crate::auth::session_dek::SessionDek,
+    embedding_pipeline_service: Arc<dyn crate::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+    app_state: Arc<AppState>,
+) -> Result<(usize, usize), AppError> {
+    let mut events_created = 0;
+    let mut messages_processed = 0;
+    
+    // Process events as they come in
+    while let Some(event_data) = receiver.recv().await {
+        messages_processed += 1;
+        
+        info!(
+            "DB writer inserting chronicle event: {} ({})",
+            event_data.summary,
+            event_data.event_type
+        );
+        
+        let create_request = CreateEventRequest {
+            event_type: event_data.event_type,
+            summary: event_data.summary,
+            source: EventSource::AiExtracted,
+            event_data: event_data.event_data,
+        };
+        
+        match chronicle_service.create_event(user_id, chronicle_id, create_request, Some(&session_dek)).await {
+            Ok(event) => {
+                events_created += 1;
+                
+                // Embed the chronicle event for semantic search
+                if let Err(e) = embedding_pipeline_service
+                    .process_and_embed_chronicle_event(app_state.clone(), event.clone(), Some(&session_dek))
+                    .await
+                {
+                    warn!(event_id = %event.id, error = %e, "Failed to embed chronicle event, but event was created successfully");
+                } else {
+                    info!(event_id = %event.id, "Successfully embedded chronicle event for semantic search");
+                }
+            },
+            Err(e) => {
+                error!("Failed to create chronicle event during streaming insertion: {}", e);
+                // Continue with other events even if one fails
+            }
+        }
+    }
+    
+    info!("DB writer task completed: {} events created from {} messages", events_created, messages_processed);
+    Ok((events_created, messages_processed))
 }

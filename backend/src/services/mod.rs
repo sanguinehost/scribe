@@ -42,7 +42,7 @@ pub use email_service::{EmailService, create_email_service};
 pub use encryption_service::EncryptionService;
 pub use file_storage_service::FileStorageService;
 pub use lorebook::LorebookService;
-pub use narrative_intelligence_service::{NarrativeIntelligenceService, NarrativeProcessingResult, NarrativeProcessingConfig};
+pub use narrative_intelligence_service::{NarrativeIntelligenceService, NarrativeProcessingResult, NarrativeProcessingConfig, BatchEventData, EventDataToInsert};
 pub use narrative_ontology_service::NarrativeOntologyService;
 pub use user_persona_service::UserPersonaService;
 pub use user_settings_service::UserSettingsService;
