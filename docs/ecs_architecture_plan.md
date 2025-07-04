@@ -211,47 +211,48 @@ graph TD
 #### 4.1 Chronicle Event Integration
 **DoD**: ECS state accurately reflects chronicle events with proper event sourcing
 
-- [ ] **4.1.1** Implement chronicle event listeners
-  - [ ] Subscribe to chronicle event creation/updates
-  - [ ] Process events to derive ECS state changes
-  - [ ] Handle event reprocessing for state reconstruction
-  - [ ] Chronicle system remains unchanged - no dual writes needed
-  - **DoD**: ECS state updates triggered by chronicle events without modifying chronicle code
+- [x] **4.1.1** Implement chronicle event listeners ✅ **COMPLETED**
+  - [x] Subscribe to chronicle event creation/updates ✅
+  - [x] Process events to derive ECS state changes ✅
+  - [x] Handle event reprocessing for state reconstruction ✅
+  - [x] Chronicle system remains unchanged - no dual writes needed ✅
+  - **DoD**: ECS state updates triggered by chronicle events without modifying chronicle code ✅
 
-- [ ] **4.1.2** Add chronicle-ECS consistency monitoring
-  - [ ] Verify ECS state matches chronicle event history
-  - [ ] Detect and report state reconstruction failures
-  - [ ] Provide tools to rebuild ECS state from chronicles
-  - **DoD**: ECS state can be fully reconstructed from chronicle events
+- [x] **4.1.2** Add chronicle-ECS consistency monitoring ✅ **COMPLETED**
+  - [x] Verify ECS state matches chronicle event history ✅
+  - [x] Detect and report state reconstruction failures ✅
+  - [x] Provide tools to rebuild ECS state from chronicles ✅
+  - **DoD**: ECS state can be fully reconstructed from chronicle events ✅
 
-- [ ] **4.1.3** Implement graceful ECS degradation
-  - [ ] Chronicle system continues working if ECS fails
-  - [ ] RAG falls back to chronicle-only mode
-  - [ ] ECS state rebuilds automatically on recovery
-  - **DoD**: Chronicle functionality unaffected by ECS issues
+- [x] **4.1.3** Implement graceful ECS degradation ✅ **COMPLETED**
+  - [x] Chronicle system continues working if ECS fails ✅
+  - [x] RAG falls back to chronicle-only mode ✅
+  - [x] ECS state rebuilds automatically on recovery ✅
+  - **DoD**: Chronicle functionality unaffected by ECS issues ✅
 
 #### 4.2 Enhanced RAG Integration
 **DoD**: Chronicle RAG system enhanced with ECS entity context
 
-- [ ] **4.2.1** Build ECS-enhanced RAG service
-  - [ ] Augment chronicle search with current entity state
-  - [ ] Provide entity relationship context for RAG
-  - [ ] Add "current state" information to chronicle events
-  - [ ] Maintain existing chronicle RAG as fallback
-  - **DoD**: RAG responses include both narrative history and current entity states
+- [x] **4.2.1** Build ECS-enhanced RAG service ✅ **COMPLETED**
+  - [x] Augment chronicle search with current entity state ✅
+  - [x] Provide entity relationship context for RAG ✅
+  - [x] Add "current state" information to chronicle events ✅
+  - [x] Maintain existing chronicle RAG as fallback ✅
+  - **DoD**: RAG responses include both narrative history and current entity states ✅
 
-- [ ] **4.2.2** Implement hybrid query system
-  - [ ] Support queries spanning chronicle events and ECS state
-  - [ ] "What happened to X and where are they now?"
-  - [ ] "Who was present at Y event and what's their current relationship?"
-  - [ ] Cache frequently accessed entity states
-  - **DoD**: Complex narrative + state queries answered accurately
+- [x] **4.2.2** Implement hybrid query system ✅ **COMPLETED**
+  - [x] Support queries spanning chronicle events and ECS state ✅
+  - [x] "What happened to X and where are they now?" ✅
+  - [x] "Who was present at Y event and what's their current relationship?" ✅
+  - [x] Cache frequently accessed entity states ✅
+  - **DoD**: Complex narrative + state queries answered accurately ✅
 
-- [ ] **4.2.3** Add new API endpoints for combined data
-  - [ ] `GET /api/chronicles/{id}/entities` - current entity states
-  - [ ] `GET /api/entities/{id}/timeline` - entity's chronicle events
-  - [ ] `GET /api/chronicles/{id}/relationships` - current relationship graph
-  - [ ] **DoD**: New endpoints provide rich context for narrative understanding
+- [x] **4.2.3** Add new API endpoints for combined data ✅ **COMPLETED**
+  - [x] `GET /api/chronicles/{id}/entities` - current entity states ✅
+  - [x] `GET /api/entities/{id}/timeline` - entity's chronicle events ✅
+  - [x] `GET /api/chronicles/{id}/relationships` - current relationship graph ✅
+  - [x] Comprehensive OWASP Top 10 security tests for all hybrid endpoints ✅
+  - **DoD**: New endpoints provide rich context for narrative understanding ✅
 
 ### Phase 5: Full Integration & Optimization (Weeks 7-10)
 **Objective**: Complete chronicle-ECS integration with enhanced narrative capabilities

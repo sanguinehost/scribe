@@ -1520,6 +1520,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         .nest("/chat", chat_routes(app_state_inner.clone()))
         .nest("/chats", chats::chat_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest("/chronicles", chronicles::create_chronicles_router(app_state_inner.clone())) // Add chronicles routes
+        .nest("/entities", chronicles::create_entities_router(app_state_inner.clone())) // Add entities routes
         .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest(
             "/personas",

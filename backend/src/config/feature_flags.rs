@@ -43,6 +43,31 @@ pub struct NarrativeFeatureFlags {
     
     /// Timeout for agentic extraction in seconds
     pub agentic_extraction_timeout_secs: u64,
+    
+    // ECS System Feature Flags
+    /// Whether to enable the ECS (Entity Component System) for world state management
+    pub enable_ecs_system: bool,
+    
+    /// Whether to automatically update ECS state from chronicle events
+    pub enable_chronicle_to_ecs_sync: bool,
+    
+    /// Whether to publish ECS state changes back to chronicle system
+    pub enable_ecs_to_chronicle_sync: bool,
+    
+    /// Whether to enable ECS-enhanced RAG queries
+    pub enable_ecs_enhanced_rag: bool,
+    
+    /// Whether to use ECS for entity relationship queries
+    pub enable_ecs_relationship_queries: bool,
+    
+    /// Whether to enable ECS cache warming on system startup
+    pub enable_ecs_cache_warming: bool,
+    
+    /// Percentage of users to enable ECS features for (0-100)
+    pub ecs_rollout_percentage: u8,
+    
+    /// Whether to run in ECS compatibility mode (chronicle + ECS hybrid)
+    pub enable_ecs_compatibility_mode: bool,
 }
 
 impl Default for NarrativeFeatureFlags {
@@ -60,6 +85,15 @@ impl Default for NarrativeFeatureFlags {
             enable_auto_chronicle_creation: false,
             max_ai_calls_per_extraction: 10,
             agentic_extraction_timeout_secs: 30,
+            // ECS defaults - conservative
+            enable_ecs_system: false,
+            enable_chronicle_to_ecs_sync: false,
+            enable_ecs_to_chronicle_sync: false,
+            enable_ecs_enhanced_rag: false,
+            enable_ecs_relationship_queries: false,
+            enable_ecs_cache_warming: false,
+            ecs_rollout_percentage: 0,
+            enable_ecs_compatibility_mode: true, // Start in compatibility mode
         }
     }
 }
@@ -80,6 +114,15 @@ impl NarrativeFeatureFlags {
             enable_auto_chronicle_creation: true,
             max_ai_calls_per_extraction: 15, // More generous in dev
             agentic_extraction_timeout_secs: 60, // Longer timeout in dev
+            // ECS fully enabled in development
+            enable_ecs_system: true,
+            enable_chronicle_to_ecs_sync: true,
+            enable_ecs_to_chronicle_sync: true,
+            enable_ecs_enhanced_rag: true,
+            enable_ecs_relationship_queries: true,
+            enable_ecs_cache_warming: true,
+            ecs_rollout_percentage: 100,
+            enable_ecs_compatibility_mode: true, // Hybrid mode for testing
         }
     }
     
@@ -98,6 +141,15 @@ impl NarrativeFeatureFlags {
             enable_auto_chronicle_creation: true,
             max_ai_calls_per_extraction: 8, // Conservative in prod
             agentic_extraction_timeout_secs: 25, // Shorter timeout in prod
+            // ECS conservative rollout in production
+            enable_ecs_system: true,
+            enable_chronicle_to_ecs_sync: true,
+            enable_ecs_to_chronicle_sync: false, // One-way sync initially
+            enable_ecs_enhanced_rag: false, // Disabled until proven stable
+            enable_ecs_relationship_queries: true,
+            enable_ecs_cache_warming: true,
+            ecs_rollout_percentage: percentage.min(100) / 2, // Half the narrative rollout
+            enable_ecs_compatibility_mode: true, // Always hybrid in prod
         }
     }
     
@@ -143,6 +195,37 @@ impl NarrativeFeatureFlags {
         self.fallback_to_manual_on_error
     }
     
+    /// Determine if ECS system should be enabled for a specific user
+    pub fn should_use_ecs_for_user(&self, user_id: &str) -> bool {
+        if !self.enable_ecs_system {
+            return false;
+        }
+        
+        // Use same hashing approach as agentic extraction for consistency
+        let user_hash = self.simple_hash(&format!("ecs_{}", user_id)) % 100;
+        user_hash < self.ecs_rollout_percentage as u64
+    }
+    
+    /// Check if chronicle-to-ECS sync should be enabled for a user
+    pub fn should_sync_chronicle_to_ecs(&self, user_id: &str) -> bool {
+        self.enable_chronicle_to_ecs_sync && self.should_use_ecs_for_user(user_id)
+    }
+    
+    /// Check if ECS-to-chronicle sync should be enabled for a user
+    pub fn should_sync_ecs_to_chronicle(&self, user_id: &str) -> bool {
+        self.enable_ecs_to_chronicle_sync && self.should_use_ecs_for_user(user_id)
+    }
+    
+    /// Check if ECS-enhanced RAG should be used for a user
+    pub fn should_use_ecs_enhanced_rag(&self, user_id: &str) -> bool {
+        self.enable_ecs_enhanced_rag && self.should_use_ecs_for_user(user_id)
+    }
+    
+    /// Check if the system is running in compatibility mode (chronicle + ECS hybrid)
+    pub fn is_ecs_compatibility_mode(&self) -> bool {
+        self.enable_ecs_compatibility_mode
+    }
+    
     /// Validate the feature flag configuration
     pub fn validate(&self) -> Result<(), String> {
         if self.agentic_rollout_percentage > 100 {
@@ -159,6 +242,23 @@ impl NarrativeFeatureFlags {
         
         if self.dual_extraction_mode && !self.enable_agentic_extraction {
             return Err("Cannot enable dual_extraction_mode without enable_agentic_extraction".to_string());
+        }
+        
+        // ECS validation
+        if self.ecs_rollout_percentage > 100 {
+            return Err("ecs_rollout_percentage must be between 0 and 100".to_string());
+        }
+        
+        if self.enable_chronicle_to_ecs_sync && !self.enable_ecs_system {
+            return Err("Cannot enable chronicle_to_ecs_sync without enable_ecs_system".to_string());
+        }
+        
+        if self.enable_ecs_to_chronicle_sync && !self.enable_ecs_system {
+            return Err("Cannot enable ecs_to_chronicle_sync without enable_ecs_system".to_string());
+        }
+        
+        if self.enable_ecs_enhanced_rag && !self.enable_ecs_system {
+            return Err("Cannot enable ecs_enhanced_rag without enable_ecs_system".to_string());
         }
         
         Ok(())

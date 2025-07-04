@@ -441,6 +441,9 @@ fn build_router(
     app_state: AppState,
     auth_layer: axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore>,
 ) -> Router {
+    let entities_router = chronicles::create_entities_router(app_state.clone());
+    tracing::info!("Entities router created, adding to protected routes");
+    
     let protected_api_routes = Router::new()
         .nest(
             "/characters",
@@ -449,6 +452,7 @@ fn build_router(
         .nest("/chat", chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024))) // 50MB limit for chat history
         .nest("/chats", chats::chat_routes())
         .nest("/chronicles", chronicles::create_chronicles_router(app_state.clone()))
+        .nest("/entities", entities_router)
         .nest("/documents", document_routes())
         .nest("/personas", user_personas_router(app_state.clone()))
         .nest("/user-settings", user_settings_routes(app_state.clone()))

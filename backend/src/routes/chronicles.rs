@@ -21,6 +21,7 @@ use crate::{
         user_store::Backend as AuthBackend,
         session_dek::SessionDek,
     },
+    config::NarrativeFeatureFlags,
     errors::AppError,
     models::{
         chats::ChatMessage,
@@ -32,7 +33,17 @@ use crate::{
     services::{
         ChronicleService,
         narrative_intelligence_service::EventDataToInsert,
+        hybrid_query_service::{
+            HybridQueryService, HybridQueryConfig, HybridQuery, HybridQueryType, HybridQueryOptions
+        },
+        ecs_enhanced_rag_service::{
+            EcsEnhancedRagService, EcsEnhancedRagConfig, EntityStateSnapshot, RelationshipContext
+        },
+        ecs_graceful_degradation::{EcsGracefulDegradation, GracefulDegradationConfig},
+        ecs_entity_manager::{EcsEntityManager, EntityManagerConfig},
+        embeddings::service::EmbeddingPipelineService,
     },
+    text_processing::chunking::{ChunkConfig, ChunkingMetric},
     state::AppState,
 };
 
@@ -82,6 +93,97 @@ pub struct ReChronicleResponse {
     pub summary: String,
 }
 
+/// Response for chronicle entities endpoint
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChronicleEntitiesResponse {
+    /// Chronicle ID
+    pub chronicle_id: Uuid,
+    /// Current entity states in this chronicle
+    pub entities: Vec<EntityStateSnapshot>,
+    /// Metadata about the entity query
+    pub metadata: ChronicleEntitiesMetadata,
+}
+
+/// Metadata for chronicle entities response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChronicleEntitiesMetadata {
+    /// Total number of entities found
+    pub total_entities: usize,
+    /// Whether ECS was available for enhanced data
+    pub ecs_enhanced: bool,
+    /// Any warnings encountered
+    pub warnings: Vec<String>,
+}
+
+/// Response for entity timeline endpoint  
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EntityTimelineResponse {
+    /// Entity ID
+    pub entity_id: Uuid,
+    /// Chronicle events involving this entity
+    pub chronicle_events: Vec<ChronicleEvent>,
+    /// Current entity state (if available)
+    pub current_state: Option<EntityStateSnapshot>,
+    /// Metadata about the timeline query
+    pub metadata: EntityTimelineMetadata,
+}
+
+/// Metadata for entity timeline response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EntityTimelineMetadata {
+    /// Total number of events found
+    pub total_events: usize,
+    /// Whether ECS was available for enhanced data
+    pub ecs_enhanced: bool,
+    /// Any warnings encountered
+    pub warnings: Vec<String>,
+}
+
+/// Response for chronicle relationships endpoint
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChronicleRelationshipsResponse {
+    /// Chronicle ID
+    pub chronicle_id: Uuid,
+    /// Current relationships in this chronicle
+    pub relationships: Vec<RelationshipContext>,
+    /// Metadata about the relationships query
+    pub metadata: ChronicleRelationshipsMetadata,
+}
+
+/// Metadata for chronicle relationships response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChronicleRelationshipsMetadata {
+    /// Total number of relationships found
+    pub total_relationships: usize,
+    /// Whether ECS was available for enhanced data
+    pub ecs_enhanced: bool,
+    /// Any warnings encountered
+    pub warnings: Vec<String>,
+}
+
+/// Query parameters for hybrid queries
+#[derive(Debug, Deserialize)]
+pub struct HybridQueryParams {
+    /// Query type (optional, defaults to narrative query)
+    pub query_type: Option<String>,
+    /// Query text for narrative queries
+    pub query: Option<String>,
+    /// Maximum results to return
+    pub limit: Option<usize>,
+    /// Include current entity states
+    #[serde(default = "default_true")]
+    pub include_current_state: bool,
+    /// Include relationship context
+    #[serde(default = "default_true")]
+    pub include_relationships: bool,
+    /// Confidence threshold for results
+    pub confidence_threshold: Option<f32>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 
 impl From<EventQuery> for EventFilter {
     fn from(query: EventQuery) -> Self {
@@ -109,7 +211,20 @@ pub fn create_chronicles_router(state: AppState) -> Router<AppState> {
         .route("/:chronicle_id/events", post(create_event).get(list_events))
         .route("/:chronicle_id/events/:event_id", delete(delete_event))
         .route("/:chronicle_id/re-chronicle", post(re_chronicle_from_chat))
+        // New ECS-enhanced endpoints for Phase 4.2.3
+        .route("/:chronicle_id/entities", get(get_chronicle_entities))
+        .route("/:chronicle_id/relationships", get(get_chronicle_relationships))
         .with_state(state)
+}
+
+/// Create the entities router with ECS-enhanced endpoints
+pub fn create_entities_router(state: AppState) -> Router<AppState> {
+    info!("=== CREATING ENTITIES ROUTER ===");
+    let router = Router::new()
+        .route("/:entity_id/timeline", get(get_entity_timeline))
+        .with_state(state);
+    info!("=== ENTITIES ROUTER CREATED WITH TIMELINE ROUTE ===");
+    router
 }
 
 // --- Chronicle CRUD Handlers ---
@@ -664,4 +779,277 @@ async fn db_writer_task(
     
     info!("DB writer task completed: {} events created from {} messages", events_created, messages_processed);
     Ok((events_created, messages_processed))
+}
+
+// --- ECS-Enhanced Hybrid Query Handlers (Phase 4.2.3) ---
+
+/// Get current entity states for a chronicle
+/// 
+/// This endpoint provides current ECS entity states that are relevant to the chronicle,
+/// combining chronicle data with ECS state information.
+#[instrument(skip(auth_session, state))]
+async fn get_chronicle_entities(
+    auth_session: AuthSession<AuthBackend>,
+    State(state): State<AppState>,
+    Path(chronicle_id): Path<Uuid>,
+    Query(params): Query<HybridQueryParams>,
+) -> Result<Json<ChronicleEntitiesResponse>, AppError> {
+    let user = auth_session.user.ok_or_else(|| {
+        error!("No authenticated user found in session");
+        AppError::Unauthorized("Authentication required".to_string())
+    })?;
+
+    info!("Getting entities for chronicle {} by user {}", chronicle_id, user.id);
+
+    // Verify chronicle ownership
+    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let _chronicle = chronicle_service.get_chronicle(user.id, chronicle_id).await?;
+
+    // Create hybrid query service
+    let hybrid_service = create_hybrid_query_service(&state).await?;
+
+    // Build hybrid query to find entities in this chronicle
+    let query = HybridQuery {
+        query_type: HybridQueryType::NarrativeQuery {
+            query_text: "Find all entities and characters in this chronicle".to_string(),
+            focus_entities: None,
+            time_range: None,
+        },
+        user_id: user.id,
+        chronicle_id: Some(chronicle_id),
+        max_results: params.limit.unwrap_or(50),
+        include_current_state: params.include_current_state,
+        include_relationships: params.include_relationships,
+        options: HybridQueryOptions {
+            use_cache: true,
+            include_timelines: false, // We don't need timelines for this endpoint
+            analyze_relationships: params.include_relationships,
+            confidence_threshold: params.confidence_threshold.unwrap_or(0.6),
+        },
+    };
+
+    // Execute the hybrid query
+    let result = hybrid_service.execute_hybrid_query(query).await?;
+
+    // Extract entity states from the result
+    let entities: Vec<EntityStateSnapshot> = result.entities
+        .into_iter()
+        .filter_map(|entity_context| entity_context.current_state)
+        .collect();
+
+    let metadata = ChronicleEntitiesMetadata {
+        total_entities: entities.len(),
+        ecs_enhanced: !result.warnings.iter().any(|w| w.contains("ECS unavailable")),
+        warnings: result.warnings,
+    };
+
+    let response = ChronicleEntitiesResponse {
+        chronicle_id,
+        entities,
+        metadata,
+    };
+
+    info!("Retrieved {} entities for chronicle {}", response.entities.len(), chronicle_id);
+    Ok(Json(response))
+}
+
+/// Get chronicle events timeline for a specific entity
+/// 
+/// This endpoint provides the chronicle events involving a specific entity,
+/// along with current entity state if available from ECS.
+#[instrument(skip(auth_session, state))]
+async fn get_entity_timeline(
+    auth_session: AuthSession<AuthBackend>,
+    State(state): State<AppState>,
+    Path(entity_id): Path<Uuid>,
+    Query(params): Query<HybridQueryParams>,
+) -> Result<Json<EntityTimelineResponse>, AppError> {
+    info!("=== GET_ENTITY_TIMELINE HANDLER CALLED ===");
+    info!("Entity ID: {}", entity_id);
+    
+    let user = auth_session.user.ok_or_else(|| {
+        error!("No authenticated user found in session");
+        AppError::Unauthorized("Authentication required".to_string())
+    })?;
+
+    info!("Getting timeline for entity {} by user {}", entity_id, user.id);
+
+    // Create hybrid query service
+    let hybrid_service = create_hybrid_query_service(&state).await?;
+
+    // Build hybrid query to get entity timeline
+    let query = HybridQuery {
+        query_type: HybridQueryType::EntityTimeline {
+            entity_name: "entity".to_string(), // Placeholder, will be resolved by entity_id
+            entity_id: Some(entity_id),
+            include_current_state: params.include_current_state,
+        },
+        user_id: user.id,
+        chronicle_id: None, // Will search across all user's chronicles
+        max_results: params.limit.unwrap_or(100),
+        include_current_state: params.include_current_state,
+        include_relationships: params.include_relationships,
+        options: HybridQueryOptions {
+            use_cache: true,
+            include_timelines: true,
+            analyze_relationships: params.include_relationships,
+            confidence_threshold: params.confidence_threshold.unwrap_or(0.6),
+        },
+    };
+
+    // Execute the hybrid query
+    let result = hybrid_service.execute_hybrid_query(query).await?;
+
+    // Extract timeline events and current state
+    let chronicle_events = result.chronicle_events;
+    let current_state = result.entities
+        .first()
+        .and_then(|entity| entity.current_state.clone());
+
+    let metadata = EntityTimelineMetadata {
+        total_events: chronicle_events.len(),
+        ecs_enhanced: !result.warnings.iter().any(|w| w.contains("ECS unavailable")),
+        warnings: result.warnings,
+    };
+
+    let response = EntityTimelineResponse {
+        entity_id,
+        chronicle_events,
+        current_state,
+        metadata,
+    };
+
+    info!("Retrieved {} events for entity {}", response.chronicle_events.len(), entity_id);
+    Ok(Json(response))
+}
+
+/// Get current relationship graph for a chronicle
+/// 
+/// This endpoint provides the current relationships between entities in the chronicle,
+/// using ECS relationship data when available.
+#[instrument(skip(auth_session, state))]
+async fn get_chronicle_relationships(
+    auth_session: AuthSession<AuthBackend>,
+    State(state): State<AppState>,
+    Path(chronicle_id): Path<Uuid>,
+    Query(params): Query<HybridQueryParams>,
+) -> Result<Json<ChronicleRelationshipsResponse>, AppError> {
+    let user = auth_session.user.ok_or_else(|| {
+        error!("No authenticated user found in session");
+        AppError::Unauthorized("Authentication required".to_string())
+    })?;
+
+    info!("Getting relationships for chronicle {} by user {}", chronicle_id, user.id);
+
+    // Verify chronicle ownership
+    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let _chronicle = chronicle_service.get_chronicle(user.id, chronicle_id).await?;
+
+    // Create hybrid query service
+    let hybrid_service = create_hybrid_query_service(&state).await?;
+
+    // Build hybrid query to find relationships in this chronicle
+    let query = HybridQuery {
+        query_type: HybridQueryType::NarrativeQuery {
+            query_text: "Find all relationships and interactions between characters".to_string(),
+            focus_entities: None,
+            time_range: None,
+        },
+        user_id: user.id,
+        chronicle_id: Some(chronicle_id),
+        max_results: params.limit.unwrap_or(100),
+        include_current_state: false, // We focus on relationships, not entity states
+        include_relationships: true,
+        options: HybridQueryOptions {
+            use_cache: true,
+            include_timelines: false,
+            analyze_relationships: true,
+            confidence_threshold: params.confidence_threshold.unwrap_or(0.6),
+        },
+    };
+
+    // Execute the hybrid query
+    let result = hybrid_service.execute_hybrid_query(query).await?;
+
+    // Extract relationships from the result
+    let relationships: Vec<RelationshipContext> = result.entities
+        .into_iter()
+        .flat_map(|entity_context| entity_context.relationships)
+        .collect();
+
+    let metadata = ChronicleRelationshipsMetadata {
+        total_relationships: relationships.len(),
+        ecs_enhanced: !result.warnings.iter().any(|w| w.contains("ECS unavailable")),
+        warnings: result.warnings,
+    };
+
+    let response = ChronicleRelationshipsResponse {
+        chronicle_id,
+        relationships,
+        metadata,
+    };
+
+    info!("Retrieved {} relationships for chronicle {}", response.relationships.len(), chronicle_id);
+    Ok(Json(response))
+}
+
+/// Helper function to create hybrid query service with required dependencies
+async fn create_hybrid_query_service(state: &AppState) -> Result<HybridQueryService, AppError> {
+    // Create feature flags for ECS (could be made configurable)
+    let feature_flags = Arc::new(NarrativeFeatureFlags::development());
+    
+    // Create Redis client for entity manager
+    let redis_client = Arc::new(
+        redis::Client::open("redis://127.0.0.1:6379/")
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to create Redis client: {}", e)))?
+    );
+    
+    // Create ECS entity manager
+    let entity_manager_config = EntityManagerConfig::default();
+    let entity_manager = Arc::new(EcsEntityManager::new(
+        state.pool.clone().into(),
+        redis_client,
+        Some(entity_manager_config),
+    ));
+    
+    // Create graceful degradation service
+    let degradation_config = GracefulDegradationConfig::default();
+    let degradation_service = Arc::new(EcsGracefulDegradation::new(
+        degradation_config,
+        feature_flags.clone(),
+        Some(entity_manager.clone()),
+        None,
+    ));
+    
+    // Create embedding service for the RAG service
+    let chunk_config = ChunkConfig {
+        metric: ChunkingMetric::Word,
+        max_size: 500,
+        overlap: 50,
+    };
+    let embedding_service = Arc::new(EmbeddingPipelineService::new(chunk_config));
+    
+    // Create enhanced RAG service
+    let rag_config = EcsEnhancedRagConfig::default();
+    let rag_service = Arc::new(EcsEnhancedRagService::new(
+        state.pool.clone().into(),
+        rag_config,
+        feature_flags.clone(),
+        entity_manager.clone(),
+        degradation_service.clone(),
+        embedding_service,
+    ));
+    
+    // Create hybrid query service
+    let hybrid_config = HybridQueryConfig::default();
+    let hybrid_service = HybridQueryService::new(
+        state.pool.clone().into(),
+        hybrid_config,
+        feature_flags,
+        entity_manager,
+        rag_service,
+        degradation_service,
+    );
+    
+    Ok(hybrid_service)
 }
