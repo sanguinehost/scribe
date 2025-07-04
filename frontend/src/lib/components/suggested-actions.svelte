@@ -23,7 +23,7 @@
 	// Removed the static 'suggestedActions' array
 </script>
 
-<div class="ml-[40px] w-[calc(100%-50px)]">
+<div class="ml-6 sm:ml-[40px] w-[calc(100%-24px)] sm:w-[calc(100%-50px)]">
 	<!-- Header with clear button -->
 	<div class="mb-2 flex items-center justify-between">
 		<span class="text-xs text-muted-foreground">Suggestions</span>
@@ -39,7 +39,7 @@
 	</div>
 
 	<!-- Suggestions grid -->
-	<div class="grid gap-2 sm:grid-cols-2">
+	<div class="grid gap-2 grid-cols-1 sm:grid-cols-2">
 		{#each actions as suggestedItem, i (suggestedItem.action)}
 			<div
 				in:fly|global={{ opacity: 0, y: 20, delay: 50 * i, duration: 400 }}
@@ -55,10 +55,10 @@
 						onclick={async () => {
 							await sendMessage(suggestedItem.action);
 						}}
-						class="h-auto w-full flex-1 items-start justify-start gap-1 rounded-xl border-0 px-4 py-3.5 pr-10 text-left text-sm"
+						class="h-auto w-full flex-1 items-start justify-start gap-1 rounded-xl border-0 px-3 sm:px-4 py-3 sm:py-3.5 pr-8 sm:pr-10 text-left text-xs sm:text-sm"
 						aria-label={`Suggested action: ${suggestedItem.action}`}
 					>
-						<span class="font-medium">{suggestedItem.action}</span>
+						<span class="font-medium break-words">{suggestedItem.action}</span>
 					</Button>
 					<!-- Edit button overlay -->
 					<Button

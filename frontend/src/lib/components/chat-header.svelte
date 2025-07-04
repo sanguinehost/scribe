@@ -253,24 +253,25 @@
 	}
 </script>
 
-<header class="sticky top-0 flex items-center gap-2 bg-background p-2">
+<header class="sticky top-0 flex items-center gap-1 sm:gap-2 bg-background p-2">
 	<SidebarToggle />
 
 	{#if isLoadingSettings}
-		<Badge variant="secondary" class="gap-1">
+		<Badge variant="secondary" class="gap-1 text-xs">
 			<ScrollText class="h-3 w-3 animate-spin" />
-			Loading...
+			<span class="hidden sm:inline">Loading...</span>
 		</Badge>
 	{:else if hasChronicleId}
 		{#if currentChronicle}
-			<Badge variant="secondary" class="gap-1">
+			<Badge variant="secondary" class="gap-1 text-xs">
 				<ScrollText class="h-3 w-3" />
-				{currentChronicle.name}
+				<span class="truncate max-w-[120px] sm:max-w-none">{currentChronicle.name}</span>
 			</Badge>
 		{:else}
-			<Badge variant="secondary" class="gap-1">
+			<Badge variant="secondary" class="gap-1 text-xs">
 				<ScrollText class="h-3 w-3" />
-				Chronicle (Loading...)
+				<span class="hidden sm:inline">Chronicle (Loading...)</span>
+				<span class="sm:hidden">Loading...</span>
 			</Badge>
 		{/if}
 
@@ -281,7 +282,7 @@
 				onclick={extractEvents}
 				disabled={isExtracting || isLoadingSettings || isReChronicling || isExtractingLorebook}
 				title="Extract new events from recent messages (Legacy - may not work)"
-				class="cursor-pointer gap-1 hover:bg-accent"
+				class="cursor-pointer gap-1 hover:bg-accent text-xs sm:text-sm hidden sm:flex"
 			>
 				<History class="h-3 w-3" />
 				{isExtracting ? 'Extracting...' : 'Extract Events'}
@@ -292,10 +293,11 @@
 				onclick={openLorebookExtractionDialog}
 				disabled={isExtractingLorebook || isLoadingSettings || isReChronicling}
 				title="Extract world-building information to a lorebook"
-				class="cursor-pointer gap-1 hover:bg-accent"
+				class="cursor-pointer gap-1 hover:bg-accent text-xs sm:text-sm"
 			>
 				<BookOpen class="h-3 w-3" />
-				{isExtractingLorebook ? 'Extracting...' : 'Extract Lore'}
+				<span class="hidden sm:inline">{isExtractingLorebook ? 'Extracting...' : 'Extract Lore'}</span>
+				<span class="sm:hidden">Lore</span>
 			</Button>
 		{/if}
 	{:else if !readonly && chat}

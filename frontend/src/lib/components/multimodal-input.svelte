@@ -112,9 +112,9 @@
 	}
 </script>
 
-<div class="relative -ml-2 flex w-full gap-4">
-	<div class="flex size-8 shrink-0"></div>
-	<div class="flex w-full flex-col gap-4">
+<div class="relative -ml-1 sm:-ml-2 flex w-full gap-2 sm:gap-4">
+	<div class="flex size-6 sm:size-8 shrink-0"></div>
+	<div class="flex w-full flex-col gap-2 sm:gap-4">
 		<input
 			type="file"
 			class="pointer-events-none fixed -left-4 -top-4 size-0.5 opacity-0"
@@ -152,7 +152,7 @@
 			{placeholder}
 			bind:value
 			class={cn(
-				'max-h-[calc(37.5dvh)] min-h-[24px] resize-none overflow-y-auto rounded-2xl bg-muted pb-10 pl-4 pr-4 !text-base dark:border-zinc-700',
+				'max-h-[calc(37.5dvh)] min-h-[24px] resize-none overflow-y-auto rounded-2xl bg-muted pb-8 sm:pb-10 pl-3 sm:pl-4 pr-3 sm:pr-4 !text-sm sm:!text-base dark:border-zinc-700',
 				c
 			)}
 			rows={2}
@@ -169,7 +169,7 @@
 			}}
 		></textarea>
 
-		<div class="absolute bottom-0 right-0 flex w-fit flex-row items-center gap-1 p-4">
+		<div class="absolute bottom-0 right-0 flex w-fit flex-row items-center gap-1 p-2 sm:p-4">
 			{#if chatId}
 				<ImpersonateWidget
 					{value}
@@ -188,12 +188,12 @@
 
 {#snippet stopButton()}
 	<Button
-		class="h-fit rounded-full border p-1.5 dark:border-zinc-600"
+		class="h-fit rounded-full border p-1 sm:p-1.5 dark:border-zinc-600"
 		onclick={(event: MouseEvent) => {
 			event.preventDefault();
 			stopGeneration(); // Use stopGeneration prop
 		}}
 	>
-		<StopIcon size={14} />
+		<StopIcon size={12} class="sm:size-[14px]" />
 	</Button>
 {/snippet}

@@ -1363,7 +1363,7 @@
 
 	<!-- Re-Chronicle Button Bar -->
 	{#if !readonly && chat}
-		<div class="flex items-center justify-end gap-2 border-b bg-background p-2">
+		<div class="flex items-center justify-end gap-1 sm:gap-2 border-b bg-background p-2 px-2 sm:px-4">
 			{#if currentChronicleId}
 				<Button
 					variant="ghost"
@@ -1371,10 +1371,11 @@
 					onclick={reChronicleFromChat}
 					disabled={isReChronicling || isLoadingSettings || isLoading}
 					title="Re-chronicle this entire conversation from beginning to end with improved context"
-					class="cursor-pointer gap-1 hover:bg-accent"
+					class="cursor-pointer gap-1 hover:bg-accent text-xs sm:text-sm"
 				>
 					<RotateCcw class="h-3 w-3 {isReChronicling ? 'animate-spin' : ''}" />
-					{isReChronicling ? 'Re-chronicling...' : 'Re-Chronicle'}
+					<span class="hidden sm:inline">{isReChronicling ? 'Re-chronicling...' : 'Re-Chronicle'}</span>
+					<span class="sm:hidden">Re-Chronicle</span>
 				</Button>
 			{:else}
 				<Button
@@ -1383,10 +1384,11 @@
 					onclick={createChronicleFromChat}
 					disabled={isCreatingChronicle || isLoadingSettings || isLoading}
 					title="Create a new chronicle from this conversation"
-					class="cursor-pointer gap-1 hover:bg-accent"
+					class="cursor-pointer gap-1 hover:bg-accent text-xs sm:text-sm"
 				>
 					<RotateCcw class="h-3 w-3 {isCreatingChronicle ? 'animate-spin' : ''}" />
-					{isCreatingChronicle ? 'Creating...' : 'Create Chronicle'}
+					<span class="hidden sm:inline">{isCreatingChronicle ? 'Creating...' : 'Create Chronicle'}</span>
+					<span class="sm:hidden">Create</span>
 				</Button>
 			{/if}
 		</div>
@@ -1428,7 +1430,7 @@
 	<!-- Show Chat Interface (Get Suggestions + Input) Only When Inside Active Chat -->
 	{#if shouldShowChatInterface}
 		<!-- Get Suggestions Button -->
-		<div class="mx-auto w-full px-4 pb-1 text-center md:max-w-3xl">
+		<div class="mx-auto w-full px-2 sm:px-4 pb-1 text-center md:max-w-3xl">
 			<button
 				type="button"
 				onclick={() => {
@@ -1437,7 +1439,7 @@
 					fetchSuggestedActions();
 				}}
 				disabled={!canFetchSuggestions || isLoadingSuggestions || isLoading}
-				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 			>
 				{#if isLoadingSuggestions}
 					<svg
@@ -1454,16 +1456,17 @@
 							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 						></path>
 					</svg>
-					Loading...
+					<span class="hidden sm:inline">Loading...</span>
 				{:else}
-					Get Suggestions
+					<span class="hidden sm:inline">Get Suggestions</span>
+					<span class="sm:hidden">Suggestions</span>
 				{/if}
 			</button>
 		</div>
 
 		<!-- Suggested Actions -->
 		{#if dynamicSuggestedActions.length > 0 && !isLoading}
-			<div class="mx-auto w-full px-4 pb-2 md:max-w-3xl">
+			<div class="mx-auto w-full px-2 sm:px-4 pb-2 md:max-w-3xl">
 				<SuggestedActions
 					{user}
 					{sendMessage}
@@ -1481,7 +1484,7 @@
 
 		<!-- Suggested Actions Error -->
 		{#if suggestionsError && !isLoading && !isLoadingSuggestions}
-			<div class="mx-auto w-full px-4 pb-2 md:max-w-3xl">
+			<div class="mx-auto w-full px-2 sm:px-4 pb-2 md:max-w-3xl">
 				<div class="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/20">
 					<div class="flex items-start gap-3">
 						<div class="flex-shrink-0 text-red-500 mt-0.5">
@@ -1532,7 +1535,7 @@
 
 
 		<!-- Message Input Form -->
-		<div class="mx-auto w-full px-4 pb-4 md:max-w-3xl md:pb-6">
+		<div class="mx-auto w-full px-2 sm:px-4 pb-4 md:max-w-3xl md:pb-6">
 			<form
 				onsubmit={(e) => {
 					console.log('🚨🚨🚨 FORM ONSUBMIT TRIGGERED');
@@ -1571,14 +1574,14 @@
 						
 						<div class="mt-2 space-y-1 text-xs text-muted-foreground border-t pt-2">
 							<!-- Main breakdown -->
-							<div class="flex justify-between items-center">
+							<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
 								<span class="font-medium">Session Usage:</span>
-								<div class="flex items-center gap-2">
+								<div class="flex items-center gap-1 sm:gap-2 text-xs flex-wrap">
 									<span class="text-blue-600 dark:text-blue-400">
-										↑{cumulativeTokens.input} input
+										↑{cumulativeTokens.input}
 									</span>
 									<span class="text-green-600 dark:text-green-400">
-										↓{cumulativeTokens.output} output
+										↓{cumulativeTokens.output}
 									</span>
 									<span class="font-medium">
 										{cumulativeTokens.total} total
@@ -1591,7 +1594,8 @@
 							
 							<!-- Note about system context -->
 							<div class="text-center text-xs opacity-75">
-								Hover messages for individual token counts & costs • Using per-message model pricing
+								<span class="hidden sm:inline">Hover messages for individual token counts & costs • Using per-message model pricing</span>
+								<span class="sm:hidden">Tap messages for details • Per-message pricing</span>
 							</div>
 						</div>
 					{/if}
