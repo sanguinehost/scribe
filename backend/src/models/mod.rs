@@ -11,6 +11,7 @@ pub mod chronicle_processing_job;
 pub mod documents;
 pub mod ecs;
 pub mod ecs_diesel;
+pub mod world_model;
 pub mod narrative_ontology;
 pub mod email_verification;
 pub mod lorebook_dtos;
@@ -45,6 +46,7 @@ pub use ecs::{
     HierarchicalQuery,
 };
 pub use ecs_diesel::*;
+pub use world_model::*;
 pub use narrative_ontology::*;
 pub use email_verification::*;
 pub use lorebook_dtos::*;

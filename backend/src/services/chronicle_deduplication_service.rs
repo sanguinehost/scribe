@@ -439,6 +439,8 @@ mod tests {
             causality: None,
             valence: None,
             modality: Some("ACTUAL".to_string()),
+            caused_by_event_id: None,
+            causes_event_ids: None,
         }
     }
 
@@ -470,6 +472,8 @@ mod tests {
             causality: None,
             valence: None,
             modality: Some("ACTUAL".to_string()),
+            caused_by_event_id: None,
+            causes_event_ids: None,
         }
     }
 }

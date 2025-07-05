@@ -474,6 +474,40 @@ impl HybridQueryRouter {
                 estimated_entity_count = 15;
                 data_volume = DataVolume::Medium;
             },
+            // Phase 2 Enhanced Query Types
+            HybridQueryType::EntityStateAtTime { .. } => {
+                complexity_score += 0.2;
+                requires_current_state = true;
+                estimated_entity_count = 1;
+            },
+            HybridQueryType::CausalChain { max_depth, .. } => {
+                complexity_score += 0.4 + (*max_depth as f32 * 0.1);
+                estimated_entity_count = (*max_depth as usize).min(20);
+                data_volume = DataVolume::Medium;
+            },
+            HybridQueryType::TemporalPath { .. } => {
+                complexity_score += 0.3;
+                requires_current_state = true;
+                estimated_entity_count = 1;
+            },
+            HybridQueryType::RelationshipNetwork { depth, .. } => {
+                complexity_score += 0.5 + (*depth as f32 * 0.1);
+                requires_relationships = true;
+                estimated_entity_count = (2_usize.pow(*depth)).min(50);
+                data_volume = if *depth > 2 { DataVolume::Large } else { DataVolume::Medium };
+            },
+            HybridQueryType::CausalInfluences { .. } => {
+                complexity_score += 0.4;
+                estimated_entity_count = 10;
+                data_volume = DataVolume::Medium;
+            },
+            HybridQueryType::WorldModelSnapshot { focus_entities, .. } => {
+                complexity_score += 0.7;
+                requires_current_state = true;
+                requires_relationships = true;
+                estimated_entity_count = focus_entities.as_ref().map(|e| e.len()).unwrap_or(100);
+                data_volume = DataVolume::Large;
+            },
         }
 
         // Adjust for max results

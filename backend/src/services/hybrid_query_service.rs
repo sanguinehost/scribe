@@ -110,6 +110,56 @@ pub enum HybridQueryType {
         focus_entities: Option<Vec<String>>,
         time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
     },
+    
+    // Phase 2: Enhanced Query Types for World Model Support
+    
+    /// Get entity state at specific time
+    EntityStateAtTime {
+        entity_id: Uuid,
+        timestamp: DateTime<Utc>,
+        include_components: Vec<String>,
+    },
+    
+    /// Trace causal chain
+    CausalChain {
+        from_event: Option<Uuid>,
+        to_state: Option<String>,
+        to_entity: Option<Uuid>,
+        max_depth: u32,
+        min_confidence: f32,
+    },
+    
+    /// Get temporal path of entity changes
+    TemporalPath {
+        entity_id: Uuid,
+        from_time: DateTime<Utc>,
+        to_time: DateTime<Utc>,
+        include_causes: bool,
+    },
+    
+    /// Get relationship network
+    RelationshipNetwork {
+        center_entity_id: Uuid,
+        depth: u32,
+        relationship_types: Option<Vec<String>>,
+        min_strength: f32,
+        categories: Option<Vec<crate::models::ecs::RelationshipCategory>>,
+    },
+    
+    /// Find causal influences on entity
+    CausalInfluences {
+        entity_id: Uuid,
+        time_window: chrono::Duration,
+        influence_types: Option<Vec<String>>,
+    },
+    
+    /// Generate world model snapshot
+    WorldModelSnapshot {
+        timestamp: Option<DateTime<Utc>>,
+        focus_entities: Option<Vec<Uuid>>,
+        spatial_scope: Option<SpatialScope>,
+        include_predictions: bool,
+    },
 }
 
 /// Parameters for hybrid queries
@@ -287,6 +337,14 @@ pub struct QueryPerformanceMetrics {
     pub cache_hit_rate: f32,
     /// Number of database queries
     pub db_queries_count: usize,
+}
+
+/// Spatial scope for world model queries
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpatialScope {
+    pub root_location: Uuid,
+    pub max_depth: u32,
+    pub include_adjacent: bool,
 }
 
 /// Hybrid Query Service with Hardened Routing and Failure Contracts
@@ -625,6 +683,30 @@ impl HybridQueryService {
             }
             HybridQueryType::NarrativeQuery { query_text, .. } => {
                 query_text.clone()
+            }
+            // Phase 2: Enhanced Query Types
+            HybridQueryType::EntityStateAtTime { entity_id, timestamp, .. } => {
+                format!("State of entity {} at time {}", entity_id, timestamp)
+            }
+            HybridQueryType::CausalChain { from_event, to_entity, .. } => {
+                match (from_event, to_entity) {
+                    (Some(event_id), Some(entity_id)) => format!("Causal chain from event {} to entity {}", event_id, entity_id),
+                    (Some(event_id), None) => format!("Causal chain from event {}", event_id),
+                    (None, Some(entity_id)) => format!("Causal chain affecting entity {}", entity_id),
+                    (None, None) => "Causal chain analysis".to_string(),
+                }
+            }
+            HybridQueryType::TemporalPath { entity_id, from_time, to_time, .. } => {
+                format!("Temporal path of entity {} from {} to {}", entity_id, from_time, to_time)
+            }
+            HybridQueryType::RelationshipNetwork { center_entity_id, .. } => {
+                format!("Relationship network around entity {}", center_entity_id)
+            }
+            HybridQueryType::CausalInfluences { entity_id, .. } => {
+                format!("Causal influences on entity {}", entity_id)
+            }
+            HybridQueryType::WorldModelSnapshot { .. } => {
+                "World model snapshot generation".to_string()
             }
         };
 

@@ -36,6 +36,7 @@ pub mod rag_budget_manager;
 pub mod tokenizer_service;
 pub mod user_persona_service;
 pub mod user_settings_service;
+pub mod world_model_service;
 
 // Re-export agentic components
 pub use agentic::{
@@ -98,3 +99,4 @@ pub use narrative_intelligence_service::{NarrativeIntelligenceService, Narrative
 pub use narrative_ontology_service::NarrativeOntologyService;
 pub use user_persona_service::UserPersonaService;
 pub use user_settings_service::UserSettingsService;
+pub use world_model_service::{WorldModelService, WorldModelOptions, LLMContextFocus, TimeFocus, ReasoningDepth};
