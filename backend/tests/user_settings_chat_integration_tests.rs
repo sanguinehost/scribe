@@ -211,6 +211,91 @@ async fn test_chat_session_uses_user_default_model() {
                 "http://localhost:3000".to_string(),
             ),
         ),
+        // ECS Services - minimal test instances
+        redis_client: Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+        feature_flags: Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+        ecs_entity_manager: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(app.db_pool.clone()),
+                redis_client,
+                None,
+            ))
+        },
+        ecs_graceful_degradation: Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+            Default::default(),
+            Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+            None,
+            None,
+        )),
+        ecs_enhanced_rag_service: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                Default::default(),
+                feature_flags.clone(),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                scribe_backend::text_processing::chunking::ChunkConfig {
+                    metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                    max_size: 500,
+                    overlap: 50,
+                }
+            ));
+            Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                Arc::new(app.db_pool.clone()),
+                Default::default(),
+                feature_flags,
+                entity_manager,
+                degradation,
+                concrete_embedding_service,
+            ))
+        },
+        hybrid_query_service: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                Default::default(),
+                feature_flags.clone(),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                scribe_backend::text_processing::chunking::ChunkConfig {
+                    metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                    max_size: 500,
+                    overlap: 50,
+                }
+            ));
+            let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                Arc::new(app.db_pool.clone()),
+                Default::default(),
+                feature_flags.clone(),
+                entity_manager.clone(),
+                degradation.clone(),
+                concrete_embedding_service,
+            ));
+            Arc::new(scribe_backend::services::HybridQueryService::new(
+                Arc::new(app.db_pool.clone()),
+                Default::default(),
+                feature_flags,
+                entity_manager,
+                rag_service,
+                degradation,
+            ))
+        },
     };
 
     let app_state_for_session = Arc::new(AppState::new(db_pool, config, app_services));

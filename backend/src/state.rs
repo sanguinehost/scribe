@@ -26,7 +26,7 @@ use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
 // ECS Services
-use crate::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService};
+use crate::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, ChronicleEventListener, ChronicleEcsTranslator, ChronicleService};
 use crate::config::NarrativeFeatureFlags;
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
@@ -56,6 +56,9 @@ pub struct AppStateServices {
     pub ecs_graceful_degradation: Arc<EcsGracefulDegradation>,
     pub ecs_enhanced_rag_service: Arc<EcsEnhancedRagService>,
     pub hybrid_query_service: Arc<HybridQueryService>,
+    pub chronicle_event_listener: Arc<ChronicleEventListener>,
+    pub chronicle_ecs_translator: Arc<ChronicleEcsTranslator>,
+    pub chronicle_service: Arc<ChronicleService>,
 }
 
 // --- Shared application state ---
@@ -93,6 +96,9 @@ pub struct AppState {
     pub ecs_graceful_degradation: Arc<EcsGracefulDegradation>,
     pub ecs_enhanced_rag_service: Arc<EcsEnhancedRagService>,
     pub hybrid_query_service: Arc<HybridQueryService>,
+    pub chronicle_event_listener: Arc<ChronicleEventListener>,
+    pub chronicle_ecs_translator: Arc<ChronicleEcsTranslator>,
+    pub chronicle_service: Arc<ChronicleService>,
 }
 
 // Manual Debug implementation for AppState
@@ -158,6 +164,9 @@ impl AppState {
             ecs_graceful_degradation: services.ecs_graceful_degradation,
             ecs_enhanced_rag_service: services.ecs_enhanced_rag_service,
             hybrid_query_service: services.hybrid_query_service,
+            chronicle_event_listener: services.chronicle_event_listener,
+            chronicle_ecs_translator: services.chronicle_ecs_translator,
+            chronicle_service: services.chronicle_service,
         }
     }
 

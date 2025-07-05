@@ -1169,6 +1169,116 @@ impl TestAppStateBuilder {
                 None,
             )
             .await?,
+            // ECS Services - minimal test instances with shared dependencies
+            redis_client: Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            feature_flags: Arc::new(crate::config::NarrativeFeatureFlags::default()),
+            ecs_entity_manager: {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(self.db_pool.clone()),
+                    redis_client,
+                    None,
+                ))
+            },
+            ecs_graceful_degradation: Arc::new(crate::services::EcsGracefulDegradation::new(
+                Default::default(),
+                Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                None,
+                None,
+            )),
+            ecs_enhanced_rag_service: {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(crate::config::NarrativeFeatureFlags::default());
+                let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(self.db_pool.clone()),
+                    redis_client,
+                    None,
+                ));
+                let degradation = Arc::new(crate::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+                    crate::text_processing::chunking::ChunkConfig {
+                        metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                Arc::new(crate::services::EcsEnhancedRagService::new(
+                    Arc::new(self.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager,
+                    degradation,
+                    concrete_embedding_service,
+                ))
+            },
+            hybrid_query_service: {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(crate::config::NarrativeFeatureFlags::default());
+                let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(self.db_pool.clone()),
+                    redis_client,
+                    None,
+                ));
+                let degradation = Arc::new(crate::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+                    crate::text_processing::chunking::ChunkConfig {
+                        metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(crate::services::EcsEnhancedRagService::new(
+                    Arc::new(self.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(crate::services::HybridQueryService::new(
+                    Arc::new(self.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager,
+                    rag_service,
+                    degradation,
+                ))
+            },
+            // Chronicle ECS services for test
+            chronicle_service: Arc::new(crate::services::ChronicleService::new(self.db_pool.clone())),
+            chronicle_ecs_translator: Arc::new(crate::services::ChronicleEcsTranslator::new(
+                Arc::new(self.db_pool.clone())
+            )),
+            chronicle_event_listener: {
+                let feature_flags = Arc::new(crate::config::NarrativeFeatureFlags::default());
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(self.db_pool.clone()),
+                    redis_client,
+                    None,
+                ));
+                let chronicle_service = Arc::new(crate::services::ChronicleService::new(self.db_pool.clone()));
+                let chronicle_ecs_translator = Arc::new(crate::services::ChronicleEcsTranslator::new(
+                    Arc::new(self.db_pool.clone())
+                ));
+                Arc::new(crate::services::ChronicleEventListener::new(
+                    Default::default(),
+                    feature_flags,
+                    chronicle_ecs_translator,
+                    entity_manager,
+                    chronicle_service,
+                ))
+            },
             // narrative_intelligence_service will be added after AppState is built
         };
 

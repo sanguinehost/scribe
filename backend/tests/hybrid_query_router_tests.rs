@@ -42,9 +42,10 @@ async fn test_hybrid_query_router_creation() {
 
     // Create graceful degradation service
     let degradation_service = Arc::new(EcsGracefulDegradation::new(
+        Default::default(),
         feature_flags,
         Some(entity_manager),
-        Default::default(),
+        None,
     ));
 
     // Create router configuration
@@ -86,9 +87,10 @@ async fn test_query_complexity_analysis() {
 
     // Create graceful degradation service
     let degradation_service = Arc::new(EcsGracefulDegradation::new(
+        Default::default(),
         feature_flags,
         Some(entity_manager),
-        Default::default(),
+        None,
     ));
 
     // Create router
@@ -164,9 +166,10 @@ async fn test_circuit_breaker_recording() {
 
     // Create graceful degradation service
     let degradation_service = Arc::new(EcsGracefulDegradation::new(
+        Default::default(),
         feature_flags,
         Some(entity_manager),
-        Default::default(),
+        None,
     ));
 
     // Create router
@@ -211,9 +214,10 @@ async fn test_failure_mode_classification() {
 
     // Create graceful degradation service
     let degradation_service = Arc::new(EcsGracefulDegradation::new(
+        Default::default(),
         feature_flags,
         Some(entity_manager),
-        Default::default(),
+        None,
     ));
 
     // Create router
@@ -271,9 +275,10 @@ async fn test_routing_metrics() {
 
     // Create graceful degradation service
     let degradation_service = Arc::new(EcsGracefulDegradation::new(
+        Default::default(),
         feature_flags,
         Some(entity_manager),
-        Default::default(),
+        None,
     ));
 
     // Create router

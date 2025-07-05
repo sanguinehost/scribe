@@ -14,6 +14,7 @@ use scribe_backend::{
             ChronicleEventNotification, ChronicleNotificationType
         },
         chronicle_ecs_translator::ChronicleEcsTranslator,
+        chronicle_service::ChronicleService,
         ecs_entity_manager::{EcsEntityManager, EntityManagerConfig},
     },
     test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestDataGuard},
@@ -32,6 +33,7 @@ async fn test_create_chronicle_event_listener() {
     let feature_flags = Arc::new(NarrativeFeatureFlags::development());
     let translator = create_test_translator(&app).await;
     let entity_manager = create_test_entity_manager(&app).await;
+    let chronicle_service = create_test_chronicle_service(&app).await;
     
     // Create the listener
     let config = ChronicleEventListenerConfig::default();
@@ -40,6 +42,7 @@ async fn test_create_chronicle_event_listener() {
         feature_flags,
         translator,
         entity_manager,
+        chronicle_service,
     );
     
     // Verify we can get a sender handle
@@ -60,6 +63,7 @@ async fn test_listener_respects_ecs_disabled_flag() {
     
     let translator = create_test_translator(&app).await;
     let entity_manager = create_test_entity_manager(&app).await;
+    let chronicle_service = create_test_chronicle_service(&app).await;
     
     // Create and start the listener
     let config = ChronicleEventListenerConfig::default();
@@ -68,6 +72,7 @@ async fn test_listener_respects_ecs_disabled_flag() {
         feature_flags,
         translator,
         entity_manager,
+        chronicle_service,
     );
     
     // Starting should succeed but do nothing
@@ -119,6 +124,7 @@ async fn test_chronicle_event_notification_types() {
     let feature_flags = Arc::new(NarrativeFeatureFlags::development());
     let translator = create_test_translator(&app).await;
     let entity_manager = create_test_entity_manager(&app).await;
+    let chronicle_service = create_test_chronicle_service(&app).await;
     
     let config = ChronicleEventListenerConfig::default();
     let mut listener = ChronicleEventListener::new(
@@ -126,6 +132,7 @@ async fn test_chronicle_event_notification_types() {
         feature_flags,
         translator,
         entity_manager,
+        chronicle_service,
     );
     
     // Start the listener
@@ -185,6 +192,7 @@ async fn test_listener_metrics() {
     let feature_flags = Arc::new(NarrativeFeatureFlags::development());
     let translator = create_test_translator(&app).await;
     let entity_manager = create_test_entity_manager(&app).await;
+    let chronicle_service = create_test_chronicle_service(&app).await;
     
     let mut config = ChronicleEventListenerConfig::default();
     config.enable_metrics = true;
@@ -194,6 +202,7 @@ async fn test_listener_metrics() {
         feature_flags,
         translator,
         entity_manager,
+        chronicle_service,
     );
     
     // Get initial metrics
@@ -325,6 +334,10 @@ async fn create_test_entity_manager(app: &TestApp) -> Arc<EcsEntityManager> {
         redis_client,
         Some(config),
     ))
+}
+
+async fn create_test_chronicle_service(app: &TestApp) -> Arc<ChronicleService> {
+    Arc::new(ChronicleService::new(app.db_pool.clone()))
 }
 
 fn create_test_notification() -> ChronicleEventNotification {

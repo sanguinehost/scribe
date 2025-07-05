@@ -254,6 +254,91 @@ async fn test_persona_context_missing_in_events() {
         auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
         file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
         email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
+        // ECS Services - minimal test instances
+        redis_client: Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+        feature_flags: Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+        ecs_entity_manager: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ))
+        },
+        ecs_graceful_degradation: Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+            Default::default(),
+            Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+            None,
+            None,
+        )),
+        ecs_enhanced_rag_service: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                Default::default(),
+                feature_flags.clone(),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                scribe_backend::text_processing::chunking::ChunkConfig {
+                    metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                    max_size: 500,
+                    overlap: 50,
+                }
+            ));
+            Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags,
+                entity_manager,
+                degradation,
+                concrete_embedding_service,
+            ))
+        },
+        hybrid_query_service: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                Default::default(),
+                feature_flags.clone(),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                scribe_backend::text_processing::chunking::ChunkConfig {
+                    metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                    max_size: 500,
+                    overlap: 50,
+                }
+            ));
+            let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags.clone(),
+                entity_manager.clone(),
+                degradation.clone(),
+                concrete_embedding_service,
+            ));
+            Arc::new(scribe_backend::services::HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags,
+                entity_manager,
+                rag_service,
+                degradation,
+            ))
+        },
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -384,6 +469,91 @@ async fn test_create_chronicle_event_tool_without_persona() {
         auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
         file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
         email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
+        // ECS Services - minimal test instances
+        redis_client: Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+        feature_flags: Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+        ecs_entity_manager: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ))
+        },
+        ecs_graceful_degradation: Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+            Default::default(),
+            Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+            None,
+            None,
+        )),
+        ecs_enhanced_rag_service: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                Default::default(),
+                feature_flags.clone(),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                scribe_backend::text_processing::chunking::ChunkConfig {
+                    metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                    max_size: 500,
+                    overlap: 50,
+                }
+            ));
+            Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags,
+                entity_manager,
+                degradation,
+                concrete_embedding_service,
+            ))
+        },
+        hybrid_query_service: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                Default::default(),
+                feature_flags.clone(),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                scribe_backend::text_processing::chunking::ChunkConfig {
+                    metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                    max_size: 500,
+                    overlap: 50,
+                }
+            ));
+            let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags.clone(),
+                entity_manager.clone(),
+                degradation.clone(),
+                concrete_embedding_service,
+            ));
+            Arc::new(scribe_backend::services::HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags,
+                entity_manager,
+                rag_service,
+                degradation,
+            ))
+        },
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

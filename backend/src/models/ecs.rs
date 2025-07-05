@@ -4,8 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::any::{Any, TypeId};
+use std::time::Duration;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
@@ -243,6 +244,266 @@ impl Component for RelationshipsComponent {
     }
 }
 
+// ============================================================================
+// Temporal System Components
+// ============================================================================
+
+/// Represents game time with variable granularity and progression modes
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GameTime {
+    /// Absolute timestamp in game world
+    pub timestamp: DateTime<Utc>,
+    /// Current turn number (if turn-based)
+    pub turn: Option<u64>,
+    /// Current phase within turn (if applicable)
+    pub phase: Option<String>,
+    /// Time progression mode
+    pub mode: TimeMode,
+}
+
+impl GameTime {
+    /// Create a new GameTime with current timestamp
+    pub fn now() -> Self {
+        Self {
+            timestamp: Utc::now(),
+            turn: None,
+            phase: None,
+            mode: TimeMode::EventDriven,
+        }
+    }
+    
+    /// Create a GameTime from a turn number
+    pub fn from_turn(turn: u64) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            turn: Some(turn),
+            phase: None,
+            mode: TimeMode::TurnBased { turn_duration: None },
+        }
+    }
+    
+    /// Get current GameTime (alias for now)
+    pub fn current() -> Self {
+        Self::now()
+    }
+}
+
+/// Time progression modes for flexible temporal systems
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum TimeMode {
+    /// Real-time progression
+    Continuous { tick_rate_ms: u64 },
+    /// Turn-based progression
+    TurnBased { turn_duration: Option<Duration> },
+    /// Event-driven progression (time advances only on events)
+    EventDriven,
+    /// Hybrid (turns with real-time within turns)
+    Hybrid { turn_duration: Duration, tick_rate_ms: u64 },
+}
+
+/// Tracks an entity's temporal existence and state changes
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TemporalComponent {
+    /// When this entity came into existence (game time)
+    pub created_at: GameTime,
+    /// When this entity ceased to exist (if applicable)
+    pub destroyed_at: Option<GameTime>,
+    /// Last time this entity's state changed
+    pub last_modified: GameTime,
+    /// Whether this entity experiences time normally
+    pub time_scale: f64, // 1.0 = normal, 0.0 = frozen, 2.0 = double speed
+}
+
+impl Component for TemporalComponent {
+    fn component_type() -> &'static str {
+        "Temporal"
+    }
+}
+
+impl Default for TemporalComponent {
+    fn default() -> Self {
+        let now = GameTime::now();
+        Self {
+            created_at: now.clone(),
+            destroyed_at: None,
+            last_modified: now,
+            time_scale: 1.0,
+        }
+    }
+}
+
+// ============================================================================
+// Spatial Hierarchy Components
+// ============================================================================
+
+/// Size classification for spatial entities
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SpatialSize {
+    Tiny,    // Ring, coin
+    Small,   // Dagger, potion
+    Medium,  // Sword, book
+    Large,   // Person, chest
+    Huge,    // Table, door
+    Massive, // Building, ship
+}
+
+/// Spatial capacity constraints for containers
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SpatialCapacity {
+    pub max_count: Option<usize>,
+    pub max_volume: Option<f64>,
+    pub max_mass: Option<f64>,
+}
+
+/// Spatial constraints and rules for entities
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SpatialConstraints {
+    /// Can this entity exist in multiple locations simultaneously?
+    pub allow_multiple_locations: bool,
+    /// Can this entity move between containers?
+    pub movable: bool,
+    /// Special rules (e.g., "must_be_in_atmosphere", "requires_power")
+    pub rules: Vec<String>,
+}
+
+impl Default for SpatialConstraints {
+    fn default() -> Self {
+        Self {
+            allow_multiple_locations: false,
+            movable: true,
+            rules: Vec::new(),
+        }
+    }
+}
+
+/// Types of spatial relationships entities can have
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SpatialType {
+    /// Can contain other entities
+    Container {
+        capacity: Option<SpatialCapacity>,
+        allowed_types: Vec<String>, // Component types that can be contained
+    },
+    /// Can be contained by other entities
+    Containable {
+        size: SpatialSize,
+        requires: Vec<String>, // Required container component types
+    },
+    /// Both container and containable
+    Nested {
+        container_props: Box<SpatialType>,
+        containable_props: Box<SpatialType>,
+    },
+    /// Fixed in space, cannot be contained
+    Anchored {
+        coordinate_system: String,
+    },
+}
+
+/// Defines spatial relationships between entities
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SpatialComponent {
+    /// How this entity relates to space
+    pub spatial_type: SpatialType,
+    /// Spatial constraints/rules
+    pub constraints: SpatialConstraints,
+    /// Metadata for spatial queries
+    pub metadata: HashMap<String, JsonValue>,
+}
+
+impl Component for SpatialComponent {
+    fn component_type() -> &'static str {
+        "Spatial"
+    }
+}
+
+// ============================================================================
+// Entity Archetype System
+// ============================================================================
+
+/// Validation rule for entity archetypes
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ArchetypeValidator {
+    pub rule: String,
+    pub error_message: String,
+}
+
+/// Defines common patterns of components for entity creation
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EntityArchetype {
+    /// Unique identifier for this archetype
+    pub name: String,
+    /// Required components
+    pub required_components: Vec<String>,
+    /// Optional components  
+    pub optional_components: Vec<String>,
+    /// Behavioral tags
+    pub tags: HashSet<String>,
+    /// Validation rules
+    pub validators: Vec<ArchetypeValidator>,
+}
+
+/// Common archetype patterns (conventions, not enforced)
+pub mod archetypes {
+    /// Location entities (worlds, rooms, areas)
+    pub const LOCATION: &[&str] = &["Spatial", "Temporal", "Position"];
+    
+    /// Actor entities (characters, NPCs)  
+    pub const ACTOR: &[&str] = &["Spatial", "Temporal", "Health", "Relationships"];
+    
+    /// Item entities (objects, equipment)
+    pub const ITEM: &[&str] = &["Spatial", "Temporal"];
+    
+    /// Abstract entities (concepts, organizations)
+    pub const ABSTRACT: &[&str] = &["Temporal", "Relationships"];
+}
+
+// ============================================================================
+// Hierarchical Query Types
+// ============================================================================
+
+/// Spatial distance measurement types for hierarchical queries
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SpatialDistance {
+    /// Direct containment levels (parent->child = 1)
+    Hierarchical(u32),
+    /// Euclidean distance (if coordinates available)
+    Euclidean(f64),
+    /// Graph distance through relationships
+    Graph(u32),
+}
+
+/// Query types for traversing spatial hierarchies
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum HierarchicalQuery {
+    /// Find all entities contained within target (recursively)
+    ContainedWithin { entity_id: Uuid, max_depth: Option<u32> },
+    
+    /// Find the path from entity A to entity B through containers
+    PathBetween { from: Uuid, to: Uuid },
+    
+    /// Find all entities of type X within spatial distance Y
+    NearbyOfType { 
+        origin: Uuid, 
+        component_type: String,
+        max_distance: SpatialDistance,
+    },
+    
+    /// Find the "root" container (world, universe, etc.)
+    RootContainer { entity_id: Uuid },
+}
+
+// ============================================================================
+// Time Range Queries
+// ============================================================================
+
+/// Time range for temporal queries
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TimeRange {
+    pub start: GameTime,
+    pub end: GameTime,
+}
+
 /// Domain model for ECS component (distinct from Diesel model)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EcsComponent {
@@ -320,5 +581,271 @@ mod tests {
         let deserialized = HealthComponent::from_json(&json).unwrap();
         
         assert_eq!(health, deserialized);
+    }
+    
+    #[test]
+    fn test_temporal_component() {
+        let temporal = TemporalComponent::default();
+        
+        assert_eq!(temporal.time_scale, 1.0);
+        assert!(temporal.destroyed_at.is_none());
+        assert_eq!(temporal.created_at.timestamp.date_naive(), temporal.last_modified.timestamp.date_naive());
+    }
+    
+    #[test]
+    fn test_spatial_component_container() {
+        let spatial = SpatialComponent {
+            spatial_type: SpatialType::Container {
+                capacity: Some(SpatialCapacity {
+                    max_count: Some(10),
+                    max_volume: None,
+                    max_mass: Some(100.0),
+                }),
+                allowed_types: vec!["Item".to_string(), "Actor".to_string()],
+            },
+            constraints: SpatialConstraints::default(),
+            metadata: HashMap::new(),
+        };
+        
+        let json = spatial.to_json().unwrap();
+        let deserialized = SpatialComponent::from_json(&json).unwrap();
+        
+        assert_eq!(spatial, deserialized);
+    }
+    
+    #[test]
+    fn test_archetype_patterns() {
+        assert!(archetypes::LOCATION.contains(&"Spatial"));
+        assert!(archetypes::LOCATION.contains(&"Temporal"));
+        assert!(archetypes::ACTOR.contains(&"Health"));
+        assert!(archetypes::ITEM.contains(&"Spatial"));
+        assert!(archetypes::ABSTRACT.contains(&"Relationships"));
+    }
+    
+    #[test]
+    fn test_game_time_creation() {
+        let now = GameTime::now();
+        let turn_time = GameTime::from_turn(42);
+        
+        assert!(now.turn.is_none());
+        assert_eq!(turn_time.turn, Some(42));
+        assert_eq!(turn_time.mode, TimeMode::TurnBased { turn_duration: None });
+    }
+    
+    #[test]
+    fn test_spatial_hierarchy_containment() {
+        // Test Container -> Containable relationship
+        let container = SpatialComponent {
+            spatial_type: SpatialType::Container {
+                capacity: Some(SpatialCapacity {
+                    max_count: Some(5),
+                    max_volume: Some(100.0),
+                    max_mass: Some(50.0),
+                }),
+                allowed_types: vec!["Item".to_string()],
+            },
+            constraints: SpatialConstraints::default(),
+            metadata: HashMap::new(),
+        };
+        
+        let containable = SpatialComponent {
+            spatial_type: SpatialType::Containable {
+                size: SpatialSize::Small,
+                requires: vec!["Container".to_string()],
+            },
+            constraints: SpatialConstraints::default(),
+            metadata: HashMap::new(),
+        };
+        
+        // Verify types
+        if let SpatialType::Container { capacity, allowed_types } = &container.spatial_type {
+            assert!(capacity.is_some());
+            assert_eq!(allowed_types, &vec!["Item".to_string()]);
+        } else {
+            panic!("Expected Container type");
+        }
+        
+        if let SpatialType::Containable { size, requires } = &containable.spatial_type {
+            assert_eq!(*size, SpatialSize::Small);
+            assert_eq!(requires, &vec!["Container".to_string()]);
+        } else {
+            panic!("Expected Containable type");
+        }
+    }
+    
+    #[test]
+    fn test_spatial_nested_entity() {
+        // Test universe->galaxy->world hierarchy using Nested type
+        let world = SpatialComponent {
+            spatial_type: SpatialType::Nested {
+                container_props: Box::new(SpatialType::Container {
+                    capacity: Some(SpatialCapacity {
+                        max_count: None, // Unlimited actors/locations
+                        max_volume: None,
+                        max_mass: None,
+                    }),
+                    allowed_types: vec!["Actor".to_string(), "Location".to_string()],
+                }),
+                containable_props: Box::new(SpatialType::Containable {
+                    size: SpatialSize::Massive,
+                    requires: vec!["Galaxy".to_string()],
+                }),
+            },
+            constraints: SpatialConstraints {
+                allow_multiple_locations: false,
+                movable: false, // Worlds don't move
+                rules: vec!["requires_atmosphere".to_string()],
+            },
+            metadata: {
+                let mut meta = HashMap::new();
+                meta.insert("world_type".to_string(), JsonValue::String("terrestrial".to_string()));
+                meta
+            },
+        };
+        
+        // Verify nested structure
+        if let SpatialType::Nested { container_props, containable_props } = &world.spatial_type {
+            if let SpatialType::Container { allowed_types, .. } = container_props.as_ref() {
+                assert!(allowed_types.contains(&"Actor".to_string()));
+                assert!(allowed_types.contains(&"Location".to_string()));
+            }
+            
+            if let SpatialType::Containable { size, requires } = containable_props.as_ref() {
+                assert_eq!(*size, SpatialSize::Massive);
+                assert_eq!(requires, &vec!["Galaxy".to_string()]);
+            }
+        } else {
+            panic!("Expected Nested type");
+        }
+        
+        assert!(!world.constraints.movable);
+        assert!(world.constraints.rules.contains(&"requires_atmosphere".to_string()));
+    }
+    
+    #[test]
+    fn test_hierarchical_query_types() {
+        use uuid::Uuid;
+        
+        let entity_id = Uuid::new_v4();
+        let from_id = Uuid::new_v4();
+        let to_id = Uuid::new_v4();
+        let origin_id = Uuid::new_v4();
+        
+        let contained_query = HierarchicalQuery::ContainedWithin {
+            entity_id,
+            max_depth: Some(3),
+        };
+        
+        let path_query = HierarchicalQuery::PathBetween {
+            from: from_id,
+            to: to_id,
+        };
+        
+        let nearby_query = HierarchicalQuery::NearbyOfType {
+            origin: origin_id,
+            component_type: "Actor".to_string(),
+            max_distance: SpatialDistance::Hierarchical(2),
+        };
+        
+        let root_query = HierarchicalQuery::RootContainer { entity_id };
+        
+        // Test serialization/deserialization
+        let queries = vec![contained_query, path_query, nearby_query, root_query];
+        
+        for query in queries {
+            let json = serde_json::to_string(&query).unwrap();
+            let deserialized: HierarchicalQuery = serde_json::from_str(&json).unwrap();
+            assert_eq!(query, deserialized);
+        }
+    }
+    
+    #[test]
+    fn test_spatial_distance_types() {
+        let hierarchical = SpatialDistance::Hierarchical(5);
+        let euclidean = SpatialDistance::Euclidean(10.5);
+        let graph = SpatialDistance::Graph(3);
+        
+        // Test serialization
+        let distances = vec![hierarchical, euclidean, graph];
+        for distance in distances {
+            let json = serde_json::to_string(&distance).unwrap();
+            let deserialized: SpatialDistance = serde_json::from_str(&json).unwrap();
+            assert_eq!(distance, deserialized);
+        }
+    }
+    
+    #[test]
+    fn test_spatial_component_serialization() {
+        // Test all spatial types can be serialized/deserialized
+        let anchored = SpatialComponent {
+            spatial_type: SpatialType::Anchored {
+                coordinate_system: "galactic_standard".to_string(),
+            },
+            constraints: SpatialConstraints::default(),
+            metadata: HashMap::new(),
+        };
+        
+        let json = serde_json::to_string(&anchored).unwrap();
+        let deserialized: SpatialComponent = serde_json::from_str(&json).unwrap();
+        assert_eq!(anchored, deserialized);
+        
+        if let SpatialType::Anchored { coordinate_system } = &deserialized.spatial_type {
+            assert_eq!(coordinate_system, "galactic_standard");
+        } else {
+            panic!("Expected Anchored type");
+        }
+    }
+    
+    #[test]
+    fn test_entity_archetype_creation() {
+        use std::collections::HashSet;
+        
+        let mut tags = HashSet::new();
+        tags.insert("interactive".to_string());
+        tags.insert("persistent".to_string());
+        
+        let archetype = EntityArchetype {
+            name: "WorldEntity".to_string(),
+            required_components: vec!["Spatial".to_string(), "Temporal".to_string()],
+            optional_components: vec!["Position".to_string(), "Relationships".to_string()],
+            tags,
+            validators: vec![
+                ArchetypeValidator {
+                    rule: "spatial_type_must_be_container_or_nested".to_string(),
+                    error_message: "World entities must be able to contain other entities".to_string(),
+                },
+            ],
+        };
+        
+        assert_eq!(archetype.name, "WorldEntity");
+        assert!(archetype.required_components.contains(&"Spatial".to_string()));
+        assert!(archetype.optional_components.contains(&"Position".to_string()));
+        assert!(archetype.tags.contains("interactive"));
+        assert_eq!(archetype.validators.len(), 1);
+        
+        // Test serialization
+        let json = serde_json::to_string(&archetype).unwrap();
+        let deserialized: EntityArchetype = serde_json::from_str(&json).unwrap();
+        assert_eq!(archetype, deserialized);
+    }
+    
+    #[test]
+    fn test_temporal_component_time_scale() {
+        let mut temporal = TemporalComponent::default();
+        
+        // Test normal time scale
+        assert_eq!(temporal.time_scale, 1.0);
+        
+        // Test frozen time
+        temporal.time_scale = 0.0;
+        assert_eq!(temporal.time_scale, 0.0);
+        
+        // Test accelerated time
+        temporal.time_scale = 2.5;
+        assert_eq!(temporal.time_scale, 2.5);
+        
+        // Verify temporal component maintains creation time
+        assert!(temporal.destroyed_at.is_none());
+        assert_eq!(temporal.created_at, temporal.last_modified);
     }
 }

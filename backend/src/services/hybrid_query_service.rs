@@ -299,6 +299,7 @@ pub struct QueryPerformanceMetrics {
 /// - Comprehensive failure contracts with specific error modes
 /// - Circuit breaker patterns for service dependencies
 /// - Performance monitoring and adaptive routing
+#[derive(Clone)]
 pub struct HybridQueryService {
     /// Database connection pool
     db_pool: Arc<PgPool>,
@@ -551,10 +552,58 @@ impl HybridQueryService {
         let rag_result = self.rag_service.query_enhanced_rag(rag_query).await?;
         
         // Extract chronicle events from the RAG result
-        let events = rag_result.chronicle_events
+        let events: Vec<ChronicleEvent> = rag_result.chronicle_events
             .into_iter()
             .map(|enhanced_event| enhanced_event.event)
             .collect();
+
+        // If RAG search found no events, fall back to direct database query
+        if events.is_empty() && query.chronicle_id.is_some() {
+            debug!("RAG search returned no events, falling back to direct database query");
+            return self.search_chronicle_events_fallback(query).await;
+        }
+
+        Ok(events)
+    }
+
+    /// Fallback method to search chronicle events directly from database
+    async fn search_chronicle_events_fallback(&self, query: &HybridQuery) -> Result<Vec<ChronicleEvent>, AppError> {
+        use crate::services::ChronicleService;
+        use crate::models::chronicle_event::{EventFilter, EventOrderBy};
+
+        let chronicle_id = query.chronicle_id.ok_or_else(|| {
+            AppError::BadRequest("Chronicle ID required for fallback search".to_string())
+        })?;
+
+        // Create chronicle service instance
+        let chronicle_service = ChronicleService::new((*self.db_pool).clone());
+
+        // Build filter based on query type
+        let filter = EventFilter {
+            event_type: None,
+            source: None,
+            action: None,
+            modality: None,
+            involves_entity: None,
+            after_timestamp: None,
+            before_timestamp: None,
+            order_by: Some(EventOrderBy::CreatedAtDesc),
+            limit: Some(query.max_results as i64),
+            offset: None,
+        };
+
+        // Get events from database
+        let events = chronicle_service.get_chronicle_events(
+            query.user_id,
+            chronicle_id,
+            filter,
+        ).await?;
+
+        debug!(
+            events_found = events.len(),
+            chronicle_id = %chronicle_id,
+            "Fallback database search completed"
+        );
 
         Ok(events)
     }
@@ -579,6 +628,21 @@ impl HybridQueryService {
             }
         };
 
+        // Extract focus entity IDs from query when available
+        let focus_entity_ids = match &query.query_type {
+            HybridQueryType::EntityTimeline { entity_id: Some(id), .. } => {
+                Some(vec![*id])
+            }
+            HybridQueryType::RelationshipHistory { 
+                entity_a_id: Some(id_a), 
+                entity_b_id: Some(id_b), 
+                .. 
+            } => {
+                Some(vec![*id_a, *id_b])
+            }
+            _ => None,
+        };
+
         Ok(EnhancedRagQuery {
             query: query_text,
             user_id: query.user_id,
@@ -586,7 +650,7 @@ impl HybridQueryService {
             max_chronicle_results: query.max_results,
             include_current_state: query.include_current_state,
             include_relationships: query.include_relationships,
-            focus_entity_ids: None, // TODO: Extract from query if available
+            focus_entity_ids,
             similarity_threshold: query.options.confidence_threshold,
         })
     }
@@ -597,8 +661,31 @@ impl HybridQueryService {
 
         // Extract entities from events
         for event in events {
-            // TODO: Parse event data to extract entity references
             debug!("Extracting entity IDs from event: {}", event.id);
+            
+            // Extract from actors list using the parsed actors
+            if let Ok(actors) = event.get_actors() {
+                for actor in actors {
+                    entity_ids.push(actor.entity_id);
+                }
+            }
+
+            // Also check event_data for actors array as fallback
+            if let Some(event_data) = &event.event_data {
+                if let Some(actors_value) = event_data.get("actors") {
+                    if let Some(actors_array) = actors_value.as_array() {
+                        for actor_value in actors_array {
+                            if let Some(actor_entity_id) = actor_value.get("entity_id") {
+                                if let Some(actor_id_str) = actor_entity_id.as_str() {
+                                    if let Ok(actor_uuid) = Uuid::parse_str(actor_id_str) {
+                                        entity_ids.push(actor_uuid);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Add query-specific entities
@@ -623,6 +710,11 @@ impl HybridQueryService {
         // Remove duplicates
         entity_ids.sort_unstable();
         entity_ids.dedup();
+
+        debug!(
+            extracted_entities = entity_ids.len(),
+            "Extracted entity IDs from events and query"
+        );
 
         Ok(entity_ids)
     }
@@ -713,8 +805,44 @@ impl HybridQueryService {
     }
 
     /// Check if entity was involved in an event
-    async fn entity_involved_in_event(&self, _entity_id: Uuid, _event: &ChronicleEvent) -> Result<bool, AppError> {
-        // TODO: Parse event data to check entity involvement
+    async fn entity_involved_in_event(&self, entity_id: Uuid, event: &ChronicleEvent) -> Result<bool, AppError> {
+        // Check if entity is mentioned in the actors list
+        if let Ok(actors) = event.get_actors() {
+            for actor in actors {
+                if actor.entity_id == entity_id {
+                    return Ok(true);
+                }
+            }
+        }
+
+        // Check if entity is mentioned in event_data
+        if let Some(event_data) = &event.event_data {
+            // Check actors array in event_data
+            if let Some(actors_value) = event_data.get("actors") {
+                if let Some(actors_array) = actors_value.as_array() {
+                    for actor_value in actors_array {
+                        if let Some(actor_entity_id) = actor_value.get("entity_id") {
+                            if let Some(actor_id_str) = actor_entity_id.as_str() {
+                                if let Ok(actor_uuid) = Uuid::parse_str(actor_id_str) {
+                                    if actor_uuid == entity_id {
+                                        return Ok(true);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check if entity_id appears anywhere in the event content
+            if let Some(content) = event_data.get("content").and_then(|c| c.as_str()) {
+                let entity_id_str = entity_id.to_string();
+                if content.contains(&entity_id_str) {
+                    return Ok(true);
+                }
+            }
+        }
+
         Ok(false)
     }
 
@@ -827,7 +955,31 @@ impl HybridQueryService {
                         entity_a, entity_b));
                 }
             }
-            _ => {}
+            HybridQueryType::LocationQuery { location_name, .. } => {
+                key_insights.push(format!("Found {} entities at {}", 
+                    entities.len(), location_name));
+            }
+            HybridQueryType::NarrativeQuery { query_text, .. } => {
+                key_insights.push(format!("Analyzed {} chronicle events for narrative query", 
+                    events.len()));
+                if !entities.is_empty() {
+                    key_insights.push(format!("Identified {} relevant entities in the narrative", 
+                        entities.len()));
+                }
+                if !relationships.is_empty() {
+                    key_insights.push(format!("Found {} relationship connections", 
+                        relationships.len()));
+                }
+            }
+            _ => {
+                // Generic insights for other query types
+                if !events.is_empty() {
+                    key_insights.push(format!("Analyzed {} chronicle events", events.len()));
+                }
+                if !entities.is_empty() {
+                    key_insights.push(format!("Found {} relevant entities", entities.len()));
+                }
+            }
         }
 
         Ok(HybridQuerySummary {

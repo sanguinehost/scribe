@@ -224,6 +224,107 @@ mod tests {
             email_service: Arc::new(crate::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
             )),
+            // ECS Services - minimal test instances
+            redis_client: Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            feature_flags: Arc::new(crate::config::NarrativeFeatureFlags::default()),
+            ecs_entity_manager: Arc::new(crate::services::EcsEntityManager::new(
+                Arc::new(pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            )),
+            ecs_graceful_degradation: Arc::new(crate::services::EcsGracefulDegradation::new(
+                Default::default(),
+                Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                None,
+                None,
+            )),
+            ecs_enhanced_rag_service: Arc::new(crate::services::EcsEnhancedRagService::new(
+                Arc::new(pool.clone()),
+                Default::default(),
+                Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+                Arc::new(crate::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                    None,
+                    None,
+                )),
+                Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+                    crate::text_processing::chunking::ChunkConfig {
+                        metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                )),
+            )),
+            hybrid_query_service: Arc::new(crate::services::HybridQueryService::new(
+                Arc::new(pool.clone()),
+                Default::default(),
+                Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+                Arc::new(crate::services::EcsEnhancedRagService::new(
+                    Arc::new(pool.clone()),
+                    Default::default(),
+                    Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                    Arc::new(crate::services::EcsEntityManager::new(
+                        Arc::new(pool.clone()),
+                        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                        None,
+                    )),
+                    Arc::new(crate::services::EcsGracefulDegradation::new(
+                        Default::default(),
+                        Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                        None,
+                        None,
+                    )),
+                    Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+                        crate::text_processing::chunking::ChunkConfig {
+                            metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                            max_size: 500,
+                            overlap: 50,
+                        }
+                    )),
+                )),
+                Arc::new(crate::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                    None,
+                    None,
+                )),
+            )),
+            // Chronicle ECS services for test
+            chronicle_service: Arc::new(crate::services::ChronicleService::new(pool.clone())),
+            chronicle_ecs_translator: Arc::new(crate::services::ChronicleEcsTranslator::new(
+                Arc::new(pool.clone())
+            )),
+            chronicle_event_listener: {
+                let feature_flags = Arc::new(crate::config::NarrativeFeatureFlags::default());
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(pool.clone()),
+                    redis_client,
+                    None,
+                ));
+                let chronicle_service = Arc::new(crate::services::ChronicleService::new(pool.clone()));
+                let chronicle_ecs_translator = Arc::new(crate::services::ChronicleEcsTranslator::new(
+                    Arc::new(pool.clone())
+                ));
+                Arc::new(crate::services::ChronicleEventListener::new(
+                    Default::default(),
+                    feature_flags,
+                    chronicle_ecs_translator,
+                    entity_manager,
+                    chronicle_service,
+                ))
+            },
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));

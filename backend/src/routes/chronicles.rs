@@ -38,6 +38,7 @@ use crate::{
         ecs_enhanced_rag_service::{
             EntityStateSnapshot, RelationshipContext
         },
+        chronicle_event_listener::{ChronicleEventNotification, ChronicleNotificationType},
     },
     state::AppState,
 };
@@ -371,6 +372,22 @@ async fn create_event(
         // Don't fail the request if embedding fails
     } else {
         info!(event_id = %event.id, "Successfully embedded chronicle event for semantic search");
+    }
+
+    // Emit ChronicleEventNotification to trigger ECS updates
+    let notification = ChronicleEventNotification {
+        event_id: event.id,
+        user_id: user.id,
+        chronicle_id,
+        event_type: event.event_type.clone(),
+        notification_type: ChronicleNotificationType::Created,
+    };
+    
+    if let Err(e) = state.chronicle_event_listener.notify_chronicle_event(notification).await {
+        warn!(event_id = %event.id, error = %e, "Failed to notify ECS system about new chronicle event");
+        // Don't fail the request if ECS notification fails - continue gracefully
+    } else {
+        info!(event_id = %event.id, "Successfully notified ECS system about new chronicle event");
     }
 
     info!("Successfully created event {}", event.id);

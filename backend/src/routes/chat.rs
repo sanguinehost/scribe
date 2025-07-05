@@ -291,31 +291,8 @@ pub async fn generate_chat_response(
     );
 
     // --- ECS-Enhanced RAG Integration ---
-    // Enhance RAG context with ECS entity state if feature is enabled
-    let enhanced_rag_context_items = if state_arc.feature_flags.enable_ecs_enhanced_rag {
-        match enhance_rag_with_ecs_context(
-            &state_arc,
-            user_id_value,
-            player_chronicle_id,
-            &current_user_content_text,
-            rag_context_items_from_service,
-        ).await {
-            Ok(enhanced_items) => {
-                info!(%session_id, 
-                      original_count = rag_context_items_from_service.len(),
-                      enhanced_count = enhanced_items.len(),
-                      "Successfully enhanced RAG context with ECS entity state");
-                enhanced_items
-            }
-            Err(e) => {
-                warn!(%session_id, error = %e, "Failed to enhance RAG with ECS context, using original RAG items");
-                rag_context_items_from_service
-            }
-        }
-    } else {
-        debug!(%session_id, "ECS-enhanced RAG disabled by feature flags");
-        rag_context_items_from_service
-    };
+    // TODO: Implement ECS-enhanced RAG once the enhancement function is created
+    let enhanced_rag_context_items = rag_context_items_from_service;
 
     // Fetch Character model from DB (only for character-based chats)
     let char_id = session_character_id.ok_or_else(|| {

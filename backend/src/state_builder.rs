@@ -237,6 +237,65 @@ impl AppStateServicesBuilder {
         // due to circular dependency (service needs AppState, but AppState is built from services)
         // We'll create a placeholder for now and set it properly after AppState construction
 
+        // TODO: Initialize proper ECS services - temporarily using placeholders to fix compilation
+        let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap_or_else(|_| {
+            // Fallback for environments without Redis
+            redis::Client::open("redis://127.0.0.1:6379/").unwrap()
+        }));
+        let feature_flags = Arc::new(crate::config::NarrativeFeatureFlags::default());
+        
+        // Create minimal ECS services to satisfy type requirements
+        let ecs_entity_manager = Arc::new(crate::services::EcsEntityManager::new(
+            Arc::new(self.db_pool.clone()),
+            redis_client.clone(),
+            None,
+        ));
+        let ecs_graceful_degradation = Arc::new(crate::services::EcsGracefulDegradation::new(
+            Default::default(),
+            feature_flags.clone(),
+            Some(ecs_entity_manager.clone()),
+            None,
+        ));
+        
+        // Create concrete embedding service for ECS (avoiding trait object issues)
+        let ecs_embedding_service = Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+            crate::text_processing::chunking::ChunkConfig {
+                metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                max_size: 500,
+                overlap: 50,
+            }
+        ));
+        
+        let ecs_enhanced_rag_service = Arc::new(crate::services::EcsEnhancedRagService::new(
+            Arc::new(self.db_pool.clone()),
+            Default::default(),
+            feature_flags.clone(),
+            ecs_entity_manager.clone(),
+            ecs_graceful_degradation.clone(),
+            ecs_embedding_service,
+        ));
+        let hybrid_query_service = Arc::new(crate::services::HybridQueryService::new(
+            Arc::new(self.db_pool.clone()),
+            Default::default(),
+            feature_flags.clone(),
+            ecs_entity_manager.clone(),
+            ecs_enhanced_rag_service.clone(),
+            ecs_graceful_degradation.clone(),
+        ));
+
+        // Create chronicle-related services for ECS integration
+        let chronicle_service = Arc::new(crate::services::ChronicleService::new(self.db_pool.clone()));
+        let chronicle_ecs_translator = Arc::new(crate::services::ChronicleEcsTranslator::new(
+            Arc::new(self.db_pool.clone())
+        ));
+        let chronicle_event_listener = Arc::new(crate::services::ChronicleEventListener::new(
+            Default::default(), // Use default config
+            feature_flags.clone(),
+            chronicle_ecs_translator.clone(),
+            ecs_entity_manager.clone(),
+            chronicle_service.clone(),
+        ));
+
         Ok(AppStateServices {
             ai_client,
             embedding_client,
@@ -250,6 +309,16 @@ impl AppStateServicesBuilder {
             auth_backend,
             file_storage_service,
             email_service,
+            // ECS Services
+            redis_client,
+            feature_flags,
+            ecs_entity_manager,
+            ecs_graceful_degradation,
+            ecs_enhanced_rag_service,
+            hybrid_query_service,
+            chronicle_event_listener,
+            chronicle_ecs_translator,
+            chronicle_service,
             // narrative_intelligence_service will be added after AppState is built
         })
     }

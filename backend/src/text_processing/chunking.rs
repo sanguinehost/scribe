@@ -45,6 +45,8 @@ impl Eq for TextChunk {} // Still Eq based on the PartialEq implementation above
 pub enum ChunkingMetric {
     Char,
     Word,
+    /// Special mode for lorebook entries - treats entire content as single atomic unit
+    LorebookEntry,
 }
 
 /// Configuration for the chunking process.
@@ -60,6 +62,7 @@ impl From<&Config> for ChunkConfig {
         let metric = match config.chunking_metric.to_lowercase().as_str() {
             "char" => ChunkingMetric::Char,
             "word" => ChunkingMetric::Word,
+            "lorebook_entry" => ChunkingMetric::LorebookEntry,
             unknown => {
                 warn!(
                     "Unknown chunking_metric value '{}' in config. Defaulting to 'Word'.",
@@ -77,6 +80,26 @@ impl From<&Config> for ChunkConfig {
     }
 }
 
+impl ChunkConfig {
+    /// Create a configuration for lorebook entries (atomic, no splitting)
+    pub fn for_lorebook_entry() -> Self {
+        Self {
+            metric: ChunkingMetric::LorebookEntry,
+            max_size: usize::MAX, // No size limit
+            overlap: 0, // No overlap for atomic units
+        }
+    }
+
+    /// Create a configuration for regular text chunking
+    pub fn for_regular_text(max_size: usize, overlap: usize) -> Self {
+        Self {
+            metric: ChunkingMetric::Word,
+            max_size,
+            overlap,
+        }
+    }
+}
+
 /// Recursively chunks text based on semantic separators and configured size/overlap.
 ///
 /// TODO: Implement the recursive splitting logic.
@@ -90,6 +113,29 @@ pub fn chunk_text(
     source_id: Option<String>,
     initial_offset: usize, // Base offset for this text within its original source
 ) -> Result<Vec<TextChunk>, AppError> {
+    // Special handling for lorebook entries - treat as single atomic unit
+    if matches!(config.metric, ChunkingMetric::LorebookEntry) {
+        debug!("Using LorebookEntry mode - treating content as single atomic chunk");
+        // For lorebook entries, return empty if original text is empty
+        if text.is_empty() {
+            return Ok(vec![]);
+        }
+        
+        // For whitespace-only content, trim it but still return one chunk
+        let content = if text.trim().is_empty() {
+            String::new() // Trim whitespace-only content to empty string
+        } else {
+            text.to_string() // Preserve original content including trailing spaces
+        };
+        
+        return Ok(vec![TextChunk {
+            content,
+            source_id,
+            start_index: initial_offset,
+            end_index: initial_offset + text.len(),
+        }]);
+    }
+
     let trimmed_text = text.trim();
     if trimmed_text.is_empty() {
         debug!("Input text is empty after trimming, returning no chunks.");
@@ -914,6 +960,7 @@ fn measure_size(text: &str, metric: ChunkingMetric, word_segmenter: &WordSegment
     match metric {
         ChunkingMetric::Char => text.chars().count(),
         ChunkingMetric::Word => word_segmenter.segment_str(text).count(),
+        ChunkingMetric::LorebookEntry => text.chars().count(), // For lorebook entries, use char count (though size limits don't apply)
     }
 }
 
@@ -1022,6 +1069,10 @@ fn generate_overlap_text(
         ChunkingMetric::Char => generate_char_overlap(&prev_chunk.content, config.overlap),
         ChunkingMetric::Word => {
             generate_word_overlap(&prev_chunk.content, config.overlap, word_segmenter)
+        }
+        ChunkingMetric::LorebookEntry => {
+            // LorebookEntry mode creates atomic chunks with no overlap
+            String::new()
         }
     }
 }
@@ -1965,4 +2016,61 @@ mod tests {
     //         "All chunks must be within size limit (including overlap)"
     //     );
     // }
+    
+    #[test]
+    fn test_lorebook_entry_chunking() {
+        let config = ChunkConfig::for_lorebook_entry();
+        
+        // Test that a complete lorebook entry is treated as a single chunk
+        let lorebook_content = r#"### **Ahsoka Tano: The Wellspring of Growth**
+
+**Name:** Ahsoka Tano
+**Species:** Togruta
+
+Ahsoka has become a conduit for pure **Growth**. She is a living font of generative, chaotic Force energy.
+
+**Force Abilities:** Ahsoka is no longer just a skilled Force-user; she is a living nexus, a self-contained **Wellspring of Growth**.
+
+**Personality:** The resilient and pragmatic woman remains, but the philosophical crisis has been resolved through a profound apotheosis."#;
+
+        let result = chunk_text(lorebook_content, &config, Some("test_lorebook_entry".to_string()), 0).unwrap();
+        
+        // Should produce exactly one chunk containing the entire content
+        assert_eq!(result.len(), 1, "LorebookEntry chunking should produce exactly one chunk");
+        assert_eq!(result[0].content, lorebook_content, "Chunk content should match entire input");
+        assert_eq!(result[0].source_id, Some("test_lorebook_entry".to_string()), "Chunk should preserve source_id");
+        assert_eq!(result[0].start_index, 0, "Chunk should start at index 0");
+        assert_eq!(result[0].end_index, lorebook_content.len(), "Chunk should end at content length");
+    }
+    
+    #[test]
+    fn test_lorebook_entry_vs_regular_chunking() {
+        let long_content = "This is a very long piece of content that would normally be split into multiple chunks. ".repeat(10);
+        
+        // Regular chunking with small max_size should split into multiple chunks
+        let regular_config = ChunkConfig::for_regular_text(50, 10);
+        let regular_result = chunk_text(&long_content, &regular_config, None, 0).unwrap();
+        
+        // Lorebook chunking should keep it as one chunk
+        let lorebook_config = ChunkConfig::for_lorebook_entry();
+        let lorebook_result = chunk_text(&long_content, &lorebook_config, None, 0).unwrap();
+        
+        assert!(regular_result.len() > 1, "Regular chunking should split long content into multiple chunks");
+        assert_eq!(lorebook_result.len(), 1, "Lorebook chunking should keep content as single chunk");
+        assert_eq!(lorebook_result[0].content, long_content, "Lorebook chunk should contain entire content");
+    }
+    
+    #[test]
+    fn test_lorebook_entry_empty_content() {
+        let config = ChunkConfig::for_lorebook_entry();
+        
+        // Empty content should return no chunks
+        let result = chunk_text("", &config, None, 0).unwrap();
+        assert_eq!(result.len(), 0, "Empty content should produce no chunks");
+        
+        // Whitespace-only content should still produce one chunk
+        let whitespace_result = chunk_text("   \n\t  ", &config, None, 0).unwrap();
+        assert_eq!(whitespace_result.len(), 1, "Whitespace content should produce one chunk after trimming");
+        assert_eq!(whitespace_result[0].content, "", "Whitespace should be trimmed to empty string");
+    }
 }

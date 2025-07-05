@@ -732,6 +732,94 @@ pub async fn get_session_data_for_generation(
             debug!(%session_id, "No chronicle linked to this session, skipping chronicle event retrieval.");
         }
 
+        // Retrieve ECS Entity State Snapshots (if ECS is enabled and chronicle is linked)
+        if let Some(chronicle_id) = player_chronicle_id_from_session {
+            if state.feature_flags.enable_ecs_enhanced_rag {
+                info!(%session_id, %chronicle_id, "Retrieving ECS entity state snapshots for RAG enhancement.");
+                
+                // Create enhanced RAG query
+                let enhanced_rag_query = crate::services::ecs_enhanced_rag_service::EnhancedRagQuery {
+                    query: user_message_content.clone(),
+                    user_id,
+                    chronicle_id: Some(chronicle_id),
+                    max_chronicle_results: 0, // We already got chronicle events above
+                    include_current_state: true,
+                    include_relationships: true,
+                    focus_entity_ids: None, // Let it determine relevant entities
+                    similarity_threshold: 0.7,
+                };
+                
+                match state.ecs_enhanced_rag_service.query_enhanced_rag(enhanced_rag_query).await {
+                    Ok(ecs_result) => {
+                        info!(
+                            %session_id, 
+                            %chronicle_id, 
+                            num_entity_states = ecs_result.current_entity_states.len(),
+                            num_relationships = ecs_result.relationship_context.len(),
+                            ecs_enhanced = ecs_result.ecs_enhanced,
+                            "Retrieved ECS entity states for RAG enhancement."
+                        );
+                        
+                        // Convert entity states to RetrievedChunk format for RAG pipeline
+                        for entity_context in ecs_result.current_entity_states {
+                            let entity_text = format!(
+                                "Current Entity State: {}\nType: {}\nKey Attributes: {}\nRecent Changes: {}",
+                                entity_context.entity_name.as_deref().unwrap_or("Unknown Entity"),
+                                "ECS Entity", // Could be derived from archetype if available
+                                serde_json::to_string_pretty(&entity_context.key_attributes).unwrap_or_else(|_| "{}".to_string()),
+                                entity_context.recent_changes.join(", ")
+                            );
+                            
+                            let entity_chunk = crate::services::embeddings::RetrievedChunk {
+                                text: entity_text,
+                                score: entity_context.relevance_score,
+                                metadata: crate::services::embeddings::RetrievedMetadata::Chronicle(
+                                    crate::services::embeddings::ChronicleEventMetadata {
+                                        event_id: entity_context.entity_id, // Use entity ID as event ID
+                                        chronicle_id,
+                                        event_type: "ENTITY_STATE".to_string(),
+                                        created_at: chrono::Utc::now(),
+                                    }
+                                ),
+                            };
+                            combined_rag_candidates.push(entity_chunk);
+                        }
+                        
+                        // Convert relationship context to RetrievedChunk format
+                        for relationship in ecs_result.relationship_context {
+                            let relationship_text = format!(
+                                "Current Relationship: {} -> {}\nType: {}\nData: {}\nEstablished: {}",
+                                relationship.from_entity_id,
+                                relationship.to_entity_id,
+                                relationship.relationship_type,
+                                serde_json::to_string_pretty(&relationship.relationship_data).unwrap_or_else(|_| "{}".to_string()),
+                                relationship.established_at.as_ref().map(|dt| dt.to_rfc3339()).unwrap_or_else(|| "Unknown".to_string())
+                            );
+                            
+                            let relationship_chunk = crate::services::embeddings::RetrievedChunk {
+                                text: relationship_text,
+                                score: 0.8, // Default relevance for relationships
+                                metadata: crate::services::embeddings::RetrievedMetadata::Chronicle(
+                                    crate::services::embeddings::ChronicleEventMetadata {
+                                        event_id: relationship.from_entity_id, // Use from_entity as event ID
+                                        chronicle_id,
+                                        event_type: "ENTITY_RELATIONSHIP".to_string(),
+                                        created_at: chrono::Utc::now(),
+                                    }
+                                ),
+                            };
+                            combined_rag_candidates.push(relationship_chunk);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(%session_id, %chronicle_id, error = %e, "Failed to retrieve ECS entity state snapshots for RAG. Proceeding without them.");
+                    }
+                }
+            } else {
+                debug!(%session_id, "ECS enhanced RAG disabled, skipping entity state retrieval.");
+            }
+        }
+
         // Retrieve Older Chat History Chunks (only if using database history)
         if frontend_history.is_none() {
             info!(%session_id, "Retrieving older chat history chunks for RAG (database mode).");

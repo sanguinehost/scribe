@@ -31,7 +31,19 @@ pub use chronicle::*;
 pub use chronicle_event::*;
 pub use chronicle_processing_job::*;
 pub use documents::*;
-pub use ecs::{Component, Entity, ComponentRegistry, HealthComponent, PositionComponent, InventoryComponent, RelationshipsComponent, EcsError, Relationship, InventoryItem};
+pub use ecs::{
+    Component, Entity, ComponentRegistry, EcsError, Relationship, InventoryItem,
+    // Core components
+    HealthComponent, PositionComponent, InventoryComponent, RelationshipsComponent,
+    // Temporal system
+    GameTime, TimeMode, TemporalComponent, TimeRange,
+    // Spatial system
+    SpatialComponent, SpatialType, SpatialSize, SpatialCapacity, SpatialConstraints, SpatialDistance,
+    // Archetype system
+    EntityArchetype, ArchetypeValidator, archetypes,
+    // Hierarchical queries
+    HierarchicalQuery,
+};
 pub use ecs_diesel::*;
 pub use narrative_ontology::*;
 pub use email_verification::*;

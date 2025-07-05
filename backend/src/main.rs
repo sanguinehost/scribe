@@ -67,7 +67,7 @@ use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService;
 // ECS Services imports
-use scribe_backend::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService};
+use scribe_backend::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, ChronicleEventListener, ChronicleEcsTranslator};
 use scribe_backend::config::NarrativeFeatureFlags;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -296,6 +296,9 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         ecs_graceful_degradation: ecs_services.ecs_graceful_degradation,
         ecs_enhanced_rag_service: ecs_services.ecs_enhanced_rag_service,
         hybrid_query_service: ecs_services.hybrid_query_service,
+        chronicle_event_listener: ecs_services.chronicle_event_listener,
+        chronicle_ecs_translator: ecs_services.chronicle_ecs_translator,
+        chronicle_service: ecs_services.chronicle_service,
     })
 }
 
@@ -307,6 +310,9 @@ struct EcsServices {
     ecs_graceful_degradation: Arc<EcsGracefulDegradation>,
     ecs_enhanced_rag_service: Arc<EcsEnhancedRagService>,
     hybrid_query_service: Arc<HybridQueryService>,
+    chronicle_event_listener: Arc<ChronicleEventListener>,
+    chronicle_ecs_translator: Arc<ChronicleEcsTranslator>,
+    chronicle_service: Arc<ChronicleService>,
 }
 
 // Initialize ECS services with proper dependency order
@@ -369,6 +375,32 @@ async fn initialize_ecs_services(
     ));
     tracing::info!("Hybrid Query Service initialized");
     
+    // Initialize Chronicle-related ECS services
+    let chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
+    tracing::info!("Chronicle Service initialized");
+    
+    let chronicle_ecs_translator = Arc::new(ChronicleEcsTranslator::new(
+        Arc::new(pool.clone())
+    ));
+    tracing::info!("Chronicle ECS Translator initialized");
+    
+    let mut chronicle_event_listener = ChronicleEventListener::new(
+        Default::default(), // Use default config
+        feature_flags.clone(),
+        chronicle_ecs_translator.clone(),
+        ecs_entity_manager.clone(),
+        chronicle_service.clone(),
+    );
+    
+    // Start the chronicle event listener
+    chronicle_event_listener
+        .start()
+        .await
+        .context("Failed to start chronicle event listener")?;
+    tracing::info!("Chronicle Event Listener initialized and started");
+    
+    let chronicle_event_listener = Arc::new(chronicle_event_listener);
+    
     tracing::info!("All ECS services initialized successfully");
     
     Ok(EcsServices {
@@ -378,6 +410,9 @@ async fn initialize_ecs_services(
         ecs_graceful_degradation,
         ecs_enhanced_rag_service,
         hybrid_query_service,
+        chronicle_event_listener,
+        chronicle_ecs_translator,
+        chronicle_service,
     })
 }
 

@@ -241,11 +241,13 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             return Ok(());
         }
 
+        // Use lorebook-specific chunking to treat entries as atomic units
+        let lorebook_chunk_config = crate::text_processing::chunking::ChunkConfig::for_lorebook_entry();
         let chunks = match chunk_text(
             &decrypted_content,
-            &self.chunk_config,
-            None, // TODO: Consider if title should be prepended for chunking context
-            0,    // TODO: Consider if a specific overlap is needed for lorebook entries
+            &lorebook_chunk_config,
+            Some(format!("lorebook_entry_{}", original_lorebook_entry_id)), // Add source_id for lorebook entries
+            0,    // No overlap needed for atomic units
         ) {
             Ok(chunks) => {
                 if chunks.is_empty() {
