@@ -1141,6 +1141,57 @@ impl EcsEntityManager {
         }).await.map_err(|e| AppError::DbInteractError(e.to_string()))?
         .map_err(|e: AppError| e)
     }
+
+    /// Get total count of entities for a user
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn get_user_entity_count(&self, user_id: Uuid) -> Result<i64, AppError> {
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        conn.interact(move |conn| {
+            use crate::schema::ecs_entities::dsl::*;
+            ecs_entities
+                .filter(user_id.eq(user_id))
+                .count()
+                .get_result::<i64>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        }).await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+    }
+
+    /// Get total count of components for a user
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn get_user_component_count(&self, user_id: Uuid) -> Result<i64, AppError> {
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        conn.interact(move |conn| {
+            use crate::schema::ecs_components::dsl::*;
+            ecs_components
+                .filter(user_id.eq(user_id))
+                .count()
+                .get_result::<i64>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        }).await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+    }
+
+    /// Get total count of relationships for a user
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn get_user_relationship_count(&self, user_id: Uuid) -> Result<i64, AppError> {
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        conn.interact(move |conn| {
+            use crate::schema::ecs_entity_relationships::dsl::*;
+            ecs_entity_relationships
+                .filter(user_id.eq(user_id))
+                .count()
+                .get_result::<i64>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        }).await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+    }
 }
 
 /// Component query criteria for entity filtering

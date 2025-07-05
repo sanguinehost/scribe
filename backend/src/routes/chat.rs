@@ -290,6 +290,33 @@ pub async fn generate_chat_response(
         "Retrieved data for generation from chat_service."
     );
 
+    // --- ECS-Enhanced RAG Integration ---
+    // Enhance RAG context with ECS entity state if feature is enabled
+    let enhanced_rag_context_items = if state_arc.feature_flags.enable_ecs_enhanced_rag {
+        match enhance_rag_with_ecs_context(
+            &state_arc,
+            user_id_value,
+            player_chronicle_id,
+            &current_user_content_text,
+            rag_context_items_from_service,
+        ).await {
+            Ok(enhanced_items) => {
+                info!(%session_id, 
+                      original_count = rag_context_items_from_service.len(),
+                      enhanced_count = enhanced_items.len(),
+                      "Successfully enhanced RAG context with ECS entity state");
+                enhanced_items
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to enhance RAG with ECS context, using original RAG items");
+                rag_context_items_from_service
+            }
+        }
+    } else {
+        debug!(%session_id, "ECS-enhanced RAG disabled by feature flags");
+        rag_context_items_from_service
+    };
+
     // Fetch Character model from DB (only for character-based chats)
     let char_id = session_character_id.ok_or_else(|| {
         AppError::BadRequest("Character-based generation endpoints not supported for non-character chat modes".to_string())
@@ -381,13 +408,13 @@ pub async fn generate_chat_response(
         options: None,
     };
 
-    // Call the new prompt builder
+    // Call the new prompt builder with ECS-enhanced RAG context
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
             config: state_arc.config.clone(),
             token_counter: state_arc.token_counter.clone(),
             recent_history: gen_ai_recent_history,
-            rag_items: rag_context_items_from_service,
+            rag_items: enhanced_rag_context_items, // Use ECS-enhanced RAG context
             system_prompt_base: system_prompt_from_service, // This is the system_prompt_base (persona/override only)
             raw_character_system_prompt, // This is the new raw_character_system_prompt
             character_metadata: Some(&character_metadata_for_prompt_builder),

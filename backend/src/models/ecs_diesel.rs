@@ -107,11 +107,11 @@ pub struct EcsEntityRelationship {
     pub id: Uuid,
     pub from_entity_id: Uuid,
     pub to_entity_id: Uuid,
-    pub user_id: Uuid,
     pub relationship_type: String,
     pub relationship_data: JsonValue,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub user_id: Uuid,
 }
 
 /// Used to insert a new entity relationship
@@ -121,9 +121,9 @@ pub struct NewEcsEntityRelationship {
     pub id: Uuid,
     pub from_entity_id: Uuid,
     pub to_entity_id: Uuid,
-    pub user_id: Uuid,
     pub relationship_type: String,
     pub relationship_data: JsonValue,
+    pub user_id: Uuid,
 }
 
 /// Used to update an existing entity relationship

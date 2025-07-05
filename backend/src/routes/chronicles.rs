@@ -21,7 +21,6 @@ use crate::{
         user_store::Backend as AuthBackend,
         session_dek::SessionDek,
     },
-    config::NarrativeFeatureFlags,
     errors::AppError,
     models::{
         chats::ChatMessage,
@@ -34,16 +33,12 @@ use crate::{
         ChronicleService,
         narrative_intelligence_service::EventDataToInsert,
         hybrid_query_service::{
-            HybridQueryService, HybridQueryConfig, HybridQuery, HybridQueryType, HybridQueryOptions
+            HybridQueryService, HybridQuery, HybridQueryType, HybridQueryOptions
         },
         ecs_enhanced_rag_service::{
-            EcsEnhancedRagService, EcsEnhancedRagConfig, EntityStateSnapshot, RelationshipContext
+            EntityStateSnapshot, RelationshipContext
         },
-        ecs_graceful_degradation::{EcsGracefulDegradation, GracefulDegradationConfig},
-        ecs_entity_manager::{EcsEntityManager, EntityManagerConfig},
-        embeddings::service::EmbeddingPipelineService,
     },
-    text_processing::chunking::{ChunkConfig, ChunkingMetric},
     state::AppState,
 };
 
@@ -993,63 +988,9 @@ async fn get_chronicle_relationships(
     Ok(Json(response))
 }
 
-/// Helper function to create hybrid query service with required dependencies
+/// Helper function to get hybrid query service from shared AppState
 async fn create_hybrid_query_service(state: &AppState) -> Result<HybridQueryService, AppError> {
-    // Create feature flags for ECS (could be made configurable)
-    let feature_flags = Arc::new(NarrativeFeatureFlags::development());
-    
-    // Create Redis client for entity manager
-    let redis_client = Arc::new(
-        redis::Client::open("redis://127.0.0.1:6379/")
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to create Redis client: {}", e)))?
-    );
-    
-    // Create ECS entity manager
-    let entity_manager_config = EntityManagerConfig::default();
-    let entity_manager = Arc::new(EcsEntityManager::new(
-        state.pool.clone().into(),
-        redis_client,
-        Some(entity_manager_config),
-    ));
-    
-    // Create graceful degradation service
-    let degradation_config = GracefulDegradationConfig::default();
-    let degradation_service = Arc::new(EcsGracefulDegradation::new(
-        degradation_config,
-        feature_flags.clone(),
-        Some(entity_manager.clone()),
-        None,
-    ));
-    
-    // Create embedding service for the RAG service
-    let chunk_config = ChunkConfig {
-        metric: ChunkingMetric::Word,
-        max_size: 500,
-        overlap: 50,
-    };
-    let embedding_service = Arc::new(EmbeddingPipelineService::new(chunk_config));
-    
-    // Create enhanced RAG service
-    let rag_config = EcsEnhancedRagConfig::default();
-    let rag_service = Arc::new(EcsEnhancedRagService::new(
-        state.pool.clone().into(),
-        rag_config,
-        feature_flags.clone(),
-        entity_manager.clone(),
-        degradation_service.clone(),
-        embedding_service,
-    ));
-    
-    // Create hybrid query service
-    let hybrid_config = HybridQueryConfig::default();
-    let hybrid_service = HybridQueryService::new(
-        state.pool.clone().into(),
-        hybrid_config,
-        feature_flags,
-        entity_manager,
-        rag_service,
-        degradation_service,
-    );
-    
-    Ok(hybrid_service)
+    // Simply return a clone of the shared hybrid query service from AppState
+    // This eliminates the anti-pattern of creating new service instances
+    Ok((*state.hybrid_query_service).clone())
 }

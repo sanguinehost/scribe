@@ -6,6 +6,10 @@ pub mod sql_types {
     pub struct AccountStatus;
 
     #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "chronicle_job_status"))]
+    pub struct ChronicleJobStatus;
+
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "message_type"))]
     pub struct MessageType;
 
@@ -306,6 +310,37 @@ diesel::table! {
         valence -> Nullable<Jsonb>,
         #[max_length = 50]
         modality -> Nullable<Varchar>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+    use super::sql_types::ChronicleJobStatus;
+
+    chronicle_processing_jobs (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        chronicle_id -> Uuid,
+        status -> ChronicleJobStatus,
+        priority -> Int4,
+        attempt_count -> Int4,
+        max_attempts -> Int4,
+        created_at -> Timestamptz,
+        started_at -> Nullable<Timestamptz>,
+        completed_at -> Nullable<Timestamptz>,
+        next_retry_at -> Nullable<Timestamptz>,
+        worker_id -> Nullable<Uuid>,
+        processing_metadata -> Nullable<Jsonb>,
+        last_error -> Nullable<Text>,
+        error_details -> Nullable<Jsonb>,
+        chronicle_events_hash -> Nullable<Text>,
+        ecs_state_checksum -> Nullable<Text>,
+        events_processed -> Nullable<Int4>,
+        entities_created -> Nullable<Int4>,
+        components_created -> Nullable<Int4>,
+        relationships_created -> Nullable<Int4>,
+        processing_duration_ms -> Nullable<Int8>,
     }
 }
 
@@ -678,6 +713,8 @@ diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
+diesel::joinable!(chronicle_processing_jobs -> player_chronicles (chronicle_id));
+diesel::joinable!(chronicle_processing_jobs -> users (user_id));
 diesel::joinable!(ecs_backfill_checkpoints -> chronicle_events (last_processed_event_id));
 diesel::joinable!(ecs_backfill_checkpoints -> player_chronicles (chronicle_id));
 diesel::joinable!(ecs_backfill_checkpoints -> users (user_id));
@@ -712,6 +749,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_session_lorebooks,
     chat_sessions,
     chronicle_events,
+    chronicle_processing_jobs,
     ecs_backfill_checkpoints,
     ecs_components,
     ecs_entities,

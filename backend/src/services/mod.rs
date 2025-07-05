@@ -4,6 +4,7 @@ pub mod character_parser;
 pub mod character_service;
 pub mod chat;
 pub mod chat_override_service;
+pub mod checksum_state_validator;
 pub mod chronicle_backfill_processor;
 pub mod chronicle_deduplication_service;
 pub mod chronicle_ecs_consistency_monitor;
@@ -24,7 +25,9 @@ pub mod extraction_dispatcher;
 pub mod file_storage_service;
 pub mod gemini_token_client;
 pub mod history_manager;
+pub mod historical_chronicle_processor;
 pub mod hybrid_query_service;
+pub mod hybrid_query_router;
 pub mod hybrid_token_counter;
 pub mod lorebook;
 pub mod narrative_intelligence_service;
@@ -42,6 +45,10 @@ pub use agentic::{
 
 pub use character_service::CharacterService;
 pub use chat_override_service::ChatOverrideService;
+pub use checksum_state_validator::{
+    ChecksumStateValidator, ChecksumValidatorConfig, StateChecksum, ChecksumValidationResult,
+    ComponentValidationResult, ValidationComponent, ValidationCheckpoint, ChecksumItemCounts
+};
 pub use chronicle_backfill_processor::{ChronicleBackfillProcessor, BackfillConfig, BackfillResult, ChronicleBackfillStats};
 pub use chronicle_deduplication_service::{ChronicleDeduplicationService, DeduplicationConfig, DuplicateDetectionResult};
 pub use chronicle_ecs_consistency_monitor::{
@@ -67,10 +74,19 @@ pub use ecs_graceful_degradation::{
     EcsGracefulDegradation, GracefulDegradationConfig, CircuitState, EcsHealthStatus,
     FallbackOperationResult, RecoveryAttemptResult
 };
+pub use historical_chronicle_processor::{
+    HistoricalChronicleProcessor, HistoricalProcessorConfig, EnqueueResult, 
+    BackfillResult as HistoricalBackfillResult, BackfillProgress
+};
 pub use hybrid_query_service::{
     HybridQueryService, HybridQueryConfig, HybridQuery, HybridQueryResult, HybridQueryType,
     HybridQueryOptions, EntityTimelineContext, TimelineEvent, RelationshipAnalysis,
     RelationshipMetrics, RelationshipTrend, HybridQuerySummary, QueryPerformanceMetrics
+};
+pub use hybrid_query_router::{
+    HybridQueryRouter, HybridQueryRouterConfig, QueryRoutingStrategy, RoutingDecision,
+    QueryComplexity, QueryPerformanceContract, FailureMode, RoutingMetrics,
+    ServiceCircuitBreakers, CircuitBreakerState, DataVolume
 };
 pub use ecs_outbox_processor::{EcsOutboxProcessor, OutboxProcessorConfig, OutboxEventHandler, EventProcessingResult, OutboxProcessingStats, LoggingEventHandler};
 pub use event_valence_processor::{EventValenceProcessor, ValenceProcessingResult, ValenceProcessingConfig};

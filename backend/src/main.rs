@@ -66,6 +66,9 @@ use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService;
+// ECS Services imports
+use scribe_backend::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService};
+use scribe_backend::config::NarrativeFeatureFlags;
 use std::path::PathBuf;
 use std::sync::Arc;
 use time::Duration;
@@ -258,6 +261,9 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         .await
         .context("Failed to initialize file storage directories")?;
 
+    // Initialize ECS services
+    let ecs_services = initialize_ecs_services(config, &pool).await?;
+    
     // --- Initialize Narrative Intelligence Service ---
     // Note: Will be initialized after AppState is created due to circular dependency
 
@@ -283,6 +289,95 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
             )
             .await?
         },
+        // ECS Services
+        redis_client: ecs_services.redis_client,
+        feature_flags: ecs_services.feature_flags,
+        ecs_entity_manager: ecs_services.ecs_entity_manager,
+        ecs_graceful_degradation: ecs_services.ecs_graceful_degradation,
+        ecs_enhanced_rag_service: ecs_services.ecs_enhanced_rag_service,
+        hybrid_query_service: ecs_services.hybrid_query_service,
+    })
+}
+
+/// ECS services container for dependency injection
+struct EcsServices {
+    redis_client: Arc<redis::Client>,
+    feature_flags: Arc<NarrativeFeatureFlags>,
+    ecs_entity_manager: Arc<EcsEntityManager>,
+    ecs_graceful_degradation: Arc<EcsGracefulDegradation>,
+    ecs_enhanced_rag_service: Arc<EcsEnhancedRagService>,
+    hybrid_query_service: Arc<HybridQueryService>,
+}
+
+// Initialize ECS services with proper dependency order
+async fn initialize_ecs_services(
+    config: &Arc<Config>,
+    pool: &PgPool,
+) -> Result<EcsServices> {
+    tracing::info!("Initializing ECS services...");
+    
+    // Initialize Redis client for ECS caching
+    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379/".to_string());
+    let redis_client = Arc::new(redis::Client::open(redis_url.as_str())
+        .context("Failed to create Redis client for ECS")?);
+    tracing::info!("Redis client initialized for ECS caching");
+    
+    // Initialize feature flags (start with defaults, could load from config later)
+    let feature_flags = Arc::new(NarrativeFeatureFlags::default());
+    tracing::info!("Feature flags initialized with defaults");
+    
+    // Initialize ECS Entity Manager (requires: db_pool, redis_client)
+    let ecs_entity_manager = Arc::new(EcsEntityManager::new(
+        Arc::new(pool.clone()),
+        redis_client.clone(),
+        None, // Use default config
+    ));
+    tracing::info!("ECS Entity Manager initialized");
+    
+    // Initialize ECS Graceful Degradation (requires: feature_flags, entity_manager)
+    let ecs_graceful_degradation = Arc::new(EcsGracefulDegradation::new(
+        Default::default(), // Use default config
+        feature_flags.clone(),
+        Some(ecs_entity_manager.clone()),
+        None, // No consistency monitor for now
+    ));
+    tracing::info!("ECS Graceful Degradation initialized");
+    
+    // Initialize ECS Enhanced RAG Service (requires: db_pool, feature_flags, entity_manager, degradation, embedding_service)
+    // Create a dedicated embedding service for ECS (reusing chunk config pattern from main initialization)
+    let chunk_config = create_chunk_config(config);
+    let ecs_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(chunk_config));
+    
+    let ecs_enhanced_rag_service = Arc::new(EcsEnhancedRagService::new(
+        Arc::new(pool.clone()),
+        Default::default(), // Use default config
+        feature_flags.clone(),
+        ecs_entity_manager.clone(),
+        ecs_graceful_degradation.clone(),
+        ecs_embedding_service,
+    ));
+    tracing::info!("ECS Enhanced RAG Service initialized");
+    
+    // Initialize Hybrid Query Service (requires: db_pool, feature_flags, entity_manager, rag_service, degradation)
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        Arc::new(pool.clone()),
+        Default::default(), // Use default config
+        feature_flags.clone(),
+        ecs_entity_manager.clone(),
+        ecs_enhanced_rag_service.clone(),
+        ecs_graceful_degradation.clone(),
+    ));
+    tracing::info!("Hybrid Query Service initialized");
+    
+    tracing::info!("All ECS services initialized successfully");
+    
+    Ok(EcsServices {
+        redis_client,
+        feature_flags,
+        ecs_entity_manager,
+        ecs_graceful_degradation,
+        ecs_enhanced_rag_service,
+        hybrid_query_service,
     })
 }
 

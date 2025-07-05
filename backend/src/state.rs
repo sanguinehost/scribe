@@ -25,6 +25,9 @@ use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for toke
 use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
+// ECS Services
+use crate::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService};
+use crate::config::NarrativeFeatureFlags;
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
@@ -46,6 +49,13 @@ pub struct AppStateServices {
     pub auth_backend: Arc<AuthBackend>,
     pub file_storage_service: Arc<FileStorageService>,
     pub email_service: Arc<dyn EmailService + Send + Sync>,
+    // ECS Services
+    pub redis_client: Arc<redis::Client>,
+    pub feature_flags: Arc<NarrativeFeatureFlags>,
+    pub ecs_entity_manager: Arc<EcsEntityManager>,
+    pub ecs_graceful_degradation: Arc<EcsGracefulDegradation>,
+    pub ecs_enhanced_rag_service: Arc<EcsEnhancedRagService>,
+    pub hybrid_query_service: Arc<HybridQueryService>,
 }
 
 // --- Shared application state ---
@@ -76,6 +86,13 @@ pub struct AppState {
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
     pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
     pub rechronicle_semaphore: Arc<Semaphore>, // Global semaphore to limit concurrent re-chronicle jobs
+    // ECS Services
+    pub redis_client: Arc<redis::Client>,
+    pub feature_flags: Arc<NarrativeFeatureFlags>,
+    pub ecs_entity_manager: Arc<EcsEntityManager>,
+    pub ecs_graceful_degradation: Arc<EcsGracefulDegradation>,
+    pub ecs_enhanced_rag_service: Arc<EcsEnhancedRagService>,
+    pub hybrid_query_service: Arc<HybridQueryService>,
 }
 
 // Manual Debug implementation for AppState
@@ -102,6 +119,12 @@ impl fmt::Debug for AppState {
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
             .field("narrative_intelligence_service", &"<Option<Arc<NarrativeIntelligenceService>>>") // Added for agentic narrative processing
             .field("rechronicle_semaphore", &"<Arc<Semaphore>>") // Added for re-chronicle concurrency control
+            .field("redis_client", &"<Arc<redis::Client>>") // ECS Redis cache
+            .field("feature_flags", &"<Arc<NarrativeFeatureFlags>>") // ECS feature control
+            .field("ecs_entity_manager", &"<Arc<EcsEntityManager>>") // ECS core service
+            .field("ecs_graceful_degradation", &"<Arc<EcsGracefulDegradation>>") // ECS degradation handling
+            .field("ecs_enhanced_rag_service", &"<Arc<EcsEnhancedRagService>>") // ECS RAG enhancement
+            .field("hybrid_query_service", &"<Arc<HybridQueryService>>") // ECS hybrid queries
             .finish()
     }
 }
@@ -128,6 +151,13 @@ impl AppState {
             email_service: services.email_service,
             narrative_intelligence_service: None, // Will be set later after AppState is fully constructed
             rechronicle_semaphore: Arc::new(Semaphore::new(20)), // Allow 20 concurrent re-chronicle jobs globally
+            // ECS Services
+            redis_client: services.redis_client,
+            feature_flags: services.feature_flags,
+            ecs_entity_manager: services.ecs_entity_manager,
+            ecs_graceful_degradation: services.ecs_graceful_degradation,
+            ecs_enhanced_rag_service: services.ecs_enhanced_rag_service,
+            hybrid_query_service: services.hybrid_query_service,
         }
     }
 
