@@ -112,6 +112,11 @@ pub struct EcsEntityRelationship {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub user_id: Uuid,
+    // Enhanced fields for graph-like capabilities
+    pub relationship_category: Option<String>,
+    pub strength: Option<f64>,
+    pub causal_metadata: Option<JsonValue>,
+    pub temporal_validity: Option<JsonValue>,
 }
 
 /// Used to insert a new entity relationship
@@ -124,6 +129,11 @@ pub struct NewEcsEntityRelationship {
     pub relationship_type: String,
     pub relationship_data: JsonValue,
     pub user_id: Uuid,
+    // Enhanced fields for graph-like capabilities
+    pub relationship_category: Option<String>,
+    pub strength: Option<f64>,
+    pub causal_metadata: Option<JsonValue>,
+    pub temporal_validity: Option<JsonValue>,
 }
 
 /// Used to update an existing entity relationship
@@ -131,6 +141,11 @@ pub struct NewEcsEntityRelationship {
 #[diesel(table_name = ecs_entity_relationships)]
 pub struct UpdateEcsEntityRelationship {
     pub relationship_data: Option<JsonValue>,
+    // Enhanced fields for graph-like capabilities
+    pub relationship_category: Option<Option<String>>,
+    pub strength: Option<Option<f64>>,
+    pub causal_metadata: Option<Option<JsonValue>>,
+    pub temporal_validity: Option<Option<JsonValue>>,
 }
 
 // ============================================================================

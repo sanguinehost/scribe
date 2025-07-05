@@ -310,6 +310,8 @@ diesel::table! {
         valence -> Nullable<Jsonb>,
         #[max_length = 50]
         modality -> Nullable<Varchar>,
+        caused_by_event_id -> Nullable<Uuid>,
+        causes_event_ids -> Nullable<Array<Nullable<Uuid>>>,
     }
 }
 
@@ -404,6 +406,11 @@ diesel::table! {
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         user_id -> Uuid,
+        #[max_length = 50]
+        relationship_category -> Nullable<Varchar>,
+        strength -> Nullable<Float8>,
+        causal_metadata -> Nullable<Jsonb>,
+        temporal_validity -> Nullable<Jsonb>,
     }
 }
 

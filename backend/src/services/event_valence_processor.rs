@@ -542,6 +542,11 @@ impl EventValenceProcessor {
                     user_id,
                     relationship_type: update.relationship_type.clone(),
                     relationship_data,
+                    // Enhanced fields (set to None for legacy relationships)
+                    relationship_category: Some("social".to_string()),
+                    strength: None,
+                    causal_metadata: None,
+                    temporal_validity: None,
                 };
 
                 conn.interact({

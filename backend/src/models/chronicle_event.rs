@@ -73,6 +73,9 @@ pub struct ChronicleEvent {
     pub causality: Option<JsonValue>,
     pub valence: Option<JsonValue>,
     pub modality: Option<String>,
+    // Enhanced causality tracking fields
+    pub caused_by_event_id: Option<Uuid>,
+    pub causes_event_ids: Option<Vec<Option<Uuid>>>,
 }
 
 impl ChronicleEvent {
@@ -238,6 +241,9 @@ pub struct NewChronicleEvent {
     pub causality: Option<JsonValue>,
     pub valence: Option<JsonValue>,
     pub modality: Option<String>,
+    // Enhanced causality tracking fields
+    pub caused_by_event_id: Option<Uuid>,
+    pub causes_event_ids: Option<Vec<Option<Uuid>>>,
 }
 
 impl NewChronicleEvent {
@@ -266,6 +272,9 @@ impl NewChronicleEvent {
             causality: None,
             valence: None,
             modality: Some("ACTUAL".to_string()),
+            // Enhanced causality tracking fields
+            caused_by_event_id: None,
+            causes_event_ids: None,
         }
     }
 
@@ -322,6 +331,9 @@ impl NewChronicleEvent {
             causality: causality_json,
             valence: valence_json,
             modality: Some(modality_str),
+            // Enhanced causality tracking fields
+            caused_by_event_id: None,
+            causes_event_ids: None,
         })
     }
 }
@@ -491,6 +503,9 @@ impl From<CreateEventRequest> for NewChronicleEvent {
             causality,
             valence,
             modality: modality.or(Some("ACTUAL".to_string())),
+            // Enhanced causality tracking fields
+            caused_by_event_id: None,
+            causes_event_ids: None,
         }
     }
 }

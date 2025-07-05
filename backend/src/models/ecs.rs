@@ -11,6 +11,9 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 
+// Re-export types that CausalComponent needs
+use crate::{PgPool, errors::AppError};
+
 /// Errors that can occur in the ECS system
 #[derive(Error, Debug)]
 pub enum EcsError {
@@ -243,6 +246,363 @@ impl Component for RelationshipsComponent {
         "Relationships"
     }
 }
+
+// ============================================================================
+// Enhanced Causal Tracking Components (Dynamic Generation Pattern)
+// ============================================================================
+
+/// Enhanced relationship categories for graph-like capabilities
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum RelationshipCategory {
+    Social,      // Character relationships
+    Spatial,     // Location-based relationships
+    Causal,      // Cause-effect relationships
+    Ownership,   // Possession relationships
+    Temporal,    // Time-based relationships
+}
+
+impl RelationshipCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RelationshipCategory::Social => "social",
+            RelationshipCategory::Spatial => "spatial",
+            RelationshipCategory::Causal => "causal",
+            RelationshipCategory::Ownership => "ownership",
+            RelationshipCategory::Temporal => "temporal",
+        }
+    }
+    
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "social" => Some(RelationshipCategory::Social),
+            "spatial" => Some(RelationshipCategory::Spatial),
+            "causal" => Some(RelationshipCategory::Causal),
+            "ownership" => Some(RelationshipCategory::Ownership),
+            "temporal" => Some(RelationshipCategory::Temporal),
+            _ => None,
+        }
+    }
+}
+
+/// Temporal validity information for relationships
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TemporalValidity {
+    pub valid_from: DateTime<Utc>,
+    pub valid_until: Option<DateTime<Utc>>,
+    pub confidence: f32,
+}
+
+/// Causal metadata for relationships
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CausalMetadata {
+    pub caused_by_event: Uuid,
+    pub confidence: f32,
+    pub causality_type: String, // "direct", "indirect", "probabilistic"
+}
+
+/// Enhanced relationship with graph-like properties
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EnhancedRelationship {
+    pub target_entity_id: Uuid,
+    pub relationship_type: String,
+    pub category: RelationshipCategory,
+    pub strength: f32, // 0.0-1.0
+    pub trust: f32,
+    pub affection: f32,
+    pub temporal_validity: TemporalValidity,
+    pub causal_metadata: Option<CausalMetadata>,
+    pub metadata: HashMap<String, JsonValue>,
+}
+
+/// Helper structures for dynamic causal component generation
+#[derive(Debug, Clone)]
+pub struct EventChains {
+    pub caused_by: Vec<Uuid>,
+    pub causes: Vec<Uuid>,
+    pub max_depth: u32,
+}
+
+/// Tracks causal relationships for entities (Generated dynamically, not persisted)
+/// 
+/// ⚠️ CRITICAL: This component is assembled at query time from:
+/// - ecs_entity_relationships with category='causal'  
+/// - chronicle_events.caused_by_event_id chains
+/// 
+/// This pattern ensures single source of truth and prevents data inconsistency.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CausalComponent {
+    /// Events that caused this entity's current state
+    pub caused_by_events: Vec<Uuid>,
+    /// Events that this entity has caused
+    pub causes_events: Vec<Uuid>,
+    /// Confidence in the causal relationships (0.0-1.0)
+    pub causal_confidence: f32,
+    /// Maximum depth of causal chain from root cause
+    pub causal_chain_depth: u32,
+    /// Metadata about causal influences
+    pub causal_metadata: HashMap<String, JsonValue>,
+}
+
+impl CausalComponent {
+    /// Generate causal component from relationships and events
+    /// 
+    /// This is the core method that dynamically assembles causal information
+    /// from the underlying database sources, maintaining data consistency.
+    pub async fn generate_for_entity(
+        entity_id: Uuid,
+        user_id: Uuid,
+        db_pool: &PgPool,
+    ) -> Result<Self, AppError> {
+        // Query causal relationships
+        let causal_relationships = Self::get_causal_relationships(entity_id, user_id, db_pool).await?;
+        
+        // Query causal event chains
+        let event_chains = Self::get_event_chains(entity_id, user_id, db_pool).await?;
+        
+        // Build metadata before moving event_chains
+        let metadata = Self::build_metadata(&causal_relationships, &event_chains);
+        
+        // Assemble component
+        Ok(Self {
+            caused_by_events: event_chains.caused_by.clone(),
+            causes_events: event_chains.causes.clone(),
+            causal_confidence: Self::calculate_confidence(&causal_relationships, &event_chains),
+            causal_chain_depth: event_chains.max_depth,
+            causal_metadata: metadata,
+        })
+    }
+    
+    /// Query causal relationships from ecs_entity_relationships table
+    async fn get_causal_relationships(
+        entity_id: Uuid,
+        user_id: Uuid,
+        db_pool: &PgPool,
+    ) -> Result<Vec<EnhancedRelationship>, AppError> {
+        use crate::schema::ecs_entity_relationships;
+        use diesel::prelude::*;
+        
+        let conn = db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+            
+        let relationships = conn.interact(move |conn| {
+            ecs_entity_relationships::table
+                .filter(
+                    ecs_entity_relationships::from_entity_id.eq(entity_id)
+                    .or(ecs_entity_relationships::to_entity_id.eq(entity_id))
+                )
+                .filter(ecs_entity_relationships::user_id.eq(user_id))
+                .filter(ecs_entity_relationships::relationship_category.eq("causal"))
+                .select((
+                    ecs_entity_relationships::to_entity_id,
+                    ecs_entity_relationships::relationship_type,
+                    ecs_entity_relationships::relationship_data,
+                    ecs_entity_relationships::strength,
+                    ecs_entity_relationships::causal_metadata,
+                    ecs_entity_relationships::temporal_validity,
+                ))
+                .load::<(Uuid, String, JsonValue, Option<f64>, Option<JsonValue>, Option<JsonValue>)>(conn)
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))?
+          .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        
+        // Convert to EnhancedRelationship objects
+        let mut enhanced_relationships = Vec::new();
+        for (target_id, rel_type, rel_data, strength, causal_meta, temporal_val) in relationships {
+            // Extract trust and affection from relationship_data
+            let trust = rel_data.get("trust").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let affection = rel_data.get("affection").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            
+            // Parse temporal validity
+            let temporal_validity = match temporal_val {
+                Some(val) => serde_json::from_value(val).unwrap_or(TemporalValidity {
+                    valid_from: Utc::now(),
+                    valid_until: None,
+                    confidence: 1.0,
+                }),
+                None => TemporalValidity {
+                    valid_from: Utc::now(),
+                    valid_until: None,
+                    confidence: 1.0,
+                },
+            };
+            
+            // Parse causal metadata
+            let causal_metadata = causal_meta.and_then(|val| {
+                serde_json::from_value(val).ok()
+            });
+            
+            enhanced_relationships.push(EnhancedRelationship {
+                target_entity_id: target_id,
+                relationship_type: rel_type,
+                category: RelationshipCategory::Causal,
+                strength: strength.unwrap_or(0.5) as f32,
+                trust,
+                affection,
+                temporal_validity,
+                causal_metadata,
+                metadata: serde_json::from_value(rel_data).unwrap_or_default(),
+            });
+        }
+        
+        Ok(enhanced_relationships)
+    }
+    
+    /// Query causal event chains from chronicle_events table
+    async fn get_event_chains(
+        entity_id: Uuid,
+        user_id: Uuid,
+        db_pool: &PgPool,
+    ) -> Result<EventChains, AppError> {
+        use crate::schema::chronicle_events;
+        use diesel::prelude::*;
+        
+        let conn = db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+            
+        // Find events where this entity was involved and trace causal chains
+        let events_with_causality = conn.interact(move |conn| {
+            chronicle_events::table
+                .filter(chronicle_events::user_id.eq(user_id))
+                .filter(chronicle_events::actors.is_not_null())
+                .select((
+                    chronicle_events::id,
+                    chronicle_events::actors,
+                    chronicle_events::caused_by_event_id,
+                    chronicle_events::causes_event_ids,
+                ))
+                .load::<(Uuid, Option<JsonValue>, Option<Uuid>, Option<Vec<Option<Uuid>>>)>(conn)
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))?
+          .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        
+        let mut caused_by = Vec::new();
+        let mut causes = Vec::new();
+        let mut entity_events = Vec::new();
+        
+        // First pass: collect all events where entity is involved
+        for (event_id, actors_json, caused_by_event, causes_events) in &events_with_causality {
+            if let Some(actors) = actors_json {
+                if Self::entity_involved_in_actors(&entity_id, &actors) {
+                    entity_events.push((*event_id, *caused_by_event, causes_events.clone()));
+                }
+            }
+        }
+        
+        // Second pass: build causal chains and calculate depth
+        for (event_id, caused_by_event, causes_events) in entity_events {
+            // Add to caused_by chain if this event was caused by another
+            if let Some(causing_event) = caused_by_event {
+                caused_by.push(causing_event);
+            }
+            
+            // Add to causes chain if this event caused others
+            if let Some(caused_events) = causes_events {
+                for caused_event in caused_events.into_iter().flatten() {
+                    causes.push(caused_event);
+                }
+            }
+        }
+        
+        // Calculate max chain depth by finding longest chain involving entity
+        let max_depth = if !caused_by.is_empty() || !causes.is_empty() {
+            // Simple depth calculation: count unique causal relationships
+            let unique_causers = caused_by.iter().collect::<std::collections::HashSet<_>>().len();
+            let unique_caused = causes.iter().collect::<std::collections::HashSet<_>>().len();
+            ((unique_causers + unique_caused).max(1)) as u32
+        } else {
+            0
+        };
+        
+        Ok(EventChains {
+            caused_by,
+            causes,
+            max_depth,
+        })
+    }
+    
+    /// Check if an entity was involved in an event based on actors JSON
+    fn entity_involved_in_actors(entity_id: &Uuid, actors_json: &JsonValue) -> bool {
+        if let Some(actors_array) = actors_json.as_array() {
+            for actor in actors_array {
+                if let Some(actor_entity_id) = actor.get("entity_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok()) {
+                    if actor_entity_id == *entity_id {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+    
+    /// Calculate confidence based on relationship strength and metadata
+    fn calculate_confidence(relationships: &[EnhancedRelationship], event_chains: &EventChains) -> f32 {
+        // If we have explicit causal relationships, use them for confidence
+        if !relationships.is_empty() {
+            let total_confidence: f32 = relationships.iter()
+                .map(|rel| {
+                    let base_confidence = rel.strength;
+                    let metadata_confidence = rel.causal_metadata
+                        .as_ref()
+                        .map(|meta| meta.confidence)
+                        .unwrap_or(0.5);
+                    (base_confidence + metadata_confidence) / 2.0
+                })
+                .sum();
+                
+            return total_confidence / relationships.len() as f32;
+        }
+        
+        // If no explicit relationships but we have causal events, calculate base confidence
+        if !event_chains.caused_by.is_empty() || !event_chains.causes.is_empty() {
+            // Base confidence from event chain existence
+            let event_count = event_chains.caused_by.len() + event_chains.causes.len();
+            let base_confidence = 0.5; // Base confidence for implicit causality
+            
+            // Boost confidence based on chain depth
+            let depth_factor = (event_chains.max_depth as f32).min(5.0) / 5.0;
+            
+            // Calculate final confidence
+            (base_confidence + (depth_factor * 0.3)).min(1.0)
+        } else {
+            0.0
+        }
+    }
+    
+    /// Build metadata from relationships and event chains
+    fn build_metadata(
+        relationships: &[EnhancedRelationship],
+        event_chains: &EventChains,
+    ) -> HashMap<String, JsonValue> {
+        let mut metadata = HashMap::new();
+        
+        metadata.insert("relationship_count".to_string(), 
+                        JsonValue::Number(relationships.len().into()));
+        metadata.insert("caused_by_count".to_string(), 
+                        JsonValue::Number(event_chains.caused_by.len().into()));
+        metadata.insert("causes_count".to_string(), 
+                        JsonValue::Number(event_chains.causes.len().into()));
+        metadata.insert("max_chain_depth".to_string(), 
+                        JsonValue::Number(event_chains.max_depth.into()));
+        
+        // Add causality types distribution
+        let causality_types: Vec<String> = relationships.iter()
+            .filter_map(|rel| rel.causal_metadata.as_ref())
+            .map(|meta| meta.causality_type.clone())
+            .collect();
+        metadata.insert("causality_types".to_string(), 
+                        JsonValue::Array(causality_types.into_iter().map(JsonValue::String).collect()));
+        
+        metadata
+    }
+    
+    /// Component type identifier (for compatibility with Component trait)
+    pub fn component_type() -> &'static str {
+        "Causal"
+    }
+}
+
+// Note: CausalComponent does NOT implement the Component trait because it's dynamically generated
+// and should never be persisted directly to the database.
 
 // ============================================================================
 // Temporal System Components

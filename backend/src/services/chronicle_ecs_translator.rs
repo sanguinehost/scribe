@@ -149,6 +149,93 @@ impl ChronicleEcsTranslator {
         Ok(result)
     }
 
+    /// Enhanced translation with causal tracking
+    /// 
+    /// This method extends the base translation with causal relationship tracking
+    /// as specified in the incremental enhancement plan.
+    #[instrument(skip(self, event, previous_event), fields(event_id = %event.id, event_type = %event.event_type, user_hash = %format!("{:x}", hash_user_id(user_id))))]
+    pub async fn translate_event_with_causality(
+        &self, 
+        event: &ChronicleEvent, 
+        user_id: Uuid,
+        previous_event: Option<&ChronicleEvent>,
+    ) -> Result<TranslationResult, AppError> {
+        debug!("Starting enhanced translation with causal tracking");
+        
+        // Start with standard translation
+        let mut result = self.translate_event(event, user_id).await?;
+        
+        // Track causality if there's a previous event
+        if let Some(prev) = previous_event {
+            info!("Tracking causal relationship from event {} to {}", prev.id, event.id);
+            
+            // Parse actors from both events
+            let current_actors = event.get_actors().unwrap_or_default();
+            let previous_actors = prev.get_actors().unwrap_or_default();
+            
+            // Update chronicle event causality in database
+            self.update_event_causality(event.id, prev.id).await?;
+            
+            // Create causal relationships between entities
+            self.create_causal_relationships(event, &current_actors, &mut result)?;
+            
+            // Persist the new causal relationships to database
+            self.persist_causal_relationships(&result.relationship_updates, user_id).await?;
+            
+            result.messages.push(format!("Added causal tracking from event {} to {}", prev.id, event.id));
+        }
+        
+        Ok(result)
+    }
+
+    /// Update chronicle event causality fields in the database
+    async fn update_event_causality(&self, event_id: Uuid, caused_by_event_id: Uuid) -> Result<(), AppError> {
+        use crate::schema::chronicle_events;
+        
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+            
+        // Update the current event to reference the causing event
+        conn.interact({
+            let event_id = event_id;
+            let caused_by_event_id = caused_by_event_id;
+            move |conn| {
+                diesel::update(chronicle_events::table.filter(chronicle_events::id.eq(event_id)))
+                    .set(chronicle_events::caused_by_event_id.eq(Some(caused_by_event_id)))
+                    .execute(conn)
+            }
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))?
+          .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        
+        // Update the previous event to add this event to its causes array
+        conn.interact({
+            let event_id = event_id;
+            let caused_by_event_id = caused_by_event_id;
+            move |conn| {
+                // First get the current causes_event_ids
+                let current_causes: Option<Vec<Option<Uuid>>> = chronicle_events::table
+                    .filter(chronicle_events::id.eq(caused_by_event_id))
+                    .select(chronicle_events::causes_event_ids)
+                    .first::<Option<Vec<Option<Uuid>>>>(conn)
+                    .optional()?
+                    .flatten();
+                
+                // Add the new event to the causes array
+                let mut updated_causes = current_causes.unwrap_or_default();
+                updated_causes.push(Some(event_id));
+                
+                // Update the causing event
+                diesel::update(chronicle_events::table.filter(chronicle_events::id.eq(caused_by_event_id)))
+                    .set(chronicle_events::causes_event_ids.eq(Some(updated_causes)))
+                    .execute(conn)
+            }
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))?
+          .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        
+        debug!("Updated causal chain: event {} caused by event {}", event_id, caused_by_event_id);
+        Ok(())
+    }
+
     /// Ensure all actor entities exist in the ECS, creating them if necessary
     async fn ensure_entities_exist(&self, actors: &[EventActor], user_id: Uuid, result: &mut TranslationResult) -> Result<(), AppError> {
         let conn = self.db_pool.get().await
@@ -457,6 +544,91 @@ impl ChronicleEcsTranslator {
         Ok(())
     }
 
+    /// Create causal relationships between entities
+    /// 
+    /// This method implements the enhanced causal tracking as specified
+    /// in the incremental enhancement plan, creating relationships with
+    /// the new graph-like metadata fields.
+    fn create_causal_relationships(
+        &self,
+        event: &ChronicleEvent,
+        actors: &[EventActor],
+        result: &mut TranslationResult,
+    ) -> Result<(), AppError> {
+        use crate::models::ecs::RelationshipCategory;
+        
+        // Agent causes effect on Patient
+        let agents: Vec<_> = actors.iter().filter(|a| a.role == ActorRole::Agent).collect();
+        let patients: Vec<_> = actors.iter().filter(|a| a.role == ActorRole::Patient).collect();
+        
+        for agent in &agents {
+            for patient in &patients {
+                // Create enhanced causal relationship with new metadata fields
+                result.relationship_updates.push(RelationshipUpdate {
+                    from_entity_id: agent.entity_id,
+                    to_entity_id: patient.entity_id,
+                    relationship_type: "causes_effect_on".to_string(),
+                    relationship_data: json!({
+                        // Enhanced fields for graph-like capabilities
+                        "category": RelationshipCategory::Causal.as_str(),
+                        "strength": 0.7,
+                        "causal_metadata": {
+                            "caused_by_event": event.id,
+                            "confidence": 0.8,
+                            "causality_type": "direct"
+                        },
+                        "temporal_validity": {
+                            "valid_from": event.created_at,
+                            "valid_until": null,
+                            "confidence": 1.0
+                        },
+                        // Legacy fields for backwards compatibility
+                        "caused_by_event": event.id,
+                        "timestamp": event.created_at,
+                        "trust": 0.0,
+                        "affection": 0.0
+                    }),
+                    operation: RelationshipOperation::Create,
+                });
+                
+                debug!("Created causal relationship: {} causes effect on {} via event {}", 
+                       agent.entity_id, patient.entity_id, event.id);
+            }
+        }
+        
+        // Also create bidirectional "affected_by" relationships for better graph traversal
+        for patient in &patients {
+            for agent in &agents {
+                result.relationship_updates.push(RelationshipUpdate {
+                    from_entity_id: patient.entity_id,
+                    to_entity_id: agent.entity_id,
+                    relationship_type: "affected_by".to_string(),
+                    relationship_data: json!({
+                        "category": RelationshipCategory::Causal.as_str(),
+                        "strength": 0.6,
+                        "causal_metadata": {
+                            "caused_by_event": event.id,
+                            "confidence": 0.8,
+                            "causality_type": "direct"
+                        },
+                        "temporal_validity": {
+                            "valid_from": event.created_at,
+                            "valid_until": null,
+                            "confidence": 1.0
+                        },
+                        "caused_by_event": event.id,
+                        "timestamp": event.created_at,
+                        "trust": 0.0,
+                        "affection": 0.0
+                    }),
+                    operation: RelationshipOperation::Create,
+                });
+            }
+        }
+        
+        Ok(())
+    }
+
     /// Apply valence changes to relationship components
     async fn apply_valence_changes(
         &self,
@@ -542,6 +714,20 @@ impl ChronicleEcsTranslator {
         // Persist relationship updates
         for update in &result.relationship_updates {
             if matches!(update.operation, RelationshipOperation::Create) {
+                // Extract enhanced relationship metadata from relationship_data
+                let category = update.relationship_data.get("category")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                    
+                let strength = update.relationship_data.get("strength")
+                    .and_then(|v| v.as_f64());
+                    
+                let causal_metadata = update.relationship_data.get("causal_metadata")
+                    .cloned();
+                    
+                let temporal_validity = update.relationship_data.get("temporal_validity")
+                    .cloned();
+                
                 let new_relationship = NewEcsEntityRelationship {
                     id: Uuid::new_v4(),
                     from_entity_id: update.from_entity_id,
@@ -549,6 +735,11 @@ impl ChronicleEcsTranslator {
                     user_id,
                     relationship_type: update.relationship_type.clone(),
                     relationship_data: update.relationship_data.clone(),
+                    // Enhanced fields for graph-like capabilities
+                    relationship_category: category,
+                    strength,
+                    causal_metadata,
+                    temporal_validity,
                 };
 
                 conn.interact({
@@ -570,6 +761,72 @@ impl ChronicleEcsTranslator {
                 })?
                 .map_err(|e| {
                     error!("Failed to insert relationship (from: {}, to: {}, type: {}) - Database query error: {}", 
+                           update.from_entity_id, update.to_entity_id, update.relationship_type, e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Persist causal relationships to the database
+    async fn persist_causal_relationships(&self, relationship_updates: &[RelationshipUpdate], user_id: Uuid) -> Result<(), AppError> {
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        // Filter for causal relationships and persist them
+        for update in relationship_updates {
+            if matches!(update.operation, RelationshipOperation::Create) && 
+               (update.relationship_type == "causes_effect_on" || update.relationship_type == "affected_by") {
+                
+                // Extract enhanced relationship metadata from relationship_data
+                let category = update.relationship_data.get("category")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                    
+                let strength = update.relationship_data.get("strength")
+                    .and_then(|v| v.as_f64());
+                    
+                let causal_metadata = update.relationship_data.get("causal_metadata")
+                    .cloned();
+                    
+                let temporal_validity = update.relationship_data.get("temporal_validity")
+                    .cloned();
+                
+                let new_relationship = NewEcsEntityRelationship {
+                    id: Uuid::new_v4(),
+                    from_entity_id: update.from_entity_id,
+                    to_entity_id: update.to_entity_id,
+                    user_id,
+                    relationship_type: update.relationship_type.clone(),
+                    relationship_data: update.relationship_data.clone(),
+                    // Enhanced fields for graph-like capabilities
+                    relationship_category: category,
+                    strength,
+                    causal_metadata,
+                    temporal_validity,
+                };
+
+                conn.interact({
+                    let new_relationship = new_relationship;
+                    move |conn| {
+                        diesel::insert_into(ecs_entity_relationships::table)
+                            .values(&new_relationship)
+                            .on_conflict((
+                                ecs_entity_relationships::from_entity_id,
+                                ecs_entity_relationships::to_entity_id,
+                                ecs_entity_relationships::relationship_type
+                            ))
+                            .do_nothing()
+                            .execute(conn)
+                    }
+                }).await.map_err(|e| {
+                    error!("Failed to insert causal relationship - DB interaction error: {}", e);
+                    AppError::DbInteractError(e.to_string())
+                })?
+                .map_err(|e| {
+                    error!("Failed to insert causal relationship (from: {}, to: {}, type: {}) - Database query error: {}", 
                            update.from_entity_id, update.to_entity_id, update.relationship_type, e);
                     AppError::DatabaseQueryError(e.to_string())
                 })?;

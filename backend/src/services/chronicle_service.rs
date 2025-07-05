@@ -382,6 +382,9 @@ impl ChronicleService {
             causality: new_event.causality.clone(),
             valence: new_event.valence.clone(),
             modality: new_event.modality.clone(),
+            // Enhanced causality tracking fields
+            caused_by_event_id: new_event.caused_by_event_id,
+            causes_event_ids: new_event.causes_event_ids.clone(),
         };
 
         // Check for duplicates before inserting

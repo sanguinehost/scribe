@@ -148,6 +148,9 @@ impl EcsChronicleEventHandler {
                 "value": 0.2
             }])),
             modality: Some("ACTUAL".to_string()),
+            // Enhanced causality tracking fields
+            caused_by_event_id: None,
+            causes_event_ids: None,
         };
 
         Ok(Some(chronicle_event))
@@ -211,6 +214,9 @@ impl EcsChronicleEventHandler {
                 "value": 0.1
             }])),
             modality: Some("ACTUAL".to_string()),
+            // Enhanced causality tracking fields
+            caused_by_event_id: None,
+            causes_event_ids: None,
         };
 
         Ok(Some(chronicle_event))
@@ -306,6 +312,9 @@ impl EcsChronicleEventHandler {
                 "value": emotional_valence
             }])),
             modality: Some("ACTUAL".to_string()),
+            // Enhanced causality tracking fields
+            caused_by_event_id: None,
+            causes_event_ids: None,
         };
 
         Ok(Some(chronicle_event))
@@ -374,6 +383,9 @@ impl EcsChronicleEventHandler {
                 "value": emotional_valence
             }])),
             modality: Some("ACTUAL".to_string()),
+            // Enhanced causality tracking fields
+            caused_by_event_id: None,
+            causes_event_ids: None,
         };
 
         Ok(Some(chronicle_event))
@@ -416,6 +428,9 @@ impl EcsChronicleEventHandler {
                 "value": -0.2
             }])),
             modality: Some("ACTUAL".to_string()),
+            // Enhanced causality tracking fields
+            caused_by_event_id: None,
+            causes_event_ids: None,
         };
 
         Ok(Some(chronicle_event))
@@ -491,6 +506,9 @@ impl EcsChronicleEventHandler {
                 "value": emotional_valence
             }])),
             modality: Some("ACTUAL".to_string()),
+            // Enhanced causality tracking fields
+            caused_by_event_id: None,
+            causes_event_ids: None,
         };
 
         Ok(Some(chronicle_event))
