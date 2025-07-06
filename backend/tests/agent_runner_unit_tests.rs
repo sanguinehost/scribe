@@ -129,6 +129,36 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                 degradation,
             ))
         },
+        chronicle_ecs_translator: {
+            Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+                Arc::new(test_app.db_pool.clone()),
+            ))
+        },
+        chronicle_service: {
+            Arc::new(scribe_backend::services::ChronicleService::new(
+                test_app.db_pool.clone(),
+            ))
+        },
+        chronicle_event_listener: {
+            let translator = Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+                Arc::new(test_app.db_pool.clone()),
+            ));
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            ));
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
+                test_app.db_pool.clone(),
+            ));
+            Arc::new(scribe_backend::services::ChronicleEventListener::new(
+                Default::default(),
+                Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                translator,
+                entity_manager,
+                chronicle_service,
+            ))
+        },
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

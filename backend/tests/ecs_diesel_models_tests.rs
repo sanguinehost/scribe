@@ -212,6 +212,10 @@ async fn test_ecs_entity_relationship_diesel_model() {
         user_id: Uuid::new_v4(), // Add required user_id field
         relationship_type: "contains".to_string(),
         relationship_data: relationship_data.clone(),
+        relationship_category: Some("spatial".to_string()),
+        strength: Some(1.0),
+        causal_metadata: None,
+        temporal_validity: None,
     };
     
     let inserted_relationship: EcsEntityRelationship = pool
