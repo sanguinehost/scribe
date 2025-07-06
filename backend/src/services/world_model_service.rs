@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use uuid::Uuid;
 use chrono::{DateTime, Utc, Duration};
+use serde::{Serialize, Deserialize};
 use serde_json::{Value as JsonValue};
 use tracing::{info, debug, warn, error, instrument};
 
@@ -676,7 +677,7 @@ pub struct LLMContextFocus {
 }
 
 /// Time focus for LLM context
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TimeFocus {
     Current,
     Historical(Duration),
@@ -684,7 +685,7 @@ pub enum TimeFocus {
 }
 
 /// Reasoning depth for LLM context
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReasoningDepth {
     Surface,  // Just facts
     Causal,   // Include causality
