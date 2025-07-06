@@ -7,15 +7,17 @@
 // - LLM response formatting
 // - OWASP security compliance
 
+use std::sync::Arc;
 use uuid::Uuid;
 use chrono::Duration;
 
 use scribe_backend::{
     services::{
-        nlp_query_handler::{IntentType, QueryIntent},
-        world_model_service::{TimeFocus, ReasoningDepth},
+        nlp_query_handler::{IntentType, QueryIntent, NLPQueryHandler},
+        world_model_service::{TimeFocus, ReasoningDepth, WorldModelService},
+        hybrid_query_service::HybridQueryService,
     },
-    models::world_model::{LLMWorldContext, RelationshipGraph, CausalChain, SpatialContext},
+    test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
 };
 
 #[tokio::test]
@@ -386,26 +388,34 @@ async fn test_nlp_query_handler_access_control() {
     
     // Each user should get their own world context (even if empty in test)
     // The important thing is that the queries are properly isolated by user_id
-    assert_ne!(user1_response.world_context.entity_summaries.len(), -1); // Sanity check
-    assert_ne!(user2_response.world_context.entity_summaries.len(), -1); // Sanity check
+    assert!(user1_response.world_context.entity_summaries.len() >= 0); // Sanity check
+    assert!(user2_response.world_context.entity_summaries.len() >= 0); // Sanity check
 }
 
 // Helper functions
 
 fn create_world_model_service(app: &scribe_backend::test_helpers::TestApp) -> Arc<WorldModelService> {
+    // Create minimal Redis client for testing
+    let redis_client = Arc::new(redis::Client::open("redis://localhost:6379/").unwrap_or_else(|_| {
+        // If Redis is not available, create a dummy client that won't be used
+        redis::Client::open("redis://localhost:6379/").unwrap()
+    }));
+    
     // Create required dependencies
     let entity_manager = Arc::new(scribe_backend::services::ecs_entity_manager::EcsEntityManager::new(
-        app.db_pool.clone(),
+        Arc::new(app.db_pool.clone()),
+        redis_client,
+        None,
     ));
     
     let hybrid_query_service = create_hybrid_query_service(app);
     
     let chronicle_service = Arc::new(scribe_backend::services::chronicle_service::ChronicleService::new(
-        app.db_pool.clone(),
+        app.db_pool.clone()
     ));
 
     Arc::new(WorldModelService::new(
-        app.db_pool.clone(),
+        Arc::new(app.db_pool.clone()),
         entity_manager,
         hybrid_query_service.clone(),
         chronicle_service,
@@ -413,12 +423,47 @@ fn create_world_model_service(app: &scribe_backend::test_helpers::TestApp) -> Ar
 }
 
 fn create_hybrid_query_service(app: &scribe_backend::test_helpers::TestApp) -> Arc<HybridQueryService> {
-    // This is a simplified version - in a real implementation, 
-    // we'd need to create all the actual dependencies
-    // For now, we'll create a minimal version for testing
+    // Create minimal feature flags for testing
+    let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+    
+    // Create minimal dependencies for testing
+    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+    let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+        Arc::new(app.db_pool.clone()),
+        redis_client.clone(),
+        None,
+    ));
+    
+    let degradation_service = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+        Default::default(),
+        feature_flags.clone(),
+        Some(entity_manager.clone()),
+        None,
+    ));
+    
+    let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+        scribe_backend::text_processing::chunking::ChunkConfig {
+            metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+            max_size: 500,
+            overlap: 50,
+        }
+    ));
+    
+    let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        feature_flags.clone(),
+        entity_manager.clone(),
+        degradation_service.clone(),
+        concrete_embedding_service,
+    ));
+    
     Arc::new(HybridQueryService::new(
-        app.db_pool.clone(),
-        app.narrative_feature_flags.clone(),
-        app.config.app_environment.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(), // HybridQueryConfig
+        feature_flags,
+        entity_manager,
+        rag_service,
+        degradation_service,
     ))
 }

@@ -11,6 +11,7 @@ use chrono::Utc;
 use serde_json::json;
 use anyhow::{Context, Result as AnyhowResult};
 use tokio::task::JoinSet;
+use secrecy::ExposeSecret;
 
 use scribe_backend::{
     config::NarrativeFeatureFlags,
@@ -92,7 +93,8 @@ impl PerformanceBenchmarks {
         let guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        let session_dek = SessionDek::generate();
+        let plaintext_dek = scribe_backend::crypto::generate_dek().context("DEK generation failed")?;
+        let session_dek = SessionDek::new(plaintext_dek.expose_secret().to_vec());
 
         // Create test chronicle
         let chronicle_service = ChronicleService::new(app.db_pool.clone());
@@ -114,11 +116,10 @@ impl PerformanceBenchmarks {
             Arc::new(app.db_pool.clone()),
             redis_client,
             Some(EntityManagerConfig {
-                cache_ttl_seconds: 600,
-                max_cache_entries: 10000,
-                enable_write_through_cache: true,
-                batch_size: 100,
-                max_concurrent_operations: 20,
+                default_cache_ttl: 600,
+                hot_cache_ttl: 1800,
+                bulk_operation_batch_size: 100,
+                enable_component_caching: true,
             }),
         ));
 
@@ -129,13 +130,21 @@ impl PerformanceBenchmarks {
             None,
         ));
 
+        let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+            scribe_backend::text_processing::chunking::ChunkConfig {
+                metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                max_size: 500,
+                overlap: 50,
+            }
+        ));
+        
         let rag_service = Arc::new(EcsEnhancedRagService::new(
             Arc::new(app.db_pool.clone()),
             EcsEnhancedRagConfig::default(),
             feature_flags.clone(),
             entity_manager.clone(),
             degradation_service.clone(),
-            app.mock_embedding_client.clone(),
+            concrete_embedding_service,
         ));
 
         let hybrid_service = HybridQueryService::new(
@@ -211,7 +220,7 @@ impl PerformanceBenchmarks {
             let event_request = CreateEventRequest {
                 event_type: "benchmark_event".to_string(),
                 summary: format!("Benchmark event {} with various narrative content", i + 1),
-                source: EventSource::UserGenerated,
+                source: EventSource::UserAdded,
                 event_data: Some(json!({
                     "content": format!("Event {} involves character interactions and location changes", i + 1),
                     "timestamp": Utc::now(),
@@ -461,7 +470,7 @@ impl PerformanceBenchmarks {
             let event_request = CreateEventRequest {
                 event_type: "large_dataset_event".to_string(),
                 summary: format!("Large dataset event {} with complex relationships", i + 1),
-                source: EventSource::UserGenerated,
+                source: EventSource::UserAdded,
                 event_data: Some(json!({
                     "content": format!("Character {} interacts with character {} at location {}", 
                                      i % 10, (i + 1) % 10, i % 5),
@@ -867,7 +876,7 @@ async fn performance_smoke_test() -> AnyhowResult<()> {
     let event_request = CreateEventRequest {
         event_type: "smoke_test".to_string(),
         summary: "Quick performance smoke test event".to_string(),
-        source: EventSource::UserGenerated,
+        source: EventSource::UserAdded,
         event_data: Some(json!({"test": true})),
     };
     

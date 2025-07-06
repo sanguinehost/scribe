@@ -106,7 +106,7 @@ impl NLPQueryHandler {
     }
     
     /// Analyze query intent using keyword-based classification
-    fn analyze_query_intent(&self, query: &str) -> Result<QueryIntent, AppError> {
+    pub fn analyze_query_intent(&self, query: &str) -> Result<QueryIntent, AppError> {
         let query_lower = query.to_lowercase();
         let mut confidence: f32 = 0.7; // Base confidence
         
@@ -279,7 +279,7 @@ impl NLPQueryHandler {
     }
     
     /// Generate reasoning suggestions based on intent and context
-    fn generate_reasoning_suggestions(
+    pub fn generate_reasoning_suggestions(
         &self,
         intent: &QueryIntent,
         llm_context: &LLMWorldContext,
@@ -378,7 +378,7 @@ impl NLPQueryHandler {
     }
     
     /// Calculate query complexity score
-    fn calculate_query_complexity(&self, query: &str) -> f32 {
+    pub fn calculate_query_complexity(&self, query: &str) -> f32 {
         let mut complexity: f32 = 0.3; // Base complexity
         
         // Add complexity for certain keywords

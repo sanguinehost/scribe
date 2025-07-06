@@ -589,25 +589,31 @@ impl MetricsCollector {
     /// Convert routing metrics to our format
     fn convert_routing_metrics(&self, routing_metrics: RoutingMetrics) -> QueryRoutingMetrics {
         let mut routing_distribution = HashMap::new();
-        routing_distribution.insert("full_ecs_enhanced".to_string(), routing_metrics.successful_routes);
-        routing_distribution.insert("rag_enhanced".to_string(), routing_metrics.fallback_routes);
-        routing_distribution.insert("chronicle_only".to_string(), routing_metrics.failed_routes);
+        let full_ecs_count = routing_metrics.strategy_counts.get("FullEcsEnhanced").unwrap_or(&0);
+        let rag_enhanced_count = routing_metrics.strategy_counts.get("RagEnhanced").unwrap_or(&0);
+        let chronicle_only_count = routing_metrics.strategy_counts.get("ChronicleOnly").unwrap_or(&0);
+        
+        routing_distribution.insert("full_ecs_enhanced".to_string(), *full_ecs_count);
+        routing_distribution.insert("rag_enhanced".to_string(), *rag_enhanced_count);
+        routing_distribution.insert("chronicle_only".to_string(), *chronicle_only_count);
 
         let mut circuit_breaker_states = HashMap::new();
         circuit_breaker_states.insert("ecs".to_string(), "closed".to_string());
         circuit_breaker_states.insert("rag".to_string(), "closed".to_string());
 
         let mut failure_mode_distribution = HashMap::new();
-        failure_mode_distribution.insert("none".to_string(), routing_metrics.successful_routes);
-        failure_mode_distribution.insert("timeout".to_string(), routing_metrics.failed_routes / 2);
-        failure_mode_distribution.insert("unavailable".to_string(), routing_metrics.failed_routes / 2);
+        let total_queries = routing_metrics.total_queries;
+        let fallback_count = routing_metrics.fallback_activations;
+        failure_mode_distribution.insert("none".to_string(), total_queries.saturating_sub(fallback_count));
+        failure_mode_distribution.insert("timeout".to_string(), fallback_count / 2);
+        failure_mode_distribution.insert("unavailable".to_string(), fallback_count / 2);
 
         QueryRoutingMetrics {
             routing_distribution,
-            fallback_frequency: if routing_metrics.total_routes > 0 {
-                routing_metrics.fallback_routes as f64 / routing_metrics.total_routes as f64
+            fallback_frequency: if routing_metrics.total_queries > 0 {
+                routing_metrics.fallback_activations as f64 / routing_metrics.total_queries as f64
             } else { 0.0 },
-            avg_routing_time_ms: routing_metrics.avg_response_time_ms as f64,
+            avg_routing_time_ms: routing_metrics.avg_response_times.values().copied().sum::<f64>() / routing_metrics.avg_response_times.len().max(1) as f64,
             circuit_breaker_states,
             failure_mode_distribution,
         }
@@ -615,20 +621,28 @@ impl MetricsCollector {
 
     /// Create default routing metrics if none available
     fn create_default_routing_metrics(&self) -> RoutingMetrics {
+        let mut strategy_counts = HashMap::new();
+        strategy_counts.insert("FullEcsEnhanced".to_string(), 85);
+        strategy_counts.insert("RagEnhanced".to_string(), 10);
+        strategy_counts.insert("ChronicleOnly".to_string(), 5);
+        
+        let mut avg_response_times = HashMap::new();
+        avg_response_times.insert("FullEcsEnhanced".to_string(), 250.0);
+        avg_response_times.insert("RagEnhanced".to_string(), 200.0);
+        avg_response_times.insert("ChronicleOnly".to_string(), 150.0);
+        
+        let mut success_rates = HashMap::new();
+        success_rates.insert("FullEcsEnhanced".to_string(), 0.9);
+        success_rates.insert("RagEnhanced".to_string(), 0.95);
+        success_rates.insert("ChronicleOnly".to_string(), 0.98);
+        
         RoutingMetrics {
-            total_routes: 100,
-            successful_routes: 85,
-            fallback_routes: 10,
-            failed_routes: 5,
-            avg_response_time_ms: 250,
-            circuit_breaker_trips: 2,
-            service_health_scores: {
-                let mut scores = HashMap::new();
-                scores.insert("ecs".to_string(), 0.9);
-                scores.insert("rag".to_string(), 0.95);
-                scores.insert("chronicle".to_string(), 0.98);
-                scores
-            },
+            total_queries: 100,
+            strategy_counts,
+            avg_response_times,
+            success_rates,
+            circuit_state_changes: 2,
+            fallback_activations: 10,
         }
     }
 
@@ -728,13 +742,21 @@ async fn test_enhanced_monitoring_system() -> AnyhowResult<()> {
         None,
     ));
 
+    let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+        scribe_backend::text_processing::chunking::ChunkConfig {
+            metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+            max_size: 500,
+            overlap: 50,
+        }
+    ));
+    
     let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
         Arc::new(app.db_pool.clone()),
         scribe_backend::services::EcsEnhancedRagConfig::default(),
         feature_flags.clone(),
         entity_manager.clone(),
         degradation_service.clone(),
-        app.mock_embedding_client.clone(),
+        concrete_embedding_service,
     ));
 
     let hybrid_service = Arc::new(scribe_backend::services::HybridQueryService::new(
@@ -782,6 +804,7 @@ async fn test_continuous_monitoring() -> AnyhowResult<()> {
     println!("🔄 Starting continuous monitoring test...");
 
     // Setup similar to the previous test
+    use scribe_backend::test_helpers::spawn_app_permissive_rate_limiting;
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
     // ... (setup code similar to above)
 

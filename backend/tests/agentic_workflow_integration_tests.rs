@@ -204,6 +204,31 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
                 degradation,
             ))
         },
+        // Chronicle ECS services for test
+        chronicle_service: Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone())),
+        chronicle_ecs_translator: Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+            Arc::new(test_app.db_pool.clone())
+        )),
+        chronicle_event_listener: {
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone()));
+            let chronicle_ecs_translator = Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+                Arc::new(test_app.db_pool.clone())
+            ));
+            Arc::new(scribe_backend::services::ChronicleEventListener::new(
+                Default::default(),
+                feature_flags,
+                chronicle_ecs_translator,
+                entity_manager,
+                chronicle_service,
+            ))
+        },
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -439,6 +464,31 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
                 degradation,
             ))
         },
+        // Chronicle ECS services for test
+        chronicle_service: Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone())),
+        chronicle_ecs_translator: Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+            Arc::new(test_app.db_pool.clone())
+        )),
+        chronicle_event_listener: {
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone()));
+            let chronicle_ecs_translator = Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+                Arc::new(test_app.db_pool.clone())
+            ));
+            Arc::new(scribe_backend::services::ChronicleEventListener::new(
+                Default::default(),
+                feature_flags,
+                chronicle_ecs_translator,
+                entity_manager,
+                chronicle_service,
+            ))
+        },
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -652,6 +702,31 @@ async fn test_dual_mode_extraction_comparison() {
                 entity_manager,
                 rag_service,
                 degradation,
+            ))
+        },
+        // Chronicle ECS services for test
+        chronicle_service: Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone())),
+        chronicle_ecs_translator: Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+            Arc::new(test_app.db_pool.clone())
+        )),
+        chronicle_event_listener: {
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone()));
+            let chronicle_ecs_translator = Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+                Arc::new(test_app.db_pool.clone())
+            ));
+            Arc::new(scribe_backend::services::ChronicleEventListener::new(
+                Default::default(),
+                feature_flags,
+                chronicle_ecs_translator,
+                entity_manager,
+                chronicle_service,
             ))
         },
     };
@@ -871,6 +946,31 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
                 entity_manager,
                 rag_service,
                 degradation,
+            ))
+        },
+        // Chronicle ECS services for test
+        chronicle_service: Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone())),
+        chronicle_ecs_translator: Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+            Arc::new(test_app.db_pool.clone())
+        )),
+        chronicle_event_listener: {
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone()));
+            let chronicle_ecs_translator = Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+                Arc::new(test_app.db_pool.clone())
+            ));
+            Arc::new(scribe_backend::services::ChronicleEventListener::new(
+                Default::default(),
+                feature_flags,
+                chronicle_ecs_translator,
+                entity_manager,
+                chronicle_service,
             ))
         },
     };

@@ -296,6 +296,31 @@ async fn test_chat_session_uses_user_default_model() {
                 degradation,
             ))
         },
+        // Chronicle ECS services for test
+        chronicle_service: Arc::new(scribe_backend::services::ChronicleService::new(app.db_pool.clone())),
+        chronicle_ecs_translator: Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+            Arc::new(app.db_pool.clone())
+        )),
+        chronicle_event_listener: {
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(app.db_pool.clone()));
+            let chronicle_ecs_translator = Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
+                Arc::new(app.db_pool.clone())
+            ));
+            Arc::new(scribe_backend::services::ChronicleEventListener::new(
+                Default::default(),
+                feature_flags,
+                chronicle_ecs_translator,
+                entity_manager,
+                chronicle_service,
+            ))
+        },
     };
 
     let app_state_for_session = Arc::new(AppState::new(db_pool, config, app_services));

@@ -138,6 +138,10 @@ async fn create_test_relationship(
         user_id,
         relationship_type: relationship_type.to_string(),
         relationship_data: data,
+        relationship_category: None,
+        strength: None,
+        causal_metadata: None,
+        temporal_validity: None,
     };
     
     conn.interact(move |conn| {
