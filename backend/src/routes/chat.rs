@@ -385,6 +385,61 @@ pub async fn generate_chat_response(
         options: None,
     };
 
+    // Generate ECS World State Context (if ECS is enabled and chronicle is linked)
+    let world_state_context = if let Some(chronicle_id) = player_chronicle_id {
+        if state_arc.feature_flags.enable_ecs_enhanced_rag {
+            info!(%session_id, %chronicle_id, "Generating ECS world state context for prompt.");
+            
+            match state_arc.world_model_service.generate_world_snapshot(
+                user_id_value,
+                Some(chronicle_id),
+                None, // No specific timestamp
+                crate::services::world_model_service::WorldModelOptions::default(), // Use default options
+            ).await {
+                Ok(world_snapshot) => {
+                    // Convert world snapshot to LLM-ready context
+                    match state_arc.world_model_service.snapshot_to_llm_context(
+                        &world_snapshot,
+                        crate::services::world_model_service::LLMContextFocus {
+                            query_intent: "chat_generation".to_string(),
+                            key_entities: Vec::new(), // No specific focus
+                            time_focus: crate::services::world_model_service::TimeFocus::Current,
+                            reasoning_depth: crate::services::world_model_service::ReasoningDepth::Surface,
+                        },
+                    ) {
+                        Ok(llm_context) => {
+                            // Convert LLMWorldContext to formatted string for the prompt
+                            let formatted_context = serde_json::to_string_pretty(&llm_context)
+                                .unwrap_or_else(|_| "Failed to serialize world state".to_string());
+                            
+                            info!(
+                                %session_id, 
+                                %chronicle_id, 
+                                context_length = formatted_context.len(),
+                                "Generated ECS world state context for prompt."
+                            );
+                            Some(formatted_context)
+                        }
+                        Err(e) => {
+                            warn!(%session_id, %chronicle_id, error = %e, "Failed to convert world snapshot to LLM context. Proceeding without world state.");
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(%session_id, %chronicle_id, error = %e, "Failed to generate world snapshot. Proceeding without world state.");
+                    None
+                }
+            }
+        } else {
+            debug!(%session_id, "ECS enhanced RAG disabled, skipping world state generation.");
+            None
+        }
+    } else {
+        debug!(%session_id, "No chronicle linked to session, skipping world state generation.");
+        None
+    };
+
     // Call the new prompt builder with ECS-enhanced RAG context
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
@@ -399,6 +454,9 @@ pub async fn generate_chat_response(
             model_name: model_to_use.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
             user_persona_name,                 // Pass user persona name for template substitution
+            world_state_context,               // ECS world state context
+            user_id: Some(user_id_value),      // User ID for ECS queries
+            chronicle_id: player_chronicle_id, // Chronicle ID for ECS context
         })
         .await
         {
@@ -1331,6 +1389,9 @@ pub async fn generate_suggested_actions(
             model_name: model_for_suggestions.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
             user_persona_name,                 // Pass user persona name for template substitution
+            world_state_context: None,         // No ECS world state for suggestions
+            user_id: Some(user_id),            // User ID for consistency
+            chronicle_id: _player_chronicle_id, // Chronicle ID for consistency
         })
         .await
         {

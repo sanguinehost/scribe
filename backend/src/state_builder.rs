@@ -296,6 +296,14 @@ impl AppStateServicesBuilder {
             chronicle_service.clone(),
         ));
 
+        // Create WorldModelService for ECS world state snapshots
+        let world_model_service = Arc::new(crate::services::WorldModelService::new(
+            Arc::new(self.db_pool.clone()),
+            ecs_entity_manager.clone(),
+            hybrid_query_service.clone(),
+            chronicle_service.clone(),
+        ));
+
         Ok(AppStateServices {
             ai_client,
             embedding_client,
@@ -319,6 +327,7 @@ impl AppStateServicesBuilder {
             chronicle_event_listener,
             chronicle_ecs_translator,
             chronicle_service,
+            world_model_service,
             // narrative_intelligence_service will be added after AppState is built
         })
     }

@@ -224,6 +224,12 @@ pub struct PromptBuildParams<'a> {
     pub model_name: String,
     pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>, // For decrypting character data
     pub user_persona_name: Option<String>,                 // For {{user}} template substitution
+    /// ECS world state context (optional)
+    pub world_state_context: Option<String>,
+    /// User ID for ECS queries
+    pub user_id: Option<uuid::Uuid>,
+    /// Chronicle ID for ECS context
+    pub chronicle_id: Option<uuid::Uuid>,
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -236,6 +242,7 @@ async fn build_meta_system_prompt(
     has_persona_override: bool,
     has_character_definition: bool,
     has_character_details: bool,
+    has_world_state: bool,
     token_counter: &HybridTokenCounter,
     model_name: &str,
 ) -> Result<(String, usize), AppError> {
@@ -260,6 +267,11 @@ async fn build_meta_system_prompt(
             "{}. <character_profile>: Character background, personality, and details for \"{}\".",
             section_num, char_name_placeholder
         ));
+        section_num += 1;
+    }
+
+    if has_world_state {
+        sections_list.push(format!("{}. <current_world_state>: Current state of entities, relationships, and world dynamics.", section_num));
         section_num += 1;
     }
 
@@ -466,6 +478,7 @@ async fn perform_initial_token_calculation(
         raw_character_system_prompt.is_some()
             && !raw_character_system_prompt.as_ref().unwrap().is_empty(),
         character_metadata.is_some(),
+        params.world_state_context.is_some(),
         token_counter,
         model_name,
     )
@@ -744,6 +757,7 @@ async fn build_final_prompt_strings(
     character_metadata: Option<&CharacterMetadata>,
     token_counter: &HybridTokenCounter,
     model_name: &str,
+    world_state_context: Option<&str>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Rebuild the meta system prompt based on final RAG items after truncation
     let has_final_rag_items = !calculation.rag_items_with_tokens.is_empty();
@@ -757,6 +771,7 @@ async fn build_final_prompt_strings(
         has_persona_override,
         has_character_definition,
         has_character_details,
+        world_state_context.is_some(),
         token_counter,
         model_name,
     )
@@ -784,6 +799,13 @@ async fn build_final_prompt_strings(
         final_system_prompt.push_str("\n\n<character_profile>\n");
         final_system_prompt.push_str(&calculation.character_details_str);
         final_system_prompt.push_str("\n</character_profile>");
+    }
+
+    // Add world state context if present
+    if let Some(world_state) = world_state_context {
+        final_system_prompt.push_str("\n\n<current_world_state>\n");
+        final_system_prompt.push_str(world_state);
+        final_system_prompt.push_str("\n</current_world_state>");
     }
 
     // End system prompt cleanly
@@ -964,52 +986,90 @@ async fn build_final_prompt_strings(
         if !other_rag_items.is_empty() {
             rag_context_for_user_message.push_str("<lorebook_entries>\n");
             
+            // Group lorebook entries by title for atomic reconstruction
+            use std::collections::HashMap;
+            let mut grouped_lorebook_entries: HashMap<String, Vec<&crate::services::embeddings::RetrievedChunk>> = HashMap::new();
+            let mut chat_items = Vec::new();
+            
+            // Separate and group items
             for (rag_item, _) in &other_rag_items {
                 match &rag_item.metadata {
-                    crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
-                        writeln!(
-                            rag_context_for_user_message,
-                            "<chat_history speaker=\"{}\">{}</chat_history>",
-                            escape_xml(&chat_meta.speaker),
-                            escape_xml(rag_item.text.trim())
-                        )
-                        .unwrap();
+                    crate::services::embeddings::RetrievedMetadata::Chat(_) => {
+                        chat_items.push(rag_item);
                     }
                     crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) => {
-                        write!(rag_context_for_user_message, "<lorebook_entry").unwrap();
-
-                        if let Some(title) = &lorebook_meta.entry_title {
-                            write!(
-                                rag_context_for_user_message,
-                                " title=\"{}\"",
-                                escape_xml(title)
-                            )
-                            .unwrap();
-                        }
-
-                        if let Some(keywords) = &lorebook_meta.keywords {
-                            if !keywords.is_empty() {
-                                let keywords_str = keywords.join(", ");
-                                write!(
-                                    rag_context_for_user_message,
-                                    " keywords=\"{}\"",
-                                    escape_xml(&keywords_str)
-                                )
-                                .unwrap();
-                            }
-                        }
-
-                        writeln!(
-                            rag_context_for_user_message,
-                            ">{}</lorebook_entry>",
-                            escape_xml(rag_item.text.trim())
-                        )
-                        .unwrap();
+                        let entry_key = lorebook_meta.entry_title.as_deref().unwrap_or("Untitled").to_string();
+                        grouped_lorebook_entries.entry(entry_key).or_default().push(rag_item);
                     }
                     crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
                         // Already handled above
                     }
                 }
+            }
+            
+            // Add chat history items
+            for rag_item in chat_items {
+                if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) = &rag_item.metadata {
+                    writeln!(
+                        rag_context_for_user_message,
+                        "<chat_history speaker=\"{}\">{}</chat_history>",
+                        escape_xml(&chat_meta.speaker),
+                        escape_xml(rag_item.text.trim())
+                    )
+                    .unwrap();
+                }
+            }
+            
+            // Add grouped lorebook entries (atomic reconstruction)
+            for (entry_title, chunks) in grouped_lorebook_entries {
+                // Sort chunks by their original text to maintain logical order
+                // For now, we'll just concatenate all chunks for this entry
+                let mut combined_content = String::new();
+                let mut keywords_set = std::collections::HashSet::new();
+                
+                for chunk in &chunks {
+                    if let crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) = &chunk.metadata {
+                        // Combine text content
+                        if !combined_content.is_empty() {
+                            combined_content.push(' '); // Add space between chunks
+                        }
+                        combined_content.push_str(chunk.text.trim());
+                        
+                        // Collect all unique keywords
+                        if let Some(chunk_keywords) = &lorebook_meta.keywords {
+                            keywords_set.extend(chunk_keywords.iter().cloned());
+                        }
+                    }
+                }
+                
+                // Write the reconstructed atomic lorebook entry
+                write!(rag_context_for_user_message, "<lorebook_entry").unwrap();
+                
+                write!(
+                    rag_context_for_user_message,
+                    " title=\"{}\"",
+                    escape_xml(&entry_title)
+                )
+                .unwrap();
+
+                if !keywords_set.is_empty() {
+                    let mut keywords_vec: Vec<String> = keywords_set.into_iter().collect();
+                    keywords_vec.sort(); // Sort for consistent output
+                    let keywords_str = keywords_vec.join(", ");
+                    write!(
+                        rag_context_for_user_message,
+                        " keywords=\"{}\"",
+                        escape_xml(&keywords_str)
+                    )
+                    .unwrap();
+                }
+
+                writeln!(
+                    rag_context_for_user_message,
+                    ">{}</lorebook_entry>",
+                    escape_xml(&combined_content)
+                )
+                .unwrap();
             }
             
             rag_context_for_user_message.push_str("</lorebook_entries>\n\n");
@@ -1058,6 +1118,7 @@ pub async fn build_final_llm_prompt(
         params.character_metadata,
         &params.token_counter,
         &params.model_name,
+        params.world_state_context.as_deref(),
     )
     .await?;
 

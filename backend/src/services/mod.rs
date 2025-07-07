@@ -27,6 +27,7 @@ pub mod gemini_token_client;
 pub mod history_manager;
 pub mod historical_chronicle_processor;
 pub mod hybrid_query_service;
+pub mod intent_detection_service;
 pub mod hybrid_query_router;
 pub mod hybrid_token_counter;
 pub mod lorebook;
@@ -39,6 +40,10 @@ pub mod user_settings_service;
 pub mod world_model_service;
 pub mod nlp_query_handler;
 pub mod prompt_templates;
+pub mod query_strategy_planner;
+pub mod context_assembly_engine;
+pub mod context_optimization_service;
+pub mod agentic_orchestrator;
 
 // Re-export agentic components
 pub use agentic::{
@@ -102,3 +107,19 @@ pub use narrative_ontology_service::NarrativeOntologyService;
 pub use user_persona_service::UserPersonaService;
 pub use user_settings_service::UserSettingsService;
 pub use world_model_service::{WorldModelService, WorldModelOptions, LLMContextFocus, TimeFocus, ReasoningDepth};
+pub use intent_detection_service::{
+    IntentDetectionService, QueryIntent, IntentType, EntityFocus, TimeScope, SpatialScope,
+    ReasoningDepth as IntentReasoningDepth, ContextPriority
+};
+pub use query_strategy_planner::{
+    QueryStrategyPlanner, QueryExecutionPlan, QueryStrategy, PlannedQuery, PlannedQueryType
+};
+pub use context_assembly_engine::{
+    ContextAssemblyEngine, AssembledContext, QueryExecutionResult
+};
+pub use context_optimization_service::{
+    ContextOptimizationService, ContextOptimization, OptimizedEntity, PrunedContent, OptimizationStrategy
+};
+pub use agentic_orchestrator::{
+    AgenticOrchestrator, AgenticRequest, AgenticResponse, QualityMode, ExecutionSummary, TokenUsageSummary
+};

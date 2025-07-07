@@ -85,15 +85,15 @@ impl Default for NarrativeFeatureFlags {
             enable_auto_chronicle_creation: false,
             max_ai_calls_per_extraction: 10,
             agentic_extraction_timeout_secs: 30,
-            // ECS defaults - conservative
-            enable_ecs_system: false,
-            enable_chronicle_to_ecs_sync: false,
-            enable_ecs_to_chronicle_sync: false,
-            enable_ecs_enhanced_rag: false,
-            enable_ecs_relationship_queries: false,
-            enable_ecs_cache_warming: false,
-            ecs_rollout_percentage: 0,
-            enable_ecs_compatibility_mode: true, // Start in compatibility mode
+            // ECS defaults - enabled for full pipeline
+            enable_ecs_system: true,
+            enable_chronicle_to_ecs_sync: true,
+            enable_ecs_to_chronicle_sync: true,
+            enable_ecs_enhanced_rag: true,
+            enable_ecs_relationship_queries: true,
+            enable_ecs_cache_warming: true,
+            ecs_rollout_percentage: 100,
+            enable_ecs_compatibility_mode: true, // Keep compatibility mode for hybrid operation
         }
     }
 }

@@ -84,14 +84,15 @@ impl ScribeTool for CreateChronicleEventTool {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "id": {"type": "string", "description": "Entity identifier"},
+                            "entity_id": {"type": "string", "description": "Entity UUID identifier (generate a UUID v4 string for each unique entity)"},
                             "role": {
                                 "type": "string", 
                                 "enum": ["AGENT", "PATIENT", "BENEFICIARY", "INSTRUMENT", "HELPER", "OPPONENT", "WITNESS"],
                                 "description": "Narrative role of the actor"
-                            }
+                            },
+                            "context": {"type": "string", "description": "Optional additional context about this actor's participation"}
                         },
-                        "required": ["id", "role"]
+                        "required": ["entity_id", "role"]
                     },
                     "description": "All entities participating in the event and their narrative roles"
                 },
@@ -101,26 +102,72 @@ impl ScribeTool for CreateChronicleEventTool {
                 },
                 "context_data": {
                     "type": "object",
-                    "description": "Spatio-temporal and situational information",
+                    "description": "Complete spatio-temporal and situational context following ECS architecture",
                     "properties": {
-                        "location_id": {"type": "string", "description": "Where the event took place"},
-                        "time_of_day": {"type": "string", "description": "Time context"},
-                        "details": {"type": "string", "description": "Additional context"}
+                        "location_id": {"type": "string", "description": "UUID of the primary location entity where event occurred"},
+                        "sub_location": {"type": "string", "description": "Specific area within the location (e.g., 'bridge', 'engine room')"},
+                        "spatial_relationships": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "entity_id": {"type": "string", "description": "Entity UUID"},
+                                    "spatial_type": {"type": "string", "enum": ["container", "containable", "anchored", "nested"], "description": "Spatial relationship type"},
+                                    "position": {"type": "string", "description": "Relative position or coordinates"},
+                                    "contained_by": {"type": "string", "description": "UUID of containing entity if applicable"}
+                                }
+                            },
+                            "description": "Spatial relationships and containment hierarchies"
+                        },
+                        "temporal_context": {
+                            "type": "object",
+                            "properties": {
+                                "game_time": {"type": "string", "description": "In-world timestamp (ISO 8601)"},
+                                "time_of_day": {"type": "string", "description": "Time of day context"},
+                                "turn_number": {"type": "integer", "description": "Turn number if turn-based"},
+                                "phase": {"type": "string", "description": "Phase within turn if applicable"},
+                                "time_mode": {"type": "string", "enum": ["continuous", "turn_based", "event_driven", "hybrid"], "description": "Time progression mode"}
+                            }
+                        },
+                        "environmental_factors": {
+                            "type": "object",
+                            "properties": {
+                                "weather": {"type": "string", "description": "Weather conditions"},
+                                "atmosphere": {"type": "string", "description": "Atmospheric conditions"},
+                                "visibility": {"type": "string", "description": "Visibility conditions"},
+                                "sound_level": {"type": "string", "description": "Ambient sound level"},
+                                "gravity": {"type": "number", "description": "Gravity level (1.0 = Earth normal)"},
+                                "custom_factors": {"type": "object", "description": "Additional environmental data"}
+                            }
+                        },
+                        "social_context": {"type": "string", "description": "Social or cultural context"},
+                        "details": {"type": "string", "description": "Additional narrative context"}
                     }
                 },
                 "causality": {
                     "type": "object",
-                    "description": "Causal relationships with other events",
+                    "description": "Enhanced causal relationships following ECS temporal hierarchy design",
                     "properties": {
-                        "causedBy": {
+                        "caused_by": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Event IDs that caused this event"
+                            "description": "Event UUIDs that were necessary conditions for this event"
                         },
                         "causes": {
                             "type": "array", 
                             "items": {"type": "string"},
-                            "description": "Event IDs that this event causes"
+                            "description": "Event UUIDs that this event directly causes or enables"
+                        },
+                        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Confidence level in these causal relationships"},
+                        "causality_type": {"type": "string", "enum": ["direct", "indirect", "probabilistic", "enabling", "preventing"], "description": "Type of causal relationship"},
+                        "causal_chain_depth": {"type": "integer", "minimum": 0, "description": "Maximum depth of causal chain from root cause"},
+                        "causal_metadata": {
+                            "type": "object",
+                            "properties": {
+                                "delay": {"type": "string", "description": "Time delay between cause and effect"},
+                                "mechanism": {"type": "string", "description": "How the causation works"},
+                                "intervening_factors": {"type": "array", "items": {"type": "string"}, "description": "Factors that mediate the causal relationship"}
+                            }
                         }
                     }
                 },
@@ -129,13 +176,49 @@ impl ScribeTool for CreateChronicleEventTool {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "target": {"type": "string", "description": "Entity affected"},
-                            "type": {"type": "string", "description": "Type of value (Trust, Fear, Health, Power, etc.)"},
-                            "change": {"type": "number", "description": "Numerical change (-1.0 to 1.0)"}
+                            "target": {"type": "string", "description": "Entity UUID affected by this valence change"},
+                            "valence_type": {"type": "string", "enum": ["emotional", "relational", "physical", "mental", "spiritual", "social"], "description": "Category of valence"},
+                            "attribute": {"type": "string", "description": "Specific attribute affected (Trust, Fear, Health, Power, Morale, etc.)"},
+                            "change": {"type": "number", "minimum": -1.0, "maximum": 1.0, "description": "Numerical change in the attribute"},
+                            "from_entity": {"type": "string", "description": "Entity UUID that caused this valence change (if different from primary actor)"},
+                            "intensity": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Intensity or significance of the change"},
+                            "duration": {"type": "string", "enum": ["temporary", "permanent", "conditional", "unknown"], "description": "Expected duration of the effect"},
+                            "conditions": {"type": "string", "description": "Conditions under which this valence applies"},
+                            "temporal_validity": {
+                                "type": "object",
+                                "properties": {
+                                    "valid_from": {"type": "string", "description": "When this valence becomes effective (ISO 8601)"},
+                                    "valid_until": {"type": "string", "description": "When this valence expires (ISO 8601, optional)"},
+                                    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Confidence in the temporal bounds"}
+                                }
+                            }
                         },
-                        "required": ["target", "type", "change"]
+                        "required": ["target", "valence_type", "attribute", "change"]
                     },
-                    "description": "Emotional or relational impact of the event"
+                    "description": "Emotional, relational, and state changes caused by the event"
+                },
+                "modality": {
+                    "type": "string",
+                    "enum": ["actual", "possible", "counterfactual", "hypothetical", "dream", "memory", "prediction"],
+                    "description": "Reality status of the event following narrative ontology"
+                },
+                "entity_state_changes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "entity_id": {"type": "string", "description": "Entity UUID whose state changed"},
+                            "component_type": {"type": "string", "description": "Component type affected (Health, Position, Inventory, etc.)"},
+                            "component_changes": {
+                                "type": "object",
+                                "description": "Specific component field changes as key-value pairs"
+                            },
+                            "operation": {"type": "string", "enum": ["create", "update", "delete"], "description": "Type of state change"},
+                            "archetype_change": {"type": "string", "description": "New archetype signature if entity type changed"}
+                        },
+                        "required": ["entity_id", "component_type", "operation"]
+                    },
+                    "description": "Direct entity state changes caused by this event"
                 }
             },
             "required": ["user_id", "chronicle_id", "event_type", "action", "actors", "summary"]

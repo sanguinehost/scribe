@@ -81,6 +81,7 @@ use tokio::net::TcpListener;
 use hex; // Added for hex::decode
 use http_body_util::BodyExt; // For collect() on Body
 use reqwest;
+use redis; // Added for redis client
 use rustls;
 use time; // For time::Duration for session expiry
 use tower::ServiceExt; // For .oneshot
@@ -117,6 +118,9 @@ pub struct MockAiClient {
     stream_to_return: ChatEventStream,
     // Field to capture the messages sent to the stream_chat method
     last_received_messages: std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
+    // For multiple responses support
+    responses: Arc<Mutex<VecDeque<String>>>,
+    current_response: Arc<Mutex<usize>>,
     // model_name: String, // Removed unused
     // provider_model_name: String, // Removed unused
     // embedding_response: Arc<Mutex<Result<Vec<f32>, AppError>>>, // Removed unused
@@ -170,6 +174,8 @@ impl MockAiClient {
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            responses: Arc::new(Mutex::new(VecDeque::new())),
+            current_response: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -188,6 +194,33 @@ impl MockAiClient {
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            responses: Arc::new(Mutex::new(VecDeque::new())),
+            current_response: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    /// Create a new MockAiClient with multiple responses that cycle through
+    #[must_use]
+    pub fn new_with_multiple_responses(responses: Vec<String>) -> Self {
+        let mut response_queue = VecDeque::new();
+        for response in responses {
+            response_queue.push_back(response);
+        }
+        
+        Self {
+            last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
+                model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
+                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
+                contents: vec![genai::chat::MessageContent::Text("placeholder".to_string())],
+                reasoning_content: None,
+                usage: Usage::default(),
+            }))),
+            stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            responses: Arc::new(Mutex::new(response_queue)),
+            current_response: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -265,9 +298,25 @@ impl AiClient for MockAiClient {
         *self.last_options.lock().unwrap() = config_override;
         // Capture messages for exec_chat as well, if needed, though stream_chat is primary for this task
         *self.last_received_messages.lock().unwrap() = Some(request.messages);
-        // TODO: Implement proper mock logic using stored response
+        
+        // Check if we have multiple responses to cycle through
+        {
+            let mut responses = self.responses.lock().unwrap();
+            if !responses.is_empty() {
+                if let Some(next_response) = responses.pop_front() {
+                    return Ok(ChatResponse {
+                        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
+                        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
+                        contents: vec![genai::chat::MessageContent::Text(next_response)],
+                        reasoning_content: None,
+                        usage: Usage::default(),
+                    });
+                }
+            }
+        }
+        
+        // Fall back to single response behavior
         self.response_to_return.lock().unwrap().clone()
-        // unimplemented!("MockAiClient exec_chat not implemented")
     }
     async fn stream_chat(
         &self,
@@ -1276,6 +1325,53 @@ impl TestAppStateBuilder {
                     feature_flags,
                     chronicle_ecs_translator,
                     entity_manager,
+                    chronicle_service,
+                ))
+            },
+            world_model_service: {
+                // Create WorldModelService for test
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(crate::config::NarrativeFeatureFlags::default());
+                let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(self.db_pool.clone()),
+                    redis_client.clone(),
+                    None,
+                ));
+                let degradation = Arc::new(crate::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+                    crate::text_processing::chunking::ChunkConfig {
+                        metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(crate::services::EcsEnhancedRagService::new(
+                    Arc::new(self.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                let hybrid_query_service = Arc::new(crate::services::HybridQueryService::new(
+                    Arc::new(self.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager.clone(),
+                    rag_service,
+                    degradation,
+                ));
+                let chronicle_service = Arc::new(crate::services::ChronicleService::new(self.db_pool.clone()));
+                
+                Arc::new(crate::services::WorldModelService::new(
+                    Arc::new(self.db_pool.clone()),
+                    entity_manager,
+                    hybrid_query_service,
                     chronicle_service,
                 ))
             },
@@ -2818,4 +2914,55 @@ pub async fn set_history_settings(
     // Ensure body is consumed to prevent issues, but we don't need to parse it here.
     let _ = response.bytes().await?;
     Ok(())
+}
+
+/// Creates a test HybridQueryService with mock dependencies
+pub fn create_test_hybrid_query_service(
+    ai_client: Arc<MockAiClient>,
+    db_pool: Arc<PgPool>,
+) -> crate::services::hybrid_query_service::HybridQueryService {
+    use crate::services::{
+        hybrid_query_service::{HybridQueryService, HybridQueryConfig},
+        ecs_entity_manager::{EcsEntityManager, EntityManagerConfig},
+        ecs_enhanced_rag_service::{EcsEnhancedRagService, EcsEnhancedRagConfig},
+        ecs_graceful_degradation::{EcsGracefulDegradation, GracefulDegradationConfig},
+    };
+    use crate::config::feature_flags::NarrativeFeatureFlags;
+    use std::sync::Arc;
+
+    // Create mock services
+    let feature_flags = Arc::new(NarrativeFeatureFlags::default());
+    // Create mock redis client for tests
+    let redis_client = Arc::new(redis::Client::open("redis://localhost").unwrap());
+    let entity_manager = Arc::new(EcsEntityManager::new(
+        db_pool.clone(),
+        redis_client,
+        Some(EntityManagerConfig::default()),
+    ));
+    let degradation_service = Arc::new(EcsGracefulDegradation::new(
+        GracefulDegradationConfig::default(),
+        feature_flags.clone(),
+        Some(entity_manager.clone()),
+        None, // No consistency monitor for tests
+    ));
+    let embedding_service = Arc::new(EmbeddingPipelineService::new(
+        ChunkConfig::for_regular_text(1000, 200)
+    ));
+    let rag_service = Arc::new(EcsEnhancedRagService::new(
+        db_pool.clone(),
+        EcsEnhancedRagConfig::default(),
+        feature_flags.clone(),
+        entity_manager.clone(),
+        degradation_service.clone(),
+        embedding_service,
+    ));
+
+    HybridQueryService::new(
+        db_pool,
+        HybridQueryConfig::default(),
+        feature_flags,
+        entity_manager,
+        rag_service,
+        degradation_service,
+    )
 }

@@ -325,6 +325,54 @@ mod tests {
                     chronicle_service,
                 ))
             },
+            world_model_service: Arc::new(crate::services::WorldModelService::new(
+                Arc::new(pool.clone()),
+                Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+                Arc::new(crate::services::HybridQueryService::new(
+                    Arc::new(pool.clone()),
+                    Default::default(),
+                    Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                    Arc::new(crate::services::EcsEntityManager::new(
+                        Arc::new(pool.clone()),
+                        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                        None,
+                    )),
+                    Arc::new(crate::services::EcsEnhancedRagService::new(
+                        Arc::new(pool.clone()),
+                        Default::default(),
+                        Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                        Arc::new(crate::services::EcsEntityManager::new(
+                            Arc::new(pool.clone()),
+                            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                            None,
+                        )),
+                        Arc::new(crate::services::EcsGracefulDegradation::new(
+                            Default::default(),
+                            Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                            None,
+                            None,
+                        )),
+                        Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+                            crate::text_processing::chunking::ChunkConfig {
+                                metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                                max_size: 500,
+                                overlap: 50,
+                            }
+                        )),
+                    )),
+                    Arc::new(crate::services::EcsGracefulDegradation::new(
+                        Default::default(),
+                        Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                        None,
+                        None,
+                    )),
+                )),
+                Arc::new(crate::services::ChronicleService::new(pool.clone())),
+            )),
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));

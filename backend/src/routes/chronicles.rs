@@ -12,7 +12,7 @@ use futures::future::try_join_all;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -85,6 +85,8 @@ pub struct ReChronicleResponse {
     pub messages_processed: usize,
     /// Number of existing events that were purged (if purge_existing was true)
     pub events_purged: usize,
+    /// Number of ECS entities created during re-chronicling (if ECS is enabled)
+    pub ecs_entities_created: Option<usize>,
     /// Processing summary
     pub summary: String,
 }
@@ -497,6 +499,7 @@ async fn re_chronicle_from_chat(
             events_created: 0,
             messages_processed: 0,
             events_purged,
+            ecs_entities_created: Some(0),
             summary: "No messages found in chat session".to_string(),
         }));
     }
@@ -515,7 +518,7 @@ async fn re_chronicle_from_chat(
     );
     
     // Process messages using the streaming pipeline
-    let (events_created, messages_processed) = process_messages_with_streaming_pipeline(
+    let (events_created, messages_processed, ecs_entities_created) = process_messages_with_streaming_pipeline(
         &state,
         &user,
         chronicle_id,
@@ -524,13 +527,14 @@ async fn re_chronicle_from_chat(
         messages_to_process,
     ).await?;
     
-    let summary = build_summary(events_created, messages_processed, events_purged);
+    let summary = build_summary(events_created, messages_processed, events_purged, Some(ecs_entities_created));
     info!("{}", summary);
     
     Ok(Json(ReChronicleResponse {
         events_created,
         messages_processed,
         events_purged,
+        ecs_entities_created: Some(ecs_entities_created),
         summary,
     }))
 }
@@ -597,7 +601,7 @@ async fn process_messages_with_streaming_pipeline(
     session_dek: &SessionDek,
     request: &ReChronicleRequest,
     messages_to_process: Vec<ChatMessage>,
-) -> Result<(usize, usize), AppError> {
+) -> Result<(usize, usize, usize), AppError> {
     // Configuration for batching and concurrency
     // Configuration for batching and concurrency
     let max_concurrent_batches = 5; // Limit concurrency to avoid overwhelming AI service
@@ -688,23 +692,32 @@ async fn process_messages_with_streaming_pipeline(
     drop(tx);
     
     // Wait for the DB writer to finish processing all events
-    let (events_created, messages_processed) = match db_writer_handle.await {
+    let (events_created, messages_processed, ecs_entities_created) = match db_writer_handle.await {
         Ok(Ok(result)) => result,
         Ok(Err(e)) => return Err(e),
         Err(_) => return Err(AppError::InternalServerErrorGeneric("DB writer task panicked".into())),
     };
     
-    Ok((events_created, messages_processed))
+    Ok((events_created, messages_processed, ecs_entities_created))
 }
 
 /// Build a summary string for the re-chronicle operation
-fn build_summary(events_created: usize, messages_processed: usize, events_purged: usize) -> String {
-    format!(
+fn build_summary(events_created: usize, messages_processed: usize, events_purged: usize, ecs_entities_created: Option<usize>) -> String {
+    let mut summary = format!(
         "Re-chronicling complete: {} events created from {} messages{}",
         events_created,
         messages_processed,
         if events_purged > 0 { format!(", {} existing events purged", events_purged) } else { String::new() }
-    )
+    );
+    
+    // Add ECS entity count if available
+    if let Some(ecs_count) = ecs_entities_created {
+        if ecs_count > 0 {
+            summary.push_str(&format!(", {} ECS entities generated", ecs_count));
+        }
+    }
+    
+    summary
 }
 
 /// Helper function to get chat messages for a session
@@ -747,9 +760,10 @@ async fn db_writer_task(
     session_dek: crate::auth::session_dek::SessionDek,
     embedding_pipeline_service: Arc<dyn crate::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
     app_state: Arc<AppState>,
-) -> Result<(usize, usize), AppError> {
+) -> Result<(usize, usize, usize), AppError> {
     let mut events_created = 0;
     let mut messages_processed = 0;
+    let mut ecs_entities_created = 0;
     
     // Process events as they come in
     while let Some(event_data) = receiver.recv().await {
@@ -781,6 +795,44 @@ async fn db_writer_task(
                 } else {
                     info!(event_id = %event.id, "Successfully embedded chronicle event for semantic search");
                 }
+                
+                // NEW: Generate ECS entities if feature flag is enabled
+                if app_state.feature_flags.enable_ecs_enhanced_rag {
+                    info!(event_id = %event.id, "Starting ECS entity generation for chronicle event");
+                    
+                    match app_state.chronicle_ecs_translator.translate_event(&event, user_id).await {
+                        Ok(translation_result) => {
+                            let entities_count = translation_result.entities_created.len();
+                            let components_count = translation_result.component_updates.len();
+                            let relationships_count = translation_result.relationship_updates.len();
+                            
+                            ecs_entities_created += entities_count;
+                            
+                            info!(
+                                event_id = %event.id,
+                                entities_created = entities_count,
+                                components_updated = components_count,
+                                relationships_updated = relationships_count,
+                                "Successfully generated ECS entities from chronicle event"
+                            );
+                            
+                            // Log any translation messages (warnings, etc.)
+                            for message in &translation_result.messages {
+                                info!(event_id = %event.id, translation_message = %message, "ECS translation message");
+                            }
+                        },
+                        Err(e) => {
+                            warn!(
+                                event_id = %event.id, 
+                                error = %e, 
+                                "Failed to generate ECS entities from chronicle event, but event was created successfully"
+                            );
+                            // Continue processing - ECS generation failure doesn't break the chronicle creation
+                        }
+                    }
+                } else {
+                    debug!(event_id = %event.id, "ECS enhanced RAG is disabled, skipping entity generation");
+                }
             },
             Err(e) => {
                 error!("Failed to create chronicle event during streaming insertion: {}", e);
@@ -789,8 +841,13 @@ async fn db_writer_task(
         }
     }
     
-    info!("DB writer task completed: {} events created from {} messages", events_created, messages_processed);
-    Ok((events_created, messages_processed))
+    info!(
+        "DB writer task completed: {} events created from {} messages, {} ECS entities generated", 
+        events_created, 
+        messages_processed,
+        ecs_entities_created
+    );
+    Ok((events_created, messages_processed, ecs_entities_created))
 }
 
 // --- ECS-Enhanced Hybrid Query Handlers (Phase 4.2.3) ---

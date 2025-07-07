@@ -67,7 +67,7 @@ use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService;
 // ECS Services imports
-use scribe_backend::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, ChronicleEventListener, ChronicleEcsTranslator};
+use scribe_backend::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, ChronicleEventListener, ChronicleEcsTranslator, WorldModelService};
 use scribe_backend::config::NarrativeFeatureFlags;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -299,6 +299,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         chronicle_event_listener: ecs_services.chronicle_event_listener,
         chronicle_ecs_translator: ecs_services.chronicle_ecs_translator,
         chronicle_service: ecs_services.chronicle_service,
+        world_model_service: ecs_services.world_model_service,
     })
 }
 
@@ -313,6 +314,7 @@ struct EcsServices {
     chronicle_event_listener: Arc<ChronicleEventListener>,
     chronicle_ecs_translator: Arc<ChronicleEcsTranslator>,
     chronicle_service: Arc<ChronicleService>,
+    world_model_service: Arc<WorldModelService>,
 }
 
 // Initialize ECS services with proper dependency order
@@ -401,6 +403,15 @@ async fn initialize_ecs_services(
     
     let chronicle_event_listener = Arc::new(chronicle_event_listener);
     
+    // Create WorldModelService for ECS world state snapshots
+    let world_model_service = Arc::new(WorldModelService::new(
+        Arc::new(pool.clone()),
+        ecs_entity_manager.clone(),
+        hybrid_query_service.clone(),
+        chronicle_service.clone(),
+    ));
+    tracing::info!("WorldModelService initialized");
+    
     tracing::info!("All ECS services initialized successfully");
     
     Ok(EcsServices {
@@ -413,6 +424,7 @@ async fn initialize_ecs_services(
         chronicle_event_listener,
         chronicle_ecs_translator,
         chronicle_service,
+        world_model_service,
     })
 }
 

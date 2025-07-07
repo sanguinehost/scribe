@@ -437,7 +437,18 @@ impl Default for EventFilter {
 impl From<CreateEventRequest> for NewChronicleEvent {
     fn from(request: CreateEventRequest) -> Self {
         // Extract Ars Fabula data from the generic event_data blob
-        let actors = request.event_data.as_ref().and_then(|data| data.get("actors").cloned());
+        // Handle both data formats: event_data.actors (new) and event_data as array (legacy)
+        let actors = request.event_data.as_ref().and_then(|data| {
+            // First check if event_data.actors exists (new format)
+            if let Some(actors_field) = data.get("actors") {
+                Some(actors_field.clone())
+            } else if data.is_array() {
+                // If event_data itself is an array, it might be the actors array (legacy format)
+                Some(data.clone())
+            } else {
+                None
+            }
+        });
         
         // Extract action - handle both string and NarrativeAction enum serialization
         let action = request.event_data.as_ref().and_then(|data| {
