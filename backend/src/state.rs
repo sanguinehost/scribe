@@ -26,7 +26,7 @@ use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
 // ECS Services
-use crate::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, ChronicleEventListener, ChronicleEcsTranslator, ChronicleService, WorldModelService};
+use crate::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, ChronicleEventListener, ChronicleEcsTranslator, ChronicleService, WorldModelService, AgenticOrchestrator, AgenticStateUpdateService};
 use crate::config::NarrativeFeatureFlags;
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
@@ -60,6 +60,8 @@ pub struct AppStateServices {
     pub chronicle_ecs_translator: Arc<ChronicleEcsTranslator>,
     pub chronicle_service: Arc<ChronicleService>,
     pub world_model_service: Arc<WorldModelService>,
+    pub agentic_orchestrator: Arc<AgenticOrchestrator>,
+    pub agentic_state_update_service: Arc<AgenticStateUpdateService>,
 }
 
 // --- Shared application state ---
@@ -101,6 +103,8 @@ pub struct AppState {
     pub chronicle_ecs_translator: Arc<ChronicleEcsTranslator>,
     pub chronicle_service: Arc<ChronicleService>,
     pub world_model_service: Arc<WorldModelService>,
+    pub agentic_orchestrator: Arc<AgenticOrchestrator>,
+    pub agentic_state_update_service: Arc<AgenticStateUpdateService>,
 }
 
 // Manual Debug implementation for AppState
@@ -134,6 +138,8 @@ impl fmt::Debug for AppState {
             .field("ecs_enhanced_rag_service", &"<Arc<EcsEnhancedRagService>>") // ECS RAG enhancement
             .field("hybrid_query_service", &"<Arc<HybridQueryService>>") // ECS hybrid queries
             .field("world_model_service", &"<Arc<WorldModelService>>") // ECS world model service
+            .field("agentic_orchestrator", &"<Arc<AgenticOrchestrator>>") // Agentic context orchestration
+            .field("agentic_state_update_service", &"<Arc<AgenticStateUpdateService>>") // Agentic state updates
             .finish()
     }
 }
@@ -171,6 +177,8 @@ impl AppState {
             chronicle_ecs_translator: services.chronicle_ecs_translator,
             chronicle_service: services.chronicle_service,
             world_model_service: services.world_model_service,
+            agentic_orchestrator: services.agentic_orchestrator,
+            agentic_state_update_service: services.agentic_state_update_service,
         }
     }
 

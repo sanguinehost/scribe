@@ -28,6 +28,14 @@ pub enum QueryStrategy {
     NarrativeContextAssembly,
     StateSnapshot,
     ComparativeAnalysis,
+    // Chronicle-focused strategies
+    ChronicleNarrativeMapping,
+    ChronicleThematicAnalysis,
+    ChronicleTimelineReconstruction,
+    // Lorebook-focused strategies
+    LorebookContextualRetrieval,
+    LorebookConceptualMapping,
+    LorebookCulturalContext,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +76,22 @@ pub enum PlannedQueryType {
     
     // Narrative queries
     NarrativeThreads,
+    
+    // Chronicle queries
+    ChronicleEvents,
+    ChronicleTimeline,
+    ChronicleThemes,
+    RelatedChronicles,
+    
+    // Lorebook queries
+    LorebookEntries,
+    LorebookConcepts,
+    LorebookCharacters,
+    LorebookLocations,
+    LorebookContext,
+    
+    // Entity creation queries
+    MissingEntities,
 }
 
 pub struct QueryStrategyPlanner {
@@ -168,6 +192,9 @@ Spatial Queries: SpatialEntities
 Temporal Queries: TimelineEvents, StateTransitions, RecentEvents
 Predictive Queries: HistoricalParallels
 Narrative Queries: NarrativeThreads
+Chronicle Queries: ChronicleEvents, ChronicleTimeline, ChronicleThemes, RelatedChronicles
+Lorebook Queries: LorebookEntries, LorebookConcepts, LorebookCharacters, LorebookLocations, LorebookContext
+Entity Creation Queries: MissingEntities
 
 STRATEGY OPTIONS:
 - CausalChainTraversal: For "what caused X" questions
@@ -260,6 +287,16 @@ Respond with only the JSON object:"#,
                     "RecentEvents" => PlannedQueryType::RecentEvents,
                     "HistoricalParallels" => PlannedQueryType::HistoricalParallels,
                     "NarrativeThreads" => PlannedQueryType::NarrativeThreads,
+                    "ChronicleEvents" => PlannedQueryType::ChronicleEvents,
+                    "ChronicleTimeline" => PlannedQueryType::ChronicleTimeline,
+                    "ChronicleThemes" => PlannedQueryType::ChronicleThemes,
+                    "RelatedChronicles" => PlannedQueryType::RelatedChronicles,
+                    "LorebookEntries" => PlannedQueryType::LorebookEntries,
+                    "LorebookConcepts" => PlannedQueryType::LorebookConcepts,
+                    "LorebookCharacters" => PlannedQueryType::LorebookCharacters,
+                    "LorebookLocations" => PlannedQueryType::LorebookLocations,
+                    "LorebookContext" => PlannedQueryType::LorebookContext,
+                    "MissingEntities" => PlannedQueryType::MissingEntities,
                     _ => return None,
                 };
 

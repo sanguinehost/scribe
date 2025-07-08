@@ -1201,7 +1201,7 @@ impl TestAppStateBuilder {
         // due to circular dependency (service needs AppState, but AppState is built from services)
 
         let services = AppStateServices {
-            ai_client: self.ai_client,
+            ai_client: self.ai_client.clone(),
             embedding_client: self.embedding_client,
             qdrant_service: self.qdrant_service,
             embedding_pipeline_service,
@@ -1373,6 +1373,69 @@ impl TestAppStateBuilder {
                     entity_manager,
                     hybrid_query_service,
                     chronicle_service,
+                ))
+            },
+            agentic_orchestrator: {
+                // Create agentic orchestrator for test
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(crate::config::NarrativeFeatureFlags::default());
+                let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(self.db_pool.clone()),
+                    redis_client.clone(),
+                    None,
+                ));
+                let degradation = Arc::new(crate::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+                    crate::text_processing::chunking::ChunkConfig {
+                        metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(crate::services::EcsEnhancedRagService::new(
+                    Arc::new(self.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                let hybrid_query_service = Arc::new(crate::services::HybridQueryService::new(
+                    Arc::new(self.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager.clone(),
+                    rag_service,
+                    degradation,
+                ));
+
+                let state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
+                    self.ai_client.clone(),
+                    entity_manager.clone(),
+                ));
+                Arc::new(crate::services::AgenticOrchestrator::new(
+                    self.ai_client.clone(),
+                    hybrid_query_service,
+                    Arc::new(self.db_pool.clone()),
+                    state_update_service,
+                ))
+            },
+            agentic_state_update_service: {
+                // Create a test agentic state update service
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(self.db_pool.clone()),
+                    redis_client,
+                    None,
+                ));
+                Arc::new(crate::services::AgenticStateUpdateService::new(
+                    self.ai_client.clone(),
+                    entity_manager,
                 ))
             },
             // narrative_intelligence_service will be added after AppState is built

@@ -304,6 +304,20 @@ impl AppStateServicesBuilder {
             chronicle_service.clone(),
         ));
 
+        // Create agentic state update service first
+        let agentic_state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
+            ai_client.clone(),
+            ecs_entity_manager.clone(),
+        ));
+
+        // Create agentic orchestrator with all required services
+        let agentic_orchestrator = Arc::new(crate::services::AgenticOrchestrator::new(
+            ai_client.clone(),
+            hybrid_query_service.clone(),
+            Arc::new(self.db_pool.clone()),
+            agentic_state_update_service.clone(),
+        ));
+
         Ok(AppStateServices {
             ai_client,
             embedding_client,
@@ -328,6 +342,8 @@ impl AppStateServicesBuilder {
             chronicle_ecs_translator,
             chronicle_service,
             world_model_service,
+            agentic_orchestrator,
+            agentic_state_update_service,
             // narrative_intelligence_service will be added after AppState is built
         })
     }

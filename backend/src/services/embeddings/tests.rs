@@ -373,6 +373,53 @@ mod tests {
                 )),
                 Arc::new(crate::services::ChronicleService::new(pool.clone())),
             )),
+            agentic_orchestrator: {
+                let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
+                    Arc::new(pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                ));
+                let state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
+                    ai_client.clone(),
+                    entity_manager.clone(),
+                ));
+                Arc::new(crate::services::AgenticOrchestrator::new(
+                    ai_client.clone(),
+                    Arc::new(crate::services::HybridQueryService::new(
+                        Arc::new(pool.clone()),
+                        Default::default(),
+                        Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                        entity_manager.clone(),
+                        Arc::new(crate::services::EcsEnhancedRagService::new(
+                            Arc::new(pool.clone()),
+                            Default::default(),
+                            Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                            entity_manager.clone(),
+                            Arc::new(crate::services::EcsGracefulDegradation::new(
+                                Default::default(),
+                                Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                                None,
+                                None,
+                            )),
+                            Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+                                crate::text_processing::chunking::ChunkConfig {
+                                    metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                                    max_size: 500,
+                                    overlap: 50,
+                                }
+                            )),
+                        )),
+                        Arc::new(crate::services::EcsGracefulDegradation::new(
+                            Default::default(),
+                            Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                            None,
+                            None,
+                        )),
+                    )),
+                    Arc::new(pool.clone()),
+                    state_update_service,
+                ))
+            },
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));
@@ -1559,12 +1606,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_process_and_embed_lorebook_entry_multiple_chunks() {
+    async fn test_process_and_embed_lorebook_entry_atomic() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let original_lorebook_entry_id = Uuid::new_v4();
         let lorebook_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
-        // Content designed to be chunked by the service's default config (max_size 100, overlap 20)
+        // Content that would normally be chunked, but lorebook entries should be treated as atomic
         let long_content = "a".repeat(150);
         let decrypted_title = Some("Long Lore".to_string());
 
@@ -1589,29 +1636,26 @@ mod tests {
 
         assert!(
             result.is_ok(),
-            "Processing multi-chunk lore entry failed: {:?}",
+            "Processing atomic lorebook entry failed: {:?}",
             result.err()
         );
 
         let embed_calls = mock_embed_client.get_calls();
-        // 150 chars, 100 max, 20 overlap.
-        // Chunk 1: 0-99 (100 chars)
-        // Chunk 2: 80-149 (70 chars) -> (start = 100 - 20 = 80)
+        // Lorebook entries should be treated as atomic units, regardless of size
+        // So even though this is 150 chars, it should only result in 1 embedding call
         assert_eq!(
             embed_calls.len(),
-            2,
-            "Expected 2 calls to embedding client for 150 char content"
+            1,
+            "Expected 1 call to embedding client for atomic lorebook entry"
         );
         assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT");
         assert_eq!(embed_calls[0].2, decrypted_title);
-        assert_eq!(embed_calls[1].1, "RETRIEVAL_DOCUMENT");
-        assert_eq!(embed_calls[1].2, decrypted_title);
 
         let qdrant_upsert_points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
         assert_eq!(
             qdrant_upsert_points.len(),
-            2,
-            "Expected 2 points in the batch upsert"
+            1,
+            "Expected 1 point in the batch upsert for atomic lorebook entry"
         );
     }
 

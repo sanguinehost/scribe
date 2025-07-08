@@ -264,6 +264,20 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     // Initialize ECS services
     let ecs_services = initialize_ecs_services(config, &pool).await?;
     
+    // Create agentic state update service
+    let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+        ai_client_arc.clone(),
+        ecs_services.ecs_entity_manager.clone(),
+    ));
+
+    // Create agentic orchestrator with all required services
+    let agentic_orchestrator = Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+        ai_client_arc.clone(),
+        ecs_services.hybrid_query_service.clone(),
+        Arc::new(pool.clone()),
+        agentic_state_update_service.clone(),
+    ));
+    
     // --- Initialize Narrative Intelligence Service ---
     // Note: Will be initialized after AppState is created due to circular dependency
 
@@ -300,6 +314,8 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         chronicle_ecs_translator: ecs_services.chronicle_ecs_translator,
         chronicle_service: ecs_services.chronicle_service,
         world_model_service: ecs_services.world_model_service,
+        agentic_orchestrator,
+        agentic_state_update_service,
     })
 }
 

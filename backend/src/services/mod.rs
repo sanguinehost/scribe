@@ -44,6 +44,9 @@ pub mod query_strategy_planner;
 pub mod context_assembly_engine;
 pub mod context_optimization_service;
 pub mod agentic_orchestrator;
+pub mod agentic_query_cache;
+pub mod agentic_metrics;
+pub mod agentic_state_update_service;
 
 // Re-export agentic components
 pub use agentic::{
@@ -108,7 +111,7 @@ pub use user_persona_service::UserPersonaService;
 pub use user_settings_service::UserSettingsService;
 pub use world_model_service::{WorldModelService, WorldModelOptions, LLMContextFocus, TimeFocus, ReasoningDepth};
 pub use intent_detection_service::{
-    IntentDetectionService, QueryIntent, IntentType, EntityFocus, TimeScope, SpatialScope,
+    IntentDetectionService, QueryIntent, NarrativeIntent, IntentType, EntityFocus, TimeScope, SpatialScope,
     ReasoningDepth as IntentReasoningDepth, ContextPriority
 };
 pub use query_strategy_planner::{
@@ -122,4 +125,19 @@ pub use context_optimization_service::{
 };
 pub use agentic_orchestrator::{
     AgenticOrchestrator, AgenticRequest, AgenticResponse, QualityMode, ExecutionSummary, TokenUsageSummary
+};
+pub use agentic_query_cache::{
+    AgenticQueryCache, AgenticCacheConfig, CacheKey, QueryType, CacheStats, CacheMetrics
+};
+pub use agentic_metrics::{
+    AgenticMetrics, AgenticMetricsCollector, MetricsConfig, RequestTracker, 
+    ProcessingStats, CacheStats as MetricsCacheStats, TokenAnalytics, QualityMetrics,
+    TimingMetrics, ErrorMetrics, TrendData, PerformanceMeasurement, PhaseTimer,
+    TokenOptimizationInsights, TokenOptimizationRecommendation, RecommendationPriority,
+    OptimizationCategory, PotentialSavings, ImplementationEffort, CostAnalysis,
+    EfficiencyTrends, TokenBreakdown, TokenEfficiency, BudgetUtilization
+};
+pub use agentic_state_update_service::{
+    AgenticStateUpdateService, StateUpdateConfig, StateUpdateResult,
+    SpatialUpdateSummary, RelationshipUpdateSummary, TemporalUpdateSummary
 };

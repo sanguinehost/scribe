@@ -26,8 +26,11 @@ use crate::prompt_builder;
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
 use crate::services::chat;
+use crate::services::hybrid_token_counter::HybridTokenCounter;
 use crate::services::chat::types::ScribeSseEvent;
 use crate::services::hybrid_token_counter::CountingMode;
+use crate::services::{AgenticRequest, QualityMode};
+use crate::services::embeddings::{RetrievedChunk, RetrievedMetadata, ChronicleEventMetadata};
 use secrecy::ExposeSecret; // Added for ExposeSecret
 // RetrievedMetadata is no longer directly used in this file for RAG string construction
 // use crate::services::embedding_pipeline::RetrievedMetadata;
@@ -292,7 +295,7 @@ pub async fn generate_chat_response(
 
     // --- ECS-Enhanced RAG Integration ---
     // TODO: Implement ECS-enhanced RAG once the enhancement function is created
-    let enhanced_rag_context_items = rag_context_items_from_service;
+    let mut enhanced_rag_context_items = rag_context_items_from_service;
 
     // Fetch Character model from DB (only for character-based chats)
     let char_id = session_character_id.ok_or_else(|| {
@@ -381,7 +384,7 @@ pub async fn generate_chat_response(
     // Prepare current user message as GenAiChatMessage
     let current_user_genai_message = GenAiChatMessage {
         role: ChatRole::User,
-        content: MessageContent::from_text(current_user_content),
+        content: MessageContent::from_text(current_user_content.clone()),
         options: None,
     };
 
@@ -440,13 +443,72 @@ pub async fn generate_chat_response(
         None
     };
 
+    // --- Agentic Orchestrator Integration ---
+    let agentic_optimized_context = if should_use_agentic_orchestration(&current_user_content, &session_character_id) {
+        info!(%session_id, "Processing query through agentic orchestrator");
+        
+        let total_token_budget = calculate_agentic_token_budget(&query_params);
+        let (context_budget, query_budget) = allocate_agentic_token_budget(total_token_budget);
+        
+        // Build token-aware conversation context
+        let conversation_context = match build_token_aware_conversation_context(
+            &gen_ai_recent_history,
+            context_budget,
+            &state_arc.token_counter,
+            &model_to_use,
+        ).await {
+            Ok(context) => {
+                if let Some(ref ctx) = context {
+                    debug!(%session_id, context_length = ctx.len(), "Built token-aware conversation context");
+                }
+                context
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to build token-aware context, falling back to simple context");
+                build_conversation_context_from_history(&gen_ai_recent_history)
+            }
+        };
+        
+        let quality_mode = determine_quality_mode(&query_params);
+        
+        let agentic_request = AgenticRequest {
+            user_query: current_user_content.clone(),
+            conversation_context,
+            user_id: user_id_value,
+            chronicle_id: player_chronicle_id,
+            token_budget: query_budget, // Use the query portion of the budget
+            quality_mode,
+            user_dek: None, // TODO: Extract from user session if available
+        };
+        
+        match state_arc.agentic_orchestrator.process_query(agentic_request).await {
+            Ok(agentic_response) => {
+                info!(%session_id, 
+                      tokens_used = agentic_response.token_usage.final_tokens_used,
+                      context_tokens = context_budget,
+                      query_tokens = query_budget,
+                      "Successfully processed query through agentic orchestrator");
+                
+                // Use agentic context directly instead of merging as RAG
+                Some(agentic_response.optimized_context)
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Agentic orchestration failed, proceeding with standard flow");
+                None
+            }
+        }
+    } else {
+        debug!(%session_id, "Skipping agentic orchestration for simple query");
+        None
+    };
+
     // Call the new prompt builder with ECS-enhanced RAG context
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
             config: state_arc.config.clone(),
             token_counter: state_arc.token_counter.clone(),
             recent_history: gen_ai_recent_history,
-            rag_items: enhanced_rag_context_items, // Use ECS-enhanced RAG context
+            rag_items: enhanced_rag_context_items, // Use ECS-enhanced RAG context (supplementary to agentic)
             system_prompt_base: system_prompt_from_service, // This is the system_prompt_base (persona/override only)
             raw_character_system_prompt, // This is the new raw_character_system_prompt
             character_metadata: Some(&character_metadata_for_prompt_builder),
@@ -457,6 +519,7 @@ pub async fn generate_chat_response(
             world_state_context,               // ECS world state context
             user_id: Some(user_id_value),      // User ID for ECS queries
             chronicle_id: player_chronicle_id, // Chronicle ID for ECS context
+            agentic_context: agentic_optimized_context, // Pre-assembled agentic intelligence
         })
         .await
         {
@@ -1392,6 +1455,7 @@ pub async fn generate_suggested_actions(
             world_state_context: None,         // No ECS world state for suggestions
             user_id: Some(user_id),            // User ID for consistency
             chronicle_id: _player_chronicle_id, // Chronicle ID for consistency
+            agentic_context: None,             // No agentic context for suggestions
         })
         .await
         {
@@ -2264,3 +2328,272 @@ pub async fn impersonate_handler(
 // ============================================================================
 // Message Variant Handlers
 // ============================================================================
+
+// ============================================================================
+// Agentic Orchestrator Helper Functions
+// ============================================================================
+
+/// Determines if a query should use agentic orchestration based on complexity
+pub fn should_use_agentic_orchestration(
+    user_content: &str,
+    _session_character_id: &Option<uuid::Uuid>,
+) -> bool {
+    // For now, use simple heuristics to determine if agentic processing would be beneficial
+    let content_length = user_content.len();
+    let has_complex_keywords = user_content.to_lowercase().contains("what") ||
+        user_content.to_lowercase().contains("how") ||
+        user_content.to_lowercase().contains("why") ||
+        user_content.to_lowercase().contains("tell me about") ||
+        user_content.to_lowercase().contains("explain");
+    
+    // Use agentic orchestration for character sessions with complex queries
+    _session_character_id.is_some() && (content_length > 50 || has_complex_keywords)
+}
+
+/// Builds conversation context from recent chat history
+pub fn build_conversation_context_from_history(
+    recent_history: &[GenAiChatMessage],
+) -> Option<String> {
+    if recent_history.is_empty() {
+        return None;
+    }
+    
+    // Take the last few messages and create a context summary
+    let context_messages: Vec<String> = recent_history
+        .iter()
+        .rev()
+        .take(5) // Last 5 messages
+        .rev()
+        .filter_map(|msg| {
+            // Check if message content has text - msg.content is a single MessageContent
+            match &msg.content {
+                MessageContent::Text(text) => {
+                    let role_name = match msg.role {
+                        ChatRole::User => "User",
+                        ChatRole::Assistant => "Assistant",
+                        ChatRole::System => "System",
+                        ChatRole::Tool => "Tool",
+                    };
+                    Some(format!("{}: {}", 
+                        role_name,
+                        text.chars().take(200).collect::<String>() // Limit length
+                    ))
+                }
+                _ => None,
+            }
+        })
+        .collect();
+    
+    if context_messages.is_empty() {
+        None
+    } else {
+        Some(context_messages.join("\n"))
+    }
+}
+
+/// Builds an enhanced conversation context with token awareness for agentic processing
+/// This version intelligently selects messages within a token budget and preserves key narrative moments
+#[instrument(skip_all, fields(history_size = recent_history.len(), token_budget = token_budget))]
+pub async fn build_token_aware_conversation_context(
+    recent_history: &[GenAiChatMessage],
+    token_budget: u32,
+    token_counter: &Arc<HybridTokenCounter>,
+    model_name: &str,
+) -> Result<Option<String>, AppError> {
+    if recent_history.is_empty() {
+        return Ok(None);
+    }
+    
+    // Reserve some tokens for metadata and formatting
+    let effective_budget = (token_budget as f32 * 0.9) as u32;
+    let mut total_tokens = 0u32;
+    let mut selected_messages = Vec::new();
+    
+    // Strategy: Start from most recent and work backwards, prioritizing:
+    // 1. User messages (they drive the narrative)
+    // 2. Key assistant responses (emotional moments, decisions, revelations)
+    // 3. Skip repetitive or purely mechanical exchanges
+    
+    for (idx, msg) in recent_history.iter().enumerate().rev() {
+        if let MessageContent::Text(text) = &msg.content {
+            // Count tokens for this message
+            let message_tokens = token_counter
+                .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
+                .await?
+                .total as u32;
+            
+            // Check if we have budget for this message
+            if total_tokens + message_tokens > effective_budget {
+                debug!(
+                    "Reached token budget at message index {} (total: {} + new: {} > budget: {})",
+                    idx, total_tokens, message_tokens, effective_budget
+                );
+                break;
+            }
+            
+            // Determine message importance
+            let importance_score = calculate_message_importance(msg, text, idx == recent_history.len() - 1);
+            
+            if importance_score > 0.3 || selected_messages.len() < 3 {
+                // Include this message
+                let role_name = match msg.role {
+                    ChatRole::User => "User",
+                    ChatRole::Assistant => "Character",
+                    ChatRole::System => "System",
+                    ChatRole::Tool => "Tool",
+                };
+                
+                selected_messages.push((idx, format!("{}: {}", role_name, text), importance_score));
+                total_tokens += message_tokens;
+            }
+        }
+    }
+    
+    // Sort by original order (oldest first) for coherent narrative
+    selected_messages.sort_by_key(|(idx, _, _)| *idx);
+    
+    if selected_messages.is_empty() {
+        return Ok(None);
+    }
+    
+    // Format the context with importance indicators
+    let mut context = String::new();
+    context.push_str("=== Recent Conversation Context ===\n");
+    
+    for (idx, (original_idx, msg_text, importance)) in selected_messages.iter().enumerate() {
+        if idx > 0 && *original_idx > selected_messages[idx - 1].0 + 1 {
+            // There's a gap in the conversation
+            context.push_str("[...narrative continues...]\n");
+        }
+        
+        if *importance > 0.7 {
+            context.push_str("**[KEY MOMENT]** ");
+        }
+        
+        context.push_str(msg_text);
+        context.push('\n');
+    }
+    
+    context.push_str(&format!(
+        "\n[Context: {} messages selected from {} total, using {} of {} tokens]",
+        selected_messages.len(),
+        recent_history.len(),
+        total_tokens,
+        token_budget
+    ));
+    
+    info!(
+        messages_selected = selected_messages.len(),
+        total_messages = recent_history.len(),
+        tokens_used = total_tokens,
+        token_budget = token_budget,
+        "Built token-aware conversation context"
+    );
+    
+    Ok(Some(context))
+}
+
+/// Calculates importance score for a message (0.0 to 1.0)
+fn calculate_message_importance(msg: &GenAiChatMessage, text: &str, is_most_recent: bool) -> f32 {
+    let mut score: f32 = 0.0;
+    
+    // Most recent message is always important
+    if is_most_recent {
+        score += 0.5;
+    }
+    
+    // User messages are important for context
+    if matches!(msg.role, ChatRole::User) {
+        score += 0.4;
+    }
+    
+    // Look for narrative significance indicators
+    let lowercase_text = text.to_lowercase();
+    
+    // Emotional moments
+    if lowercase_text.contains("love") || lowercase_text.contains("hate") || 
+       lowercase_text.contains("fear") || lowercase_text.contains("hope") ||
+       lowercase_text.contains("tears") || lowercase_text.contains("smile") {
+        score += 0.3;
+    }
+    
+    // Questions and decisions
+    if text.contains('?') || lowercase_text.contains("decide") || 
+       lowercase_text.contains("choose") || lowercase_text.contains("must") {
+        score += 0.2;
+    }
+    
+    // Actions and changes
+    if lowercase_text.contains("suddenly") || lowercase_text.contains("realized") ||
+       lowercase_text.contains("discovered") || text.contains('!') {
+        score += 0.2;
+    }
+    
+    // Character names (heuristic: capitalized words that aren't at sentence start)
+    let words: Vec<&str> = text.split_whitespace().collect();
+    for (i, word) in words.iter().enumerate() {
+        if i > 0 && word.chars().next().map_or(false, |c| c.is_uppercase()) {
+            score += 0.1;
+            break;
+        }
+    }
+    
+    // Long messages often contain important narrative
+    if text.len() > 500 {
+        score += 0.2;
+    } else if text.len() < 50 {
+        score -= 0.1; // Short messages are often less important
+    }
+    
+    score.min(1.0).max(0.0)
+}
+
+/// Calculates token budget for agentic processing based on query parameters
+pub fn calculate_agentic_token_budget(
+    _query_params: &ChatGenerateQueryParams,
+) -> u32 {
+    // For now, use a reasonable default
+    // In the future, this could be based on user subscription level, query complexity, etc.
+    5000
+}
+
+/// Allocates token budget between conversation context and query processing
+pub fn allocate_agentic_token_budget(total_budget: u32) -> (u32, u32) {
+    // Allocate 30% for conversation context, 70% for query processing
+    let context_budget = (total_budget as f32 * 0.3) as u32;
+    let query_budget = total_budget - context_budget;
+    (context_budget, query_budget)
+}
+
+/// Determines quality mode based on query parameters
+pub fn determine_quality_mode(
+    _query_params: &ChatGenerateQueryParams,
+) -> QualityMode {
+    // For now, use balanced mode
+    // In the future, this could be configurable based on user preferences
+    QualityMode::Balanced
+}
+
+/// Merges orchestrated context with existing RAG context
+pub fn merge_orchestrated_context(
+    mut existing_rag_items: Vec<RetrievedChunk>,
+    optimized_context_string: String,
+) -> Vec<RetrievedChunk> {
+    // Convert the optimized context string into a single high-priority RAG chunk
+    if !optimized_context_string.is_empty() {
+        let agentic_chunk = RetrievedChunk {
+            text: optimized_context_string,
+            score: 0.95, // Very high relevance for orchestrated results
+            metadata: RetrievedMetadata::Chronicle(ChronicleEventMetadata {
+                event_id: uuid::Uuid::new_v4(),
+                event_type: "agentic_orchestration".to_string(),
+                chronicle_id: uuid::Uuid::new_v4(), // Placeholder chronicle ID
+                created_at: chrono::Utc::now(),
+            }),
+        };
+        
+        existing_rag_items.push(agentic_chunk);
+    }
+    
+    existing_rag_items
+}

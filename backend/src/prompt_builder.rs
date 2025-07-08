@@ -230,6 +230,8 @@ pub struct PromptBuildParams<'a> {
     pub user_id: Option<uuid::Uuid>,
     /// Chronicle ID for ECS context
     pub chronicle_id: Option<uuid::Uuid>,
+    /// Pre-assembled agentic context from orchestrator (optional)
+    pub agentic_context: Option<String>,
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -243,6 +245,7 @@ async fn build_meta_system_prompt(
     has_character_definition: bool,
     has_character_details: bool,
     has_world_state: bool,
+    has_agentic_context: bool,
     token_counter: &HybridTokenCounter,
     model_name: &str,
 ) -> Result<(String, usize), AppError> {
@@ -275,8 +278,13 @@ async fn build_meta_system_prompt(
         section_num += 1;
     }
 
+    if has_agentic_context {
+        sections_list.push(format!("{}. <agentic_context>: AI-assembled narrative intelligence including relevant chronicles, lorebook entries, entity relationships, and contextual insights for this specific scenario.", section_num));
+        section_num += 1;
+    }
+
     if has_rag_items {
-        sections_list.push(format!("{}. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.", section_num));
+        sections_list.push(format!("{}. <lorebook_entries>: Additional background information about the world, other characters, or plot points (supplementary to agentic context).", section_num));
         section_num += 1;
     }
 
@@ -335,11 +343,12 @@ async fn calculate_component_tokens(
     raw_character_system_prompt: Option<&str>,
     character_metadata: Option<&CharacterMetadata>,
     current_user_message: &GenAiChatMessage,
+    agentic_context: Option<&str>,
     token_counter: &HybridTokenCounter,
     model_name: &str,
     user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
     user_persona_name: Option<&str>,
-) -> Result<((String, usize), (String, usize), (String, usize), usize), AppError> {
+) -> Result<((String, usize), (String, usize), (String, usize), usize, usize), AppError> {
     // Apply template substitution to persona override prompt
     let character_name = character_metadata.map(|cm| cm.name.as_str());
     let persona_override_prompt_str = if let Some(base) = system_prompt_base {
@@ -397,6 +406,19 @@ async fn calculate_component_tokens(
     let current_user_message_tokens =
         count_tokens_for_genai_message(current_user_message, token_counter, model_name).await?;
 
+    let agentic_context_tokens = if let Some(agentic_ctx) = agentic_context {
+        if agentic_ctx.is_empty() {
+            0
+        } else {
+            token_counter
+                .count_tokens(agentic_ctx, CountingMode::LocalOnly, Some(model_name))
+                .await?
+                .total
+        }
+    } else {
+        0
+    };
+
     Ok((
         (
             persona_override_prompt_str.to_string(),
@@ -408,6 +430,7 @@ async fn calculate_component_tokens(
         ),
         (character_details_str, character_details_tokens),
         current_user_message_tokens,
+        agentic_context_tokens,
     ))
 }
 
@@ -449,6 +472,7 @@ pub(crate) struct TokenCalculation {
     character_details_str: String,
     character_details_tokens: usize,
     current_user_message_tokens: usize,
+    agentic_context_tokens: usize,
     rag_items_with_tokens: Vec<(RetrievedChunk, usize)>,
     recent_history_with_tokens: Vec<(GenAiChatMessage, usize)>,
 }
@@ -479,6 +503,7 @@ async fn perform_initial_token_calculation(
             && !raw_character_system_prompt.as_ref().unwrap().is_empty(),
         character_metadata.is_some(),
         params.world_state_context.is_some(),
+        params.agentic_context.is_some() && !params.agentic_context.as_ref().unwrap().is_empty(),
         token_counter,
         model_name,
     )
@@ -490,11 +515,13 @@ async fn perform_initial_token_calculation(
         (character_definition_str, character_definition_tokens),
         (character_details_str, character_details_tokens),
         current_user_message_tokens,
+        agentic_context_tokens,
     ) = calculate_component_tokens(
         system_prompt_base.as_deref(),
         raw_character_system_prompt.as_deref(),
         *character_metadata,
         current_user_message,
+        params.agentic_context.as_deref(),
         token_counter,
         model_name,
         params.user_dek,
@@ -515,6 +542,7 @@ async fn perform_initial_token_calculation(
         character_details_str,
         character_details_tokens,
         current_user_message_tokens,
+        agentic_context_tokens,
         rag_items_with_tokens,
         recent_history_with_tokens,
     })
@@ -527,6 +555,7 @@ fn calculate_total_tokens(calculation: &TokenCalculation) -> usize {
         + calculation.character_definition_tokens
         + calculation.character_details_tokens
         + calculation.current_user_message_tokens
+        + calculation.agentic_context_tokens
         + calculation
             .rag_items_with_tokens
             .iter()
@@ -553,6 +582,7 @@ fn log_initial_token_calculation(
         calculation.character_definition_tokens,
         calculation.character_details_tokens,
         calculation.current_user_message_tokens,
+        calculation.agentic_context_tokens,
         rag_tokens = calculation
             .rag_items_with_tokens
             .iter()
@@ -758,6 +788,7 @@ async fn build_final_prompt_strings(
     token_counter: &HybridTokenCounter,
     model_name: &str,
     world_state_context: Option<&str>,
+    agentic_context: Option<&str>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Rebuild the meta system prompt based on final RAG items after truncation
     let has_final_rag_items = !calculation.rag_items_with_tokens.is_empty();
@@ -772,6 +803,7 @@ async fn build_final_prompt_strings(
         has_character_definition,
         has_character_details,
         world_state_context.is_some(),
+        agentic_context.is_some() && !agentic_context.unwrap().is_empty(),
         token_counter,
         model_name,
     )
@@ -806,6 +838,15 @@ async fn build_final_prompt_strings(
         final_system_prompt.push_str("\n\n<current_world_state>\n");
         final_system_prompt.push_str(world_state);
         final_system_prompt.push_str("\n</current_world_state>");
+    }
+
+    // Add agentic context if present
+    if let Some(agentic_ctx) = agentic_context {
+        if !agentic_ctx.is_empty() {
+            final_system_prompt.push_str("\n\n<agentic_context>\n");
+            final_system_prompt.push_str(agentic_ctx);
+            final_system_prompt.push_str("\n</agentic_context>");
+        }
     }
 
     // End system prompt cleanly
@@ -1119,6 +1160,7 @@ pub async fn build_final_llm_prompt(
         &params.token_counter,
         &params.model_name,
         params.world_state_context.as_deref(),
+        params.agentic_context.as_deref(),
     )
     .await?;
 
@@ -1127,6 +1169,7 @@ pub async fn build_final_llm_prompt(
         + calculation.character_definition_tokens
         + calculation.character_details_tokens
         + calculation.current_user_message_tokens
+        + calculation.agentic_context_tokens
         + calculation
             .rag_items_with_tokens
             .iter()
@@ -1342,6 +1385,7 @@ mod tests {
                 character_details_str: if details_tokens > 0 { "details".to_string() } else { String::new() },
                 character_details_tokens: details_tokens,
                 current_user_message_tokens: current_user_tokens,
+                agentic_context_tokens: 0, // Default to 0 for tests
                 rag_items_with_tokens: rag_items,
                 recent_history_with_tokens: history_messages,
             }

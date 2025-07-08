@@ -116,6 +116,12 @@ impl ContextOptimizationService {
             QueryStrategy::NarrativeContextAssembly => "Narrative context for story continuation",
             QueryStrategy::StateSnapshot => "Current state inquiry of entities",
             QueryStrategy::ComparativeAnalysis => "Comparative analysis between entities",
+            QueryStrategy::ChronicleNarrativeMapping => "Chronicle narrative mapping and story context",
+            QueryStrategy::ChronicleThematicAnalysis => "Chronicle thematic and character analysis",
+            QueryStrategy::ChronicleTimelineReconstruction => "Chronicle timeline and causal reconstruction",
+            QueryStrategy::LorebookContextualRetrieval => "Lorebook contextual information retrieval",
+            QueryStrategy::LorebookConceptualMapping => "Lorebook conceptual knowledge mapping",
+            QueryStrategy::LorebookCulturalContext => "Lorebook cultural and historical context",
         };
 
         let current_context_summary = context.results.iter()
@@ -171,6 +177,46 @@ impl ContextOptimizationService {
                     crate::services::context_assembly_engine::QueryExecutionResult::NarrativeThreads(r) => {
                         format!("NarrativeThreads ({} threads, status: {})", 
                                r.threads.len(), r.status)
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::ChronicleEvents(r) => {
+                        format!("ChronicleEvents ({} events, time: {})", 
+                               r.events.len(), r.time_range)
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::ChronicleTimeline(r) => {
+                        format!("ChronicleTimeline ({} events, {} arcs)", 
+                               r.timeline.len(), r.narrative_arcs.len())
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::ChronicleThemes(r) => {
+                        format!("ChronicleThemes ({} themes, {} arcs)", 
+                               r.themes.len(), r.character_arcs.len())
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::RelatedChronicles(r) => {
+                        format!("RelatedChronicles ({} chronicles)", 
+                               r.related_chronicles.len())
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::LorebookEntries(r) => {
+                        format!("LorebookEntries ({} entries, {} categories)", 
+                               r.entries.len(), r.categories.len())
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::LorebookConcepts(r) => {
+                        format!("LorebookConcepts ({} concepts, {} types)", 
+                               r.concepts.len(), r.concept_types.len())
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::LorebookCharacters(r) => {
+                        format!("LorebookCharacters ({} characters, {} types)", 
+                               r.characters.len(), r.character_types.len())
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::LorebookLocations(r) => {
+                        format!("LorebookLocations ({} locations, {} types)", 
+                               r.locations.len(), r.location_types.len())
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::LorebookContext(r) => {
+                        format!("LorebookContext ({} entries, {} types)", 
+                               r.contextual_entries.len(), r.context_types.len())
+                    },
+                    crate::services::context_assembly_engine::QueryExecutionResult::MissingEntities(r) => {
+                        format!("MissingEntities ({} missing, priority: {:.2})", 
+                               r.missing_entities.len(), r.creation_priority)
                     },
                 }
             })
