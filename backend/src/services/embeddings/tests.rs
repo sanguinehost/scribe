@@ -149,63 +149,67 @@ mod tests {
     // TODO: Add tests for process_and_embed_lorebook_entry
 
     // Helper for setting up test environment for service methods
+
+    // Helper function to set up a test environment for the embedding pipeline
     async fn setup_pipeline_test_env() -> (
         Arc<AppState>,
         Arc<MockQdrantClientService>,
         Arc<MockEmbeddingClient>,
     ) {
-        let mock_qdrant = Arc::new(MockQdrantClientService::new());
-        let mock_embed_client = Arc::new(MockEmbeddingClient::new());
-        let pool = setup_test_database(None).await;
-        let config = Arc::new(Config::default());
+        let pool = Arc::new(crate::test_helpers::db::setup_test_database(None).await);
         let ai_client = Arc::new(MockAiClient::new());
+        let mock_embed_client = Arc::new(MockEmbeddingClient::new());
+        let mock_qdrant = Arc::new(MockQdrantClientService::new());
 
-        // For EmbeddingPipelineService tests, we instantiate the actual service
-        let chunk_config = ChunkConfig {
-            metric: ChunkingMetric::Char,
-            max_size: 100,
-            overlap: 20,
-        };
-        let embedding_pipeline_service_concrete =
-            Arc::new(EmbeddingPipelineService::new(chunk_config));
+        let embedding_pipeline_service_concrete = Arc::new(
+            crate::services::embeddings::EmbeddingPipelineService::new(
+                crate::text_processing::chunking::ChunkConfig {
+                    metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                    max_size: 500,
+                    overlap: 50,
+                },
+            ),
+        );
 
-        let encryption_service =
-            Arc::new(crate::services::encryption_service::EncryptionService::new());
-        let chat_override_service = Arc::new(
-            crate::services::chat_override_service::ChatOverrideService::new(
-                pool.clone(),
-                encryption_service.clone(),
-            ),
-        );
-        let user_persona_service = Arc::new(
-            crate::services::user_persona_service::UserPersonaService::new(
-                pool.clone(),
-                encryption_service.clone(),
-            ),
-        );
-        let token_counter_service = Arc::new(
-            crate::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
-                crate::services::tokenizer_service::TokenizerService::new(
-                    &config.tokenizer_model_path,
-                )
-                .expect("Failed to create tokenizer for test"),
-            ),
-        );
-        let lorebook_service = Arc::new(LorebookService::new(
-            pool.clone(),
+        let encryption_service = Arc::new(crate::services::encryption_service::EncryptionService::new());
+
+        let chat_override_service = Arc::new(crate::services::ChatOverrideService::new(
+            (*pool).clone(),
+            encryption_service.clone(),
+        ));
+        let user_persona_service = Arc::new(crate::services::UserPersonaService::new(
+            (*pool).clone(),
+            encryption_service.clone(),
+        ));
+        let tokenizer_service = crate::services::tokenizer_service::TokenizerService::new(
+            "tokenizer.json"
+        ).expect("Failed to create tokenizer service");
+        let token_counter_service = Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new(
+            tokenizer_service,
+            None,
+            "gemini-1.5-flash",
+        ));
+        let lorebook_service = Arc::new(crate::services::LorebookService::new(
+            (*pool).clone(),
             encryption_service.clone(),
             mock_qdrant.clone(),
         ));
-        let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
+        let auth_backend = Arc::new(crate::auth::user_store::Backend::new(
+            (*pool).clone(),
+        ));
+        let file_storage_service = Arc::new(crate::services::file_storage_service::FileStorageService::new(
+            "test_uploads",
+        ).expect("Failed to create FileStorageService"));
 
-        let file_storage_service = Arc::new(
-            crate::services::file_storage_service::FileStorageService::new("./test_uploads")
-                .expect("Failed to create test file storage service"),
-        );
-
-        // Create chronicle service for narrative intelligence
-        let chronicle_service = Arc::new(crate::services::chronicle_service::ChronicleService::new(
+        let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
             pool.clone(),
+            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            None,
+        ));
+
+        let state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
+            ai_client.clone(),
+            entity_manager.clone(),
         ));
 
         // First create services without narrative intelligence service
@@ -227,11 +231,7 @@ mod tests {
             // ECS Services - minimal test instances
             redis_client: Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
             feature_flags: Arc::new(crate::config::NarrativeFeatureFlags::default()),
-            ecs_entity_manager: Arc::new(crate::services::EcsEntityManager::new(
-                Arc::new(pool.clone()),
-                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                None,
-            )),
+            ecs_entity_manager: entity_manager.clone(),
             ecs_graceful_degradation: Arc::new(crate::services::EcsGracefulDegradation::new(
                 Default::default(),
                 Arc::new(crate::config::NarrativeFeatureFlags::default()),
@@ -239,14 +239,10 @@ mod tests {
                 None,
             )),
             ecs_enhanced_rag_service: Arc::new(crate::services::EcsEnhancedRagService::new(
-                Arc::new(pool.clone()),
+                pool.clone(),
                 Default::default(),
                 Arc::new(crate::config::NarrativeFeatureFlags::default()),
-                Arc::new(crate::services::EcsEntityManager::new(
-                    Arc::new(pool.clone()),
-                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                    None,
-                )),
+                entity_manager.clone(),
                 Arc::new(crate::services::EcsGracefulDegradation::new(
                     Default::default(),
                     Arc::new(crate::config::NarrativeFeatureFlags::default()),
@@ -262,23 +258,15 @@ mod tests {
                 )),
             )),
             hybrid_query_service: Arc::new(crate::services::HybridQueryService::new(
-                Arc::new(pool.clone()),
+                pool.clone(),
                 Default::default(),
                 Arc::new(crate::config::NarrativeFeatureFlags::default()),
-                Arc::new(crate::services::EcsEntityManager::new(
-                    Arc::new(pool.clone()),
-                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                    None,
-                )),
+                entity_manager.clone(),
                 Arc::new(crate::services::EcsEnhancedRagService::new(
-                    Arc::new(pool.clone()),
+                    pool.clone(),
                     Default::default(),
                     Arc::new(crate::config::NarrativeFeatureFlags::default()),
-                    Arc::new(crate::services::EcsEntityManager::new(
-                        Arc::new(pool.clone()),
-                        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                        None,
-                    )),
+                    entity_manager.clone(),
                     Arc::new(crate::services::EcsGracefulDegradation::new(
                         Default::default(),
                         Arc::new(crate::config::NarrativeFeatureFlags::default()),
@@ -301,21 +289,21 @@ mod tests {
                 )),
             )),
             // Chronicle ECS services for test
-            chronicle_service: Arc::new(crate::services::ChronicleService::new(pool.clone())),
+            chronicle_service: Arc::new(crate::services::ChronicleService::new((*pool).clone())),
             chronicle_ecs_translator: Arc::new(crate::services::ChronicleEcsTranslator::new(
-                Arc::new(pool.clone())
+                pool.clone()
             )),
             chronicle_event_listener: {
                 let feature_flags = Arc::new(crate::config::NarrativeFeatureFlags::default());
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
-                    Arc::new(pool.clone()),
+                    pool.clone(),
                     redis_client,
                     None,
                 ));
-                let chronicle_service = Arc::new(crate::services::ChronicleService::new(pool.clone()));
+                let chronicle_service = Arc::new(crate::services::ChronicleService::new((*pool).clone()));
                 let chronicle_ecs_translator = Arc::new(crate::services::ChronicleEcsTranslator::new(
-                    Arc::new(pool.clone())
+                    pool.clone()
                 ));
                 Arc::new(crate::services::ChronicleEventListener::new(
                     Default::default(),
@@ -326,30 +314,18 @@ mod tests {
                 ))
             },
             world_model_service: Arc::new(crate::services::WorldModelService::new(
-                Arc::new(pool.clone()),
-                Arc::new(crate::services::EcsEntityManager::new(
-                    Arc::new(pool.clone()),
-                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                    None,
-                )),
+                pool.clone(),
+                entity_manager.clone(),
                 Arc::new(crate::services::HybridQueryService::new(
-                    Arc::new(pool.clone()),
+                    pool.clone(),
                     Default::default(),
                     Arc::new(crate::config::NarrativeFeatureFlags::default()),
-                    Arc::new(crate::services::EcsEntityManager::new(
-                        Arc::new(pool.clone()),
-                        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                        None,
-                    )),
+                    entity_manager.clone(),
                     Arc::new(crate::services::EcsEnhancedRagService::new(
-                        Arc::new(pool.clone()),
+                        pool.clone(),
                         Default::default(),
                         Arc::new(crate::config::NarrativeFeatureFlags::default()),
-                        Arc::new(crate::services::EcsEntityManager::new(
-                            Arc::new(pool.clone()),
-                            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                            None,
-                        )),
+                        entity_manager.clone(),
                         Arc::new(crate::services::EcsGracefulDegradation::new(
                             Default::default(),
                             Arc::new(crate::config::NarrativeFeatureFlags::default()),
@@ -371,58 +347,51 @@ mod tests {
                         None,
                     )),
                 )),
-                Arc::new(crate::services::ChronicleService::new(pool.clone())),
+                Arc::new(crate::services::ChronicleService::new((*pool).clone())),
             )),
-            agentic_orchestrator: {
-                let entity_manager = Arc::new(crate::services::EcsEntityManager::new(
-                    Arc::new(pool.clone()),
-                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                    None,
-                ));
-                let state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
-                    ai_client.clone(),
+            agentic_orchestrator: Arc::new(crate::services::AgenticOrchestrator::new(
+                ai_client.clone(),
+                Arc::new(crate::services::HybridQueryService::new(
+                    pool.clone(),
+                    Default::default(),
+                    Arc::new(crate::config::NarrativeFeatureFlags::default()),
                     entity_manager.clone(),
-                ));
-                Arc::new(crate::services::AgenticOrchestrator::new(
-                    ai_client.clone(),
-                    Arc::new(crate::services::HybridQueryService::new(
-                        Arc::new(pool.clone()),
+                    Arc::new(crate::services::EcsEnhancedRagService::new(
+                        pool.clone(),
                         Default::default(),
                         Arc::new(crate::config::NarrativeFeatureFlags::default()),
                         entity_manager.clone(),
-                        Arc::new(crate::services::EcsEnhancedRagService::new(
-                            Arc::new(pool.clone()),
-                            Default::default(),
-                            Arc::new(crate::config::NarrativeFeatureFlags::default()),
-                            entity_manager.clone(),
-                            Arc::new(crate::services::EcsGracefulDegradation::new(
-                                Default::default(),
-                                Arc::new(crate::config::NarrativeFeatureFlags::default()),
-                                None,
-                                None,
-                            )),
-                            Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
-                                crate::text_processing::chunking::ChunkConfig {
-                                    metric: crate::text_processing::chunking::ChunkingMetric::Word,
-                                    max_size: 500,
-                                    overlap: 50,
-                                }
-                            )),
-                        )),
                         Arc::new(crate::services::EcsGracefulDegradation::new(
                             Default::default(),
                             Arc::new(crate::config::NarrativeFeatureFlags::default()),
                             None,
                             None,
                         )),
+                        Arc::new(crate::services::embeddings::EmbeddingPipelineService::new(
+                            crate::text_processing::chunking::ChunkConfig {
+                                metric: crate::text_processing::chunking::ChunkingMetric::Word,
+                                max_size: 500,
+                                overlap: 50,
+                            }
+                        )),
                     )),
-                    Arc::new(pool.clone()),
-                    state_update_service,
-                ))
-            },
+                    Arc::new(crate::services::EcsGracefulDegradation::new(
+                        Default::default(),
+                        Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                        None,
+                        None,
+                    )),
+                )),
+                pool.clone(),
+                state_update_service.clone(), // Clone the state_update_service here
+            )),
+            agentic_state_update_service: state_update_service.clone(), // Add this line
         };
 
-        let app_state = Arc::new(AppState::new(pool, config, services));
+        let config = crate::config::Config::load()
+            .expect("Failed to load config from environment");
+
+        let app_state = Arc::new(AppState::new((*pool).clone(), Arc::new(config), services));
         (app_state, mock_qdrant, mock_embed_client)
     }
 

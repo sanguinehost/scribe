@@ -6,6 +6,7 @@
 // implementing the bridge between narrative events and structured game state.
 
 use std::sync::Arc;
+use std::collections::HashMap;
 use uuid::Uuid;
 use serde_json::{Value as JsonValue, json};
 use tracing::{info, warn, debug, error, instrument};
@@ -16,10 +17,11 @@ use crate::{
     models::{
         chronicle_event::ChronicleEvent,
         narrative_ontology::{EventActor, ActorRole, EventValence, ValenceType, NarrativeAction},
-        ecs::{Component, HealthComponent, PositionComponent, RelationshipsComponent},
+        ecs::{Component, HealthComponent, PositionComponent, RelationshipsComponent, NameComponent, InventoryComponent},
         ecs_diesel::{EcsEntity, NewEcsEntity, NewEcsComponent, NewEcsEntityRelationship},
     },
     schema::{ecs_entities, ecs_components, ecs_entity_relationships},
+    services::agentic::entity_resolution_tool::NarrativeContext,
 };
 
 use diesel::prelude::*;
@@ -82,6 +84,15 @@ pub enum RelationshipOperation {
     Delete,
 }
 
+/// Full entity data extracted from event JSON
+#[derive(Debug, Clone)]
+struct EntityData {
+    name: String,
+    entity_type: String,
+    confidence: f64,
+    is_new: bool,
+}
+
 /// Service for translating chronicle events to ECS state changes
 pub struct ChronicleEcsTranslator {
     db_pool: Arc<PgPool>,
@@ -97,6 +108,7 @@ impl ChronicleEcsTranslator {
     #[instrument(skip(self, event), fields(event_id = %event.id, event_type = %event.event_type, user_hash = %format!("{:x}", hash_user_id(user_id))))]
     pub async fn translate_event(&self, event: &ChronicleEvent, user_id: Uuid) -> Result<TranslationResult, AppError> {
         debug!("Starting translation of chronicle event");
+        debug!("Event actors field: {:?}", event.actors);
         
         let mut result = TranslationResult {
             entities_created: Vec::new(),
@@ -105,9 +117,31 @@ impl ChronicleEcsTranslator {
             messages: Vec::new(),
         };
 
-        // Parse actors from the event
-        let actors = match event.get_actors() {
-            Ok(actors) => actors,
+        // Parse actors from the event with fallback for missing entity_id
+        let actors = match event.get_actors_with_fallback() {
+            Ok(actors) => {
+                debug!("Parsed {} actors from event", actors.len());
+                if actors.is_empty() {
+                    warn!(
+                        "EMPTY ACTORS DETECTED - Event ID: {}, Type: {}, Action: {:?}, Summary: {}, User: {:#x}", 
+                        event.id, 
+                        event.event_type,
+                        event.get_action(),
+                        event.summary.chars().take(100).collect::<String>(),
+                        hash_user_id(user_id)
+                    );
+                    debug!("Event data for empty actors analysis: {}", 
+                        serde_json::to_string_pretty(&event.event_data).unwrap_or_else(|_| "Failed to serialize".to_string())
+                    );
+                    result.messages.push("Warning: No actors found in event - this may indicate incomplete entity extraction".to_string());
+                } else {
+                    for (i, actor) in actors.iter().enumerate() {
+                        debug!("Actor {}: role={:?}, entity_id={}, context={:?}", 
+                            i, actor.role, actor.entity_id, actor.context);
+                    }
+                }
+                actors
+            },
             Err(e) => {
                 warn!("Failed to parse actors from event: {}", e);
                 result.messages.push(format!("Failed to parse actors: {}", e));
@@ -117,10 +151,14 @@ impl ChronicleEcsTranslator {
 
         // Parse action from the event
         let action = event.get_action();
+        debug!("Event action: {:?}", action);
 
         // Parse valence changes from the event
         let valence_changes = match event.get_valence() {
-            Ok(changes) => changes,
+            Ok(changes) => {
+                debug!("Event valence changes: {} entries", changes.len());
+                changes
+            },
             Err(e) => {
                 debug!("No valence changes in event or parse error: {}", e);
                 Vec::new()
@@ -128,11 +166,13 @@ impl ChronicleEcsTranslator {
         };
 
         // Step 1: Ensure all actor entities exist in ECS
-        self.ensure_entities_exist(&actors, user_id, &mut result).await?;
+        let entity_data_map = self.extract_entity_data_from_event(event);
+        debug!("Extracted entity data for {} entities: {:?}", entity_data_map.len(), entity_data_map);
+        self.ensure_entities_exist(&actors, user_id, event, &mut result, &entity_data_map).await?;
 
         // Step 2: Apply action-based state changes
         if let Some(action) = action {
-            self.apply_action_changes(&action, &actors, user_id, event, &mut result).await?;
+            self.apply_action_changes(&action, &actors, user_id, event, &mut result, &entity_data_map).await?;
         }
 
         // Step 3: Apply valence changes to relationships
@@ -237,7 +277,7 @@ impl ChronicleEcsTranslator {
     }
 
     /// Ensure all actor entities exist in the ECS, creating them if necessary
-    async fn ensure_entities_exist(&self, actors: &[EventActor], user_id: Uuid, result: &mut TranslationResult) -> Result<(), AppError> {
+    async fn ensure_entities_exist(&self, actors: &[EventActor], user_id: Uuid, event: &ChronicleEvent, result: &mut TranslationResult, entity_data_map: &HashMap<Uuid, EntityData>) -> Result<(), AppError> {
         let conn = self.db_pool.get().await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
@@ -257,8 +297,9 @@ impl ChronicleEcsTranslator {
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             if exists.is_none() {
-                // Create new entity with basic archetype
-                let archetype = self.determine_entity_archetype(actor);
+                // Create new entity with archetype based on extracted data
+                let entity_data = entity_data_map.get(&actor.entity_id);
+                let archetype = self.determine_entity_archetype_from_data(entity_data);
                 
                 let new_entity = NewEcsEntity {
                     id: actor.entity_id,
@@ -287,79 +328,162 @@ impl ChronicleEcsTranslator {
                 result.entities_created.push(actor.entity_id);
                 
                 // Create basic components for new entities
-                self.create_basic_components(actor, user_id, result).await?;
+                let entity_data = entity_data_map.get(&actor.entity_id);
+                self.create_basic_components(actor, user_id, event, result, entity_data).await?;
             }
         }
 
         Ok(())
     }
 
-    /// Determine the archetype signature for a new entity based on its actor role and context
-    fn determine_entity_archetype(&self, actor: &EventActor) -> String {
-        // Default archetype for most entities
-        let mut components = vec!["Position"];
-
-        // Add components based on context clues
-        if let Some(context) = &actor.context {
-            let context_lower = context.to_lowercase();
-            
-            // Characters/people get health and relationships
-            if context_lower.contains("character") || 
-               context_lower.contains("person") || 
-               context_lower.contains("adventurer") ||
-               context_lower.contains("hero") ||
-               context_lower.contains("merchant") {
-                components.extend_from_slice(&["Health", "Relationships"]);
-            }
-            
-            // Items get inventory properties
-            if context_lower.contains("item") || 
-               context_lower.contains("weapon") || 
-               context_lower.contains("sword") ||
-               context_lower.contains("potion") ||
-               context_lower.contains("artifact") {
-                // Items don't need health, but might be in inventories
-                // Keep just Position for now
+    /// Extract full entity data from the original event JSON before EventActor parsing
+    fn extract_entity_data_from_event(&self, event: &ChronicleEvent) -> HashMap<Uuid, EntityData> {
+        let mut entity_data_map = HashMap::new();
+        
+        // First try to get resolved actors from event_data.actors (contains full resolution data)
+        if let Some(event_data) = &event.event_data {
+            if let Some(actors_json) = event_data.get("actors") {
+                if let Some(actors_array) = actors_json.as_array() {
+                    for actor_value in actors_array {
+                        if let Some(entity_id_str) = actor_value.get("entity_id").and_then(|v| v.as_str()) {
+                            if let Ok(entity_id) = Uuid::parse_str(entity_id_str) {
+                                let entity_data = EntityData {
+                                    name: actor_value.get("entity_name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                                    entity_type: actor_value.get("entity_type").and_then(|v| v.as_str()).unwrap_or("UNKNOWN").to_string(),
+                                    confidence: actor_value.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5),
+                                    is_new: actor_value.get("is_new").and_then(|v| v.as_bool()).unwrap_or(true),
+                                };
+                                entity_data_map.insert(entity_id, entity_data);
+                            }
+                        }
+                    }
+                    return entity_data_map; // Return early if we found resolved actors
+                }
             }
         }
+        
+        // Fallback to legacy actors field if no resolved actors found
+        if let Some(actors_json) = &event.actors {
+            if let Some(actors_array) = actors_json.as_array() {
+                for actor_value in actors_array {
+                    if let Some(entity_id_str) = actor_value.get("entity_id").and_then(|v| v.as_str()) {
+                        if let Ok(entity_id) = Uuid::parse_str(entity_id_str) {
+                            let entity_data = EntityData {
+                                name: actor_value.get("entity_name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                                entity_type: actor_value.get("entity_type").and_then(|v| v.as_str()).unwrap_or("UNKNOWN").to_string(),
+                                confidence: actor_value.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5),
+                                is_new: actor_value.get("is_new").and_then(|v| v.as_bool()).unwrap_or(true),
+                            };
+                            entity_data_map.insert(entity_id, entity_data);
+                        }
+                    }
+                }
+            }
+        }
+        
+        entity_data_map
+    }
 
-        // Default to character-like entity if uncertain
-        if components.len() == 1 {
-            components.extend_from_slice(&["Health", "Relationships"]);
+    /// Determine the archetype signature for a new entity based on extracted entity data
+    fn determine_entity_archetype_from_data(&self, entity_data: Option<&EntityData>) -> String {
+        let mut components = vec!["Name"]; // Always start with Name
+        
+        match entity_data {
+            Some(data) => {
+                match data.entity_type.as_str() {
+                    "CHARACTER" => {
+                        components.extend_from_slice(&["Position", "Health", "Relationships", "Personality", "Skills", "Inventory"]);
+                    },
+                    "LOCATION" => {
+                        components.extend_from_slice(&["Position", "Spatial_Containment", "Description", "Environmental_Properties"]);
+                    },
+                    "ITEM" => {
+                        components.extend_from_slice(&["Position", "Physical_Properties", "Ownership", "Item_State"]);
+                    },
+                    "CONCEPT" => {
+                        components.extend_from_slice(&["Abstract_Properties", "Conceptual_Relationships"]);
+                    },
+                    "ORGANIZATION" => {
+                        components.extend_from_slice(&["Position", "Description", "Organizational_Structure", "Relationships", "Operational_Status"]);
+                    },
+                    _ => {
+                        // Unknown type - default to basic entity
+                        components.extend_from_slice(&["Position", "Description"]);
+                    }
+                }
+            },
+            None => {
+                // No entity data - fallback to basic character-like entity
+                components.extend_from_slice(&["Position", "Health", "Relationships"]);
+            }
         }
 
         components.join("|")
     }
 
     /// Create basic components for a newly created entity
-    async fn create_basic_components(&self, actor: &EventActor, user_id: Uuid, result: &mut TranslationResult) -> Result<(), AppError> {
-        let archetype = self.determine_entity_archetype(actor);
+    async fn create_basic_components(&self, actor: &EventActor, user_id: Uuid, event: &ChronicleEvent, result: &mut TranslationResult, entity_data: Option<&EntityData>) -> Result<(), AppError> {
+        let archetype = self.determine_entity_archetype_from_data(entity_data);
         let component_types: Vec<&str> = archetype.split('|').collect();
+
+        // Extract narrative context from event if available
+        let narrative_context = self.extract_narrative_context_from_event(event);
+        
+        // Always create a ChronicleSource component to link entities to their chronicles
+        result.component_updates.push(ComponentUpdate {
+            entity_id: actor.entity_id,
+            component_type: "ChronicleSource".to_string(),
+            component_data: json!({
+                "chronicle_id": event.chronicle_id,
+                "source_event_id": event.id,
+                "created_at": Utc::now().to_rfc3339(),
+                "entity_id": actor.entity_id
+            }),
+            operation: ComponentOperation::Create,
+        });
 
         for component_type in component_types {
             let component_data = match component_type {
                 "Health" => {
-                    let health = HealthComponent {
-                        current: 100,
-                        max: 100,
-                        regeneration_rate: 1.0,
-                    };
+                    // Use contextual health data if available, otherwise defaults
+                    let health = self.create_health_component_from_context(entity_data, narrative_context.as_ref())?;
                     health.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?
                 }
                 "Position" => {
-                    let position = PositionComponent {
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                        zone: "unknown".to_string(),
-                    };
+                    // Use spatial context to populate position
+                    let position = self.create_position_component_from_context(entity_data, narrative_context.as_ref())?;
                     position.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?
                 }
                 "Relationships" => {
-                    let relationships = RelationshipsComponent {
-                        relationships: Vec::new(),
-                    };
+                    // This is now handled by handle_social_context, but we still need the component
+                    let relationships = RelationshipsComponent { relationships: Vec::new() };
                     relationships.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?
+                }
+                "Name" => {
+                    let actual_name = entity_data.map(|d| d.name.as_str()).unwrap_or("Unknown");
+                    let name = NameComponent {
+                        name: actual_name.to_string(),
+                        display_name: actual_name.to_string(),
+                        aliases: Vec::new(),
+                    };
+                    name.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?
+                }
+                "Inventory" => {
+                    let inventory = InventoryComponent {
+                        items: Vec::new(),
+                        capacity: 20,
+                    };
+                    inventory.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?
+                }
+                "Description" => {
+                    // Use entity description from narrative context
+                    self.create_description_component_from_context(entity_data, narrative_context.as_ref())?
+                }
+                // Enhanced components using rich context data
+                "Personality" | "Skills" | "Spatial_Containment" | "Environmental_Properties" |
+                "Physical_Properties" | "Ownership" | "Item_State" | "Abstract_Properties" | "Conceptual_Relationships" => {
+                    // Create contextual component data using narrative context
+                    self.create_contextual_component(component_type, entity_data, narrative_context.as_ref())?
                 }
                 _ => {
                     // Unknown component type, skip
@@ -383,13 +507,16 @@ impl ChronicleEcsTranslator {
         &self,
         action: &NarrativeAction,
         actors: &[EventActor],
-        user_id: Uuid,
+        _user_id: Uuid,
         event: &ChronicleEvent,
         result: &mut TranslationResult,
+        entity_data_map: &HashMap<Uuid, EntityData>,
     ) -> Result<(), AppError> {
+        self.handle_social_context(event, result, entity_data_map).await?;
+
         match action {
             NarrativeAction::Met => {
-                self.handle_meeting_action(actors, result).await?;
+                // This is now handled by handle_social_context
             }
             NarrativeAction::Acquired | NarrativeAction::Found | NarrativeAction::Discovered => {
                 self.handle_acquisition_action(actors, event, result).await?;
@@ -412,46 +539,57 @@ impl ChronicleEcsTranslator {
         Ok(())
     }
 
-    /// Handle meeting actions - create mutual relationships
-    async fn handle_meeting_action(&self, actors: &[EventActor], result: &mut TranslationResult) -> Result<(), AppError> {
-        // Find agent and patient actors
-        let agents: Vec<_> = actors.iter().filter(|a| a.role == ActorRole::Agent).collect();
-        let patients: Vec<_> = actors.iter().filter(|a| a.role == ActorRole::Patient).collect();
+    /// Handle social context from the narrative to create relationships
+    async fn handle_social_context(
+        &self,
+        event: &ChronicleEvent,
+        result: &mut TranslationResult,
+        entity_data_map: &HashMap<Uuid, EntityData>,
+    ) -> Result<(), AppError> {
+        if let Some(context) = self.extract_narrative_context_from_event(event) {
+            let name_to_uuid_map: HashMap<_, _> = entity_data_map
+                .iter()
+                .map(|(uuid, data)| (data.name.as_str(), *uuid))
+                .collect();
 
-        // Create mutual acquaintance relationships
-        for agent in &agents {
-            for patient in &patients {
-                if agent.entity_id != patient.entity_id {
-                    // Create bidirectional "knows" relationship
+            for rel in &context.social_context.relationships {
+                if let (Some(&entity1_id), Some(&entity2_id)) = (
+                    name_to_uuid_map.get(rel.entity1.as_str()),
+                    name_to_uuid_map.get(rel.entity2.as_str()),
+                ) {
+                    if entity1_id == entity2_id { continue; }
+
+                    // Create bidirectional relationship
                     result.relationship_updates.push(RelationshipUpdate {
-                        from_entity_id: agent.entity_id,
-                        to_entity_id: patient.entity_id,
-                        relationship_type: "knows".to_string(),
+                        from_entity_id: entity1_id,
+                        to_entity_id: entity2_id,
+                        relationship_type: rel.relationship.clone(),
                         relationship_data: json!({
                             "trust": 0.1,
                             "affection": 0.0,
                             "created_at": Utc::now().to_rfc3339(),
-                            "context": "first meeting"
+                            "context": format!("Established from narrative: {}", event.summary.chars().take(100).collect::<String>())
                         }),
                         operation: RelationshipOperation::Create,
                     });
 
                     result.relationship_updates.push(RelationshipUpdate {
-                        from_entity_id: patient.entity_id,
-                        to_entity_id: agent.entity_id,
-                        relationship_type: "knows".to_string(),
+                        from_entity_id: entity2_id,
+                        to_entity_id: entity1_id,
+                        relationship_type: rel.relationship.clone(),
                         relationship_data: json!({
                             "trust": 0.1,
                             "affection": 0.0,
                             "created_at": Utc::now().to_rfc3339(),
-                            "context": "first meeting"
+                            "context": format!("Established from narrative: {}", event.summary.chars().take(100).collect::<String>())
                         }),
                         operation: RelationshipOperation::Create,
                     });
+                } else {
+                    warn!("Could not resolve entities for social relationship: {} <-> {}", rel.entity1, rel.entity2);
                 }
             }
         }
-
         Ok(())
     }
 
@@ -634,7 +772,7 @@ impl ChronicleEcsTranslator {
         &self,
         valence_changes: &[EventValence],
         actors: &[EventActor],
-        user_id: Uuid,
+        _user_id: Uuid,
         result: &mut TranslationResult,
     ) -> Result<(), AppError> {
         for valence in valence_changes {
@@ -834,5 +972,266 @@ impl ChronicleEcsTranslator {
         }
 
         Ok(())
+    }
+
+    /// Extract narrative context from chronicle event's context_data field
+    fn extract_narrative_context_from_event(&self, event: &ChronicleEvent) -> Option<NarrativeContext> {
+        let context_json = event.context_data.as_ref()
+            .or_else(|| event.event_data.as_ref().and_then(|ed| ed.get("context_data")));
+
+        context_json.and_then(|json| {
+            match serde_json::from_value(json.clone()) {
+                Ok(context) => Some(context),
+                Err(e) => {
+                    warn!("Failed to deserialize NarrativeContext from event {}: {}", event.id, e);
+                    None
+                }
+            }
+        })
+    }
+
+    /// Create a health component using narrative context if available
+    fn create_health_component_from_context(
+        &self,
+        entity_data: Option<&EntityData>,
+        narrative_context: Option<&NarrativeContext>
+    ) -> Result<HealthComponent, AppError> {
+        // Try to extract health information from narrative context
+        if let Some(context) = narrative_context {
+            let entity_name = entity_data.map(|d| d.name.as_str()).unwrap_or("Unknown");
+            
+            if let Some(entity) = context.entities.iter().find(|e| e.name == entity_name) {
+                for prop in &entity.properties {
+                    let prop_lower = prop.to_lowercase();
+                    if prop_lower.contains("wounded") || prop_lower.contains("injured") {
+                        return Ok(HealthComponent {
+                            current: 50,
+                            max: 100,
+                            regeneration_rate: 0.5,
+                        });
+                    } else if prop_lower.contains("healthy") || prop_lower.contains("strong") {
+                        return Ok(HealthComponent {
+                            current: 100,
+                            max: 100,
+                            regeneration_rate: 1.5,
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Default health if no context available
+        Ok(HealthComponent {
+            current: 100,
+            max: 100,
+            regeneration_rate: 1.0,
+        })
+    }
+
+    /// Create a position component using spatial context if available
+    fn create_position_component_from_context(
+        &self,
+        entity_data: Option<&EntityData>,
+        narrative_context: Option<&NarrativeContext>
+    ) -> Result<PositionComponent, AppError> {
+        // Try to extract spatial information from narrative context
+        if let Some(context) = narrative_context {
+            let entity_name = entity_data.map(|d| d.name.as_str()).unwrap_or("Unknown");
+
+            // Check if there's a primary location
+            if let Some(primary_location) = &context.spatial_context.primary_location {
+                if !primary_location.is_empty() {
+                    return Ok(PositionComponent {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        zone: primary_location.clone(),
+                    });
+                }
+            }
+
+            // Check spatial relationships for this entity
+            for rel in &context.spatial_context.spatial_relationships {
+                if rel.entity1 == entity_name || rel.entity2 == entity_name {
+                    // Use the location from the relationship
+                    let location = if rel.entity1 == entity_name { &rel.entity2 } else { &rel.entity1 };
+                    if !location.is_empty() {
+                        return Ok(PositionComponent {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                            zone: format!("{} ({})", rel.relationship, location),
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Default position if no spatial context available
+        Ok(PositionComponent {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            zone: "unknown".to_string(),
+        })
+    }
+
+
+    /// Create a description component using entity description from narrative context
+    fn create_description_component_from_context(
+        &self, 
+        entity_data: Option<&EntityData>,
+        narrative_context: Option<&NarrativeContext>
+    ) -> Result<JsonValue, AppError> {
+        let mut description = "No description available.".to_string();
+        
+        // Try to extract description from narrative context
+        if let Some(context) = narrative_context {
+            let entity_name = entity_data.map(|d| d.name.as_str()).unwrap_or("Unknown");
+            if let Some(entity) = context.entities.iter().find(|e| e.name == entity_name) {
+                if !entity.description.is_empty() {
+                    description = entity.description.clone();
+                }
+            }
+        }
+        
+        Ok(json!({
+            "description": description,
+            "source": "narrative_context"
+        }))
+    }
+
+    /// Create contextual component data for various component types
+    fn create_contextual_component(
+        &self,
+        component_type: &str,
+        entity_data: Option<&EntityData>,
+        narrative_context: Option<&NarrativeContext>
+    ) -> Result<JsonValue, AppError> {
+        let entity_name = entity_data.map(|d| d.name.as_str()).unwrap_or("Unknown");
+        let entity_type = entity_data.map(|d| d.entity_type.as_str()).unwrap_or("UNKNOWN");
+        
+        let mut component_data = json!({
+            "component_type": component_type,
+            "entity_name": entity_name,
+            "entity_type": entity_type,
+            "confidence": entity_data.map(|d| d.confidence).unwrap_or(0.5)
+        });
+        
+        // Add contextual data based on component type and available narrative context
+        if let Some(context) = narrative_context {
+            if let Some(entity) = context.entities.iter().find(|e| e.name == entity_name) {
+                match component_type {
+                    "Personality" => {
+                        // More specific filtering for personality traits
+                        let personality_keywords = ["brave", "cunning", "stoic", "deceptive", "friendly", "hostile", "kind", "cruel"];
+                        let mut traits: Vec<String> = entity.properties.iter()
+                            .filter(|p| personality_keywords.iter().any(|kw| p.to_lowercase().contains(kw)))
+                            .map(|s| s.to_string())
+                            .collect();
+                        
+                        // Add emotional tone as a mood
+                        let mood = context.social_context.emotional_tone.clone();
+                        if !traits.contains(&mood) {
+                            traits.push(mood);
+                        }
+
+                        component_data["traits"] = json!(traits);
+                        component_data["mood"] = json!(context.social_context.emotional_tone);
+                    }
+                    "Skills" => {
+                        let mut skills: Vec<String> = entity.properties.iter()
+                            .filter(|p| {
+                                let p_lower = p.to_lowercase();
+                                p_lower.contains("skill") || p_lower.contains("ability") || p_lower.contains("proficient")
+                            })
+                            .map(|s| s.to_string())
+                            .collect();
+
+                        // Infer skills from actions
+                        for action in &context.actions_and_events {
+                            if let Some(agent) = &action.agent {
+                                if agent == entity_name {
+                                    // Simple mapping from verb to skill noun
+                                    let skill = match action.action.to_lowercase().as_str() {
+                                        "attacked" | "fought" => "combat".to_string(),
+                                        "negotiated" | "persuaded" => "diplomacy".to_string(),
+                                        "crafted" | "built" => "crafting".to_string(),
+                                        "healed" => "healing".to_string(),
+                                        _ => continue,
+                                    };
+                                    if !skills.contains(&skill) {
+                                        skills.push(skill);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if !skills.is_empty() {
+                            component_data["skills"] = json!(skills);
+                        }
+                    }
+                    "Environmental_Properties" => {
+                        if let Some(primary_location) = &context.spatial_context.primary_location {
+                            component_data["primary_environment"] = json!(primary_location);
+                        }
+                        if !context.spatial_context.secondary_locations.is_empty() {
+                            component_data["nearby_environments"] = json!(context.spatial_context.secondary_locations);
+                        }
+                    }
+                    "Spatial_Containment" => {
+                        let mut contains = Vec::new();
+                        let mut contained_by = Vec::new();
+                        
+                        for rel in &context.spatial_context.spatial_relationships {
+                            if rel.entity1 == entity_name && (rel.relationship.contains("in") || rel.relationship.contains("contains")) {
+                                contains.push(&rel.entity2);
+                            } else if rel.entity2 == entity_name && (rel.relationship.contains("in") || rel.relationship.contains("contains")) {
+                                contained_by.push(&rel.entity1);
+                            }
+                        }
+                        
+                        if !contains.is_empty() {
+                            component_data["contains"] = json!(contains);
+                        }
+                        if !contained_by.is_empty() {
+                            component_data["contained_by"] = json!(contained_by);
+                        }
+                    }
+                    "Organizational_Structure" => {
+                        let org_traits: Vec<&String> = entity.properties.iter()
+                            .filter(|p| {
+                                let p_lower = p.to_lowercase();
+                                p_lower.contains("system") || p_lower.contains("organization") || p_lower.contains("department") || p_lower.contains("division")
+                            })
+                            .collect();
+                        
+                        if !org_traits.is_empty() {
+                            component_data["structure_info"] = json!(org_traits);
+                        }
+                    }
+                    "Operational_Status" => {
+                        let status_indicators: Vec<&String> = entity.properties.iter()
+                            .filter(|p| {
+                                let p_lower = p.to_lowercase();
+                                p_lower.contains("active") || p_lower.contains("inactive") || p_lower.contains("operational") || p_lower.contains("functional") || p_lower.contains("status")
+                            })
+                            .collect();
+                        
+                        if !status_indicators.is_empty() {
+                            component_data["status"] = json!(status_indicators);
+                        } else if entity_type == "ORGANIZATION" {
+                            component_data["status"] = json!(["operational"]);
+                        }
+                    }
+                    _ => {
+                        // For other component types, just include basic properties
+                        component_data["properties"] = json!({});
+                    }
+                }
+            }
+        }
+        
+        Ok(component_data)
     }
 }

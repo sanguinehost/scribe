@@ -31,15 +31,18 @@ pub struct DeduplicationConfig {
     pub enable_action_similarity: bool,
     /// Maximum number of events to check for duplicates per query
     pub max_events_to_check: i64,
+    /// Confidence threshold for flagging duplicates
+    pub duplicate_confidence_threshold: f32,
 }
 
 impl Default for DeduplicationConfig {
     fn default() -> Self {
         Self {
-            time_window_minutes: 5, // 5 minute window
-            actor_overlap_threshold: 0.6, // 60% actor overlap
+            time_window_minutes: 15, // Increased to 15 minutes for re-chronicling
+            actor_overlap_threshold: 0.7, // Increased to 70% actor overlap
             enable_action_similarity: true,
-            max_events_to_check: 50,
+            max_events_to_check: 100, // Increased to check more events
+            duplicate_confidence_threshold: 0.8, // Lowered threshold for more aggressive deduplication
         }
     }
 }
@@ -177,31 +180,43 @@ impl ChronicleDeduplicationService {
             return Ok(None);
         }
 
-        // Stage 1: Check action similarity
+        // Stage 1: Check for exact content match first (fastest check)
+        let content_score = self.calculate_content_similarity(new_event, candidate);
+        if content_score >= 0.95 {
+            debug!("Events have very high content similarity: {:.2}", content_score);
+            return Ok(Some(DuplicateDetectionResult {
+                is_duplicate: true,
+                duplicate_event_id: Some(candidate.id),
+                confidence: content_score,
+                reasoning: format!("Exact content match: {:.2}", content_score),
+            }));
+        }
+
+        // Stage 2: Check action similarity
         let action_score = self.calculate_action_similarity(new_event, candidate);
         if action_score < 0.5 {
             debug!("Events have low action similarity: {:.2}", action_score);
             return Ok(None);
         }
 
-        // Stage 2: Check actor overlap
+        // Stage 3: Check actor overlap
         let actor_score = self.calculate_actor_overlap(new_event, candidate).await?;
         if actor_score < self.config.actor_overlap_threshold {
             debug!("Events have low actor overlap: {:.2}", actor_score);
             return Ok(None);
         }
 
-        // Stage 3: Temporal score already calculated above
+        // Stage 4: Temporal score already calculated above
 
-        // Calculate overall confidence
-        let confidence = (action_score * 0.4 + actor_score * 0.4 + temporal_score * 0.2).min(1.0);
+        // Calculate overall confidence with content similarity included
+        let confidence = (content_score * 0.4 + action_score * 0.25 + actor_score * 0.25 + temporal_score * 0.1).min(1.0);
 
         // Consider it a duplicate if confidence is high enough
-        let is_duplicate = confidence >= 0.7;
+        let is_duplicate = confidence >= self.config.duplicate_confidence_threshold;
 
         let reasoning = format!(
-            "Action similarity: {:.2}, Actor overlap: {:.2}, Temporal proximity: {:.2}, Overall confidence: {:.2}",
-            action_score, actor_score, temporal_score, confidence
+            "Content similarity: {:.2}, Action similarity: {:.2}, Actor overlap: {:.2}, Temporal proximity: {:.2}, Overall confidence: {:.2}",
+            content_score, action_score, actor_score, temporal_score, confidence
         );
 
         Ok(Some(DuplicateDetectionResult {
@@ -210,6 +225,72 @@ impl ChronicleDeduplicationService {
             confidence,
             reasoning,
         }))
+    }
+
+    /// Calculate content similarity between two events based on summary and event_data
+    fn calculate_content_similarity(&self, event1: &ChronicleEvent, event2: &ChronicleEvent) -> f32 {
+        // First check if summaries are identical
+        if event1.summary == event2.summary {
+            // If summaries are identical, check event_data as well
+            match (&event1.event_data, &event2.event_data) {
+                (Some(data1), Some(data2)) => {
+                    if data1 == data2 {
+                        1.0 // Perfect match
+                    } else {
+                        0.9 // Same summary but different structured data
+                    }
+                }
+                (None, None) => 1.0, // Same summary, no event data
+                _ => 0.85, // Same summary, one has event data
+            }
+        } else {
+            // Calculate fuzzy similarity for summaries
+            let summary_similarity = self.calculate_string_similarity(&event1.summary, &event2.summary);
+            
+            // If summaries are very similar, check event_data
+            if summary_similarity > 0.8 {
+                match (&event1.event_data, &event2.event_data) {
+                    (Some(data1), Some(data2)) => {
+                        if data1 == data2 {
+                            summary_similarity * 0.9 // High similarity with same data
+                        } else {
+                            summary_similarity * 0.7 // Similar summary, different data
+                        }
+                    }
+                    (None, None) => summary_similarity,
+                    _ => summary_similarity * 0.8,
+                }
+            } else {
+                summary_similarity
+            }
+        }
+    }
+    
+    /// Calculate similarity between two strings using simple character-based comparison
+    fn calculate_string_similarity(&self, str1: &str, str2: &str) -> f32 {
+        if str1 == str2 {
+            return 1.0;
+        }
+        
+        let len1 = str1.len();
+        let len2 = str2.len();
+        
+        if len1 == 0 || len2 == 0 {
+            return 0.0;
+        }
+        
+        // Simple character overlap calculation
+        let chars1: std::collections::HashSet<char> = str1.chars().collect();
+        let chars2: std::collections::HashSet<char> = str2.chars().collect();
+        
+        let intersection = chars1.intersection(&chars2).count();
+        let union = chars1.union(&chars2).count();
+        
+        if union == 0 {
+            0.0
+        } else {
+            intersection as f32 / union as f32
+        }
     }
 
     /// Calculate similarity between two actions
@@ -261,8 +342,8 @@ impl ChronicleDeduplicationService {
 
     /// Calculate overlap between actors in two events
     async fn calculate_actor_overlap(&self, event1: &ChronicleEvent, event2: &ChronicleEvent) -> Result<f32, AppError> {
-        let actors1 = event1.get_actors().map_err(|e| AppError::SerializationError(e.to_string()))?;
-        let actors2 = event2.get_actors().map_err(|e| AppError::SerializationError(e.to_string()))?;
+        let actors1 = event1.get_actors_with_fallback().map_err(|e| AppError::SerializationError(e.to_string()))?;
+        let actors2 = event2.get_actors_with_fallback().map_err(|e| AppError::SerializationError(e.to_string()))?;
 
         if actors1.is_empty() && actors2.is_empty() {
             return Ok(0.5); // Both have no actors
@@ -411,7 +492,7 @@ mod tests {
         ]);
         
         let event2 = create_test_event_with_actors("DISCOVERED", vec![
-            (event1.get_actors().unwrap()[0].entity_id, "AGENT"), // Same entity
+            (event1.get_actors_with_fallback().unwrap()[0].entity_id, "AGENT"), // Same entity
             (Uuid::new_v4(), "WITNESS"), // Different entity
         ]);
 

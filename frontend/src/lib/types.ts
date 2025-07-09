@@ -843,3 +843,71 @@ export interface TokenCountResponse {
 	model_used: string;
 	counting_method: string;
 }
+
+// Agentic chat types
+export interface AgenticChatRequest {
+	user_query: string;
+	conversation_context?: string;
+	chronicle_id?: string;
+	token_budget?: number;
+	quality_mode?: 'Fast' | 'Balanced' | 'Thorough';
+}
+
+export interface AgenticExecutionSummary {
+	intent_detected: string;
+	strategy_used: string;
+	queries_executed: number;
+	entities_analyzed: number;
+	content_pruned: number;
+	execution_time_ms: number;
+}
+
+export interface AgenticTokenUsageSummary {
+	intent_detection_tokens: number;
+	strategy_planning_tokens: number;
+	optimization_tokens: number;
+	total_llm_tokens: number;
+	context_tokens_generated: number;
+	final_tokens_used: number;
+}
+
+export interface AgenticChatResponse {
+	optimized_context: string;
+	execution_summary: AgenticExecutionSummary;
+	token_usage: AgenticTokenUsageSummary;
+	confidence: number;
+}
+
+// ECS Entity Types
+export interface EntityStateSnapshot {
+	entity_id: string;
+	archetype_signature: string;
+	components: Record<string, any>;
+	snapshot_time: string;
+	status_indicators: string[];
+}
+
+export interface ChronicleEntitiesResponse {
+	chronicle_id: string;
+	entities: EntityStateSnapshot[];
+	metadata: ChronicleEntitiesMetadata;
+}
+
+export interface ChronicleEntitiesMetadata {
+	total_entities: number;
+	ecs_enhanced: boolean;
+	warnings: string[];
+}
+
+export interface EntityTimelineResponse {
+	entity_id: string;
+	chronicle_events: ChronicleEvent[];
+	current_state?: EntityStateSnapshot;
+	metadata: EntityTimelineMetadata;
+}
+
+export interface EntityTimelineMetadata {
+	total_events: number;
+	ecs_enhanced: boolean;
+	warnings: string[];
+}

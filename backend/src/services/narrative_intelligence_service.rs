@@ -9,6 +9,7 @@
 use std::sync::Arc;
 use tracing::{info, warn, error, instrument};
 use uuid::Uuid;
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tokio::sync::Semaphore;
 use backoff::{ExponentialBackoff, Error as BackoffError};
@@ -58,6 +59,8 @@ pub struct EventDataToInsert {
     pub summary: String,
     /// Structured event data including actors, causality, etc.
     pub event_data: Option<Value>,
+    /// Timestamp of the original chat message that led to this event
+    pub timestamp: DateTime<Utc>,
 }
 
 /// Result from processing a batch without inserting events
@@ -145,8 +148,8 @@ impl NarrativeIntelligenceService {
         let config = config.unwrap_or_default();
         
         // Create the agentic system using the factory
-        // For development setup, always use dev config regardless of enabled status
-        let workflow_config = Some(AgenticNarrativeFactory::create_dev_config());
+        // Use configuration from app config instead of hardcoded dev config
+        let workflow_config = Some(AgenticNarrativeFactory::create_config_from_app_config(&app_state.config));
         
         let narrative_runner = AgenticNarrativeFactory::create_system_with_deps(
             ai_client,
@@ -179,12 +182,8 @@ impl NarrativeIntelligenceService {
         let config = config.unwrap_or_default();
         
         // Create the agentic system using the factory
-        // Use appropriate config based on the intended use
-        let workflow_config = if config.enabled {
-            Some(AgenticNarrativeFactory::create_production_config())
-        } else {
-            Some(AgenticNarrativeFactory::create_dev_config())
-        };
+        // Use configuration from app config instead of hardcoded dev/production configs
+        let workflow_config = Some(AgenticNarrativeFactory::create_config_from_app_config(&app_state.config));
         
         let narrative_runner = AgenticNarrativeFactory::create_system(
             ai_client,
@@ -308,20 +307,49 @@ impl NarrativeIntelligenceService {
         messages: Vec<ChatMessage>,
         session_dek: &SessionDek,
     ) -> Result<NarrativeProcessingResult, AppError> {
+        self.process_chat_history_batch_with_options(
+            user_id,
+            session_id,
+            chronicle_id,
+            messages,
+            session_dek,
+            true, // include_persona_context - default to true for backwards compatibility
+        ).await
+    }
+
+    /// Process a batch of chat messages for re-chronicling with persona context options
+    /// 
+    /// This method processes historical chat messages to extract chronicle events.
+    /// It accepts an option to exclude persona context for re-chronicle operations.
+    pub async fn process_chat_history_batch_with_options(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        messages: Vec<ChatMessage>,
+        session_dek: &SessionDek,
+        include_persona_context: bool,
+    ) -> Result<NarrativeProcessingResult, AppError> {
         if messages.is_empty() {
             return Ok(NarrativeProcessingResult::default());
         }
         
         info!(
-            "Processing chat history batch for user {}: {} messages",
+            "Processing chat history batch for user {}: {} messages, include_persona={}",
             user_id,
-            messages.len()
+            messages.len(),
+            include_persona_context
         );
         
         let start_time = std::time::Instant::now();
         
-        // Retrieve user's persona context for narrative intelligence
-        let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
+        // Conditionally retrieve user's persona context for narrative intelligence
+        let persona_context = if include_persona_context {
+            self.get_user_persona_context(user_id, session_dek).await.ok()
+        } else {
+            info!("Excluding persona context for re-chronicle batch processing");
+            None
+        };
         
         // Execute the agentic workflow for this batch of messages with exponential backoff
         match self.execute_with_backoff(|| async {
@@ -384,6 +412,32 @@ impl NarrativeIntelligenceService {
         session_dek: &SessionDek,
         batch_index: usize,
     ) -> Result<BatchEventData, AppError> {
+        self.process_chat_history_batch_dry_run_with_options(
+            user_id,
+            session_id,
+            chronicle_id,
+            messages,
+            session_dek,
+            batch_index,
+            true, // include_persona_context - default to true for backwards compatibility
+            None, // No extraction model for this path
+        ).await
+    }
+
+    /// Process a batch of chat messages and return event data with actual tool execution
+    ///
+    /// This method executes tools for real (not simulation) and returns the event data.
+    pub async fn process_chat_history_batch_with_execution(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        messages: Vec<ChatMessage>,
+        session_dek: &SessionDek,
+        batch_index: usize,
+        include_persona_context: bool,
+        extraction_model: Option<String>,
+    ) -> Result<BatchEventData, AppError> {
         if messages.is_empty() {
             return Ok(BatchEventData {
                 batch_index,
@@ -395,16 +449,123 @@ impl NarrativeIntelligenceService {
         }
         
         info!(
-            "Processing chat history batch (dry-run) for user {}: {} messages, batch_index={}",
+            "Processing chat history batch (WITH EXECUTION) for user {}: {} messages, batch_index={}, include_persona={}, model={:?}",
             user_id,
             messages.len(),
-            batch_index
+            batch_index,
+            include_persona_context,
+            extraction_model
         );
         
         let start_time = std::time::Instant::now();
         
-        // Retrieve user's persona context for narrative intelligence
-        let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
+        // Conditionally retrieve user's persona context for narrative intelligence
+        let persona_context = if include_persona_context {
+            self.get_user_persona_context(user_id, session_dek).await.ok()
+        } else {
+            info!("Excluding persona context for re-chronicle batch processing");
+            None
+        };
+        
+        // Execute the agentic workflow in REAL execution mode with exponential backoff
+        match self.execute_with_backoff(|| async {
+            // Acquire AI permit before making any AI calls
+            let _ai_permit = self.api_call_semaphore.acquire().await
+                .map_err(|_| AppError::ServiceUnavailable("Too many concurrent AI calls".to_string()))?;
+            
+            // THIS IS THE KEY DIFFERENCE - we call the real execution method, not dry-run
+            self.narrative_runner.process_narrative_event_with_options(
+                user_id,
+                session_id,
+                chronicle_id,
+                &messages,
+                session_dek,
+                persona_context.clone(),
+                !include_persona_context, // If we're excluding persona context, we're likely doing re-chronicle
+                extraction_model.clone(),
+            ).await
+        }).await {
+            Ok(workflow_result) => {
+                let processing_time = start_time.elapsed().as_millis() as u64;
+                
+                // Extract event data from workflow results
+                let events = self.extract_event_data_from_workflow(&workflow_result.execution_results, user_id, chronicle_id, session_dek)?;
+                
+                let result = BatchEventData {
+                    batch_index,
+                    events,
+                    is_significant: workflow_result.triage_result.is_significant,
+                    confidence: workflow_result.triage_result.confidence as f64,
+                    processing_time_ms: processing_time,
+                };
+                
+                info!(
+                    "Chat history batch execution completed: batch_index={}, significant={}, confidence={:.2}, events={}, time={}ms",
+                    batch_index,
+                    result.is_significant,
+                    result.confidence,
+                    result.events.len(),
+                    result.processing_time_ms
+                );
+                
+                Ok(result)
+            }
+            Err(e) => {
+                error!("Chat history batch execution failed: {}", e);
+                // Return empty batch data on failure
+                Ok(BatchEventData {
+                    batch_index,
+                    events: Vec::new(),
+                    is_significant: false,
+                    confidence: 0.0,
+                    processing_time_ms: start_time.elapsed().as_millis() as u64,
+                })
+            }
+        }
+    }
+
+    /// Process a batch of chat messages and return event data without inserting into database
+    ///
+    /// This method accepts an option to exclude persona context for re-chronicle operations.
+    pub async fn process_chat_history_batch_dry_run_with_options(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        messages: Vec<ChatMessage>,
+        session_dek: &SessionDek,
+        batch_index: usize,
+        include_persona_context: bool,
+        extraction_model: Option<String>,
+    ) -> Result<BatchEventData, AppError> {
+        if messages.is_empty() {
+            return Ok(BatchEventData {
+                batch_index,
+                events: Vec::new(),
+                is_significant: false,
+                confidence: 0.0,
+                processing_time_ms: 0,
+            });
+        }
+        
+        info!(
+            "Processing chat history batch (dry-run) for user {}: {} messages, batch_index={}, include_persona={}, model={:?}",
+            user_id,
+            messages.len(),
+            batch_index,
+            include_persona_context,
+            extraction_model
+        );
+        
+        let start_time = std::time::Instant::now();
+        
+        // Conditionally retrieve user's persona context for narrative intelligence
+        let persona_context = if include_persona_context {
+            self.get_user_persona_context(user_id, session_dek).await.ok()
+        } else {
+            info!("Excluding persona context for re-chronicle batch processing");
+            None
+        };
         
         // Execute the agentic workflow in dry-run mode with exponential backoff
         match self.execute_with_backoff(|| async {
@@ -412,13 +573,15 @@ impl NarrativeIntelligenceService {
             let _ai_permit = self.api_call_semaphore.acquire().await
                 .map_err(|_| AppError::ServiceUnavailable("Too many concurrent AI calls".to_string()))?;
             
-            self.narrative_runner.process_narrative_event_dry_run(
+            self.narrative_runner.process_narrative_event_dry_run_with_options(
                 user_id,
                 session_id,
                 chronicle_id,
                 &messages,
                 session_dek,
                 persona_context.clone(),
+                !include_persona_context, // If we're excluding persona context, we're likely doing re-chronicle
+                extraction_model.clone(),
             ).await
         }).await {
             Ok(workflow_result) => {
@@ -445,7 +608,7 @@ impl NarrativeIntelligenceService {
                 );
                 
                 Ok(result)
-            },
+            }
             Err(e) => {
                 error!("Chat history batch dry-run processing failed: {}", e);
                 // Return empty batch data on failure
@@ -549,17 +712,22 @@ impl NarrativeIntelligenceService {
             if let Some(success) = result.get("success").and_then(|v| v.as_bool()) {
                 if success && result.get("event_type").is_some() {
                     // Extract event data from the successful result
-                    if let (Some(event_type), Some(summary)) = (
+                    if let (Some(event_type), Some(summary), Some(timestamp_str)) = (
                         result.get("event_type").and_then(|v| v.as_str()),
-                        result.get("summary").and_then(|v| v.as_str())
+                        result.get("summary").and_then(|v| v.as_str()),
+                        result.get("timestamp_iso8601").and_then(|v| v.as_str())
                     ) {
-                        // Extract additional event data if present
                         let event_data = result.get("event_data").cloned();
                         
+                        let timestamp = DateTime::parse_from_rfc3339(timestamp_str)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to parse timestamp: {}", e)))?;
+
                         events.push(EventDataToInsert {
                             event_type: event_type.to_string(),
                             summary: summary.to_string(),
                             event_data,
+                            timestamp,
                         });
                     }
                 }

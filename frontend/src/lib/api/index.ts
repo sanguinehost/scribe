@@ -61,7 +61,11 @@ import type {
 	EventFilter,
 	TokenCountRequest,
 	TokenCountResponse,
-	PaginatedMessagesResponse
+	PaginatedMessagesResponse,
+	AgenticChatRequest,
+	AgenticChatResponse,
+	ChronicleEntitiesResponse,
+	EntityTimelineResponse
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -560,6 +564,13 @@ class ApiClient {
 		return this.fetch<SuggestedActionsResponse>(`/api/chat/${chatId}/suggested-actions`, {
 			method: 'POST',
 			body: JSON.stringify({}) // Empty JSON object
+		});
+	}
+
+	async fetchAgenticChat(chatId: string, request: AgenticChatRequest): Promise<Result<AgenticChatResponse, ApiError>> {
+		return this.fetch<AgenticChatResponse>(`/api/chat/${chatId}/agentic`, {
+			method: 'POST',
+			body: JSON.stringify(request)
 		});
 	}
 
@@ -1149,6 +1160,46 @@ class ApiClient {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
+	}
+
+	// ============================================================================
+	// ECS Entity Methods
+	// ============================================================================
+
+	// Get entities for a chronicle
+	async getChronicleEntities(
+		chronicleId: string,
+		options?: {
+			limit?: number;
+			include_current_state?: boolean;
+			include_relationships?: boolean;
+			confidence_threshold?: number;
+		}
+	): Promise<Result<ChronicleEntitiesResponse, ApiError>> {
+		const params = new URLSearchParams();
+		if (options?.limit) params.append('limit', options.limit.toString());
+		if (options?.include_current_state) params.append('include_current_state', 'true');
+		if (options?.include_relationships) params.append('include_relationships', 'true');
+		if (options?.confidence_threshold) params.append('confidence_threshold', options.confidence_threshold.toString());
+		
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.fetch<ChronicleEntitiesResponse>(`/api/chronicles/${chronicleId}/entities${query}`);
+	}
+
+	// Get timeline for a specific entity
+	async getEntityTimeline(
+		entityId: string,
+		options?: {
+			limit?: number;
+			include_current_state?: boolean;
+		}
+	): Promise<Result<EntityTimelineResponse, ApiError>> {
+		const params = new URLSearchParams();
+		if (options?.limit) params.append('limit', options.limit.toString());
+		if (options?.include_current_state) params.append('include_current_state', 'true');
+		
+		const query = params.toString() ? `?${params.toString()}` : '';
+		return this.fetch<EntityTimelineResponse>(`/api/entities/${entityId}/timeline${query}`);
 	}
 
 	// ============================================================================

@@ -113,10 +113,14 @@ impl NarrativeAgentRunner {
         );
 
         // Step 1: Triage - Is this significant?
-        let triage_result = self.perform_triage(user_id, chronicle_id, messages, session_dek, persona_context.as_ref()).await?;
+        let triage_result = self.perform_triage(user_id, chronicle_id, messages, session_dek, persona_context.as_ref(), false, None).await?;
         
-        if !triage_result.is_significant {
-            info!("Triage determined event is not significant, skipping workflow");
+        // Use a higher confidence threshold for regular chat to avoid over-generation
+        if !triage_result.is_significant || triage_result.confidence < 0.7 {
+            info!(
+                "Triage determined event is not significant for regular chat (confidence: {}), skipping workflow",
+                triage_result.confidence
+            );
             return Ok(NarrativeWorkflowResult {
                 triage_result,
                 actions_taken: vec![],
@@ -177,12 +181,87 @@ impl NarrativeAgentRunner {
             chronicle_id,
             chronicle_was_just_created, // Pass this information to the planner
             persona_context.as_ref(),
+            false, // This is not a re-chronicle
         ).await?;
 
         info!("Generated action plan with {} actions", action_plan.actions.len());
 
         // Step 4: Execution - Execute the planned actions
-        let execution_results = self.execute_action_plan(&action_plan, user_id, chronicle_id, session_dek, persona_context.as_ref()).await?;
+        let execution_results = self.execute_action_plan(&action_plan, user_id, chronicle_id, messages, session_dek, persona_context.as_ref()).await?;
+
+        Ok(NarrativeWorkflowResult {
+            triage_result,
+            actions_taken: action_plan.actions,
+            execution_results,
+            cost_estimate: 0.0, // TODO: Implement cost tracking
+        })
+    }
+
+    /// Process narrative event with actual tool execution and additional options
+    /// 
+    /// This method executes tools for real (not simulation) with options for model selection.
+    pub async fn process_narrative_event_with_options(
+        &self,
+        user_id: Uuid,
+        chat_session_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        messages: &[ChatMessage],
+        session_dek: &SessionDek,
+        persona_context: Option<super::UserPersonaContext>,
+        is_re_chronicle: bool,
+        extraction_model: Option<String>,
+    ) -> Result<NarrativeWorkflowResult, AppError> {
+        info!(
+            "Starting narrative workflow (WITH EXECUTION) for chat {} with {} messages, is_re_chronicle={}, model={:?}",
+            chat_session_id,
+            messages.len(),
+            is_re_chronicle,
+            extraction_model
+        );
+
+        // Step 1: Triage - Is this significant?
+        // FOR RE-CHRONICLE: We completely bypass the AI triage step and assume significance.
+        let triage_result = if is_re_chronicle {
+            info!("Re-chronicle mode: Bypassing AI triage and assuming significance.");
+            TriageResult {
+                is_significant: true,
+                summary: self.build_conversation_text(messages, session_dek).await?,
+                event_type: "RE-CHRONICLE".to_string(),
+                confidence: 1.0,
+            }
+        } else {
+            self.perform_triage(user_id, chronicle_id, messages, session_dek, persona_context.as_ref(), is_re_chronicle, extraction_model).await?
+        };
+        
+        if !triage_result.is_significant {
+            info!("Triage determined event is not significant, skipping workflow");
+            return Ok(NarrativeWorkflowResult {
+                triage_result,
+                actions_taken: vec![],
+                execution_results: vec![],
+                cost_estimate: 0.0,
+            });
+        }
+
+        info!("Event deemed significant (or in re-chronicle mode): {}", triage_result.summary);
+
+        // Step 2: Knowledge Retrieval - What do we already know?
+        let knowledge_context = self.retrieve_knowledge_context(&triage_result).await?;
+
+        // Step 3: Planning - What should we do? (actual execution mode)
+        let action_plan = self.generate_action_plan(
+            &triage_result,
+            &knowledge_context,
+            chronicle_id,
+            false, // Chronicle not created in dry-run
+            persona_context.as_ref(),
+            is_re_chronicle,
+        ).await?;
+
+        info!("Generated action plan with {} actions", action_plan.actions.len());
+
+        // Step 4: Execution - Actually execute the planned actions
+        let execution_results = self.execute_action_plan(&action_plan, user_id, chronicle_id, messages, session_dek, persona_context.as_ref()).await?;
 
         Ok(NarrativeWorkflowResult {
             triage_result,
@@ -205,15 +284,55 @@ impl NarrativeAgentRunner {
         session_dek: &SessionDek,
         persona_context: Option<super::UserPersonaContext>,
     ) -> Result<NarrativeWorkflowResult, AppError> {
-        info!(
-            "Starting narrative workflow (dry-run) for chat {} with {} messages",
+        self.process_narrative_event_dry_run_with_options(
+            user_id,
             chat_session_id,
-            messages.len()
+            chronicle_id,
+            messages,
+            session_dek,
+            persona_context,
+            false, // is_re_chronicle - default to false for backwards compatibility
+            None, // No extraction model for this path
+        ).await
+    }
+
+    /// Execute the narrative workflow for dry-run (with re-chronicle option)
+    pub async fn process_narrative_event_dry_run_with_options(
+        &self,
+        user_id: Uuid,
+        chat_session_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        messages: &[ChatMessage],
+        session_dek: &SessionDek,
+        persona_context: Option<super::UserPersonaContext>,
+        is_re_chronicle: bool,
+        extraction_model: Option<String>,
+    ) -> Result<NarrativeWorkflowResult, AppError> {
+        info!(
+            "Starting narrative workflow (dry-run) for chat {} with {} messages, is_re_chronicle={}, model={:?}",
+            chat_session_id,
+            messages.len(),
+            is_re_chronicle,
+            extraction_model
         );
 
         // Step 1: Triage - Is this significant?
-        let triage_result = self.perform_triage(user_id, chronicle_id, messages, session_dek, persona_context.as_ref()).await?;
+        // FOR RE-CHRONICLE: We completely bypass the AI triage step and assume significance.
+        // The triage was proving to be too aggressive and was filtering out important events.
+        let triage_result = if is_re_chronicle {
+            info!("Re-chronicle mode: Bypassing AI triage and assuming significance.");
+            TriageResult {
+                is_significant: true,
+                summary: self.build_conversation_text(messages, session_dek).await?,
+                event_type: "RE-CHRONICLE".to_string(),
+                confidence: 1.0,
+            }
+        } else {
+            self.perform_triage(user_id, chronicle_id, messages, session_dek, persona_context.as_ref(), is_re_chronicle, extraction_model).await?
+        };
         
+        // The significance check is now handled by the caller in re-chronicle mode
+        // to allow for confidence-based overrides.
         if !triage_result.is_significant {
             info!("Triage determined event is not significant, skipping workflow");
             return Ok(NarrativeWorkflowResult {
@@ -224,7 +343,7 @@ impl NarrativeAgentRunner {
             });
         }
 
-        info!("Event deemed significant: {}", triage_result.summary);
+        info!("Event deemed significant (or in re-chronicle mode): {}", triage_result.summary);
 
         // Skip auto-creating chronicle in dry-run mode - assume chronicle_id is provided
         
@@ -238,12 +357,13 @@ impl NarrativeAgentRunner {
             chronicle_id,
             false, // Chronicle not created in dry-run
             persona_context.as_ref(),
+            is_re_chronicle,
         ).await?;
 
         info!("Generated dry-run action plan with {} actions", action_plan.actions.len());
 
         // Step 4: Execution - Simulate the planned actions without inserting
-        let execution_results = self.execute_action_plan_dry_run(&action_plan, user_id, chronicle_id, session_dek, persona_context.as_ref()).await?;
+        let execution_results = self.execute_action_plan_dry_run(&action_plan, user_id, chronicle_id, messages, session_dek, persona_context.as_ref()).await?;
 
         Ok(NarrativeWorkflowResult {
             triage_result,
@@ -261,16 +381,28 @@ impl NarrativeAgentRunner {
         messages: &[ChatMessage],
         session_dek: &SessionDek,
         persona_context: Option<&super::UserPersonaContext>,
+        is_re_chronicle: bool,
+        extraction_model: Option<String>,
     ) -> Result<TriageResult, AppError> {
         debug!("Performing narrative triage on {} messages", messages.len());
 
         // Build conversation text
         let conversation_text = self.build_conversation_text(messages, session_dek).await?;
 
+        // Determine which model to use for triage
+        let triage_model = extraction_model.unwrap_or_else(|| self.config.triage_model.clone());
+        info!("Using triage model: {}", triage_model);
+
         // Get comprehensive chronicle context with XML labeling for deduplication
-        let recent_chronicles_context = if let Some(chron_id) = chronicle_id {
-            self.get_recent_chronicle_context_with_xml_labeling(user_id, chron_id).await.unwrap_or_default()
+        // Skip during re-chronicle to avoid false duplicates
+        let recent_chronicles_context = if !is_re_chronicle {
+            if let Some(chron_id) = chronicle_id {
+                self.get_recent_chronicle_context_with_xml_labeling(user_id, chron_id).await.unwrap_or_default()
+            } else {
+                String::new()
+            }
         } else {
+            info!("Skipping chronicle context during re-chronicle to avoid false duplicates");
             String::new()
         };
         
@@ -281,14 +413,71 @@ impl NarrativeAgentRunner {
             String::new()
         };
 
-        let triage_prompt = format!(
-            r#"🎯 NARRATIVE CHRONICLE MISSION: Identify significant story moments while avoiding exact duplicates.
+        let triage_prompt = if is_re_chronicle {
+            format!(
+                r#"🚨 URGENT RE-CHRONICLE EXTRACTION MODE 🚨
 
-🎯 CORE QUESTION: "Does this conversation contain meaningful narrative developments that are NOT already recorded in existing chronicles?"
+⚡ MISSION: EXTRACT EVERYTHING that has roleplay value from this conversation batch.
 
-📋 XML LABELING ACTIVE: Existing chronicle events are clearly marked below. You can see ALL relevant context but must NOT duplicate what already exists.
+📖 RE-CHRONICLE DIRECTIVE: You are processing historical conversations to rebuild a chronicle. Your job is to be EXTREMELY GENEROUS about what counts as significant. When in doubt, ALWAYS mark as significant.
 
-Analyze this roleplay conversation and determine if it contains narratively significant events that are NOT already covered by the existing chronicles.
+🎯 CORE QUESTION: "Does this conversation contain ANY character actions, decisions, dialogue, or story elements?"
+
+If the answer is YES to any of these, mark it as significant:
+- Did a character DO something? (actions, decisions, movements with purpose)
+- Did a character SAY something meaningful? (dialogue, requests, plans, reactions)
+- Did something happen TO a character? (events affecting them)
+- Was there ANY story progression? (plot development, world building, character development)
+- Is there ANY character interaction? (social dynamics, relationships)
+
+{}
+
+CONVERSATION TO ANALYZE:
+{}
+
+⚠️ IGNORE EXISTING CHRONICLES: This is re-chronicle mode, do not check against existing events.
+
+Respond with JSON:
+{{
+    "is_significant": boolean, // TRUE unless this is pure OOC/system text with zero roleplay content
+    "summary": "string", // What happened - be generous with interpretation
+    "event_category": "string", // WORLD, CHARACTER, PLOT, RELATIONSHIP
+    "event_type": "string", // ACTION, DIALOGUE, DECISION, INTERACTION, DISCOVERY, DEVELOPMENT
+    "narrative_action": "string", // ACTED, SAID, DECIDED, MOVED, DISCOVERED, INTERACTED, etc.
+    "primary_agent": "string", // Who did something
+    "primary_patient": "string", // Who/what was affected
+    "confidence": float // 0.3+ for most roleplay content, 0.9+ only for major events
+}}
+
+🔥 RE-CHRONICLE BIAS: FAVOR CREATION OVER REJECTION 🔥
+
+Examples of what SHOULD be marked significant in re-chronicle mode:
+✅ Character makes ANY decision or choice
+✅ Character performs ANY action with intent  
+✅ Character has ANY meaningful dialogue
+✅ Character reacts to events
+✅ Character moves with purpose
+✅ Character interacts with objects/environment
+✅ ANY story or plot development
+✅ Character emotional moments or development
+✅ World building or lore mentions
+✅ Social interactions between characters
+
+Examples of what should NOT be marked significant:
+❌ Pure system messages ("You leveled up", "Save complete")
+❌ Out-of-character (OOC) discussion about the game mechanics
+❌ Empty responses or one-word acknowledgments with no context
+
+🚨 WHEN IN DOUBT: MARK AS SIGNIFICANT 🚨
+
+This is historical extraction - we want to capture the story, not filter it aggressively."#,
+            persona_section,
+            conversation_text
+        )
+        } else {
+            // Normal triage mode - use the original prompt
+            format!(
+                r#"Analyze this roleplay conversation and determine if it contains narratively significant events.
 {}
 CONVERSATION:
 {}
@@ -310,73 +499,22 @@ You are analyzing according to the Ars Fabula narrative ontology. Respond with a
     "confidence": float // 0.0-1.0 confidence in this assessment
 }}
 
-SIGNIFICANCE CRITERIA (Ars Fabula Event Ontology):
-
-WORLD Events (Changes to the physical/conceptual reality):
-- DISCOVERY + DISCOVERED/FOUND: New locations, items, secrets, knowledge
-- ALTERATION + TRANSFORMED/CHANGED: Environmental changes, world state shifts  
-- LORE_EXPANSION + REVEALED/TOLD: Learning history, understanding mechanics
-
-CHARACTER Events (Individual entity changes):
-- STATE_CHANGE + DIED/TRANSFORMED: Death, injury, fundamental change
-- DEVELOPMENT + ACQUIRED/EVOLVED: Skill gains, power increases, growth
-- PROGRESSION + DECIDED/COMMITTED: Character arc advancement, goal changes
-
-PLOT Events (Narrative structure progression):
-- REVELATION + REVEALED/DISCOVERED: Secrets uncovered, mysteries solved
-- TURNING_POINT + DECIDED/CHOSE: Critical decisions, plot branches
-- PROGRESSION + ADVANCED/COMPLETED: Quest advancement, story milestone
-
-RELATIONSHIP Events (Social dynamics):
-- FORMATION + MET/BEFRIENDED: New relationships, alliances formed
-- MODIFICATION + BETRAYED/CHANGED: Relationship shifts, trust changes
-- INTERACTION + TOLD/ASKED: Significant dialogue, negotiations
-
-Examples:
-- Character death: WORLD.STATE_CHANGE + DIED, agent=killer, patient=victim
-- Meeting someone: RELATIONSHIP.FORMATION + MET, agent=character1, patient=character2
-- Finding treasure: WORLD.DISCOVERY + DISCOVERED, agent=finder, object=treasure
-- Learning secret: PLOT.REVELATION + REVEALED, agent=revealer, patient=learner
-
 Consider NOT significant if:
 - Events are directly duplicated in existing chronicles (check EXISTING_CHRONICLES section)
 - Pure system/mechanical messages with no roleplay content
 - Out-of-character (OOC) discussions about the game itself
 - Purely repetitive actions with identical outcomes already chronicled
 - Minor movements or transitions without narrative consequence
-- Brief acknowledgments or simple responses without development
 
-CHRONICLE GUIDELINE (Event Quality):
-- **MEANINGFUL MOMENTS**: Record character development, relationship changes, world discoveries, plot advancement
-- **EMOTIONAL DEPTH**: Significant character introspection, reactions, and emotional growth are chronicle-worthy
-- **DIALOGUE SIGNIFICANCE**: Important conversations, negotiations, confessions, revelations should be recorded
-- **CHARACTER AGENCY**: Decisions, actions, and their consequences are valuable chronicle content
-- **IMMEDIATE AFTERMATH**: Pure emotional reactions to recent events may be less significant than the original event
-- **MICRO vs MACRO**: Focus on substantial developments rather than minute-by-minute scene descriptions
-
-SCOPE GUIDANCE:
-- Both major plot events AND substantial character moments are valuable
-- Meaningful character interactions, important dialogue, and development are chronicle-worthy
-- Scene details that reveal character depth or advance plot understanding should be recorded
-- Rich roleplay conversations often contain chronicle-worthy content, but not every exchange needs recording
-
-DEDUPLICATION RULES (CRITICAL - MUST FOLLOW):
-- **MANDATORY CHECK**: If ANY similar event is in <EXISTING_CHRONICLES> above, mark as NOT significant
-- **SEMANTIC OVERLAP**: If the conversation describes the same ACTION + ACTOR + CONTEXT as existing chronicles, mark as NOT significant
-- **REDUNDANCY CHECK**: If this conversation is just describing what was already chronicled, mark as NOT significant
-- **EMOTIONAL AFTERMATH**: If this is just emotional reaction to an existing chronicled event, mark as NOT significant
-- **SCENE TRANSITIONS**: Moving between locations or routine actions without new consequences are NOT significant
-- **WHEN IN DOUBT**: Favor recording meaningful roleplay moments unless clearly redundant with existing chronicles
-- **XML CONTEXT**: Use the <EXISTING_CHRONICLES> section as your primary reference for what already exists
-
-IMPORTANT: When identifying characters in the conversation, use the persona context above to properly identify who is who. Do not refer to characters generically as "the user" or "the character" when you have specific persona information available."#,
+IMPORTANT: When identifying characters in the conversation, use the persona context above to properly identify who is who."#,
             persona_section,
             conversation_text,
             recent_chronicles_context
-        );
+        )
+        };
 
         // Call AI for triage
-        let response = self.call_ai_structured(&self.config.triage_model, &triage_prompt).await?;
+        let response = self.call_ai_structured(&triage_model, &triage_prompt).await?;
 
         // Parse response
         let is_significant = response.get("is_significant")
@@ -440,6 +578,7 @@ IMPORTANT: When identifying characters in the conversation, use the persona cont
         chronicle_id: Option<Uuid>,
         chronicle_was_just_created: bool,
         persona_context: Option<&super::UserPersonaContext>,
+        is_re_chronicle: bool,
     ) -> Result<ActionPlan, AppError> {
         debug!("Generating action plan for event: {}", triage_result.event_type);
 
@@ -474,8 +613,68 @@ IMPORTANT: When identifying characters in the conversation, use the persona cont
             String::new()
         };
 
-        let planning_prompt = format!(
-            r#"🚨 ANTI-DUPLICATION MISSION: Before creating ANY chronicle events, you MUST verify they don't duplicate existing content.
+        let planning_prompt = if is_re_chronicle {
+            // New, more aggressive prompt for re-chronicling that bypasses deduplication logic
+            format!(
+                r#"🚨 URGENT RE-CHRONICLE EVENT CREATION MODE 🚨
+
+⚡ MISSION: Your task is to convert the conversation batch below into a detailed, structured `create_chronicle_event` action. Be generous and create an event unless the summary is clearly OOC or system-related.
+
+📖 RE-CHRONICLE DIRECTIVE: You are rebuilding a story from scratch. Your bias should be heavily towards **CREATING** events. Do not worry about duplication. The goal is to capture every possible narrative beat.
+
+CONVERSATION BATCH TO ANALYZE:
+{}
+
+AVAILABLE TOOLS:
+- create_chronicle_event: Record temporal, player-centric events that happened at specific times.
+
+CHRONICLE ID: {}
+
+🚨 MANDATORY: The "actors" array MUST contain ALL entities from the conversation! 🚨
+
+Respond with a JSON plan. You MUST create at least one action in the `actions` array if there is any roleplay content.
+{{
+    "reasoning": "string explaining why this event is being chronicled from the conversation batch",
+    "actions": [
+        {{
+            "tool_name": "create_chronicle_event",
+            "parameters": {{ ... detailed event data extracted from the conversation ... }},
+            "reasoning": "string explaining why this specific event is important for the story"
+        }}
+    ]
+}}
+
+ARS FABULA NARRATIVE ONTOLOGY RULES (for `create_chronicle_event`):
+
+1.  **TEMPORAL EVENTS (for create_chronicle_event):**
+    *   **Structure:** Events must be atomic and capture a single, significant moment.
+    *   **`event_type`:** Use dot-notation: `CATEGORY.TYPE.SUBTYPE` (e.g., `CHARACTER.STATE_CHANGE.DEATH`).
+    *   **`actors`:** ⚠️ CRITICAL REQUIREMENT ⚠️ A JSON array that MUST contain ALL entity names mentioned in the narrative. Each entry needs: `{{"id": "exact_entity_name_from_text", "role": "Agent|Patient|Beneficiary|Instrument|Witness"}}`. DO NOT leave this array empty - extract every character, location, object, or entity mentioned.
+    *   **`action`:** The core verb of the event (e.g., `Betrayed`, `Discovered`, `Killed`).
+    *   **`causality`:** A JSON object with `causedBy` (an array of event IDs that led to this one) and `causes` (an array of event IDs this one leads to). Use this to link events into a causal chain. If an event in EXISTING KNOWLEDGE is a direct cause, reference its ID.
+    *   **`valence`:** A JSON array quantifying emotional/relational impact. Each object needs a `target` (entity ID), `type` (`Trust`, `Fear`, `Health`, `Power`), and `change` (float from -1.0 to 1.0).
+    *   **`context_data`:** A JSON object for situational context like `location_id`, `time_of_day`, etc.
+
+2.  **CRAFTING IMMERSIVE EVENT SUMMARIES (The Most Important Part):**
+    
+    The `summary` field is what users see and what gets fed back to the AI in future prompts. It should read like a gripping excerpt from an epic novel, not a dry database entry.
+    
+    **INCLUDE ALL OF THESE ELEMENTS:**
+    *   **WHO:** Character names and their relationship dynamics
+    *   **WHAT:** The dramatic action with emotional weight
+    *   **WHERE:** Atmospheric setting details that set the scene
+    *   **WHY:** Motivations, stakes, and what drove this moment
+    *   **HOW:** The method, style, or emotional texture of the action
+    *   **IMPACT:** Why this moment matters to the larger story
+
+🔥 RE-CHRONICLE BIAS: FAVOR CREATION OVER REJECTION. CREATE AN EVENT. 🔥"#,
+                triage_result.summary, // In re-chronicle mode, this contains the full conversation text
+                chronicle_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string()),
+            )
+        } else {
+            // Original prompt for normal operation
+            format!(
+                r#"🚨 ANTI-DUPLICATION MISSION: Before creating ANY chronicle events, you MUST verify they don't duplicate existing content.
 
 🔍 MANDATORY DUPLICATE CHECK:
 1. Read the <EXISTING_CHRONICLES> section below carefully
@@ -505,6 +704,8 @@ CHRONICLE JUST CREATED: {}
 
 {}
 
+🚨 MANDATORY: When using create_chronicle_event, the "actors" array MUST contain ALL entities from the narrative! 🚨
+
 Create a JSON plan following Ars Fabula principles:
 {{
     "reasoning": "string explaining your logic and narrative impact",
@@ -522,7 +723,7 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
 1.  **TEMPORAL EVENTS (for create_chronicle_event):**
     *   **Structure:** Events must be atomic and capture a single, significant moment.
     *   **`event_type`:** Use dot-notation: `CATEGORY.TYPE.SUBTYPE` (e.g., `CHARACTER.STATE_CHANGE.DEATH`).
-    *   **`actors`:** A JSON array detailing all participants and their roles (`Agent`, `Patient`, `Beneficiary`, `Instrument`, `Witness`).
+    *   **`actors`:** ⚠️ CRITICAL REQUIREMENT ⚠️ A JSON array that MUST contain ALL entity names mentioned in the narrative. Each entry needs: `{{"id": "exact_entity_name_from_text", "role": "Agent|Patient|Beneficiary|Instrument|Witness"}}`. DO NOT leave this array empty - extract every character, location, object, or entity mentioned.
     *   **`action`:** The core verb of the event (e.g., `Betrayed`, `Discovered`, `Killed`).
     *   **`causality`:** A JSON object with `causedBy` (an array of event IDs that led to this one) and `causes` (an array of event IDs this one leads to). Use this to link events into a causal chain. If an event in EXISTING KNOWLEDGE is a direct cause, reference its ID.
     *   **`valence`:** A JSON array quantifying emotional/relational impact. Each object needs a `target` (entity ID), `type` (`Trust`, `Fear`, `Health`, `Power`), and `change` (float from -1.0 to 1.0).
@@ -544,7 +745,7 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
     
     **INCLUDE ALL OF THESE ELEMENTS:**
     *   **WHO:** Character names and their relationship dynamics
-    *   **WHAT:** The dramatic action with emotional weight  
+    *   **WHAT:** The dramatic action with emotional weight
     *   **WHERE:** Atmospheric setting details that set the scene
     *   **WHY:** Motivations, stakes, and what drove this moment
     *   **HOW:** The method, style, or emotional texture of the action
@@ -636,14 +837,14 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
 6.  **ENHANCED DEDUPLICATION RULES (CRITICAL - MUST FOLLOW):**
     *   **STEP 1 - SEMANTIC COMPARISON**: Before creating ANY event, compare its core elements against ALL existing chronicle context:
         - Same ACTION (secured, mastered, met, etc.) + Same SUBJECT/ACTOR + Similar TIMEFRAME = DUPLICATE
-        - Same LOCATION + Same TYPE of interaction + Same CHARACTERS = DUPLICATE  
+        - Same LOCATION + Same TYPE of interaction + Same CHARACTERS = DUPLICATE
         - Same EMOTIONAL STATE or REACTION to recent major event = DUPLICATE
     *   **STEP 2 - TEMPORAL REDUNDANCY CHECK**: If conversation text is describing something that just happened in the messages, AND similar events exist in chronicle context, DO NOT create new event
     *   **STEP 3 - CONSEQUENCE vs CONTINUATION**: Ask "Is this a NEW narrative consequence, or just describing/continuing what already happened?"
     *   **STEP 4 - WHEN IN DOUBT**: Choose NOT to create an event rather than risk duplication
     *   **EXAMPLES OF WHAT NOT TO CHRONICLE**:
         - "Sol secured Executive Suite" (if already chronicled)
-        - "Sol used multitool to secure room" (if room security already chronicled)  
+        - "Sol used multitool to secure room" (if room security already chronicled)
         - "Sol and Lumiya headed to meeting" (if meeting arrangement already chronicled)
         - Emotional reactions to events that just got chronicled
         - Scene transitions without new narrative content
@@ -662,24 +863,25 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
 
 **JSON FORMAT REQUIREMENTS:**
 - Ensure all string values are properly quoted and escaped
-- Use double quotes (") for JSON strings, not single quotes (')  
+- Use double quotes (") for JSON strings, not single quotes (')
 - Escape any quotes within string values with \"
 - Avoid unescaped newlines or special characters in strings
 - Ensure all arrays and objects are properly closed with ] and }}"#,
-            persona_section,
-            triage_result.event_type,
-            triage_result.summary,
-            triage_result.confidence,
-            serde_json::to_string_pretty(knowledge_context).unwrap_or_default(),
-            tools_description,
-            chronicle_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string()),
-            chronicle_was_just_created,
-            if chronicle_was_just_created {
-                "IMPORTANT: A new chronicle was JUST created for this significant event. You MUST create at least one chronicle_event to record this founding moment that triggered the chronicle's creation. This is the FIRST event in a new chronicle!"
-            } else {
-                ""
-            }
-        );
+                persona_section,
+                triage_result.event_type,
+                triage_result.summary,
+                triage_result.confidence,
+                serde_json::to_string_pretty(knowledge_context).unwrap_or_default(),
+                tools_description,
+                chronicle_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string()),
+                chronicle_was_just_created,
+                if chronicle_was_just_created {
+                    "IMPORTANT: A new chronicle was JUST created for this significant event. You MUST create at least one chronicle_event to record this founding moment that triggered the chronicle's creation. This is the FIRST event in a new chronicle!"
+                } else {
+                    ""
+                }
+            )
+        };
 
         let response = self.call_ai_structured(&self.config.planning_model, &planning_prompt).await?;
 
@@ -719,6 +921,7 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
         plan: &ActionPlan,
         user_id: Uuid,
         chronicle_id: Option<Uuid>,
+        messages: &[ChatMessage],
         session_dek: &SessionDek,
         _persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<Vec<ToolResult>, AppError> {
@@ -749,10 +952,17 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
                                 obj.insert("user_id".to_string(), serde_json::Value::String(user_id.to_string()));
                             }
                             
-                            // Add chronicle_id if not present and available (for chronicle events)
-                            if action.tool_name == "create_chronicle_event" && !obj.contains_key("chronicle_id") {
+                            // Add chronicle_id if available (for chronicle events) - always override if provided
+                            if action.tool_name == "create_chronicle_event" {
                                 if let Some(chron_id) = chronicle_id {
                                     obj.insert("chronicle_id".to_string(), serde_json::Value::String(chron_id.to_string()));
+                                    debug!("Injected chronicle_id: {}", chron_id);
+                                } else {
+                                    error!("create_chronicle_event called but chronicle_id is None - skipping tool execution");
+                                    return Ok(vec![serde_json::json!({
+                                        "status": "error",
+                                        "message": "Chronicle ID is required for chronicle events but was not provided"
+                                    })]);
                                 }
                             }
                             
@@ -760,6 +970,15 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
                             if (action.tool_name == "create_lorebook_entry" || action.tool_name == "create_chronicle_event") && !obj.contains_key("session_dek") {
                                 let session_dek_hex = hex::encode(session_dek.0.expose_secret());
                                 obj.insert("session_dek".to_string(), serde_json::Value::String(session_dek_hex));
+                            }
+                            
+                            // Add timestamp from the last message for chronicle events (CRITICAL FIX!)
+                            if action.tool_name == "create_chronicle_event" && !obj.contains_key("timestamp_iso8601") {
+                                if let Some(last_message) = messages.last() {
+                                    let timestamp_iso8601 = last_message.created_at.to_rfc3339();
+                                    obj.insert("timestamp_iso8601".to_string(), serde_json::Value::String(timestamp_iso8601.clone()));
+                                    debug!("Added timestamp {} to chronicle event tool from message", timestamp_iso8601);
+                                }
                             }
                         } else {
                             // If parameters is not an object, create one with required fields
@@ -769,6 +988,20 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
                             if action.tool_name == "create_chronicle_event" {
                                 if let Some(chron_id) = chronicle_id {
                                     obj.insert("chronicle_id".to_string(), serde_json::Value::String(chron_id.to_string()));
+                                    debug!("Injected chronicle_id (fallback): {}", chron_id);
+                                } else {
+                                    error!("create_chronicle_event called but chronicle_id is None - skipping tool execution (fallback)");
+                                    return Ok(vec![serde_json::json!({
+                                        "status": "error",
+                                        "message": "Chronicle ID is required for chronicle events but was not provided"
+                                    })]);
+                                }
+                                
+                                // Add timestamp from the last message for chronicle events (CRITICAL FIX!)
+                                if let Some(last_message) = messages.last() {
+                                    let timestamp_iso8601 = last_message.created_at.to_rfc3339();
+                                    obj.insert("timestamp_iso8601".to_string(), serde_json::Value::String(timestamp_iso8601.clone()));
+                                    debug!("Added timestamp {} to chronicle event tool from message (fallback)", timestamp_iso8601);
                                 }
                             }
                             
@@ -824,6 +1057,7 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
         chronicle_id: Option<Uuid>,
         chronicle_was_just_created: bool,
         persona_context: Option<&super::UserPersonaContext>,
+        is_re_chronicle: bool,
     ) -> Result<ActionPlan, AppError> {
         // For now, dry-run planning is identical to regular planning
         // The difference is in execution where we don't actually insert events
@@ -833,6 +1067,7 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
             chronicle_id,
             chronicle_was_just_created,
             persona_context,
+            is_re_chronicle,
         ).await
     }
 
@@ -842,6 +1077,7 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
         plan: &ActionPlan,
         user_id: Uuid,
         chronicle_id: Option<Uuid>,
+        messages: &[ChatMessage], // Add messages parameter
         session_dek: &SessionDek,
         _persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<Vec<ToolResult>, AppError> {
@@ -865,14 +1101,20 @@ IMPORTANT: When creating chronicle events, use the persona context above to prop
                         .and_then(|v| v.as_str())
                         .unwrap_or("Event summary");
                     
-                    info!("Simulating chronicle event creation: {} ({})", summary, event_type);
+                    // Get timestamp from the last message in the batch
+                    let timestamp_iso8601 = messages.last()
+                        .map(|msg| msg.created_at.to_rfc3339())
+                        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+                    info!("Simulating chronicle event creation: {} ({}) at {}", summary, event_type, timestamp_iso8601);
                     
-                    // Return simulated success result with event data
+                    // Return simulated success result with event data and timestamp
                     results.push(json!({
                         "success": true,
                         "event_type": event_type,
                         "summary": summary,
-                        "event_data": action.parameters.get("actors"), // Include actors and other data
+                        "event_data": action.parameters.get("event_data"), // Use event_data from parameters
+                        "timestamp_iso8601": timestamp_iso8601, // Add timestamp
                         "simulated": true,
                         "message": "Chronicle event simulation successful"
                     }));

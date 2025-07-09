@@ -76,6 +76,22 @@ pub struct Config {
     // Narrative Feature Flags
     #[serde(default)]
     pub narrative_flags: NarrativeFeatureFlags,
+
+    // Re-chronicle config
+    #[serde(default = "default_rechronicle_confidence_threshold")]
+    pub rechronicle_confidence_threshold: f32,
+    
+    // Agentic model configuration
+    #[serde(default = "default_agentic_triage_model")]
+    pub agentic_triage_model: String,
+    #[serde(default = "default_agentic_planning_model")]
+    pub agentic_planning_model: String,
+    #[serde(default = "default_agentic_extraction_model")]
+    pub agentic_extraction_model: String,
+    #[serde(default = "default_agentic_entity_resolution_model")]
+    pub agentic_entity_resolution_model: String,
+    #[serde(default = "default_agentic_max_tool_executions")]
+    pub agentic_max_tool_executions: usize,
 }
 
 impl std::fmt::Debug for Config {
@@ -127,6 +143,7 @@ impl std::fmt::Debug for Config {
                 "from_email",
                 &self.from_email.as_ref().map(|_| "[REDACTED]"),
             )
+            .field("rechronicle_confidence_threshold", &self.rechronicle_confidence_threshold)
             .finish()
     }
 }
@@ -200,6 +217,30 @@ fn default_app_env() -> String {
     "development".to_string()
 }
 
+fn default_rechronicle_confidence_threshold() -> f32 {
+    0.5
+}
+
+fn default_agentic_triage_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
+fn default_agentic_planning_model() -> String {
+    "gemini-2.5-flash".to_string()
+}
+
+fn default_agentic_extraction_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
+fn default_agentic_entity_resolution_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
+const fn default_agentic_max_tool_executions() -> usize {
+    15
+}
+
 impl Config {
     /// Loads configuration from environment variables.
     ///
@@ -259,6 +300,12 @@ impl Default for Config {
             app_env: default_app_env(),
             from_email: None,
             narrative_flags: NarrativeFeatureFlags::default(),
+            rechronicle_confidence_threshold: default_rechronicle_confidence_threshold(),
+            agentic_triage_model: default_agentic_triage_model(),
+            agentic_planning_model: default_agentic_planning_model(),
+            agentic_extraction_model: default_agentic_extraction_model(),
+            agentic_entity_resolution_model: default_agentic_entity_resolution_model(),
+            agentic_max_tool_executions: default_agentic_max_tool_executions(),
         }
     }
 }

@@ -76,6 +76,8 @@ pub struct ChronicleEvent {
     // Enhanced causality tracking fields
     pub caused_by_event_id: Option<Uuid>,
     pub causes_event_ids: Option<Vec<Option<Uuid>>>,
+    // Sequence number for exact ordering
+    pub sequence_number: i32,
 }
 
 impl ChronicleEvent {
@@ -119,6 +121,67 @@ impl ChronicleEvent {
     pub fn get_actors(&self) -> Result<Vec<EventActor>, serde_json::Error> {
         match &self.actors {
             Some(json) => serde_json::from_value(json.clone()),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Get actors with fallback for missing entity_id fields
+    /// This is more robust for ECS translation where entity_id is critical
+    pub fn get_actors_with_fallback(&self) -> Result<Vec<EventActor>, Box<dyn std::error::Error>> {
+        use uuid::Uuid;
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        match &self.actors {
+            Some(json) => {
+                // Try normal parsing first
+                match serde_json::from_value::<Vec<EventActor>>(json.clone()) {
+                    Ok(actors) => Ok(actors),
+                    Err(_) => {
+                        // If parsing fails, try to fix missing entity_id fields
+                        if let Ok(raw_actors) = serde_json::from_value::<Vec<serde_json::Value>>(json.clone()) {
+                            let mut fixed_actors = Vec::new();
+                            
+                            for (index, mut actor_value) in raw_actors.into_iter().enumerate() {
+                                if let Some(actor_obj) = actor_value.as_object_mut() {
+                                    // Generate entity_id if missing
+                                    if !actor_obj.contains_key("entity_id") {
+                                        // Generate a deterministic UUID based on actor properties
+                                        let mut hasher = DefaultHasher::new();
+                                        
+                                        // Hash the actor's role and context to create a stable entity_id
+                                        if let Some(role) = actor_obj.get("role") {
+                                            role.to_string().hash(&mut hasher);
+                                        }
+                                        if let Some(context) = actor_obj.get("context") {
+                                            context.to_string().hash(&mut hasher);
+                                        }
+                                        
+                                        // Include the event ID and actor index for uniqueness
+                                        self.id.hash(&mut hasher);
+                                        index.hash(&mut hasher);
+                                        
+                                        let hash = hasher.finish();
+                                        // Convert hash to UUID v4-like format
+                                        let entity_id = Uuid::from_u128(hash as u128);
+                                        
+                                        actor_obj.insert("entity_id".to_string(), serde_json::Value::String(entity_id.to_string()));
+                                    }
+                                    
+                                    // Parse the fixed actor
+                                    if let Ok(actor) = serde_json::from_value::<EventActor>(serde_json::Value::Object(actor_obj.clone())) {
+                                        fixed_actors.push(actor);
+                                    }
+                                }
+                            }
+                            
+                            Ok(fixed_actors)
+                        } else {
+                            Err("Failed to parse actors JSON".into())
+                        }
+                    }
+                }
+            }
             None => Ok(Vec::new()),
         }
     }
@@ -244,6 +307,8 @@ pub struct NewChronicleEvent {
     // Enhanced causality tracking fields
     pub caused_by_event_id: Option<Uuid>,
     pub causes_event_ids: Option<Vec<Option<Uuid>>>,
+    // Sequence number for exact ordering
+    pub sequence_number: i32,
 }
 
 impl NewChronicleEvent {
@@ -255,6 +320,7 @@ impl NewChronicleEvent {
         summary: String,
         source: EventSource,
         event_data: Option<JsonValue>,
+        sequence_number: i32,
     ) -> Self {
         Self {
             chronicle_id,
@@ -275,6 +341,7 @@ impl NewChronicleEvent {
             // Enhanced causality tracking fields
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number,
         }
     }
 
@@ -284,6 +351,7 @@ impl NewChronicleEvent {
         user_id: Uuid,
         narrative_event: &NarrativeEvent,
         source: EventSource,
+        sequence_number: i32,
     ) -> Result<Self, serde_json::Error> {
         let actors_json = if narrative_event.actors.is_empty() {
             None
@@ -334,6 +402,7 @@ impl NewChronicleEvent {
             // Enhanced causality tracking fields
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number,
         })
     }
 }
@@ -359,6 +428,8 @@ pub struct CreateEventRequest {
     #[serde(default = "default_event_source")]
     pub source: EventSource,
     pub event_data: Option<JsonValue>,
+    /// Optional timestamp for when the event occurred (defaults to current time)
+    pub timestamp_iso8601: Option<DateTime<Utc>>,
 }
 
 fn default_event_source() -> EventSource {
@@ -413,6 +484,10 @@ pub enum EventOrderBy {
     UpdatedAtDesc,
     #[serde(rename = "timestamp_asc")]
     TimestampAsc,
+    #[serde(rename = "sequence_asc")]
+    SequenceAsc,
+    #[serde(rename = "sequence_desc")]
+    SequenceDesc,
     #[serde(rename = "timestamp_desc")]
     TimestampDesc,
 }
@@ -490,13 +565,15 @@ impl From<CreateEventRequest> for NewChronicleEvent {
         let causality = request.event_data.as_ref().and_then(|data| data.get("causality").cloned());
         let valence = request.event_data.as_ref().and_then(|data| data.get("valence").cloned());
         
-        // Extract timestamp from event_data if provided, otherwise use current time
-        let timestamp = request.event_data.as_ref()
-            .and_then(|data| data.get("timestamp_iso8601"))
-            .and_then(|ts| ts.as_str())
-            .and_then(|ts_str| chrono::DateTime::parse_from_rfc3339(ts_str).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(Utc::now);
+        // Extract timestamp from request field first, then from event_data if provided, otherwise use current time
+        let timestamp = request.timestamp_iso8601.unwrap_or_else(|| {
+            request.event_data.as_ref()
+                .and_then(|data| data.get("timestamp_iso8601"))
+                .and_then(|ts| ts.as_str())
+                .and_then(|ts_str| chrono::DateTime::parse_from_rfc3339(ts_str).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(Utc::now)
+        });
 
         Self {
             chronicle_id: Uuid::nil(), // Will be set by the service
@@ -517,6 +594,7 @@ impl From<CreateEventRequest> for NewChronicleEvent {
             // Enhanced causality tracking fields
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 0, // Will be set by the service
         }
     }
 }

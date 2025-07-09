@@ -151,6 +151,7 @@ impl EcsChronicleEventHandler {
             // Enhanced causality tracking fields
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 0, // Will be set by chronicle service
         };
 
         Ok(Some(chronicle_event))
@@ -217,6 +218,7 @@ impl EcsChronicleEventHandler {
             // Enhanced causality tracking fields
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 0, // Will be set by chronicle service
         };
 
         Ok(Some(chronicle_event))
@@ -315,6 +317,7 @@ impl EcsChronicleEventHandler {
             // Enhanced causality tracking fields
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 0, // Will be set by chronicle service
         };
 
         Ok(Some(chronicle_event))
@@ -386,6 +389,7 @@ impl EcsChronicleEventHandler {
             // Enhanced causality tracking fields
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 0, // Will be set by chronicle service
         };
 
         Ok(Some(chronicle_event))
@@ -431,6 +435,7 @@ impl EcsChronicleEventHandler {
             // Enhanced causality tracking fields
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 0, // Will be set by chronicle service
         };
 
         Ok(Some(chronicle_event))
@@ -509,6 +514,7 @@ impl EcsChronicleEventHandler {
             // Enhanced causality tracking fields
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 0, // Will be set by chronicle service
         };
 
         Ok(Some(chronicle_event))

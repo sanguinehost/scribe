@@ -84,7 +84,7 @@ impl ScribeTool for CreateChronicleEventTool {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "entity_id": {"type": "string", "description": "Entity UUID identifier (generate a UUID v4 string for each unique entity)"},
+                            "id": {"type": "string", "description": "The actual name of the entity as mentioned in the narrative (e.g., 'Elara', 'the ancient sword', 'the tavern')"},
                             "role": {
                                 "type": "string", 
                                 "enum": ["AGENT", "PATIENT", "BENEFICIARY", "INSTRUMENT", "HELPER", "OPPONENT", "WITNESS"],
@@ -92,7 +92,7 @@ impl ScribeTool for CreateChronicleEventTool {
                             },
                             "context": {"type": "string", "description": "Optional additional context about this actor's participation"}
                         },
-                        "required": ["entity_id", "role"]
+                        "required": ["id", "role"]
                     },
                     "description": "All entities participating in the event and their narrative roles"
                 },
@@ -104,17 +104,17 @@ impl ScribeTool for CreateChronicleEventTool {
                     "type": "object",
                     "description": "Complete spatio-temporal and situational context following ECS architecture",
                     "properties": {
-                        "location_id": {"type": "string", "description": "UUID of the primary location entity where event occurred"},
+                        "location_name": {"type": "string", "description": "The name of the primary location where event occurred"},
                         "sub_location": {"type": "string", "description": "Specific area within the location (e.g., 'bridge', 'engine room')"},
                         "spatial_relationships": {
                             "type": "array",
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "entity_id": {"type": "string", "description": "Entity UUID"},
+                                    "entity_name": {"type": "string", "description": "The actual name of the entity"},
                                     "spatial_type": {"type": "string", "enum": ["container", "containable", "anchored", "nested"], "description": "Spatial relationship type"},
                                     "position": {"type": "string", "description": "Relative position or coordinates"},
-                                    "contained_by": {"type": "string", "description": "UUID of containing entity if applicable"}
+                                    "contained_by": {"type": "string", "description": "Name of containing entity if applicable"}
                                 }
                             },
                             "description": "Spatial relationships and containment hierarchies"
@@ -207,7 +207,7 @@ impl ScribeTool for CreateChronicleEventTool {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "entity_id": {"type": "string", "description": "Entity UUID whose state changed"},
+                            "entity_name": {"type": "string", "description": "The actual name of the entity whose state changed"},
                             "component_type": {"type": "string", "description": "Component type affected (Health, Position, Inventory, etc.)"},
                             "component_changes": {
                                 "type": "object",
@@ -216,9 +216,13 @@ impl ScribeTool for CreateChronicleEventTool {
                             "operation": {"type": "string", "enum": ["create", "update", "delete"], "description": "Type of state change"},
                             "archetype_change": {"type": "string", "description": "New archetype signature if entity type changed"}
                         },
-                        "required": ["entity_id", "component_type", "operation"]
+                        "required": ["entity_name", "component_type", "operation"]
                     },
                     "description": "Direct entity state changes caused by this event"
+                },
+                "timestamp_iso8601": {
+                    "type": "string",
+                    "description": "ISO 8601 timestamp for when this event occurred (defaults to current time if not provided)"
                 }
             },
             "required": ["user_id", "chronicle_id", "event_type", "action", "actors", "summary"]
@@ -236,6 +240,8 @@ impl ScribeTool for CreateChronicleEventTool {
         let chronicle_id_str = params.get("chronicle_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParams("chronicle_id is required".to_string()))?;
+        
+        debug!("Attempting to parse chronicle_id: '{}'", chronicle_id_str);
 
         let event_type = params.get("event_type")
             .and_then(|v| v.as_str())
@@ -256,6 +262,7 @@ impl ScribeTool for CreateChronicleEventTool {
         let context_data = params.get("context_data").cloned();
         let causality = params.get("causality").cloned();
         let valence = params.get("valence").cloned();
+        let timestamp_iso8601 = params.get("timestamp_iso8601").and_then(|v| v.as_str());
 
         // Parse UUIDs
         let user_uuid = Uuid::parse_str(user_id_str)
@@ -264,12 +271,106 @@ impl ScribeTool for CreateChronicleEventTool {
         let chronicle_uuid = Uuid::parse_str(chronicle_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid chronicle_id format".to_string()))?;
 
+        // Use the new EntityResolutionTool with Flash-powered entity resolution
+        let entity_resolution_tool = super::entity_resolution_tool::EntityResolutionTool::new(self.app_state.clone());
+        
+        // If actors array is empty, extract entity names from the summary/narrative text
+        let empty_vec = vec![];
+        let actors_array = actors.as_array().unwrap_or(&empty_vec);
+        let final_actors = if actors_array.is_empty() {
+            debug!("Actors array is empty, extracting entity names from summary: {}", summary);
+            
+            // Extract entity names from the summary text
+            let extracted_names = entity_resolution_tool.extract_entity_names(summary).await
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to extract entity names: {}", e)))?;
+            
+            // Convert extracted names to actor format
+            let extracted_actors: Vec<Value> = extracted_names
+                .into_iter()
+                .map(|name| json!({"entity_name": name}))
+                .collect();
+            
+            info!("Extracted {} entity names from summary: {:?}", extracted_actors.len(), extracted_actors);
+            extracted_actors
+        } else {
+            actors_array.clone()
+        };
+        
+        let resolution_result = entity_resolution_tool.resolve_actors_to_entities(
+            &final_actors,
+            Some(chronicle_uuid),
+            user_uuid,
+            super::entity_resolution_tool::ProcessingMode::Incremental,
+        ).await.map_err(|e| ToolError::ExecutionFailed(format!("Failed to resolve entity names: {}", e)))?;
+
+        let resolved_actors = resolution_result.resolved_actors;
+        let narrative_context = resolution_result.narrative_context;
+
+        // Build a map for quick lookup of resolved entity names to UUIDs
+        let entity_id_map: std::collections::HashMap<String, Uuid> = resolved_actors
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|actor| {
+                let name = actor.get("entity_name").and_then(|n| n.as_str())?;
+                let id_str = actor.get("entity_id").and_then(|id| id.as_str())?;
+                let id = Uuid::parse_str(id_str).ok()?;
+                Some((name.to_string(), id))
+            })
+            .collect();
+
+        // Resolve entity names in the valence array
+        let resolved_valence = if let Some(val) = valence {
+            if let Some(arr) = val.as_array() {
+                let mut new_arr = Vec::new();
+                for item in arr {
+                    if let Some(obj) = item.as_object() {
+                        let mut new_obj = obj.clone();
+                        let mut is_valid = true;
+
+                        // Resolve target
+                        if let Some(target_name) = obj.get("target").and_then(|t| t.as_str()) {
+                            if let Some(resolved_id) = entity_id_map.get(target_name) {
+                                new_obj.insert("target".to_string(), json!(resolved_id.to_string()));
+                            } else {
+                                warn!("Could not resolve valence target entity name: {}", target_name);
+                                is_valid = false;
+                            }
+                        }
+
+                        // Resolve from_entity
+                        if let Some(from_name) = obj.get("from_entity").and_then(|f| f.as_str()) {
+                            if let Some(resolved_id) = entity_id_map.get(from_name) {
+                                new_obj.insert("from_entity".to_string(), json!(resolved_id.to_string()));
+                            } else {
+                                warn!("Could not resolve valence from_entity name: {}", from_name);
+                                // This might be acceptable, so we don't invalidate
+                            }
+                        }
+                        
+                        if is_valid {
+                            new_arr.push(json!(new_obj));
+                        }
+                    }
+                }
+                Some(json!(new_arr))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Build event_data with Ars Fabula structured data
         let mut event_data_obj = serde_json::Map::new();
         event_data_obj.insert("action".to_string(), json!(action));
-        event_data_obj.insert("actors".to_string(), actors.clone());
+        event_data_obj.insert("actors".to_string(), resolved_actors.clone());
         
-        if let Some(context) = context_data {
+        // Add the rich narrative context to the event data
+        if let Ok(context_json) = serde_json::to_value(narrative_context) {
+            event_data_obj.insert("context_data".to_string(), context_json);
+        } else if let Some(context) = context_data {
+            // Fallback to original context_data if serialization fails
             event_data_obj.insert("context_data".to_string(), context);
         }
         
@@ -277,15 +378,27 @@ impl ScribeTool for CreateChronicleEventTool {
             event_data_obj.insert("causality".to_string(), causal);
         }
         
-        if let Some(val) = valence {
+        if let Some(val) = resolved_valence {
             event_data_obj.insert("valence".to_string(), val);
         }
+
+        // Parse timestamp if provided
+        let timestamp = if let Some(timestamp_str) = timestamp_iso8601 {
+            Some(
+                chrono::DateTime::parse_from_rfc3339(timestamp_str)
+                    .map_err(|e| ToolError::InvalidParams(format!("Invalid timestamp format: {}", e)))?
+                    .with_timezone(&chrono::Utc)
+            )
+        } else {
+            None
+        };
 
         let create_request = crate::models::CreateEventRequest {
             event_type: event_type.to_string(),
             summary: summary.to_string(),
             source: crate::models::EventSource::AiExtracted,
             event_data: Some(json!(event_data_obj)),
+            timestamp_iso8601: timestamp,
         };
 
         info!(
@@ -340,12 +453,37 @@ impl ScribeTool for CreateChronicleEventTool {
                     );
                 }
                 
+                // CRITICAL: Notify the ECS system about the new chronicle event for entity creation
+                let notification = crate::services::chronicle_event_listener::ChronicleEventNotification {
+                    event_id: event.id,
+                    user_id: user_uuid,
+                    chronicle_id: chronicle_uuid,
+                    event_type: event.event_type.clone(),
+                    notification_type: crate::services::chronicle_event_listener::ChronicleNotificationType::Created,
+                };
+                
+                if let Err(e) = self.app_state.chronicle_event_listener.notify_chronicle_event(notification).await {
+                    warn!(
+                        event_id = %event.id, 
+                        error = %e, 
+                        "Failed to notify ECS system about new chronicle event created by narrative agent"
+                    );
+                    // Don't fail the event creation if ECS notification fails
+                } else {
+                    info!(
+                        event_id = %event.id, 
+                        "Successfully notified ECS system about chronicle event created by narrative agent"
+                    );
+                }
+                
                 Ok(json!({
                     "success": true,
                     "event_id": event.id,
                     "event_type": event_type,
                     "action": action,
                     "summary": summary,
+                    "event_data": event.event_data,
+                    "timestamp_iso8601": event.timestamp_iso8601.to_rfc3339(),
                     "message": "Chronicle event created and embedded successfully"
                 }))
             }

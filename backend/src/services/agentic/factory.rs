@@ -16,6 +16,7 @@ use super::{
         AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
         SearchKnowledgeBaseTool, UpdateLorebookEntryTool
     },
+    entity_resolution_tool::EntityResolutionTool,
     registry::ToolRegistry,
 };
 
@@ -143,6 +144,10 @@ impl AgenticNarrativeFactory {
         ));
         registry.add_tool(update_lorebook_tool);
 
+        // Entity resolution tool
+        let entity_resolution_tool = Arc::new(EntityResolutionTool::new(app_state.clone()));
+        registry.add_tool(entity_resolution_tool);
+
         info!("Registered {} core tools", registry.list_tools().len());
     }
 
@@ -193,6 +198,10 @@ impl AgenticNarrativeFactory {
         ));
         registry.add_tool(update_lorebook_tool);
 
+        // Entity resolution tool
+        let entity_resolution_tool = Arc::new(EntityResolutionTool::new(app_state.clone()));
+        registry.add_tool(entity_resolution_tool);
+
         info!("Registered {} core tools", registry.list_tools().len());
     }
 
@@ -200,8 +209,18 @@ impl AgenticNarrativeFactory {
     pub fn create_dev_config() -> NarrativeWorkflowConfig {
         NarrativeWorkflowConfig {
             triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-            planning_model: "gemini-2.5-flash".to_string(), // Use cheaper model for dev
-            max_tool_executions: 3,
+            planning_model: "gemini-2.5-flash".to_string(), // Use smarter model for planning
+            max_tool_executions: 15, // Increased to allow multiple tool calls per batch
+            enable_cost_optimizations: true,
+        }
+    }
+    
+    /// Create configuration from app config
+    pub fn create_config_from_app_config(config: &crate::config::Config) -> NarrativeWorkflowConfig {
+        NarrativeWorkflowConfig {
+            triage_model: config.agentic_triage_model.clone(),
+            planning_model: config.agentic_planning_model.clone(),
+            max_tool_executions: config.agentic_max_tool_executions,
             enable_cost_optimizations: true,
         }
     }
@@ -210,7 +229,7 @@ impl AgenticNarrativeFactory {
     pub fn create_production_config() -> NarrativeWorkflowConfig {
         NarrativeWorkflowConfig {
             triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-            planning_model: "gemini-2.5-pro".to_string(),
+            planning_model: "gemini-2.5-flash".to_string(),
             max_tool_executions: 5,
             enable_cost_optimizations: true,
         }

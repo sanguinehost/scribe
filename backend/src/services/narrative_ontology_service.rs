@@ -43,6 +43,7 @@ impl NarrativeOntologyService {
             user_id,
             narrative_event,
             EventSource::AiExtracted,
+            0, // sequence_number will be set by the chronicle service
         ).map_err(|e| AppError::SerializationError(format!("Failed to convert NarrativeEvent to NewChronicleEvent: {}", e)))?;
 
         // Override event_data with our serialized version to ensure all data is preserved
@@ -101,6 +102,7 @@ impl NarrativeOntologyService {
             summary: narrative_event.summary.clone(),
             source: EventSource::AiExtracted,
             event_data: Some(event_data),
+            timestamp_iso8601: Some(narrative_event.timestamp), // Use the narrative event timestamp
         })
     }
 

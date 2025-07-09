@@ -11,21 +11,61 @@ use std::collections::HashMap;
 use uuid::Uuid;
 use validator::Validate;
 
+
 /// EventModality represents the reality status of an event in the narrative
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum EventModality {
     /// Part of the ground-truth Fabula (objective reality)
-    #[serde(rename = "ACTUAL")]
     Actual,
     /// Part of a plan or possibility space
-    #[serde(rename = "HYPOTHETICAL")]
     Hypothetical,
     /// What could have happened (counterfactual)
-    #[serde(rename = "COUNTERFACTUAL")]
     Counterfactual,
     /// Believed to be true by a specific agent (subjective belief)
     #[serde(rename = "BELIEVED_BY")]
     BelievedBy(Uuid), // Agent ID who believes this
+}
+
+impl<'de> Deserialize<'de> for EventModality {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.to_uppercase().as_str() {
+            "ACTUAL" => Ok(EventModality::Actual),
+            "HYPOTHETICAL" => Ok(EventModality::Hypothetical),
+            "COUNTERFACTUAL" => Ok(EventModality::Counterfactual),
+            _ => {
+                // Handle BELIEVED_BY variant with UUID
+                if s.to_uppercase().starts_with("BELIEVED_BY") {
+                    // Extract UUID from "BELIEVED_BY(uuid)" or "BELIEVED_BY:uuid" format
+                    let uuid_str = if let Some(start) = s.find('(') {
+                        if let Some(end) = s.rfind(')') {
+                            &s[start + 1..end]
+                        } else {
+                            return Err(serde::de::Error::custom("Invalid BELIEVED_BY format: missing closing parenthesis"));
+                        }
+                    } else if let Some(colon_pos) = s.find(':') {
+                        &s[colon_pos + 1..]
+                    } else {
+                        return Err(serde::de::Error::custom("Invalid BELIEVED_BY format: missing UUID"));
+                    };
+                    
+                    match Uuid::parse_str(uuid_str.trim()) {
+                        Ok(uuid) => Ok(EventModality::BelievedBy(uuid)),
+                        Err(_) => Err(serde::de::Error::custom(format!("Invalid UUID in BELIEVED_BY: {}", uuid_str))),
+                    }
+                } else {
+                    Err(serde::de::Error::unknown_variant(
+                        &s,
+                        &["ACTUAL", "HYPOTHETICAL", "COUNTERFACTUAL", "BELIEVED_BY"],
+                    ))
+                }
+            }
+        }
+    }
 }
 
 impl Default for EventModality {
@@ -36,29 +76,45 @@ impl Default for EventModality {
 
 /// ActorRole defines the narrative function of participants in an event
 /// Based on Vladimir Propp's dramatis personae and semantic role theory
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum ActorRole {
     /// The entity that initiates the action
-    #[serde(rename = "AGENT")]
     Agent,
     /// The entity being acted upon
-    #[serde(rename = "PATIENT")]
     Patient,
     /// The entity that benefits from the action
-    #[serde(rename = "BENEFICIARY")]
     Beneficiary,
     /// The tool or means used to perform the action
-    #[serde(rename = "INSTRUMENT")]
     Instrument,
     /// The entity that helps the agent
-    #[serde(rename = "HELPER")]
     Helper,
     /// The entity that opposes the agent
-    #[serde(rename = "OPPONENT")]
     Opponent,
     /// Witnesses or observers without direct involvement
-    #[serde(rename = "WITNESS")]
     Witness,
+}
+
+impl<'de> Deserialize<'de> for ActorRole {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.to_uppercase().as_str() {
+            "AGENT" => Ok(ActorRole::Agent),
+            "PATIENT" => Ok(ActorRole::Patient),
+            "BENEFICIARY" => Ok(ActorRole::Beneficiary),
+            "INSTRUMENT" => Ok(ActorRole::Instrument),
+            "HELPER" => Ok(ActorRole::Helper),
+            "OPPONENT" => Ok(ActorRole::Opponent),
+            "WITNESS" => Ok(ActorRole::Witness),
+            _ => Err(serde::de::Error::unknown_variant(
+                &s,
+                &["AGENT", "PATIENT", "BENEFICIARY", "INSTRUMENT", "HELPER", "OPPONENT", "WITNESS"],
+            )),
+        }
+    }
 }
 
 /// EventActor represents an entity participating in a narrative event
@@ -113,38 +169,69 @@ impl Default for EventCausality {
 }
 
 /// ValenceType represents different types of emotional/relational impact
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum ValenceType {
     /// Impact on trust relationships
-    #[serde(rename = "TRUST")]
     Trust,
     /// Impact on affection/liking
-    #[serde(rename = "AFFECTION")]
     Affection,
     /// Impact on respect/admiration
-    #[serde(rename = "RESPECT")]
     Respect,
     /// Impact on fear/intimidation
-    #[serde(rename = "FEAR")]
     Fear,
     /// Impact on character power/influence
-    #[serde(rename = "POWER")]
     Power,
     /// Impact on character knowledge/wisdom
-    #[serde(rename = "KNOWLEDGE")]
     Knowledge,
     /// Impact on character wealth/resources
-    #[serde(rename = "WEALTH")]
     Wealth,
     /// Impact on character health/wellbeing
-    #[serde(rename = "HEALTH")]
     Health,
     /// Impact on character reputation
-    #[serde(rename = "REPUTATION")]
     Reputation,
     /// Custom/domain-specific valence
     #[serde(rename = "CUSTOM")]
     Custom(String),
+}
+
+impl<'de> Deserialize<'de> for ValenceType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.to_uppercase().as_str() {
+            "TRUST" => Ok(ValenceType::Trust),
+            "AFFECTION" => Ok(ValenceType::Affection),
+            "RESPECT" => Ok(ValenceType::Respect),
+            "FEAR" => Ok(ValenceType::Fear),
+            "POWER" => Ok(ValenceType::Power),
+            "KNOWLEDGE" => Ok(ValenceType::Knowledge),
+            "WEALTH" => Ok(ValenceType::Wealth),
+            "HEALTH" => Ok(ValenceType::Health),
+            "REPUTATION" => Ok(ValenceType::Reputation),
+            other => {
+                // Handle custom valence types
+                if other.starts_with("CUSTOM") {
+                    let custom_value = if other == "CUSTOM" {
+                        String::new()
+                    } else if let Some(colon_pos) = other.find(':') {
+                        other[colon_pos + 1..].to_string()
+                    } else {
+                        other.to_string()
+                    };
+                    Ok(ValenceType::Custom(custom_value))
+                } else {
+                    Err(serde::de::Error::unknown_variant(
+                        &s,
+                        &["TRUST", "AFFECTION", "RESPECT", "FEAR", "POWER", "KNOWLEDGE", 
+                          "WEALTH", "HEALTH", "REPUTATION", "CUSTOM"],
+                    ))
+                }
+            }
+        }
+    }
 }
 
 /// EventValence represents the emotional/relational impact of an event
@@ -161,83 +248,117 @@ pub struct EventValence {
 }
 
 /// Core action verbs that can occur in narrative events
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum NarrativeAction {
     // Discovery and revelation actions
-    #[serde(rename = "DISCOVERED")]
     Discovered,
-    #[serde(rename = "REVEALED")]
     Revealed,
-    #[serde(rename = "UNCOVERED")]
     Uncovered,
-    #[serde(rename = "FOUND")]
     Found,
     
     // Social and relationship actions
-    #[serde(rename = "MET")]
     Met,
-    #[serde(rename = "BEFRIENDED")]
     Befriended,
-    #[serde(rename = "BETRAYED")]
     Betrayed,
-    #[serde(rename = "MARRIED")]
     Married,
-    #[serde(rename = "DIVORCED")]
     Divorced,
     
     // Conflict actions
-    #[serde(rename = "ATTACKED")]
     Attacked,
-    #[serde(rename = "DEFENDED")]
     Defended,
-    #[serde(rename = "DEFEATED")]
     Defeated,
-    #[serde(rename = "FLED")]
     Fled,
     
     // Acquisition and loss actions
-    #[serde(rename = "ACQUIRED")]
     Acquired,
-    #[serde(rename = "LOST")]
     Lost,
-    #[serde(rename = "GAVE")]
     Gave,
-    #[serde(rename = "STOLE")]
     Stole,
     
     // Transformation actions
-    #[serde(rename = "TRANSFORMED")]
     Transformed,
-    #[serde(rename = "EVOLVED")]
     Evolved,
-    #[serde(rename = "DIED")]
     Died,
-    #[serde(rename = "RESURRECTED")]
     Resurrected,
     
     // Communication actions
-    #[serde(rename = "TOLD")]
     Told,
-    #[serde(rename = "ASKED")]
     Asked,
-    #[serde(rename = "LIED")]
     Lied,
-    #[serde(rename = "CONFESSED")]
     Confessed,
     
     // Decision and commitment actions
-    #[serde(rename = "DECIDED")]
     Decided,
-    #[serde(rename = "COMMITTED")]
     Committed,
-    #[serde(rename = "REFUSED")]
     Refused,
-    #[serde(rename = "ABANDONED")]
     Abandoned,
     
     // Custom action for domain-specific verbs
     #[serde(rename = "CUSTOM")]
     Custom(String),
+}
+
+impl<'de> Deserialize<'de> for NarrativeAction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.to_uppercase().as_str() {
+            "DISCOVERED" => Ok(NarrativeAction::Discovered),
+            "REVEALED" => Ok(NarrativeAction::Revealed),
+            "UNCOVERED" => Ok(NarrativeAction::Uncovered),
+            "FOUND" => Ok(NarrativeAction::Found),
+            "MET" => Ok(NarrativeAction::Met),
+            "BEFRIENDED" => Ok(NarrativeAction::Befriended),
+            "BETRAYED" => Ok(NarrativeAction::Betrayed),
+            "MARRIED" => Ok(NarrativeAction::Married),
+            "DIVORCED" => Ok(NarrativeAction::Divorced),
+            "ATTACKED" => Ok(NarrativeAction::Attacked),
+            "DEFENDED" => Ok(NarrativeAction::Defended),
+            "DEFEATED" => Ok(NarrativeAction::Defeated),
+            "FLED" => Ok(NarrativeAction::Fled),
+            "ACQUIRED" => Ok(NarrativeAction::Acquired),
+            "LOST" => Ok(NarrativeAction::Lost),
+            "GAVE" => Ok(NarrativeAction::Gave),
+            "STOLE" => Ok(NarrativeAction::Stole),
+            "TRANSFORMED" => Ok(NarrativeAction::Transformed),
+            "EVOLVED" => Ok(NarrativeAction::Evolved),
+            "DIED" => Ok(NarrativeAction::Died),
+            "RESURRECTED" => Ok(NarrativeAction::Resurrected),
+            "TOLD" => Ok(NarrativeAction::Told),
+            "ASKED" => Ok(NarrativeAction::Asked),
+            "LIED" => Ok(NarrativeAction::Lied),
+            "CONFESSED" => Ok(NarrativeAction::Confessed),
+            "DECIDED" => Ok(NarrativeAction::Decided),
+            "COMMITTED" => Ok(NarrativeAction::Committed),
+            "REFUSED" => Ok(NarrativeAction::Refused),
+            "ABANDONED" => Ok(NarrativeAction::Abandoned),
+            other => {
+                // Handle custom actions by checking if it starts with "CUSTOM:"
+                if other.starts_with("CUSTOM") {
+                    let custom_value = if other == "CUSTOM" {
+                        String::new()
+                    } else if let Some(colon_pos) = other.find(':') {
+                        other[colon_pos + 1..].to_string()
+                    } else {
+                        other.to_string()
+                    };
+                    Ok(NarrativeAction::Custom(custom_value))
+                } else {
+                    Err(serde::de::Error::unknown_variant(
+                        &s,
+                        &["DISCOVERED", "REVEALED", "UNCOVERED", "FOUND", "MET", "BEFRIENDED", 
+                          "BETRAYED", "MARRIED", "DIVORCED", "ATTACKED", "DEFENDED", "DEFEATED", 
+                          "FLED", "ACQUIRED", "LOST", "GAVE", "STOLE", "TRANSFORMED", "EVOLVED", 
+                          "DIED", "RESURRECTED", "TOLD", "ASKED", "LIED", "CONFESSED", "DECIDED", 
+                          "COMMITTED", "REFUSED", "ABANDONED", "CUSTOM"],
+                    ))
+                }
+            }
+        }
+    }
 }
 
 /// Complete Ars Fabula narrative event structure
@@ -494,6 +615,7 @@ impl NarrativeEventBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json;
 
     #[test]
     fn test_narrative_event_creation() {
@@ -556,5 +678,93 @@ mod tests {
             "A new cave was found".to_string(),
         ).with_modality(EventModality::BelievedBy(agent_id));
         assert_eq!(believed_event.modality, EventModality::BelievedBy(agent_id));
+    }
+
+    #[test]
+    fn test_actor_role_case_insensitive_deserialization() {
+        // Test uppercase (standard format)
+        let uppercase = serde_json::from_str::<ActorRole>("\"AGENT\"").unwrap();
+        assert_eq!(uppercase, ActorRole::Agent);
+
+        // Test Pascal case (what AI might return)
+        let pascal_case = serde_json::from_str::<ActorRole>("\"Agent\"").unwrap();
+        assert_eq!(pascal_case, ActorRole::Agent);
+
+        // Test lowercase
+        let lowercase = serde_json::from_str::<ActorRole>("\"agent\"").unwrap();
+        assert_eq!(lowercase, ActorRole::Agent);
+
+        // Test other roles
+        let patient = serde_json::from_str::<ActorRole>("\"Patient\"").unwrap();
+        assert_eq!(patient, ActorRole::Patient);
+
+        let beneficiary = serde_json::from_str::<ActorRole>("\"beneficiary\"").unwrap();
+        assert_eq!(beneficiary, ActorRole::Beneficiary);
+    }
+
+    #[test]
+    fn test_narrative_action_case_insensitive_deserialization() {
+        // Test uppercase (standard format)
+        let uppercase = serde_json::from_str::<NarrativeAction>("\"DISCOVERED\"").unwrap();
+        assert_eq!(uppercase, NarrativeAction::Discovered);
+
+        // Test Pascal case (what AI might return)
+        let pascal_case = serde_json::from_str::<NarrativeAction>("\"Discovered\"").unwrap();
+        assert_eq!(pascal_case, NarrativeAction::Discovered);
+
+        // Test lowercase
+        let lowercase = serde_json::from_str::<NarrativeAction>("\"discovered\"").unwrap();
+        assert_eq!(lowercase, NarrativeAction::Discovered);
+
+        // Test other actions
+        let met = serde_json::from_str::<NarrativeAction>("\"Met\"").unwrap();
+        assert_eq!(met, NarrativeAction::Met);
+
+        let betrayed = serde_json::from_str::<NarrativeAction>("\"betrayed\"").unwrap();
+        assert_eq!(betrayed, NarrativeAction::Betrayed);
+    }
+
+    #[test]
+    fn test_valence_type_case_insensitive_deserialization() {
+        // Test uppercase (standard format)
+        let uppercase = serde_json::from_str::<ValenceType>("\"TRUST\"").unwrap();
+        assert_eq!(uppercase, ValenceType::Trust);
+
+        // Test Pascal case (what AI might return)
+        let pascal_case = serde_json::from_str::<ValenceType>("\"Trust\"").unwrap();
+        assert_eq!(pascal_case, ValenceType::Trust);
+
+        // Test lowercase
+        let lowercase = serde_json::from_str::<ValenceType>("\"trust\"").unwrap();
+        assert_eq!(lowercase, ValenceType::Trust);
+
+        // Test other valence types
+        let affection = serde_json::from_str::<ValenceType>("\"Affection\"").unwrap();
+        assert_eq!(affection, ValenceType::Affection);
+
+        let power = serde_json::from_str::<ValenceType>("\"POWER\"").unwrap();
+        assert_eq!(power, ValenceType::Power);
+    }
+
+    #[test]
+    fn test_event_modality_case_insensitive_deserialization() {
+        // Test uppercase (standard format)
+        let uppercase = serde_json::from_str::<EventModality>("\"ACTUAL\"").unwrap();
+        assert_eq!(uppercase, EventModality::Actual);
+
+        // Test Pascal case (what AI might return)
+        let pascal_case = serde_json::from_str::<EventModality>("\"Actual\"").unwrap();
+        assert_eq!(pascal_case, EventModality::Actual);
+
+        // Test lowercase
+        let lowercase = serde_json::from_str::<EventModality>("\"actual\"").unwrap();
+        assert_eq!(lowercase, EventModality::Actual);
+
+        // Test other modalities
+        let hypothetical = serde_json::from_str::<EventModality>("\"Hypothetical\"").unwrap();
+        assert_eq!(hypothetical, EventModality::Hypothetical);
+
+        let counterfactual = serde_json::from_str::<EventModality>("\"COUNTERFACTUAL\"").unwrap();
+        assert_eq!(counterfactual, EventModality::Counterfactual);
     }
 }

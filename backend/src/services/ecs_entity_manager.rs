@@ -312,8 +312,12 @@ impl EcsEntityManager {
                                     component_data: update.component_data.clone(),
                                 };
 
+                                // Use upsert to handle cases where component already exists
                                 let ecs_component: EcsComponent = diesel::insert_into(ecs_components::table)
                                     .values(&new_component)
+                                    .on_conflict((ecs_components::entity_id, ecs_components::component_type))
+                                    .do_update()
+                                    .set(ecs_components::component_data.eq(update.component_data.clone()))
                                     .returning(EcsComponent::as_returning())
                                     .get_result(conn)
                                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -321,7 +325,8 @@ impl EcsEntityManager {
                                 result_components.push(ecs_component);
                             }
                             ComponentOperation::Update => {
-                                let updated: EcsComponent = diesel::update(
+                                // Try to update existing component
+                                match diesel::update(
                                     ecs_components::table
                                         .filter(ecs_components::entity_id.eq(update.entity_id))
                                         .filter(ecs_components::component_type.eq(update.component_type.clone()))
@@ -329,10 +334,32 @@ impl EcsEntityManager {
                                 )
                                 .set(ecs_components::component_data.eq(update.component_data.clone()))
                                 .returning(EcsComponent::as_returning())
-                                .get_result(conn)
-                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                                .get_result(conn) {
+                                    Ok(updated) => {
+                                        result_components.push(updated);
+                                    }
+                                    Err(diesel::result::Error::NotFound) => {
+                                        // Component doesn't exist, create it instead
+                                        let new_component = NewEcsComponent {
+                                            id: Uuid::new_v4(),
+                                            entity_id: update.entity_id,
+                                            user_id,
+                                            component_type: update.component_type.clone(),
+                                            component_data: update.component_data.clone(),
+                                        };
 
-                                result_components.push(updated);
+                                        let created: EcsComponent = diesel::insert_into(ecs_components::table)
+                                            .values(&new_component)
+                                            .returning(EcsComponent::as_returning())
+                                            .get_result(conn)
+                                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                                        result_components.push(created);
+                                    }
+                                    Err(e) => {
+                                        return Err(AppError::DatabaseQueryError(e.to_string()));
+                                    }
+                                }
                             }
                             ComponentOperation::Remove => {
                                 diesel::delete(
@@ -959,6 +986,178 @@ impl EcsEntityManager {
 
         // Estimate ~1ms per entity for warming
         Ok((entity_count? as u64).saturating_mul(1))
+    }
+
+    /// Get all ECS entities for a specific chronicle
+    /// This provides a simple direct query for entity listing in the UI
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), chronicle_id = %chronicle_id))]
+    pub async fn get_entities_by_chronicle(&self, user_id: Uuid, chronicle_id: Uuid, limit: Option<usize>) -> Result<Vec<EntityQueryResult>, AppError> {
+        info!("Getting ECS entities for chronicle {} by user {}", chronicle_id, user_id);
+        
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let entity_ids = conn.interact({
+            let chronicle_id = chronicle_id;
+            let user_id = user_id;
+            move |conn| -> Result<Vec<Uuid>, AppError> {
+                use crate::schema::{ecs_entities, ecs_components};
+                use diesel::prelude::*;
+
+                let mut query = ecs_entities::table
+                    .inner_join(ecs_components::table.on(ecs_entities::id.eq(ecs_components::entity_id)))
+                    .filter(ecs_entities::user_id.eq(user_id))
+                    .filter(ecs_components::component_type.eq("ChronicleSource"))
+                    .filter(
+                        diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
+                            "cast(component_data->>'chronicle_id' as uuid) = '{}'", chronicle_id
+                        ))
+                    )
+                    .select(ecs_entities::id)
+                    .distinct()
+                    .into_boxed();
+
+                if let Some(limit) = limit {
+                    query = query.limit(limit as i64);
+                }
+
+                query.load::<Uuid>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            }
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+        if entity_ids.is_empty() {
+            info!("No ECS entities found for chronicle {}", chronicle_id);
+            return Ok(Vec::new());
+        }
+
+        info!("Found {} ECS entities for chronicle {}", entity_ids.len(), chronicle_id);
+        
+        // Get full entity data for found entities
+        let entities = self.get_entities(user_id, &entity_ids).await?;
+        Ok(entities)
+    }
+
+    /// Delete all ECS entities for a specific chronicle
+    /// This should be called during re-chronicle to clean up old entities
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), chronicle_id = %chronicle_id))]
+    pub async fn purge_entities_by_chronicle(&self, user_id: Uuid, chronicle_id: Uuid) -> Result<usize, AppError> {
+        info!("Purging ECS entities for chronicle {} by user {}", chronicle_id, user_id);
+        
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        // First, find all entities that have ChronicleSource components pointing to this chronicle
+        let entities_to_delete = conn.interact({
+            let chronicle_id = chronicle_id;
+            let user_id = user_id;
+            move |conn| -> Result<Vec<Uuid>, AppError> {
+                use crate::schema::{ecs_entities, ecs_components};
+                
+                let entity_ids = ecs_entities::table
+                    .inner_join(ecs_components::table.on(ecs_entities::id.eq(ecs_components::entity_id)))
+                    .filter(ecs_entities::user_id.eq(user_id))
+                    .filter(ecs_components::component_type.eq("ChronicleSource"))
+                    .filter(
+                        diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
+                            "cast(component_data->>'chronicle_id' as uuid) = '{}'", chronicle_id
+                        ))
+                    )
+                    .select(ecs_entities::id)
+                    .distinct()
+                    .load::<Uuid>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                
+                Ok(entity_ids)
+            }
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+        if entities_to_delete.is_empty() {
+            info!("No ECS entities found for chronicle {}", chronicle_id);
+            return Ok(0);
+        }
+
+        info!("Found {} ECS entities to delete for chronicle {}", entities_to_delete.len(), chronicle_id);
+
+        // Delete components first (foreign key constraint)
+        let components_deleted = conn.interact({
+            let entities_to_delete = entities_to_delete.clone();
+            let user_id = user_id;
+            move |conn| -> Result<usize, AppError> {
+                use crate::schema::ecs_components;
+                
+                let deleted_count = diesel::delete(
+                    ecs_components::table
+                        .filter(ecs_components::entity_id.eq_any(&entities_to_delete))
+                        .filter(ecs_components::user_id.eq(user_id))
+                ).execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                
+                Ok(deleted_count)
+            }
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+        // Delete entity relationships
+        let relationships_deleted = conn.interact({
+            let entities_to_delete = entities_to_delete.clone();
+            let user_id = user_id;
+            move |conn| -> Result<usize, AppError> {
+                use crate::schema::ecs_entity_relationships;
+                
+                let deleted_count = diesel::delete(
+                    ecs_entity_relationships::table
+                        .filter(
+                            ecs_entity_relationships::from_entity_id.eq_any(&entities_to_delete)
+                                .or(ecs_entity_relationships::to_entity_id.eq_any(&entities_to_delete))
+                        )
+                        .filter(ecs_entity_relationships::user_id.eq(user_id))
+                ).execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                
+                Ok(deleted_count)
+            }
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+        // Delete entities
+        let entities_deleted = conn.interact({
+            let entities_to_delete = entities_to_delete.clone();
+            let user_id = user_id;
+            move |conn| -> Result<usize, AppError> {
+                use crate::schema::ecs_entities;
+                
+                let deleted_count = diesel::delete(
+                    ecs_entities::table
+                        .filter(ecs_entities::id.eq_any(&entities_to_delete))
+                        .filter(ecs_entities::user_id.eq(user_id))
+                ).execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                
+                Ok(deleted_count)
+            }
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+        // Clear cache for deleted entities
+        self.clear_entities_from_cache(user_id, &entities_to_delete).await?;
+
+        info!(
+            "Purged {} entities, {} components, {} relationships for chronicle {}",
+            entities_deleted, components_deleted, relationships_deleted, chronicle_id
+        );
+
+        Ok(entities_deleted)
+    }
+
+    /// Clear multiple entities from cache
+    async fn clear_entities_from_cache(&self, user_id: Uuid, entity_ids: &[Uuid]) -> Result<(), AppError> {
+        let mut conn = self.redis_client.get_multiplexed_async_connection().await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Redis connection failed: {}", e)))?;
+
+        for entity_id in entity_ids {
+            let cache_key = self.entity_cache_key(user_id, *entity_id);
+            let _: redis::RedisResult<()> = conn.del(&cache_key).await;
+        }
+
+        Ok(())
     }
 
     async fn store_entity_in_cache_with_ttl(&self, cache_key: &str, result: &EntityQueryResult, ttl: u64) -> redis::RedisResult<()> {

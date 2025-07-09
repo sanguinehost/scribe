@@ -401,7 +401,7 @@
 			const result = await apiClient.reChronicleFromChat(currentChronicleId, {
 				chat_session_id: chat.id,
 				purge_existing: true,
-				extraction_model: 'gemini-2.5-pro',
+				extraction_model: 'gemini-2.5-flash-lite-preview-06-17',
 			});
 
 			if (result.isOk()) {
@@ -602,6 +602,11 @@
 	let suggestionsError = $state<string | null>(null);
 	let suggestionsRetryable = $state(false);
 
+	// --- Agentic Chat State ---
+	let isLoadingAgenticChat = $state(false);
+	let agenticChatResponse = $state<import('$lib/types').AgenticChatResponse | null>(null);
+	let agenticChatError = $state<string | null>(null);
+	let showAgenticResponse = $state(false);
 
 	// --- Impersonate Response State ---
 	// Removed - impersonate now directly sets input text
@@ -927,6 +932,58 @@
 			toast.error(`Could not load suggested actions: ${cleanErrorMessage}`);
 		} finally {
 			isLoadingSuggestions = false;
+		}
+	}
+
+	async function fetchAgenticChat() {
+		console.log('fetchAgenticChat: Entered function.');
+
+		if (!chat?.id) {
+			console.log('fetchAgenticChat: Aborting, missing chat.id.');
+			return;
+		}
+
+		if (!chatInput.trim()) {
+			toast.error('Please enter a query for agentic analysis.');
+			return;
+		}
+
+		console.log('Fetching agentic chat response for:', chatInput.trim());
+
+		try {
+			isLoadingAgenticChat = true;
+			agenticChatError = null;
+			
+			const request: import('$lib/types').AgenticChatRequest = {
+				user_query: chatInput.trim(),
+				conversation_context: undefined, // Could be built from message history if needed
+				chronicle_id: currentChronicleId || undefined,
+				token_budget: 4000,
+				quality_mode: 'Balanced'
+			};
+
+			const result = await apiClient.fetchAgenticChat(chat.id, request);
+
+			if (result.isOk()) {
+				agenticChatResponse = result.value;
+				showAgenticResponse = true;
+				console.log('Successfully fetched agentic chat response:', agenticChatResponse);
+				
+				// Clear the input since we got a response
+				chatInput = '';
+			} else {
+				const error = result.error;
+				console.error('Error fetching agentic chat response:', error.message);
+				
+				agenticChatError = error.message;
+				toast.error(`Agentic chat failed: ${error.message}`);
+			}
+		} catch (err: any) {
+			console.error('Error fetching agentic chat:', err);
+			agenticChatError = err.message || 'An unexpected error occurred.';
+			toast.error(`Agentic chat failed: ${agenticChatError}`);
+		} finally {
+			isLoadingAgenticChat = false;
 		}
 	}
 
@@ -1429,39 +1486,75 @@
 
 	<!-- Show Chat Interface (Get Suggestions + Input) Only When Inside Active Chat -->
 	{#if shouldShowChatInterface}
-		<!-- Get Suggestions Button -->
+		<!-- Action Buttons -->
 		<div class="mx-auto w-full px-2 sm:px-4 pb-1 text-center md:max-w-3xl">
-			<button
-				type="button"
-				onclick={() => {
-					// Always log this message for the test to pass, regardless of environment
-					console.log('Get Suggestions button clicked!');
-					fetchSuggestedActions();
-				}}
-				disabled={!canFetchSuggestions || isLoadingSuggestions || isLoading}
-				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
-			>
-				{#if isLoadingSuggestions}
-					<svg
-						class="-ml-1 mr-2 h-4 w-4 animate-spin text-primary"
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-					>
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-						></circle>
-						<path
-							class="opacity-75"
-							fill="currentColor"
-							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-						></path>
-					</svg>
-					<span class="hidden sm:inline">Loading...</span>
-				{:else}
-					<span class="hidden sm:inline">Get Suggestions</span>
-					<span class="sm:hidden">Suggestions</span>
-				{/if}
-			</button>
+			<div class="flex gap-2 justify-center">
+				<!-- Get Suggestions Button -->
+				<button
+					type="button"
+					onclick={() => {
+						// Always log this message for the test to pass, regardless of environment
+						console.log('Get Suggestions button clicked!');
+						fetchSuggestedActions();
+					}}
+					disabled={!canFetchSuggestions || isLoadingSuggestions || isLoading}
+					class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+				>
+					{#if isLoadingSuggestions}
+						<svg
+							class="-ml-1 mr-2 h-4 w-4 animate-spin text-primary"
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+						>
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+							></circle>
+							<path
+								class="opacity-75"
+								fill="currentColor"
+								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+							></path>
+						</svg>
+						<span class="hidden sm:inline">Loading...</span>
+					{:else}
+						<span class="hidden sm:inline">Get Suggestions</span>
+						<span class="sm:hidden">Suggestions</span>
+					{/if}
+				</button>
+
+				<!-- Agentic Chat Button -->
+				<button
+					type="button"
+					onclick={() => {
+						console.log('Agentic Chat button clicked!');
+						fetchAgenticChat();
+					}}
+					disabled={!canFetchSuggestions || isLoadingAgenticChat || isLoading || !chatInput.trim()}
+					class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-purple-50 hover:bg-purple-100 dark:bg-purple-950 dark:hover:bg-purple-900 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium ring-offset-background transition-colors hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+					title="Analyze current input with intelligent context retrieval"
+				>
+					{#if isLoadingAgenticChat}
+						<svg
+							class="-ml-1 mr-2 h-4 w-4 animate-spin text-purple-600"
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+						>
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+							></circle>
+							<path
+								class="opacity-75"
+								fill="currentColor"
+								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+							></path>
+						</svg>
+						<span class="hidden sm:inline">Analyzing...</span>
+					{:else}
+						<span class="hidden sm:inline">Agentic Analysis</span>
+						<span class="sm:hidden">Agentic</span>
+					{/if}
+				</button>
+			</div>
 		</div>
 
 		<!-- Suggested Actions -->
@@ -1533,6 +1626,144 @@
 			</div>
 		{/if}
 
+		<!-- Agentic Chat Response -->
+		{#if showAgenticResponse && agenticChatResponse && !isLoading}
+			<div class="mx-auto w-full px-2 sm:px-4 pb-2 md:max-w-3xl">
+				<div class="rounded-md border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-950/20">
+					<div class="flex items-start justify-between gap-3 mb-3">
+						<h3 class="text-purple-700 dark:text-purple-300 font-medium text-sm">
+							🧠 Agentic Analysis Results
+						</h3>
+						<button
+							type="button"
+							onclick={() => {
+								showAgenticResponse = false;
+								agenticChatResponse = null;
+							}}
+							class="text-purple-500 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-200"
+							title="Close"
+						>
+							<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+								<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+							</svg>
+						</button>
+					</div>
+					
+					<!-- Context Preview -->
+					<div class="mb-4">
+						<h4 class="text-purple-600 dark:text-purple-400 font-medium text-xs mb-2 uppercase tracking-wide">
+							Optimized Context ({agenticChatResponse.optimized_context.length} chars)
+						</h4>
+						<div class="bg-white dark:bg-gray-900 rounded border p-3 text-sm max-h-32 overflow-y-auto">
+							<pre class="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{agenticChatResponse.optimized_context}</pre>
+						</div>
+					</div>
+
+					<!-- Execution Summary -->
+					<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+						<div class="text-center">
+							<div class="text-xs text-purple-600 dark:text-purple-400 font-medium">Intent</div>
+							<div class="text-xs text-gray-700 dark:text-gray-300">{agenticChatResponse.execution_summary.intent_detected}</div>
+						</div>
+						<div class="text-center">
+							<div class="text-xs text-purple-600 dark:text-purple-400 font-medium">Queries</div>
+							<div class="text-xs text-gray-700 dark:text-gray-300">{agenticChatResponse.execution_summary.queries_executed}</div>
+						</div>
+						<div class="text-center">
+							<div class="text-xs text-purple-600 dark:text-purple-400 font-medium">Entities</div>
+							<div class="text-xs text-gray-700 dark:text-gray-300">{agenticChatResponse.execution_summary.entities_analyzed}</div>
+						</div>
+						<div class="text-center">
+							<div class="text-xs text-purple-600 dark:text-purple-400 font-medium">Confidence</div>
+							<div class="text-xs text-gray-700 dark:text-gray-300">{(agenticChatResponse.confidence * 100).toFixed(1)}%</div>
+						</div>
+					</div>
+
+					<!-- Token Usage -->
+					<div class="text-xs text-purple-600 dark:text-purple-400 border-t border-purple-200 dark:border-purple-800 pt-2">
+						<div class="flex justify-between items-center">
+							<span>Tokens: {agenticChatResponse.token_usage.total_llm_tokens} total, {agenticChatResponse.token_usage.final_tokens_used} final</span>
+							<span>⏱️ {agenticChatResponse.execution_summary.execution_time_ms}ms</span>
+						</div>
+					</div>
+					
+					<!-- Action Buttons -->
+					<div class="flex gap-2 mt-3">
+						<button
+							type="button"
+							onclick={() => {
+								// Add the optimized context to the chat input for further refinement
+								chatInput = agenticChatResponse?.optimized_context || '';
+								showAgenticResponse = false;
+							}}
+							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-100 border border-purple-300 rounded-md hover:bg-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 dark:text-purple-300 dark:bg-purple-950/30 dark:border-purple-700 dark:hover:bg-purple-950/50"
+						>
+							Use as Context
+						</button>
+						<button
+							type="button"
+							onclick={() => {
+								// Send the optimized context as a regular message
+								if (agenticChatResponse?.optimized_context) {
+									sendMessage(agenticChatResponse.optimized_context);
+									showAgenticResponse = false;
+								}
+							}}
+							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 dark:text-green-300 dark:bg-green-950/30 dark:border-green-700 dark:hover:bg-green-950/50"
+						>
+							Send as Message
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Agentic Chat Error -->
+		{#if agenticChatError && !isLoading && !isLoadingAgenticChat}
+			<div class="mx-auto w-full px-2 sm:px-4 pb-2 md:max-w-3xl">
+				<div class="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/20">
+					<div class="flex items-start gap-3">
+						<div class="flex-shrink-0 text-red-500 mt-0.5">
+							<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+								<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+							</svg>
+						</div>
+						<div class="flex-1">
+							<p class="text-red-700 dark:text-red-300 font-medium text-sm">
+								Agentic analysis failed
+							</p>
+							<p class="text-red-600 dark:text-red-400 text-sm mt-1">
+								{agenticChatError}
+							</p>
+							<div class="flex gap-2 mt-3">
+								<button
+									type="button"
+									onclick={() => {
+										agenticChatError = null;
+										fetchAgenticChat();
+									}}
+									class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 dark:text-red-300 dark:bg-red-950/30 dark:border-red-700 dark:hover:bg-red-950/50"
+								>
+									<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+									</svg>
+									Retry
+								</button>
+								<button
+									type="button"
+									onclick={() => {
+										agenticChatError = null;
+									}}
+									class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1 dark:text-gray-300 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700"
+								>
+									Dismiss
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Message Input Form -->
 		<div class="mx-auto w-full px-2 sm:px-4 pb-4 md:max-w-3xl md:pb-6">

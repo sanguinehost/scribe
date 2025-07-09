@@ -16,6 +16,7 @@
 
 pub mod agent_runner;
 pub mod narrative_tools;
+pub mod entity_resolution_tool;
 pub mod factory;
 pub mod registry;
 pub mod tools;
@@ -35,3 +36,4 @@ pub use narrative_tools::{
     AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
     SearchKnowledgeBaseTool, UpdateLorebookEntryTool
 };
+pub use entity_resolution_tool::{EntityResolutionTool, ProcessingMode};

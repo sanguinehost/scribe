@@ -329,6 +329,36 @@ impl ChronicleService {
 
     // --- Event Operations ---
 
+    /// Get the next sequence number for a chronicle
+    #[instrument(skip(self), fields(chronicle_id = %chronicle_id))]
+    async fn get_next_sequence_number(&self, chronicle_id: Uuid) -> Result<i32, AppError> {
+        let conn = self.db_pool.get().await.map_err(|e| {
+            error!("Failed to get database connection: {}", e);
+            AppError::DbPoolError(format!("Connection pool error: {e}"))
+        })?;
+
+        let next_sequence = conn
+            .interact(move |conn| {
+                use diesel::dsl::max;
+                chronicle_events::table
+                    .filter(chronicle_events::chronicle_id.eq(chronicle_id))
+                    .select(max(chronicle_events::sequence_number))
+                    .first::<Option<i32>>(conn)
+                    .map(|max_seq| max_seq.unwrap_or(0) + 1)
+            })
+            .await
+            .map_err(|e| {
+                error!("Database interaction error when getting next sequence number: {}", e);
+                AppError::DbInteractError(format!("Failed to get next sequence number: {e}"))
+            })?
+            .map_err(|e| {
+                error!("Diesel error when getting next sequence number: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to get next sequence number: {e}"))
+            })?;
+
+        Ok(next_sequence)
+    }
+
     /// Create a new event in a chronicle
     #[instrument(skip(self), fields(user_id = %user_id, chronicle_id = %chronicle_id, event_type = %request.event_type))]
     pub async fn create_event(
@@ -341,9 +371,13 @@ impl ChronicleService {
         // First verify chronicle ownership
         self.get_chronicle(user_id, chronicle_id).await?;
 
+        // Get the next sequence number for proper ordering
+        let sequence_number = self.get_next_sequence_number(chronicle_id).await?;
+
         let mut new_event: NewChronicleEvent = request.into();
         new_event.chronicle_id = chronicle_id;
         new_event.user_id = user_id;
+        new_event.sequence_number = sequence_number;
 
         // Encrypt the summary if DEK is provided
         if let Some(dek) = session_dek {
@@ -385,6 +419,7 @@ impl ChronicleService {
             // Enhanced causality tracking fields
             caused_by_event_id: new_event.caused_by_event_id,
             causes_event_ids: new_event.causes_event_ids.clone(),
+            sequence_number: new_event.sequence_number,
         };
 
         // Check for duplicates before inserting
@@ -556,13 +591,15 @@ impl ChronicleService {
                     query = query.filter(chronicle_events::created_at.lt(timestamp));
                 }
 
-                // Apply ordering
-                match filter.order_by.unwrap_or(EventOrderBy::TimestampAsc) {
+                // Apply ordering - default to sequence order for proper chronological display
+                match filter.order_by.unwrap_or(EventOrderBy::SequenceAsc) {
                     EventOrderBy::CreatedAtAsc => query = query.order(chronicle_events::created_at.asc()),
                     EventOrderBy::CreatedAtDesc => query = query.order(chronicle_events::created_at.desc()),
                     EventOrderBy::UpdatedAtAsc => query = query.order(chronicle_events::updated_at.asc()),
                     EventOrderBy::UpdatedAtDesc => query = query.order(chronicle_events::updated_at.desc()),
                     EventOrderBy::TimestampAsc => query = query.order(chronicle_events::timestamp_iso8601.asc()),
+                    EventOrderBy::SequenceAsc => query = query.order(chronicle_events::sequence_number.asc()),
+                    EventOrderBy::SequenceDesc => query = query.order(chronicle_events::sequence_number.desc()),
                     EventOrderBy::TimestampDesc => query = query.order(chronicle_events::timestamp_iso8601.desc()),
                 }
 

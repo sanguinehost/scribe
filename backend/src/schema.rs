@@ -312,6 +312,7 @@ diesel::table! {
         modality -> Nullable<Varchar>,
         caused_by_event_id -> Nullable<Uuid>,
         causes_event_ids -> Nullable<Array<Nullable<Uuid>>>,
+        sequence_number -> Int4,
     }
 }
 

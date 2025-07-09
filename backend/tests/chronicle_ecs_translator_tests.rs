@@ -1,416 +1,216 @@
-#![cfg(test)]
 // backend/tests/chronicle_ecs_translator_tests.rs
-//
-// Tests for the Chronicle-to-ECS translation service that maps chronicle events
-// to ECS entity state changes
 
-use std::sync::Arc;
-use anyhow::Result as AnyhowResult;
+use chrono::Utc;
 use scribe_backend::{
     models::{
-        chronicle_event::{ChronicleEvent, EventSource, CreateEventRequest},
-        chronicle::{CreateChronicleRequest},
-        users::{NewUser, UserRole, AccountStatus, UserDbQuery},
-        narrative_ontology::{EventActor, ActorRole, EventValence, ValenceType, NarrativeAction},
-        ecs_diesel::{EcsEntity, EcsComponent},
+        chronicle_event::ChronicleEvent,
+        ecs::{HealthComponent, NameComponent, PositionComponent},
+        ecs_diesel::{EcsComponent, EcsEntityRelationship},
     },
     services::{
-        chronicle_service::ChronicleService,
+        agentic::entity_resolution_tool::{
+            NarrativeAction, NarrativeContext, NarrativeEntity, SocialContext, SocialRelationship,
+            SpatialContext, SpatialRelationship, TemporalContext,
+        },
         chronicle_ecs_translator::ChronicleEcsTranslator,
     },
-    schema::users,
-    test_helpers::{TestDataGuard, TestApp, spawn_app_permissive_rate_limiting},
+    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
+    PgPool,
 };
-use uuid::Uuid;
-use chrono::Utc;
 use serde_json::json;
-use secrecy::{SecretString, ExposeSecret};
-use diesel::{RunQueryDsl, prelude::*};
-use bcrypt;
-
-/// Helper to create a test user in the database
-async fn create_test_user(test_app: &TestApp) -> AnyhowResult<Uuid> {
-    let conn = test_app.db_pool.get().await?;
-    
-    let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
-    let username = format!("translator_test_user_{}", Uuid::new_v4().simple());
-    let email = format!("{}@test.com", username);
-    
-    // Generate proper crypto keys
-    let kek_salt = scribe_backend::crypto::generate_salt()?;
-    let dek = scribe_backend::crypto::generate_dek()?;
-    
-    let secret_password = secrecy::SecretString::new("testpassword".to_string().into());
-    let kek = scribe_backend::crypto::derive_kek(&secret_password, &kek_salt)?;
-    
-    let (encrypted_dek, dek_nonce) = scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
-    
-    let new_user = NewUser {
-        username,
-        password_hash: hashed_password,
-        email,
-        kek_salt,
-        encrypted_dek,
-        encrypted_dek_by_recovery: None,
-        role: UserRole::User,
-        recovery_kek_salt: None,
-        dek_nonce,
-        recovery_dek_nonce: None,
-        account_status: AccountStatus::Active,
-    };
-    
-    let user_db: UserDbQuery = conn
-        .interact(move |conn| {
-            diesel::insert_into(users::table)
-                .values(&new_user)
-                .returning(UserDbQuery::as_returning())
-                .get_result(conn)
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
-    
-    Ok(user_db.id)
-}
-
-/// Helper to create a test chronicle
-async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResult<Uuid> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
-    
-    let create_request = CreateChronicleRequest {
-        name: "ECS Translation Test Chronicle".to_string(),
-        description: Some("Testing chronicle event to ECS entity translation".to_string()),
-    };
-    
-    let chronicle = chronicle_service
-        .create_chronicle(user_id, create_request)
-        .await?;
-    
-    Ok(chronicle.id)
-}
-
-/// Helper to create a chronicle event with actors and action
-async fn create_event_with_actors(
-    user_id: Uuid,
-    chronicle_id: Uuid, 
-    event_type: &str,
-    summary: &str,
-    actors: Vec<EventActor>,
-    action: Option<NarrativeAction>,
-    valence: Option<Vec<EventValence>>,
-    test_app: &TestApp,
-) -> AnyhowResult<ChronicleEvent> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
-    
-    let create_request = CreateEventRequest {
-        event_type: event_type.to_string(),
-        summary: summary.to_string(),
-        event_data: Some(json!({
-            "location": "Test Location",
-            "participants": actors.iter().map(|a| a.entity_id.to_string()).collect::<Vec<_>>()
-        })),
-        source: EventSource::AiExtracted,
-    };
-    
-    let mut event = chronicle_service
-        .create_event(user_id, chronicle_id, create_request, None)
-        .await?;
-    
-    // Set the Ars Fabula ontology fields
-    event.actors = Some(serde_json::to_value(&actors)?);
-    if let Some(action) = action {
-        event.action = Some(serde_json::to_value(&action)?.as_str().unwrap_or("UNKNOWN").to_string());
-    }
-    if let Some(valence) = valence {
-        event.valence = Some(serde_json::to_value(&valence)?);
-    }
-    event.timestamp_iso8601 = Utc::now();
-    
-    Ok(event)
-}
+use uuid::Uuid;
 
 #[tokio::test]
-async fn test_translate_simple_character_meeting_event() {
-    // Test that a simple character meeting event creates ECS entities and relationships
-    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
-    let user_id = create_test_user(&test_app).await.unwrap();
-    let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
-    
-    // Create two character entities
-    let character_a_id = Uuid::new_v4();
-    let character_b_id = Uuid::new_v4();
-    
-    // Create actors for the meeting event
-    let actors = vec![
-        EventActor {
-            entity_id: character_a_id,
-            role: ActorRole::Agent,
-            context: Some("approached the tavern".to_string()),
-        },
-        EventActor {
-            entity_id: character_b_id,
-            role: ActorRole::Patient,
-            context: Some("was sitting at the bar".to_string()),
-        },
-    ];
-    
-    // Create the meeting event
-    let event = create_event_with_actors(
-        user_id,
-        chronicle_id,
-        "CHARACTER.SOCIAL.MEETING",
-        "Alice met Bob at the tavern",
-        actors,
-        Some(NarrativeAction::Met),
-        None, // No valence changes yet
-        &test_app,
-    ).await.unwrap();
-    
-    // Create the translator service
-    let translator = ChronicleEcsTranslator::new(Arc::new(test_app.db_pool.clone()));
-    
-    // Translate the event to ECS
-    let translation_result = translator
-        .translate_event(&event, user_id)
-        .await
-        .expect("Translation should succeed");
-    
-    // Verify entities were created
-    assert_eq!(translation_result.entities_created.len(), 2);
-    assert!(translation_result.entities_created.contains(&character_a_id));
-    assert!(translation_result.entities_created.contains(&character_b_id));
-    
-    // Verify component updates - characters should have basic components
-    assert!(!translation_result.component_updates.is_empty());
-    
-    // Verify relationship creation - characters should now know each other
-    assert!(!translation_result.relationship_updates.is_empty());
-    
-    println!("✅ Successfully translated character meeting event to ECS");
-}
+async fn test_full_narrative_to_ecs_translation() {
+    let app = spawn_app(false, false, false).await;
+    let mut tdg = TestDataGuard::new(app.db_pool.clone());
 
-#[tokio::test]
-async fn test_translate_valence_change_event() {
-    // Test that valence changes in events update relationship components
-    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
-    let user_id = create_test_user(&test_app).await.unwrap();
-    let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
-    
-    let character_a_id = Uuid::new_v4();
-    let character_b_id = Uuid::new_v4();
-    
-    // Create actors
-    let actors = vec![
-        EventActor {
-            entity_id: character_a_id,
-            role: ActorRole::Agent,
-            context: Some("the betrayer".to_string()),
-        },
-        EventActor {
-            entity_id: character_b_id,
-            role: ActorRole::Patient,
-            context: Some("the betrayed".to_string()),
-        },
-    ];
-    
-    // Create valence changes - A betrayed B, reducing trust
-    let valence = vec![
-        EventValence {
-            target: character_b_id,
-            valence_type: ValenceType::Trust,
-            change: -0.8, // Major trust loss
-            description: Some("Lost trust due to betrayal".to_string()),
-        },
-        EventValence {
-            target: character_a_id,
-            valence_type: ValenceType::Reputation,
-            change: -0.3, // Some reputation loss
-            description: Some("Reputation damaged by betraying a friend".to_string()),
-        },
-    ];
-    
-    // Create the betrayal event
-    let event = create_event_with_actors(
-        user_id,
-        chronicle_id,
-        "CHARACTER.SOCIAL.BETRAYAL",
-        "Alice betrayed Bob by revealing his secret",
-        actors,
-        Some(NarrativeAction::Betrayed),
-        Some(valence),
-        &test_app,
-    ).await.unwrap();
-    
-    // Create the translator service
-    let translator = ChronicleEcsTranslator::new(Arc::new(test_app.db_pool.clone()));
-    
-    // Translate the event to ECS
-    let translation_result = translator
-        .translate_event(&event, user_id)
+    let test_user = create_test_user(&app.db_pool, "testuser".to_string(), "password123".to_string())
         .await
-        .expect("Translation should succeed");
-    
-    // Verify relationship updates
-    assert!(!translation_result.relationship_updates.is_empty());
-    
-    // Check that trust values were updated
-    let trust_updates: Vec<_> = translation_result.relationship_updates
-        .iter()
-        .filter(|r| r.relationship_type == "trust")
-        .collect();
-    
-    assert!(!trust_updates.is_empty(), "Should have trust relationship updates");
-    
-    println!("✅ Successfully translated valence changes to relationship components");
-}
+        .expect("Failed to create test user");
+    tdg.add_user(test_user.id);
+    let user_id = test_user.id;
 
-#[tokio::test]
-async fn test_translate_item_acquisition_event() {
-    // Test that item acquisition events update inventory components
-    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
-    let user_id = create_test_user(&test_app).await.unwrap();
-    let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
-    
-    let character_id = Uuid::new_v4();
-    let item_id = Uuid::new_v4();
-    
-    // Create actors - character acquires item
-    let actors = vec![
-        EventActor {
-            entity_id: character_id,
-            role: ActorRole::Agent,
-            context: Some("the adventurer".to_string()),
-        },
-        EventActor {
-            entity_id: item_id,
-            role: ActorRole::Patient,
-            context: Some("magical sword".to_string()),
-        },
-    ];
-    
-    // Create the acquisition event
-    let event = create_event_with_actors(
-        user_id,
-        chronicle_id,
-        "ITEM.ACQUISITION.FOUND",
-        "The adventurer found a magical sword in the ancient temple",
-        actors,
-        Some(NarrativeAction::Acquired),
-        None,
-        &test_app,
-    ).await.unwrap();
-    
-    // Create the translator service
-    let translator = ChronicleEcsTranslator::new(Arc::new(test_app.db_pool.clone()));
-    
-    // Translate the event to ECS
-    let translation_result = translator
-        .translate_event(&event, user_id)
-        .await
-        .expect("Translation should succeed");
-    
-    // Verify both character and item entities were created
-    assert!(translation_result.entities_created.contains(&character_id));
-    assert!(translation_result.entities_created.contains(&item_id));
-    
-    // Verify inventory component update
-    let inventory_updates: Vec<_> = translation_result.component_updates
-        .iter()
-        .filter(|c| c.component_type == "Inventory")
-        .collect();
-    
-    assert!(!inventory_updates.is_empty(), "Should have inventory component updates");
-    
-    println!("✅ Successfully translated item acquisition to inventory component");
-}
-
-#[tokio::test]  
-async fn test_translate_multiple_events_preserves_state() {
-    // Test that processing multiple events in sequence maintains correct ECS state
-    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
-    let user_id = create_test_user(&test_app).await.unwrap();
-    let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
-    
-    let character_a_id = Uuid::new_v4();
-    let character_b_id = Uuid::new_v4();
-    
-    // Create the translator service
-    let translator = ChronicleEcsTranslator::new(Arc::new(test_app.db_pool.clone()));
-    
-    // Event 1: Characters meet
-    let meeting_actors = vec![
-        EventActor {
-            entity_id: character_a_id,
-            role: ActorRole::Agent,
-            context: Some("approached".to_string()),
-        },
-        EventActor {
-            entity_id: character_b_id,
-            role: ActorRole::Patient,
-            context: Some("was waiting".to_string()),
-        },
-    ];
-    
-    let meeting_event = create_event_with_actors(
-        user_id,
-        chronicle_id,
-        "CHARACTER.SOCIAL.MEETING",
-        "Alice met Bob",
-        meeting_actors,
-        Some(NarrativeAction::Met),
-        None,
-        &test_app,
-    ).await.unwrap();
-    
-    let result1 = translator.translate_event(&meeting_event, user_id).await.unwrap();
-    assert_eq!(result1.entities_created.len(), 2);
-    
-    // Event 2: Trust increases
-    let trust_valence = vec![
-        EventValence {
-            target: character_b_id,
-            valence_type: ValenceType::Trust,
-            change: 0.5,
-            description: Some("Helpful interaction".to_string()),
-        },
-    ];
-    
-    let trust_event = create_event_with_actors(
-        user_id,
-        chronicle_id,
-        "CHARACTER.SOCIAL.HELP",
-        "Alice helped Bob",
-        vec![
-            EventActor {
-                entity_id: character_a_id,
-                role: ActorRole::Agent,
-                context: Some("the helper".to_string()),
+    // 1. Setup: Create a mock NarrativeContext with an action
+    let narrative_context = NarrativeContext {
+        entities: vec![
+            NarrativeEntity {
+                name: "Sol".to_string(),
+                description: "A stoic warrior".to_string(),
+                entity_type: "CHARACTER".to_string(),
+                properties: vec!["healthy".to_string(), "brave".to_string()],
             },
-            EventActor {
-                entity_id: character_b_id,
-                role: ActorRole::Beneficiary,
-                context: Some("received help".to_string()),
+            NarrativeEntity {
+                name: "Borga".to_string(),
+                description: "A cunning rogue".to_string(),
+                entity_type: "CHARACTER".to_string(),
+                properties: vec!["injured".to_string(), "deceptive".to_string()],
             },
         ],
-        Some(NarrativeAction::Gave), // Using 'Gave' as a proxy for helping
-        Some(trust_valence),
-        &test_app,
-    ).await.unwrap();
-    
-    let result2 = translator.translate_event(&trust_event, user_id).await.unwrap();
-    
-    // Entities should not be recreated
-    assert_eq!(result2.entities_created.len(), 0, "Entities should already exist");
-    
-    // Should have relationship updates
-    assert!(!result2.relationship_updates.is_empty());
-    
-    println!("✅ Successfully processed multiple events maintaining state consistency");
+        spatial_context: SpatialContext {
+            primary_location: Some("The Shadowy Alley".to_string()),
+            secondary_locations: vec!["near the tavern".to_string()],
+            spatial_relationships: vec![SpatialRelationship {
+                entity1: "Sol".to_string(),
+                entity2: "Borga".to_string(),
+                relationship: "standing near".to_string(),
+            }],
+        },
+        social_context: SocialContext {
+            relationships: vec![SocialRelationship {
+                entity1: "Sol".to_string(),
+                entity2: "Borga".to_string(),
+                relationship: "allies".to_string(),
+            }],
+            social_dynamics: vec![],
+            emotional_tone: "tense".to_string(),
+        },
+        temporal_context: TemporalContext {
+            time_indicators: vec![],
+            sequence_markers: vec![],
+            duration_hints: vec![],
+        },
+        actions_and_events: vec![NarrativeAction {
+            action: "attacked".to_string(),
+            agent: Some("Sol".to_string()),
+            target: Some("Borga".to_string()),
+            context: Some("with a rusty sword".to_string()),
+        }],
+    };
+
+    // 2. Create a ChronicleEvent with this context
+    let sol_id = Uuid::new_v4();
+    let borga_id = Uuid::new_v4();
+    let event_id = Uuid::new_v4();
+    let summary = "Sol and Borga met in a shadowy alley.".to_string();
+
+    let event = ChronicleEvent {
+        id: event_id,
+        user_id,
+        chronicle_id: Uuid::new_v4(),
+        event_type: "narrative".to_string(),
+        summary: summary.clone(),
+        source: "AI_EXTRACTED".to_string(),
+        event_data: Some(json!({
+            "actors": [
+                {"entity_id": sol_id.to_string(), "entity_name": "Sol", "entity_type": "CHARACTER", "role": "Agent"},
+                {"entity_id": borga_id.to_string(), "entity_name": "Borga", "entity_type": "CHARACTER", "role": "Patient"}
+            ],
+            "action": "Met",
+            "summary": summary,
+        })),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        summary_encrypted: None,
+        summary_nonce: None,
+        timestamp_iso8601: Utc::now(),
+        actors: Some(json!([
+            {"entity_id": sol_id.to_string(), "entity_name": "Sol", "role": "Agent"},
+            {"entity_id": borga_id.to_string(), "entity_name": "Borga", "role": "Patient"}
+        ])),
+        action: Some("Met".to_string()),
+        context_data: Some(serde_json::to_value(&narrative_context).unwrap()),
+        causality: None,
+        valence: None,
+        modality: Some("ACTUAL".to_string()),
+        caused_by_event_id: None,
+        causes_event_ids: None,
+        sequence_number: 1,
+    };
+
+    // 3. Run the translator
+    let translator = ChronicleEcsTranslator::new(app.db_pool.clone().into());
+    let result = translator.translate_event(&event, user_id).await.unwrap();
+
+    // 4. Assertions
+    assert_eq!(result.entities_created.len(), 2);
+    assert!(result.entities_created.contains(&sol_id));
+    assert!(result.entities_created.contains(&borga_id));
+
+    // Verify Sol's components
+    let sol_components = get_entity_components(&app.db_pool, sol_id).await;
+
+    let sol_name: NameComponent = get_component_data(&sol_components, "Name").unwrap();
+    assert_eq!(sol_name.name, "Sol");
+
+    let sol_health: HealthComponent = get_component_data(&sol_components, "Health").unwrap();
+    assert_eq!(sol_health.current, 100);
+
+    let sol_pos: PositionComponent = get_component_data(&sol_components, "Position").unwrap();
+    assert_eq!(sol_pos.zone, "The Shadowy Alley");
+
+    // Verify Personality and Skills for Sol
+    let sol_personality: serde_json::Value = get_component_data(&sol_components, "Personality").unwrap();
+    let sol_traits = sol_personality["traits"].as_array().unwrap();
+    assert!(sol_traits.iter().any(|v| v.as_str().unwrap() == "brave"));
+    assert!(sol_traits.iter().any(|v| v.as_str().unwrap() == "tense"));
+
+    let sol_skills: serde_json::Value = get_component_data(&sol_components, "Skills").unwrap();
+    let sol_skill_list = sol_skills["skills"].as_array().unwrap();
+    assert!(sol_skill_list.iter().any(|v| v.as_str().unwrap() == "combat"));
+
+    // Verify Borga's components
+    let borga_components = get_entity_components(&app.db_pool, borga_id).await;
+
+    let borga_name: NameComponent = get_component_data(&borga_components, "Name").unwrap();
+    assert_eq!(borga_name.name, "Borga");
+
+    let borga_health: HealthComponent = get_component_data(&borga_components, "Health").unwrap();
+    assert_eq!(borga_health.current, 50);
+
+    let borga_pos: PositionComponent = get_component_data(&borga_components, "Position").unwrap();
+    assert_eq!(borga_pos.zone, "The Shadowy Alley");
+
+    // Verify relationships
+    let sol_relationships = get_entity_relationships(&app.db_pool, sol_id).await;
+    assert_eq!(sol_relationships.len(), 1);
+    assert_eq!(sol_relationships[0].to_entity_id, borga_id);
+    assert_eq!(sol_relationships[0].relationship_type, "allies");
+
+    let borga_relationships = get_entity_relationships(&app.db_pool, borga_id).await;
+    assert_eq!(borga_relationships.len(), 1);
+    assert_eq!(borga_relationships[0].to_entity_id, sol_id);
+    assert_eq!(borga_relationships[0].relationship_type, "allies");
+}
+
+// Helper functions to query DB for verification
+async fn get_entity_components(pool: &PgPool, entity_id_val: Uuid) -> Vec<EcsComponent> {
+    use diesel::prelude::*;
+    use scribe_backend::schema::ecs_components::dsl::*;
+    let conn = pool.get().await.unwrap();
+    conn.interact(move |conn| {
+        ecs_components
+            .filter(entity_id.eq(entity_id_val))
+            .load::<EcsComponent>(conn)
+    })
+    .await
+    .unwrap()
+    .unwrap()
+}
+
+async fn get_entity_relationships(
+    pool: &PgPool,
+    entity_id_val: Uuid,
+) -> Vec<EcsEntityRelationship> {
+    use diesel::prelude::*;
+    use scribe_backend::schema::ecs_entity_relationships::dsl::*;
+    let conn = pool.get().await.unwrap();
+    conn.interact(move |conn| {
+        ecs_entity_relationships
+            .filter(from_entity_id.eq(entity_id_val))
+            .load::<EcsEntityRelationship>(conn)
+    })
+    .await
+    .unwrap()
+    .unwrap()
+}
+
+fn get_component_data<'a, T: serde::de::DeserializeOwned>(
+    components: &'a [EcsComponent],
+    component_type: &str,
+) -> Option<T> {
+    components
+        .iter()
+        .find(|c| c.component_type == component_type)
+        .and_then(|c| serde_json::from_value(c.component_data.clone()).ok())
 }

@@ -428,6 +428,7 @@ async fn initialize_ecs_services(
     ));
     tracing::info!("WorldModelService initialized");
     
+    
     tracing::info!("All ECS services initialized successfully");
     
     Ok(EcsServices {

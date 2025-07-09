@@ -247,6 +247,20 @@ impl Component for RelationshipsComponent {
     }
 }
 
+/// Name component for entities that have names and identifiers
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NameComponent {
+    pub name: String,
+    pub display_name: String,
+    pub aliases: Vec<String>,
+}
+
+impl Component for NameComponent {
+    fn component_type() -> &'static str {
+        "Name"
+    }
+}
+
 // ============================================================================
 // Enhanced Causal Tracking Components (Dynamic Generation Pattern)
 // ============================================================================

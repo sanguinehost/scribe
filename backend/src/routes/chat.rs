@@ -109,6 +109,29 @@ pub struct TokenCountResponse {
     pub counting_method: String,
 }
 
+#[derive(Deserialize, Validate, Debug)]
+pub struct AgenticChatRequest {
+    pub user_query: String,
+    pub conversation_context: Option<String>,
+    pub chronicle_id: Option<Uuid>,
+    #[serde(default = "default_token_budget")]
+    pub token_budget: u32,
+    #[serde(default)]
+    pub quality_mode: QualityMode,
+}
+
+fn default_token_budget() -> u32 {
+    4000
+}
+
+#[derive(Serialize, Debug)]
+pub struct AgenticChatResponse {
+    pub optimized_context: String,
+    pub execution_summary: crate::services::agentic_orchestrator::ExecutionSummary,
+    pub token_usage: crate::services::agentic_orchestrator::TokenUsageSummary,
+    pub confidence: f32,
+}
+
 #[instrument(skip_all, fields(user_id = field::Empty, character_id = field::Empty))]
 pub async fn create_chat_session_handler(
     State(state): State<AppState>,
@@ -1007,6 +1030,7 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
             get(get_chat_settings_handler).put(update_chat_settings_handler),
         )
         .route("/:session_id_str/generate", post(generate_chat_response))
+        .route("/:session_id_str/agentic", post(generate_agentic_chat_response))
         .route(
             "/overrides/:session_id",
             post(create_or_update_chat_character_override_handler).with_state(state.clone()),
@@ -2572,6 +2596,63 @@ pub fn determine_quality_mode(
     // For now, use balanced mode
     // In the future, this could be configurable based on user preferences
     QualityMode::Balanced
+}
+
+/// Generate agentic chat response using the full agentic pipeline
+#[instrument(skip_all, fields(session_id = %session_id_str, user_id = field::Empty))]
+pub async fn generate_agentic_chat_response(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    session_dek: SessionDek,
+    Path(session_id_str): Path<String>,
+    Json(payload): Json<AgenticChatRequest>,
+) -> Result<Json<AgenticChatResponse>, AppError> {
+    info!("Received request for agentic chat response");
+    payload.validate()?;
+
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
+
+    let user_id = user.id;
+    tracing::Span::current().record("user_id", tracing::field::display(user_id));
+
+    let session_id = Uuid::parse_str(&session_id_str)
+        .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?;
+
+    debug!(%session_id, %user_id, "Processing agentic chat request");
+
+    // Build the agentic request
+    let agentic_request = AgenticRequest {
+        user_query: payload.user_query,
+        conversation_context: payload.conversation_context,
+        user_id,
+        chronicle_id: payload.chronicle_id,
+        token_budget: payload.token_budget,
+        quality_mode: payload.quality_mode,
+        user_dek: Some(Arc::new(session_dek.0)),
+    };
+
+    // Process through the agentic orchestrator
+    let agentic_response = state.agentic_orchestrator
+        .process_query(agentic_request)
+        .await?;
+
+    info!(
+        confidence = agentic_response.confidence,
+        execution_time = agentic_response.execution_summary.execution_time_ms,
+        "Agentic response generated successfully"
+    );
+
+    // Convert to API response format
+    let response = AgenticChatResponse {
+        optimized_context: agentic_response.optimized_context,
+        execution_summary: agentic_response.execution_summary,
+        token_usage: agentic_response.token_usage,
+        confidence: agentic_response.confidence,
+    };
+
+    Ok(Json(response))
 }
 
 /// Merges orchestrated context with existing RAG context

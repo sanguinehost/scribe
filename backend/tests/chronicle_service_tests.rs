@@ -71,6 +71,7 @@ mod unit_tests {
             summary: "Hero meets the mysterious bartender".to_string(),
             source: EventSource::AiExtracted,
             event_data: Some(event_data.clone()),
+            timestamp_iso8601: None,
         };
 
         assert_eq!(request.event_type, "CHARACTER_INTERACTION");
@@ -271,6 +272,7 @@ mod integration_tests {
             summary: "The adventure begins in a quiet village".to_string(),
             source: EventSource::UserAdded,
             event_data: Some(event_data.clone()),
+            timestamp_iso8601: None,
         };
 
         let created_event = chronicle_service
@@ -291,6 +293,7 @@ mod integration_tests {
             summary: "Fought off bandits on the road".to_string(),
             source: EventSource::AiExtracted,
             event_data: None,
+            timestamp_iso8601: None,
         };
 
         let event2 = chronicle_service
@@ -305,9 +308,9 @@ mod integration_tests {
             .unwrap();
 
         assert_eq!(events.len(), 2);
-        // Events should be ordered by created_at desc by default
-        assert_eq!(events[0].id, event2.id); // Most recent first
-        assert_eq!(events[1].id, created_event.id);
+        // Events should be ordered by sequence_asc by default (chronological order)
+        assert_eq!(events[0].id, created_event.id); // First event chronologically
+        assert_eq!(events[1].id, event2.id); // Second event chronologically
 
         // Test: Filter by Event Type
         let filter = EventFilter {
@@ -389,6 +392,7 @@ mod integration_tests {
                 summary: format!("Test event {}", i),
                 source: EventSource::UserAdded,
                 event_data: None,
+                timestamp_iso8601: None,
             };
 
             chronicle_service
@@ -490,6 +494,7 @@ mod integration_tests {
             summary: "Test event".to_string(),
             source: EventSource::UserAdded,
             event_data: None,
+            timestamp_iso8601: None,
         };
 
         let result = chronicle_service
@@ -526,6 +531,7 @@ mod integration_tests {
             summary: "Event to be cascade deleted".to_string(),
             source: EventSource::UserAdded,
             event_data: None,
+            timestamp_iso8601: None,
         };
 
         let event = chronicle_service
@@ -582,6 +588,7 @@ mod integration_tests {
                 "secret_info": "This contains sensitive information",
                 "location": "Hidden Cave"
             })),
+            timestamp_iso8601: None,
         };
 
         let encrypted_event = chronicle_service
@@ -606,6 +613,7 @@ mod integration_tests {
             summary: "This is a public summary".to_string(),
             source: EventSource::UserAdded,
             event_data: None,
+            timestamp_iso8601: None,
         };
 
         let unencrypted_event = chronicle_service

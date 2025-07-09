@@ -58,8 +58,10 @@
 		User,
 		Bot,
 		Gamepad2,
-		Settings
+		Settings,
+		Users
 	} from 'lucide-svelte';
+	import EntityViewer from '$lib/components/EntityViewer.svelte';
 
 	let {
 		chronicleId
@@ -101,6 +103,9 @@
 	// Filter state
 	let filterEventType = $state<string>('');
 	let filterSource = $state<string>('');
+
+	// Tab state
+	let activeTab = $state<'events' | 'entities'>('events');
 
 	onMount(async () => {
 		await loadChronicle();
@@ -146,7 +151,7 @@
 			const filter: EventFilter = {};
 			if (filterEventType) filter.event_type = filterEventType;
 			if (filterSource) filter.source = filterSource as EventSource;
-			filter.order_by = 'timestamp_asc';
+			filter.order_by = 'sequence_asc';
 
 			const result = await apiClient.getChronicleEvents(chronicleId, filter);
 			if (result.isOk()) {
@@ -417,122 +422,151 @@
 				</CardHeader>
 			</Card>
 
-			<!-- Events section -->
+			<!-- Tabbed content section -->
 			<div class="min-h-0 flex-1 space-y-6">
+				<!-- Tab navigation -->
 				<div class="flex items-center justify-between">
-					<h2 class="text-xl font-semibold">Chronicle Events</h2>
-					<div class="flex gap-2">
-						{#if uniqueEventTypes.length > 0}
+					<div class="flex items-center gap-6">
+						<button
+							class="flex items-center gap-2 pb-2 text-lg font-semibold transition-colors {activeTab === 'events' 
+								? 'border-b-2 border-primary text-primary' 
+								: 'text-muted-foreground hover:text-foreground'}"
+							onclick={() => activeTab = 'events'}
+						>
+							<MessageSquare class="h-5 w-5" />
+							Events
+						</button>
+						<button
+							class="flex items-center gap-2 pb-2 text-lg font-semibold transition-colors {activeTab === 'entities' 
+								? 'border-b-2 border-primary text-primary' 
+								: 'text-muted-foreground hover:text-foreground'}"
+							onclick={() => activeTab = 'entities'}
+						>
+							<Users class="h-5 w-5" />
+							Entities
+						</button>
+					</div>
+					
+					<!-- Tab-specific actions -->
+					{#if activeTab === 'events'}
+						<div class="flex gap-2">
+							{#if uniqueEventTypes.length > 0}
+								<select
+									class="w-40 rounded-md border border-input bg-background px-3 py-2 text-sm"
+									bind:value={filterEventType}
+									onchange={() => loadEvents()}
+								>
+									<option value="">All types</option>
+									{#each uniqueEventTypes as type}
+										<option value={type}>{type}</option>
+									{/each}
+								</select>
+							{/if}
 							<select
 								class="w-40 rounded-md border border-input bg-background px-3 py-2 text-sm"
-								bind:value={filterEventType}
+								bind:value={filterSource}
 								onchange={() => loadEvents()}
 							>
-								<option value="">All types</option>
-								{#each uniqueEventTypes as type}
-									<option value={type}>{type}</option>
-								{/each}
+								<option value="">All sources</option>
+								<option value="USER_ADDED">User Added</option>
+								<option value="AI_EXTRACTED">AI Extracted</option>
+								<option value="GAME_API">Game API</option>
+								<option value="SYSTEM">System</option>
 							</select>
-						{/if}
-						<select
-							class="w-40 rounded-md border border-input bg-background px-3 py-2 text-sm"
-							bind:value={filterSource}
-							onchange={() => loadEvents()}
-						>
-							<option value="">All sources</option>
-							<option value="USER_ADDED">User Added</option>
-							<option value="AI_EXTRACTED">AI Extracted</option>
-							<option value="GAME_API">Game API</option>
-							<option value="SYSTEM">System</option>
-						</select>
-						<Button onclick={() => (createEventDialogOpen = true)} class="gap-2">
-							<Plus class="h-4 w-4" />
-							Add Event
-						</Button>
-					</div>
+							<Button onclick={() => (createEventDialogOpen = true)} class="gap-2">
+								<Plus class="h-4 w-4" />
+								Add Event
+							</Button>
+						</div>
+					{/if}
 				</div>
 
+				<!-- Tab content -->
 				<div class="min-h-0 flex-1 overflow-y-auto">
-					{#if isLoadingEvents}
-						<div class="space-y-4">
-							{#each Array(3) as _}
-								<Card>
-									<CardHeader>
-										<Skeleton class="h-6 w-1/4" />
-										<Skeleton class="h-4 w-3/4" />
-									</CardHeader>
-								</Card>
-							{/each}
-						</div>
-					{:else if events.length === 0}
-						<Card>
-							<CardContent class="py-12 text-center">
-								<FileText class="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-								<h3 class="mb-2 text-lg font-semibold">No events yet</h3>
-								<p class="mb-6 text-sm text-muted-foreground">
-									Add events to track important moments in your chronicle
-								</p>
-								<Button onclick={() => (createEventDialogOpen = true)} class="gap-2">
-									<Plus class="h-4 w-4" />
-									Add First Event
-								</Button>
-							</CardContent>
-						</Card>
-					{:else}
-						<div class="space-y-4">
-							{#each events as event (event.id)}
-								<Card>
-									<CardHeader>
-										<div class="flex items-start justify-between">
-											<div class="min-w-0 flex-1">
-												<div class="flex items-center gap-2">
-													<Badge variant="outline" class="gap-1">
-														{#if event.source === 'USER_ADDED'}
-															<User class="h-3 w-3" />
-														{:else if event.source === 'AI_EXTRACTED'}
-															<Bot class="h-3 w-3" />
-														{:else if event.source === 'GAME_API'}
-															<Gamepad2 class="h-3 w-3" />
-														{:else if event.source === 'SYSTEM'}
-															<Settings class="h-3 w-3" />
-														{:else}
-															<FileText class="h-3 w-3" />
-														{/if}
-														{getSourceLabel(event.source)}
-													</Badge>
-													<Badge>{event.event_type}</Badge>
-												</div>
-												<CardDescription class="mt-2">{event.summary}</CardDescription>
-												{#if event.event_data}
-													<details class="mt-2">
-														<summary
-															class="cursor-pointer text-sm text-muted-foreground hover:text-foreground"
-														>
-															View data
-														</summary>
-														<pre class="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
+					{#if activeTab === 'events'}
+						{#if isLoadingEvents}
+							<div class="space-y-4">
+								{#each Array(3) as _}
+									<Card>
+										<CardHeader>
+											<Skeleton class="h-6 w-1/4" />
+											<Skeleton class="h-4 w-3/4" />
+										</CardHeader>
+									</Card>
+								{/each}
+							</div>
+						{:else if events.length === 0}
+							<Card>
+								<CardContent class="py-12 text-center">
+									<FileText class="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+									<h3 class="mb-2 text-lg font-semibold">No events yet</h3>
+									<p class="mb-6 text-sm text-muted-foreground">
+										Add events to track important moments in your chronicle
+									</p>
+									<Button onclick={() => (createEventDialogOpen = true)} class="gap-2">
+										<Plus class="h-4 w-4" />
+										Add First Event
+									</Button>
+								</CardContent>
+							</Card>
+						{:else}
+							<div class="space-y-4">
+								{#each events as event (event.id)}
+									<Card>
+										<CardHeader>
+											<div class="flex items-start justify-between">
+												<div class="min-w-0 flex-1">
+													<div class="flex items-center gap-2">
+														<Badge variant="outline" class="gap-1">
+															{#if event.source === 'USER_ADDED'}
+																<User class="h-3 w-3" />
+															{:else if event.source === 'AI_EXTRACTED'}
+																<Bot class="h-3 w-3" />
+															{:else if event.source === 'GAME_API'}
+																<Gamepad2 class="h-3 w-3" />
+															{:else if event.source === 'SYSTEM'}
+																<Settings class="h-3 w-3" />
+															{:else}
+																<FileText class="h-3 w-3" />
+															{/if}
+															{getSourceLabel(event.source)}
+														</Badge>
+														<Badge>{event.event_type}</Badge>
+													</div>
+													<CardDescription class="mt-2">{event.summary}</CardDescription>
+													{#if event.event_data}
+														<details class="mt-2">
+															<summary
+																class="cursor-pointer text-sm text-muted-foreground hover:text-foreground"
+															>
+																View data
+															</summary>
+															<pre class="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
 {JSON.stringify(event.event_data, null, 2)}</pre>
-													</details>
-												{/if}
+														</details>
+													{/if}
+												</div>
+												<Button
+													variant="ghost"
+													size="icon"
+													onclick={() => handleDeleteEventClick(event)}
+													title="Delete event"
+												>
+													<Trash2 class="h-4 w-4 text-destructive" />
+												</Button>
 											</div>
-											<Button
-												variant="ghost"
-												size="icon"
-												onclick={() => handleDeleteEventClick(event)}
-												title="Delete event"
-											>
-												<Trash2 class="h-4 w-4 text-destructive" />
-											</Button>
-										</div>
-									</CardHeader>
-									<CardFooter class="pt-0">
-										<div class="text-xs text-muted-foreground">
-											{formatDate(event.created_at)}
-										</div>
-									</CardFooter>
-								</Card>
-							{/each}
-						</div>
+										</CardHeader>
+										<CardFooter class="pt-0">
+											<div class="text-xs text-muted-foreground">
+												{formatDate(event.created_at)}
+											</div>
+										</CardFooter>
+									</Card>
+								{/each}
+							</div>
+						{/if}
+					{:else if activeTab === 'entities'}
+						<EntityViewer {chronicleId} />
 					{/if}
 				</div>
 			</div>

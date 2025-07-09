@@ -413,21 +413,74 @@ impl ChronicleEventListener {
         
         // Apply component updates per entity
         for (entity_id, updates) in component_updates_per_entity {
-            if let Err(e) = entity_manager.update_components(
-                notification.user_id,
-                entity_id,
-                updates.clone(),
-            ).await {
-                warn!(
-                    entity_id = %entity_id,
-                    updates_count = updates.len(),
-                    error = %e,
-                    "Failed to update components during chronicle event processing"
-                );
-            } else {
-                components_updated += updates.len();
-                if !entities_affected.contains(&entity_id) {
-                    entities_affected.push(entity_id);
+            // First check if entity exists before updating components
+            match entity_manager.get_entity(notification.user_id, entity_id).await {
+                Ok(_) => {
+                    // Entity exists, proceed with component updates
+                    if let Err(e) = entity_manager.update_components(
+                        notification.user_id,
+                        entity_id,
+                        updates.clone(),
+                    ).await {
+                        warn!(
+                            entity_id = %entity_id,
+                            updates_count = updates.len(),
+                            error = %e,
+                            "Failed to update components during chronicle event processing"
+                        );
+                    } else {
+                        components_updated += updates.len();
+                        if !entities_affected.contains(&entity_id) {
+                            entities_affected.push(entity_id);
+                        }
+                    }
+                }
+                Err(AppError::NotFound(_)) => {
+                    // Entity doesn't exist, create it first
+                    debug!(
+                        entity_id = %entity_id,
+                        "Entity not found, creating entity before applying component updates"
+                    );
+                    
+                    if let Err(e) = entity_manager.create_entity(
+                        notification.user_id,
+                        Some(entity_id),
+                        "default".to_string(), // Default archetype signature
+                        vec![], // Empty initial components
+                    ).await {
+                        warn!(
+                            entity_id = %entity_id,
+                            error = %e,
+                            "Failed to create missing entity during chronicle event processing"
+                        );
+                        continue;
+                    }
+                    
+                    // Now try component updates again
+                    if let Err(e) = entity_manager.update_components(
+                        notification.user_id,
+                        entity_id,
+                        updates.clone(),
+                    ).await {
+                        warn!(
+                            entity_id = %entity_id,
+                            updates_count = updates.len(),
+                            error = %e,
+                            "Failed to update components after creating entity"
+                        );
+                    } else {
+                        components_updated += updates.len();
+                        if !entities_affected.contains(&entity_id) {
+                            entities_affected.push(entity_id);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        entity_id = %entity_id,
+                        error = %e,
+                        "Failed to check entity existence during chronicle event processing"
+                    );
                 }
             }
         }
