@@ -9,26 +9,273 @@
 
 use super::{EntityResolutionTool, ProcessingMode};
 use crate::services::agentic::tools::{ScribeTool, ToolError};
+use crate::state::AppState;
+use crate::services::{
+    ChronicleService, ChronicleEventListener, ChronicleEcsTranslator, WorldModelService,
+    AgenticOrchestrator, AgenticStateUpdateService, EcsEntityManager, EcsGracefulDegradation,
+    EcsEnhancedRagService, HybridQueryService, 
+    chat_override_service::ChatOverrideService,
+    user_persona_service::UserPersonaService,
+    encryption_service::EncryptionService,
+    hybrid_token_counter::HybridTokenCounter,
+    lorebook::LorebookService,
+    tokenizer_service::TokenizerService,
+    embeddings::EmbeddingPipelineService,
+};
+use crate::auth::user_store::Backend as AuthBackend;
+use crate::services::file_storage_service::FileStorageService;
+use crate::services::email_service::LoggingEmailService;
+use crate::test_helpers::{TestApp, MockEmbeddingClient};
+use crate::config::NarrativeFeatureFlags;
+use crate::text_processing::chunking::{ChunkConfig, ChunkingMetric};
 use serde_json::json;
 use std::sync::Arc;
+
+/// Helper function to create a minimal AppState for testing
+fn create_test_app_state(test_app: &TestApp) -> Arc<AppState> {
+    Arc::new(AppState {
+        pool: test_app.db_pool.clone(),
+        config: test_app.config.clone(),
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: Arc::new(MockEmbeddingClient::new()),
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
+        chat_override_service: Arc::new(ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            Arc::new(EncryptionService::new())
+        )),
+        user_persona_service: Arc::new(UserPersonaService::new(
+            test_app.db_pool.clone(),
+            Arc::new(EncryptionService::new())
+        )),
+        embedding_call_tracker: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        token_counter: Arc::new(HybridTokenCounter::new(
+            TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap(),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: Arc::new(EncryptionService::new()),
+        lorebook_service: Arc::new(LorebookService::new(
+            test_app.db_pool.clone(),
+            Arc::new(EncryptionService::new()),
+            test_app.qdrant_service.clone(),
+        )),
+        auth_backend: Arc::new(AuthBackend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(FileStorageService::new("test_files").unwrap()),
+        email_service: Arc::new(LoggingEmailService::new("http://localhost:3000".to_string())),
+        narrative_intelligence_service: None,
+        rechronicle_semaphore: Arc::new(tokio::sync::Semaphore::new(20)),
+        // ECS Services - create minimal mocks
+        redis_client: Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+        feature_flags: Arc::new(NarrativeFeatureFlags::default()),
+        ecs_entity_manager: Arc::new(EcsEntityManager::new(
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+            None,
+        )),
+        ecs_graceful_degradation: Arc::new(EcsGracefulDegradation::new(
+            Default::default(),
+            Arc::new(NarrativeFeatureFlags::default()),
+            None,
+            None,
+        )),
+        ecs_enhanced_rag_service: Arc::new(EcsEnhancedRagService::new(
+            Arc::new(test_app.db_pool.clone()),
+            Default::default(),
+            Arc::new(NarrativeFeatureFlags::default()),
+            Arc::new(EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                None,
+            )),
+            Arc::new(EcsGracefulDegradation::new(
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                None,
+                None,
+            )),
+            Arc::new(EmbeddingPipelineService::new(
+                ChunkConfig {
+                    metric: ChunkingMetric::Word,
+                    max_size: 500,
+                    overlap: 50,
+                }
+            )),
+        )),
+        hybrid_query_service: Arc::new(HybridQueryService::new(
+            Arc::new(test_app.db_pool.clone()),
+            Default::default(),
+            Arc::new(NarrativeFeatureFlags::default()),
+            Arc::new(EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                None,
+            )),
+            Arc::new(EcsEnhancedRagService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                Arc::new(EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                    None,
+                )),
+                Arc::new(EcsGracefulDegradation::new(
+                    Default::default(),
+                    Arc::new(NarrativeFeatureFlags::default()),
+                    None,
+                    None,
+                )),
+                Arc::new(EmbeddingPipelineService::new(
+                    ChunkConfig {
+                        metric: ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                )),
+            )),
+            Arc::new(EcsGracefulDegradation::new(
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                None,
+                None,
+            )),
+        )),
+        chronicle_event_listener: Arc::new(ChronicleEventListener::new(
+            Default::default(),
+            Arc::new(NarrativeFeatureFlags::default()),
+            Arc::new(ChronicleEcsTranslator::new(
+                Arc::new(test_app.db_pool.clone()),
+            )),
+            Arc::new(EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                None,
+            )),
+            Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        )),
+        chronicle_ecs_translator: Arc::new(ChronicleEcsTranslator::new(
+            Arc::new(test_app.db_pool.clone()),
+        )),
+        chronicle_service: Arc::new(ChronicleService::new(
+            test_app.db_pool.clone(),
+        )),
+        world_model_service: Arc::new(WorldModelService::new(
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                None,
+            )),
+            Arc::new(HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                Arc::new(EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                    None,
+                )),
+                Arc::new(EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    Arc::new(NarrativeFeatureFlags::default()),
+                    Arc::new(EcsEntityManager::new(
+                        Arc::new(test_app.db_pool.clone()),
+                        Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                        None,
+                    )),
+                    Arc::new(EcsGracefulDegradation::new(
+                        Default::default(),
+                        Arc::new(NarrativeFeatureFlags::default()),
+                        None,
+                        None,
+                    )),
+                    Arc::new(EmbeddingPipelineService::new(
+                        ChunkConfig {
+                            metric: ChunkingMetric::Word,
+                            max_size: 500,
+                            overlap: 50,
+                        }
+                    )),
+                )),
+                Arc::new(EcsGracefulDegradation::new(
+                    Default::default(),
+                    Arc::new(NarrativeFeatureFlags::default()),
+                    None,
+                    None,
+                )),
+            )),
+            Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        )),
+        agentic_orchestrator: Arc::new(AgenticOrchestrator::new(
+            test_app.ai_client.clone(),
+            Arc::new(HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                Arc::new(EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                    None,
+                )),
+                Arc::new(EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    Arc::new(NarrativeFeatureFlags::default()),
+                    Arc::new(EcsEntityManager::new(
+                        Arc::new(test_app.db_pool.clone()),
+                        Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                        None,
+                    )),
+                    Arc::new(EcsGracefulDegradation::new(
+                        Default::default(),
+                        Arc::new(NarrativeFeatureFlags::default()),
+                        None,
+                        None,
+                    )),
+                    Arc::new(EmbeddingPipelineService::new(
+                        ChunkConfig {
+                            metric: ChunkingMetric::Word,
+                            max_size: 500,
+                            overlap: 50,
+                        }
+                    )),
+                )),
+                Arc::new(EcsGracefulDegradation::new(
+                    Default::default(),
+                    Arc::new(NarrativeFeatureFlags::default()),
+                    None,
+                    None,
+                )),
+            )),
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(AgenticStateUpdateService::new(
+                test_app.ai_client.clone(),
+                Arc::new(EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                    None,
+                )),
+            )),
+        )),
+        agentic_state_update_service: Arc::new(AgenticStateUpdateService::new(
+            test_app.ai_client.clone(),
+            Arc::new(EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1/").unwrap()),
+                None,
+            )),
+        )),
+    })
+}
 
 #[tokio::test]
 async fn test_entity_resolution_tool_creation() {
     let test_app = crate::test_helpers::spawn_app(false, false, false).await;
     
-    // Create AppState using the same pattern as working tests
-    let services = crate::state::AppStateServices {
-        ai_client: test_app.ai_client.clone(),
-        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
-        qdrant_service: test_app.qdrant_service.clone(),
-    };
-    
-    let app_state = Arc::new(crate::state::AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        services,
-    ));
-    
+    // Create a minimal AppState for testing
+    let app_state = create_test_app_state(&test_app);
     let tool = EntityResolutionTool::new(app_state);
     
     assert_eq!(tool.name(), "resolve_entities");
@@ -58,19 +305,8 @@ async fn test_processing_mode_enum() {
 async fn test_narrative_context_creation() {
     let test_app = crate::test_helpers::spawn_app(false, false, false).await;
     
-    // Create AppState using the same pattern as working tests
-    let services = crate::state::AppStateServices {
-        ai_client: test_app.ai_client.clone(),
-        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
-        qdrant_service: test_app.qdrant_service.clone(),
-    };
-    
-    let app_state = Arc::new(crate::state::AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        services,
-    ));
-    
+    // Create a minimal AppState for testing
+    let app_state = create_test_app_state(&test_app);
     let tool = EntityResolutionTool::new(app_state);
     
     let actors = vec![
@@ -100,19 +336,8 @@ async fn test_narrative_context_creation() {
 async fn test_error_handling() {
     let test_app = crate::test_helpers::spawn_app(false, false, false).await;
     
-    // Create AppState using the same pattern as working tests
-    let services = crate::state::AppStateServices {
-        ai_client: test_app.ai_client.clone(),
-        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
-        qdrant_service: test_app.qdrant_service.clone(),
-    };
-    
-    let app_state = Arc::new(crate::state::AppState::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        services,
-    ));
-    
+    // Create a minimal AppState for testing
+    let app_state = create_test_app_state(&test_app);
     let tool = EntityResolutionTool::new(app_state);
     
     // Test with invalid parameters
@@ -153,9 +378,13 @@ async fn test_truncated_ai_response_handling() {
         }
 "#; // Note the missing closing braces and backticks
 
-    test_app.ai_client.set_next_chat_response(truncated_response.to_string());
+    if let Some(mock_client) = &test_app.mock_ai_client {
+        mock_client.set_next_chat_response(truncated_response.to_string());
+    }
 
-    let tool = EntityResolutionTool::new(test_app.app_state.clone());
+    // Create a minimal AppState for testing
+    let app_state = create_test_app_state(&test_app);
+    let tool = EntityResolutionTool::new(app_state);
 
     let params = json!({
         "user_id": user_id.to_string(),

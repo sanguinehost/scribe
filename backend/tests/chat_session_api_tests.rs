@@ -1639,10 +1639,30 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
                 rag_service,
                 degradation,
             ));
+            let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                test_app.ai_client.clone(),
+                Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+            ));
             Arc::new(scribe_backend::services::AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
+                agentic_state_update_service.clone(),
+            ))
+        },
+        agentic_state_update_service: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                test_app.ai_client.clone(),
+                Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    redis_client,
+                    None,
+                )),
             ))
         },
     };

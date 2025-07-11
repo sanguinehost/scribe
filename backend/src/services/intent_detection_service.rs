@@ -1,9 +1,8 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-use uuid::Uuid;
 use chrono::{DateTime, Utc, Duration};
-use tracing::{info, debug, instrument};
+use tracing::{info, instrument};
 
 use crate::{
     llm::AiClient,

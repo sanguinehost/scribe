@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
-use serde_json::json;
 use tracing::{info, warn, debug, error, instrument};
 
 use crate::{
@@ -22,7 +21,6 @@ use crate::{
     services::{
         ChronicleService,
         ChronicleEcsTranslator,
-        chronicle_ecs_translator::TranslationResult,
     },
     schema::ecs_backfill_checkpoints,
 };
@@ -431,7 +429,7 @@ impl ChronicleBackfillProcessor {
         &self,
         user_id: Uuid,
     ) -> Result<Vec<String>, AppError> {
-        let mut issues = Vec::new();
+        let issues = Vec::new();
 
         // TODO: Implement consistency checks
         // - Verify all entities have valid archetype signatures

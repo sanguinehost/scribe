@@ -12,7 +12,6 @@ use crate::{
         hybrid_query_service::HybridQueryService,
         EncryptionService,
     },
-    models::LorebookEntry,
     schema::{lorebook_entries, lorebooks},
     llm::AiClient,
 };
@@ -1269,7 +1268,7 @@ impl ContextAssemblyEngine {
         }))
     }
 
-    async fn execute_shared_events_query(
+    pub async fn execute_shared_events_query(
         &self,
         query: &PlannedQuery,
         user_id: Uuid,
@@ -1372,7 +1371,7 @@ impl ContextAssemblyEngine {
         }))
     }
 
-    async fn execute_causal_factors_query(
+    pub async fn execute_causal_factors_query(
         &self,
         query: &PlannedQuery,
         user_id: Uuid,
@@ -1545,7 +1544,7 @@ impl ContextAssemblyEngine {
         }))
     }
 
-    async fn execute_recent_events_query(
+    pub async fn execute_recent_events_query(
         &self,
         query: &PlannedQuery,
         user_id: Uuid,
@@ -1625,7 +1624,7 @@ impl ContextAssemblyEngine {
         }))
     }
 
-    async fn execute_historical_parallels_query(
+    pub async fn execute_historical_parallels_query(
         &self,
         query: &PlannedQuery,
         user_id: Uuid,
@@ -1730,7 +1729,7 @@ impl ContextAssemblyEngine {
         let time_threshold = chrono::Utc::now() - chrono::Duration::hours(24);
 
         // Query for entities that have been updated recently
-        let mut conn = self.db_pool.get().await
+        let conn = self.db_pool.get().await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         let active_entity_records: Vec<(Uuid, String, chrono::DateTime<chrono::Utc>)> = conn.interact(move |conn| {
@@ -1835,7 +1834,7 @@ impl ContextAssemblyEngine {
         let mut total_tokens = 0u32;
 
         // Get recent chronicle events to analyze for narrative patterns
-        let mut conn = self.db_pool.get().await
+        let conn = self.db_pool.get().await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         let recent_events: Vec<(Uuid, String, String, chrono::DateTime<chrono::Utc>)> = conn.interact(move |conn| {
@@ -2722,7 +2721,7 @@ impl ContextAssemblyEngine {
 
         // Query lorebook entries that might be concepts
         let entries_result = conn.interact(move |conn_sync| {
-            let mut query = lorebook_entries::table
+            let query = lorebook_entries::table
                 .inner_join(lorebooks::table)
                 .filter(lorebooks::user_id.eq(user_id))
                 .filter(lorebook_entries::is_enabled.eq(true))
@@ -3197,7 +3196,7 @@ Only include entities with confidence >= 0.6"#, chronicle_content);
 
         // Parse AI response to extract entities
         let mut missing_entities = Vec::new();
-        let mut tokens_used = 400; // Estimated tokens for AI call
+        let tokens_used = 400; // Estimated tokens for AI call
 
         if let Ok(extracted_entities) = serde_json::from_str::<Vec<serde_json::Value>>(&response_text) {
             for entity_value in extracted_entities {

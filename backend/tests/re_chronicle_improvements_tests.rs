@@ -70,12 +70,14 @@ async fn test_chronicle_service_batch_operations() {
             summary: "Test event 1".to_string(),
             source: EventSource::AiExtracted,
             event_data: None,
+            timestamp_iso8601: chrono::Utc::now().to_rfc3339(),
         },
         CreateEventRequest {
             event_type: "TEST.EVENT.TWO".to_string(),
             summary: "Test event 2".to_string(),
             source: EventSource::AiExtracted,
             event_data: None,
+            timestamp_iso8601: chrono::Utc::now().to_rfc3339(),
         },
     ];
     
@@ -99,6 +101,7 @@ async fn test_streaming_pipeline_channel_creation() {
         event_type: "TEST.EVENT".to_string(),
         summary: "Test event".to_string(),
         event_data: None,
+        timestamp: chrono::Utc::now(),
     };
     
     tx.send(test_event.clone()).await.unwrap();

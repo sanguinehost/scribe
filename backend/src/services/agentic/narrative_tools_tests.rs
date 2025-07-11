@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
     use super::super::narrative_tools::*;
-    use super::super::tools::{ScribeTool, ToolParams};
+    use super::super::tools::ScribeTool;
     use serde_json::json;
-    use uuid::Uuid;
+    
     use std::sync::Arc;
     use crate::test_helpers::MockAiClient;
 

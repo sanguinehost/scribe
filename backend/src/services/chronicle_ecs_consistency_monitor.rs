@@ -29,7 +29,7 @@ use crate::{
         chronicle_event::ChronicleEvent,
         ecs_diesel::{EcsEntity, EcsComponent},
     },
-    schema::{ecs_entities, ecs_components, chronicle_events},
+    schema::chronicle_events,
     services::{
         chronicle_ecs_translator::ChronicleEcsTranslator,
         ecs_entity_manager::EcsEntityManager,
@@ -349,7 +349,7 @@ impl ChronicleEcsConsistencyMonitor {
         let chronicle_events = self.fetch_chronicle_events(user_id, chronicle_id).await?;
 
         let mut entities_created = 0;
-        let mut entities_updated = 0;
+        let entities_updated = 0;
         let mut components_modified = 0;
         let mut relationships_modified = 0;
         let mut success = true;

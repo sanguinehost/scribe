@@ -23,9 +23,7 @@ use crate::{
     services::{
         chronicle_ecs_translator::{
             ChronicleEcsTranslator, 
-            ComponentUpdate as TranslatorComponentUpdate, 
-            ComponentOperation as TranslatorComponentOperation,
-            RelationshipUpdate
+            ComponentOperation as TranslatorComponentOperation
         },
         ecs_entity_manager::{EcsEntityManager, ComponentUpdate, ComponentOperation},
         chronicle_service::ChronicleService,

@@ -1,18 +1,17 @@
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
-use tracing::{info, debug, warn, instrument};
-use secrecy::SecretBox;
+use tracing::{info, debug, instrument};
 
 use crate::{
     errors::AppError,
     PgPool,
     services::{
-        intent_detection_service::{IntentDetectionService, QueryIntent},
-        query_strategy_planner::{QueryStrategyPlanner, QueryExecutionPlan},
+        intent_detection_service::IntentDetectionService,
+        query_strategy_planner::QueryStrategyPlanner,
         context_assembly_engine::{ContextAssemblyEngine, AssembledContext},
         context_optimization_service::{ContextOptimizationService, ContextOptimization},
-        agentic_state_update_service::{AgenticStateUpdateService, StateUpdateResult},
+        agentic_state_update_service::AgenticStateUpdateService,
         hybrid_query_service::HybridQueryService,
         agentic_metrics::{
             AgenticMetricsCollector, MetricsConfig, RequestTracker, AiCallMetric, 

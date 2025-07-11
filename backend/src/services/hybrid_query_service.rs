@@ -25,15 +25,12 @@ use crate::{
     PgPool,
     config::NarrativeFeatureFlags,
     errors::AppError,
-    models::{
-        chronicle_event::ChronicleEvent,
-        ecs_diesel::{EcsEntity, EcsComponent},
-    },
+    models::chronicle_event::ChronicleEvent,
     services::{
         ecs_entity_manager::EcsEntityManager,
         ecs_enhanced_rag_service::{
-            EcsEnhancedRagService, EnhancedRagQuery, EnhancedRagResult,
-            EntityStateSnapshot, EntityStateContext, RelationshipContext
+            EcsEnhancedRagService, EnhancedRagQuery,
+            EntityStateSnapshot, RelationshipContext
         },
         ecs_graceful_degradation::EcsGracefulDegradation,
         hybrid_query_router::{
@@ -1041,7 +1038,7 @@ impl HybridQueryService {
                 key_insights.push(format!("Found {} entities at {}", 
                     entities.len(), location_name));
             }
-            HybridQueryType::NarrativeQuery { query_text, .. } => {
+            HybridQueryType::NarrativeQuery {  .. } => {
                 key_insights.push(format!("Analyzed {} chronicle events for narrative query", 
                     events.len()));
                 if !entities.is_empty() {

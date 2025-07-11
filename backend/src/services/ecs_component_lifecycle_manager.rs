@@ -8,21 +8,17 @@
 use std::sync::Arc;
 use uuid::Uuid;
 use serde_json::{Value as JsonValue, json};
-use tracing::{info, warn, debug, instrument};
+use tracing::{info, debug, instrument};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
     PgPool,
     errors::AppError,
-    models::{
-        ecs_diesel::{EcsEntity, EcsComponent, NewEcsComponent},
-    },
-    schema::{ecs_entities, ecs_components},
+    models::ecs_diesel::EcsComponent,
     services::{EcsEntityManager, ComponentUpdate, ComponentOperation},
 };
 
 use diesel::prelude::*;
-use validator::Validate;
 
 /// Component validation rule
 pub struct ComponentValidationRule {
@@ -347,7 +343,7 @@ impl EcsComponentLifecycleManager {
 
         let mut all_validation_errors = Vec::new();
         let mut all_dependency_issues = Vec::new();
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
 
         // Group operations by entity
         let mut operations_by_entity: HashMap<Uuid, Vec<ComponentUpdate>> = HashMap::new();

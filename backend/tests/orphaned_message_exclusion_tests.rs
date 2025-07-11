@@ -279,6 +279,114 @@ async fn test_frontend_history_vs_database_history() {
                 chronicle_service,
             ))
         },
+        // Add missing fields for WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
+        world_model_service: Arc::new(scribe_backend::services::WorldModelService::new(
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            )),
+            Arc::new(scribe_backend::services::HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+                Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                    Arc::new(scribe_backend::services::EcsEntityManager::new(
+                        Arc::new(test_app.db_pool.clone()),
+                        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                        None,
+                    )),
+                    Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                        Default::default(),
+                        Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                        None,
+                        None,
+                    )),
+                    Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                        scribe_backend::text_processing::chunking::ChunkConfig {
+                            metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                            max_size: 500,
+                            overlap: 50,
+                        }
+                    )),
+                )),
+                Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                    None,
+                    None,
+                )),
+            )),
+            Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone())),
+        )),
+        agentic_orchestrator: Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+            test_app.ai_client.clone(),
+            Arc::new(scribe_backend::services::HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+                Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                    Arc::new(scribe_backend::services::EcsEntityManager::new(
+                        Arc::new(test_app.db_pool.clone()),
+                        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                        None,
+                    )),
+                    Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                        Default::default(),
+                        Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                        None,
+                        None,
+                    )),
+                    Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                        scribe_backend::text_processing::chunking::ChunkConfig {
+                            metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                            max_size: 500,
+                            overlap: 50,
+                        }
+                    )),
+                )),
+                Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                    None,
+                    None,
+                )),
+            )),
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                test_app.ai_client.clone(),
+                Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+            )),
+        )),
+        agentic_state_update_service: Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+            test_app.ai_client.clone(),
+            Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            )),
+        )),
     };
 
     let state = AppState::new(test_app.db_pool.clone(), test_app.config.clone(), services);
@@ -557,6 +665,114 @@ async fn test_orphaned_message_exclusion_scenario() {
                 chronicle_service,
             ))
         },
+        // Add missing fields for WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
+        world_model_service: Arc::new(scribe_backend::services::WorldModelService::new(
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            )),
+            Arc::new(scribe_backend::services::HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+                Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                    Arc::new(scribe_backend::services::EcsEntityManager::new(
+                        Arc::new(test_app.db_pool.clone()),
+                        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                        None,
+                    )),
+                    Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                        Default::default(),
+                        Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                        None,
+                        None,
+                    )),
+                    Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                        scribe_backend::text_processing::chunking::ChunkConfig {
+                            metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                            max_size: 500,
+                            overlap: 50,
+                        }
+                    )),
+                )),
+                Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                    None,
+                    None,
+                )),
+            )),
+            Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone())),
+        )),
+        agentic_orchestrator: Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+            test_app.ai_client.clone(),
+            Arc::new(scribe_backend::services::HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+                Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                    Arc::new(scribe_backend::services::EcsEntityManager::new(
+                        Arc::new(test_app.db_pool.clone()),
+                        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                        None,
+                    )),
+                    Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                        Default::default(),
+                        Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                        None,
+                        None,
+                    )),
+                    Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                        scribe_backend::text_processing::chunking::ChunkConfig {
+                            metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                            max_size: 500,
+                            overlap: 50,
+                        }
+                    )),
+                )),
+                Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                    None,
+                    None,
+                )),
+            )),
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                test_app.ai_client.clone(),
+                Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                    None,
+                )),
+            )),
+        )),
+        agentic_state_update_service: Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+            test_app.ai_client.clone(),
+            Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            )),
+        )),
     };
 
     let state = AppState::new(test_app.db_pool.clone(), test_app.config.clone(), services);

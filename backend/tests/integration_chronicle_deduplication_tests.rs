@@ -105,6 +105,7 @@ impl MountEverestTestFixture {
                 actor_overlap_threshold: 0.6,
                 enable_action_similarity: true,
                 max_events_to_check: 50,
+                duplicate_confidence_threshold: 0.7,
             }),
         );
 
@@ -179,6 +180,7 @@ impl MountEverestTestFixture {
                 "modality": narrative_event.modality,
                 "timestamp_iso8601": narrative_event.timestamp,
             })),
+            timestamp_iso8601: narrative_event.timestamp.clone(),
         }
     }
 }

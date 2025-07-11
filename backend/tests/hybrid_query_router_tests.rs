@@ -10,8 +10,7 @@ use uuid::Uuid;
 use scribe_backend::{
     config::NarrativeFeatureFlags,
     services::{
-        HybridQueryRouter, HybridQueryRouterConfig, QueryRoutingStrategy, RoutingDecision,
-        QueryComplexity, QueryPerformanceContract, FailureMode, DataVolume,
+        HybridQueryRouter, HybridQueryRouterConfig, QueryRoutingStrategy, QueryPerformanceContract, FailureMode, DataVolume,
         EcsGracefulDegradation, EcsEntityManager, EntityManagerConfig,
         HybridQuery, HybridQueryType, HybridQueryOptions,
     },

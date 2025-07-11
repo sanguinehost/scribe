@@ -14,18 +14,16 @@
 //! - Performance-based routing decisions
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU64, Ordering};
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn, debug, error, instrument};
-use chrono::{DateTime, Utc};
+use tracing::{info, warn, debug, instrument};
 use std::collections::HashMap;
 
 use crate::{
     errors::AppError,
     services::{
-        hybrid_query_service::{HybridQuery, HybridQueryResult, HybridQueryType},
+        hybrid_query_service::{HybridQuery, HybridQueryType},
         ecs_graceful_degradation::{EcsGracefulDegradation, CircuitState},
     },
 };

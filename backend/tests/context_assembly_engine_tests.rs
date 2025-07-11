@@ -295,9 +295,17 @@ async fn test_planned_query_type_variants() {
 /// Validates user isolation and authorization in the agentic pipeline
 #[tokio::test]
 async fn test_security_a01_broken_access_control() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
@@ -315,10 +323,12 @@ async fn test_security_a01_broken_access_control() {
         query_type: PlannedQueryType::TimelineEvents,
         priority: 1.0,
         estimated_tokens: Some(1000),
-        parameters: json!({
-            "entity_names": ["sensitive_entity"],
-            "chronicle_id": user_a.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("entity_names".to_string(), json!(["sensitive_entity"]));
+            params.insert("chronicle_id".to_string(), json!(user_a.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -338,9 +348,17 @@ async fn test_security_a01_broken_access_control() {
 /// Validates encryption and data protection in the agentic pipeline
 #[tokio::test]
 async fn test_security_a02_cryptographic_failures() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     
     // Test with proper encryption service
     let encryption_service = Arc::new(EncryptionService::new());
@@ -360,10 +378,12 @@ async fn test_security_a02_cryptographic_failures() {
         query_type: PlannedQueryType::EntityStates,
         priority: 1.0,
         estimated_tokens: Some(400),
-        parameters: json!({
-            "entity_names": ["user_with_sensitive_data"],
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("entity_names".to_string(), json!(["user_with_sensitive_data"]));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -375,9 +395,17 @@ async fn test_security_a02_cryptographic_failures() {
 /// Validates input sanitization and injection prevention
 #[tokio::test]
 async fn test_security_a03_injection_prevention() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
@@ -394,10 +422,12 @@ async fn test_security_a03_injection_prevention() {
         query_type: PlannedQueryType::TimelineEvents,
         priority: 1.0,
         estimated_tokens: Some(1000),
-        parameters: json!({
-            "entity_names": ["'; DROP TABLE entities; --", "1=1 OR '1'='1"],
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("entity_names".to_string(), json!(["'; DROP TABLE entities; --", "1=1 OR '1'='1"]));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -409,12 +439,14 @@ async fn test_security_a03_injection_prevention() {
         query_type: PlannedQueryType::CausalFactors,
         priority: 1.0,
         estimated_tokens: Some(600),
-        parameters: json!({
-            "scenario": "<script>alert('xss')</script>",
-            "entity": "javascript:alert('xss')",
-            "factor_types": ["<img src=x onerror=alert('xss')>"],
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("scenario".to_string(), json!("<script>alert('xss')</script>"));
+            params.insert("entity".to_string(), json!("javascript:alert('xss')"));
+            params.insert("factor_types".to_string(), json!(["<img src=x onerror=alert('xss')>"]));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -426,12 +458,14 @@ async fn test_security_a03_injection_prevention() {
         query_type: PlannedQueryType::RecentEvents,
         priority: 1.0,
         estimated_tokens: Some(800),
-        parameters: json!({
-            "time_scope": "; rm -rf /",
-            "event_types": ["|cat /etc/passwd"],
-            "max_events": 10,
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("time_scope".to_string(), json!("; rm -rf /"));
+            params.insert("event_types".to_string(), json!(["|cat /etc/passwd"]));
+            params.insert("max_events".to_string(), json!(10));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -443,9 +477,17 @@ async fn test_security_a03_injection_prevention() {
 /// Validates secure design patterns and proper error handling
 #[tokio::test]
 async fn test_security_a04_insecure_design() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
@@ -462,7 +504,7 @@ async fn test_security_a04_insecure_design() {
         query_type: PlannedQueryType::TimelineEvents,
         priority: 1.0,
         estimated_tokens: Some(1000),
-        parameters: json!({}), // Missing required entity_names
+        parameters: HashMap::new(), // Missing required entity_names
         dependencies: vec![],
     };
     
@@ -486,11 +528,13 @@ async fn test_security_a04_insecure_design() {
         query_type: PlannedQueryType::StateTransitions,
         priority: 1.0,
         estimated_tokens: Some(500),
-        parameters: json!({
-            "entity": 12345, // Should be string, not number
-            "transition_types": "not_an_array", // Should be array
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("entity".to_string(), json!(12345));
+            params.insert("transition_types".to_string(), json!("not_an_array"));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -503,9 +547,17 @@ async fn test_security_a04_insecure_design() {
 /// Validates proper configuration and secure defaults
 #[tokio::test]
 async fn test_security_a05_security_misconfiguration() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
@@ -522,10 +574,12 @@ async fn test_security_a05_security_misconfiguration() {
         query_type: PlannedQueryType::SharedEvents,
         priority: 1.0,
         estimated_tokens: None, // Should use reasonable default
-        parameters: json!({
-            "entities": ["entity_a", "entity_b"],
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("entities".to_string(), json!(["entity_a", "entity_b"]));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -543,9 +597,17 @@ async fn test_security_a05_security_misconfiguration() {
 /// Validates proper user identification and session handling
 #[tokio::test] 
 async fn test_security_a07_authentication_failures() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
@@ -561,10 +623,12 @@ async fn test_security_a07_authentication_failures() {
         query_type: PlannedQueryType::EntityStates,
         priority: 1.0,
         estimated_tokens: Some(400),
-        parameters: json!({
-            "entity_names": ["test_entity"],
-            "chronicle_id": valid_user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("entity_names".to_string(), json!(["test_entity"]));
+            params.insert("chronicle_id".to_string(), json!(valid_user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -582,9 +646,17 @@ async fn test_security_a07_authentication_failures() {
 /// Validates data integrity and consistency
 #[tokio::test]
 async fn test_security_a08_data_integrity() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
@@ -601,11 +673,13 @@ async fn test_security_a08_data_integrity() {
         query_type: PlannedQueryType::StateTransitions,
         priority: 1.0,
         estimated_tokens: Some(500),
-        parameters: json!({
-            "entity": "test_entity",
-            "transition_types": ["valid_type"],
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("entity".to_string(), json!("test_entity"));
+            params.insert("transition_types".to_string(), json!(["valid_type"]));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -638,10 +712,12 @@ async fn test_security_a08_data_integrity() {
         query_type: PlannedQueryType::TimelineEvents,
         priority: 1.0,
         estimated_tokens: Some(1000),
-        parameters: json!({
-            "entity_names": ["test_entity"],
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("entity_names".to_string(), json!(["test_entity"]));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -672,14 +748,22 @@ async fn test_security_a08_data_integrity() {
 /// Validates proper logging and monitoring capabilities
 #[tokio::test]
 async fn test_security_a09_logging_monitoring() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone().into(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone().into(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        pool.clone().into(),
         encryption_service,
         ai_client.clone(),
     );
@@ -691,11 +775,13 @@ async fn test_security_a09_logging_monitoring() {
         query_type: PlannedQueryType::CausalFactors,
         priority: 1.0,
         estimated_tokens: Some(600),
-        parameters: json!({
-            "scenario": "test_scenario",
-            "entity": "test_entity",
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("scenario".to_string(), json!("test_scenario"));
+            params.insert("entity".to_string(), json!("test_entity"));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -724,14 +810,22 @@ async fn test_security_a09_logging_monitoring() {
 /// Validates protection against SSRF attacks in query parameters
 #[tokio::test]
 async fn test_security_a10_ssrf_prevention() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone().into(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone().into(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        pool.clone().into(),
         encryption_service,
         ai_client.clone(),
     );
@@ -743,11 +837,13 @@ async fn test_security_a10_ssrf_prevention() {
         query_type: PlannedQueryType::HistoricalParallels,
         priority: 1.0,
         estimated_tokens: Some(600),
-        parameters: json!({
-            "scenario_type": "http://internal-server/admin",
-            "outcome_focus": true,
-            "chronicle_id": "file:///etc/passwd"
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("scenario_type".to_string(), json!("http://internal-server/admin"));
+            params.insert("outcome_focus".to_string(), json!(true));
+            params.insert("chronicle_id".to_string(), json!("file:///etc/passwd"));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -765,12 +861,14 @@ async fn test_security_a10_ssrf_prevention() {
         query_type: PlannedQueryType::RecentEvents,
         priority: 1.0,
         estimated_tokens: Some(800),
-        parameters: json!({
-            "time_scope": "http://localhost:8080/admin",
-            "event_types": ["http://127.0.0.1/secrets"],
-            "max_events": 10,
-            "chronicle_id": user_id.to_string()
-        }),
+        parameters: {
+            let mut params = HashMap::new();
+            params.insert("time_scope".to_string(), json!("http://localhost:8080/admin"));
+            params.insert("event_types".to_string(), json!(["http://127.0.0.1/secrets"]));
+            params.insert("max_events".to_string(), json!(10));
+            params.insert("chronicle_id".to_string(), json!(user_id.to_string()));
+            params
+        },
         dependencies: vec![],
     };
     
@@ -782,14 +880,22 @@ async fn test_security_a10_ssrf_prevention() {
 /// Validates protection against resource exhaustion attacks
 #[tokio::test]
 async fn test_security_resource_exhaustion() {
-    let (_app, pool, _cleanup) = spawn_app().await;
+    let test_app = spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
-    let hybrid_query_service = Arc::new(HybridQueryService::new(pool.clone(), ai_client.clone()));
+    let hybrid_query_service = Arc::new(HybridQueryService::new(
+        pool.clone().into(),
+        Default::default(),
+        Arc::new(Default::default()),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone().into(), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
+    ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        pool.clone().into(),
         encryption_service,
         ai_client.clone(),
     );
@@ -829,7 +935,7 @@ async fn test_security_resource_exhaustion() {
             let mut params = HashMap::new();
             params.insert("scenario".to_string(), serde_json::Value::String("a".repeat(100000)));
             params.insert("entity".to_string(), serde_json::Value::String("\0\0\0".to_string()));
-            params.insert("factor_types".to_string(), serde_json::Value::Array(vec!["type"; 10000].into_iter().map(serde_json::Value::String).collect()));
+            params.insert("factor_types".to_string(), serde_json::Value::Array(vec!["type"; 10000].into_iter().map(|s| serde_json::Value::String(s.to_string())).collect()));
             params.insert("chronicle_id".to_string(), serde_json::Value::String(user_id.to_string()));
             params
         },

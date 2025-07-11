@@ -7,7 +7,6 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
-use chrono::Utc;
 use http_body_util::BodyExt;
 use serde_json::json;
 use tower::ServiceExt;
@@ -18,17 +17,10 @@ use diesel::RunQueryDsl;
 use diesel::prelude::*;
 
 // Crate imports
-use scribe_backend::models::character_card::NewCharacter;
-use scribe_backend::models::characters::Character as DbCharacter;
 use scribe_backend::models::chats::{Chat as DbChatSession, ChatMode, CreateChatSessionPayload};
-use scribe_backend::schema::{characters, chat_sessions};
+use scribe_backend::schema::chat_sessions;
 use scribe_backend::test_helpers;
-use secrecy::{ExposeSecret, SecretBox};
-use std::sync::Arc;
-use tracing::debug;
 
-use scribe_backend::crypto;
-use scribe_backend::models::users::User;
 
 /// Test creating a Character mode chat session (traditional mode)
 #[tokio::test]
@@ -479,7 +471,7 @@ async fn test_chat_mode_database_constraints() {
     .await
     .expect("Failed to create test user");
 
-    let mut conn = test_app.db_pool.get().await.expect("Failed to get DB connection");
+    let conn = test_app.db_pool.get().await.expect("Failed to get DB connection");
 
     // Test 1: Verify chat_mode column exists and accepts valid values
     let session_id = Uuid::new_v4();

@@ -18,10 +18,8 @@ use scribe_backend::{
         embeddings::service::EmbeddingPipelineService,
     },
     test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestDataGuard},
-    errors::AppError,
 };
 use std::sync::Arc;
-use tokio::time::Duration;
 use uuid::Uuid;
 use serde_json::json;
 

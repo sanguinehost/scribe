@@ -12,19 +12,18 @@
 //! - Query confidence scoring and fallback handling
 
 use std::sync::Arc;
-use std::collections::HashMap;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use chrono::{DateTime, Utc, Duration};
-use tracing::{info, debug, warn, instrument};
+use chrono::Duration;
+use tracing::{info, debug, instrument};
 
 use crate::{
     errors::AppError,
     models::world_model::*,
     services::{
         world_model_service::{WorldModelService, WorldModelOptions, LLMContextFocus, TimeFocus, ReasoningDepth},
-        hybrid_query_service::{HybridQueryService, HybridQueryType},
+        hybrid_query_service::HybridQueryService,
     },
 };
 

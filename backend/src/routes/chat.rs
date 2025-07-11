@@ -318,7 +318,7 @@ pub async fn generate_chat_response(
 
     // --- ECS-Enhanced RAG Integration ---
     // TODO: Implement ECS-enhanced RAG once the enhancement function is created
-    let mut enhanced_rag_context_items = rag_context_items_from_service;
+    let enhanced_rag_context_items = rag_context_items_from_service;
 
     // Fetch Character model from DB (only for character-based chats)
     let char_id = session_character_id.ok_or_else(|| {

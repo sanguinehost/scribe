@@ -4,20 +4,17 @@ mod tests {
     use crate::errors::AppError;
     use crate::models::chats::ChatMessage;
     use crate::services::embeddings::{
-        ChatMessageChunkMetadata, EmbeddingPipelineService, LorebookEntryParams, RetrievedMetadata,
+        ChatMessageChunkMetadata, LorebookEntryParams, RetrievedMetadata,
     };
     use crate::state::AppState;
-    use crate::text_processing::chunking::ChunkConfig;
+    
     use crate::{
-        config::Config,
         crypto::encrypt_gcm, // Updated for encryption tests
-        models::chats::MessageRole,
-        services::lorebook::LorebookService, // Added for LorebookService
+        models::chats::MessageRole, // Added for LorebookService
         state::AppStateServices,
         test_helpers::{
-            MockAiClient, MockEmbeddingClient, MockQdrantClientService, db::setup_test_database,
+            MockAiClient, MockEmbeddingClient, MockQdrantClientService,
         },
-        text_processing::chunking::ChunkingMetric,
     };
     use chrono::Utc;
     use qdrant_client::qdrant::{

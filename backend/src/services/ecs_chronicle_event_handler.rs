@@ -7,8 +7,8 @@
 
 use std::sync::Arc;
 use uuid::Uuid;
-use serde_json::{Value as JsonValue, json};
-use tracing::{info, debug, error, instrument};
+use serde_json::json;
+use tracing::{info, debug, instrument};
 use async_trait::async_trait;
 
 use crate::{
@@ -27,7 +27,7 @@ use crate::{
 };
 
 use diesel::prelude::*;
-use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods};
+use diesel::RunQueryDsl;
 
 /// Configuration for the Chronicle event handler
 #[derive(Debug, Clone)]

@@ -50,6 +50,7 @@ async fn test_simple_deduplication() {
         summary: "Lucas performed a cleansing ritual".to_string(),
         source: EventSource::AiExtracted,
         event_data: Some(event_data),
+        timestamp_iso8601: chrono::Utc::now().to_rfc3339(),
     };
     
     let first_event = chronicle_service

@@ -15,8 +15,8 @@ use scribe_backend::{
     services::{
         ScribeTool,
         agentic::{
-            AgenticNarrativeFactory,
-            AnalyzeTextSignificanceTool, CreateChronicleEventTool,
+            AgenticNarrativeFactory, AgenticOrchestrator, AgenticStateUpdateService,
+            AnalyzeTextSignificanceTool, CreateChronicleEventTool, WorldModelService,
         },
         ChronicleService, UserPersonaService,
     },
@@ -364,6 +364,17 @@ async fn test_persona_context_missing_in_events() {
                 chronicle_service,
             ))
         },
+        world_model_service: Arc::new(WorldModelService::new(
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+        )),
+        agentic_state_update_service: Arc::new(AgenticStateUpdateService::new(
+            Arc::new(test_app.db_pool.clone()),
+        )),
+        agentic_orchestrator: Arc::new(AgenticOrchestrator::new(
+            Default::default(),
+            Arc::new(test_app.db_pool.clone()),
+        )),
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -604,6 +615,17 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 chronicle_service,
             ))
         },
+        world_model_service: Arc::new(WorldModelService::new(
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+        )),
+        agentic_state_update_service: Arc::new(AgenticStateUpdateService::new(
+            Arc::new(test_app.db_pool.clone()),
+        )),
+        agentic_orchestrator: Arc::new(AgenticOrchestrator::new(
+            Default::default(),
+            Arc::new(test_app.db_pool.clone()),
+        )),
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

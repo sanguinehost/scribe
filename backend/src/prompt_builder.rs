@@ -1348,8 +1348,8 @@ mod tests {
     }
 
     mod strategic_truncation_tests {
-        use super::*;
-        use crate::config::Config;
+        
+        
         use crate::errors::AppError;
         use crate::services::embeddings::{RetrievedChunk, RetrievedMetadata, ChatMessageChunkMetadata};
         use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent};

@@ -8,24 +8,21 @@
 // state stays synchronized with the narrative understanding.
 
 use std::sync::Arc;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
-use serde_json::Value as JsonValue;
 use tracing::{info, debug, warn, instrument};
 use chrono::{DateTime, Utc};
 
 use crate::{
-    PgPool,
     errors::AppError,
     llm::AiClient,
     services::{
         context_assembly_engine::{AssembledContext, QueryExecutionResult},
         ecs_entity_manager::{EcsEntityManager, ComponentUpdate, ComponentOperation},
-        query_strategy_planner::QueryStrategy,
     },
     models::ecs::{
-        SpatialComponent, PositionComponent, RelationshipsComponent, 
+        SpatialComponent, RelationshipsComponent, 
         TemporalComponent, GameTime, Relationship, RelationshipCategory,
     },
 };
@@ -285,7 +282,7 @@ impl AgenticStateUpdateService {
     ) -> Result<SpatialAnalysis, AppError> {
         let mut primary_location = None;
         let mut entities_in_location = Vec::new();
-        let mut spatial_containment = HashMap::new();
+        let spatial_containment = HashMap::new();
         let mut confidence = 0.0;
 
         // Look for spatial information in query results

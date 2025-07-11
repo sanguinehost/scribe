@@ -25,10 +25,7 @@ use crate::{
     PgPool,
     config::NarrativeFeatureFlags,
     errors::AppError,
-    models::{
-        chronicle_event::ChronicleEvent,
-        ecs_diesel::{EcsEntity, EcsComponent},
-    },
+    models::chronicle_event::ChronicleEvent,
     services::{
         ecs_entity_manager::EcsEntityManager,
         ecs_graceful_degradation::EcsGracefulDegradation,
@@ -429,7 +426,7 @@ impl EcsEnhancedRagService {
 
     /// Get relationship context for specified entities
     async fn get_relationship_context(&self, entity_ids: &[Uuid], user_id: Uuid) -> Result<Vec<RelationshipContext>, AppError> {
-        let mut relationships = Vec::new();
+        let relationships = Vec::new();
         
         // Query ECS relationships table for connections between these entities
         debug!("Getting relationship context for {} entities", entity_ids.len());

@@ -3,19 +3,15 @@
 //! Implements structured query-based de-duplication using Ars Fabula narrative ontology.
 //! This moves beyond simple semantic similarity to structured event reasoning.
 
-use std::sync::Arc;
 use std::collections::HashSet;
-use tracing::{info, warn, debug, instrument};
+use tracing::{info, debug, instrument};
 use uuid::Uuid;
-use chrono::{DateTime, Utc, Duration};
-use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods, PgTextExpressionMethods};
+use chrono::Duration;
+use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods};
 
 use crate::{
     errors::AppError,
-    models::{
-        chronicle_event::{ChronicleEvent, DeduplicationFilter},
-        narrative_ontology::{EventActor, NarrativeAction},
-    },
+    models::chronicle_event::{ChronicleEvent, DeduplicationFilter},
     schema::chronicle_events::dsl as chronicle_events_dsl,
     state::DbPool,
 };
@@ -450,7 +446,7 @@ impl ChronicleDeduplicationService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::*;
+    
     use chrono::Utc;
     use serde_json::json;
 
@@ -522,6 +518,7 @@ mod tests {
             modality: Some("ACTUAL".to_string()),
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 1,
         }
     }
 
@@ -555,6 +552,7 @@ mod tests {
             modality: Some("ACTUAL".to_string()),
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 1,
         }
     }
 }

@@ -277,6 +277,27 @@ impl MockAiClient {
         // TODO: Implement mock logic
         *self.stream_to_return.lock().unwrap() = Some(stream_items);
     }
+    
+    /// Adds a response to the mock AI client's response queue
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
+    pub fn add_response(&self, response: String) {
+        let mut responses = self.responses.lock().unwrap();
+        responses.push_back(response);
+    }
+    
+    /// Sets the next chat response for the mock AI client
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
+    pub fn set_next_chat_response(&self, response: String) {
+        let mut responses = self.responses.lock().unwrap();
+        responses.clear();
+        responses.push_back(response);
+    }
 }
 
 impl Default for MockAiClient {
@@ -1518,6 +1539,7 @@ pub struct TestApp {
     pub config: Arc<Config>, // Add config field
     // Store the actual AI client being used (could be real or mock)
     pub ai_client: Arc<dyn AiClient + Send + Sync>,
+    pub redis_client: Arc<redis::Client>,
     // Optionally store the mock client for tests that need mock-specific methods
     pub mock_ai_client: Option<Arc<MockAiClient>>,
     pub mock_embedding_client: Arc<MockEmbeddingClient>,
@@ -1622,6 +1644,8 @@ pub async fn spawn_app_with_rate_limiting_options(
     ensure_tracing_initialized();
     ensure_rustls_provider_installed(); // Ensure rustls crypto provider is set up
     dotenv().ok();
+
+    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
 
     let test_db_name_suffix = if multi_thread {
         Some(Uuid::new_v4().to_string()) // Ensure it's String for suffix
@@ -1846,6 +1870,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         // Direct reqwest calls are made to `app_address`.
         // Keeping it to satisfy struct, but should ideally be removed or used consistently.
         db_pool: pool,
+        redis_client,
         config: config_arc,
         ai_client: ai_client_for_state,
         mock_ai_client: mock_ai_client_for_test_app,

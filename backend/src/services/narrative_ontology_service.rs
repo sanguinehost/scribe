@@ -436,7 +436,7 @@ impl Default for NarrativeOntologyService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::narrative_ontology::{EventModality, ValenceType};
+    
 
     #[test]
     fn test_narrative_to_chronicle_conversion() {

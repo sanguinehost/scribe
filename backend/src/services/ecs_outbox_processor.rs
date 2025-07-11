@@ -8,11 +8,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
-use serde_json::{Value as JsonValue, json};
+use serde_json::Value as JsonValue;
 use tracing::{info, warn, debug, error, instrument};
 use tokio::time::{sleep, Instant};
 use chrono::{DateTime, Utc};
-use async_trait::async_trait;
 
 use crate::{
     PgPool,

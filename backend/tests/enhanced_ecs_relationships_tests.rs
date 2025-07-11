@@ -6,7 +6,6 @@
 // - Database integrity and data validation
 // - Access control and authorization
 
-use std::sync::Arc;
 use uuid::Uuid;
 use serde_json::json;
 use chrono::{Utc, Duration};
@@ -17,9 +16,7 @@ use scribe_backend::{
         ecs_diesel::{NewEcsEntityRelationship, EcsEntityRelationship, NewEcsEntity},
         ecs::{RelationshipCategory},
     },
-    errors::AppError,
     schema::{ecs_entity_relationships, ecs_entities},
-    PgPool,
 };
 use diesel::prelude::*;
 

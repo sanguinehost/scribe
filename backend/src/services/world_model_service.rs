@@ -10,7 +10,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};
 use serde_json::{Value as JsonValue};
-use tracing::{info, debug, warn, error, instrument};
+use tracing::{info, debug, instrument};
 
 use crate::{
     PgPool,
@@ -19,7 +19,7 @@ use crate::{
         world_model::*,
         chronicle_event::ChronicleEvent,
         ecs_diesel::{EcsEntity, EcsComponent, EcsEntityRelationship},
-        ecs::{CausalComponent, RelationshipCategory},
+        ecs::CausalComponent,
     },
     services::{
         ecs_entity_manager::EcsEntityManager,

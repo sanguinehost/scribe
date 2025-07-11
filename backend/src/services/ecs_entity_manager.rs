@@ -21,7 +21,7 @@ use crate::{
 };
 
 use diesel::prelude::*;
-use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods, PgExpressionMethods};
+use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods};
 
 /// Configuration for entity manager caching behavior
 #[derive(Debug, Clone)]

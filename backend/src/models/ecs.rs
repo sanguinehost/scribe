@@ -261,6 +261,149 @@ impl Component for NameComponent {
     }
 }
 
+/// ParentLink component for explicit hierarchical relationships
+/// This component provides explicit parent references alongside SpatialComponent
+/// enabling queries like "What galaxy is this planet in?" or "What building is this office in?"
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ParentLinkComponent {
+    /// The UUID of the parent entity
+    pub parent_entity_id: Uuid,
+    /// Depth from the root entity (root = 0, immediate children = 1, etc.)
+    pub depth_from_root: u32,
+    /// The type of spatial relationship (e.g., "contained_within", "part_of", "orbits")
+    pub spatial_relationship: String,
+}
+
+impl Component for ParentLinkComponent {
+    fn component_type() -> &'static str {
+        "ParentLink"
+    }
+}
+
+/// Spatial Scale Archetype component for multi-scale spatial classification
+/// This component provides hierarchical spatial context across different scales
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum SpatialScale {
+    /// Cosmic scale: Universe → Galaxy → System → World/Moon → Continent → Region
+    Cosmic,
+    /// Planetary scale: World → Continent → Country → City → District → Building → Room
+    Planetary,
+    /// Intimate scale: Building → Floor → Room → Area → Furniture → Container
+    Intimate,
+}
+
+impl SpatialScale {
+    /// Get the hierarchical levels for this spatial scale
+    pub fn hierarchical_levels(&self) -> Vec<&'static str> {
+        match self {
+            SpatialScale::Cosmic => vec!["Universe", "Galaxy", "System", "World", "Moon", "Continent", "Region"],
+            SpatialScale::Planetary => vec!["World", "Continent", "Country", "City", "District", "Building", "Room"],
+            SpatialScale::Intimate => vec!["Building", "Floor", "Room", "Area", "Furniture", "Container"],
+        }
+    }
+    
+    /// Get the maximum depth for this spatial scale
+    pub fn max_depth(&self) -> u32 {
+        (self.hierarchical_levels().len() - 1) as u32
+    }
+    
+    /// Get the level name for a given depth
+    pub fn level_name(&self, depth: u32) -> Option<&'static str> {
+        self.hierarchical_levels().get(depth as usize).copied()
+    }
+    
+    /// Check if this scale is appropriate for a given entity type
+    pub fn is_appropriate_for_entity(&self, entity_type: &str) -> bool {
+        match self {
+            SpatialScale::Cosmic => matches!(entity_type, "star" | "planet" | "galaxy" | "system" | "universe" | "spaceship"),
+            SpatialScale::Planetary => matches!(entity_type, "country" | "city" | "building" | "continent" | "region"),
+            SpatialScale::Intimate => matches!(entity_type, "room" | "furniture" | "container" | "object" | "person"),
+        }
+    }
+}
+
+/// SpatialArchetype component for defining spatial scale and position
+/// This component provides the scale-aware spatial context for entities
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SpatialArchetypeComponent {
+    /// The spatial scale this entity operates within
+    pub scale: SpatialScale,
+    /// The hierarchical level within the scale (0 = root level)
+    pub hierarchical_level: u32,
+    /// The specific archetype name (e.g., "Galaxy", "Building", "Room")
+    pub archetype_name: String,
+    /// Optional position within the level (coordinates, index, etc.)
+    pub position_data: Option<JsonValue>,
+}
+
+impl Component for SpatialArchetypeComponent {
+    fn component_type() -> &'static str {
+        "SpatialArchetype"
+    }
+}
+
+impl SpatialArchetypeComponent {
+    /// Create a new SpatialArchetypeComponent
+    pub fn new(scale: SpatialScale, hierarchical_level: u32, archetype_name: String) -> Result<Self, String> {
+        // Validate that the hierarchical level is within the scale's bounds
+        if hierarchical_level > scale.max_depth() {
+            return Err(format!(
+                "Hierarchical level {} exceeds maximum depth {} for scale {:?}",
+                hierarchical_level, scale.max_depth(), scale
+            ));
+        }
+        
+        // Validate that the archetype name matches the expected level
+        if let Some(expected_level) = scale.level_name(hierarchical_level) {
+            if archetype_name != expected_level {
+                return Err(format!(
+                    "Archetype name '{}' does not match expected level '{}' for scale {:?} at depth {}",
+                    archetype_name, expected_level, scale, hierarchical_level
+                ));
+            }
+        }
+        
+        Ok(Self {
+            scale,
+            hierarchical_level,
+            archetype_name,
+            position_data: None,
+        })
+    }
+    
+    /// Create a new SpatialArchetypeComponent with position data
+    pub fn with_position(scale: SpatialScale, hierarchical_level: u32, archetype_name: String, position_data: JsonValue) -> Result<Self, String> {
+        let mut component = Self::new(scale, hierarchical_level, archetype_name)?;
+        component.position_data = Some(position_data);
+        Ok(component)
+    }
+    
+    /// Get the expected parent level for this archetype
+    pub fn expected_parent_level(&self) -> Option<&'static str> {
+        if self.hierarchical_level == 0 {
+            None
+        } else {
+            self.scale.level_name(self.hierarchical_level - 1)
+        }
+    }
+    
+    /// Get the expected child level for this archetype
+    pub fn expected_child_level(&self) -> Option<&'static str> {
+        self.scale.level_name(self.hierarchical_level + 1)
+    }
+    
+    /// Check if this archetype can contain the given child archetype
+    pub fn can_contain(&self, child: &SpatialArchetypeComponent) -> bool {
+        // Must be the same scale
+        if self.scale != child.scale {
+            return false;
+        }
+        
+        // Child must be exactly one level deeper
+        child.hierarchical_level == self.hierarchical_level + 1
+    }
+}
+
 // ============================================================================
 // Enhanced Causal Tracking Components (Dynamic Generation Pattern)
 // ============================================================================
@@ -1221,5 +1364,305 @@ mod tests {
         // Verify temporal component maintains creation time
         assert!(temporal.destroyed_at.is_none());
         assert_eq!(temporal.created_at, temporal.last_modified);
+    }
+    
+    #[test]
+    fn test_parent_link_component() {
+        let parent_id = Uuid::new_v4();
+        let parent_link = ParentLinkComponent {
+            parent_entity_id: parent_id,
+            depth_from_root: 2,
+            spatial_relationship: "contained_within".to_string(),
+        };
+        
+        assert_eq!(parent_link.parent_entity_id, parent_id);
+        assert_eq!(parent_link.depth_from_root, 2);
+        assert_eq!(parent_link.spatial_relationship, "contained_within");
+        assert_eq!(ParentLinkComponent::component_type(), "ParentLink");
+    }
+    
+    #[test]
+    fn test_parent_link_serialization() {
+        let parent_id = Uuid::new_v4();
+        let parent_link = ParentLinkComponent {
+            parent_entity_id: parent_id,
+            depth_from_root: 1,
+            spatial_relationship: "galaxy_contains_system".to_string(),
+        };
+        
+        let json_value = parent_link.to_json().unwrap();
+        let deserialized = ParentLinkComponent::from_json(&json_value).unwrap();
+        
+        assert_eq!(parent_link, deserialized);
+    }
+    
+    #[test]
+    fn test_parent_link_hierarchy_depths() {
+        let universe_id = Uuid::new_v4();
+        let galaxy_id = Uuid::new_v4();
+        let system_id = Uuid::new_v4();
+        
+        // Test cosmic hierarchy: Universe -> Galaxy -> System -> Planet
+        let galaxy_parent = ParentLinkComponent {
+            parent_entity_id: universe_id,
+            depth_from_root: 1,
+            spatial_relationship: "universe_contains_galaxy".to_string(),
+        };
+        
+        let system_parent = ParentLinkComponent {
+            parent_entity_id: galaxy_id,
+            depth_from_root: 2,
+            spatial_relationship: "galaxy_contains_system".to_string(),
+        };
+        
+        // Verify hierarchy depths
+        assert_eq!(galaxy_parent.depth_from_root, 1);
+        assert_eq!(system_parent.depth_from_root, 2);
+        assert_eq!(galaxy_parent.spatial_relationship, "universe_contains_galaxy");
+        assert_eq!(system_parent.spatial_relationship, "galaxy_contains_system");
+    }
+    
+    #[test]
+    fn test_spatial_scale_hierarchical_levels() {
+        // Test Cosmic scale levels
+        let cosmic_levels = SpatialScale::Cosmic.hierarchical_levels();
+        assert_eq!(cosmic_levels, vec!["Universe", "Galaxy", "System", "World", "Moon", "Continent", "Region"]);
+        assert_eq!(SpatialScale::Cosmic.max_depth(), 6);
+        
+        // Test Planetary scale levels
+        let planetary_levels = SpatialScale::Planetary.hierarchical_levels();
+        assert_eq!(planetary_levels, vec!["World", "Continent", "Country", "City", "District", "Building", "Room"]);
+        assert_eq!(SpatialScale::Planetary.max_depth(), 6);
+        
+        // Test Intimate scale levels
+        let intimate_levels = SpatialScale::Intimate.hierarchical_levels();
+        assert_eq!(intimate_levels, vec!["Building", "Floor", "Room", "Area", "Furniture", "Container"]);
+        assert_eq!(SpatialScale::Intimate.max_depth(), 5);
+    }
+    
+    #[test]
+    fn test_spatial_scale_level_names() {
+        // Test Cosmic scale level names
+        assert_eq!(SpatialScale::Cosmic.level_name(0), Some("Universe"));
+        assert_eq!(SpatialScale::Cosmic.level_name(1), Some("Galaxy"));
+        assert_eq!(SpatialScale::Cosmic.level_name(6), Some("Region"));
+        assert_eq!(SpatialScale::Cosmic.level_name(10), None);
+        
+        // Test Planetary scale level names
+        assert_eq!(SpatialScale::Planetary.level_name(0), Some("World"));
+        assert_eq!(SpatialScale::Planetary.level_name(3), Some("City"));
+        assert_eq!(SpatialScale::Planetary.level_name(6), Some("Room"));
+        
+        // Test Intimate scale level names
+        assert_eq!(SpatialScale::Intimate.level_name(0), Some("Building"));
+        assert_eq!(SpatialScale::Intimate.level_name(2), Some("Room"));
+        assert_eq!(SpatialScale::Intimate.level_name(5), Some("Container"));
+    }
+    
+    #[test]
+    fn test_spatial_scale_entity_appropriateness() {
+        // Test Cosmic scale appropriateness
+        assert!(SpatialScale::Cosmic.is_appropriate_for_entity("star"));
+        assert!(SpatialScale::Cosmic.is_appropriate_for_entity("galaxy"));
+        assert!(SpatialScale::Cosmic.is_appropriate_for_entity("spaceship"));
+        assert!(!SpatialScale::Cosmic.is_appropriate_for_entity("chair"));
+        
+        // Test Planetary scale appropriateness
+        assert!(SpatialScale::Planetary.is_appropriate_for_entity("city"));
+        assert!(SpatialScale::Planetary.is_appropriate_for_entity("building"));
+        assert!(SpatialScale::Planetary.is_appropriate_for_entity("country"));
+        assert!(!SpatialScale::Planetary.is_appropriate_for_entity("furniture"));
+        
+        // Test Intimate scale appropriateness
+        assert!(SpatialScale::Intimate.is_appropriate_for_entity("room"));
+        assert!(SpatialScale::Intimate.is_appropriate_for_entity("furniture"));
+        assert!(SpatialScale::Intimate.is_appropriate_for_entity("container"));
+        assert!(!SpatialScale::Intimate.is_appropriate_for_entity("galaxy"));
+    }
+    
+    #[test]
+    fn test_spatial_archetype_component_creation() {
+        // Test valid creation
+        let galaxy_archetype = SpatialArchetypeComponent::new(
+            SpatialScale::Cosmic,
+            1,
+            "Galaxy".to_string(),
+        ).unwrap();
+        
+        assert_eq!(galaxy_archetype.scale, SpatialScale::Cosmic);
+        assert_eq!(galaxy_archetype.hierarchical_level, 1);
+        assert_eq!(galaxy_archetype.archetype_name, "Galaxy");
+        assert!(galaxy_archetype.position_data.is_none());
+        assert_eq!(SpatialArchetypeComponent::component_type(), "SpatialArchetype");
+        
+        // Test invalid hierarchical level
+        let invalid_level = SpatialArchetypeComponent::new(
+            SpatialScale::Cosmic,
+            10,
+            "Invalid".to_string(),
+        );
+        assert!(invalid_level.is_err());
+        
+        // Test invalid archetype name
+        let invalid_name = SpatialArchetypeComponent::new(
+            SpatialScale::Cosmic,
+            1,
+            "Wrong".to_string(),
+        );
+        assert!(invalid_name.is_err());
+    }
+    
+    #[test]
+    fn test_spatial_archetype_with_position() {
+        use serde_json::json;
+        
+        let position_data = json!({
+            "coordinates": [12.5, 48.2, 0.0],
+            "rotation": 45.0
+        });
+        
+        let room_archetype = SpatialArchetypeComponent::with_position(
+            SpatialScale::Intimate,
+            2,
+            "Room".to_string(),
+            position_data.clone(),
+        ).unwrap();
+        
+        assert_eq!(room_archetype.scale, SpatialScale::Intimate);
+        assert_eq!(room_archetype.hierarchical_level, 2);
+        assert_eq!(room_archetype.archetype_name, "Room");
+        assert_eq!(room_archetype.position_data, Some(position_data));
+    }
+    
+    #[test]
+    fn test_spatial_archetype_parent_child_relationships() {
+        let galaxy_archetype = SpatialArchetypeComponent::new(
+            SpatialScale::Cosmic,
+            1,
+            "Galaxy".to_string(),
+        ).unwrap();
+        
+        let system_archetype = SpatialArchetypeComponent::new(
+            SpatialScale::Cosmic,
+            2,
+            "System".to_string(),
+        ).unwrap();
+        
+        // Test expected parent/child levels
+        assert_eq!(galaxy_archetype.expected_parent_level(), Some("Universe"));
+        assert_eq!(galaxy_archetype.expected_child_level(), Some("System"));
+        assert_eq!(system_archetype.expected_parent_level(), Some("Galaxy"));
+        assert_eq!(system_archetype.expected_child_level(), Some("World"));
+        
+        // Test containment relationships
+        assert!(galaxy_archetype.can_contain(&system_archetype));
+        assert!(!system_archetype.can_contain(&galaxy_archetype));
+    }
+    
+    #[test]
+    fn test_spatial_archetype_cross_scale_containment() {
+        let galaxy_archetype = SpatialArchetypeComponent::new(
+            SpatialScale::Cosmic,
+            1,
+            "Galaxy".to_string(),
+        ).unwrap();
+        
+        let room_archetype = SpatialArchetypeComponent::new(
+            SpatialScale::Intimate,
+            2,
+            "Room".to_string(),
+        ).unwrap();
+        
+        // Different scales cannot contain each other
+        assert!(!galaxy_archetype.can_contain(&room_archetype));
+        assert!(!room_archetype.can_contain(&galaxy_archetype));
+    }
+    
+    #[test]
+    fn test_spatial_archetype_serialization() {
+        let archetype = SpatialArchetypeComponent::new(
+            SpatialScale::Planetary,
+            3,
+            "City".to_string(),
+        ).unwrap();
+        
+        let json_value = archetype.to_json().unwrap();
+        let deserialized = SpatialArchetypeComponent::from_json(&json_value).unwrap();
+        
+        assert_eq!(archetype, deserialized);
+    }
+    
+    #[test]
+    fn test_spatial_scale_serialization() {
+        let scales = vec![SpatialScale::Cosmic, SpatialScale::Planetary, SpatialScale::Intimate];
+        
+        for scale in scales {
+            let json = serde_json::to_string(&scale).unwrap();
+            let deserialized: SpatialScale = serde_json::from_str(&json).unwrap();
+            assert_eq!(scale, deserialized);
+        }
+    }
+    
+    #[test]
+    fn test_cosmic_scale_star_wars_example() {
+        // Test Star Wars bounty hunter scenario: Galaxy -> System -> Planet
+        let galaxy = SpatialArchetypeComponent::new(
+            SpatialScale::Cosmic,
+            1,
+            "Galaxy".to_string(),
+        ).unwrap();
+        
+        let system = SpatialArchetypeComponent::new(
+            SpatialScale::Cosmic,
+            2,
+            "System".to_string(),
+        ).unwrap();
+        
+        let world = SpatialArchetypeComponent::new(
+            SpatialScale::Cosmic,
+            3,
+            "World".to_string(),
+        ).unwrap();
+        
+        // Verify containment hierarchy
+        assert!(galaxy.can_contain(&system));
+        assert!(system.can_contain(&world));
+        assert!(!world.can_contain(&system));
+        
+        // Verify levels
+        assert_eq!(galaxy.expected_child_level(), Some("System"));
+        assert_eq!(system.expected_parent_level(), Some("Galaxy"));
+        assert_eq!(world.expected_parent_level(), Some("System"));
+    }
+    
+    #[test]
+    fn test_intimate_scale_office_example() {
+        // Test office worker scenario: Building -> Floor -> Room -> Area
+        let building = SpatialArchetypeComponent::new(
+            SpatialScale::Intimate,
+            0,
+            "Building".to_string(),
+        ).unwrap();
+        
+        let floor = SpatialArchetypeComponent::new(
+            SpatialScale::Intimate,
+            1,
+            "Floor".to_string(),
+        ).unwrap();
+        
+        let room = SpatialArchetypeComponent::new(
+            SpatialScale::Intimate,
+            2,
+            "Room".to_string(),
+        ).unwrap();
+        
+        // Verify containment hierarchy
+        assert!(building.can_contain(&floor));
+        assert!(floor.can_contain(&room));
+        assert!(!room.can_contain(&floor));
+        
+        // Test root level (Building has no parent)
+        assert_eq!(building.expected_parent_level(), None);
+        assert_eq!(building.hierarchical_level, 0);
     }
 }

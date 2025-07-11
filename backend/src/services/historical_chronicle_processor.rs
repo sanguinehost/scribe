@@ -28,8 +28,7 @@ use crate::{
     config::NarrativeFeatureFlags,
     errors::AppError,
     models::{
-        chronicle::PlayerChronicle,
-        chronicle_event::{ChronicleEvent, EventFilter},
+        chronicle_event::ChronicleEvent,
         chronicle_processing_job::{
             ChronicleProcessingJob, NewChronicleProcessingJob, UpdateChronicleProcessingJob,
             ChronicleJobStatus, ChronicleJobStats,
@@ -37,16 +36,14 @@ use crate::{
     },
     services::{
         chronicle_service::ChronicleService,
-        chronicle_ecs_translator::{ChronicleEcsTranslator, TranslationResult},
+        chronicle_ecs_translator::ChronicleEcsTranslator,
         ecs_entity_manager::EcsEntityManager,
     },
-    schema::chronicle_processing_jobs,
 };
 
 use diesel::prelude::*;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use bigdecimal::ToPrimitive;
 
 /// Simple count result for raw SQL queries
 #[derive(diesel::QueryableByName)]
@@ -760,7 +757,7 @@ impl HistoricalChronicleProcessor {
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         
         conn.interact(move |conn| {
-            use crate::schema::chronicle_processing_jobs::dsl::*;
+            
             
             // Use raw SQL to avoid enum QueryId issues, with string interpolation for limit
             let query_sql = format!(

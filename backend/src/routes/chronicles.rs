@@ -8,7 +8,6 @@ use axum::{
     Router,
 };
 use axum_login::AuthSession;
-use futures::future::try_join_all;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;

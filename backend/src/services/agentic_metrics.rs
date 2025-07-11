@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
-use tracing::{info, debug, instrument};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::services::agentic_orchestrator::QualityMode;

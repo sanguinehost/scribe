@@ -1,5 +1,6 @@
 use scribe_backend::services::agentic_orchestrator::*;
-use scribe_backend::test_helpers::MockAiClient;
+use scribe_backend::services::{AgenticStateUpdateService, EcsEntityManager};
+use scribe_backend::test_helpers::{MockAiClient, MockQdrantClientService};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -76,6 +77,7 @@ async fn test_orchestrator_complete_pipeline() {
         chronicle_id: Some(Uuid::new_v4()),
         token_budget: 4000,
         quality_mode: QualityMode::Balanced,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -152,6 +154,7 @@ async fn test_orchestrator_fast_quality_mode() {
         chronicle_id: None,
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -249,6 +252,7 @@ async fn test_orchestrator_thorough_quality_mode() {
         chronicle_id: Some(Uuid::new_v4()),
         token_budget: 6000,
         quality_mode: QualityMode::Thorough,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -351,6 +355,7 @@ async fn test_orchestrator_spatial_analysis() {
         chronicle_id: Some(Uuid::new_v4()),
         token_budget: 3000,
         quality_mode: QualityMode::Balanced,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -430,6 +435,7 @@ async fn test_orchestrator_token_budget_management() {
         chronicle_id: Some(Uuid::new_v4()),
         token_budget: 1500, // Tight budget
         quality_mode: QualityMode::Balanced,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -518,6 +524,7 @@ async fn test_orchestrator_error_handling() {
         chronicle_id: None,
         token_budget: 4000,
         quality_mode: QualityMode::Balanced,
+        user_dek: None,
     };
 
     let result = orchestrator.process_query(request).await;
@@ -593,6 +600,7 @@ async fn test_orchestrator_access_control_user_isolation() {
         chronicle_id: None,
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -675,6 +683,7 @@ async fn test_orchestrator_sensitive_data_exposure() {
         chronicle_id: None,
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -748,6 +757,7 @@ async fn test_orchestrator_injection_prevention() {
             chronicle_id: None,
             token_budget: 2000,
             quality_mode: QualityMode::Fast,
+            user_dek: None,
         };
 
         let response = orchestrator.process_query(request).await.unwrap();
@@ -822,6 +832,7 @@ async fn test_orchestrator_token_budget_limits() {
         chronicle_id: None,
         token_budget: 100, // Very low budget
         quality_mode: QualityMode::Fast,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -896,6 +907,7 @@ async fn test_orchestrator_configuration_validation() {
         chronicle_id: None,
         token_budget: u32::MAX, // Extreme value
         quality_mode: QualityMode::Fast,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -958,6 +970,7 @@ async fn test_orchestrator_user_validation() {
         chronicle_id: None,
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -1031,6 +1044,7 @@ async fn test_orchestrator_audit_logging() {
         chronicle_id: None,
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
+        user_dek: None,
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -1050,9 +1064,19 @@ async fn create_test_orchestrator(ai_client: Arc<MockAiClient>) -> AgenticOrches
     let db_pool = Arc::new(test_app.db_pool);
     let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone());
     
+    let test_qdrant_service = MockQdrantClientService::new();
+    let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
+        ai_client.clone(),
+        Arc::new(EcsEntityManager::new(
+            db_pool.clone(),
+            Arc::new(test_qdrant_service),
+            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+        )),
+    ));
     AgenticOrchestrator::new(
         ai_client,
         Arc::new(hybrid_query_service),
         db_pool,
+        agentic_state_update_service,
     )
 }

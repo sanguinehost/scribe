@@ -162,6 +162,38 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                 chronicle_service,
             ))
         },
+        // Add missing fields for WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
+        world_model_service: Arc::new(scribe_backend::services::WorldModelService::new(
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+        )),
+        agentic_orchestrator: {
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let world_model_service = Arc::new(scribe_backend::services::WorldModelService::new(
+                Arc::new(test_app.db_pool.clone()),
+                feature_flags.clone(),
+            ));
+            let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                Arc::new(test_app.db_pool.clone()),
+                feature_flags.clone(),
+            ));
+            Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+                Arc::new(test_app.db_pool.clone()),
+                feature_flags,
+                entity_manager,
+                agentic_state_update_service,
+            ))
+        },
+        agentic_state_update_service: Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+            Arc::new(test_app.db_pool.clone()),
+            Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+        )),
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
