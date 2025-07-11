@@ -15,14 +15,11 @@ use scribe_backend::{
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
     models::{
         chronicle_event::{ChronicleEvent, NewChronicleEvent, EventSource},
-        narrative_ontology::{EventActor, ActorRole, NarrativeAction},
         ecs::{RelationshipCategory},
         ecs_diesel::{NewEcsEntity},
     },
     services::chronicle_ecs_translator::ChronicleEcsTranslator,
-    errors::AppError,
     schema::{chronicle_events, ecs_entities, ecs_entity_relationships},
-    PgPool,
 };
 use diesel::prelude::*;
 
@@ -82,6 +79,7 @@ async fn test_translate_event_with_causality_basic() {
     let previous_event = NewChronicleEvent {
         chronicle_id,
         user_id: user.id,
+        sequence_number: 1,
         event_type: "COMBAT_INITIATION".to_string(),
         summary: "Hero draws sword".to_string(),
         source: EventSource::AiExtracted.to_string(),
@@ -115,6 +113,7 @@ async fn test_translate_event_with_causality_basic() {
         id: current_event_id,
         chronicle_id,
         user_id: user.id,
+        sequence_number: 2,
         event_type: "COMBAT_ACTION".to_string(),
         summary: "Hero attacks monster".to_string(),
         source: EventSource::AiExtracted.to_string(),
@@ -207,6 +206,7 @@ async fn test_chronicle_event_causality_update() {
     let previous_event = NewChronicleEvent {
         chronicle_id,
         user_id: user.id,
+        sequence_number: 1,
         event_type: "CAUSE".to_string(),
         summary: "Hero casts spell".to_string(),
         source: EventSource::AiExtracted.to_string(),
@@ -238,6 +238,7 @@ async fn test_chronicle_event_causality_update() {
         id: current_event_id,
         chronicle_id,
         user_id: user.id,
+        sequence_number: 2,
         event_type: "EFFECT".to_string(),
         summary: "Monster takes fire damage".to_string(),
         source: EventSource::AiExtracted.to_string(),
@@ -265,6 +266,7 @@ async fn test_chronicle_event_causality_update() {
         let current_event_new = NewChronicleEvent {
             chronicle_id: current_event.chronicle_id,
             user_id: current_event.user_id,
+            sequence_number: current_event.sequence_number,
             event_type: current_event.event_type.clone(),
             summary: current_event.summary.clone(),
             source: current_event.source.clone(),
@@ -360,6 +362,7 @@ async fn test_causal_relationship_creation() {
         id: Uuid::new_v4(),
         chronicle_id,
         user_id: user.id,
+        sequence_number: 2,
         event_type: "ATTACK".to_string(),
         summary: "Hero strikes monster with sword".to_string(),
         source: EventSource::AiExtracted.to_string(),
@@ -390,6 +393,7 @@ async fn test_causal_relationship_creation() {
         id: Uuid::new_v4(),
         chronicle_id,
         user_id: user.id,
+        sequence_number: 1,
         event_type: "PREPARATION".to_string(),
         summary: "Hero prepares for battle".to_string(),
         source: EventSource::AiExtracted.to_string(),
@@ -491,6 +495,7 @@ async fn test_translator_access_control() {
         id: Uuid::new_v4(),
         chronicle_id,
         user_id: user2.id, // Event belongs to user2
+        sequence_number: 1,
         event_type: "UNAUTHORIZED_ACCESS".to_string(),
         summary: "Trying to access another user's entity".to_string(),
         source: EventSource::AiExtracted.to_string(),
@@ -568,6 +573,7 @@ async fn test_translator_injection_resistance() {
         id: Uuid::new_v4(),
         chronicle_id,
         user_id: user.id,
+        sequence_number: 1,
         event_type: "'; DROP TABLE ecs_entities; --".to_string(),
         summary: "'; DELETE FROM ecs_entity_relationships; --".to_string(),
         source: EventSource::AiExtracted.to_string(),
@@ -668,6 +674,7 @@ async fn test_translator_data_integrity() {
         id: Uuid::new_v4(),
         chronicle_id,
         user_id: user.id,
+        sequence_number: 1,
         event_type: "INTEGRITY_TEST".to_string(),
         summary: "Testing data integrity during translation".to_string(),
         source: EventSource::AiExtracted.to_string(),
@@ -771,6 +778,7 @@ async fn test_translator_performance_limits() {
         id: Uuid::new_v4(),
         chronicle_id,
         user_id: user.id,
+        sequence_number: 1,
         event_type: "PERFORMANCE_TEST".to_string(),
         summary: "Testing translation performance".to_string(),
         source: EventSource::AiExtracted.to_string(),
