@@ -8,7 +8,6 @@
 // - OWASP security compliance
 
 use std::sync::Arc;
-use uuid::Uuid;
 use chrono::Duration;
 
 use scribe_backend::{

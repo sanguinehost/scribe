@@ -4,28 +4,18 @@
 
 use std::sync::Arc;
 use uuid::Uuid;
-use chrono::Utc;
-use secrecy::SecretBox;
 
 use scribe_backend::{
-    auth::session_dek::SessionDek,
-    models::{
-        chats::{ChatMessage, MessageRole},
-        chronicle_event::{CreateEventRequest, EventSource},
-    },
     services::{
         agentic::{
-            factory::AgenticNarrativeFactory,
             narrative_tools::CreateChronicleEventTool,
             tools::ScribeTool,
         },
         ChronicleService,
-        LorebookService,
-        EncryptionService,
     },
     state::AppState,
     state_builder::AppStateServicesBuilder,
-    test_helpers::{TestDataGuard, MockAiClient},
+    test_helpers::TestDataGuard,
 };
 use serde_json::json;
 

@@ -3,7 +3,6 @@
 //! Tests the integration of ECS entity generation into the re-chronicle pipeline.
 //! This is a simple test to verify the compilation and basic integration works.
 
-use uuid::Uuid;
 
 // Test that the enhanced ReChronicleResponse includes ECS entity count
 #[tokio::test]

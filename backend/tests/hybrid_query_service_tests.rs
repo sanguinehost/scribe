@@ -11,8 +11,8 @@ use scribe_backend::{
     services::{
         hybrid_query_service::{
             HybridQueryService, HybridQueryConfig, HybridQuery, HybridQueryType,
-            HybridQueryOptions, EntityTimelineContext, RelationshipAnalysis,
-            RelationshipMetrics, RelationshipTrend, HybridQuerySummary, QueryPerformanceMetrics
+            HybridQueryOptions, RelationshipAnalysis,
+            RelationshipMetrics, RelationshipTrend, QueryPerformanceMetrics
         },
         ecs_enhanced_rag_service::{EcsEnhancedRagService, EcsEnhancedRagConfig},
         ecs_graceful_degradation::{EcsGracefulDegradation, GracefulDegradationConfig},
@@ -20,10 +20,8 @@ use scribe_backend::{
         embeddings::service::EmbeddingPipelineService,
     },
     test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestDataGuard},
-    errors::AppError,
 };
 use std::sync::Arc;
-use tokio::time::Duration;
 use uuid::Uuid;
 use serde_json::json;
 use chrono::Utc;

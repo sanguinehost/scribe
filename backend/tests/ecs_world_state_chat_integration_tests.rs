@@ -51,8 +51,8 @@ pub struct EcsWorldStateTestContext {
 
 impl EcsWorldStateTestContext {
     /// Create a complete test context with user, character, session, chronicle, and ECS entities
-    pub async fn setup() -> anyhow::Result<Self> {
-        let app = spawn_app_permissive_rate_limiting(false, false, false).await;
+    pub async fn setup(enable_ecs: bool) -> anyhow::Result<Self> {
+        let app = spawn_app_permissive_rate_limiting(true, enable_ecs, true).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         // Create test user
@@ -241,13 +241,20 @@ impl EcsWorldStateTestContext {
                     .values(&NewEcsEntity {
                         id: test_entity_id,
                         user_id: user.id,
-                        archetype_signature: "character|position|health|inventory".to_string(),
+                        archetype_signature: "character|position|health|inventory|name".to_string(),
                     })
                     .execute(conn)?;
 
                 // Create test components for the entity
                 diesel::insert_into(ecs_components::table)
                     .values(&vec![
+                        NewEcsComponent {
+                            id: Uuid::new_v4(),
+                            entity_id: test_entity_id,
+                            user_id: user.id,
+                            component_type: "name".to_string(),
+                            component_data: json!({"name": "Test Hero"}),
+                        },
                         NewEcsComponent {
                             id: Uuid::new_v4(),
                             entity_id: test_entity_id,
@@ -286,41 +293,28 @@ impl EcsWorldStateTestContext {
         })
     }
 
-    /// Enable ECS enhanced RAG feature flag
-    pub async fn enable_ecs_feature(&self) {
-        // Update the feature flags in the app state to enable ECS
-        let mut feature_flags = NarrativeFeatureFlags::development();
-        feature_flags.enable_ecs_enhanced_rag = true;
-        
-        // Note: In a real test we'd need to update the app state's feature flags
-        // For now, we assume the test app has ECS enabled by default
-    }
-
-    /// Disable ECS enhanced RAG feature flag  
-    pub async fn disable_ecs_feature(&self) {
-        // Update the feature flags in the app state to disable ECS
-        let mut feature_flags = NarrativeFeatureFlags::development();
-        feature_flags.enable_ecs_enhanced_rag = false;
-        
-        // Note: In a real test we'd need to update the app state's feature flags
-    }
-
     /// Send a chat message and return the response using direct service call to bypass auth
     pub async fn send_chat_message(&self, message: &str) -> anyhow::Result<axum::response::Response> {
-        // Instead of making HTTP request, let's directly test the world state generation logic
-        // by calling the chat generation service with mocked data
-        let history = vec![ApiChatMessage {
-            role: "user".to_string(),
-            content: message.to_string(),
-        }];
+        let request_body = GenerateChatRequest {
+            session_id: self.session.id,
+            character_id: self.character.id,
+            messages: vec![ApiChatMessage {
+                role: "user".to_string(),
+                content: message.to_string(),
+            }],
+            stream: false,
+            options: None,
+        };
 
-        // Simulate calling the generation service directly to test ECS world state integration
-        // For now, return a successful mock response since we're testing the service layer separately
-        let mock_response = axum::response::Response::builder()
-            .status(200)
-            .body(Body::from("Mock response"))?;
-        
-        Ok(mock_response)
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/chats/{}/generate", self.session.id))
+            .header(header::COOKIE, &self.auth_cookie)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_string(&request_body)?))?;
+
+        let response = self.app.app.clone().oneshot(request).await?;
+        Ok(response)
     }
 
     /// Extract the system prompt from the mock AI client's last request
@@ -358,7 +352,7 @@ impl EcsWorldStateTestContext {
 
 #[tokio::test]
 async fn test_ecs_world_state_included_when_enabled_and_chronicle_linked() {
-    let context = EcsWorldStateTestContext::setup().await.unwrap();
+    let context = EcsWorldStateTestContext::setup(true).await.unwrap();
     
     // Create the WorldModelService independently for testing
     let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -402,7 +396,6 @@ async fn test_ecs_world_state_included_when_enabled_and_chronicle_linked() {
     ));
     
     let world_model_service = Arc::new(scribe_backend::services::WorldModelService::new(
-        Arc::new(context.app.db_pool.clone()),
         entity_manager.clone(),
         hybrid_query_service,
         chronicle_service,
@@ -471,10 +464,7 @@ async fn test_ecs_world_state_included_when_enabled_and_chronicle_linked() {
 
 #[tokio::test] 
 async fn test_ecs_world_state_excluded_when_feature_disabled() {
-    let context = EcsWorldStateTestContext::setup().await.unwrap();
-    
-    // Disable ECS feature
-    context.disable_ecs_feature().await;
+    let context = EcsWorldStateTestContext::setup(false).await.unwrap();
     
     // Send a chat message  
     let response = context.send_chat_message("What's happening?").await.unwrap();
@@ -496,7 +486,7 @@ async fn test_ecs_world_state_excluded_when_feature_disabled() {
 
 #[tokio::test]
 async fn test_ecs_world_state_excluded_when_no_chronicle_linked() {
-    let mut context = EcsWorldStateTestContext::setup().await.unwrap();
+    let mut context = EcsWorldStateTestContext::setup(true).await.unwrap();
     
     // Create a new session WITHOUT a linked chronicle
     let session_without_chronicle = context.app.db_pool.get().await.unwrap()
@@ -538,8 +528,6 @@ async fn test_ecs_world_state_excluded_when_no_chronicle_linked() {
     // Update context to use the new session
     context.session = session_without_chronicle;
     
-    // Ensure ECS is enabled
-    context.enable_ecs_feature().await;
     
     // Send a chat message
     let response = context.send_chat_message("Hello there!").await.unwrap();
@@ -561,10 +549,7 @@ async fn test_ecs_world_state_excluded_when_no_chronicle_linked() {
 
 #[tokio::test]
 async fn test_graceful_degradation_when_world_state_generation_fails() {
-    let context = EcsWorldStateTestContext::setup().await.unwrap();
-    
-    // Ensure ECS is enabled
-    context.enable_ecs_feature().await;
+    let context = EcsWorldStateTestContext::setup(true).await.unwrap();
     
     // TODO: Mock WorldModelService to fail world state generation
     // This would require dependency injection or a way to make the service fail
@@ -581,10 +566,7 @@ async fn test_graceful_degradation_when_world_state_generation_fails() {
 
 #[tokio::test]
 async fn test_world_state_coexists_with_existing_rag_content() {
-    let context = EcsWorldStateTestContext::setup().await.unwrap();
-    
-    // Ensure ECS is enabled
-    context.enable_ecs_feature().await;
+    let context = EcsWorldStateTestContext::setup(true).await.unwrap();
     
     // Mock embedding pipeline to return some RAG content
     context.app.mock_embedding_pipeline_service
@@ -645,10 +627,7 @@ async fn test_world_state_coexists_with_existing_rag_content() {
 
 #[tokio::test]
 async fn test_world_state_content_structure_and_format() {
-    let context = EcsWorldStateTestContext::setup().await.unwrap();
-    
-    // Ensure ECS is enabled
-    context.enable_ecs_feature().await;
+    let context = EcsWorldStateTestContext::setup(true).await.unwrap();
     
     // Send a chat message
     let response = context.send_chat_message("What entities are present?").await.unwrap();
@@ -690,10 +669,7 @@ async fn test_world_state_content_structure_and_format() {
 
 #[tokio::test]  
 async fn test_performance_impact_of_world_state_generation() {
-    let context = EcsWorldStateTestContext::setup().await.unwrap();
-    
-    // Ensure ECS is enabled
-    context.enable_ecs_feature().await;
+    let context = EcsWorldStateTestContext::setup(true).await.unwrap();
     
     // Measure response time with world state generation
     let start_time = std::time::Instant::now();
@@ -716,10 +692,7 @@ async fn test_performance_impact_of_world_state_generation() {
 #[tokio::test]
 #[ignore] // Mark as ignored since this requires manual verification of logs
 async fn test_world_state_logging_and_observability() {
-    let context = EcsWorldStateTestContext::setup().await.unwrap();
-    
-    // Ensure ECS is enabled
-    context.enable_ecs_feature().await;
+    let context = EcsWorldStateTestContext::setup(true).await.unwrap();
     
     // Send a chat message
     let response = context.send_chat_message("Test logging").await.unwrap();

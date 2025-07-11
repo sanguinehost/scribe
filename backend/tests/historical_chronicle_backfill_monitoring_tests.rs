@@ -6,7 +6,6 @@
 
 use std::sync::Arc;
 use uuid::Uuid;
-use chrono::Utc;
 
 use scribe_backend::{
     config::NarrativeFeatureFlags,

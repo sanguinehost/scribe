@@ -11,7 +11,7 @@ use scribe_backend::{
     services::{
         chronicle_ecs_consistency_monitor::{
             ChronicleEcsConsistencyMonitor, ConsistencyMonitorConfig, ConsistencyCheckResult,
-            InconsistencyType, InconsistencySeverity, StateReconstructionResult, HealthStatus
+            InconsistencyType, InconsistencySeverity, HealthStatus
         },
         chronicle_ecs_translator::ChronicleEcsTranslator,
         ecs_entity_manager::{EcsEntityManager, EntityManagerConfig},
@@ -19,7 +19,6 @@ use scribe_backend::{
     test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestDataGuard},
 };
 use std::sync::Arc;
-use tokio::time::Duration;
 use uuid::Uuid;
 
 /// Test creating a consistency monitor with default configuration

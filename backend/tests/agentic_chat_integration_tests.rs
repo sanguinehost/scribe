@@ -2,125 +2,140 @@
 // Tests for agentic orchestrator integration with chat generation flow
 
 use scribe_backend::{
-    services::{AgenticRequest, QualityMode},
-    test_helpers::{TestDataGuard, spawn_app},
-    models::chats::{CreateChatSessionPayload, MessageRole, GenerateChatRequest},
+    models::chats::{ApiChatMessage, ChatMode, CreateChatSessionPayload, GenerateChatRequest},
+    test_helpers::{db, login_user_via_api, TestDataGuard},
 };
-use reqwest;
 use serde_json::json;
 use uuid::Uuid;
 
 #[tokio::test]
 async fn test_agentic_orchestration_triggered_for_complex_query() -> anyhow::Result<()> {
-    let _guard = TestDataGuard::new().await?;
-    let app = spawn_app().await;
+    let app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
+    let mut guard = TestDataGuard::new(app.db_pool.clone());
+
+    // Create user and character
+    let user = db::create_test_user(&app.db_pool, "testuser".to_string(), "password123".to_string()).await?;
+    guard.add_user(user.id);
+    let character_db = db::create_test_character(&app.db_pool, user.id, "Test Character".to_string()).await?;
+    guard.add_character(character_db.id);
 
     // Create authenticated session
-    let auth_response = app.post_json("/api/auth/login", &json!({
-        "email": "test@example.com",
-        "password": "password123"
-    })).await;
-    assert_eq!(auth_response.status(), 200);
-
-    // Create character for testing
-    let character_response = app.post_json("/api/characters", &json!({
-        "name": "Test Character",
-        "description": "A character for testing agentic integration",
-        "system_prompt": "You are a helpful character.",
-        "avatar_url": null,
-        "is_public": false
-    })).await;
-    assert_eq!(character_response.status(), 201);
-    let character: serde_json::Value = character_response.json().await?;
-    let character_id = character["id"].as_str().unwrap();
+    let (client, _) = login_user_via_api(&app, "testuser", "password123").await;
 
     // Create chat session
     let session_payload = CreateChatSessionPayload {
-        character_id: Some(Uuid::parse_str(character_id)?),
-        title: None,
+        character_id: Some(character_db.id),
+        active_custom_persona_id: None,
+        chat_mode: Some(ChatMode::Character),
     };
-    let session_response = app.post_json("/api/chat/create_session", &session_payload).await;
+    let session_response = client
+        .post(&format!("{}/api/chat/create_session", app.address))
+        .json(&session_payload)
+        .send()
+        .await?;
     assert_eq!(session_response.status(), 201);
     let session: serde_json::Value = session_response.json().await?;
     let session_id = session["id"].as_str().unwrap();
+    guard.add_chat(Uuid::parse_str(session_id)?);
 
     // Send a complex query that should trigger agentic orchestration
     let complex_query = "I'm really struggling with understanding how Luke's departure affected the group dynamics and relationships. Can you help me analyze the emotional cascading effects across all the characters involved and how their motivations have shifted since then?";
-    
+
     let generate_request = GenerateChatRequest {
-        content: complex_query.to_string(),
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: complex_query.to_string(),
+        }],
+        model: None,
+        query_text_for_rag: None,
     };
 
-    let generate_response = app.post_json(
-        &format!("/api/chat/{}/generate", session_id),
-        &generate_request,
-    ).await;
+    let generate_response = client
+        .post(&format!("{}/api/chat/{}/generate", app.address, session_id))
+        .header("Accept", "text/event-stream")
+        .json(&generate_request)
+        .send()
+        .await?;
 
     assert_eq!(generate_response.status(), 200);
 
     // Verify that the response contains content
     let response_text = generate_response.text().await?;
-    assert!(!response_text.is_empty(), "Should receive non-empty response from agentic-enhanced chat");
+    assert!(
+        !response_text.is_empty(),
+        "Should receive non-empty response from agentic-enhanced chat"
+    );
 
     // Check if agentic context was used by examining logs or response quality
     // For a more complex query like this, the response should be more contextually rich
-    assert!(response_text.len() > 100, "Complex queries should generate substantial responses");
+    assert!(
+        response_text.len() > 100,
+        "Complex queries should generate substantial responses"
+    );
 
+    guard.cleanup().await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_agentic_orchestration_skipped_for_simple_query() -> anyhow::Result<()> {
-    let _guard = TestDataGuard::new().await?;
-    let app = spawn_app().await;
+    let app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
+    let mut guard = TestDataGuard::new(app.db_pool.clone());
+
+    // Create user and character
+    let user = db::create_test_user(&app.db_pool, "testuser2".to_string(), "password123".to_string()).await?;
+    guard.add_user(user.id);
+    let character_db = db::create_test_character(&app.db_pool, user.id, "Test Character 2".to_string()).await?;
+    guard.add_character(character_db.id);
 
     // Create authenticated session
-    let auth_response = app.post_json("/api/auth/login", &json!({
-        "email": "test@example.com",
-        "password": "password123"
-    })).await;
-    assert_eq!(auth_response.status(), 200);
-
-    // Create character for testing
-    let character_response = app.post_json("/api/characters", &json!({
-        "name": "Test Character",
-        "description": "A character for testing agentic integration",
-        "system_prompt": "You are a helpful character.",
-        "avatar_url": null,
-        "is_public": false
-    })).await;
-    assert_eq!(character_response.status(), 201);
-    let character: serde_json::Value = character_response.json().await?;
-    let character_id = character["id"].as_str().unwrap();
+    let (client, _) = login_user_via_api(&app, "testuser2", "password123").await;
 
     // Create chat session
     let session_payload = CreateChatSessionPayload {
-        character_id: Some(Uuid::parse_str(character_id)?),
-        title: None,
+        character_id: Some(character_db.id),
+        active_custom_persona_id: None,
+        chat_mode: Some(ChatMode::Character),
     };
-    let session_response = app.post_json("/api/chat/create_session", &session_payload).await;
+    let session_response = client
+        .post(&format!("{}/api/chat/create_session", app.address))
+        .json(&session_payload)
+        .send()
+        .await?;
     assert_eq!(session_response.status(), 201);
     let session: serde_json::Value = session_response.json().await?;
     let session_id = session["id"].as_str().unwrap();
+    guard.add_chat(Uuid::parse_str(session_id)?);
 
     // Send a simple query that should skip agentic orchestration
     let simple_query = "Hi!";
-    
+
     let generate_request = GenerateChatRequest {
-        content: simple_query.to_string(),
+        history: vec![ApiChatMessage {
+            role: "user".to_string(),
+            content: simple_query.to_string(),
+        }],
+        model: None,
+        query_text_for_rag: None,
     };
 
-    let generate_response = app.post_json(
-        &format!("/api/chat/{}/generate", session_id),
-        &generate_request,
-    ).await;
+    let generate_response = client
+        .post(&format!("{}/api/chat/{}/generate", app.address, session_id))
+        .header("Accept", "text/event-stream")
+        .json(&generate_request)
+        .send()
+        .await?;
 
     assert_eq!(generate_response.status(), 200);
 
     // Verify that the response is received even without agentic processing
     let response_text = generate_response.text().await?;
-    assert!(!response_text.is_empty(), "Should receive response even for simple queries");
+    assert!(
+        !response_text.is_empty(),
+        "Should receive response even for simple queries"
+    );
 
+    guard.cleanup().await?;
     Ok(())
 }
 
@@ -209,9 +224,7 @@ fn test_build_conversation_context_from_history() {
 fn test_calculate_agentic_token_budget() {
     use scribe_backend::routes::chat::{calculate_agentic_token_budget, ChatGenerateQueryParams};
     
-    let query_params = ChatGenerateQueryParams {
-        request_thinking: false,
-    };
+    let query_params: ChatGenerateQueryParams = serde_json::from_value(json!({})).unwrap();
     
     let budget = calculate_agentic_token_budget(&query_params);
     assert_eq!(budget, 5000, "Should return default token budget");
@@ -222,9 +235,7 @@ fn test_determine_quality_mode() {
     use scribe_backend::routes::chat::{determine_quality_mode, ChatGenerateQueryParams};
     use scribe_backend::services::QualityMode;
     
-    let query_params = ChatGenerateQueryParams {
-        request_thinking: false,
-    };
+    let query_params: ChatGenerateQueryParams = serde_json::from_value(json!({})).unwrap();
     
     let quality_mode = determine_quality_mode(&query_params);
     assert_eq!(quality_mode, QualityMode::Balanced, "Should return default balanced quality mode");
@@ -233,7 +244,7 @@ fn test_determine_quality_mode() {
 #[test]
 fn test_merge_orchestrated_context() {
     use scribe_backend::routes::chat::{merge_orchestrated_context};
-    use scribe_backend::services::embeddings::{RetrievedChunk, RetrievedMetadata, ChronicleEventMetadata};
+    use scribe_backend::services::embeddings::RetrievedMetadata;
     
     // Test with empty context
     let existing_chunks = vec![];

@@ -28,7 +28,6 @@ use scribe_backend::{
     },
     test_helpers::{spawn_app_permissive_rate_limiting, TestDataGuard, TestApp},
     auth::session_dek::SessionDek,
-    errors::AppError,
 };
 
 /// Performance benchmark results
@@ -227,6 +226,7 @@ impl PerformanceBenchmarks {
                     "sequence": i + 1,
                     "benchmark": true
                 })),
+                timestamp_iso8601: Some(Utc::now()),
             };
 
             match self.chronicle_service.create_event(
@@ -472,13 +472,14 @@ impl PerformanceBenchmarks {
                 summary: format!("Large dataset event {} with complex relationships", i + 1),
                 source: EventSource::UserAdded,
                 event_data: Some(json!({
-                    "content": format!("Character {} interacts with character {} at location {}", 
+                    "content": format!("Character {} interacts with character {} at location {}",
                                      i % 10, (i + 1) % 10, i % 5),
                     "character_a": format!("character_{}", i % 10),
                     "character_b": format!("character_{}", (i + 1) % 10),
                     "location": format!("location_{}", i % 5),
                     "relationship_change": (i as f32 % 2.0) - 1.0, // Random trust change
                 })),
+                timestamp_iso8601: Some(Utc::now()),
             };
 
             let _ = self.chronicle_service.create_event(
@@ -878,6 +879,7 @@ async fn performance_smoke_test() -> AnyhowResult<()> {
         summary: "Quick performance smoke test event".to_string(),
         source: EventSource::UserAdded,
         event_data: Some(json!({"test": true})),
+        timestamp_iso8601: Some(Utc::now()),
     };
     
     let _event = benchmarks.chronicle_service.create_event(
