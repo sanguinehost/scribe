@@ -1064,13 +1064,13 @@ async fn create_test_orchestrator(ai_client: Arc<MockAiClient>) -> AgenticOrches
     let db_pool = Arc::new(test_app.db_pool);
     let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone());
     
-    let test_qdrant_service = MockQdrantClientService::new();
+    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
     let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
             db_pool.clone(),
-            Arc::new(test_qdrant_service),
-            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            redis_client,
+            None,
         )),
     ));
     AgenticOrchestrator::new(

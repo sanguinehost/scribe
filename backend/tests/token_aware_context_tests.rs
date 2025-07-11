@@ -7,7 +7,7 @@ use scribe_backend::{
         hybrid_token_counter::HybridTokenCounter,
         tokenizer_service::TokenizerService, QualityMode,
     },
-    test_helpers::{spawn_app_with_options, TestApp, TestOptions},
+    test_helpers::{spawn_app_with_options, TestApp},
 };
 use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent};
 use std::sync::Arc;
@@ -77,7 +77,7 @@ fn create_test_messages() -> Vec<GenAiChatMessage> {
 
 #[tokio::test]
 async fn test_build_token_aware_conversation_context_basic() {
-    let _app = spawn_app_with_options(TestOptions::default()).await;
+    let _app = spawn_app_with_options(false, false, false, false).await;
     let token_counter = create_test_token_counter();
     let messages = create_test_messages();
     
@@ -101,7 +101,7 @@ async fn test_build_token_aware_conversation_context_basic() {
 
 #[tokio::test]
 async fn test_build_token_aware_conversation_context_empty_history() {
-    let _app = spawn_app_with_options(TestOptions::default()).await;
+    let _app = spawn_app_with_options(false, false, false, false).await;
     let token_counter = create_test_token_counter();
     let empty_messages: Vec<GenAiChatMessage> = vec![];
     
@@ -119,7 +119,7 @@ async fn test_build_token_aware_conversation_context_empty_history() {
 
 #[tokio::test]
 async fn test_build_token_aware_conversation_context_small_budget() {
-    let _app = spawn_app_with_options(TestOptions::default()).await;
+    let _app = spawn_app_with_options(false, false, false, false).await;
     let token_counter = create_test_token_counter();
     let messages = create_test_messages();
     
@@ -145,7 +145,7 @@ async fn test_build_token_aware_conversation_context_small_budget() {
 
 #[tokio::test]
 async fn test_build_token_aware_conversation_context_key_moments() {
-    let _app = spawn_app_with_options(TestOptions::default()).await;
+    let _app = spawn_app_with_options(false, false, false, false).await;
     let token_counter = create_test_token_counter();
     
     // Create messages with high importance markers
@@ -185,7 +185,7 @@ async fn test_build_token_aware_conversation_context_key_moments() {
 
 #[tokio::test]
 async fn test_build_token_aware_conversation_context_narrative_gaps() {
-    let _app = spawn_app_with_options(TestOptions::default()).await;
+    let _app = spawn_app_with_options(false, false, false, false).await;
     let token_counter = create_test_token_counter();
     
     // Create a scenario where budget forces gaps in conversation
@@ -279,7 +279,7 @@ async fn test_message_importance_scoring() {
 
 #[tokio::test]
 async fn test_token_aware_context_respects_budget() {
-    let _app = spawn_app_with_options(TestOptions::default()).await;
+    let _app = spawn_app_with_options(false, false, false, false).await;
     let token_counter = create_test_token_counter();
     
     // Create long messages that would exceed budget
@@ -320,7 +320,7 @@ async fn test_token_aware_context_respects_budget() {
 
 #[tokio::test]
 async fn test_token_aware_context_prioritizes_recent_and_user() {
-    let _app = spawn_app_with_options(TestOptions::default()).await;
+    let _app = spawn_app_with_options(false, false, false, false).await;
     let token_counter = create_test_token_counter();
     
     // Create messages where user messages should be prioritized

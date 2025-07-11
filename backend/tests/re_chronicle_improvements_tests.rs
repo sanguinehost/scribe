@@ -70,14 +70,14 @@ async fn test_chronicle_service_batch_operations() {
             summary: "Test event 1".to_string(),
             source: EventSource::AiExtracted,
             event_data: None,
-            timestamp_iso8601: chrono::Utc::now().to_rfc3339(),
+            timestamp_iso8601: Some(chrono::Utc::now()),
         },
         CreateEventRequest {
             event_type: "TEST.EVENT.TWO".to_string(),
             summary: "Test event 2".to_string(),
             source: EventSource::AiExtracted,
             event_data: None,
-            timestamp_iso8601: chrono::Utc::now().to_rfc3339(),
+            timestamp_iso8601: Some(chrono::Utc::now()),
         },
     ];
     

@@ -9,11 +9,9 @@ use scribe_backend::{
     models::{
         chats::{ChatMessage, MessageRole},
         lorebook_dtos::{CreateLorebookPayload},
-        users::User,
     },
     services::{
         agentic::factory::AgenticNarrativeFactory,
-        LorebookService,
     },
     test_helpers::{TestDataGuard, MockAiClient},
     auth::{session_dek::SessionDek},
@@ -163,10 +161,50 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
             ))
         },
         // Add missing fields for WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
-        world_model_service: Arc::new(scribe_backend::services::WorldModelService::new(
-            Arc::new(test_app.db_pool.clone()),
-            Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
-        )),
+        world_model_service: {
+            let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                Default::default(),
+                feature_flags.clone(),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags.clone(),
+                entity_manager.clone(),
+                degradation.clone(),
+                Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                )),
+            ));
+            let query_service = Arc::new(scribe_backend::services::HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags,
+                entity_manager.clone(),
+                rag_service,
+                degradation,
+            ));
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone()));
+            Arc::new(scribe_backend::services::WorldModelService::new(
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager.clone(),
+                query_service.clone(),
+                chronicle_service,
+            ))
+        },
         agentic_orchestrator: {
             let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
             let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -175,25 +213,57 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                 redis_client,
                 None,
             ));
-            let world_model_service = Arc::new(scribe_backend::services::WorldModelService::new(
-                Arc::new(test_app.db_pool.clone()),
+            let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                Default::default(),
                 feature_flags.clone(),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags.clone(),
+                entity_manager.clone(),
+                degradation.clone(),
+                Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                )),
+            ));
+            let hybrid_query_service = Arc::new(scribe_backend::services::HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                feature_flags,
+                entity_manager.clone(),
+                rag_service,
+                degradation,
             ));
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
-                Arc::new(test_app.db_pool.clone()),
-                feature_flags.clone(),
+                test_app.ai_client.clone(),
+                entity_manager,
             ));
             Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+                test_app.ai_client.clone(),
+                hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
-                feature_flags,
-                entity_manager,
-                agentic_state_update_service,
+                agentic_state_update_service.clone(),
             ))
         },
-        agentic_state_update_service: Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
-            Arc::new(test_app.db_pool.clone()),
-            Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
-        )),
+        agentic_state_update_service: {
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                test_app.ai_client.clone(),
+                entity_manager,
+            ))
+        },
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
