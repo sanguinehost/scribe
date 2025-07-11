@@ -92,8 +92,8 @@ async fn test_orchestrator_simple_query_end_to_end() {
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
             db_pool.clone(),
-            Arc::new(test_qdrant_service),
             Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            None,
         )),
     ));
     let orchestrator = AgenticOrchestrator::new(
@@ -220,8 +220,8 @@ async fn test_orchestrator_complex_query_with_chronicle() {
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
             db_pool.clone(),
-            Arc::new(test_qdrant_service),
             Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            None,
         )),
     ));
     let orchestrator = AgenticOrchestrator::new(
@@ -289,8 +289,8 @@ async fn test_orchestrator_error_handling_and_recovery() {
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
             db_pool.clone(),
-            Arc::new(test_qdrant_service),
             Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            None,
         )),
     ));
     let orchestrator = AgenticOrchestrator::new(
@@ -379,8 +379,8 @@ async fn test_orchestrator_metrics_collection() {
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
             db_pool.clone(),
-            Arc::new(test_qdrant_service),
             Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            None,
         )),
     ));
     let orchestrator = AgenticOrchestrator::new(
@@ -473,8 +473,8 @@ async fn test_orchestrator_quality_modes() {
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
             db_pool.clone(),
-            Arc::new(test_qdrant_service),
             Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            None,
         )),
     ));
     let orchestrator = AgenticOrchestrator::new(
@@ -581,8 +581,8 @@ async fn test_orchestrator_token_budget_constraints() {
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
             db_pool.clone(),
-            Arc::new(test_qdrant_service),
             Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+            None,
         )),
     ));
     let orchestrator = AgenticOrchestrator::new(
