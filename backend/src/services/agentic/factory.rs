@@ -60,7 +60,7 @@ impl AgenticNarrativeFactory {
             config.planning_model
         );
 
-        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service, app_state.token_counter.clone())
+        NarrativeAgentRunner::new(app_state.clone(), registry, config, chronicle_service, app_state.token_counter.clone())
     }
 
     /// Create agentic narrative system with individual dependencies (no circular dependency)
@@ -100,7 +100,7 @@ impl AgenticNarrativeFactory {
             config.planning_model
         );
         
-        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service, app_state.token_counter.clone())
+        NarrativeAgentRunner::new(app_state.clone(), registry, config, chronicle_service, app_state.token_counter.clone())
     }
 
     /// Register all core tools in the registry

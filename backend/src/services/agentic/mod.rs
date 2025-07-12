@@ -26,11 +26,10 @@ pub mod persona_context;
 mod narrative_tools_tests;
 
 // Re-export key types for convenience
-pub use agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig, NarrativeWorkflowResult};
+pub use agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig, TriageResult, ActionPlan, PlannedAction, UserPersonaContext};
 pub use factory::AgenticNarrativeFactory;
 pub use registry::ToolRegistry;
 pub use tools::{ScribeTool, ToolError, ToolParams, ToolResult};
-pub use persona_context::UserPersonaContext;
 pub use narrative_tools::{
     CreateChronicleEventTool, CreateLorebookEntryTool, 
     AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,

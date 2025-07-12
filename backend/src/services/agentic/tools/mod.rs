@@ -3,6 +3,7 @@
 pub mod hierarchy_tools;
 pub mod ai_powered_tools;
 pub mod ai_entity_resolution;
+pub mod ai_narrative_analysis;
 
 use async_trait::async_trait;
 use serde_json::Value;

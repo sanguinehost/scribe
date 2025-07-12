@@ -10,7 +10,7 @@ Sanguine Scribe is architected as a **world simulator** - a foundation for persi
 
 **Vision:** We will evolve the system from a reactive "story generator" to a proactive "world simulator." This is achieved through a **Hierarchical Agent Framework** composed of three distinct layers:
 *   **The Strategic Layer ("Director"):** A new, high-level agent for long-term narrative planning.
-*   **The Tactical Layer ("Stage Manager"):** The evolution of the `PreResponseAgent`, responsible for decomposing strategic goals into verifiable steps using a formal planner.
+*   **The Tactical Layer ("Stage Manager"):** The evolution of the `PreResponseAgent`, responsible for decomposing strategic goals into verifiable steps by generating a plan with an LLM and validating it against the world state.
 *   **The Operational Layer ("Actor"):** The existing `RoleplayAI`, which executes the final, concrete generative task.
 
 This ensures every AI response is deeply informed by a dynamic, living world that operates on principles of causal reasoning, transforming Sanguine Scribe into a true digital consciousness substrate.
@@ -28,7 +28,7 @@ This ensures every AI response is deeply informed by a dynamic, living world tha
 
 ### **🔴 Critical Implementation Gaps**
 - **Missing Agent Hierarchy**: No `StrategicAgent`, `TacticalAgent`, or formal agent communication protocol
-- **No Formal Planning Engine**: Current LLM-based planning lacks symbolic reasoning and formal verification
+- **No Validated Planning Loop**: The system lacks a dedicated planning-and-validation loop; agentic actions are generated without being explicitly validated against ECS ground truth before execution.
 - **Missing Pre-Response Integration**: Current agents operate post-chat; no pre-response enrichment pipeline
 - **Incomplete Agent Security**: Security controls need extension to hierarchical agent framework
 - **🚨 Widespread Architectural Inconsistency**: 8+ services bypass Flash abstraction layer with hardcoded AI calls and system prompts
@@ -37,7 +37,7 @@ This ensures every AI response is deeply informed by a dynamic, living world tha
 - **Strategic Layer ("Director")**: 10% - Narrative planning concepts exist but no implementation
 - **Tactical Layer ("Stage Manager")**: 25% - Agent orchestration patterns exist but need hierarchy integration and Flash refactoring
 - **Operational Layer ("Actor")**: 90% - `RoleplayAI` exists and functions well
-- **Planning & Reasoning Cortex**: 5% - Query planning exists but no formal PDDL/HTN integration
+- **Planning & Reasoning Cortex**: 5% - Query planning infrastructure exists, but the LLM-based planning service and the critical `PlanValidator` service are not implemented.
 - **Security Framework**: 85% - Excellent foundation needs agent-specific extensions
 - **🔴 AI Integration Architecture**: 40% - Sophisticated AI logic exists across 8+ services but requires comprehensive Flash integration refactoring
 
@@ -145,13 +145,14 @@ The Living World supports roleplay scenarios spanning from intimate personal int
 
 ### **Tactical Layer Integration**
 
-*   **Responsibility:** To receive abstract directives from the Director, use the **Planning & Reasoning Cortex** to decompose them into a sequence of concrete, verifiable sub-goals, and manage the world state's integrity.
+*   **Responsibility:** To receive abstract directives from the Director, use the **Planning & Reasoning Cortex** to decompose them into a sequence of concrete, *validated* sub-goals, and manage the world state's integrity.
 *   **Workflow:**
     1.  Receives a high-level directive (e.g., "Execute 'Confrontation' scene").
-    2.  Invokes the `PlanningCortex` to generate a valid plan.
-    3.  Takes the *first* step of the plan as the current sub-goal.
-    4.  Uses its toolkit (`find_entity`, etc.) to gather necessary data.
-    5.  Packages the sub-goal and retrieved data into the `EnrichedContext` for the Operational Layer.
+    2.  Invokes the `PlanningCortex` to generate a *proposed* plan (a structured JSON object from an LLM).
+    3.  The `PlanningCortex` then uses its **Symbolic Firewall** (`PlanValidator` service) to verify the entire proposed plan against the current ECS world state.
+    4.  If the plan is valid, the `TacticalAgent` takes the *first* step as the current sub-goal.
+    5.  Uses its toolkit (`find_entity`, etc.) to gather necessary data for the sub-goal.
+    6.  Packages the sub-goal and retrieved data into the `EnrichedContext` for the Operational Layer.
 *   **Perception (Post-Response):** It also incorporates the role of the `PostResponseAgent`, parsing the AI's output to update the world state, ensuring the loop is closed for the next turn.
 
 ### **✅ Dynamic Hierarchy Promotion (IMPLEMENTED)**
@@ -193,14 +194,16 @@ This implementation enables **fully dynamic spatial hierarchies** that automatic
 ### 3. The Operational Layer (The "Actor")
 This is the `RoleplayAI`. It is the execution layer, responsible for taking a single, concrete, short-term sub-goal from the Tactical Layer and performing the final action of generation (e.g., writing the prose for the "attack description").
 
-### 4. The Planning & Reasoning Cortex
-This is a new, formal component that provides the logical reasoning for the Tactical Layer.
+### 4. The Planning & Reasoning Cortex (LLM-as-a-Planner)
+This component provides the logical reasoning for the Tactical Layer by using an LLM to generate plans, which are then rigorously validated. It is not a formal solver, but a pragmatic, AI-driven planning system with a critical validation layer.
 
-**Current State:** The system has sophisticated `QueryStrategyPlanner` and action planning capabilities but lacks formal planning language integration. This provides a foundation for the formal planning engine.
+**Current State:** The system has a `QueryStrategyPlanner` and AI service infrastructure, which provides a foundation for this new model.
 
-*   **Responsibility:** To provide a formal guarantee of plot coherence and causal consistency.
-*   **Implementation:** Uses a formal planning language (e.g., PDDL/HTN) and a solver. It takes the current world state and a goal from the Tactical Layer and produces a provably correct sequence of actions. This acts as a **"symbolic firewall,"** preventing the generative layers from producing logically inconsistent or impossible narrative events.
-*   **Migration Path:** The existing query planning infrastructure can be evolved to support formal planning, leveraging the current world state representation and reasoning capabilities.
+*   **Responsibility:** To provide a guarantee of causal consistency by ensuring all AI-generated plans are valid within the rules of the world state (ECS) before execution.
+*   **Implementation:** This is a two-part system:
+    1.  **The Planner (`PlanningService`):** An AI-driven service that takes a narrative goal and the relevant world state, and uses an LLM (via a structured prompt and an `Action Schema`) to generate a proposed plan as a JSON object.
+    2.  **The Validator (`PlanValidatorService`):** This is the **"Symbolic Firewall."** It takes the LLM's proposed JSON plan and meticulously checks every step against the ground truth of the ECS. It verifies actions, parameters, and preconditions, rejecting any plan that is not 100% consistent with the world's rules.
+*   **Workflow:** The `TacticalAgent` calls the `PlanningService` to get a creative plan, but **no action is taken** until the `PlanValidatorService` has confirmed the entire plan is logically sound.
 
 ## Security & Encryption by Design
 
@@ -215,9 +218,9 @@ This architecture upholds and enhances the project's security posture, adhering 
 
 This new architecture directly addresses the previously identified "Living World Blockers" with greater robustness:
 
-*   **🔴 Entity Resolution is Fundamentally Broken -> ✅ SOLVED:** The Tactical Layer's formal planning process makes entity resolution a prerequisite for any action, ensuring it is handled correctly and consistently.
-*   **🔴 Component Data is Effectively Useless -> ✅ SOLVED:** The planner's preconditions and effects directly operate on component data, making it the central driver of world state changes.
-*   **🔴 No Spatial or Relational Context -> ✅ SOLVED:** The planner can reason about hierarchical spatial relationships (`ParentLink`) and entity relationships as part of its core logic.
+*   **🔴 Entity Resolution is Fundamentally Broken -> ✅ SOLVED:** The Tactical Layer's validated planning process makes entity resolution a prerequisite for any action, ensuring it is handled correctly and consistently.
+*   **🔴 Component Data is Effectively Useless -> ✅ SOLVED:** The plan validator's preconditions and effects directly operate on component data, making it the central driver of world state changes.
+*   **🔴 No Spatial or Relational Context -> ✅ SOLVED:** The planning and validation process can reason about hierarchical spatial relationships (`ParentLink`) and entity relationships as part of its core logic.
 *   **🔴 Chronicle Events Don't Drive World State -> ✅ SOLVED:** The Tactical Layer now directly drives the world state based on the output of a verifiable plan.
 *   **🔴 AI Prompts Are Shallow and Context-Blind -> ✅ SOLVED:** The `prompt_builder` now receives a payload containing a specific, actionable sub-goal derived from a coherent plan, making the Roleplay AI exceptionally context-aware and directed.
 
@@ -229,13 +232,13 @@ This V4 architecture moves Sanguine Scribe from a system that *remembers* to a s
 
 Sanguine Scribe is fundamentally a **Prompt Orchestration Engine** - a sophisticated system designed to craft the perfect `EnrichedContext` payload for Gemini 2.5 Flash/Flash-Lite. This represents a state-of-the-art neuro-symbolic architecture where:
 
-- **Symbolic Layer** (Rust ECS + PDDL): Provides logical consistency, causal reasoning, and world state management
-- **Neural Layer** (Gemini): Provides creativity, prose generation, and narrative flexibility
-- **Orchestration Layer** (Hierarchical Agents): Bridges symbolic and neural through intelligent prompt construction
+- **Symbolic Layer** (Rust ECS + `PlanValidatorService`): Provides logical consistency, causal reasoning, and world state management.
+- **Neural Layer** (Gemini via `PlanningService`): Provides creative plan generation, prose generation, and narrative flexibility.
+- **Orchestration Layer** (Hierarchical Agents): Bridges symbolic and neural through a validated, intelligent prompt construction pipeline.
 
 ### **The "Symbolic Firewall" Principle**
 
-The PDDL Planning Cortex acts as a **"symbolic firewall"** that prevents the generative model from producing logically impossible or narratively inconsistent outputs. The LLM receives prompts that already contain the next valid step from a pre-vetted plan, ensuring:
+The `PlanValidatorService` acts as a **"symbolic firewall"** that prevents the generative model from producing logically impossible or narratively inconsistent outputs. The LLM's creative plan is fully vetted *before* any part of it is used to build the final prompt for the `RoleplayAI`, ensuring:
 
 - **Causal Consistency**: Every action follows logical preconditions
 - **Narrative Coherence**: Events build upon established world state
@@ -252,11 +255,11 @@ The comprehensive gap analysis reveals that Sanguine Scribe has an **excellent f
 
 ### **Implementation Strategy**
 
-1. **Phase 1: Foundation Hardening (4-6 weeks)** - Critical Flash integration refactoring and ECS enhancement
-2. **Phase 2: Proof of Concept (4-6 weeks)** - Implement basic hierarchical agents without formal planning
-3. **Phase 3: Formal Planning Integration (6-8 weeks)** - Add symbolic reasoning capabilities
-4. **Phase 4: Full Hierarchy (8-10 weeks)** - Complete hierarchical communication and autonomous planning
-5. **Phase 5: System Hardening (2-3 weeks)** - Security validation and performance optimization
+1. **Phase 1: Foundation Hardening** - Critical Flash integration refactoring and ECS enhancement
+2. **Phase 2: Proof of Concept** - Implement basic hierarchical agents without a planning loop.
+3. **Phase 3: LLM-based Planning Integration** - Add the AI planning and validation services.
+4. **Phase 4: Full Hierarchy** - Complete hierarchical communication and autonomous planning
+5. **Phase 5: System Hardening** - Security validation and performance optimization
 
 ### **Key Success Factors**
 
@@ -267,7 +270,7 @@ The comprehensive gap analysis reveals that Sanguine Scribe has an **excellent f
 
 ### **Risk Mitigation**
 
-- **Formal Planning Complexity**: Start with simple PDDL before complex HTN integration
+- **Planning & Validation Complexity**: Implement the `PlanValidator` with comprehensive test coverage for all action types and edge cases.
 - **Performance Concerns**: Implement caching and optimization from the beginning
 - **AI Model Limitations**: Design fallback mechanisms for strategic planning failures
 - **🔴 Widespread Architectural Inconsistency**: **CRITICAL** - Refactor 8+ services with hardcoded AI calls to use Flash/Flash-Lite before migration to maintain proper AI abstraction patterns

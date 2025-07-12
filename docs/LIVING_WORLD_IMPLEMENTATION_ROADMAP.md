@@ -255,9 +255,9 @@
     *   **Objective:** Fix the widespread architectural issue where multiple services bypass the Flash abstraction layer.
     *   **🚨 Critical Scope:** Analysis reveals 8+ services with hardcoded AI calls and system prompts
     *   **🎯 Architectural Vision:** This refactoring transforms scattered AI logic into a unified **Prompt Orchestration Engine** where Flash becomes the single, auditable interface to Gemini 2.5 Flash/Flash-Lite
-    *   **[ ] Subtask 1.0.1: Core Agentic Tools (PRIORITY)**
-        *   [ ] **`entity_resolution_tool.rs`**: Replace hardcoded context extraction and entity matching prompts with Flash-Lite
-        *   [ ] **`agent_runner.rs`**: Replace hardcoded narrative analysis and triage prompts with Flash
+    *   **[x] Subtask 1.0.1: Core Agentic Tools (PRIORITY)**
+        *   [x] **`entity_resolution_tool.rs`**: Replace hardcoded context extraction and entity matching prompts with Flash-Lite
+        *   [x] **`agent_runner.rs`**: Replace hardcoded narrative analysis and triage prompts with Flash
         *   [ ] **`narrative_tools.rs`**: Replace hardcoded narrative triage prompts with Flash-Lite
     *   **[ ] Subtask 1.0.2: AI Analysis Services**
         *   [ ] **`intent_detection_service.rs`**: Replace hardcoded intent analysis prompts with Flash
@@ -298,7 +298,7 @@
     *   **Objective:** Replace rigid, rule-based logic within agentic services with more flexible, context-aware AI calls. This is distinct from Task 1.0, which refactors existing *hardcoded AI calls*; this task focuses on converting *non-AI logic* (e.g., `match` statements, string formatting) into intelligent, AI-driven operations.
     *   **🎯 Key Principle:** Let Flash/Flash-Lite make intelligent decisions based on context, rather than following predetermined rules. The AI should analyze, reason, and suggest - not just extract data.
     *   **Current State:** ❌ Not implemented - Several key functions rely on simple string manipulation or hard-coded rules.
-    *   **[ ] Subtask 1.3.1: Implement AI-Powered Chronicle Naming**
+    *   **[x] Subtask 1.3.1: Implement AI-Powered Chronicle Naming**
         *   **File:** `backend/src/services/agentic/agent_runner.rs`
         *   **Logic:** Replace the `generate_chronicle_name` function's string concatenation logic with a Flash call that generates a creative, summary-based name from the `ActionPlan`.
     *   **[ ] Subtask 1.3.2: Implement AI-Powered Entity Component Suggestion**
