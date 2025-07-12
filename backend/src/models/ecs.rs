@@ -1150,6 +1150,350 @@ impl Default for TemporalComponent {
 }
 
 // ============================================================================
+// Entity Salience System (Task 0.2)
+// ============================================================================
+
+/// Entity Salience Tiers for preventing entity explosion across different scales
+/// Differentiates between narratively critical entities and transient background details
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum SalienceTier {
+    /// Core entities: Player Characters, major NPCs, key locations (always tracked)
+    /// - Always exist with full component suite
+    /// - Persistent across sessions
+    /// - Critical to narrative continuity
+    Core,
+    
+    /// Secondary entities: Supporting characters, important items, notable locations (tracked when relevant)
+    /// - Created when player enters relevant scale
+    /// - Simplified components
+    /// - Important but not essential
+    Secondary,
+    
+    /// Flavor entities: Scenery, background details, atmospheric elements (created/destroyed as needed)
+    /// - Generated on-demand
+    /// - Minimal components
+    /// - Garbage collected when out of scope
+    Flavor,
+}
+
+impl SalienceTier {
+    /// Get the string representation of this salience tier
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SalienceTier::Core => "core",
+            SalienceTier::Secondary => "secondary",
+            SalienceTier::Flavor => "flavor",
+        }
+    }
+    
+    /// Parse salience tier from string
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "core" => Some(SalienceTier::Core),
+            "secondary" => Some(SalienceTier::Secondary),
+            "flavor" => Some(SalienceTier::Flavor),
+            _ => None,
+        }
+    }
+    
+    /// Check if this salience tier should be persistent across sessions
+    pub fn is_persistent(&self) -> bool {
+        matches!(self, SalienceTier::Core)
+    }
+    
+    /// Check if this salience tier can be garbage collected when out of scope
+    pub fn can_be_garbage_collected(&self) -> bool {
+        matches!(self, SalienceTier::Flavor)
+    }
+    
+    /// Get the minimum component requirements for this salience tier
+    pub fn minimum_components(&self) -> Vec<&'static str> {
+        match self {
+            SalienceTier::Core => vec!["Name", "Temporal", "Salience"],
+            SalienceTier::Secondary => vec!["Name", "Salience"],
+            SalienceTier::Flavor => vec!["Salience"],
+        }
+    }
+    
+    /// Check if this salience tier should have simplified components
+    pub fn has_simplified_components(&self) -> bool {
+        matches!(self, SalienceTier::Secondary | SalienceTier::Flavor)
+    }
+    
+    /// Get the promotion threshold (how many interactions before considering promotion)
+    pub fn promotion_threshold(&self) -> Option<u32> {
+        match self {
+            SalienceTier::Flavor => Some(3), // Promote to Secondary after 3 meaningful interactions
+            SalienceTier::Secondary => Some(10), // Promote to Core after 10 meaningful interactions
+            SalienceTier::Core => None, // Core entities don't get promoted further
+        }
+    }
+    
+    /// Get the demotion threshold (how long unused before considering demotion)
+    pub fn demotion_threshold_hours(&self) -> Option<u32> {
+        match self {
+            SalienceTier::Core => None, // Core entities never get demoted
+            SalienceTier::Secondary => Some(168), // Demote to Flavor after 1 week of no interaction
+            SalienceTier::Flavor => Some(24), // Garbage collect after 24 hours of no interaction
+        }
+    }
+}
+
+/// Scale-specific salience examples for different spatial contexts
+/// These provide guidance for AI systems on appropriate salience assignment
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SalienceExamples {
+    /// Examples for galactic scale
+    pub galactic_scale: SalienceExampleSet,
+    /// Examples for planetary scale
+    pub planetary_scale: SalienceExampleSet,
+    /// Examples for intimate scale
+    pub intimate_scale: SalienceExampleSet,
+}
+
+impl Default for SalienceExamples {
+    fn default() -> Self {
+        Self {
+            galactic_scale: SalienceExampleSet {
+                core: vec!["Death Star".to_string(), "Main Character's Ship".to_string(), "Player Faction".to_string()],
+                secondary: vec!["Imperial Fleet".to_string(), "Important Star Systems".to_string(), "Major NPCs".to_string()],
+                flavor: vec!["Background starships".to_string(), "Minor space stations".to_string(), "Ambient traffic".to_string()],
+            },
+            planetary_scale: SalienceExampleSet {
+                core: vec!["Player Character".to_string(), "Home Base".to_string(), "Main Quest Location".to_string()],
+                secondary: vec!["Mos Eisley Cantina".to_string(), "Important NPCs".to_string(), "Quest-related locations".to_string()],
+                flavor: vec!["Random moisture farms".to_string(), "Background buildings".to_string(), "Ambient NPCs".to_string()],
+            },
+            intimate_scale: SalienceExampleSet {
+                core: vec!["Player Character".to_string(), "Key NPCs".to_string(), "Important items".to_string()],
+                secondary: vec!["Bartender".to_string(), "Furniture".to_string(), "Notable objects".to_string()],
+                flavor: vec!["Cantina patrons".to_string(), "Decorations".to_string(), "Ambient details".to_string()],
+            },
+        }
+    }
+}
+
+/// Example set for a specific scale
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SalienceExampleSet {
+    pub core: Vec<String>,
+    pub secondary: Vec<String>,
+    pub flavor: Vec<String>,
+}
+
+/// Component that tracks entity salience tier and related metadata
+/// This component determines how persistently an entity should be tracked
+/// and what level of detail should be maintained
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SalienceComponent {
+    /// Current salience tier of this entity
+    pub tier: SalienceTier,
+    
+    /// The spatial scale context where this salience applies
+    pub scale_context: Option<SpatialScale>,
+    
+    /// Number of meaningful interactions this entity has had
+    pub interaction_count: u32,
+    
+    /// Last time this entity was interacted with
+    pub last_interaction: DateTime<Utc>,
+    
+    /// Number of times this entity has been promoted
+    pub promotion_count: u32,
+    
+    /// Number of times this entity has been demoted
+    pub demotion_count: u32,
+    
+    /// Whether this entity's salience was manually set (prevents automatic changes)
+    pub manually_set: bool,
+    
+    /// Reason for current salience tier assignment
+    pub assignment_reason: String,
+    
+    /// Metadata for salience management
+    pub metadata: HashMap<String, JsonValue>,
+}
+
+impl Component for SalienceComponent {
+    fn component_type() -> &'static str {
+        "Salience"
+    }
+}
+
+impl SalienceComponent {
+    /// Create a new salience component with the specified tier
+    pub fn new(tier: SalienceTier) -> Self {
+        Self {
+            tier,
+            scale_context: None,
+            interaction_count: 0,
+            last_interaction: Utc::now(),
+            promotion_count: 0,
+            demotion_count: 0,
+            manually_set: false,
+            assignment_reason: "initial_assignment".to_string(),
+            metadata: HashMap::new(),
+        }
+    }
+    
+    /// Create a new salience component with scale context
+    pub fn with_scale(tier: SalienceTier, scale: SpatialScale) -> Self {
+        let mut component = Self::new(tier);
+        component.scale_context = Some(scale);
+        component
+    }
+    
+    /// Create a core salience entity (always tracked)
+    pub fn core() -> Self {
+        let mut component = Self::new(SalienceTier::Core);
+        component.assignment_reason = "core_entity".to_string();
+        component
+    }
+    
+    /// Create a secondary salience entity (tracked when relevant)
+    pub fn secondary() -> Self {
+        let mut component = Self::new(SalienceTier::Secondary);
+        component.assignment_reason = "secondary_entity".to_string();
+        component
+    }
+    
+    /// Create a flavor salience entity (temporary/atmospheric)
+    pub fn flavor() -> Self {
+        let mut component = Self::new(SalienceTier::Flavor);
+        component.assignment_reason = "flavor_entity".to_string();
+        component
+    }
+    
+    /// Create a salience component with manual assignment (prevents automatic changes)
+    pub fn manual(tier: SalienceTier, reason: String) -> Self {
+        let mut component = Self::new(tier);
+        component.manually_set = true;
+        component.assignment_reason = reason;
+        component
+    }
+    
+    /// Record an interaction with this entity
+    pub fn record_interaction(&mut self) {
+        self.interaction_count += 1;
+        self.last_interaction = Utc::now();
+    }
+    
+    /// Check if this entity should be considered for promotion based on interactions
+    pub fn should_consider_promotion(&self) -> bool {
+        if self.manually_set {
+            return false;
+        }
+        
+        if let Some(threshold) = self.tier.promotion_threshold() {
+            self.interaction_count >= threshold
+        } else {
+            false
+        }
+    }
+    
+    /// Check if this entity should be considered for demotion based on time since last interaction
+    pub fn should_consider_demotion(&self) -> bool {
+        if self.manually_set {
+            return false;
+        }
+        
+        if let Some(threshold_hours) = self.tier.demotion_threshold_hours() {
+            let hours_since_interaction = Utc::now()
+                .signed_duration_since(self.last_interaction)
+                .num_hours() as u32;
+            hours_since_interaction >= threshold_hours
+        } else {
+            false
+        }
+    }
+    
+    /// Promote this entity to the next salience tier
+    pub fn promote(&mut self, reason: String) -> Result<SalienceTier, String> {
+        if self.manually_set {
+            return Err("Cannot promote manually set salience".to_string());
+        }
+        
+        let new_tier = match self.tier {
+            SalienceTier::Flavor => SalienceTier::Secondary,
+            SalienceTier::Secondary => SalienceTier::Core,
+            SalienceTier::Core => return Err("Core entities cannot be promoted further".to_string()),
+        };
+        
+        self.tier = new_tier.clone();
+        self.promotion_count += 1;
+        self.assignment_reason = reason;
+        self.last_interaction = Utc::now();
+        
+        Ok(new_tier)
+    }
+    
+    /// Demote this entity to the next lower salience tier
+    pub fn demote(&mut self, reason: String) -> Result<SalienceTier, String> {
+        if self.manually_set {
+            return Err("Cannot demote manually set salience".to_string());
+        }
+        
+        let new_tier = match self.tier {
+            SalienceTier::Core => SalienceTier::Secondary,
+            SalienceTier::Secondary => SalienceTier::Flavor,
+            SalienceTier::Flavor => return Err("Flavor entities should be garbage collected, not demoted".to_string()),
+        };
+        
+        self.tier = new_tier.clone();
+        self.demotion_count += 1;
+        self.assignment_reason = reason;
+        
+        Ok(new_tier)
+    }
+    
+    /// Check if this entity can be garbage collected
+    pub fn can_be_garbage_collected(&self) -> bool {
+        !self.manually_set && 
+        self.tier.can_be_garbage_collected() && 
+        self.should_consider_demotion()
+    }
+    
+    /// Get the appropriate component set for this salience tier
+    pub fn required_components(&self) -> Vec<&'static str> {
+        self.tier.minimum_components()
+    }
+    
+    /// Add metadata to the salience component
+    pub fn add_metadata(&mut self, key: String, value: JsonValue) {
+        self.metadata.insert(key, value);
+    }
+    
+    /// Get metadata from the salience component
+    pub fn get_metadata(&self, key: &str) -> Option<&JsonValue> {
+        self.metadata.get(key)
+    }
+    
+    /// Update the scale context for this salience component
+    pub fn update_scale_context(&mut self, scale: SpatialScale) {
+        self.scale_context = Some(scale);
+    }
+    
+    /// Check if this salience component is appropriate for the given scale
+    pub fn is_appropriate_for_scale(&self, scale: &SpatialScale) -> bool {
+        match &self.scale_context {
+            Some(current_scale) => current_scale == scale,
+            None => true, // Scale-agnostic entities are appropriate for any scale
+        }
+    }
+    
+    /// Get a summary of this entity's salience status
+    pub fn status_summary(&self) -> String {
+        format!(
+            "{} entity ({} interactions, last: {}, reason: {})",
+            self.tier.as_str(),
+            self.interaction_count,
+            self.last_interaction.format("%Y-%m-%d %H:%M"),
+            self.assignment_reason
+        )
+    }
+}
+
+// ============================================================================
 // Spatial Hierarchy Components
 // ============================================================================
 
@@ -1933,6 +2277,296 @@ mod tests {
         assert_eq!(galaxy.expected_child_level(), Some("System"));
         assert_eq!(system.expected_parent_level(), Some("Galaxy"));
         assert_eq!(world.expected_parent_level(), Some("System"));
+    }
+    
+    #[test]
+    fn test_salience_tier_basic_functionality() {
+        // Test string conversion
+        assert_eq!(SalienceTier::Core.as_str(), "core");
+        assert_eq!(SalienceTier::Secondary.as_str(), "secondary");
+        assert_eq!(SalienceTier::Flavor.as_str(), "flavor");
+        
+        // Test parsing
+        assert_eq!(SalienceTier::from_str("core"), Some(SalienceTier::Core));
+        assert_eq!(SalienceTier::from_str("SECONDARY"), Some(SalienceTier::Secondary));
+        assert_eq!(SalienceTier::from_str("flavor"), Some(SalienceTier::Flavor));
+        assert_eq!(SalienceTier::from_str("invalid"), None);
+        
+        // Test persistence
+        assert!(SalienceTier::Core.is_persistent());
+        assert!(!SalienceTier::Secondary.is_persistent());
+        assert!(!SalienceTier::Flavor.is_persistent());
+        
+        // Test garbage collection
+        assert!(!SalienceTier::Core.can_be_garbage_collected());
+        assert!(!SalienceTier::Secondary.can_be_garbage_collected());
+        assert!(SalienceTier::Flavor.can_be_garbage_collected());
+    }
+    
+    #[test]
+    fn test_salience_tier_component_requirements() {
+        // Test minimum components
+        assert_eq!(SalienceTier::Core.minimum_components(), vec!["Name", "Temporal", "Salience"]);
+        assert_eq!(SalienceTier::Secondary.minimum_components(), vec!["Name", "Salience"]);
+        assert_eq!(SalienceTier::Flavor.minimum_components(), vec!["Salience"]);
+        
+        // Test simplified components
+        assert!(!SalienceTier::Core.has_simplified_components());
+        assert!(SalienceTier::Secondary.has_simplified_components());
+        assert!(SalienceTier::Flavor.has_simplified_components());
+    }
+    
+    #[test]
+    fn test_salience_tier_thresholds() {
+        // Test promotion thresholds
+        assert_eq!(SalienceTier::Flavor.promotion_threshold(), Some(3));
+        assert_eq!(SalienceTier::Secondary.promotion_threshold(), Some(10));
+        assert_eq!(SalienceTier::Core.promotion_threshold(), None);
+        
+        // Test demotion thresholds
+        assert_eq!(SalienceTier::Core.demotion_threshold_hours(), None);
+        assert_eq!(SalienceTier::Secondary.demotion_threshold_hours(), Some(168));
+        assert_eq!(SalienceTier::Flavor.demotion_threshold_hours(), Some(24));
+    }
+    
+    #[test]
+    fn test_salience_component_creation() {
+        // Test basic creation
+        let salience = SalienceComponent::new(SalienceTier::Core);
+        assert_eq!(salience.tier, SalienceTier::Core);
+        assert_eq!(salience.interaction_count, 0);
+        assert!(!salience.manually_set);
+        assert_eq!(salience.assignment_reason, "initial_assignment");
+        
+        // Test convenience constructors
+        let core = SalienceComponent::core();
+        assert_eq!(core.tier, SalienceTier::Core);
+        assert_eq!(core.assignment_reason, "core_entity");
+        
+        let secondary = SalienceComponent::secondary();
+        assert_eq!(secondary.tier, SalienceTier::Secondary);
+        assert_eq!(secondary.assignment_reason, "secondary_entity");
+        
+        let flavor = SalienceComponent::flavor();
+        assert_eq!(flavor.tier, SalienceTier::Flavor);
+        assert_eq!(flavor.assignment_reason, "flavor_entity");
+        
+        // Test manual creation
+        let manual = SalienceComponent::manual(SalienceTier::Core, "player_character".to_string());
+        assert!(manual.manually_set);
+        assert_eq!(manual.assignment_reason, "player_character");
+    }
+    
+    #[test]
+    fn test_salience_component_with_scale() {
+        let salience = SalienceComponent::with_scale(SalienceTier::Secondary, SpatialScale::Planetary);
+        assert_eq!(salience.tier, SalienceTier::Secondary);
+        assert_eq!(salience.scale_context, Some(SpatialScale::Planetary));
+        
+        // Test scale appropriateness
+        assert!(salience.is_appropriate_for_scale(&SpatialScale::Planetary));
+        assert!(!salience.is_appropriate_for_scale(&SpatialScale::Cosmic));
+        
+        // Test scale-agnostic entities
+        let scale_agnostic = SalienceComponent::new(SalienceTier::Core);
+        assert!(scale_agnostic.is_appropriate_for_scale(&SpatialScale::Cosmic));
+        assert!(scale_agnostic.is_appropriate_for_scale(&SpatialScale::Planetary));
+        assert!(scale_agnostic.is_appropriate_for_scale(&SpatialScale::Intimate));
+    }
+    
+    #[test]
+    fn test_salience_component_interactions() {
+        let mut salience = SalienceComponent::new(SalienceTier::Flavor);
+        let initial_time = salience.last_interaction;
+        
+        // Record interaction
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        salience.record_interaction();
+        
+        assert_eq!(salience.interaction_count, 1);
+        assert!(salience.last_interaction > initial_time);
+        
+        // Test promotion consideration
+        assert!(!salience.should_consider_promotion()); // Only 1 interaction, needs 3
+        
+        salience.interaction_count = 3;
+        assert!(salience.should_consider_promotion());
+        
+        // Test manual entities don't get promoted automatically
+        salience.manually_set = true;
+        assert!(!salience.should_consider_promotion());
+    }
+    
+    #[test]
+    fn test_salience_component_promotion() {
+        let mut salience = SalienceComponent::new(SalienceTier::Flavor);
+        
+        // Test successful promotion
+        let result = salience.promote("became_important".to_string());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), SalienceTier::Secondary);
+        assert_eq!(salience.tier, SalienceTier::Secondary);
+        assert_eq!(salience.promotion_count, 1);
+        assert_eq!(salience.assignment_reason, "became_important");
+        
+        // Test promotion from Secondary to Core
+        let result = salience.promote("critical_to_story".to_string());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), SalienceTier::Core);
+        assert_eq!(salience.tier, SalienceTier::Core);
+        assert_eq!(salience.promotion_count, 2);
+        
+        // Test cannot promote Core further
+        let result = salience.promote("already_core".to_string());
+        assert!(result.is_err());
+        assert_eq!(salience.promotion_count, 2);
+        
+        // Test manual entities cannot be promoted
+        let mut manual = SalienceComponent::manual(SalienceTier::Flavor, "manual".to_string());
+        let result = manual.promote("attempt".to_string());
+        assert!(result.is_err());
+        assert_eq!(manual.tier, SalienceTier::Flavor);
+    }
+    
+    #[test]
+    fn test_salience_component_demotion() {
+        let mut salience = SalienceComponent::new(SalienceTier::Core);
+        
+        // Test successful demotion
+        let result = salience.demote("less_important".to_string());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), SalienceTier::Secondary);
+        assert_eq!(salience.tier, SalienceTier::Secondary);
+        assert_eq!(salience.demotion_count, 1);
+        assert_eq!(salience.assignment_reason, "less_important");
+        
+        // Test demotion from Secondary to Flavor
+        let result = salience.demote("rarely_used".to_string());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), SalienceTier::Flavor);
+        assert_eq!(salience.tier, SalienceTier::Flavor);
+        assert_eq!(salience.demotion_count, 2);
+        
+        // Test cannot demote Flavor further
+        let result = salience.demote("already_flavor".to_string());
+        assert!(result.is_err());
+        assert_eq!(salience.demotion_count, 2);
+        
+        // Test manual entities cannot be demoted
+        let mut manual = SalienceComponent::manual(SalienceTier::Core, "manual".to_string());
+        let result = manual.demote("attempt".to_string());
+        assert!(result.is_err());
+        assert_eq!(manual.tier, SalienceTier::Core);
+    }
+    
+    #[test]
+    fn test_salience_component_garbage_collection() {
+        use chrono::Duration;
+        
+        // Test flavor entity that can be garbage collected
+        let mut flavor = SalienceComponent::new(SalienceTier::Flavor);
+        flavor.last_interaction = Utc::now() - Duration::hours(25); // 25 hours ago
+        assert!(flavor.can_be_garbage_collected());
+        
+        // Test recent flavor entity that cannot be garbage collected
+        let recent_flavor = SalienceComponent::new(SalienceTier::Flavor);
+        assert!(!recent_flavor.can_be_garbage_collected());
+        
+        // Test manual entities cannot be garbage collected
+        let mut manual_flavor = SalienceComponent::manual(SalienceTier::Flavor, "manual".to_string());
+        manual_flavor.last_interaction = Utc::now() - Duration::hours(25);
+        assert!(!manual_flavor.can_be_garbage_collected());
+        
+        // Test core and secondary entities cannot be garbage collected
+        let mut core = SalienceComponent::new(SalienceTier::Core);
+        core.last_interaction = Utc::now() - Duration::hours(25);
+        assert!(!core.can_be_garbage_collected());
+        
+        let mut secondary = SalienceComponent::new(SalienceTier::Secondary);
+        secondary.last_interaction = Utc::now() - Duration::hours(200); // 8+ days ago
+        assert!(!secondary.can_be_garbage_collected()); // Secondary can't be garbage collected, only demoted
+    }
+    
+    #[test]
+    fn test_salience_component_metadata() {
+        let mut salience = SalienceComponent::new(SalienceTier::Core);
+        
+        // Test adding metadata
+        salience.add_metadata("narrative_role".to_string(), JsonValue::String("protagonist".to_string()));
+        salience.add_metadata("importance_score".to_string(), JsonValue::Number(95.into()));
+        
+        // Test retrieving metadata
+        assert_eq!(
+            salience.get_metadata("narrative_role"),
+            Some(&JsonValue::String("protagonist".to_string()))
+        );
+        assert_eq!(
+            salience.get_metadata("importance_score"),
+            Some(&JsonValue::Number(95.into()))
+        );
+        assert_eq!(salience.get_metadata("nonexistent"), None);
+    }
+    
+    #[test]
+    fn test_salience_component_required_components() {
+        let core = SalienceComponent::core();
+        let secondary = SalienceComponent::secondary();
+        let flavor = SalienceComponent::flavor();
+        
+        assert_eq!(core.required_components(), vec!["Name", "Temporal", "Salience"]);
+        assert_eq!(secondary.required_components(), vec!["Name", "Salience"]);
+        assert_eq!(flavor.required_components(), vec!["Salience"]);
+    }
+    
+    #[test]
+    fn test_salience_component_status_summary() {
+        let salience = SalienceComponent::core();
+        let summary = salience.status_summary();
+        
+        assert!(summary.contains("core entity"));
+        assert!(summary.contains("0 interactions"));
+        assert!(summary.contains("core_entity"));
+    }
+    
+    #[test]
+    fn test_salience_component_serialization() {
+        let salience = SalienceComponent::with_scale(SalienceTier::Secondary, SpatialScale::Planetary);
+        
+        let json_value = salience.to_json().unwrap();
+        let deserialized = SalienceComponent::from_json(&json_value).unwrap();
+        
+        assert_eq!(salience, deserialized);
+        assert_eq!(SalienceComponent::component_type(), "Salience");
+    }
+    
+    #[test]
+    fn test_salience_examples_default() {
+        let examples = SalienceExamples::default();
+        
+        // Test galactic scale examples
+        assert!(examples.galactic_scale.core.contains(&"Death Star".to_string()));
+        assert!(examples.galactic_scale.secondary.contains(&"Imperial Fleet".to_string()));
+        assert!(examples.galactic_scale.flavor.contains(&"Background starships".to_string()));
+        
+        // Test planetary scale examples
+        assert!(examples.planetary_scale.core.contains(&"Player Character".to_string()));
+        assert!(examples.planetary_scale.secondary.contains(&"Mos Eisley Cantina".to_string()));
+        assert!(examples.planetary_scale.flavor.contains(&"Random moisture farms".to_string()));
+        
+        // Test intimate scale examples
+        assert!(examples.intimate_scale.core.contains(&"Player Character".to_string()));
+        assert!(examples.intimate_scale.secondary.contains(&"Bartender".to_string()));
+        assert!(examples.intimate_scale.flavor.contains(&"Cantina patrons".to_string()));
+    }
+    
+    #[test]
+    fn test_salience_examples_serialization() {
+        let examples = SalienceExamples::default();
+        
+        let json = serde_json::to_string(&examples).unwrap();
+        let deserialized: SalienceExamples = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(examples, deserialized);
     }
     
     #[test]

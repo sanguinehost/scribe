@@ -401,7 +401,7 @@ impl EcsEntityManager {
     ) -> Result<Vec<EntityQueryResult>, AppError> {
         let query_options = EntityQueryOptions {
             criteria: component_criteria,
-            limit,
+            limit: limit.map(|l| l as i64),
             offset,
             sort_by: None,
             min_components: None,
@@ -1611,6 +1611,563 @@ impl EcsEntityManager {
         }
 
         Ok(path)
+    }
+    
+    // ============================================================================
+    // Salience-Aware Entity Management (Task 0.2.2)
+    // ============================================================================
+    
+    /// Create an entity with a specific salience tier
+    /// This method determines the appropriate component set based on salience
+    #[instrument(skip(self, base_components), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn create_entity_with_salience(
+        &self,
+        user_id: Uuid,
+        entity_id: Option<Uuid>,
+        archetype_signature: String,
+        salience_tier: crate::models::ecs::SalienceTier,
+        scale_context: Option<crate::models::ecs::SpatialScale>,
+        base_components: Vec<(String, JsonValue)>,
+    ) -> Result<EntityQueryResult, AppError> {
+        use crate::models::ecs::{SalienceComponent, Component};
+        
+        let entity_id = entity_id.unwrap_or_else(Uuid::new_v4);
+        
+        // Create salience component
+        let salience_component = if let Some(scale) = scale_context {
+            SalienceComponent::with_scale(salience_tier.clone(), scale)
+        } else {
+            SalienceComponent::new(salience_tier.clone())
+        };
+        
+        // Convert salience component to JSON
+        let salience_json = salience_component.to_json()
+            .map_err(|e| AppError::SerializationError(format!("Failed to serialize salience component: {}", e)))?;
+        
+        // Build component list based on salience tier requirements
+        let mut components = base_components;
+        
+        // Always add the salience component
+        components.push(("Salience".to_string(), salience_json));
+        
+        // Add required components for this salience tier if not already present
+        let required_components = salience_tier.minimum_components();
+        for required_type in required_components {
+            if required_type == "Salience" {
+                continue; // Already added
+            }
+            
+            // Check if component is already provided
+            let already_provided = components.iter().any(|(comp_type, _)| comp_type == required_type);
+            if !already_provided {
+                // Add default component based on type
+                let default_component = self.create_default_component(required_type)?;
+                components.push((required_type.to_string(), default_component));
+            }
+        }
+        
+        // Filter components based on salience tier (remove complex components for simplified tiers)
+        if salience_tier.has_simplified_components() {
+            components = self.simplify_components_for_salience(components, &salience_tier);
+        }
+        
+        // Create the entity with all components
+        self.create_entity(user_id, Some(entity_id), archetype_signature, components).await
+    }
+    
+    /// Update an entity's salience tier and adjust its components accordingly
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn update_entity_salience(
+        &self,
+        user_id: Uuid,
+        entity_id: Uuid,
+        new_tier: crate::models::ecs::SalienceTier,
+        reason: String,
+    ) -> Result<(), AppError> {
+        use crate::models::ecs::{SalienceComponent, Component};
+        
+        // Get current entity
+        let entity_result = self.get_entity(user_id, entity_id).await?
+            .ok_or_else(|| AppError::NotFound("Entity not found".to_string()))?;
+        
+        // Find and update salience component
+        let mut salience_component: Option<SalienceComponent> = None;
+        let mut other_components = Vec::new();
+        
+        for comp in &entity_result.components {
+            if comp.component_type == "Salience" {
+                let mut current_salience = SalienceComponent::from_json(&comp.component_data)
+                    .map_err(|e| AppError::SerializationError(format!("Failed to deserialize salience: {}", e)))?;
+                
+                // Update the salience tier
+                match new_tier {
+                    crate::models::ecs::SalienceTier::Core => {
+                        current_salience.tier = crate::models::ecs::SalienceTier::Core;
+                        current_salience.promotion_count += 1;
+                    }
+                    crate::models::ecs::SalienceTier::Secondary => {
+                        if current_salience.tier == crate::models::ecs::SalienceTier::Core {
+                            current_salience.tier = crate::models::ecs::SalienceTier::Secondary;
+                            current_salience.demotion_count += 1;
+                        } else {
+                            current_salience.tier = crate::models::ecs::SalienceTier::Secondary;
+                            current_salience.promotion_count += 1;
+                        }
+                    }
+                    crate::models::ecs::SalienceTier::Flavor => {
+                        current_salience.tier = crate::models::ecs::SalienceTier::Flavor;
+                        current_salience.demotion_count += 1;
+                    }
+                }
+                
+                current_salience.assignment_reason = reason.clone();
+                current_salience.last_interaction = chrono::Utc::now();
+                salience_component = Some(current_salience);
+            } else {
+                other_components.push((comp.component_type.clone(), comp.component_data.clone()));
+            }
+        }
+        
+        let salience_component = salience_component.ok_or_else(|| 
+            AppError::BadRequest("Entity does not have a Salience component".to_string())
+        )?;
+        
+        // Convert updated salience to JSON
+        let salience_json = salience_component.to_json()
+            .map_err(|e| AppError::SerializationError(format!("Failed to serialize updated salience: {}", e)))?;
+        
+        // Add the updated salience component
+        other_components.push(("Salience".to_string(), salience_json));
+        
+        // Adjust components based on new salience tier
+        let adjusted_components = self.adjust_components_for_salience_change(
+            other_components,
+            &salience_component.tier,
+        );
+        
+        // Update the entity with new components
+        let component_updates: Vec<ComponentUpdate> = adjusted_components.into_iter()
+            .map(|(component_type, component_data)| ComponentUpdate {
+                entity_id,
+                component_type,
+                component_data,
+                operation: ComponentOperation::Update,
+            })
+            .collect();
+        
+        self.update_components(user_id, entity_id, component_updates).await?;
+        Ok(())
+    }
+    
+    /// Promote an entity's salience tier based on interaction tracking
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn promote_entity_salience(
+        &self,
+        user_id: Uuid,
+        entity_id: Uuid,
+        reason: String,
+    ) -> Result<Option<crate::models::ecs::SalienceTier>, AppError> {
+        use crate::models::ecs::{SalienceComponent, Component};
+        
+        // Get current entity
+        let entity_result = self.get_entity(user_id, entity_id).await?
+            .ok_or_else(|| AppError::NotFound("Entity not found".to_string()))?;
+        
+        // Find salience component
+        let salience_comp = entity_result.components.iter()
+            .find(|comp| comp.component_type == "Salience")
+            .ok_or_else(|| AppError::BadRequest("Entity does not have a Salience component".to_string()))?;
+        
+        let mut salience_component = SalienceComponent::from_json(&salience_comp.component_data)
+            .map_err(|e| AppError::SerializationError(format!("Failed to deserialize salience: {}", e)))?;
+        
+        // Check if promotion is appropriate
+        if salience_component.should_consider_promotion() {
+            match salience_component.promote(reason) {
+                Ok(new_tier) => {
+                    // Update the entity with new salience tier
+                    self.update_entity_salience(user_id, entity_id, new_tier.clone(), 
+                                               salience_component.assignment_reason.clone()).await?;
+                    Ok(Some(new_tier))
+                }
+                Err(_) => Ok(None), // Promotion not possible or not allowed
+            }
+        } else {
+            Ok(None) // Not ready for promotion
+        }
+    }
+    
+    /// Demote an entity's salience tier based on inactivity
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn demote_entity_salience(
+        &self,
+        user_id: Uuid,
+        entity_id: Uuid,
+        reason: String,
+    ) -> Result<Option<crate::models::ecs::SalienceTier>, AppError> {
+        use crate::models::ecs::{SalienceComponent, Component};
+        
+        // Get current entity
+        let entity_result = self.get_entity(user_id, entity_id).await?
+            .ok_or_else(|| AppError::NotFound("Entity not found".to_string()))?;
+        
+        // Find salience component
+        let salience_comp = entity_result.components.iter()
+            .find(|comp| comp.component_type == "Salience")
+            .ok_or_else(|| AppError::BadRequest("Entity does not have a Salience component".to_string()))?;
+        
+        let mut salience_component = SalienceComponent::from_json(&salience_comp.component_data)
+            .map_err(|e| AppError::SerializationError(format!("Failed to deserialize salience: {}", e)))?;
+        
+        // Check if demotion is appropriate
+        if salience_component.should_consider_demotion() {
+            match salience_component.demote(reason) {
+                Ok(new_tier) => {
+                    // Update the entity with new salience tier
+                    self.update_entity_salience(user_id, entity_id, new_tier.clone(), 
+                                               salience_component.assignment_reason.clone()).await?;
+                    Ok(Some(new_tier))
+                }
+                Err(_) => Ok(None), // Demotion not possible or not allowed
+            }
+        } else {
+            Ok(None) // Not ready for demotion
+        }
+    }
+    
+    /// Find entities that can be garbage collected (Flavor tier entities that are inactive)
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn find_garbage_collectible_entities(
+        &self,
+        user_id: Uuid,
+        scale_context: Option<crate::models::ecs::SpatialScale>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Uuid>, AppError> {
+        use crate::models::ecs::{SalienceComponent, Component};
+        
+        // Query entities with Salience components
+        let query_criteria = vec![ComponentQuery::HasComponent("Salience".to_string())];
+        let options = EntityQueryOptions {
+            criteria: query_criteria,
+            limit: limit.map(|l| l as i64),
+            offset: None,
+            sort_by: None,
+            min_components: None,
+            max_components: None,
+            cache_key: None,
+            cache_ttl: None,
+        };
+        
+        let entities = self.query_entities_advanced(user_id, options).await?;
+        
+        let mut garbage_collectible = Vec::new();
+        
+        for entity_result in entities.entities {
+            if let Some(salience_comp) = entity_result.components.iter()
+                .find(|comp| comp.component_type == "Salience") {
+                
+                if let Ok(salience_component) = SalienceComponent::from_json(&salience_comp.component_data) {
+                    // Check if this entity can be garbage collected
+                    if salience_component.can_be_garbage_collected() {
+                        // If scale context is specified, check if it matches
+                        if let Some(scale) = &scale_context {
+                            if salience_component.is_appropriate_for_scale(scale) {
+                                garbage_collectible.push(entity_result.entity.id);
+                            }
+                        } else {
+                            garbage_collectible.push(entity_result.entity.id);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(garbage_collectible)
+    }
+    
+    /// Garbage collect entities that are eligible for removal
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn garbage_collect_entities(
+        &self,
+        user_id: Uuid,
+        entity_ids: Vec<Uuid>,
+    ) -> Result<usize, AppError> {
+        use crate::models::ecs::{SalienceComponent, Component};
+        
+        let mut collected_count = 0;
+        
+        for entity_id in entity_ids {
+            // Double-check that the entity can be garbage collected
+            if let Ok(Some(entity_result)) = self.get_entity(user_id, entity_id).await {
+                if let Some(salience_comp) = entity_result.components.iter()
+                    .find(|comp| comp.component_type == "Salience") {
+                    
+                    if let Ok(salience_component) = SalienceComponent::from_json(&salience_comp.component_data) {
+                        if salience_component.can_be_garbage_collected() {
+                            // Delete the entity by removing all its components first, then the entity itself
+                            let delete_result = self.delete_entity_internal(user_id, entity_id).await;
+                            match delete_result {
+                                Ok(_) => {
+                                    collected_count += 1;
+                                    info!("Garbage collected entity {} (reason: {})", 
+                                          entity_id, salience_component.assignment_reason);
+                                }
+                                Err(e) => {
+                                    warn!("Failed to garbage collect entity {}: {}", entity_id, e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(collected_count)
+    }
+    
+    /// Record an interaction with an entity to update its salience tracking
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn record_entity_interaction(
+        &self,
+        user_id: Uuid,
+        entity_id: Uuid,
+    ) -> Result<bool, AppError> {
+        use crate::models::ecs::{SalienceComponent, Component};
+        
+        // Get current entity
+        let entity_result = match self.get_entity(user_id, entity_id).await {
+            Ok(Some(result)) => result,
+            Ok(None) | Err(_) => return Ok(false), // Entity doesn't exist, nothing to record
+        };
+        
+        // Find and update salience component
+        if let Some(salience_comp) = entity_result.components.iter()
+            .find(|comp| comp.component_type == "Salience") {
+            
+            let mut salience_component = SalienceComponent::from_json(&salience_comp.component_data)
+                .map_err(|e| AppError::SerializationError(format!("Failed to deserialize salience: {}", e)))?;
+            
+            // Record the interaction
+            salience_component.record_interaction();
+            
+            // Update the component
+            let salience_json = salience_component.to_json()
+                .map_err(|e| AppError::SerializationError(format!("Failed to serialize salience: {}", e)))?;
+            
+            // Update only the salience component
+            let component_update = ComponentUpdate {
+                entity_id,
+                component_type: "Salience".to_string(),
+                component_data: salience_json,
+                operation: ComponentOperation::Update,
+            };
+            
+            self.update_components(user_id, entity_id, vec![component_update]).await?;
+            
+            Ok(true)
+        } else {
+            Ok(false) // No salience component to update
+        }
+    }
+    
+    /// Get entities filtered by salience tier
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn get_entities_by_salience(
+        &self,
+        user_id: Uuid,
+        salience_tier: crate::models::ecs::SalienceTier,
+        scale_context: Option<crate::models::ecs::SpatialScale>,
+        limit: Option<usize>,
+    ) -> Result<Vec<EntityQueryResult>, AppError> {
+        use crate::models::ecs::{SalienceComponent, Component};
+        
+        // Query entities with Salience components
+        let query_criteria = vec![ComponentQuery::HasComponent("Salience".to_string())];
+        let options = EntityQueryOptions {
+            criteria: query_criteria,
+            limit: limit.map(|l| l as i64),
+            offset: None,
+            sort_by: None,
+            min_components: None,
+            max_components: None,
+            cache_key: None,
+            cache_ttl: None,
+        };
+        
+        let entities = self.query_entities_advanced(user_id, options).await?;
+        
+        let mut filtered_entities = Vec::new();
+        
+        for entity_result in entities.entities {
+            if let Some(salience_comp) = entity_result.components.iter()
+                .find(|comp| comp.component_type == "Salience") {
+                
+                if let Ok(salience_component) = SalienceComponent::from_json(&salience_comp.component_data) {
+                    // Check if salience tier matches
+                    if salience_component.tier == salience_tier {
+                        // If scale context is specified, check if it matches
+                        if let Some(scale) = &scale_context {
+                            if salience_component.is_appropriate_for_scale(scale) {
+                                filtered_entities.push(entity_result);
+                            }
+                        } else {
+                            filtered_entities.push(entity_result);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(filtered_entities)
+    }
+    
+    // Helper methods for salience management
+    
+    /// Create a default component of the given type
+    fn create_default_component(&self, component_type: &str) -> Result<JsonValue, AppError> {
+        use crate::models::ecs::{NameComponent, TemporalComponent, Component};
+        use serde_json::json;
+        
+        match component_type {
+            "Name" => {
+                let name_component = NameComponent {
+                    name: "Generated Entity".to_string(),
+                    display_name: "Generated Entity".to_string(),
+                    aliases: Vec::new(),
+                };
+                name_component.to_json()
+                    .map_err(|e| AppError::SerializationError(format!("Failed to serialize name component: {}", e)))
+            }
+            "Temporal" => {
+                let temporal_component = TemporalComponent::default();
+                temporal_component.to_json()
+                    .map_err(|e| AppError::SerializationError(format!("Failed to serialize temporal component: {}", e)))
+            }
+            _ => {
+                // Return empty JSON object for unknown component types
+                Ok(json!({}))
+            }
+        }
+    }
+    
+    /// Simplify components for entities with simplified salience tiers
+    fn simplify_components_for_salience(
+        &self,
+        components: Vec<(String, JsonValue)>,
+        salience_tier: &crate::models::ecs::SalienceTier,
+    ) -> Vec<(String, JsonValue)> {
+        use serde_json::json;
+        
+        if !salience_tier.has_simplified_components() {
+            return components;
+        }
+        
+        // For simplified entities, keep only essential components and simplify complex ones
+        let mut simplified = Vec::new();
+        
+        for (component_type, component_data) in components {
+            match component_type.as_str() {
+                "Salience" | "Name" => {
+                    // Always keep these components as-is
+                    simplified.push((component_type, component_data));
+                }
+                "Temporal" => {
+                    // Simplify temporal component for Secondary/Flavor entities
+                    if *salience_tier == crate::models::ecs::SalienceTier::Flavor {
+                        // Minimal temporal data for flavor entities
+                        simplified.push((component_type, json!({
+                            "created_at": chrono::Utc::now(),
+                            "time_scale": 1.0
+                        })));
+                    } else {
+                        // Keep full temporal for Secondary
+                        simplified.push((component_type, component_data));
+                    }
+                }
+                "Relationships" => {
+                    // Simplify relationships for flavor entities
+                    if *salience_tier == crate::models::ecs::SalienceTier::Flavor {
+                        simplified.push((component_type, json!({
+                            "relationships": []
+                        })));
+                    } else {
+                        simplified.push((component_type, component_data));
+                    }
+                }
+                "Inventory" => {
+                    // Simplify inventory for non-core entities
+                    if *salience_tier != crate::models::ecs::SalienceTier::Core {
+                        simplified.push((component_type, json!({
+                            "items": [],
+                            "capacity": 5
+                        })));
+                    } else {
+                        simplified.push((component_type, component_data));
+                    }
+                }
+                _ => {
+                    // Keep other components but mark them as simplified if needed
+                    simplified.push((component_type, component_data));
+                }
+            }
+        }
+        
+        simplified
+    }
+    
+    /// Adjust components when salience tier changes
+    fn adjust_components_for_salience_change(
+        &self,
+        components: Vec<(String, JsonValue)>,
+        new_salience_tier: &crate::models::ecs::SalienceTier,
+    ) -> Vec<(String, JsonValue)> {
+        // For now, just apply simplification based on new tier
+        self.simplify_components_for_salience(components, new_salience_tier)
+    }
+    
+    /// Internal method to delete an entity and all its components
+    async fn delete_entity_internal(&self, user_id: Uuid, entity_id: Uuid) -> Result<(), AppError> {
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        conn.interact({
+            let user_id = user_id;
+            let entity_id = entity_id;
+            move |conn| -> Result<(), AppError> {
+                conn.transaction(|conn| {
+                    use crate::schema::{ecs_components, ecs_entities};
+                    
+                    // Delete components first (foreign key constraint)
+                    diesel::delete(
+                        ecs_components::table
+                            .filter(ecs_components::entity_id.eq(entity_id))
+                            .filter(ecs_components::user_id.eq(user_id))
+                    )
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    
+                    // Delete the entity
+                    diesel::delete(
+                        ecs_entities::table
+                            .filter(ecs_entities::id.eq(entity_id))
+                            .filter(ecs_entities::user_id.eq(user_id))
+                    )
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    
+                    Ok(())
+                })
+            }
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+        // Clear cache entry for deleted entity
+        let cache_key = format!("entity:{}:{}", user_id, entity_id);
+        let _: Result<(), redis::RedisError> = async {
+            let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
+            conn.del(&cache_key).await
+        }.await;
+
+        Ok(())
     }
 }
 

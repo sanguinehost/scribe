@@ -164,29 +164,49 @@
             *   [x] `multi_scale_integration_tests.rs`: Cross-scale hierarchy validation
             *   [x] `scale_aware_position_tests.rs`: Position system with hierarchical coordinates
 
-*   **[ ] Task 0.2: Define and Implement Entity Salience Tiers**
+*   **[x] Task 0.2: Define and Implement Entity Salience Tiers**
     *   **Objective:** Differentiate between narratively critical entities and transient background details to prevent entity explosion across different scales.
-    *   **Current State:** ❌ Not implemented - requires new component type
-    *   **[ ] Subtask 0.2.1: Create Scale-Aware Salience Component**
-        *   [ ] **`Salience` Component Enum:**
-            *   [ ] **`Core`**: Player Characters, major NPCs, key locations (always tracked)
-            *   [ ] **`Secondary`**: Supporting characters, important items, notable locations (tracked when relevant)
-            *   [ ] **`Flavor`**: Scenery, background details, atmospheric elements (created/destroyed as needed)
-        *   [ ] **Scale-Specific Examples:**
-            *   [ ] **Galactic Scale**: Core = "Death Star", Secondary = "Imperial Fleet", Flavor = "Background starships"
-            *   [ ] **Planetary Scale**: Core = "Tatooine", Secondary = "Mos Eisley", Flavor = "Random moisture farms"
-            *   [ ] **Intimate Scale**: Core = "Player Character", Secondary = "Bartender", Flavor = "Cantina patrons"
-    *   **[ ] Subtask 0.2.2: Implement Scale-Appropriate Entity Management**
-        *   [ ] **Core entities**: Always exist, full component suite, persistent across sessions
-        *   [ ] **Secondary entities**: Created when player enters relevant scale, simplified components
-        *   [ ] **Flavor entities**: Generated on-demand, minimal components, garbage collected when out of scope
-        *   [ ] **Examples:**
-            *   [ ] God-level player: "Entire star systems" become Flavor entities until player focuses on them
-            *   [ ] Office worker: "Other office buildings" are Flavor until player visits them
-    *   **[ ] Subtask 0.2.3: Write Salience Management Tests**
-        *   [ ] Test automatic salience promotion: Flavor → Secondary when player interacts
-        *   [ ] Test salience demotion: Secondary → Flavor when player leaves area
-        *   [ ] Test scale transitions: Office worker suddenly gains cosmic powers (salience rescaling)
+    *   **Current State:** ✅ **COMPLETED** - Full implementation with comprehensive tests
+    *   **[x] Subtask 0.2.1: Create Scale-Aware Salience Component**
+        *   [x] **`Salience` Component Enum:**
+            *   [x] **`Core`**: Player Characters, major NPCs, key locations (always tracked)
+            *   [x] **`Secondary`**: Supporting characters, important items, notable locations (tracked when relevant)
+            *   [x] **`Flavor`**: Scenery, background details, atmospheric elements (created/destroyed as needed)
+        *   [x] **Scale-Specific Examples:**
+            *   [x] **Galactic Scale**: Core = "Death Star", Secondary = "Imperial Fleet", Flavor = "Background starships"
+            *   [x] **Planetary Scale**: Core = "Tatooine", Secondary = "Mos Eisley", Flavor = "Random moisture farms"
+            *   [x] **Intimate Scale**: Core = "Player Character", Secondary = "Bartender", Flavor = "Cantina patrons"
+        *   [x] **Implementation Details:**
+            *   [x] Created `SalienceTier` enum with Core/Secondary/Flavor variants
+            *   [x] Implemented `SalienceComponent` with full lifecycle management
+            *   [x] Added promotion/demotion tracking with interaction counting
+            *   [x] Integrated scale-appropriate assignment with `SpatialScale` awareness
+            *   [x] Created `SalienceExamples` for different scales with automatic assignment logic
+    *   **[x] Subtask 0.2.2: Implement Scale-Appropriate Entity Management**
+        *   [x] **Core entities**: Always exist, full component suite, persistent across sessions
+        *   [x] **Secondary entities**: Created when player enters relevant scale, simplified components
+        *   [x] **Flavor entities**: Generated on-demand, minimal components, garbage collected when out of scope
+        *   [x] **Examples:**
+            *   [x] God-level player: "Entire star systems" become Flavor entities until player focuses on them
+            *   [x] Office worker: "Other office buildings" are Flavor until player visits them
+        *   [x] **Implementation Details:**
+            *   [x] Added `create_entity_with_salience()` for automatic salience assignment
+            *   [x] Implemented `update_entity_salience()` for tier transitions
+            *   [x] Created `promote_entity_salience()` and `demote_entity_salience()` with interaction tracking
+            *   [x] Added `find_garbage_collectible_entities()` and `garbage_collect_entities()` for Flavor cleanup
+            *   [x] Implemented `record_entity_interaction()` for automatic salience tracking
+            *   [x] Added `get_entities_by_salience()` for tier-specific queries
+            *   [x] Created component simplification logic for different salience tiers
+    *   **[x] Subtask 0.2.3: Write Salience Management Tests**
+        *   [x] Test automatic salience promotion: Flavor → Secondary when player interacts
+        *   [x] Test salience demotion: Secondary → Flavor when player leaves area
+        *   [x] Test scale transitions: Office worker suddenly gains cosmic powers (salience rescaling)
+        *   [x] **Comprehensive Test Suite (15 tests):**
+            *   [x] Salience component creation, serialization, promotion/demotion
+            *   [x] Scale-appropriate salience assignment and validation
+            *   [x] Interaction tracking and threshold-based promotion
+            *   [x] Garbage collection eligibility and component simplification
+            *   [x] Examples validation for Cosmic/Planetary/Intimate scales
 
 
 *   [ ] Task 0.3: Make Foundational Tools AI-Driven
