@@ -296,19 +296,22 @@
 
 *   **[ ] Task 1.3: Convert Hardcoded Rule-Based Logic to AI-Driven Tools**
     *   **Objective:** Replace rigid, rule-based logic within agentic services with more flexible, context-aware AI calls. This is distinct from Task 1.0, which refactors existing *hardcoded AI calls*; this task focuses on converting *non-AI logic* (e.g., `match` statements, string formatting) into intelligent, AI-driven operations.
+    *   **🎯 Key Principle:** Let Flash/Flash-Lite make intelligent decisions based on context, rather than following predetermined rules. The AI should analyze, reason, and suggest - not just extract data.
     *   **Current State:** ❌ Not implemented - Several key functions rely on simple string manipulation or hard-coded rules.
     *   **[ ] Subtask 1.3.1: Implement AI-Powered Chronicle Naming**
         *   **File:** `backend/src/services/agentic/agent_runner.rs`
         *   **Logic:** Replace the `generate_chronicle_name` function's string concatenation logic with a Flash call that generates a creative, summary-based name from the `ActionPlan`.
     *   **[ ] Subtask 1.3.2: Implement AI-Powered Entity Component Suggestion**
         *   **File:** `backend/src/services/agentic/entity_resolution_tool.rs`
-        *   **Logic:** Replace the `suggest_components` function's hard-coded `match` statement with a Flash call that analyzes the `NarrativeContext` to suggest more relevant and specific components for an entity.
+        *   **Current:** Hardcoded `match entity.entity_type.as_str() { "CHARACTER" => [...], "LOCATION" => [...] }`
+        *   **New:** Flash analyzes the full `NarrativeContext` and entity properties to intelligently suggest components. E.g., "This wounded soldier needs Health, Position, and MedicalStatus components based on the narrative context."
     *   **[ ] Subtask 1.3.3: Implement AI-Powered Lorebook Entry Merging**
         *   **File:** `backend/src/services/agentic/narrative_tools.rs`
         *   **Logic:** Implement the `UpdateLorebookEntryTool` with a Flash call that performs a "semantic merge" of new information with existing entry content, resolving contradictions and integrating data intelligently.
     *   **[ ] Subtask 1.3.4: Implement AI-Powered Semantic Entity Matching**
         *   **File:** `backend/src/services/agentic/entity_resolution_tool.rs`
-        *   **Logic:** Enhance the `resolve_stage` to use a Flash call for semantic matching of entities, improving its ability to handle aliases, typos, and contextual references beyond simple string comparison.
+        *   **Current:** Simple string comparison: `e.name.eq_ignore_ascii_case(name) || e.aliases.contains(name)`
+        *   **New:** Flash performs semantic matching: "the wounded soldier" == "Private Johnson", "the captain" == "Captain Smith", handling context, roles, and descriptions intelligently.
 
 ---
 
