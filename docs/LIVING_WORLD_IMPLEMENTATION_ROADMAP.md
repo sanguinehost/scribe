@@ -115,7 +115,7 @@
 
 **Current State:** 🟡 **70% Complete** - Strong ECS foundation exists with `SpatialComponent` container/containable relationships
 
-*   **[ ] Task 0.1: Enhance Hierarchical Spatial Model**
+*   **[x] Task 0.1: Enhance Hierarchical Spatial Model**
     *   **Objective:** Extend existing spatial hierarchy to support multi-scale roleplay scenarios from galactic exploration to slice-of-life interactions.
     *   **Current State:** ✅ `SpatialComponent` with sophisticated container/containable relationships already implemented
     *   **[x] Subtask 0.1.1: Add `ParentLink` Component for Explicit Hierarchies**
@@ -129,15 +129,23 @@
             *   [x] **Star Wars Bounty Hunter**: `Universe(Star Wars) → Galaxy(Far Far Away) → System(Tatooine) → World(Tatooine) → Region(Mos Eisley) → Building(Cantina) → Room(Main Hall)`
             *   [x] **Office Worker**: `World(Earth) → Continent(North America) → Country(USA) → City(New York) → District(Manhattan) → Building(Corporate Tower) → Floor(42nd) → Room(Conference Room)`
             *   [x] **Galactic God**: Can move between any level: `Universe → Galaxy → System` etc.
-    *   **[ ] Subtask 0.1.3: Implement Scale-Aware Position System**
-        *   [ ] Enhance `Position` component to work with hierarchical coordinates
-        *   [ ] Support both absolute coordinates (for gods/spaceships) and relative coordinates (for mortals)
-        *   [ ] Example: Position(relative_to: "Tatooine Cantina", coordinates: (15.2, 8.5, 0.0))
-    *   **[ ] Subtask 0.1.4: Write Multi-Scale Integration Tests**
-        *   [ ] Test cosmic hierarchy: Create "Star Wars Universe" → "Outer Rim" → "Tatooine System" → "Tatooine"
-        *   [ ] Test planetary hierarchy: Create "Earth" → "Europe" → "France" → "Paris" → "Apartment"
-        *   [ ] Test entity movement across scales: Player travels from "Tatooine" to "Coruscant" via "Hyperdrive"
-        *   [ ] Test scale-appropriate queries: "What's in this room?" vs "What systems are in this galaxy?"
+    *   **[x] Subtask 0.1.3: Implement Scale-Aware Position System**
+        *   [x] Enhanced `Position` component to work with hierarchical coordinates via `EnhancedPositionComponent`
+        *   [x] Support both absolute coordinates (for gods/spaceships) and relative coordinates (for mortals) via `PositionType` enum
+        *   [x] Example: Position(relative_to: "Tatooine Cantina", coordinates: (15.2, 8.5, 0.0))
+        *   [x] Added `HierarchicalCoordinates` with scale awareness and metadata support
+    *   **[x] Subtask 0.1.4: Write Multi-Scale Integration Tests**
+        *   [x] Test cosmic hierarchy: Create "Star Wars Universe" → "Outer Rim" → "Tatooine System" → "Tatooine"
+        *   [x] Test planetary hierarchy: Create "Earth" → "Europe" → "France" → "Paris" → "Apartment"
+        *   [x] Test entity movement across scales: Player travels from "Tatooine" to "Coruscant" via "Hyperdrive"
+        *   [x] Test scale-appropriate queries: "What's in this room?" vs "What systems are in this galaxy?"
+    *   **[x] Subtask 0.1.5: Implement Dynamic Hierarchy Promotion (ENHANCEMENT)**
+        *   [x] Created `promote_entity_hierarchy()` in `EcsEntityManager` for expanding scope when needed
+        *   [x] Added recursive depth updating with `update_descendant_depths()` for hierarchy restructuring
+        *   [x] Implemented hierarchy path traversal with `get_entity_hierarchy_path()` 
+        *   [x] **Agent-Callable Tools**: Created `PromoteEntityHierarchyTool` and `GetEntityHierarchyTool` for AI systems
+        *   [x] **JSON Interface**: Full JSON schema for agent interaction with hierarchy management
+        *   [x] **Use Case**: When traveling between planets, automatically create solar system as new root entity
 
 *   **[ ] Task 0.2: Define and Implement Entity Salience Tiers**
     *   **Objective:** Differentiate between narratively critical entities and transient background details to prevent entity explosion across different scales.
@@ -163,6 +171,20 @@
         *   [ ] Test salience demotion: Secondary → Flavor when player leaves area
         *   [ ] Test scale transitions: Office worker suddenly gains cosmic powers (salience rescaling)
 
+
+*   [ ] Task 0.3: Make Foundational Tools AI-Driven
+    *   **Objective:** Enhance the core "Atlas" tools with AI capabilities, moving beyond simple ECS wrappers to intelligent, context-aware operations. This addresses the need to make foundational tools AI-driven from the start, rather than only refactoring existing ones later.
+    *   **Current State:** ❌ Not implemented - Existing tools are direct wrappers around ECS logic.
+    *   **[ ] Subtask 0.3.1: Create AI-Powered Hierarchy Tools**
+        *   [ ] **`AnalyzeHierarchyRequestTool`**: Create a new tool that uses Flash-Lite to interpret natural language requests (e.g., "show me the chain of command for this fleet") and translates them into formal queries for `GetEntityHierarchyTool`.
+        *   [ ] **`SuggestHierarchyPromotionTool`**: Create a new tool that uses Flash to analyze narrative events and suggest when a hierarchy promotion is logical (e.g., "The characters have discussed the 'Crimson Fleet' extensively. Suggest promoting it to a `Core` salience entity with its own hierarchy.").
+    *   **[ ] Subtask 0.3.2: Create AI-Powered Salience Management Tool**
+        *   [ ] **`UpdateSalienceTool`**: Create a tool that uses Flash to analyze narrative context from a chat message or event and automatically assign or update an entity's `Salience` tier (`Core`, `Secondary`, `Flavor`).
+        *   [ ] **Use Case**: When a background character ("a bartender") is mentioned repeatedly and becomes important to the plot, this tool would automatically promote them from `Flavor` to `Secondary` or `Core`.
+    *   **[ ] Subtask 0.3.3: Write AI-Tool Integration Tests**
+        *   [ ] Test `AnalyzeHierarchyRequestTool` with various natural language queries.
+        *   [ ] Test `SuggestHierarchyPromotionTool` with narrative snippets that imply a promotion is needed.
+        *   [ ] Test `UpdateSalienceTool` with before/after narrative contexts to verify correct salience assignment.
 ---
 
 ## ➡️ Epic 1: Foundational Refactoring & Decommissioning
@@ -213,6 +235,22 @@
     *   **[ ] Subtask 1.2.1:** Remove `EntityResolutionTool` registration from `backend/src/services/agentic/factory.rs`.
     *   **[ ] Subtask 1.2.2:** Remove the re-export from `backend/src/services/agentic/mod.rs`.
     *   **[ ] Subtask 1.2.3:** Run `cargo check --all-targets` and fix any compilation errors. Note: Current system has good test coverage to catch regressions.
+
+*   **[ ] Task 1.3: Convert Hardcoded Rule-Based Logic to AI-Driven Tools**
+    *   **Objective:** Replace rigid, rule-based logic within agentic services with more flexible, context-aware AI calls. This is distinct from Task 1.0, which refactors existing *hardcoded AI calls*; this task focuses on converting *non-AI logic* (e.g., `match` statements, string formatting) into intelligent, AI-driven operations.
+    *   **Current State:** ❌ Not implemented - Several key functions rely on simple string manipulation or hard-coded rules.
+    *   **[ ] Subtask 1.3.1: Implement AI-Powered Chronicle Naming**
+        *   **File:** `backend/src/services/agentic/agent_runner.rs`
+        *   **Logic:** Replace the `generate_chronicle_name` function's string concatenation logic with a Flash call that generates a creative, summary-based name from the `ActionPlan`.
+    *   **[ ] Subtask 1.3.2: Implement AI-Powered Entity Component Suggestion**
+        *   **File:** `backend/src/services/agentic/entity_resolution_tool.rs`
+        *   **Logic:** Replace the `suggest_components` function's hard-coded `match` statement with a Flash call that analyzes the `NarrativeContext` to suggest more relevant and specific components for an entity.
+    *   **[ ] Subtask 1.3.3: Implement AI-Powered Lorebook Entry Merging**
+        *   **File:** `backend/src/services/agentic/narrative_tools.rs`
+        *   **Logic:** Implement the `UpdateLorebookEntryTool` with a Flash call that performs a "semantic merge" of new information with existing entry content, resolving contradictions and integrating data intelligently.
+    *   **[ ] Subtask 1.3.4: Implement AI-Powered Semantic Entity Matching**
+        *   **File:** `backend/src/services/agentic/entity_resolution_tool.rs`
+        *   **Logic:** Enhance the `resolve_stage` to use a Flash call for semantic matching of entities, improving its ability to handle aliases, typos, and contextual references beyond simple string comparison.
 
 ---
 

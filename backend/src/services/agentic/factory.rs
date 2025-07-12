@@ -17,6 +17,7 @@ use super::{
         SearchKnowledgeBaseTool, UpdateLorebookEntryTool
     },
     entity_resolution_tool::EntityResolutionTool,
+    tools::hierarchy_tools::{PromoteEntityHierarchyTool, GetEntityHierarchyTool},
     registry::ToolRegistry,
 };
 
@@ -148,6 +149,13 @@ impl AgenticNarrativeFactory {
         let entity_resolution_tool = Arc::new(EntityResolutionTool::new(app_state.clone()));
         registry.add_tool(entity_resolution_tool);
 
+        // Hierarchy management tools for ECS
+        let promote_hierarchy_tool = Arc::new(PromoteEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(promote_hierarchy_tool);
+
+        let get_hierarchy_tool = Arc::new(GetEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(get_hierarchy_tool);
+
         info!("Registered {} core tools", registry.list_tools().len());
     }
 
@@ -201,6 +209,13 @@ impl AgenticNarrativeFactory {
         // Entity resolution tool
         let entity_resolution_tool = Arc::new(EntityResolutionTool::new(app_state.clone()));
         registry.add_tool(entity_resolution_tool);
+
+        // Hierarchy management tools for ECS
+        let promote_hierarchy_tool = Arc::new(PromoteEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(promote_hierarchy_tool);
+
+        let get_hierarchy_tool = Arc::new(GetEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(get_hierarchy_tool);
 
         info!("Registered {} core tools", registry.list_tools().len());
     }

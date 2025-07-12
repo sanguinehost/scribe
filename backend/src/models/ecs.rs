@@ -206,6 +206,306 @@ impl Component for PositionComponent {
     }
 }
 
+// ============================================================================
+// Scale-Aware Position System (Task 0.1.3)
+// ============================================================================
+
+/// Hierarchical coordinates that work with the spatial hierarchy
+/// Support both absolute coordinates (for gods/spaceships) and relative coordinates (for mortals)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HierarchicalCoordinates {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    /// The spatial scale this position operates within
+    pub scale: SpatialScale,
+    /// Extensible metadata for scale-specific information
+    pub metadata: serde_json::Map<String, serde_json::Value>,
+}
+
+impl HierarchicalCoordinates {
+    /// Create new hierarchical coordinates
+    pub fn new(x: f64, y: f64, z: f64, scale: SpatialScale) -> Self {
+        Self {
+            x,
+            y,
+            z,
+            scale,
+            metadata: serde_json::Map::new(),
+        }
+    }
+    
+    /// Create hierarchical coordinates with metadata
+    pub fn with_metadata(
+        x: f64, 
+        y: f64, 
+        z: f64, 
+        scale: SpatialScale, 
+        metadata: serde_json::Map<String, serde_json::Value>
+    ) -> Self {
+        Self {
+            x,
+            y,
+            z,
+            scale,
+            metadata,
+        }
+    }
+    
+    /// Convert to absolute coordinates for calculations
+    pub fn to_absolute(&self) -> (f64, f64, f64) {
+        (self.x, self.y, self.z)
+    }
+    
+    /// Check if these coordinates are at the same scale as another
+    pub fn same_scale(&self, other: &HierarchicalCoordinates) -> bool {
+        self.scale == other.scale
+    }
+    
+    /// Calculate distance to another coordinate (if same scale)
+    pub fn distance_to(&self, other: &HierarchicalCoordinates) -> Option<f64> {
+        if !self.same_scale(other) {
+            return None;
+        }
+        
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        let dz = self.z - other.z;
+        
+        Some((dx * dx + dy * dy + dz * dz).sqrt())
+    }
+}
+
+/// Position types supporting both absolute and relative positioning
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PositionType {
+    /// Absolute coordinates for entities that can exist independently (gods, spaceships)
+    Absolute {
+        coordinates: HierarchicalCoordinates,
+    },
+    /// Relative coordinates for entities contained within others (mortals, objects)
+    Relative {
+        relative_to_entity: Uuid,
+        coordinates: HierarchicalCoordinates,
+    },
+}
+
+impl PositionType {
+    /// Get the coordinates regardless of position type
+    pub fn coordinates(&self) -> &HierarchicalCoordinates {
+        match self {
+            PositionType::Absolute { coordinates } => coordinates,
+            PositionType::Relative { coordinates, .. } => coordinates,
+        }
+    }
+    
+    /// Get mutable coordinates regardless of position type
+    pub fn coordinates_mut(&mut self) -> &mut HierarchicalCoordinates {
+        match self {
+            PositionType::Absolute { coordinates } => coordinates,
+            PositionType::Relative { coordinates, .. } => coordinates,
+        }
+    }
+    
+    /// Check if this is an absolute position
+    pub fn is_absolute(&self) -> bool {
+        matches!(self, PositionType::Absolute { .. })
+    }
+    
+    /// Check if this is a relative position
+    pub fn is_relative(&self) -> bool {
+        matches!(self, PositionType::Relative { .. })
+    }
+    
+    /// Get the parent entity ID if this is a relative position
+    pub fn parent_entity(&self) -> Option<Uuid> {
+        match self {
+            PositionType::Relative { relative_to_entity, .. } => Some(*relative_to_entity),
+            PositionType::Absolute { .. } => None,
+        }
+    }
+}
+
+/// Enhanced position component with hierarchical and scale-aware positioning
+/// Supports both absolute coordinates (for gods/spaceships) and relative coordinates (for mortals)
+/// Example: Position(relative_to: "Tatooine Cantina", coordinates: (15.2, 8.5, 0.0))
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EnhancedPositionComponent {
+    /// The position type (absolute or relative)
+    pub position_type: PositionType,
+    /// Movement constraints for this entity
+    pub movement_constraints: Vec<String>,
+    /// Last time this position was updated
+    pub last_updated: DateTime<Utc>,
+}
+
+impl Component for EnhancedPositionComponent {
+    fn component_type() -> &'static str {
+        "EnhancedPosition"
+    }
+}
+
+impl EnhancedPositionComponent {
+    /// Create a new absolute position
+    pub fn absolute(coordinates: HierarchicalCoordinates) -> Self {
+        Self {
+            position_type: PositionType::Absolute { coordinates },
+            movement_constraints: Vec::new(),
+            last_updated: Utc::now(),
+        }
+    }
+    
+    /// Create a new relative position
+    pub fn relative(relative_to_entity: Uuid, coordinates: HierarchicalCoordinates) -> Self {
+        Self {
+            position_type: PositionType::Relative {
+                relative_to_entity,
+                coordinates,
+            },
+            movement_constraints: Vec::new(),
+            last_updated: Utc::now(),
+        }
+    }
+    
+    /// Create an enhanced position with movement constraints
+    pub fn with_constraints(
+        position_type: PositionType,
+        movement_constraints: Vec<String>,
+    ) -> Self {
+        Self {
+            position_type,
+            movement_constraints,
+            last_updated: Utc::now(),
+        }
+    }
+    
+    /// Convert a basic PositionComponent to an EnhancedPositionComponent
+    pub fn from_basic_position(basic: &PositionComponent, scale: SpatialScale) -> Self {
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("zone".to_string(), serde_json::Value::String(basic.zone.clone()));
+        
+        let coordinates = HierarchicalCoordinates::with_metadata(
+            basic.x,
+            basic.y,
+            basic.z,
+            scale,
+            metadata,
+        );
+        
+        Self::absolute(coordinates)
+    }
+    
+    /// Get coordinates regardless of position type
+    pub fn coordinates(&self) -> &HierarchicalCoordinates {
+        self.position_type.coordinates()
+    }
+    
+    /// Update the position coordinates
+    pub fn update_coordinates(&mut self, new_coordinates: HierarchicalCoordinates) {
+        match &mut self.position_type {
+            PositionType::Absolute { coordinates } => *coordinates = new_coordinates,
+            PositionType::Relative { coordinates, .. } => *coordinates = new_coordinates,
+        }
+        self.last_updated = Utc::now();
+    }
+    
+    /// Move to a new parent entity (only for relative positions)
+    pub fn move_to_parent(&mut self, new_parent: Uuid) -> Result<(), String> {
+        match &mut self.position_type {
+            PositionType::Relative { relative_to_entity, .. } => {
+                *relative_to_entity = new_parent;
+                self.last_updated = Utc::now();
+                Ok(())
+            }
+            PositionType::Absolute { .. } => {
+                Err("Cannot move absolute position to a parent entity".to_string())
+            }
+        }
+    }
+    
+    /// Convert to absolute position (only if originally relative)
+    pub fn make_absolute(&mut self) -> Result<(), String> {
+        match &self.position_type {
+            PositionType::Relative { coordinates, .. } => {
+                let coordinates_clone = coordinates.clone();
+                self.position_type = PositionType::Absolute {
+                    coordinates: coordinates_clone,
+                };
+                self.last_updated = Utc::now();
+                Ok(())
+            }
+            PositionType::Absolute { .. } => {
+                Err("Position is already absolute".to_string())
+            }
+        }
+    }
+    
+    /// Convert to relative position
+    pub fn make_relative(&mut self, relative_to: Uuid) -> Result<(), String> {
+        match &self.position_type {
+            PositionType::Absolute { coordinates } => {
+                let coordinates_clone = coordinates.clone();
+                self.position_type = PositionType::Relative {
+                    relative_to_entity: relative_to,
+                    coordinates: coordinates_clone,
+                };
+                self.last_updated = Utc::now();
+                Ok(())
+            }
+            PositionType::Relative { .. } => {
+                Err("Position is already relative".to_string())
+            }
+        }
+    }
+    
+    /// Add a movement constraint
+    pub fn add_constraint(&mut self, constraint: String) {
+        if !self.movement_constraints.contains(&constraint) {
+            self.movement_constraints.push(constraint);
+            self.last_updated = Utc::now();
+        }
+    }
+    
+    /// Remove a movement constraint
+    pub fn remove_constraint(&mut self, constraint: &str) {
+        self.movement_constraints.retain(|c| c != constraint);
+        self.last_updated = Utc::now();
+    }
+    
+    /// Check if a movement constraint exists
+    pub fn has_constraint(&self, constraint: &str) -> bool {
+        self.movement_constraints.contains(&constraint.to_string())
+    }
+    
+    /// Get the spatial scale of this position
+    pub fn scale(&self) -> SpatialScale {
+        self.coordinates().scale.clone()
+    }
+    
+    /// Calculate distance to another enhanced position (if compatible)
+    pub fn distance_to(&self, other: &EnhancedPositionComponent) -> Option<f64> {
+        // Can only calculate distance if both positions are at the same scale
+        // and both are either absolute or relative to the same entity
+        match (&self.position_type, &other.position_type) {
+            (
+                PositionType::Absolute { coordinates: coord1 },
+                PositionType::Absolute { coordinates: coord2 },
+            ) => coord1.distance_to(coord2),
+            (
+                PositionType::Relative { relative_to_entity: parent1, coordinates: coord1 },
+                PositionType::Relative { relative_to_entity: parent2, coordinates: coord2 },
+            ) => {
+                if parent1 == parent2 {
+                    coord1.distance_to(coord2)
+                } else {
+                    None // Different parents, can't calculate simple distance
+                }
+            }
+            _ => None, // Mixed absolute/relative, can't calculate simple distance
+        }
+    }
+}
+
 /// Inventory component for entities that can hold items
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InventoryComponent {

@@ -154,6 +154,42 @@ The Living World supports roleplay scenarios spanning from intimate personal int
     5.  Packages the sub-goal and retrieved data into the `EnrichedContext` for the Operational Layer.
 *   **Perception (Post-Response):** It also incorporates the role of the `PostResponseAgent`, parsing the AI's output to update the world state, ensuring the loop is closed for the next turn.
 
+### **✅ Dynamic Hierarchy Promotion (IMPLEMENTED)**
+
+**Current State:** ✅ **COMPLETE** - Agent-callable hierarchy promotion tools are fully implemented and integrated into the agentic system.
+
+**Implementation Details:**
+- **`PromoteEntityHierarchyTool`**: Allows AI agents to expand spatial hierarchies when scope increases (e.g., traveling from planet to planet requires creating a solar system)
+- **`GetEntityHierarchyTool`**: Enables agents to query complete hierarchy paths from root to entity
+- **JSON Interface**: Full schema specification for agent interaction with hierarchy management
+- **Security**: Proper user ownership validation and SessionDek integration
+- **Integration**: Tools registered in `AgenticNarrativeFactory` and available to all agents
+
+**Use Cases:**
+- **Interplanetary Travel**: When player travels from Tatooine to Coruscant, system automatically creates "Tatooine System" and "Republic Core" as intermediate hierarchy levels
+- **Scale Transitions**: Office worker character suddenly gains cosmic powers - system dynamically restructures hierarchy to accommodate new scope
+- **Galactic Campaigns**: God-level players operating across multiple star systems with automatic hierarchy management
+
+**Agent Interface Example:**
+```json
+{
+  "tool": "promote_entity_hierarchy",
+  "params": {
+    "user_id": "user-uuid",
+    "entity_id": "tatooine-uuid", 
+    "new_parent_name": "Tatooine System",
+    "new_parent_scale": "Cosmic",
+    "new_parent_position": {
+      "position_type": "absolute",
+      "coordinates": {"x": 0, "y": 0, "z": 0}
+    },
+    "relationship_type": "orbits"
+  }
+}
+```
+
+This implementation enables **fully dynamic spatial hierarchies** that automatically adapt to narrative scope changes, supporting seamless transitions between intimate character interactions and cosmic-scale adventures.
+
 ### 3. The Operational Layer (The "Actor")
 This is the `RoleplayAI`. It is the execution layer, responsible for taking a single, concrete, short-term sub-goal from the Tactical Layer and performing the final action of generation (e.g., writing the prose for the "attack description").
 

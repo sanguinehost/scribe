@@ -1391,6 +1391,239 @@ impl EcsEntityManager {
         }).await
         .map_err(|e| AppError::DbInteractError(e.to_string()))?
     }
+
+    /// Promote an entity to have a new parent, creating intermediate hierarchy levels as needed
+    /// This is used when the scope of interaction expands (e.g., moving from planet to galaxy level)
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), entity_id = %entity_id))]
+    pub async fn promote_entity_hierarchy(
+        &self,
+        user_id: Uuid,
+        entity_id: Uuid,
+        new_parent_name: String,
+        new_parent_scale: crate::models::ecs::SpatialScale,
+        new_parent_position: crate::models::ecs::PositionType,
+        relationship_type: String,
+    ) -> Result<Uuid, AppError> {
+        use crate::models::ecs::{
+            SpatialArchetypeComponent, EnhancedPositionComponent, NameComponent, 
+            TemporalComponent, SpatialComponent, SpatialType, SpatialConstraints,
+            ParentLinkComponent, Component
+        };
+
+        info!("Promoting entity {} hierarchy with new parent: {}", entity_id, new_parent_name);
+
+        // 1. Get current entity to understand existing hierarchy
+        let current_entity = self.get_entity(user_id, entity_id).await?
+            .ok_or_else(|| AppError::NotFound(format!("Entity not found: {}", entity_id)))?;
+
+        // 2. Determine hierarchical level for new parent
+        let current_parent_link = current_entity.components.iter()
+            .find(|c| c.component_type == "ParentLink");
+
+        let new_parent_level = 0u32; // New parent becomes root
+        let entity_new_level = 1u32;  // Original entity becomes child
+
+        // 3. Create new parent entity
+        let new_parent_id = Uuid::new_v4();
+
+        // Create spatial archetype for new parent
+        let level_name = new_parent_scale.level_name(new_parent_level)
+            .ok_or_else(|| AppError::InternalServerErrorGeneric(
+                format!("Invalid level {} for scale {:?}", new_parent_level, new_parent_scale)
+            ))?;
+
+        let spatial_archetype = SpatialArchetypeComponent::new(
+            new_parent_scale,
+            new_parent_level,
+            level_name.to_string(),
+        ).map_err(|e| AppError::InternalServerErrorGeneric(e))?;
+
+        let enhanced_position = EnhancedPositionComponent {
+            position_type: new_parent_position,
+            movement_constraints: Vec::new(),
+            last_updated: chrono::Utc::now(),
+        };
+
+        let name_component = NameComponent {
+            name: new_parent_name.clone(),
+            display_name: new_parent_name.clone(),
+            aliases: Vec::new(),
+        };
+
+        let temporal_component = TemporalComponent::default();
+
+        // Create spatial component as container
+        let spatial_component = SpatialComponent {
+            spatial_type: SpatialType::Container {
+                capacity: None,
+                allowed_types: vec!["Location".to_string(), "Actor".to_string()],
+            },
+            constraints: SpatialConstraints {
+                allow_multiple_locations: false,
+                movable: false,
+                rules: Vec::new(),
+            },
+            metadata: std::collections::HashMap::new(),
+        };
+
+        // Prepare components for new parent
+        let parent_components = vec![
+            ("SpatialArchetype".to_string(), spatial_archetype.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
+            ("EnhancedPosition".to_string(), enhanced_position.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
+            ("Name".to_string(), name_component.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
+            ("Temporal".to_string(), temporal_component.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
+            ("Spatial".to_string(), spatial_component.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
+        ];
+
+        // Create new parent entity
+        let archetype_signature = "SpatialArchetype|EnhancedPosition|Name|Temporal|Spatial".to_string();
+        self.create_entity(user_id, Some(new_parent_id), archetype_signature, parent_components).await?;
+
+        // 4. Update original entity to become child of new parent
+        let new_parent_link = ParentLinkComponent {
+            parent_entity_id: new_parent_id,
+            depth_from_root: entity_new_level,
+            spatial_relationship: relationship_type,
+        };
+
+        let parent_link_update = ComponentUpdate {
+            entity_id,
+            component_type: "ParentLink".to_string(),
+            component_data: new_parent_link.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?,
+            operation: if current_parent_link.is_some() {
+                ComponentOperation::Update
+            } else {
+                ComponentOperation::Add
+            },
+        };
+
+        // 5. Recursively update depth for all descendants of the original entity
+        self.update_descendant_depths(user_id, entity_id, entity_new_level).await?;
+
+        // 6. Apply the parent link update
+        self.update_components(user_id, entity_id, vec![parent_link_update]).await?;
+
+        info!("Successfully promoted entity {} hierarchy. New parent: {}", entity_id, new_parent_id);
+        Ok(new_parent_id)
+    }
+
+    /// Recursively update depth_from_root for all descendants of an entity
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), parent_id = %parent_id, new_depth = new_parent_depth))]
+    fn update_descendant_depths(
+        &self,
+        user_id: Uuid,
+        parent_id: Uuid,
+        new_parent_depth: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), AppError>> + Send + '_>> {
+        Box::pin(async move {
+            use crate::models::ecs::{ParentLinkComponent, Component};
+
+            // Query for all children of this entity
+            let children = self.query_entities(
+                user_id,
+                vec![ComponentQuery::HasComponent("ParentLink".to_string())],
+                None,
+                None,
+            ).await?;
+
+            // Filter for direct children and update their depths
+            for child in children {
+                if let Some(parent_link_component) = child.components.iter()
+                    .find(|c| c.component_type == "ParentLink") {
+                    
+                    let parent_link: ParentLinkComponent = serde_json::from_value(parent_link_component.component_data.clone())
+                        .map_err(|e| AppError::SerializationError(e.to_string()))?;
+                    
+                    // Only update direct children of this parent
+                    if parent_link.parent_entity_id == parent_id {
+                        let new_child_depth = new_parent_depth + 1;
+                        
+                        // Update this child's depth
+                        let updated_parent_link = ParentLinkComponent {
+                            parent_entity_id: parent_link.parent_entity_id,
+                            depth_from_root: new_child_depth,
+                            spatial_relationship: parent_link.spatial_relationship,
+                        };
+
+                        let depth_update = ComponentUpdate {
+                            entity_id: child.entity.id,
+                            component_type: "ParentLink".to_string(),
+                            component_data: updated_parent_link.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?,
+                            operation: ComponentOperation::Update,
+                        };
+
+                        self.update_components(user_id, child.entity.id, vec![depth_update]).await?;
+
+                        // Recursively update this child's descendants
+                        self.update_descendant_depths(user_id, child.entity.id, new_child_depth).await?;
+                    }
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Get the complete hierarchy path for an entity (from root to entity)
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), entity_id = %entity_id))]
+    pub async fn get_entity_hierarchy_path(&self, user_id: Uuid, entity_id: Uuid) -> Result<Vec<EntityHierarchyInfo>, AppError> {
+        use crate::models::ecs::{ParentLinkComponent, NameComponent, SpatialArchetypeComponent, Component};
+
+        let mut path = Vec::new();
+        let mut current_entity_id = entity_id;
+
+        // Traverse up the hierarchy until we reach the root
+        loop {
+            let entity = self.get_entity(user_id, current_entity_id).await?
+                .ok_or_else(|| AppError::NotFound(format!("Entity not found: {}", current_entity_id)))?;
+
+            // Extract entity information
+            let name_component = entity.components.iter()
+                .find(|c| c.component_type == "Name")
+                .and_then(|c| serde_json::from_value::<NameComponent>(c.component_data.clone()).ok());
+
+            let spatial_archetype = entity.components.iter()
+                .find(|c| c.component_type == "SpatialArchetype")
+                .and_then(|c| serde_json::from_value::<SpatialArchetypeComponent>(c.component_data.clone()).ok());
+
+            let parent_link = entity.components.iter()
+                .find(|c| c.component_type == "ParentLink")
+                .and_then(|c| serde_json::from_value::<ParentLinkComponent>(c.component_data.clone()).ok());
+
+            let hierarchy_info = EntityHierarchyInfo {
+                entity_id: current_entity_id,
+                name: name_component.map(|n| n.name).unwrap_or_else(|| "Unknown".to_string()),
+                scale: spatial_archetype.as_ref().map(|s| s.scale.clone()),
+                hierarchical_level: spatial_archetype.as_ref().map(|s| s.hierarchical_level).unwrap_or(0),
+                depth_from_root: parent_link.as_ref().map(|p| p.depth_from_root).unwrap_or(0),
+                parent_id: parent_link.as_ref().map(|p| p.parent_entity_id),
+                relationship: parent_link.as_ref().map(|p| p.spatial_relationship.clone()),
+            };
+
+            path.insert(0, hierarchy_info); // Insert at beginning to build path from root
+
+            // If no parent, we've reached the root
+            if let Some(parent_link) = parent_link {
+                current_entity_id = parent_link.parent_entity_id;
+            } else {
+                break;
+            }
+        }
+
+        Ok(path)
+    }
+}
+
+/// Information about an entity in a spatial hierarchy
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityHierarchyInfo {
+    pub entity_id: Uuid,
+    pub name: String,
+    pub scale: Option<crate::models::ecs::SpatialScale>,
+    pub hierarchical_level: u32,
+    pub depth_from_root: u32,
+    pub parent_id: Option<Uuid>,
+    pub relationship: Option<String>,
 }
 
 /// Component query criteria for entity filtering
