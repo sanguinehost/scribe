@@ -6,7 +6,6 @@ use scribe_backend::{
     auth::session_dek::SessionDek,
     models::{
         chats::{ChatMessage, MessageRole},
-        chronicle_event::EventSource,
     },
     services::{
         agentic::{
@@ -88,7 +87,7 @@ fn create_agentic_services(test_app: &TestApp) -> (Arc<scribe_backend::services:
 async fn test_agentic_tools_basic_functionality() {
     // Test the core agentic tools work with basic inputs
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // Test data for all tools
     let test_messages = json!({
@@ -151,10 +150,7 @@ async fn test_agentic_tools_basic_functionality() {
 
     // Test 4: Search Knowledge Base Tool
     println!("  → Testing SearchKnowledgeBaseTool...");
-    let search_tool = SearchKnowledgeBaseTool::new(
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_client.clone(),
-    );
+    let search_tool = SearchKnowledgeBaseTool::new(test_app.app_state.clone());
     
     let search_params = json!({
         "query": "temple guardian",
@@ -180,7 +176,7 @@ async fn test_agentic_tools_basic_functionality() {
 async fn test_chronicle_event_creation_tool() {
     // Test that the CreateChronicleEventTool can actually create events in the database
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     println!("🧪 Testing chronicle event creation...");
     
@@ -394,7 +390,7 @@ async fn test_chronicle_event_creation_tool() {
 async fn test_workflow_message_processing() {
     // Test message processing pipeline that would be used in the real workflow
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     println!("🧪 Testing message processing workflow...");
     
@@ -449,7 +445,7 @@ async fn test_workflow_message_processing() {
     ];
     
     // Create session DEK (empty since we're not encrypting)
-    let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
+    let _session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
     
     // Test that the workflow components can process these messages
     println!("  → Converting messages to triage format...");
@@ -515,7 +511,7 @@ async fn test_workflow_message_processing() {
 async fn test_tool_registry_integration() {
     // Test that all tools can be registered and found in a registry
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     println!("🧪 Testing tool registry integration...");
     
@@ -694,10 +690,7 @@ async fn test_tool_registry_integration() {
     let concepts_tool = Arc::new(ExtractWorldConceptsTool::new(test_app.app_state.clone()));
     registry.add_tool(concepts_tool);
     
-    let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_client.clone(),
-    ));
+    let search_tool = Arc::new(SearchKnowledgeBaseTool::new(test_app.app_state.clone()));
     registry.add_tool(search_tool);
     
     let create_event_tool = Arc::new(CreateChronicleEventTool::new(

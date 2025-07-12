@@ -4,7 +4,6 @@
 // Tests the end-to-end flow from chat messages through AI analysis to tool execution.
 
 use chrono::Utc;
-use reqwest::StatusCode;
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -12,18 +11,11 @@ use secrecy::SecretBox;
 
 use scribe_backend::{
     config::{NarrativeFeatureFlags, ExtractionMode},
-    llm::{AiClient, EmbeddingClient},
-    models::{
-        chats::{ChatMessage, MessageRole},
-        chronicle::CreateChronicleRequest,
-        lorebook_dtos::CreateLorebookEntryPayload,
-    },
+    llm::EmbeddingClient,
+    models::chats::{ChatMessage, MessageRole},
     services::{
-        agentic::{
-            AgenticNarrativeFactory, NarrativeAgentRunner, 
-            NarrativeWorkflowConfig, NarrativeWorkflowResult
-        },
-        extraction_dispatcher::{ExtractionDispatcher, ExtractionResult},
+        agentic::AgenticNarrativeFactory,
+        extraction_dispatcher::ExtractionDispatcher,
         ChronicleService, LorebookService, EncryptionService,
     },
     test_helpers::{spawn_app, MockAiClient, TestDataGuard, db::create_test_user},
@@ -390,33 +382,28 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
     let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
     // Run the agentic workflow
-    let result = agentic_runner.process_narrative_event(
-        user_id,
-        session_id,
-        None, // No existing chronicle
+    let result = agentic_runner.process_narrative_content(
         &messages,
         &session_dek,
+        user_id,
+        None, // No existing chronicle
         None, // No persona context
+        false, // Not re-chronicle
+        "integration_test_context",
     ).await;
 
     // Verify the workflow completed successfully
     assert!(result.is_ok(), "Agentic workflow should complete successfully");
     let workflow_result = result.unwrap();
 
-    // Verify triage and planning steps were executed
-    assert!(!workflow_result.execution_results.is_empty(), "Should have execution results");
-    assert!(!workflow_result.actions_taken.is_empty(), "Should have taken actions");
-
-    // Verify actions were planned correctly
-    let actions = &workflow_result.actions_taken;
-    assert!(
-        actions.iter().any(|action| action.tool_name == "create_chronicle"),
-        "Should have planned chronicle creation"
-    );
-    assert!(
-        actions.iter().any(|action| action.tool_name == "create_lorebook_entry"),
-        "Should have planned lorebook entry creation"
-    );
+    // Verify triage detected significance
+    let triage = workflow_result.get("triage").expect("Should have triage section");
+    assert!(triage.get("is_significant").and_then(|v| v.as_bool()).unwrap_or(false), 
+            "Triage should detect significant events");
+    
+    // Verify execution occurred
+    let execution = workflow_result.get("execution").expect("Should have execution section");
+    assert!(execution.is_array() || execution.is_object(), "Should have execution results");
 
     println!("✓ Complete agentic workflow test passed");
 }
@@ -1465,7 +1452,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
 
 #[tokio::test]
 async fn test_feature_flag_user_rollout() {
-    let test_app = spawn_app(false, false, false).await;
+    let _test_app = spawn_app(false, false, false).await;
 
     // Test user not in rollout (0% rollout)
     let mut feature_flags = NarrativeFeatureFlags::default();

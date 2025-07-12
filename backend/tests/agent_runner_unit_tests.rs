@@ -738,7 +738,9 @@ mod agent_runner_duplicate_prevention_tests {
             None, // persona_context
         ).await.expect("First narrative processing should succeed");
         
-        println!("First run created {} actions", first_result.actions_taken.len());
+        // Check first result structure
+        let first_execution = first_result.get("execution").expect("Should have execution section");
+        println!("First run - execution: {:?}", first_execution);
         
         // Second run with very similar messages - should NOT create duplicate events due to XML-based deduplication
         let similar_messages = create_similar_executive_suite_messages(&session_dek).await;
@@ -777,16 +779,29 @@ mod agent_runner_duplicate_prevention_tests {
             None, // persona_context
         ).await.expect("Second narrative processing should succeed");
         
-        println!("Second run created {} actions", second_result.actions_taken.len());
+        // Check second result structure
+        let second_execution = second_result.get("execution").expect("Should have execution section");
+        println!("Second run - execution: {:?}", second_execution);
         
         // The key assertion: the second run should create significantly fewer events
         // because the XML-labeled existing chronicles allow the AI to see what already exists
         // and make informed decisions about duplication
+        let first_execution_size = if first_execution.is_array() { 
+            first_execution.as_array().unwrap().len() 
+        } else { 
+            1 
+        };
+        let second_execution_size = if second_execution.is_array() { 
+            second_execution.as_array().unwrap().len() 
+        } else { 
+            1 
+        };
+        
         assert!(
-            second_result.actions_taken.len() <= first_result.actions_taken.len(),
+            second_execution_size <= first_execution_size,
             "Second run should create fewer or equal events due to XML-based deduplication. First: {}, Second: {}", 
-            first_result.actions_taken.len(), 
-            second_result.actions_taken.len()
+            first_execution_size, 
+            second_execution_size
         );
         
         println!("✅ Integration test passed: XML-based duplicate prevention working");

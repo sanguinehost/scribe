@@ -3,30 +3,23 @@
 
 use scribe_backend::{
     services::agentic::{
-        tools::{
-            narrative_tools::{
-                AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
-                UpdateLorebookEntryTool, CreateChronicleEventTool, SearchKnowledgeBaseTool,
-                ListChronicleEventsTool,
-            },
-            ScribeTool,
+        narrative_tools::{
+            AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
+            UpdateLorebookEntryTool, CreateChronicleEventTool, SearchKnowledgeBaseTool,
         },
-        factory::AgenticNarrativeFactory,
+        tools::ScribeTool,
     },
-    test_helpers::{spawn_app, TestDataGuard},
+    test_helpers::{spawn_app, TestDataGuard, MockAiClient},
     models::{
-        chronicle::{CreateChronicleRequest, Chronicle},
-        lorebook::{CreateLorebookRequest, CreateLorebookEntryRequest, Lorebook, LorebookEntry},
+        chronicle::CreateChronicleRequest,
         users::{UserRole, AccountStatus},
     },
-    llm::MockAiClient,
     services::{ChronicleService, LorebookService},
-    AppState,
 };
 use std::sync::Arc;
 use uuid::Uuid;
 use serde_json::json;
-use secrecy::SecretString;
+use secrecy::{SecretString, ExposeSecret};
 
 // Helper to create a second test user for cross-user access tests
 async fn create_second_test_user(test_app: &scribe_backend::test_helpers::TestApp) -> anyhow::Result<(Uuid, scribe_backend::auth::session_dek::SessionDek)> {
@@ -34,7 +27,7 @@ async fn create_second_test_user(test_app: &scribe_backend::test_helpers::TestAp
     
     let username = format!("security_test_user_{}", Uuid::new_v4().simple());
     let email = format!("{}@test.com", username);
-    let password = SecretString::new("testpassword123!".to_string());
+    let password = SecretString::from("testpassword123!".to_string());
     
     // Generate crypto keys
     let kek_salt = scribe_backend::crypto::generate_salt()?;
@@ -74,8 +67,8 @@ async fn create_second_test_user(test_app: &scribe_backend::test_helpers::TestAp
         .await
         .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
     
-    let session_dek = scribe_backend::auth::session_dek::SessionDek(
-        secrecy::SecretBox::new(Box::new(dek.expose_secret().to_vec()))
+    let session_dek = scribe_backend::auth::session_dek::SessionDek::new(
+        dek.expose_secret().to_vec()
     );
     
     Ok((user_db.id, session_dek))
@@ -85,7 +78,7 @@ async fn create_second_test_user(test_app: &scribe_backend::test_helpers::TestAp
 #[tokio::test]
 async fn test_a01_create_chronicle_event_cross_user_access() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // Create two users
     let (user1_id, session_dek1) = create_second_test_user(&test_app).await.unwrap();
@@ -116,7 +109,7 @@ async fn test_a01_create_chronicle_event_cross_user_access() {
         "event_subtype": "UNAUTHORIZED_ACCESS",
         "summary": "User2 trying to access User1's chronicle",
         "subject": "Attacker",
-        "session_dek": hex::encode(session_dek1.0.expose_secret()),  // Using User1's DEK
+        "session_dek": hex::encode(session_dek1.expose_bytes()),  // Using User1's DEK
         "event_data": {}
     });
     
@@ -131,7 +124,7 @@ async fn test_a01_create_chronicle_event_cross_user_access() {
 #[tokio::test]
 async fn test_a01_list_chronicle_events_cross_user_access() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // Create two users
     let (user1_id, _session_dek1) = create_second_test_user(&test_app).await.unwrap();
@@ -147,21 +140,27 @@ async fn test_a01_list_chronicle_events_cross_user_access() {
         .await
         .unwrap();
     
-    // Create the tool
-    let tool = ListChronicleEventsTool::new(chronicle_service.clone());
+    // Create search tool instead (no ListChronicleEventsTool exists)
+    let tool = SearchKnowledgeBaseTool::new(test_app.app_state.clone());
     
-    // User2 tries to list events from User1's chronicle
+    // User2 tries to search for User1's chronicle information
     let params = json!({
         "user_id": user2_id.to_string(),  // User2
-        "chronicle_id": chronicle.id.to_string(),  // User1's chronicle
+        "query": format!("chronicle {}", chronicle.name),
     });
     
     let result = tool.execute(&params).await;
     
-    // Should either fail or return empty results
+    // Should either fail or return no sensitive results
     if let Ok(output) = result {
-        let events = output["events"].as_array().unwrap();
-        assert_eq!(events.len(), 0, "User2 should not see User1's events");
+        if let Some(results) = output["results"].as_array() {
+            // Verify no cross-user data leakage
+            for result_item in results {
+                if let Some(content) = result_item["content"].as_str() {
+                    assert!(!content.contains("User1's Secret Plans"), "Should not leak User1's data");
+                }
+            }
+        }
     }
     
     guard.cleanup().await;
@@ -171,16 +170,23 @@ async fn test_a01_list_chronicle_events_cross_user_access() {
 #[tokio::test]
 async fn test_a02_update_lorebook_without_encryption() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // Mock AI client for semantic merge
     let mock_ai_client = Arc::new(MockAiClient::new());
-    mock_ai_client.set_generate_text_response(Ok("Merged content".to_string()));
+    mock_ai_client.set_next_chat_response("Merged content".to_string());
     
     // Create tool with mocked AI
     let mut app_state_clone = (*test_app.app_state).clone();
-    app_state_clone.ai_client = mock_ai_client;
-    let tool = UpdateLorebookEntryTool::new(Arc::new(app_state_clone));
+    app_state_clone.ai_client = mock_ai_client.clone();
+    let tool = UpdateLorebookEntryTool::new(
+        Arc::new(LorebookService::new(
+            test_app.db_pool.clone(),
+            test_app.app_state.encryption_service.clone(),
+            test_app.app_state.qdrant_service.clone(),
+        )),
+        Arc::new(app_state_clone)
+    );
     
     // Try to update with plain text content (missing session_dek)
     let params = json!({
@@ -201,12 +207,9 @@ async fn test_a02_update_lorebook_without_encryption() {
 #[tokio::test]
 async fn test_a03_sql_injection_in_search() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
-    let tool = SearchKnowledgeBaseTool::new(
-        test_app.qdrant_service.clone(),
-        test_app.app_state.embedding_client.clone(),
-    );
+    let tool = SearchKnowledgeBaseTool::new(test_app.app_state.clone());
     
     // SQL injection attempt in search query
     let params = json!({
@@ -242,7 +245,7 @@ async fn test_a03_sql_injection_in_search() {
 #[tokio::test]
 async fn test_a03_json_injection_in_event_data() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let (user_id, session_dek) = create_second_test_user(&test_app).await.unwrap();
     
@@ -270,7 +273,7 @@ async fn test_a03_json_injection_in_event_data() {
         "event_subtype": "INJECTION",
         "summary": "Testing JSON injection",
         "subject": "Tester",
-        "session_dek": hex::encode(session_dek.0.expose_secret()),
+        "session_dek": hex::encode(session_dek.expose_bytes()),
         "event_data": {
             "malicious": "\",\"admin\":true,\"hack\":\"",
             "nested": {
@@ -291,15 +294,15 @@ async fn test_a03_json_injection_in_event_data() {
 #[tokio::test]
 async fn test_a04_rate_limiting_protection() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // Mock AI client that tracks call count
     let mock_ai_client = Arc::new(MockAiClient::new());
-    mock_ai_client.set_generate_text_response(Ok(json!({
+    mock_ai_client.set_next_chat_response(json!({
         "is_significant": true,
         "confidence": 0.9,
         "reasoning": "Test"
-    }).to_string()));
+    }).to_string());
     
     // Create tool with mocked AI
     let mut app_state_clone = (*test_app.app_state).clone();
@@ -307,7 +310,7 @@ async fn test_a04_rate_limiting_protection() {
     let tool = AnalyzeTextSignificanceTool::new(Arc::new(app_state_clone));
     
     // Attempt rapid-fire requests (simulating DoS attack)
-    let mut results = Vec::new();
+    let mut results: Vec<Result<serde_json::Value, _>> = Vec::new();
     for i in 0..100 {
         let params = json!({
             "messages": [
@@ -329,7 +332,7 @@ async fn test_a04_rate_limiting_protection() {
 #[tokio::test]
 async fn test_a05_verbose_error_messages() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let tool = CreateChronicleEventTool::new(
         Arc::new(ChronicleService::new(test_app.db_pool.clone())),
@@ -361,11 +364,11 @@ async fn test_a05_verbose_error_messages() {
 #[tokio::test]
 async fn test_a08_data_validation_temporal_events() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // Mock AI that returns malformed data
     let mock_ai_client = Arc::new(MockAiClient::new());
-    mock_ai_client.set_generate_text_response(Ok(json!({
+    mock_ai_client.set_next_chat_response(json!({
         "events": [
             {
                 // Missing required fields
@@ -376,7 +379,7 @@ async fn test_a08_data_validation_temporal_events() {
                 "description": ["should", "be", "string"]  // Wrong type
             }
         ]
-    }).to_string()));
+    }).to_string());
     
     let mut app_state_clone = (*test_app.app_state).clone();
     app_state_clone.ai_client = mock_ai_client;
@@ -400,7 +403,7 @@ async fn test_a08_data_validation_temporal_events() {
 #[tokio::test]
 async fn test_a09_security_event_logging() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let (user_id, session_dek) = create_second_test_user(&test_app).await.unwrap();
     let (attacker_id, _) = create_second_test_user(&test_app).await.unwrap();
@@ -429,7 +432,7 @@ async fn test_a09_security_event_logging() {
         "event_subtype": "UNAUTHORIZED",
         "summary": "Attempting unauthorized access",
         "subject": "Attacker",
-        "session_dek": hex::encode(session_dek.0.expose_secret()),
+        "session_dek": hex::encode(session_dek.expose_bytes()),
         "event_data": {}
     });
     
@@ -445,13 +448,13 @@ async fn test_a09_security_event_logging() {
 #[tokio::test]
 async fn test_a10_ssrf_protection_in_ai_calls() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // Mock AI client that could be vulnerable to SSRF
     let mock_ai_client = Arc::new(MockAiClient::new());
-    mock_ai_client.set_generate_text_response(Ok(json!({
+    mock_ai_client.set_next_chat_response(json!({
         "concepts": ["safe", "concepts"]
-    }).to_string()));
+    }).to_string());
     
     let mut app_state_clone = (*test_app.app_state).clone();
     app_state_clone.ai_client = mock_ai_client;
@@ -484,15 +487,15 @@ async fn test_a10_ssrf_protection_in_ai_calls() {
 #[tokio::test]
 async fn test_input_size_limits() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // Mock AI client
     let mock_ai_client = Arc::new(MockAiClient::new());
-    mock_ai_client.set_generate_text_response(Ok(json!({
+    mock_ai_client.set_next_chat_response(json!({
         "is_significant": false,
         "confidence": 0.1,
         "reasoning": "Too large"
-    }).to_string()));
+    }).to_string());
     
     let mut app_state_clone = (*test_app.app_state).clone();
     app_state_clone.ai_client = mock_ai_client;
@@ -517,7 +520,7 @@ async fn test_input_size_limits() {
 #[tokio::test]
 async fn test_concurrent_access_safety() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let (user_id, session_dek) = create_second_test_user(&test_app).await.unwrap();
     
@@ -540,9 +543,9 @@ async fn test_concurrent_access_safety() {
     let mut handles = vec![];
     for i in 0..10 {
         let tool_clone = tool.clone();
-        let session_dek_hex = hex::encode(session_dek.0.expose_secret());
+        let session_dek_hex = hex::encode(session_dek.expose_bytes());
         
-        let handle = tokio::spawn(async move {
+        let handle: tokio::task::JoinHandle<Result<serde_json::Value, _>> = tokio::spawn(async move {
             let params = json!({
                 "user_id": user_id.to_string(),
                 "chronicle_id": chronicle.id.to_string(),

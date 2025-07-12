@@ -9,7 +9,7 @@
 //! - SearchKnowledgeBaseTool (Flash-Lite + Flash)
 //! - UpdateLorebookEntryTool (Flash)
 
-use serde_json::{json, Value};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ use scribe_backend::{
     services::{
         agentic::{
             narrative_tools::*,
-            tools::{ScribeTool, ToolError, ToolParams},
+            tools::{ScribeTool, ToolError},
         },
         ChronicleService, LorebookService,
     },
@@ -27,10 +27,10 @@ use scribe_backend::{
 /// Test Flash-Lite powered significance analysis tool
 #[tokio::test]
 async fn test_analyze_text_significance_flash_lite() {
-    let _guard = TestDataGuard::new().await;
-    let app_state = spawn_app().await.expect("Failed to spawn test app");
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
 
-    let tool = AnalyzeTextSignificanceTool::new(app_state.clone());
+    let tool = AnalyzeTextSignificanceTool::new(app.app_state.clone());
 
     // Test with significant narrative content
     let params = json!({
@@ -63,10 +63,10 @@ async fn test_analyze_text_significance_flash_lite() {
 /// Test significance analysis with mundane content
 #[tokio::test]
 async fn test_analyze_text_significance_mundane_content() {
-    let _guard = TestDataGuard::new().await;
-    let app_state = spawn_app().await.expect("Failed to spawn test app");
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
 
-    let tool = AnalyzeTextSignificanceTool::new(app_state.clone());
+    let tool = AnalyzeTextSignificanceTool::new(app.app_state.clone());
 
     let params = json!({
         "user_id": Uuid::new_v4().to_string(),
@@ -86,10 +86,10 @@ async fn test_analyze_text_significance_mundane_content() {
 /// Test significance analysis with invalid parameters
 #[tokio::test]
 async fn test_analyze_text_significance_invalid_params() {
-    let _guard = TestDataGuard::new().await;
-    let app_state = spawn_app().await.expect("Failed to spawn test app");
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
 
-    let tool = AnalyzeTextSignificanceTool::new(app_state.clone());
+    let tool = AnalyzeTextSignificanceTool::new(app.app_state.clone());
 
     // Test missing user_id
     let params_missing_user = json!({
@@ -126,10 +126,10 @@ async fn test_analyze_text_significance_invalid_params() {
 /// Test Flash-powered temporal event extraction
 #[tokio::test]
 async fn test_extract_temporal_events_flash() {
-    let _guard = TestDataGuard::new().await;
-    let app_state = spawn_app().await.expect("Failed to spawn test app");
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
 
-    let tool = ExtractTemporalEventsTool::new(app_state.clone());
+    let tool = ExtractTemporalEventsTool::new(app.app_state.clone());
 
     let params = json!({
         "user_id": Uuid::new_v4().to_string(),
@@ -164,10 +164,10 @@ async fn test_extract_temporal_events_flash() {
 /// Test Flash-powered world concept extraction
 #[tokio::test]
 async fn test_extract_world_concepts_flash() {
-    let _guard = TestDataGuard::new().await;
-    let app_state = spawn_app().await.expect("Failed to spawn test app");
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
 
-    let tool = ExtractWorldConceptsTool::new(app_state.clone());
+    let tool = ExtractWorldConceptsTool::new(app.app_state.clone());
 
     let params = json!({
         "user_id": Uuid::new_v4().to_string(),
@@ -202,10 +202,10 @@ async fn test_extract_world_concepts_flash() {
 /// Test Flash-enhanced knowledge base search
 #[tokio::test]
 async fn test_search_knowledge_base_flash_enhanced() {
-    let _guard = TestDataGuard::new().await;
-    let app_state = spawn_app().await.expect("Failed to spawn test app");
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
 
-    let tool = SearchKnowledgeBaseTool::new(app_state.clone());
+    let tool = SearchKnowledgeBaseTool::new(app.app_state.clone());
 
     let params = json!({
         "user_id": Uuid::new_v4().to_string(),
@@ -249,11 +249,15 @@ async fn test_search_knowledge_base_flash_enhanced() {
 /// Test Flash-powered lorebook entry updating with semantic merging
 #[tokio::test]
 async fn test_update_lorebook_entry_flash_semantic_merge() {
-    let _guard = TestDataGuard::new().await;
-    let app_state = spawn_app().await.expect("Failed to spawn test app");
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
 
-    let lorebook_service = Arc::new(LorebookService::new(app_state.pool.clone()));
-    let tool = UpdateLorebookEntryTool::new(lorebook_service, app_state.clone());
+    let lorebook_service = Arc::new(LorebookService::new(
+        app.db_pool.clone(),
+        app.app_state.encryption_service.clone(),
+        app.app_state.qdrant_service.clone(),
+    ));
+    let tool = UpdateLorebookEntryTool::new(lorebook_service, app.app_state.clone());
 
     let entry_id = Uuid::new_v4();
     let params = json!({
@@ -295,11 +299,11 @@ async fn test_update_lorebook_entry_flash_semantic_merge() {
 /// Test create chronicle event tool with proper service integration
 #[tokio::test]
 async fn test_create_chronicle_event_tool() {
-    let _guard = TestDataGuard::new().await;
-    let app_state = spawn_app().await.expect("Failed to spawn test app");
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
 
-    let chronicle_service = Arc::new(ChronicleService::new(app_state.pool.clone()));
-    let tool = CreateChronicleEventTool::new(chronicle_service, app_state.clone());
+    let chronicle_service = Arc::new(ChronicleService::new(app.db_pool.clone()));
+    let tool = CreateChronicleEventTool::new(chronicle_service, app.app_state.clone());
 
     let chronicle_id = Uuid::new_v4();
     let params = json!({
@@ -333,11 +337,15 @@ async fn test_create_chronicle_event_tool() {
 /// Test create lorebook entry tool
 #[tokio::test]
 async fn test_create_lorebook_entry_tool() {
-    let _guard = TestDataGuard::new().await;
-    let app_state = spawn_app().await.expect("Failed to spawn test app");
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
 
-    let lorebook_service = Arc::new(LorebookService::new(app_state.pool.clone()));
-    let tool = CreateLorebookEntryTool::new(lorebook_service, app_state.clone());
+    let lorebook_service = Arc::new(LorebookService::new(
+        app.db_pool.clone(),
+        app.app_state.encryption_service.clone(),
+        app.app_state.qdrant_service.clone(),
+    ));
+    let tool = CreateLorebookEntryTool::new(lorebook_service, app.app_state.clone());
 
     let params = json!({
         "user_id": Uuid::new_v4().to_string(),
@@ -356,8 +364,9 @@ async fn test_create_lorebook_entry_tool() {
 
 /// Test tool input schema validation
 #[tokio::test]
-fn test_tool_input_schemas() {
-    let app_state_mock = Arc::new(crate::test_helpers::spawn_app().await.unwrap());
+async fn test_tool_input_schemas() {
+    let app = spawn_app(false, false, false).await;
+    let app_state_mock = app.app_state.clone();
     
     // Test all tools have proper schemas
     let significance_tool = AnalyzeTextSignificanceTool::new(app_state_mock.clone());
@@ -383,8 +392,9 @@ fn test_tool_input_schemas() {
 
 /// Test tool names and descriptions
 #[tokio::test]
-fn test_tool_metadata() {
-    let app_state_mock = Arc::new(crate::test_helpers::spawn_app().await.unwrap());
+async fn test_tool_metadata() {
+    let app = spawn_app(false, false, false).await;
+    let app_state_mock = app.app_state.clone();
     
     let significance_tool = AnalyzeTextSignificanceTool::new(app_state_mock.clone());
     assert_eq!(significance_tool.name(), "analyze_text_significance");

@@ -15,7 +15,7 @@ use scribe_backend::{
         ScribeTool,
         agentic::{
             AgenticNarrativeFactory,
-            SearchKnowledgeBaseTool, CreateChronicleEventTool,
+            SearchKnowledgeBaseTool,
         },
         ChronicleService,
     },
@@ -25,7 +25,7 @@ use scribe_backend::{
 use uuid::Uuid;
 use chrono::Utc;
 use serde_json::json;
-use secrecy::{SecretString, SecretBox, ExposeSecret};
+use secrecy::{SecretBox, ExposeSecret};
 use diesel::{RunQueryDsl, prelude::*};
 use bcrypt;
 
@@ -192,10 +192,7 @@ async fn test_search_knowledge_base_tool_functionality() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     
     // Test the search tool
-    let search_tool = SearchKnowledgeBaseTool::new(
-        test_app.qdrant_service.clone(),
-        test_app.mock_embedding_client.clone(),
-    );
+    let search_tool = SearchKnowledgeBaseTool::new(test_app.app_state.clone());
     
     let search_params = json!({
         "query": "Mount Everest cleansing pollution",
@@ -546,8 +543,18 @@ async fn test_deduplication_failure_multiple_everest_events() {
         .await
         .expect("Workflow should complete");
     
-    println!("Triage result - significant: {}", workflow_result.triage_result.is_significant);
-    println!("Actions taken: {}", workflow_result.actions_taken.len());
+    let triage = workflow_result.get("triage").expect("Should have triage section");
+    println!("Triage result - significant: {}", triage.get("is_significant").and_then(|v| v.as_bool()).unwrap_or(false));
+    
+    if let Some(execution) = workflow_result.get("execution") {
+        if execution.is_array() {
+            println!("Actions taken: {}", execution.as_array().unwrap().len());
+        } else {
+            println!("Execution result present but not array");
+        }
+    } else {
+        println!("No execution section (likely insignificant)");
+    }
     
     // Get final event count
     let final_events = chronicle_service
@@ -704,7 +711,7 @@ async fn test_ai_triage_with_existing_context() {
         "confidence": 0.85
     });
 
-    let mock_ai_client = Arc::new(scribe_backend::test_helpers::MockAiClient::new_with_response(mock_triage_response.to_string()));
+    let _mock_ai_client = Arc::new(scribe_backend::test_helpers::MockAiClient::new_with_response(mock_triage_response.to_string()));
 
     // Test triage with explicit context
     let triage_params = json!({
@@ -716,7 +723,7 @@ async fn test_ai_triage_with_existing_context() {
         ]
     });
     
-    let triage_tool = scribe_backend::services::agentic::AnalyzeTextSignificanceTool::new(mock_ai_client.clone());
+    let triage_tool = scribe_backend::services::agentic::AnalyzeTextSignificanceTool::new(test_app.app_state.clone());
     let triage_result = triage_tool.execute(&triage_params).await.unwrap();
     
     println!("Triage result with context: {:?}", triage_result);

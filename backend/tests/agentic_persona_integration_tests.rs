@@ -748,7 +748,8 @@ async fn test_persona_context_missing_in_events() {
         .expect("Workflow should complete");
     
     // Check if events were created
-    if workflow_result.triage_result.is_significant && !workflow_result.execution_results.is_empty() {
+    let triage = workflow_result.get("triage").expect("Should have triage section");
+    if triage.get("is_significant").and_then(|v| v.as_bool()).unwrap_or(false) {
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
         let events = chronicle_service
             .get_chronicle_events(user_id, chronicle_id, EventFilter::default())
