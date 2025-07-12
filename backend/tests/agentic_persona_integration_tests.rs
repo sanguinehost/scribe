@@ -1390,7 +1390,7 @@ async fn test_triage_tool_persona_awareness() {
     });
     
     // Test the triage tool
-    let triage_tool = AnalyzeTextSignificanceTool::new(test_app.ai_client.clone());
+    let triage_tool = AnalyzeTextSignificanceTool::new(test_app.app_state.clone());
     let triage_result = triage_tool.execute(&messages).await.unwrap();
     
     assert!(triage_result.get("is_significant").is_some());
