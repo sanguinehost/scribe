@@ -299,18 +299,18 @@ async fn test_security_a01_broken_access_control() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );
@@ -352,11 +352,11 @@ async fn test_security_a02_cryptographic_failures() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     
@@ -364,7 +364,7 @@ async fn test_security_a02_cryptographic_failures() {
     let encryption_service = Arc::new(EncryptionService::new());
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );
@@ -399,18 +399,18 @@ async fn test_security_a03_injection_prevention() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );
@@ -481,18 +481,18 @@ async fn test_security_a04_insecure_design() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );
@@ -551,18 +551,18 @@ async fn test_security_a05_security_misconfiguration() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );
@@ -601,18 +601,18 @@ async fn test_security_a07_authentication_failures() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );
@@ -650,18 +650,18 @@ async fn test_security_a08_data_integrity() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );
@@ -752,18 +752,18 @@ async fn test_security_a09_logging_monitoring() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone().into(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone().into(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone().into(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );
@@ -814,18 +814,18 @@ async fn test_security_a10_ssrf_prevention() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone().into(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone().into(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone().into(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );
@@ -884,18 +884,18 @@ async fn test_security_resource_exhaustion() {
     let pool = test_app.db_pool.clone();
     let ai_client = Arc::new(MockAiClient::new());
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        pool.clone().into(),
+        Arc::new(pool.clone()),
         Default::default(),
         Arc::new(Default::default()),
-        Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone().into(), test_app.redis_client.clone(), None)),
-        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(pool.clone(), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(pool.clone(), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(Default::default())))),
+        Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)),
+        Arc::new(scribe_backend::services::EcsEnhancedRagService::new(Arc::new(pool.clone()), Default::default(), Arc::new(Default::default()), Arc::new(scribe_backend::services::EcsEntityManager::new(Arc::new(pool.clone()), test_app.redis_client.clone(), None)), Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)), Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(scribe_backend::text_processing::chunking::ChunkConfig { metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word, max_size: 500, overlap: 50 })))),
         Arc::new(scribe_backend::services::EcsGracefulDegradation::new(Default::default(), Arc::new(Default::default()), None, None)),
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     
     let engine = ContextAssemblyEngine::new(
         hybrid_query_service,
-        pool.clone().into(),
+        Arc::new(pool.clone()),
         encryption_service,
         ai_client.clone(),
     );

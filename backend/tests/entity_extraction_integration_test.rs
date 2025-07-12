@@ -36,7 +36,7 @@ async fn test_entity_extraction_fallback_compilation() {
     let user_id = user.id;
     
     // Create session DEK using user's DEK
-    let session_dek = SessionDek::new(user.dek.as_ref().unwrap().expose_secret_bytes());
+    let session_dek = SessionDek::new(user.dek.as_ref().unwrap().expose_secret_bytes().to_vec());
 
     // Create chronicle
     let chronicle_service = Arc::new(ChronicleService::new(_test_app.db_pool.clone()));
@@ -52,7 +52,7 @@ async fn test_entity_extraction_fallback_compilation() {
     let feature_flags = Arc::new(NarrativeFeatureFlags::default());
     
     let ecs_entity_manager = Arc::new(EcsEntityManager::new(
-        _test_app.db_pool.clone(),
+        Arc::new(_test_app.db_pool.clone()),
         redis_client.clone(),
         None,
     ));
@@ -73,7 +73,7 @@ async fn test_entity_extraction_fallback_compilation() {
     ));
 
     let ecs_enhanced_rag_service = Arc::new(EcsEnhancedRagService::new(
-        _test_app.db_pool.clone(),
+        Arc::new(_test_app.db_pool.clone()),
         Default::default(),
         feature_flags.clone(),
         ecs_entity_manager.clone(),
@@ -82,7 +82,7 @@ async fn test_entity_extraction_fallback_compilation() {
     ));
 
     let hybrid_query_service = Arc::new(HybridQueryService::new(
-        _test_app.db_pool.clone(),
+        Arc::new(_test_app.db_pool.clone()),
         Default::default(),
         feature_flags.clone(),
         ecs_entity_manager.clone(),
@@ -91,26 +91,26 @@ async fn test_entity_extraction_fallback_compilation() {
     ));
 
     let world_model_service = Arc::new(WorldModelService::new(
+        Arc::new(_test_app.db_pool.clone()),
         ecs_entity_manager.clone(),
         hybrid_query_service.clone(),
         chronicle_service.clone(),
     ));
 
-    let agentic_orchestrator = Arc::new(AgenticOrchestrator::new(
+    let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         _test_app.ai_client.clone(),
-        _test_app.db_pool.clone(),
-        world_model_service.clone(),
+        ecs_entity_manager.clone(),
     ));
 
-    let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
-        world_model_service.clone(),
+    let agentic_orchestrator = Arc::new(AgenticOrchestrator::new(
+        _test_app.ai_client.clone(),
+        hybrid_query_service.clone(),
+        Arc::new(_test_app.db_pool.clone()),
+        agentic_state_update_service.clone(),
     ));
 
     let chronicle_ecs_translator = Arc::new(ChronicleEcsTranslator::new(
-        ecs_entity_manager.clone(),
-        world_model_service.clone(),
-        agentic_orchestrator.clone(),
-        agentic_state_update_service.clone(),
+        Arc::new(_test_app.db_pool.clone())
     ));
 
     let services = scribe_backend::state::AppStateServices {
@@ -148,7 +148,13 @@ async fn test_entity_extraction_fallback_compilation() {
         ecs_graceful_degradation: ecs_graceful_degradation.clone(),
         ecs_enhanced_rag_service: ecs_enhanced_rag_service.clone(),
         hybrid_query_service: hybrid_query_service.clone(),
-        chronicle_event_listener: Arc::new(ChronicleEventListener::new(chronicle_ecs_translator.clone())),
+        chronicle_event_listener: Arc::new(ChronicleEventListener::new(
+            Default::default(),
+            feature_flags.clone(),
+            chronicle_ecs_translator.clone(),
+            ecs_entity_manager.clone(),
+            chronicle_service.clone(),
+        )),
         chronicle_ecs_translator: chronicle_ecs_translator.clone(),
         chronicle_service: chronicle_service.clone(),
         world_model_service: world_model_service.clone(),

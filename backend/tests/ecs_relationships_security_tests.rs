@@ -795,6 +795,7 @@ mod a04_insecure_design {
             modality: None,
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 1,
         };
 
         let translation_result = translator.translate_event(&malformed_event, user.id).await;
@@ -946,6 +947,7 @@ mod a08_data_integrity {
                 modality: Some("ACTUAL".to_string()),
                 caused_by_event_id: None,
                 causes_event_ids: None,
+                sequence_number: 1,
             },
             NewChronicleEvent {
                 chronicle_id,
@@ -965,6 +967,7 @@ mod a08_data_integrity {
                 modality: Some("ACTUAL".to_string()),
                 caused_by_event_id: None,
                 causes_event_ids: None,
+                sequence_number: 2,
             },
         ];
 
@@ -1154,6 +1157,7 @@ mod a09_logging_monitoring {
             modality: Some("ACTUAL".to_string()),
             caused_by_event_id: None,
             causes_event_ids: None,
+            sequence_number: 1,
         };
 
         let stored_event = conn.interact({

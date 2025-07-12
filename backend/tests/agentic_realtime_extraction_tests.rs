@@ -27,6 +27,68 @@ use secrecy::{SecretBox, SecretString, ExposeSecret};
 use diesel::{RunQueryDsl, prelude::*};
 use bcrypt;
 
+/// Helper to create agentic services for tests
+fn create_agentic_services(test_app: &TestApp) -> (Arc<scribe_backend::services::WorldModelService>, Arc<scribe_backend::services::AgenticOrchestrator>, Arc<scribe_backend::services::AgenticStateUpdateService>) {
+    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+    let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+    let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+        Arc::new(test_app.db_pool.clone()),
+        redis_client,
+        None,
+    ));
+    let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+        Default::default(),
+        feature_flags.clone(),
+        Some(entity_manager.clone()),
+        None,
+    ));
+    let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+        scribe_backend::text_processing::chunking::ChunkConfig {
+            metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+            max_size: 500,
+            overlap: 50,
+        }
+    ));
+    let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+        Arc::new(test_app.db_pool.clone()),
+        Default::default(),
+        feature_flags.clone(),
+        entity_manager.clone(),
+        degradation.clone(),
+        concrete_embedding_service,
+    ));
+    let hybrid_query_service = Arc::new(scribe_backend::services::HybridQueryService::new(
+        Arc::new(test_app.db_pool.clone()),
+        Default::default(),
+        feature_flags,
+        entity_manager.clone(),
+        rag_service,
+        degradation,
+    ));
+    let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone()));
+    
+    let world_model_service = Arc::new(scribe_backend::services::WorldModelService::new(
+        Arc::new(test_app.db_pool.clone()),
+        entity_manager.clone(),
+        hybrid_query_service.clone(),
+        chronicle_service,
+    ));
+    
+    let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+        test_app.ai_client.clone(),
+        entity_manager.clone(),
+    ));
+    
+    let agentic_orchestrator = Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+        test_app.ai_client.clone(),
+        hybrid_query_service,
+        Arc::new(test_app.db_pool.clone()),
+        agentic_state_update_service.clone(),
+    ));
+    
+    (world_model_service, agentic_orchestrator, agentic_state_update_service)
+}
+
 /// Helper to create a test user in the database
 async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)> {
     let conn = test_app.db_pool.get().await?;
@@ -299,6 +361,19 @@ mod realtime_extraction_tests {
                 chronicle_service,
             ))
         },
+        // Agentic services for test
+        world_model_service: {
+            let (world_model_service, _, _) = create_agentic_services(&test_app);
+            world_model_service
+        },
+        agentic_state_update_service: {
+            let (_, _, agentic_state_update_service) = create_agentic_services(&test_app);
+            agentic_state_update_service
+        },
+        agentic_orchestrator: {
+            let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
+            agentic_orchestrator
+        },
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -530,6 +605,19 @@ mod realtime_extraction_tests {
                 entity_manager,
                 chronicle_service,
             ))
+        },
+        // Agentic services for test
+        world_model_service: {
+            let (world_model_service, _, _) = create_agentic_services(&test_app);
+            world_model_service
+        },
+        agentic_state_update_service: {
+            let (_, _, agentic_state_update_service) = create_agentic_services(&test_app);
+            agentic_state_update_service
+        },
+        agentic_orchestrator: {
+            let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
+            agentic_orchestrator
         },
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
@@ -779,6 +867,19 @@ mod realtime_extraction_tests {
                 entity_manager,
                 chronicle_service,
             ))
+        },
+        // Agentic services for test
+        world_model_service: {
+            let (world_model_service, _, _) = create_agentic_services(&test_app);
+            world_model_service
+        },
+        agentic_state_update_service: {
+            let (_, _, agentic_state_update_service) = create_agentic_services(&test_app);
+            agentic_state_update_service
+        },
+        agentic_orchestrator: {
+            let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
+            agentic_orchestrator
         },
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
@@ -1030,6 +1131,19 @@ mod realtime_extraction_tests {
                 entity_manager,
                 chronicle_service,
             ))
+        },
+        // Agentic services for test
+        world_model_service: {
+            let (world_model_service, _, _) = create_agentic_services(&test_app);
+            world_model_service
+        },
+        agentic_state_update_service: {
+            let (_, _, agentic_state_update_service) = create_agentic_services(&test_app);
+            agentic_state_update_service
+        },
+        agentic_orchestrator: {
+            let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
+            agentic_orchestrator
         },
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
@@ -1284,6 +1398,19 @@ mod realtime_extraction_tests {
                 entity_manager,
                 chronicle_service,
             ))
+        },
+        // Agentic services for test
+        world_model_service: {
+            let (world_model_service, _, _) = create_agentic_services(&test_app);
+            world_model_service
+        },
+        agentic_state_update_service: {
+            let (_, _, agentic_state_update_service) = create_agentic_services(&test_app);
+            agentic_state_update_service
+        },
+        agentic_orchestrator: {
+            let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
+            agentic_orchestrator
         },
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(

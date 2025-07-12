@@ -170,27 +170,104 @@ async fn test_entity_resolution_tool_compiles() {
             )),
             Arc::new(ChronicleService::new(test_app.db_pool.clone())),
         )),
-        world_model_service: Arc::new(WorldModelService::new(
-            Arc::new(test_app.db_pool.clone()),
-            Arc::new(NarrativeFeatureFlags::default()),
-        )),
-        agentic_orchestrator: Arc::new(AgenticOrchestrator::new(
-            Arc::new(test_app.db_pool.clone()),
-            Arc::new(NarrativeFeatureFlags::default()),
-            Arc::new(EcsEntityManager::new(
+        world_model_service: {
+            let entity_manager = Arc::new(EcsEntityManager::new(
                 Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
-            )),
-            Arc::new(AgenticStateUpdateService::new(
-                Arc::new(test_app.db_pool.clone()),
+            ));
+            let degradation = Arc::new(EcsGracefulDegradation::new(
+                Default::default(),
                 Arc::new(NarrativeFeatureFlags::default()),
-            )),
-        )),
-        agentic_state_update_service: Arc::new(AgenticStateUpdateService::new(
-            Arc::new(test_app.db_pool.clone()),
-            Arc::new(NarrativeFeatureFlags::default()),
-        )),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let rag_service = Arc::new(EcsEnhancedRagService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                entity_manager.clone(),
+                degradation.clone(),
+                Arc::new(EmbeddingPipelineService::new(
+                    ChunkConfig {
+                        metric: ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                )),
+            ));
+            let query_service = Arc::new(HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                entity_manager.clone(),
+                rag_service,
+                degradation,
+            ));
+            let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+            Arc::new(WorldModelService::new(
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager,
+                query_service,
+                chronicle_service,
+            ))
+        },
+        agentic_state_update_service: {
+            let entity_manager = Arc::new(EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            ));
+            Arc::new(AgenticStateUpdateService::new(
+                test_app.ai_client.clone(),
+                entity_manager,
+            ))
+        },
+        agentic_orchestrator: {
+            let entity_manager = Arc::new(EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            ));
+            let degradation = Arc::new(EcsGracefulDegradation::new(
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let rag_service = Arc::new(EcsEnhancedRagService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                entity_manager.clone(),
+                degradation.clone(),
+                Arc::new(EmbeddingPipelineService::new(
+                    ChunkConfig {
+                        metric: ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                )),
+            ));
+            let query_service = Arc::new(HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                entity_manager.clone(),
+                rag_service,
+                degradation,
+            ));
+            let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
+                test_app.ai_client.clone(),
+                entity_manager,
+            ));
+            Arc::new(AgenticOrchestrator::new(
+                test_app.ai_client.clone(),
+                query_service,
+                Arc::new(test_app.db_pool.clone()),
+                agentic_state_update_service,
+            ))
+        },
     };
     
     let app_state = Arc::new(AppState::new(

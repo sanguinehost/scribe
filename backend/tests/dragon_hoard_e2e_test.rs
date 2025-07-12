@@ -290,6 +290,7 @@ impl DragonHoardScenario {
                 "locations": mentioned_locations,
                 "items": mentioned_items
             })),
+            timestamp_iso8601: None,
         };
 
         let event = self.chronicle_service.create_event(

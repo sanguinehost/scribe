@@ -385,6 +385,7 @@ async fn test_persona_context_missing_in_events() {
                     test_app.db_pool.clone(),
                 ));
                 Arc::new(scribe_backend::services::WorldModelService::new(
+                    Arc::new(test_app.db_pool.clone()),
                     entity_manager.clone(),
                     hybrid_query_service,
                     chronicle_service,
@@ -428,17 +429,15 @@ async fn test_persona_context_missing_in_events() {
                     test_app.ai_client.clone(),
                     hybrid_query_service,
                     Arc::new(test_app.db_pool.clone()),
-                    Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(world_model_service.clone())),
+                    Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(test_app.ai_client.clone(), entity_manager.clone())),
                 ))
             };
             let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
-                world_model_service.clone(),
+                test_app.ai_client.clone(),
+                entity_manager.clone(),
             ));
             Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
-                entity_manager,
-                world_model_service,
-                agentic_orchestrator,
-                agentic_state_update_service,
+                Arc::new(test_app.db_pool.clone())
             ))
         },
         chronicle_event_listener: {
@@ -494,6 +493,7 @@ async fn test_persona_context_missing_in_events() {
                         test_app.db_pool.clone(),
                     ));
                     Arc::new(scribe_backend::services::WorldModelService::new(
+                        Arc::new(test_app.db_pool.clone()),
                         entity_manager.clone(),
                         hybrid_query_service,
                         chronicle_service,
@@ -537,17 +537,15 @@ async fn test_persona_context_missing_in_events() {
                         test_app.ai_client.clone(),
                         hybrid_query_service,
                         Arc::new(test_app.db_pool.clone()),
-                        Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(world_model_service.clone())),
+                        Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(test_app.ai_client.clone(), entity_manager.clone())),
                     ))
                 };
                 let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
-                    world_model_service.clone(),
+                    test_app.ai_client.clone(),
+                    entity_manager.clone(),
                 ));
                 Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
-                    entity_manager,
-                    world_model_service,
-                    agentic_orchestrator,
-                    agentic_state_update_service,
+                    Arc::new(test_app.db_pool.clone())
                 ))
             };
             Arc::new(scribe_backend::services::ChronicleEventListener::new(
@@ -601,8 +599,9 @@ async fn test_persona_context_missing_in_events() {
                 test_app.db_pool.clone(),
             ));
             Arc::new(WorldModelService::new(
-                entity_manager,
-                hybrid_query_service,
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager.clone(),
+                hybrid_query_service.clone(),
                 chronicle_service,
             ))
         },
@@ -649,12 +648,14 @@ async fn test_persona_context_missing_in_events() {
                 test_app.db_pool.clone(),
             ));
             let world_model_service = Arc::new(WorldModelService::new(
+                Arc::new(test_app.db_pool.clone()),
                 entity_manager.clone(),
                 hybrid_query_service,
                 chronicle_service,
             ));
             Arc::new(AgenticStateUpdateService::new(
-                world_model_service,
+                test_app.ai_client.clone(),
+                entity_manager,
             ))
         },
         agentic_orchestrator: {
@@ -700,16 +701,18 @@ async fn test_persona_context_missing_in_events() {
                 test_app.db_pool.clone(),
             ));
             let world_model_service = Arc::new(WorldModelService::new(
-                entity_manager,
-                hybrid_query_service,
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager.clone(),
+                hybrid_query_service.clone(),
                 chronicle_service,
             ));
             let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
-                world_model_service.clone(),
+                test_app.ai_client.clone(),
+                entity_manager.clone(),
             ));
             Arc::new(AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
-                hybrid_query_service,
+                hybrid_query_service.clone(),
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
             ))
@@ -975,6 +978,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                     test_app.db_pool.clone(),
                 ));
                 Arc::new(scribe_backend::services::WorldModelService::new(
+                    Arc::new(test_app.db_pool.clone()),
                     entity_manager.clone(),
                     hybrid_query_service,
                     chronicle_service,
@@ -1015,7 +1019,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                     ))
                 };
                 let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
-                    world_model_service.clone(),
+                    test_app.ai_client.clone(),
+                    entity_manager.clone(),
                 ));
                 Arc::new(scribe_backend::services::AgenticOrchestrator::new(
                     test_app.ai_client.clone(),
@@ -1025,13 +1030,11 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 ))
             };
             let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
-                world_model_service.clone(),
+                test_app.ai_client.clone(),
+                entity_manager.clone(),
             ));
             Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
-                entity_manager,
-                world_model_service,
-                agentic_orchestrator,
-                agentic_state_update_service,
+                Arc::new(test_app.db_pool.clone())
             ))
         },
         chronicle_event_listener: {
@@ -1087,6 +1090,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                         test_app.db_pool.clone(),
                     ));
                     Arc::new(scribe_backend::services::WorldModelService::new(
+                        Arc::new(test_app.db_pool.clone()),
                         entity_manager.clone(),
                         hybrid_query_service,
                         chronicle_service,
@@ -1127,7 +1131,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                         ))
                     };
                     let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
-                        world_model_service.clone(),
+                        test_app.ai_client.clone(),
+                        entity_manager.clone(),
                     ));
                     Arc::new(scribe_backend::services::AgenticOrchestrator::new(
                         test_app.ai_client.clone(),
@@ -1137,13 +1142,11 @@ async fn test_create_chronicle_event_tool_without_persona() {
                     ))
                 };
                 let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
-                    world_model_service.clone(),
+                    test_app.ai_client.clone(),
+                    entity_manager.clone(),
                 ));
                 Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
-                    entity_manager,
-                    world_model_service,
-                    agentic_orchestrator,
-                    agentic_state_update_service,
+                    Arc::new(test_app.db_pool.clone())
                 ))
             };
             Arc::new(scribe_backend::services::ChronicleEventListener::new(
@@ -1197,8 +1200,9 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 test_app.db_pool.clone(),
             ));
             Arc::new(WorldModelService::new(
-                entity_manager,
-                hybrid_query_service,
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager.clone(),
+                hybrid_query_service.clone(),
                 chronicle_service,
             ))
         },
@@ -1245,12 +1249,14 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 test_app.db_pool.clone(),
             ));
             let world_model_service = Arc::new(WorldModelService::new(
-                entity_manager,
-                hybrid_query_service,
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager.clone(),
+                hybrid_query_service.clone(),
                 chronicle_service,
             ));
             Arc::new(AgenticStateUpdateService::new(
-                world_model_service,
+                test_app.ai_client.clone(),
+                entity_manager,
             ))
         },
         agentic_orchestrator: {
@@ -1296,16 +1302,18 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 test_app.db_pool.clone(),
             ));
             let world_model_service = Arc::new(WorldModelService::new(
-                entity_manager,
-                hybrid_query_service,
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager.clone(),
+                hybrid_query_service.clone(),
                 chronicle_service,
             ));
             let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
-                world_model_service.clone(),
+                test_app.ai_client.clone(),
+                entity_manager.clone(),
             ));
             Arc::new(AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
-                hybrid_query_service,
+                hybrid_query_service.clone(),
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
             ))

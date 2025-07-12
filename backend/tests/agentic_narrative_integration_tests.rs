@@ -439,7 +439,7 @@ async fn test_agentic_tools_with_mock_ai() {
                 test_app.db_pool.clone(),
             ));
             Arc::new(scribe_backend::services::WorldModelService::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 entity_manager,
                 hybrid_query_service,
                 chronicle_service,

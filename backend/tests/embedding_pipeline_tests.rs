@@ -1273,6 +1273,31 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
 
     // Create a new AppState with the real service
+    // Create services properly without relying on non-existent app_state_arc
+    let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
+    let chat_override_service = Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone()
+    ));
+    let user_persona_service = Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone()
+    ));
+    let token_counter = Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+        scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+            panic!("Failed to create tokenizer for test")
+        }),
+        None,
+        "gemini-2.5-pro"
+    ));
+    let lorebook_service = Arc::new(scribe_backend::services::lorebook::LorebookService::new(
+        test_app.db_pool.clone(), 
+        encryption_service.clone(),
+        test_app.qdrant_service.clone()
+    ));
+    let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone()));
+    let file_storage_service = Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap());
+    
     let services_for_metadata_test = AppStateServices {
         ai_client: test_app
             .mock_ai_client
@@ -1281,13 +1306,13 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         embedding_client: test_app.mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(), // This is the MockQdrantClientService
         embedding_pipeline_service: Arc::new(real_embeddings_service), // Use the real service
-        chat_override_service: app_state_arc.chat_override_service.clone(), // Reuse from previous app_state_arc
-        user_persona_service: app_state_arc.user_persona_service.clone(),
-        token_counter: app_state_arc.token_counter.clone(),
-        encryption_service: app_state_arc.encryption_service.clone(),
-        lorebook_service: app_state_arc.lorebook_service.clone(),
-        auth_backend: app_state_arc.auth_backend.clone(), // Reuse auth_backend from app_state_arc
-        file_storage_service: app_state_arc.file_storage_service.clone(),
+        chat_override_service,
+        user_persona_service,
+        token_counter,
+        encryption_service,
+        lorebook_service,
+        auth_backend,
+        file_storage_service,
         email_service: Arc::new(
             scribe_backend::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
@@ -1404,10 +1429,126 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                 chronicle_service,
             ))
         },
-        // Add missing fields for WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
-        world_model_service: app_state_arc.world_model_service.clone(),
-        agentic_orchestrator: app_state_arc.agentic_orchestrator.clone(),
-        agentic_state_update_service: app_state_arc.agentic_state_update_service.clone(),
+        // Create WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
+        world_model_service: {
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            ));
+            let hybrid_query_service = {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+                let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(scribe_backend::services::HybridQueryService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager.clone(),
+                    rag_service,
+                    degradation,
+                ))
+            };
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
+                test_app.db_pool.clone(),
+            ));
+            Arc::new(scribe_backend::services::WorldModelService::new(
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager,
+                hybrid_query_service,
+                chronicle_service,
+            ))
+        },
+        agentic_state_update_service: {
+            let ai_client = test_app.mock_ai_client.clone().expect("Mock AI client should be present");
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                ai_client,
+                entity_manager,
+            ))
+        },
+        agentic_orchestrator: {
+            let ai_client = test_app.mock_ai_client.clone().expect("Mock AI client should be present");
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                ai_client.clone(),
+                entity_manager.clone(),
+            ));
+            let hybrid_query_service = {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+                let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    redis_client,
+                    None,
+                ));
+                let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(scribe_backend::services::HybridQueryService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager,
+                    rag_service,
+                    degradation,
+                ))
+            };
+            Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+                ai_client,
+                hybrid_query_service,
+                Arc::new(test_app.db_pool.clone()),
+                agentic_state_update_service,
+            ))
+        },
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1937,10 +2078,126 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                 chronicle_service,
             ))
         },
-        // Add missing fields for WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
-        world_model_service: app_state_arc.world_model_service.clone(),
-        agentic_orchestrator: app_state_arc.agentic_orchestrator.clone(),
-        agentic_state_update_service: app_state_arc.agentic_state_update_service.clone(),
+        // Create WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
+        world_model_service: {
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            ));
+            let hybrid_query_service = {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+                let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(scribe_backend::services::HybridQueryService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager.clone(),
+                    rag_service,
+                    degradation,
+                ))
+            };
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
+                test_app.db_pool.clone(),
+            ));
+            Arc::new(scribe_backend::services::WorldModelService::new(
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager,
+                hybrid_query_service,
+                chronicle_service,
+            ))
+        },
+        agentic_state_update_service: {
+            let ai_client = test_app.mock_ai_client.clone().expect("Mock AI client should be present");
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                ai_client,
+                entity_manager,
+            ))
+        },
+        agentic_orchestrator: {
+            let ai_client = test_app.mock_ai_client.clone().expect("Mock AI client should be present");
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                ai_client.clone(),
+                entity_manager.clone(),
+            ));
+            let hybrid_query_service = {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+                let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    redis_client,
+                    None,
+                ));
+                let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(scribe_backend::services::HybridQueryService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager,
+                    rag_service,
+                    degradation,
+                ))
+            };
+            Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+                ai_client,
+                hybrid_query_service,
+                Arc::new(test_app.db_pool.clone()),
+                agentic_state_update_service,
+            ))
+        },
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2192,10 +2449,126 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
                 chronicle_service,
             ))
         },
-        // Add missing fields for WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
-        world_model_service: app_state_arc.world_model_service.clone(),
-        agentic_orchestrator: app_state_arc.agentic_orchestrator.clone(),
-        agentic_state_update_service: app_state_arc.agentic_state_update_service.clone(),
+        // Create WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
+        world_model_service: {
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            ));
+            let hybrid_query_service = {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+                let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(scribe_backend::services::HybridQueryService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager.clone(),
+                    rag_service,
+                    degradation,
+                ))
+            };
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
+                test_app.db_pool.clone(),
+            ));
+            Arc::new(scribe_backend::services::WorldModelService::new(
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager,
+                hybrid_query_service,
+                chronicle_service,
+            ))
+        },
+        agentic_state_update_service: {
+            let ai_client = test_app.mock_ai_client.clone().expect("Mock AI client should be present");
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                ai_client,
+                entity_manager,
+            ))
+        },
+        agentic_orchestrator: {
+            let ai_client = test_app.mock_ai_client.clone().expect("Mock AI client should be present");
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                ai_client.clone(),
+                entity_manager.clone(),
+            ));
+            let hybrid_query_service = {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+                let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    redis_client,
+                    None,
+                ));
+                let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(scribe_backend::services::HybridQueryService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager,
+                    rag_service,
+                    degradation,
+                ))
+            };
+            Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+                ai_client,
+                hybrid_query_service,
+                Arc::new(test_app.db_pool.clone()),
+                agentic_state_update_service,
+            ))
+        },
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2459,10 +2832,126 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
                 chronicle_service,
             ))
         },
-        // Add missing fields for WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
-        world_model_service: app_state_arc.world_model_service.clone(),
-        agentic_orchestrator: app_state_arc.agentic_orchestrator.clone(),
-        agentic_state_update_service: app_state_arc.agentic_state_update_service.clone(),
+        // Create WorldModelService, AgenticOrchestrator, and AgenticStateUpdateService
+        world_model_service: {
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+                None,
+            ));
+            let hybrid_query_service = {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+                let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(scribe_backend::services::HybridQueryService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager.clone(),
+                    rag_service,
+                    degradation,
+                ))
+            };
+            let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
+                test_app.db_pool.clone(),
+            ));
+            Arc::new(scribe_backend::services::WorldModelService::new(
+                Arc::new(test_app.db_pool.clone()),
+                entity_manager,
+                hybrid_query_service,
+                chronicle_service,
+            ))
+        },
+        agentic_state_update_service: {
+            let ai_client = test_app.mock_ai_client.clone().expect("Mock AI client should be present");
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                ai_client,
+                entity_manager,
+            ))
+        },
+        agentic_orchestrator: {
+            let ai_client = test_app.mock_ai_client.clone().expect("Mock AI client should be present");
+            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                Arc::new(test_app.db_pool.clone()),
+                redis_client,
+                None,
+            ));
+            let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                ai_client.clone(),
+                entity_manager.clone(),
+            ));
+            let hybrid_query_service = {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+                let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    redis_client,
+                    None,
+                ));
+                let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(scribe_backend::services::HybridQueryService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager,
+                    rag_service,
+                    degradation,
+                ))
+            };
+            Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+                ai_client,
+                hybrid_query_service,
+                Arc::new(test_app.db_pool.clone()),
+                agentic_state_update_service,
+            ))
+        },
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),

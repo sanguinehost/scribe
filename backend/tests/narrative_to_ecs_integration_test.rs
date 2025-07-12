@@ -256,7 +256,7 @@ async fn test_complete_narrative_to_ecs_flow() {
         hybrid_query_service: {
             let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
             let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
             ));
@@ -267,7 +267,7 @@ async fn test_complete_narrative_to_ecs_flow() {
                 None,
             ));
             let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags.clone(),
                 entity_manager.clone(),
@@ -294,7 +294,7 @@ async fn test_complete_narrative_to_ecs_flow() {
             let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
             let translator = Arc::new(ChronicleEcsTranslator::new(Arc::new(test_app.db_pool.clone())));
             let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
             ));
@@ -308,7 +308,7 @@ async fn test_complete_narrative_to_ecs_flow() {
         },
         world_model_service: {
             let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
             ));
@@ -320,7 +320,7 @@ async fn test_complete_narrative_to_ecs_flow() {
                 None,
             ));
             let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags.clone(),
                 entity_manager.clone(),
@@ -334,7 +334,7 @@ async fn test_complete_narrative_to_ecs_flow() {
                 )),
             ));
             let query_service = Arc::new(scribe_backend::services::hybrid_query_service::HybridQueryService::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
                 entity_manager.clone(),
@@ -622,7 +622,7 @@ async fn test_entity_extraction_with_existing_entities() {
         hybrid_query_service: {
             let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
             let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
             ));
@@ -633,7 +633,7 @@ async fn test_entity_extraction_with_existing_entities() {
                 None,
             ));
             let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags.clone(),
                 entity_manager.clone(),
@@ -660,7 +660,7 @@ async fn test_entity_extraction_with_existing_entities() {
             let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
             let translator = Arc::new(ChronicleEcsTranslator::new(Arc::new(test_app.db_pool.clone())));
             let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
             ));
@@ -674,7 +674,7 @@ async fn test_entity_extraction_with_existing_entities() {
         },
         world_model_service: {
             let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
             ));
@@ -686,7 +686,7 @@ async fn test_entity_extraction_with_existing_entities() {
                 None,
             ));
             let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags.clone(),
                 entity_manager.clone(),
@@ -700,7 +700,7 @@ async fn test_entity_extraction_with_existing_entities() {
                 )),
             ));
             let query_service = Arc::new(scribe_backend::services::hybrid_query_service::HybridQueryService::new(
-                test_app.db_pool.clone(),
+                Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
                 entity_manager.clone(),

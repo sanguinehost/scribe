@@ -76,7 +76,7 @@ type CurrentAuthSession = AuthSession<AuthBackend>;
 #[derive(Deserialize, Debug)]
 pub struct ChatGenerateQueryParams {
     #[serde(default)]
-    request_thinking: bool,
+    pub request_thinking: bool,
 }
 
 #[derive(Serialize, Debug)] // Added derive Debug

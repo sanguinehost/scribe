@@ -994,7 +994,7 @@ impl ContextAssemblyEngine {
         }
     }
 
-    async fn execute_timeline_events_query(
+    pub async fn execute_timeline_events_query(
         &self,
         query: &PlannedQuery,
         user_id: Uuid,
@@ -1181,7 +1181,7 @@ impl ContextAssemblyEngine {
         }))
     }
 
-    async fn execute_entity_states_query(
+    pub async fn execute_entity_states_query(
         &self,
         query: &PlannedQuery,
         user_id: Uuid,
@@ -1469,7 +1469,7 @@ impl ContextAssemblyEngine {
         }))
     }
 
-    async fn execute_state_transitions_query(
+    pub async fn execute_state_transitions_query(
         &self,
         query: &PlannedQuery,
         user_id: Uuid,

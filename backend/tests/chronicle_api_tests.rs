@@ -316,6 +316,7 @@ mod api_tests {
             summary: "The party enters the mysterious misty forest".to_string(),
             source: EventSource::UserAdded,
             event_data: Some(event_data.clone()),
+            timestamp_iso8601: None,
         };
 
         let create_event_response = test_app.router
@@ -483,6 +484,7 @@ mod api_tests {
             summary: "This should not be allowed".to_string(),
             source: EventSource::UserAdded,
             event_data: None,
+            timestamp_iso8601: None,
         };
 
         let unauthorized_event_response = test_app.router
@@ -582,6 +584,7 @@ mod api_tests {
             summary: "Test event".to_string(),
             source: EventSource::UserAdded,
             event_data: None,
+            timestamp_iso8601: None,
         };
 
         let event_response = test_app.router

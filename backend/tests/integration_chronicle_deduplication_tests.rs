@@ -180,7 +180,7 @@ impl MountEverestTestFixture {
                 "modality": narrative_event.modality,
                 "timestamp_iso8601": narrative_event.timestamp,
             })),
-            timestamp_iso8601: narrative_event.timestamp.clone(),
+            timestamp_iso8601: Some(narrative_event.timestamp.clone()),
         }
     }
 }

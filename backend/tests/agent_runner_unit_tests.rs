@@ -173,59 +173,60 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                     test_app.db_pool.clone(),
                 ));
                 Arc::new(scribe_backend::services::WorldModelService::new(
+                    Arc::new(test_app.db_pool.clone()),
                     entity_manager.clone(),
                     hybrid_query_service,
                     chronicle_service,
                 ))
             };
-            let agentic_orchestrator = {
-                let hybrid_query_service = {
-                    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
-                    let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
-                    let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
-                        Default::default(),
-                        feature_flags.clone(),
-                        Some(entity_manager.clone()),
-                        None,
-                    ));
-                    let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
-                        scribe_backend::text_processing::chunking::ChunkConfig {
-                            metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
-                            max_size: 500,
-                            overlap: 50,
-                        }
-                    ));
-                    let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
-                        Arc::new(test_app.db_pool.clone()),
-                        Default::default(),
-                        feature_flags.clone(),
-                        entity_manager.clone(),
-                        degradation.clone(),
-                        concrete_embedding_service,
-                    ));
-                    Arc::new(scribe_backend::services::HybridQueryService::new(
-                        Arc::new(test_app.db_pool.clone()),
-                        Default::default(),
-                        feature_flags,
-                        entity_manager.clone(),
-                        rag_service,
-                        degradation,
-                    ))
-                };
-                Arc::new(scribe_backend::services::AgenticOrchestrator::new(
-                    test_app.ai_client.clone(),
+            
+            let hybrid_query_service = {
+                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
+                let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
+                    Default::default(),
+                    feature_flags.clone(),
+                    Some(entity_manager.clone()),
+                    None,
+                ));
+                let concrete_embedding_service = Arc::new(scribe_backend::services::embeddings::EmbeddingPipelineService::new(
+                    scribe_backend::text_processing::chunking::ChunkConfig {
+                        metric: scribe_backend::text_processing::chunking::ChunkingMetric::Word,
+                        max_size: 500,
+                        overlap: 50,
+                    }
+                ));
+                let rag_service = Arc::new(scribe_backend::services::EcsEnhancedRagService::new(
                     Arc::new(test_app.db_pool.clone()),
-                    world_model_service.clone(),
+                    Default::default(),
+                    feature_flags.clone(),
+                    entity_manager.clone(),
+                    degradation.clone(),
+                    concrete_embedding_service,
+                ));
+                Arc::new(scribe_backend::services::HybridQueryService::new(
+                    Arc::new(test_app.db_pool.clone()),
+                    Default::default(),
+                    feature_flags,
+                    entity_manager.clone(),
+                    rag_service,
+                    degradation,
                 ))
             };
-            let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
-                world_model_service.clone(),
+
+            let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
+                test_app.ai_client.clone(),
+                entity_manager.clone(),
+            ));
+
+            let agentic_orchestrator = Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+                test_app.ai_client.clone(),
+                hybrid_query_service.clone(),
+                Arc::new(test_app.db_pool.clone()),
+                agentic_state_update_service.clone(),
             ));
             Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
-                entity_manager,
-                world_model_service,
-                agentic_orchestrator,
-                agentic_state_update_service,
+                Arc::new(test_app.db_pool.clone())
             ))
         },
         chronicle_service: {
@@ -235,7 +236,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
         },
         chronicle_event_listener: {
             let translator = Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
-                Arc::new(test_app.db_pool.clone()),
+                Arc::new(test_app.db_pool.clone())
             ));
             let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
                 Arc::new(test_app.db_pool.clone()),
@@ -296,6 +297,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                 test_app.db_pool.clone(),
             ));
             Arc::new(scribe_backend::services::WorldModelService::new(
+                Arc::new(test_app.db_pool.clone()),
                 entity_manager,
                 hybrid_query_service,
                 chronicle_service,

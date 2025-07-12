@@ -336,14 +336,6 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
                 None,
             )),
         )),
-        entity_name_resolver: Arc::new(scribe_backend::services::EntityNameResolver::new(
-            Arc::new(test_app.db_pool.clone()),
-            Arc::new(scribe_backend::services::EcsEntityManager::new(
-                Arc::new(test_app.db_pool.clone()),
-                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                None,
-            )),
-        )),
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -711,14 +703,6 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
                 None,
             )),
         )),
-        entity_name_resolver: Arc::new(scribe_backend::services::EntityNameResolver::new(
-            Arc::new(test_app.db_pool.clone()),
-            Arc::new(scribe_backend::services::EcsEntityManager::new(
-                Arc::new(test_app.db_pool.clone()),
-                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                None,
-            )),
-        )),
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -1060,14 +1044,6 @@ async fn test_dual_mode_extraction_comparison() {
         )),
         agentic_state_update_service: Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
             test_app.ai_client.clone(),
-            Arc::new(scribe_backend::services::EcsEntityManager::new(
-                Arc::new(test_app.db_pool.clone()),
-                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                None,
-            )),
-        )),
-        entity_name_resolver: Arc::new(scribe_backend::services::EntityNameResolver::new(
-            Arc::new(test_app.db_pool.clone()),
             Arc::new(scribe_backend::services::EcsEntityManager::new(
                 Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
@@ -1419,14 +1395,6 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
         )),
         agentic_state_update_service: Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
             test_app.ai_client.clone(),
-            Arc::new(scribe_backend::services::EcsEntityManager::new(
-                Arc::new(test_app.db_pool.clone()),
-                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                None,
-            )),
-        )),
-        entity_name_resolver: Arc::new(scribe_backend::services::EntityNameResolver::new(
-            Arc::new(test_app.db_pool.clone()),
             Arc::new(scribe_backend::services::EcsEntityManager::new(
                 Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),

@@ -139,6 +139,7 @@ async fn create_test_chronicle_with_events(
                 "participants": [character_a_id.to_string(), character_b_id.to_string()]
             })),
             source: EventSource::AiExtracted,
+            timestamp_iso8601: None,
         };
         
         let event = chronicle_service

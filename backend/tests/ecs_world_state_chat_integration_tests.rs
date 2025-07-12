@@ -188,6 +188,7 @@ impl EcsWorldStateTestContext {
                         modality: Some("ACTUAL".to_string()),
                         caused_by_event_id: None,
                         causes_event_ids: None,
+                        sequence_number: 0,
                     })
                     .execute(conn)?;
                 
@@ -296,14 +297,12 @@ impl EcsWorldStateTestContext {
     /// Send a chat message and return the response using direct service call to bypass auth
     pub async fn send_chat_message(&self, message: &str) -> anyhow::Result<axum::response::Response> {
         let request_body = GenerateChatRequest {
-            session_id: self.session.id,
-            character_id: self.character.id,
-            messages: vec![ApiChatMessage {
+            history: vec![ApiChatMessage {
                 role: "user".to_string(),
                 content: message.to_string(),
             }],
-            stream: false,
-            options: None,
+            model: Some("gemini-2.5-pro".to_string()),
+            query_text_for_rag: None,
         };
 
         let request = Request::builder()
@@ -313,7 +312,7 @@ impl EcsWorldStateTestContext {
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(serde_json::to_string(&request_body)?))?;
 
-        let response = self.app.app.clone().oneshot(request).await?;
+        let response = self.app.router.clone().oneshot(request).await?;
         Ok(response)
     }
 
@@ -396,6 +395,7 @@ async fn test_ecs_world_state_included_when_enabled_and_chronicle_linked() {
     ));
     
     let world_model_service = Arc::new(scribe_backend::services::WorldModelService::new(
+        Arc::new(context.app.db_pool.clone()),
         entity_manager.clone(),
         hybrid_query_service,
         chronicle_service,

@@ -129,6 +129,7 @@ async fn test_causal_component_generation() {
         modality: Some("ACTUAL".to_string()),
         caused_by_event_id: None,
         causes_event_ids: None,
+        sequence_number: 0,
     };
 
     let caused_event = NewChronicleEvent {
@@ -151,6 +152,7 @@ async fn test_causal_component_generation() {
         modality: Some("ACTUAL".to_string()),
         caused_by_event_id: None,
         causes_event_ids: None,
+        sequence_number: 0,
     };
 
     // Insert causing event first (no dependencies)
@@ -293,6 +295,7 @@ async fn test_causal_component_complex_chain() {
         modality: Some("ACTUAL".to_string()),
         caused_by_event_id: None,
         causes_event_ids: None,
+        sequence_number: 0,
     };
 
     let event_a_result = conn.interact({
@@ -323,6 +326,7 @@ async fn test_causal_component_complex_chain() {
         modality: Some("ACTUAL".to_string()),
         caused_by_event_id: Some(event_a_result.id),
         causes_event_ids: None,
+        sequence_number: 1,
     };
 
     let event_b_result = conn.interact({
@@ -353,6 +357,7 @@ async fn test_causal_component_complex_chain() {
         modality: Some("ACTUAL".to_string()),
         caused_by_event_id: Some(event_b_result.id),
         causes_event_ids: None,
+        sequence_number: 2,
     };
 
     conn.interact({
@@ -584,6 +589,7 @@ async fn test_causal_component_data_integrity() {
         modality: Some("ACTUAL".to_string()),
         caused_by_event_id: None,
         causes_event_ids: None,
+        sequence_number: 0,
     };
 
     conn.interact({
