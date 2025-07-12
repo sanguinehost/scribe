@@ -113,7 +113,7 @@
 
 **Goal:** Establish a robust and intelligent world model before building the agent. This solves the core problems of "entity explosion" and "flat, meaningless space."
 
-**Current State:** 🟢 **90% Complete** - Strong ECS foundation with comprehensive hierarchical model, scale-aware positioning, agent tools, and security validation complete
+**Current State:** 🟢 **100% Complete** - Comprehensive world ontology with hierarchical spatial model, entity salience tiers, and AI-powered foundational tools fully implemented
 
 *   **[x] Task 0.1: Enhance Hierarchical Spatial Model**
     *   **Objective:** Extend existing spatial hierarchy to support multi-scale roleplay scenarios from galactic exploration to slice-of-life interactions.
@@ -209,19 +209,40 @@
             *   [x] Examples validation for Cosmic/Planetary/Intimate scales
 
 
-*   [ ] Task 0.3: Make Foundational Tools AI-Driven
+*   **[x] Task 0.3: Make Foundational Tools AI-Driven**
     *   **Objective:** Enhance the core "Atlas" tools with AI capabilities, moving beyond simple ECS wrappers to intelligent, context-aware operations. This addresses the need to make foundational tools AI-driven from the start, rather than only refactoring existing ones later.
-    *   **Current State:** ❌ Not implemented - Existing tools are direct wrappers around ECS logic.
-    *   **[ ] Subtask 0.3.1: Create AI-Powered Hierarchy Tools**
-        *   [ ] **`AnalyzeHierarchyRequestTool`**: Create a new tool that uses Flash-Lite to interpret natural language requests (e.g., "show me the chain of command for this fleet") and translates them into formal queries for `GetEntityHierarchyTool`.
-        *   [ ] **`SuggestHierarchyPromotionTool`**: Create a new tool that uses Flash to analyze narrative events and suggest when a hierarchy promotion is logical (e.g., "The characters have discussed the 'Crimson Fleet' extensively. Suggest promoting it to a `Core` salience entity with its own hierarchy.").
-    *   **[ ] Subtask 0.3.2: Create AI-Powered Salience Management Tool**
-        *   [ ] **`UpdateSalienceTool`**: Create a tool that uses Flash to analyze narrative context from a chat message or event and automatically assign or update an entity's `Salience` tier (`Core`, `Secondary`, `Flavor`).
-        *   [ ] **Use Case**: When a background character ("a bartender") is mentioned repeatedly and becomes important to the plot, this tool would automatically promote them from `Flavor` to `Secondary` or `Core`.
-    *   **[ ] Subtask 0.3.3: Write AI-Tool Integration Tests**
-        *   [ ] Test `AnalyzeHierarchyRequestTool` with various natural language queries.
-        *   [ ] Test `SuggestHierarchyPromotionTool` with narrative snippets that imply a promotion is needed.
-        *   [ ] Test `UpdateSalienceTool` with before/after narrative contexts to verify correct salience assignment.
+    *   **Current State:** ✅ **COMPLETED** - Full implementation with comprehensive AI-powered tools and testing infrastructure
+    *   **[x] Subtask 0.3.1: Create AI-Powered Hierarchy Tools**
+        *   [x] **`AnalyzeHierarchyRequestTool`**: Create a new tool that uses Flash-Lite to interpret natural language requests (e.g., "show me the chain of command for this fleet") and translates them into formal queries for `GetEntityHierarchyTool`.
+        *   [x] **`SuggestHierarchyPromotionTool`**: Create a new tool that uses Flash to analyze narrative events and suggest when a hierarchy promotion is logical (e.g., "The characters have discussed the 'Crimson Fleet' extensively. Suggest promoting it to a `Core` salience entity with its own hierarchy.").
+        *   [x] **Implementation Details:**
+            *   [x] Created `AnalyzeHierarchyRequestTool` with sophisticated natural language interpretation using Flash-Lite (gemini-2.5-flash-lite-preview-06-17)
+            *   [x] Implemented `SuggestHierarchyPromotionTool` with narrative analysis using Flash (gemini-2.5-flash-preview-06-17)
+            *   [x] Both tools integrated with existing `GetEntityHierarchyTool` for seamless hierarchy operations
+            *   [x] Registered in agentic factory for AI agent access
+    *   **[x] Subtask 0.3.2: Create AI-Powered Salience Management Tool**
+        *   [x] **`UpdateSalienceTool`**: Create a tool that uses Flash to analyze narrative context from a chat message or event and automatically assign or update an entity's `Salience` tier (`Core`, `Secondary`, `Flavor`).
+        *   [x] **Use Case**: When a background character ("a bartender") is mentioned repeatedly and becomes important to the plot, this tool would automatically promote them from `Flavor` to `Secondary` or `Core`.
+        *   [x] **Implementation Details:**
+            *   [x] Created sophisticated AI-driven salience analysis using Flash (gemini-2.5-flash-preview-06-17)
+            *   [x] Integrated with existing `SalienceTier` and `SpatialScale` enums for seamless ECS integration
+            *   [x] Supports all salience tier transitions with confidence scoring and reasoning
+            *   [x] Context-aware analysis for different scales (Cosmic/Planetary/Intimate)
+    *   **[x] Subtask 0.3.3: Write AI-Tool Integration Tests**
+        *   [x] Test `AnalyzeHierarchyRequestTool` with various natural language queries.
+        *   [x] Test `SuggestHierarchyPromotionTool` with narrative snippets that imply a promotion is needed.
+        *   [x] Test `UpdateSalienceTool` with before/after narrative contexts to verify correct salience assignment.
+        *   [x] **Comprehensive Test Suite (11 tests):**
+            *   [x] Basic functionality tests for all three AI tools
+            *   [x] Error handling and invalid input tests
+            *   [x] Comprehensive workflow integration testing
+            *   [x] Multi-scale scenario validation (Cosmic/Planetary/Intimate)
+            *   [x] Edge case handling (no promotions, flavor scenery, cosmic entities)
+        *   [x] **Centralized Testing Infrastructure:**
+            *   [x] Created `ai_tool_testing` module in `test_helpers.rs` with reusable test infrastructure
+            *   [x] Implemented `ToolTestConfig`, `ToolTestSetup` for standardized tool testing
+            *   [x] Added helper functions for tool creation, mock AI configuration, and result validation
+            *   [x] Designed for scalability to support dozens of future AI tools
 ---
 
 ## ➡️ Epic 1: Foundational Refactoring & Decommissioning

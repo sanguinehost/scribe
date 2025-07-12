@@ -17,7 +17,10 @@ use super::{
         SearchKnowledgeBaseTool, UpdateLorebookEntryTool
     },
     entity_resolution_tool::EntityResolutionTool,
-    tools::hierarchy_tools::{PromoteEntityHierarchyTool, GetEntityHierarchyTool},
+    tools::{
+        hierarchy_tools::{PromoteEntityHierarchyTool, GetEntityHierarchyTool},
+        ai_powered_tools::{AnalyzeHierarchyRequestTool, SuggestHierarchyPromotionTool, UpdateSalienceTool},
+    },
     registry::ToolRegistry,
 };
 
@@ -156,6 +159,16 @@ impl AgenticNarrativeFactory {
         let get_hierarchy_tool = Arc::new(GetEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
         registry.add_tool(get_hierarchy_tool);
 
+        // AI-powered foundational tools
+        let analyze_hierarchy_tool = Arc::new(AnalyzeHierarchyRequestTool::new(app_state.clone()));
+        registry.add_tool(analyze_hierarchy_tool);
+
+        let suggest_promotion_tool = Arc::new(SuggestHierarchyPromotionTool::new(app_state.clone()));
+        registry.add_tool(suggest_promotion_tool);
+
+        let update_salience_tool = Arc::new(UpdateSalienceTool::new(app_state.clone()));
+        registry.add_tool(update_salience_tool);
+
         info!("Registered {} core tools", registry.list_tools().len());
     }
 
@@ -216,6 +229,16 @@ impl AgenticNarrativeFactory {
 
         let get_hierarchy_tool = Arc::new(GetEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
         registry.add_tool(get_hierarchy_tool);
+
+        // AI-powered foundational tools
+        let analyze_hierarchy_tool = Arc::new(AnalyzeHierarchyRequestTool::new(app_state.clone()));
+        registry.add_tool(analyze_hierarchy_tool);
+
+        let suggest_promotion_tool = Arc::new(SuggestHierarchyPromotionTool::new(app_state.clone()));
+        registry.add_tool(suggest_promotion_tool);
+
+        let update_salience_tool = Arc::new(UpdateSalienceTool::new(app_state.clone()));
+        registry.add_tool(update_salience_tool);
 
         info!("Registered {} core tools", registry.list_tools().len());
     }

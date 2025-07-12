@@ -1,6 +1,7 @@
 //! Defines the core traits and data structures for the agentic tool framework.
 
 pub mod hierarchy_tools;
+pub mod ai_powered_tools;
 
 use async_trait::async_trait;
 use serde_json::Value;

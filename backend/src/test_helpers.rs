@@ -298,6 +298,20 @@ impl MockAiClient {
         responses.clear();
         responses.push_back(response);
     }
+
+    /// Create a new MockAiClient that returns an error
+    #[must_use]
+    pub fn new_with_error(error_message: String) -> Self {
+        Self {
+            last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Err(AppError::BadRequest(error_message)))),
+            stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            responses: Arc::new(Mutex::new(VecDeque::new())),
+            current_response: Arc::new(Mutex::new(0)),
+        }
+    }
 }
 
 impl Default for MockAiClient {
@@ -1547,6 +1561,8 @@ pub struct TestApp {
     pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Use trait object
     // Optionally store the mock Qdrant client for tests that need mock-specific methods
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
+    // Store the full AppState for tool testing
+    pub app_state: Arc<AppState>,
     // user_persona_service field removed as per plan
     // embedding_call_tracker field removed as per plan
 }
@@ -1878,7 +1894,171 @@ pub async fn spawn_app_with_rate_limiting_options(
         mock_embedding_pipeline_service: mock_embedding_pipeline_service_for_test_app.clone(),
         qdrant_service: qdrant_service_for_state,
         mock_qdrant_service: mock_qdrant_service_for_test_app,
+        app_state: Arc::new(app_state_inner), // Expose the full AppState for tool testing
         // user_persona_service and embedding_call_tracker removed from TestApp instantiation
+    }
+}
+
+// --- AI Tool Testing Infrastructure ---
+
+/// Comprehensive testing infrastructure for AI-powered tools
+/// This provides centralized helpers that all tool integration tests can use
+pub mod ai_tool_testing {
+    use super::*;
+    use crate::services::agentic::tools::ScribeTool;
+    use serde_json::Value as JsonValue;
+    use uuid::Uuid;
+
+    /// Configuration for AI tool tests
+    pub struct ToolTestConfig {
+        /// Whether to use real AI (true) or mock AI (false)
+        pub use_real_ai: bool,
+        /// Whether to use real Qdrant (true) or mock Qdrant (false)
+        pub use_real_qdrant: bool,
+        /// Whether to use real embedding pipeline (true) or mock (false)
+        pub use_real_embedding_pipeline: bool,
+        /// Whether to run in multi-threaded mode
+        pub multi_thread: bool,
+    }
+
+    impl Default for ToolTestConfig {
+        fn default() -> Self {
+            Self {
+                use_real_ai: false,
+                use_real_qdrant: false,
+                use_real_embedding_pipeline: false,
+                multi_thread: false,
+            }
+        }
+    }
+
+    /// Result of setting up a tool test environment
+    pub struct ToolTestSetup {
+        pub app: TestApp,
+        pub guard: TestDataGuard,
+        pub mock_ai_client: Option<Arc<MockAiClient>>,
+    }
+
+    /// Set up a complete testing environment for AI tools
+    /// This creates a TestApp with AppState and provides access to mock clients
+    pub async fn setup_tool_test(config: ToolTestConfig) -> ToolTestSetup {
+        let app = spawn_app(
+            config.multi_thread,
+            config.use_real_ai,
+            config.use_real_qdrant,
+        ).await;
+        
+        let guard = TestDataGuard::new(app.db_pool.clone());
+        let mock_ai_client = app.mock_ai_client.clone();
+
+        ToolTestSetup {
+            app,
+            guard,
+            mock_ai_client,
+        }
+    }
+
+    /// Create a tool with the test AppState
+    /// This is a generic helper that works with any tool that needs AppState
+    pub fn create_tool_with_app_state<T>(app_state: Arc<AppState>) -> T
+    where
+        T: From<Arc<AppState>>,
+    {
+        T::from(app_state)
+    }
+
+    /// Helper to configure mock AI responses for tool testing
+    pub fn configure_mock_ai_response(
+        mock_ai_client: &Arc<MockAiClient>,
+        response: JsonValue,
+    ) {
+        mock_ai_client.set_next_chat_response(response.to_string());
+    }
+
+    /// Helper to configure mock AI error responses for tool testing
+    pub fn configure_mock_ai_error(
+        mock_ai_client: &Arc<MockAiClient>,
+        error_message: &str,
+    ) {
+        let error_response = Err(crate::errors::AppError::BadRequest(error_message.to_string()));
+        mock_ai_client.set_response(error_response);
+    }
+
+    /// Execute a tool and return the result with proper error handling
+    pub async fn execute_tool_test<T: ScribeTool>(
+        tool: &T,
+        params: JsonValue,
+    ) -> Result<JsonValue, String> {
+        tool.execute(&params)
+            .await
+            .map_err(|e| format!("Tool execution failed: {}", e))
+    }
+
+    /// Create a test user ID for tool testing
+    pub fn create_test_user_id() -> Uuid {
+        Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
+            .expect("Valid test UUID")
+    }
+
+    /// Verify tool schema has required fields
+    pub fn verify_tool_schema(
+        schema: &JsonValue,
+        required_fields: &[&str],
+    ) -> Result<(), String> {
+        let properties = schema.get("properties")
+            .ok_or("Schema missing 'properties' field")?;
+        
+        let required = schema.get("required")
+            .and_then(|r| r.as_array())
+            .ok_or("Schema missing 'required' array")?;
+
+        // Check all required fields exist in properties
+        for &field in required_fields {
+            if !properties.get(field).is_some() {
+                return Err(format!("Schema missing required property: {}", field));
+            }
+
+            if !required.iter().any(|r| r.as_str() == Some(field)) {
+                return Err(format!("Required field '{}' not in required array", field));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Verify tool output has expected structure
+    pub fn verify_tool_output(
+        output: &JsonValue,
+        expected_fields: &[&str],
+    ) -> Result<(), String> {
+        for &field in expected_fields {
+            if !output.get(field).is_some() {
+                return Err(format!("Output missing expected field: {}", field));
+            }
+        }
+        Ok(())
+    }
+
+    /// Helper to test tool error handling
+    pub async fn test_tool_error_handling<T: ScribeTool>(
+        tool: &T,
+        invalid_params: JsonValue,
+        expected_error_contains: &str,
+    ) -> Result<(), String> {
+        match tool.execute(&invalid_params).await {
+            Ok(_) => Err("Expected tool to return error but it succeeded".to_string()),
+            Err(e) => {
+                let error_str = e.to_string();
+                if error_str.contains(expected_error_contains) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "Error message '{}' does not contain expected text '{}'",
+                        error_str, expected_error_contains
+                    ))
+                }
+            }
+        }
     }
 }
 
