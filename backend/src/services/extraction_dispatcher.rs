@@ -176,12 +176,18 @@ impl ExtractionDispatcher {
 
         let duration = start_time.elapsed();
         
-        // Calculate metrics from workflow result
-        let events_extracted = workflow_result.execution_results.len();
+        // Calculate metrics from workflow result (JSON value)
+        let events_extracted = workflow_result
+            .get("execution")
+            .and_then(|e| e.get("events_created"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
         let chronicles_created = if chronicle_id.is_none() && events_extracted > 0 { 1 } else { 0 };
-        let lorebook_entries_created = workflow_result.actions_taken.iter()
-            .filter(|action| action.tool_name == "create_lorebook_entry")
-            .count();
+        let lorebook_entries_created = workflow_result
+            .get("execution")
+            .and_then(|e| e.get("lorebook_entries_created"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
 
         info!(
             duration_ms = duration.as_millis(),

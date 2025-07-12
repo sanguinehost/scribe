@@ -24,7 +24,7 @@ use crate::services::file_storage_service::FileStorageService; // Added for File
 use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
 use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
-use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
+use crate::services::narrative_intelligence_service::NarrativeIntelligenceService;
 // ECS Services
 use crate::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, ChronicleEventListener, ChronicleEcsTranslator, ChronicleService, WorldModelService, AgenticOrchestrator, AgenticStateUpdateService};
 use crate::config::NarrativeFeatureFlags;
@@ -90,7 +90,7 @@ pub struct AppState {
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
     pub file_storage_service: Arc<FileStorageService>, // Added for file storage
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
-    pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
+    pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Flash-integrated narrative orchestrator
     pub rechronicle_semaphore: Arc<Semaphore>, // Global semaphore to limit concurrent re-chronicle jobs
     // ECS Services
     pub redis_client: Arc<redis::Client>,
@@ -129,7 +129,7 @@ impl fmt::Debug for AppState {
             .field("auth_backend", &"<Arc<AuthBackend>>") // Added
             .field("file_storage_service", &"<Arc<FileStorageService>>") // Added
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
-            .field("narrative_intelligence_service", &"<Option<Arc<NarrativeIntelligenceService>>>") // Added for agentic narrative processing
+            .field("narrative_intelligence_service", &"<Option<Arc<NarrativeIntelligenceService>>>") // Flash-integrated narrative orchestrator
             .field("rechronicle_semaphore", &"<Arc<Semaphore>>") // Added for re-chronicle concurrency control
             .field("redis_client", &"<Arc<redis::Client>>") // ECS Redis cache
             .field("feature_flags", &"<Arc<NarrativeFeatureFlags>>") // ECS feature control
@@ -182,7 +182,7 @@ impl AppState {
         }
     }
 
-    /// Set the narrative intelligence service after AppState construction
+    /// Set the narrative intelligence service after AppState construction  
     /// This is needed to break the circular dependency during construction
     pub fn set_narrative_intelligence_service(&mut self, service: Arc<NarrativeIntelligenceService>) {
         self.narrative_intelligence_service = Some(service);

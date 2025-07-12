@@ -579,16 +579,11 @@ fn setup_app_state_and_auth(
     let mut app_state = AppState::new(pool.clone(), config.clone(), services);
     
     // Initialize narrative intelligence service after AppState creation to avoid circular dependency
-    let chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
     let narrative_intelligence_service = Arc::new(
-        NarrativeIntelligenceService::for_production_with_deps(
-            app_state.ai_client.clone(),
-            chronicle_service,
-            app_state.lorebook_service.clone(),
-            app_state.qdrant_service.clone(),
-            app_state.embedding_client.clone(),
+        NarrativeIntelligenceService::new(
             Arc::new(app_state.clone()),
-        )
+            None,
+        )?
     );
     app_state.set_narrative_intelligence_service(narrative_intelligence_service);
 

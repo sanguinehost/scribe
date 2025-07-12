@@ -35,7 +35,7 @@ use crate::{
     },
     services::{
         ChronicleService,
-        narrative_intelligence_service::EventDataToInsert,
+        EventDataToInsert,
         hybrid_query_service::{
             HybridQueryService, HybridQuery, HybridQueryType, HybridQueryOptions
         },

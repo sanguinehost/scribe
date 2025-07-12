@@ -27,6 +27,7 @@ use crate::{
     models::{
         chats::ChatMessage,
         chronicle::CreateChronicleRequest,
+        chronicle_event::EventFilter,
     },
     services::{ChronicleService, hybrid_token_counter::HybridTokenCounter},
     state::AppState,
@@ -455,7 +456,7 @@ impl NarrativeAgentRunner {
 
         // Get existing chronicle events if chronicle exists
         if let Some(c_id) = chronicle_id {
-            match self.chronicle_service.get_chronicle_events(c_id, user_id).await {
+            match self.chronicle_service.get_chronicle_events(user_id, c_id, EventFilter::default()).await {
                 Ok(events) => {
                     context["existing_chronicles"] = json!({
                         "chronicle_id": c_id.to_string(),
@@ -543,6 +544,54 @@ Respond with ONLY the chronicle name, nothing else."#,
 
         debug!("Generated chronicle name: {}", chronicle_name);
         Ok(chronicle_name)
+    }
+
+    // TEMPORARY STUB METHODS - to be removed during narrative intelligence service refactoring
+    // These methods are called by legacy services and will be replaced during Epic 1 Flash integration
+    
+    #[deprecated(note = "Legacy method - will be removed during narrative intelligence service refactoring")]
+    pub async fn process_narrative_event(
+        &self,
+        _user_id: uuid::Uuid,
+        _session_id: uuid::Uuid,
+        _chronicle_id: Option<uuid::Uuid>,
+        _messages: &[crate::models::chats::ChatMessage],
+        _session_dek: &crate::auth::session_dek::SessionDek,
+        _persona_context: Option<crate::services::agentic::agent_runner::UserPersonaContext>,
+    ) -> Result<serde_json::Value, crate::errors::AppError> {
+        // Temporary stub - redirect to new method
+        self.process_narrative_content(_messages, _session_dek, _user_id, _chronicle_id, _persona_context.as_ref(), false, "legacy_context").await
+    }
+
+    #[deprecated(note = "Legacy method - will be removed during narrative intelligence service refactoring")]
+    pub async fn process_narrative_event_with_options(
+        &self,
+        _messages: &[crate::models::chats::ChatMessage],
+        _session_dek: &crate::auth::session_dek::SessionDek,
+        _user_id: uuid::Uuid,
+        _chronicle_id: Option<uuid::Uuid>,
+        _is_re_chronicle: bool,
+        _context: &str,
+    ) -> Result<serde_json::Value, crate::errors::AppError> {
+        // Temporary stub - redirect to new method
+        self.process_narrative_content(_messages, _session_dek, _user_id, _chronicle_id, None, _is_re_chronicle, _context).await
+    }
+
+    #[deprecated(note = "Legacy method - will be removed during narrative intelligence service refactoring")]
+    pub async fn process_narrative_event_dry_run_with_options(
+        &self,
+        _messages: &[crate::models::chats::ChatMessage],
+        _session_dek: &crate::auth::session_dek::SessionDek,
+        _user_id: uuid::Uuid,
+        _chronicle_id: Option<uuid::Uuid>,
+        _is_re_chronicle: bool,
+        _context: &str,
+    ) -> Result<serde_json::Value, crate::errors::AppError> {
+        // Temporary stub for dry run - just return empty result
+        Ok(serde_json::json!({
+            "dry_run": true,
+            "message": "Legacy dry run method - functionality will be replaced during Flash integration"
+        }))
     }
 }
 

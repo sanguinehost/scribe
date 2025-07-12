@@ -103,7 +103,7 @@ async fn test_agentic_tools_basic_functionality() {
 
     // Test 1: Analyze Text Significance Tool
     println!("  → Testing AnalyzeTextSignificanceTool...");
-    let triage_tool = AnalyzeTextSignificanceTool::new(test_app.ai_client.clone());
+    let triage_tool = AnalyzeTextSignificanceTool::new(test_app.app_state.clone());
     let triage_result = triage_tool.execute(&test_messages).await;
     
     match triage_result {
@@ -121,7 +121,7 @@ async fn test_agentic_tools_basic_functionality() {
 
     // Test 2: Extract Temporal Events Tool
     println!("  → Testing ExtractTemporalEventsTool...");
-    let events_tool = ExtractTemporalEventsTool::new(test_app.ai_client.clone());
+    let events_tool = ExtractTemporalEventsTool::new(test_app.app_state.clone());
     let events_result = events_tool.execute(&test_messages).await;
     
     match events_result {
@@ -136,7 +136,7 @@ async fn test_agentic_tools_basic_functionality() {
 
     // Test 3: Extract World Concepts Tool
     println!("  → Testing ExtractWorldConceptsTool...");
-    let concepts_tool = ExtractWorldConceptsTool::new(test_app.ai_client.clone());
+    let concepts_tool = ExtractWorldConceptsTool::new(test_app.app_state.clone());
     let concepts_result = concepts_tool.execute(&test_messages).await;
     
     match concepts_result {
@@ -472,7 +472,7 @@ async fn test_workflow_message_processing() {
     });
     
     println!("  → Testing significance analysis...");
-    let triage_tool = AnalyzeTextSignificanceTool::new(test_app.ai_client.clone());
+    let triage_tool = AnalyzeTextSignificanceTool::new(test_app.app_state.clone());
     let triage_result = triage_tool.execute(&messages_for_ai).await;
     
     match triage_result {
@@ -486,14 +486,14 @@ async fn test_workflow_message_processing() {
                 println!("  → Content deemed significant, would proceed with extraction...");
                 
                 // Test extraction tools
-                let events_tool = ExtractTemporalEventsTool::new(test_app.ai_client.clone());
+                let events_tool = ExtractTemporalEventsTool::new(test_app.app_state.clone());
                 if let Ok(events_result) = events_tool.execute(&messages_for_ai).await {
                     if let Some(events) = events_result.get("events").and_then(|v| v.as_array()) {
                         println!("    🎯 Would extract {} temporal events", events.len());
                     }
                 }
                 
-                let concepts_tool = ExtractWorldConceptsTool::new(test_app.ai_client.clone());
+                let concepts_tool = ExtractWorldConceptsTool::new(test_app.app_state.clone());
                 if let Ok(concepts_result) = concepts_tool.execute(&messages_for_ai).await {
                     if let Some(concepts) = concepts_result.get("concepts").and_then(|v| v.as_array()) {
                         println!("    🌍 Would extract {} world concepts", concepts.len());
@@ -685,13 +685,13 @@ async fn test_tool_registry_integration() {
     let mut registry = ToolRegistry::new();
     
     // Register all agentic tools
-    let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(test_app.ai_client.clone()));
+    let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(test_app.app_state.clone()));
     registry.add_tool(significance_tool);
     
-    let events_tool = Arc::new(ExtractTemporalEventsTool::new(test_app.ai_client.clone()));
+    let events_tool = Arc::new(ExtractTemporalEventsTool::new(test_app.app_state.clone()));
     registry.add_tool(events_tool);
     
-    let concepts_tool = Arc::new(ExtractWorldConceptsTool::new(test_app.ai_client.clone()));
+    let concepts_tool = Arc::new(ExtractWorldConceptsTool::new(test_app.app_state.clone()));
     registry.add_tool(concepts_tool);
     
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(

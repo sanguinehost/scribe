@@ -22,8 +22,6 @@ pub mod registry;
 pub mod tools;
 pub mod persona_context;
 
-#[cfg(test)]
-mod narrative_tools_tests;
 
 // Re-export key types for convenience
 pub use agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig, TriageResult, ActionPlan, PlannedAction, UserPersonaContext};

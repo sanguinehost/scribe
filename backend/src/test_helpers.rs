@@ -39,7 +39,7 @@ use crate::{
     services::file_storage_service::FileStorageService,   // <<< ADDED THIS IMPORT
     services::gemini_token_client::GeminiTokenClient,
     services::hybrid_token_counter::HybridTokenCounter,
-    services::narrative_intelligence_service::NarrativeIntelligenceService, // <<< ADDED THIS IMPORT
+    services::narrative_intelligence_service::NarrativeIntelligenceService,
     services::tokenizer_service::TokenizerService,
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
     state::{AppState, AppStateServices},
@@ -1478,16 +1478,12 @@ impl TestAppStateBuilder {
 
         let mut app_state = AppState::new(self.db_pool, self.config, services);
         
-        // Now create the narrative intelligence service with the fully constructed AppState
+        // Create the Flash-integrated narrative intelligence service
         let narrative_intelligence_service = Arc::new(
             NarrativeIntelligenceService::for_development_with_deps(
-                app_state.ai_client.clone(),
-                chronicle_service,
-                app_state.lorebook_service.clone(),
-                app_state.qdrant_service.clone(),
-                app_state.embedding_client.clone(),
                 Arc::new(app_state.clone()),
-            )
+                None, // Use default config
+            ).expect("Failed to create narrative intelligence service")
         );
         
         // Set the narrative intelligence service

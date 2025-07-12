@@ -112,14 +112,14 @@ impl AgenticNarrativeFactory {
         app_state: Arc<AppState>,
     ) {
         // Triage tool - for Step 1 of the workflow
-        let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(ai_client.clone()));
+        let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(app_state.clone()));
         registry.add_tool(significance_tool);
 
         // Extraction tools - for Step 3 (no DB operations)
-        let extract_events_tool = Arc::new(ExtractTemporalEventsTool::new(ai_client.clone()));
+        let extract_events_tool = Arc::new(ExtractTemporalEventsTool::new(app_state.clone()));
         registry.add_tool(extract_events_tool);
 
-        let extract_concepts_tool = Arc::new(ExtractWorldConceptsTool::new(ai_client.clone()));
+        let extract_concepts_tool = Arc::new(ExtractWorldConceptsTool::new(app_state.clone()));
         registry.add_tool(extract_concepts_tool);
 
         // Creation tools - atomic DB operations for Step 4
@@ -131,13 +131,13 @@ impl AgenticNarrativeFactory {
 
         let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(
             lorebook_service.clone(),
+            app_state.clone(),
         ));
         registry.add_tool(create_lorebook_tool);
 
         // Knowledge search tools - using existing embeddings infrastructure
         let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-            app_state.qdrant_service.clone(),
-            app_state.embedding_client.clone(),
+            app_state.clone(),
         ));
         registry.add_tool(search_tool);
 
@@ -183,14 +183,14 @@ impl AgenticNarrativeFactory {
         app_state: Arc<AppState>,
     ) {
         // Triage tool - for Step 1 of the workflow
-        let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(ai_client.clone()));
+        let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(app_state.clone()));
         registry.add_tool(significance_tool);
 
         // Extraction tools - atomic operations for Step 2
-        let temporal_tool = Arc::new(ExtractTemporalEventsTool::new(ai_client.clone()));
+        let temporal_tool = Arc::new(ExtractTemporalEventsTool::new(app_state.clone()));
         registry.add_tool(temporal_tool);
 
-        let world_tool = Arc::new(ExtractWorldConceptsTool::new(ai_client.clone()));
+        let world_tool = Arc::new(ExtractWorldConceptsTool::new(app_state.clone()));
         registry.add_tool(world_tool);
 
         // Creation tools - atomic DB operations for Step 4
@@ -202,13 +202,13 @@ impl AgenticNarrativeFactory {
 
         let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(
             lorebook_service.clone(),
+            app_state.clone(),
         ));
         registry.add_tool(create_lorebook_tool);
 
         // Knowledge search tools - using existing embeddings infrastructure
         let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-            qdrant_service,
-            embedding_client,
+            app_state.clone(),
         ));
         registry.add_tool(search_tool);
         

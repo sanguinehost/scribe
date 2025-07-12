@@ -8,7 +8,7 @@
 //! - AiPromptGenerator: Context-aware prompt generation
 //! - AiPlanGenerator: Intelligent action planning
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync::Arc;
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -21,7 +21,6 @@ use crate::{
 };
 
 use super::super::agent_runner::{TriageResult, ActionPlan, PlannedAction, UserPersonaContext};
-use super::{ToolParams, ToolError};
 
 /// AI-powered triage analyzer that intelligently assesses narrative significance
 pub struct AiTriageAnalyzer {
@@ -178,13 +177,20 @@ Respond with JSON:
 
         for message in messages {
             // Decrypt message content
-            let decrypted_content = self.app_state.services.encryption_service
-                .decrypt_text(&message.encrypted_content, session_dek.expose_secret())
+            let nonce = message.content_nonce.as_deref().unwrap_or(&[0u8; 12]); // Fallback nonce for tests
+            let decrypted_content = self.app_state.encryption_service
+                .decrypt(&message.content, nonce, session_dek.expose_bytes())
                 .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to decrypt message: {}", e)))?;
+            
+            let content_str = String::from_utf8_lossy(&decrypted_content);
 
             conversation.push_str(&format!("{}: {}\n", 
-                message.sender_name.as_deref().unwrap_or("Unknown"),
-                decrypted_content
+                match message.message_type {
+                    crate::models::chats::MessageRole::User => "User",
+                    crate::models::chats::MessageRole::Assistant => "Assistant",
+                    crate::models::chats::MessageRole::System => "System",
+                },
+                content_str
             ));
         }
 

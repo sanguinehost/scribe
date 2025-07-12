@@ -255,10 +255,30 @@
     *   **Objective:** Fix the widespread architectural issue where multiple services bypass the Flash abstraction layer.
     *   **🚨 Critical Scope:** Analysis reveals 8+ services with hardcoded AI calls and system prompts
     *   **🎯 Architectural Vision:** This refactoring transforms scattered AI logic into a unified **Prompt Orchestration Engine** where Flash becomes the single, auditable interface to Gemini 2.5 Flash/Flash-Lite
-    *   **[x] Subtask 1.0.1: Core Agentic Tools (PRIORITY)**
+    *   **✅ PROGRESS UPDATE (2025-07-12):** Subtask 1.0.1 fully completed - Core agentic tools now use Flash/Flash-Lite throughout
+    *   **[x] Subtask 1.0.1: Core Agentic Tools (PRIORITY) ✅ COMPLETED**
         *   [x] **`entity_resolution_tool.rs`**: Replace hardcoded context extraction and entity matching prompts with Flash-Lite
         *   [x] **`agent_runner.rs`**: Replace hardcoded narrative analysis and triage prompts with Flash
-        *   [ ] **`narrative_tools.rs`**: Replace hardcoded narrative triage prompts with Flash-Lite
+        *   [x] **`narrative_tools.rs`**: Replace hardcoded narrative triage prompts with Flash-Lite ✅
+            *   [x] **Narrative Intelligence Service**: Main orchestrator implementing 4-step agentic workflow
+                *   Triage → Flash-Lite determines narrative significance
+                *   Retrieve → Context assembly with Flash-enhanced queries
+                *   Plan → Flash generates action plans for world state updates
+                *   Execute → Coordinated tool execution with Flash validation
+            *   [x] **Flash-Powered Tools**: All 7 narrative tools now use Flash/Flash-Lite
+                *   `AnalyzeTextSignificanceTool` - Flash-Lite powered significance analysis
+                *   `CreateChronicleEventTool` - Flash-powered event creation
+                *   `CreateLorebookEntryTool` - Flash-powered lorebook entry creation
+                *   `ExtractTemporalEventsTool` - Flash-powered temporal extraction
+                *   `ExtractWorldConceptsTool` - Flash-powered concept extraction
+                *   `SearchKnowledgeBaseTool` - Flash-powered knowledge search
+                *   `UpdateLorebookEntryTool` - Flash-powered entry updates
+            *   [x] **Security Tests**: Comprehensive OWASP Top 10 test coverage added
+                *   `agent_runner_security_tests.rs` - Access control, injection protection
+                *   `entity_resolution_security_tests.rs` - Entity isolation, data integrity
+                *   `narrative_tools_security_tests.rs` - Tool-specific security validation
+            *   [x] **Integration Tests**: Smoke tests verify Flash integration works correctly
+                *   `flash_integration_smoke_test.rs` - Verifies all components instantiate and configure properly
     *   **[ ] Subtask 1.0.2: AI Analysis Services**
         *   [ ] **`intent_detection_service.rs`**: Replace hardcoded intent analysis prompts with Flash
         *   [ ] **`context_optimization_service.rs`**: Replace hardcoded context filtering prompts with Flash-Lite

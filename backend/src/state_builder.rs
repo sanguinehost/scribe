@@ -467,15 +467,15 @@ impl AppStateBuilder {
         let mut app_state = AppState::new(self.pool, self.config, services);
         
         // Now create the narrative intelligence service with the fully constructed AppState
+        // We need to temporarily wrap in Arc for the service creation
+        let app_state_arc = Arc::new(app_state.clone());
+        
+        // Create the Flash-integrated narrative intelligence service 
         let narrative_intelligence_service = Arc::new(
             NarrativeIntelligenceService::for_development_with_deps(
-                app_state.ai_client.clone(),
-                Arc::new(ChronicleService::new(app_state.pool.clone())),
-                app_state.lorebook_service.clone(),
-                app_state.qdrant_service.clone(),
-                app_state.embedding_client.clone(),
-                Arc::new(app_state.clone()),
-            )
+                app_state_arc, // Pass the Arc<AppState>
+                None, // Use default config
+            )?
         );
         
         // Set the narrative intelligence service
