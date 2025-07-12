@@ -1,6 +1,6 @@
 # Sanguine Scribe: Living World Implementation Roadmap (V8 - Hierarchical Model)
 
-**Vision:** To execute a methodical, test-driven migration to a **Hierarchical World Model**. This roadmap details the establishment of a rich world ontology (The Atlas), the integration of a formal planning engine (The Blueprint), the development of tactical and operational agents (The Puppet), and the creation of a strategic, autonomous narrative system (The Autonomic System), with security and testability as foundational pillars.
+**Vision:** To execute a methodical, test-driven migration to a **Hierarchical World Model**. This roadmap details the establishment of a rich world ontology (The Atlas), the integration of an AI-driven planning system (The Blueprint), the development of tactical and operational agents (The Puppet), and the creation of a strategic, autonomous narrative system (The Autonomic System), with security and testability as foundational pillars.
 
 ## 📋 **Definition of Done**
 
@@ -59,7 +59,7 @@
 
 ### **🔴 Critical Gaps Identified**
 - **Missing Hierarchical Agents**: No `StrategicAgent`, `TacticalAgent`, or `PreResponseAgent`/`PostResponseAgent` classes exist
-- **No Formal Planning**: Current system uses LLM-based planning without formal verification (no PDDL/HTN integration)
+- **No Validated Planning**: The system lacks a dedicated planning-and-validation loop; agentic actions are generated without being explicitly validated against ECS ground truth before execution.
 - **Missing Pre-Response Pipeline**: Agents currently run post-chat; no pre-response enrichment integration
 - **No Agent Security Framework**: Security controls need extension to new agent hierarchy
 
@@ -103,7 +103,7 @@
 ### **🚨 High-Risk Areas Requiring Special Attention**
 1. **🔴 Comprehensive Flash Integration**: 8+ services with hardcoded AI calls need systematic refactoring without breaking existing functionality - **This is the bedrock of the entire system**
 2. **EnrichedContext Schema Design**: The JSON schema is the formal API between symbolic and neural layers - must be optimized for token efficiency and semantic richness
-3. **"Symbolic Firewall" Implementation**: PDDL planner must successfully prevent logically impossible outputs while preserving narrative creativity
+3. **"Symbolic Firewall" Implementation**: The `PlanValidator` service must successfully prevent the execution of logically impossible or invalid actions proposed by the LLM, grounding the AI's creativity in the ECS's rules.
 4. **Prompt Template Architecture**: Agent-specific templates must produce consistent, parseable outputs while maintaining narrative quality
 5. **Performance & Cost Optimization**: Hierarchical pipeline must minimize API calls and token usage while maximizing context relevance
 
@@ -367,40 +367,58 @@
 
 ---
 
-## 🧠 Epic 3: The Planning & Reasoning Cortex (The "Blueprint") - 🔴 HIGH RISK
+## 🧠 Epic 3: The Planning & Reasoning Cortex (The "Blueprint") - 🟡 MEDIUM RISK
 
-**Goal:** To create the "Blueprint" for the narrative by integrating a formal planner, providing a guarantee of causal consistency.
+**Goal:** To create the "Blueprint" for the narrative by implementing an **LLM-as-a-Planner**. This system uses a sophisticated, AI-driven prompt construction process to generate a sequence of actions as a structured JSON object. This plan is then rigorously validated against the ECS ground truth by a "Symbolic Firewall" before execution, ensuring causal consistency without the rigidity of an external formal planning engine.
 
-**Current State:** 🟡 **5% Complete** - Query planning infrastructure exists but no formal planning engine integration
+**Current State:** 🟡 **5% Complete** - Foundational query planning and AI service infrastructure exists.
 
-**Risk Assessment:** 🔴 **HIGH RISK** - Complex integration with external planning frameworks that may not align cleanly with existing ECS architecture
+**Risk Assessment:** 🟡 **MEDIUM RISK** - The core challenge is not integration with an external framework, but the robust implementation of the `PlanValidator` service. This service is the critical "Symbolic Firewall" that must correctly interpret the AI's plan and prevent any invalid actions from being executed.
 
-*   **[ ] Task 3.1: Define the PDDL Action Domain**
-    *   **Objective:** Translate the agent's toolkit from Epic 2 into a formal language the planner can understand.
-    *   **Current State:** ❌ No formal planning language integration exists
-    *   **Risk Mitigation:** Start with simple PDDL domain before attempting complex HTN integration
-    *   **[ ] Subtask 3.1.1:** Create a `domain.pddl` file in `backend/resources/planning/`.
-    *   **[ ] Subtask 3.1.2:** For each tool in `world_tools.rs` (e.g., `move_entity`), define a corresponding PDDL `(:action ...)` with `:parameters`, `:precondition`, and `:effect`. The predicates in the PDDL file must map directly to ECS components and relationships.
+*   **[ ] Task 3.1: Define the Action Schema for the LLM Planner**
+    *   **Objective:** Create the formal "language" that the LLM will use to construct plans. This schema is the contract between the AI's creative output and the game's logical rules.
+    *   **Current State:** ❌ No formal action schema exists.
+    *   **[ ] Subtask 3.1.1:** Create a versioned JSON schema file (e.g., `backend/resources/planning/action_schema_v1.json`).
+    *   **[ ] Subtask 3.1.2:** Define the schema to include `actions`, where each action has a `name` (matching a tool from Epic 2), `parameters` (with types), `preconditions` (ECS state required), and `effects` (ECS state changes).
+    *   **[ ] Subtask 3.1.3:** Document the schema thoroughly, explaining how each part maps to the ECS and the `TacticalToolkit`. This documentation is critical for prompt engineering.
 
-*   **[ ] Task 3.2: Integrate a Unified Planning Framework**
-    *   **Objective:** Add a planning engine to the backend services.
-    *   **Current State:** ❌ No formal planning framework integration
-    *   **Risk Mitigation:** Research Rust-compatible planning frameworks before implementation
-    *   **[ ] Subtask 3.2.1:** **RESEARCH PHASE:** Evaluate `AIPlan4EU Unified Planning Framework (UPF)` compatibility with Rust ecosystem. Consider alternatives like `planning-rs` or Python integration.
-    *   **[ ] Subtask 3.2.2:** Create a new `backend/src/services/planning/mod.rs` module and a `PlanningService`.
-    *   **[ ] Subtask 3.2.3:** Implement a `PlanningService::generate_plan` method that takes the current world state (as a structured representation of relevant ECS data) and a goal state, and uses the selected planning framework to generate a plan.
-    *   **[ ] Subtask 3.2.4 (Security - A02):** The `generate_plan` method MUST require a `SessionDek` as an argument to decrypt the necessary world state data for planning. Add tests to confirm it fails without one.
+*   **[ ] Task 3.2: Implement the LLM-based Planning Service**
+    *   **Objective:** Create the service that translates a narrative goal into a structured, AI-generated plan.
+    *   **Current State:** ❌ No dedicated planning service exists.
+    *   **[ ] Subtask 3.2.1:** Create a new `backend/src/services/planning/mod.rs` module and a `PlanningService`.
+    *   **[ ] Subtask 3.2.2:** Implement a `PlanningService::generate_plan` method. This method will:
+        *   [ ] Accept a high-level goal (e.g., "Sol needs to get the datapad from Borga").
+        *   [ ] Query the ECS for relevant world state (characters, locations, relationships).
+        *   [ ] Construct a detailed prompt for the LLM, providing the goal, the current world state, and the `Action Schema` as a "function calling" or "tool use" definition.
+        *   [ ] Call the AI service (Flash) and request a plan as a JSON object conforming to the schema.
+    *   **[ ] Subtask 3.2.3 (Security - A02):** The `generate_plan` method MUST require a `SessionDek` to decrypt the necessary world state data for constructing the prompt.
 
-*   **[ ] Task 3.3: Planner Integration Tests**
-    *   **Objective:** Verify that the planner can generate a valid plan based on the world state.
+*   **[ ] Task 3.3: Implement the Plan Validator (The "Symbolic Firewall")**
+    *   **Objective:** Create the critical service that validates the AI's plan against the ground truth of the ECS. **No action is executed without passing this check.**
+    *   **Current State:** ❌ No plan validation logic exists.
+    *   **[ ] Subtask 3.3.1:** Create a `PlanValidatorService` in the `planning` module.
+    *   **[ ] Subtask 3.3.2:** Implement a `PlanValidatorService::validate_plan` method that takes the JSON plan from the LLM and the current `EcsSnapshot`.
+    *   **[ ] Subtask 3.3.3:** For each step in the plan, the validator must check:
+        *   [ ] **Action Validity:** Does the action (e.g., `move_entity`) exist in our `TacticalToolkit`?
+        *   [ ] **Parameter Validity:** Do the entities and values passed as parameters (e.g., "Sol", "Cantina") actually exist in the ECS?
+        *   [ ] **Precondition Fulfillment:** Is the state required by the action's preconditions met in the current ECS snapshot? (e.g., Is "Sol" actually in the "Chamber" before attempting to move to the "Cantina"?)
+    *   **[ ] Subtask 3.3.4:** The service should return either a `ValidPlan` or an `InvalidPlan` result with detailed reasons for failure.
+
+*   **[ ] Task 3.4: Planning and Validation Integration Tests**
+    *   **Objective:** Verify that the entire planning and validation loop works correctly.
     *   **File:** `backend/tests/planning_service_tests.rs` (new)
-    *   **Current State:** ✅ Excellent test infrastructure exists with `test_helpers` - can be leveraged for planning tests
-    *   **[ ] Subtask 3.3.1:** Write a test that:
-        1.  [ ] Uses existing `test_helpers` to set up an initial world state in the test DB (e.g., "Sol is in the Chamber").
-        2.  [ ] Defines a goal state as a set of predicates (e.g., "Sol is in the Cantina").
-        3.  [ ] Calls the `PlanningService`.
-        4.  [ ] Asserts that the service returns a non-empty, valid sequence of actions (e.g., `[move_entity("Sol", "Cantina")]`).
-    *   **[ ] Subtask 3.3.2 (Security - A01):** Add a test case where the goal involves an entity not owned by the user, and assert that the planner fails to produce a plan, returning a `PermissionDenied` error.
+    *   **Current State:** ✅ Excellent test infrastructure exists with `test_helpers`.
+    *   **[ ] Subtask 3.4.1: Write a "Valid Plan" Test:**
+        1.  [ ] Use `test_helpers` to set up an initial world state (e.g., "Sol is in the Chamber").
+        2.  [ ] Define a goal: "Sol wants to go to the Cantina."
+        3.  [ ] Mock the AI call in `PlanningService` to return a correct, hardcoded JSON plan: `{"actions": [{"name": "move_entity", "parameters": ["Sol", "Cantina"]}]}`.
+        4.  [ ] Call the `PlanningService`, then pass its output to the `PlanValidatorService`.
+        5.  [ ] Assert that the plan is validated successfully.
+    *   **[ ] Subtask 3.4.2: Write an "Invalid Plan" Test (Precondition Fail):**
+        1.  [ ] Set up a world state where a precondition is not met (e.g., Sol needs a "keycard" to move, but doesn't have one).
+        2.  [ ] Mock the AI to return the same plan as above.
+        3.  [ ] Call the services and assert that the `PlanValidatorService` rejects the plan with a specific "PreconditionNotMet" error.
+    *   **[ ] Subtask 3.4.3 (Security - A01):** Add a test where the goal involves an entity not owned by the user. Assert that the `PlanningService`'s world state query returns no data for that entity, leading to the `PlanValidatorService` rejecting any plan involving it.
 
 ---
 
@@ -497,7 +515,7 @@
 2. **[ ] Planning Cortex Security**
    - [ ] Validate all planning inputs against user ownership
    - [ ] Implement plan execution limits and timeouts
-   - [ ] Add security constraints to PDDL domain definitions
+   - [ ] Add security constraints to the `Action Schema` (e.g., marking certain actions as requiring admin privileges)
 
 3. **[ ] Enhanced Security Monitoring**
    - [ ] Implement centralized security event correlation
