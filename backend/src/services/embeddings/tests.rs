@@ -383,6 +383,7 @@ mod tests {
                 state_update_service.clone(), // Clone the state_update_service here
             )),
             agentic_state_update_service: state_update_service.clone(), // Add this line
+            hierarchical_context_assembler: None, // Will be set after AppState is built
         };
 
         let config = crate::config::Config::load()
