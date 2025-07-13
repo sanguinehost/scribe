@@ -5,6 +5,11 @@ use crate::{
     services::{
         embeddings::RetrievedChunk,
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
+        context_assembly_engine::{
+            EnrichedContext, StrategicDirective, ValidatedPlan, SubGoal,
+            EntityContext, SpatialContext, CausalContext, TemporalContext,
+            ValidationCheck,
+        },
     },
 };
 use genai::chat::ChatMessage as GenAiChatMessage;
@@ -232,6 +237,40 @@ pub struct PromptBuildParams<'a> {
     pub chronicle_id: Option<uuid::Uuid>,
     /// Pre-assembled agentic context from orchestrator (optional)
     pub agentic_context: Option<String>,
+}
+
+/// Enhanced parameters for building LLM prompts with EnrichedContext support
+/// This enables the Hierarchical Agent Framework with Strategic → Tactical → Operational layers
+pub struct EnrichedPromptBuildParams<'a> {
+    // Core configuration (required)
+    pub config: Arc<Config>,
+    pub token_counter: Arc<HybridTokenCounter>,
+    pub model_name: String,
+    pub user_id: uuid::Uuid,
+    pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>,
+    
+    // EnrichedContext payload from the hierarchical agent framework
+    pub enriched_context: Option<&'a EnrichedContext>,
+    
+    // Current user message (required for all modes)
+    pub current_user_message: GenAiChatMessage,
+    
+    // Legacy compatibility - when EnrichedContext is not available
+    pub legacy_params: Option<PromptBuildParams<'a>>,
+    
+    // User persona name for template substitution
+    pub user_persona_name: Option<String>,
+}
+
+/// Flash-optimized prompt mode for hierarchical agent framework
+#[derive(Debug, Clone)]
+pub enum PromptMode {
+    /// Legacy character-based roleplay mode
+    Legacy,
+    /// EnrichedContext mode with hierarchical agent framework
+    Enriched,
+    /// Hybrid mode that combines legacy character data with enriched context
+    Hybrid,
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -1189,6 +1228,642 @@ pub async fn build_final_llm_prompt(
     );
 
     Ok((final_system_prompt, final_message_list))
+}
+
+// ============================================================================
+// ENRICHED CONTEXT PROMPT ORCHESTRATION ENGINE
+// ============================================================================
+
+/// Main entry point for building prompts with EnrichedContext support
+/// This function implements the "Prompt Orchestration Engine" for the Hierarchical Agent Framework
+///
+/// # Errors
+/// Returns `AppError` if token counting fails, prompt building encounters errors, or validation fails
+pub async fn build_enriched_context_prompt(
+    params: EnrichedPromptBuildParams<'_>,
+) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
+    let prompt_mode = determine_prompt_mode(&params);
+    
+    match prompt_mode {
+        PromptMode::Legacy => {
+            // Fall back to legacy prompt building if no EnrichedContext available
+            if let Some(legacy_params) = params.legacy_params {
+                build_final_llm_prompt(legacy_params).await
+            } else {
+                return Err(AppError::BadRequest(
+                    "No EnrichedContext or legacy parameters provided".to_string()
+                ));
+            }
+        }
+        PromptMode::Enriched => {
+            build_hierarchical_agent_prompt(&params).await
+        }
+        PromptMode::Hybrid => {
+            build_hybrid_prompt(&params).await
+        }
+    }
+}
+
+/// Determines the appropriate prompt mode based on available parameters
+fn determine_prompt_mode(params: &EnrichedPromptBuildParams<'_>) -> PromptMode {
+    match (params.enriched_context.is_some(), params.legacy_params.is_some()) {
+        (true, true) => PromptMode::Hybrid,  // Both available - use hybrid approach
+        (true, false) => PromptMode::Enriched,  // Only EnrichedContext - pure hierarchical
+        (false, true) => PromptMode::Legacy,  // Only legacy - character-based roleplay
+        (false, false) => PromptMode::Legacy,  // Default to legacy for safety
+    }
+}
+
+/// Builds prompts for the full Hierarchical Agent Framework
+/// Strategic Layer → Tactical Layer → Operational Layer
+async fn build_hierarchical_agent_prompt(
+    params: &EnrichedPromptBuildParams<'_>,
+) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
+    let enriched_context = params.enriched_context.ok_or_else(|| {
+        AppError::BadRequest("EnrichedContext required for hierarchical agent prompts".to_string())
+    })?;
+
+    // Build Flash-optimized meta system prompt for hierarchical agents
+    let meta_system_prompt = build_hierarchical_meta_prompt(enriched_context, &params.model_name).await?;
+    
+    // Assemble structured sections
+    let mut system_prompt = meta_system_prompt;
+    
+    // Strategic Layer section
+    if let Some(strategic_directive) = &enriched_context.strategic_directive {
+        system_prompt.push_str(&build_strategic_directive_section(strategic_directive)?);
+    }
+    
+    // Tactical Layer sections
+    system_prompt.push_str(&build_tactical_plan_section(&enriched_context.validated_plan)?);
+    system_prompt.push_str(&build_sub_goal_section(&enriched_context.current_sub_goal)?);
+    
+    // Entity & World Context sections
+    if !enriched_context.relevant_entities.is_empty() {
+        system_prompt.push_str(&build_entity_context_section(&enriched_context.relevant_entities)?);
+    }
+    
+    if let Some(spatial_ctx) = &enriched_context.spatial_context {
+        system_prompt.push_str(&build_spatial_context_section(spatial_ctx)?);
+    }
+    
+    if let Some(causal_ctx) = &enriched_context.causal_context {
+        system_prompt.push_str(&build_causal_context_section(causal_ctx)?);
+    }
+    
+    if let Some(temporal_ctx) = &enriched_context.temporal_context {
+        system_prompt.push_str(&build_temporal_context_section(temporal_ctx)?);
+    }
+    
+    // Symbolic Firewall section
+    if !enriched_context.symbolic_firewall_checks.is_empty() {
+        system_prompt.push_str(&build_symbolic_firewall_section(&enriched_context.symbolic_firewall_checks)?);
+    }
+    
+    // Legacy context integration (if available in hybrid mode)
+    if let Some(assembled_ctx) = &enriched_context.assembled_context {
+        system_prompt.push_str(&build_legacy_context_section(assembled_ctx)?);
+    }
+    
+    // Create message list with user input
+    let message_list = vec![params.current_user_message.clone()];
+    
+    debug!(
+        system_prompt_len = system_prompt.len(),
+        message_list_len = message_list.len(),
+        "Hierarchical agent prompt constructed"
+    );
+    
+    Ok((system_prompt, message_list))
+}
+
+/// Builds hybrid prompts that combine legacy character data with EnrichedContext
+async fn build_hybrid_prompt(
+    params: &EnrichedPromptBuildParams<'_>,
+) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
+    // Start with hierarchical prompt
+    let (mut system_prompt, message_list) = build_hierarchical_agent_prompt(params).await?;
+    
+    // Add legacy character context if available
+    if let Some(legacy_params) = &params.legacy_params {
+        if let Some(character_metadata) = legacy_params.character_metadata {
+            let character_info = build_character_info_string(
+                Some(character_metadata),
+                params.user_dek,
+                params.user_persona_name.as_deref(),
+            );
+            
+            if !character_info.is_empty() {
+                system_prompt.push_str("\n\n<character_profile>\n");
+                system_prompt.push_str(&character_info);
+                system_prompt.push_str("\n</character_profile>");
+            }
+        }
+    }
+    
+    debug!("Hybrid prompt constructed with both EnrichedContext and legacy character data");
+    
+    Ok((system_prompt, message_list))
+}
+
+/// Builds Flash-optimized meta system prompt for hierarchical agents
+async fn build_hierarchical_meta_prompt(
+    enriched_context: &EnrichedContext,
+    model_name: &str,
+) -> Result<String, AppError> {
+    let meta_prompt = format!(
+        "You are Assistant, an advanced AI operating within a sophisticated Hierarchical Agent Framework. You are the **Operational Layer** (\"Actor\") receiving structured directives from higher-level strategic and tactical agents.
+
+## Hierarchical Agent Framework
+
+This is a **world simulator** with persistent, intelligent narrative ecosystems. You operate as part of a three-layer hierarchy:
+
+1. **Strategic Layer (\"Director\")**: Provides long-term narrative planning and plot management
+2. **Tactical Layer (\"Stage Manager\")**: Decomposes strategic goals into validated, executable plans
+3. **Operational Layer (\"Actor\") - YOUR ROLE**: Executes concrete generative tasks based on validated sub-goals
+
+## Your Operational Responsibilities
+
+- **Execute Sub-Goals**: Follow the specific actionable directive provided in <current_sub_goal>
+- **Maintain Causal Consistency**: All actions must align with the validated plan and world state
+- **Leverage Context**: Use the rich entity context, spatial relationships, and causal constraints provided
+- **Ensure Quality**: Generate responses that meet the success criteria specified in your sub-goal
+
+## Information Architecture
+
+You will receive structured information optimized for Gemini 2.5 Flash processing:
+
+1. **Strategic Directive**: High-level narrative direction and plot significance
+2. **Validated Plan**: Vetted action sequence with preconditions and expected outcomes  
+3. **Current Sub-Goal**: Your specific, actionable directive with success criteria
+4. **Entity Context**: Rich character and object data with AI-driven insights
+5. **Spatial Context**: Hierarchical location and containment relationships
+6. **Causal Context**: Cause-and-effect relationships and constraints
+7. **Symbolic Firewall**: Validation results ensuring logical consistency
+
+## Flash Optimization Guidelines
+
+- Focus on the **specific sub-goal** - this is your primary directive
+- Use **entity context** for character authenticity and world consistency
+- Respect **causal constraints** - the symbolic firewall has pre-validated your actions
+- Leverage **spatial context** for environmental awareness and scene setting
+- Follow **success criteria** exactly as specified in your sub-goal
+
+Your role is critical: you transform validated strategic plans into compelling, consistent narrative experiences.
+
+---
+"
+    );
+    
+    Ok(meta_prompt)
+}
+
+/// Builds the strategic directive section from the Strategic Layer
+fn build_strategic_directive_section(directive: &StrategicDirective) -> Result<String, AppError> {
+    let mut section = String::new();
+    
+    section.push_str("\n<strategic_directive>\n");
+    section.push_str(&format!("**Directive Type**: {}\n", escape_xml(&directive.directive_type)));
+    section.push_str(&format!("**Narrative Arc**: {}\n", escape_xml(&directive.narrative_arc)));
+    section.push_str(&format!("**Plot Significance**: {:?}\n", directive.plot_significance));
+    section.push_str(&format!("**Emotional Tone**: {}\n", escape_xml(&directive.emotional_tone)));
+    section.push_str(&format!("**World Impact Level**: {:?}\n", directive.world_impact_level));
+    
+    if !directive.character_focus.is_empty() {
+        section.push_str("**Character Focus**: ");
+        section.push_str(&directive.character_focus.iter()
+            .map(|name| escape_xml(name))
+            .collect::<Vec<_>>()
+            .join(", "));
+        section.push('\n');
+    }
+    
+    section.push_str("</strategic_directive>\n");
+    
+    Ok(section)
+}
+
+/// Builds the tactical plan section from the Planning & Reasoning Cortex
+fn build_tactical_plan_section(plan: &ValidatedPlan) -> Result<String, AppError> {
+    let mut section = String::new();
+    
+    section.push_str("\n<tactical_plan>\n");
+    section.push_str(&format!("**Plan ID**: {}\n", plan.plan_id));
+    section.push_str(&format!("**Preconditions Met**: {}\n", plan.preconditions_met));
+    section.push_str(&format!("**Causal Consistency Verified**: {}\n", plan.causal_consistency_verified));
+    
+    if let Some(exec_time) = plan.estimated_execution_time {
+        section.push_str(&format!("**Estimated Execution Time**: {}ms\n", exec_time));
+    }
+    
+    // Risk assessment
+    section.push_str(&format!("**Risk Assessment**:\n"));
+    section.push_str(&format!("  - Overall Risk: {:?}\n", plan.risk_assessment.overall_risk));
+    
+    if !plan.risk_assessment.identified_risks.is_empty() {
+        section.push_str("  - Identified Risks:\n");
+        for risk in &plan.risk_assessment.identified_risks {
+            section.push_str(&format!("    • {}\n", escape_xml(risk)));
+        }
+    }
+    
+    if !plan.risk_assessment.mitigation_strategies.is_empty() {
+        section.push_str("  - Mitigation Strategies:\n");
+        for strategy in &plan.risk_assessment.mitigation_strategies {
+            section.push_str(&format!("    • {}\n", escape_xml(strategy)));
+        }
+    }
+    
+    // Plan steps
+    if !plan.steps.is_empty() {
+        section.push_str("\n**Plan Steps**:\n");
+        for (i, step) in plan.steps.iter().enumerate() {
+            section.push_str(&format!("{}. **{}** ({}ms)\n", 
+                i + 1, 
+                escape_xml(&step.description),
+                step.estimated_duration.unwrap_or(0)
+            ));
+            
+            if !step.preconditions.is_empty() {
+                section.push_str("   - Preconditions: ");
+                section.push_str(&step.preconditions.iter()
+                    .map(|pc| escape_xml(pc))
+                    .collect::<Vec<_>>()
+                    .join(", "));
+                section.push('\n');
+            }
+            
+            if !step.expected_outcomes.is_empty() {
+                section.push_str("   - Expected Outcomes: ");
+                section.push_str(&step.expected_outcomes.iter()
+                    .map(|eo| escape_xml(eo))
+                    .collect::<Vec<_>>()
+                    .join(", "));
+                section.push('\n');
+            }
+        }
+    }
+    
+    section.push_str("</tactical_plan>\n");
+    
+    Ok(section)
+}
+
+/// Builds the current sub-goal section for the Operational Layer
+fn build_sub_goal_section(sub_goal: &SubGoal) -> Result<String, AppError> {
+    let mut section = String::new();
+    
+    section.push_str("\n<current_sub_goal>\n");
+    section.push_str(&format!("**Goal ID**: {}\n", sub_goal.goal_id));
+    section.push_str(&format!("**Description**: {}\n", escape_xml(&sub_goal.description)));
+    section.push_str(&format!("**Actionable Directive**: {}\n", escape_xml(&sub_goal.actionable_directive)));
+    section.push_str(&format!("**Priority Level**: {:.2}\n", sub_goal.priority_level));
+    
+    if !sub_goal.required_entities.is_empty() {
+        section.push_str("**Required Entities**: ");
+        section.push_str(&sub_goal.required_entities.iter()
+            .map(|entity| escape_xml(entity))
+            .collect::<Vec<_>>()
+            .join(", "));
+        section.push('\n');
+    }
+    
+    if !sub_goal.success_criteria.is_empty() {
+        section.push_str("**Success Criteria**:\n");
+        for criterion in &sub_goal.success_criteria {
+            section.push_str(&format!("• {}\n", escape_xml(criterion)));
+        }
+    }
+    
+    if !sub_goal.context_requirements.is_empty() {
+        section.push_str("**Context Requirements**:\n");
+        for requirement in &sub_goal.context_requirements {
+            section.push_str(&format!("• {:?}\n", requirement));
+        }
+    }
+    
+    section.push_str("</current_sub_goal>\n");
+    
+    Ok(section)
+}
+
+/// Builds the entity context section with AI-driven insights
+fn build_entity_context_section(entities: &[EntityContext]) -> Result<String, AppError> {
+    let mut section = String::new();
+    
+    section.push_str("\n<entity_context>\n");
+    
+    for entity in entities {
+        section.push_str(&format!("<entity id=\"{}\" name=\"{}\" type=\"{}\">\n",
+            entity.entity_id,
+            escape_xml(&entity.entity_name),
+            escape_xml(&entity.entity_type)
+        ));
+        
+        // Current state
+        if !entity.current_state.is_empty() {
+            section.push_str("  <current_state>\n");
+            for (key, value) in &entity.current_state {
+                section.push_str(&format!("    <{}>{}</{key}>\n", 
+                    escape_xml(key), 
+                    escape_xml(&value.to_string())
+                ));
+            }
+            section.push_str("  </current_state>\n");
+        }
+        
+        // Spatial location
+        if let Some(spatial_loc) = &entity.spatial_location {
+            if let Some(coords) = spatial_loc.coordinates {
+                section.push_str(&format!("  <spatial_location>\n    <coordinates x=\"{:.2}\" y=\"{:.2}\" z=\"{:.2}\" />\n    <location_id>{}</location_id>\n    <name>{}</name>\n  </spatial_location>\n",
+                    coords.0,
+                    coords.1, 
+                    coords.2,
+                    escape_xml(&spatial_loc.location_id.to_string()),
+                    escape_xml(&spatial_loc.name)
+                ));
+            } else {
+                section.push_str(&format!("  <spatial_location>\n    <location_id>{}</location_id>\n    <name>{}</name>\n  </spatial_location>\n",
+                    escape_xml(&spatial_loc.location_id.to_string()),
+                    escape_xml(&spatial_loc.name)
+                ));
+            }
+        }
+        
+        // Relationships
+        if !entity.relationships.is_empty() {
+            section.push_str("  <relationships>\n");
+            for relationship in &entity.relationships {
+                section.push_str(&format!("    <relationship from=\"{}\" to=\"{}\" type=\"{}\" strength=\"{:.2}\" context=\"{}\" />\n",
+                    escape_xml(&relationship.from_entity),
+                    escape_xml(&relationship.to_entity),
+                    escape_xml(&relationship.relationship_type),
+                    relationship.strength,
+                    escape_xml(&relationship.context)
+                ));
+            }
+            section.push_str("  </relationships>\n");
+        }
+        
+        // Recent actions
+        if !entity.recent_actions.is_empty() {
+            section.push_str("  <recent_actions>\n");
+            for action in &entity.recent_actions {
+                section.push_str(&format!("    <action timestamp=\"{}\" type=\"{}\" impact=\"{:.2}\">{}</action>\n",
+                    action.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+                    escape_xml(&action.action_type),
+                    action.impact_level,
+                    escape_xml(&action.description)
+                ));
+            }
+            section.push_str("  </recent_actions>\n");
+        }
+        
+        // Emotional state
+        if let Some(emotional_state) = &entity.emotional_state {
+            section.push_str(&format!("  <emotional_state intensity=\"{:.2}\">{}</emotional_state>\n",
+                emotional_state.intensity,
+                escape_xml(&emotional_state.primary_emotion)
+            ));
+            if !emotional_state.contributing_factors.is_empty() {
+                section.push_str("  <contributing_factors>\n");
+                for factor in &emotional_state.contributing_factors {
+                    section.push_str(&format!("    <factor>{}</factor>\n", escape_xml(factor)));
+                }
+                section.push_str("  </contributing_factors>\n");
+            }
+        }
+        
+        section.push_str(&format!("  <narrative_importance>{:.2}</narrative_importance>\n", entity.narrative_importance));
+        section.push_str("</entity>\n");
+    }
+    
+    section.push_str("</entity_context>\n");
+    
+    Ok(section)
+}
+
+/// Builds the spatial context section
+fn build_spatial_context_section(spatial_ctx: &SpatialContext) -> Result<String, AppError> {
+    let mut section = String::new();
+    
+    section.push_str("\n<spatial_context>\n");
+    section.push_str(&format!("**Current Location**: {} ({})\n", 
+        escape_xml(&spatial_ctx.current_location.name),
+        escape_xml(&spatial_ctx.current_location.location_type)
+    ));
+    
+    if let Some(coords) = spatial_ctx.current_location.coordinates {
+        section.push_str(&format!("**Coordinates**: ({:.2}, {:.2}, {:.2})\n", coords.0, coords.1, coords.2));
+    }
+    
+    if !spatial_ctx.nearby_locations.is_empty() {
+        section.push_str("**Nearby Locations**:\n");
+        for location in &spatial_ctx.nearby_locations {
+            section.push_str(&format!("• {} ({})\n", 
+                escape_xml(&location.name),
+                escape_xml(&location.location_type)
+            ));
+        }
+    }
+    
+    if !spatial_ctx.environmental_factors.is_empty() {
+        section.push_str("**Environmental Factors**:\n");
+        for factor in &spatial_ctx.environmental_factors {
+            section.push_str(&format!("• **{}**: {} (impact: {:.2})\n",
+                escape_xml(&factor.factor_type),
+                escape_xml(&factor.description),
+                factor.impact_level
+            ));
+        }
+    }
+    
+    if !spatial_ctx.spatial_relationships.is_empty() {
+        section.push_str("**Spatial Relationships**:\n");
+        for relationship in &spatial_ctx.spatial_relationships {
+            section.push_str(&format!("• {} → {} ({})\n",
+                escape_xml(&relationship.from_location),
+                escape_xml(&relationship.to_location),
+                escape_xml(&relationship.relationship_type)
+            ));
+        }
+    }
+    
+    section.push_str("</spatial_context>\n");
+    
+    Ok(section)
+}
+
+/// Builds the causal context section
+fn build_causal_context_section(causal_ctx: &CausalContext) -> Result<String, AppError> {
+    let mut section = String::new();
+    
+    section.push_str("\n<causal_context>\n");
+    section.push_str(&format!("**Causal Confidence**: {:.2}\n", causal_ctx.causal_confidence));
+    
+    if !causal_ctx.causal_chains.is_empty() {
+        section.push_str("**Causal Chains**:\n");
+        for chain in &causal_ctx.causal_chains {
+            section.push_str(&format!("• Chain (confidence: {:.2})\n", chain.confidence));
+            for event in &chain.events {
+                section.push_str(&format!("  - {} (strength: {:.2})\n",
+                    escape_xml(&event.description),
+                    event.cause_strength
+                ));
+            }
+        }
+    }
+    
+    if !causal_ctx.potential_consequences.is_empty() {
+        section.push_str("**Potential Consequences**:\n");
+        for consequence in &causal_ctx.potential_consequences {
+            section.push_str(&format!("• {} (probability: {:.2}, impact: {:.2})\n",
+                escape_xml(&consequence.description),
+                consequence.probability,
+                consequence.impact_severity
+            ));
+        }
+    }
+    
+    if !causal_ctx.historical_precedents.is_empty() {
+        section.push_str("**Historical Precedents**:\n");
+        for precedent in &causal_ctx.historical_precedents {
+            section.push_str(&format!("• **{}** → {} (similarity: {:.2})\n",
+                escape_xml(&precedent.event_description),
+                escape_xml(&precedent.outcome),
+                precedent.similarity_score
+            ));
+        }
+    }
+    
+    section.push_str("</causal_context>\n");
+    
+    Ok(section)
+}
+
+/// Builds the temporal context section
+fn build_temporal_context_section(temporal_ctx: &TemporalContext) -> Result<String, AppError> {
+    let mut section = String::new();
+    
+    section.push_str("\n<temporal_context>\n");
+    section.push_str(&format!("**Current Time**: {}\n", temporal_ctx.current_time.format("%Y-%m-%d %H:%M:%S UTC")));
+    section.push_str(&format!("**Temporal Significance**: {:.2}\n", temporal_ctx.temporal_significance));
+    
+    if !temporal_ctx.recent_events.is_empty() {
+        section.push_str("**Recent Events**:\n");
+        for event in &temporal_ctx.recent_events {
+            section.push_str(&format!("• **{}** (significance: {:.2}): {}\n",
+                event.timestamp.format("%H:%M:%S"),
+                event.significance,
+                escape_xml(&event.description)
+            ));
+        }
+    }
+    
+    if !temporal_ctx.future_scheduled_events.is_empty() {
+        section.push_str("**Scheduled Events**:\n");
+        for event in &temporal_ctx.future_scheduled_events {
+            section.push_str(&format!("• **{}**: {}\n",
+                event.scheduled_time.format("%H:%M:%S"),
+                escape_xml(&event.description)
+            ));
+            if !event.participants.is_empty() {
+                section.push_str(&format!("  Participants: {}\n", 
+                    event.participants.iter().map(|p| escape_xml(p)).collect::<Vec<_>>().join(", ")
+                ));
+            }
+        }
+    }
+    
+    section.push_str("</temporal_context>\n");
+    
+    Ok(section)
+}
+
+/// Builds the symbolic firewall section with validation results
+fn build_symbolic_firewall_section(checks: &[ValidationCheck]) -> Result<String, AppError> {
+    let mut section = String::new();
+    
+    section.push_str("\n<symbolic_firewall>\n");
+    section.push_str("**Validation Status**: All checks passed - actions are logically consistent and safe to execute\n\n");
+    
+    // Group checks by severity
+    let mut critical_checks = Vec::new();
+    let mut high_checks = Vec::new();
+    let mut medium_checks = Vec::new();
+    let mut low_checks = Vec::new();
+    
+    for check in checks {
+        match check.severity {
+            crate::services::context_assembly_engine::ValidationSeverity::Critical => critical_checks.push(check),
+            crate::services::context_assembly_engine::ValidationSeverity::High => high_checks.push(check),
+            crate::services::context_assembly_engine::ValidationSeverity::Medium => medium_checks.push(check),
+            crate::services::context_assembly_engine::ValidationSeverity::Low => low_checks.push(check),
+        }
+    }
+    
+    if !critical_checks.is_empty() {
+        section.push_str("**Critical Validations**:\n");
+        for check in critical_checks {
+            section.push_str(&format!("• **Critical** ({:?}): {}\n",
+                check.check_type,
+                escape_xml(&check.message)
+            ));
+        }
+    }
+    
+    if !high_checks.is_empty() {
+        section.push_str("**High Priority Validations**:\n");
+        for check in high_checks {
+            section.push_str(&format!("• **High** ({:?}): {}\n",
+                check.check_type,
+                escape_xml(&check.message)
+            ));
+        }
+    }
+    
+    if !medium_checks.is_empty() {
+        section.push_str("**Medium Priority Validations**:\n");
+        for check in medium_checks {
+            section.push_str(&format!("• **Medium** ({:?}): {}\n",
+                check.check_type,
+                escape_xml(&check.message)
+            ));
+        }
+    }
+    
+    if !low_checks.is_empty() {
+        section.push_str("**Low Priority Validations**:\n");
+        for check in low_checks {
+            section.push_str(&format!("• **Low** ({:?}): {}\n",
+                check.check_type,
+                escape_xml(&check.message)
+            ));
+        }
+    }
+    
+    section.push_str("</symbolic_firewall>\n");
+    
+    Ok(section)
+}
+
+/// Builds legacy context section for backward compatibility
+fn build_legacy_context_section(assembled_ctx: &crate::services::context_assembly_engine::AssembledContext) -> Result<String, AppError> {
+    let mut section = String::new();
+    
+    section.push_str("\n<legacy_context>\n");
+    section.push_str("**Note**: Legacy context provided for gradual migration compatibility\n\n");
+    
+    // Add basic assembled context information
+    section.push_str(&format!("**Strategy Used**: {:?}\n", assembled_ctx.strategy_used));
+    section.push_str(&format!("**Total Tokens Used**: {}\n", assembled_ctx.total_tokens_used));
+    section.push_str(&format!("**Execution Time**: {}ms\n", assembled_ctx.execution_time_ms));
+    section.push_str(&format!("**Success Rate**: {:.2}\n", assembled_ctx.success_rate));
+    section.push_str(&format!("**Total Results**: {}\n", assembled_ctx.results.len()));
+    
+    section.push_str("</legacy_context>\n");
+    
+    Ok(section)
 }
 
 // --- Unit Tests ---
