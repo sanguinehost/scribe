@@ -307,9 +307,9 @@
             *   [x] **EnrichedContext Structure**: Complete implementation with strategic directives, validated plans, sub-goals, entity context, and symbolic firewall checks
             *   [x] **Backward Compatibility**: Legacy `execute_plan()` method maintained for existing code integration
             *   [x] **Comprehensive Testing**: 11 functional tests and 10 OWASP Top 10 security tests
-    *   **[ ] Subtask 1.0.3: Character & Chat Generation**
-        *   [ ] **`character_generation/field_generator.rs`**: Replace hardcoded character generation prompts with Flash
-        *   [ ] **`chat/generation.rs`**: Replace hardcoded conversation generation with Flash integration
+    *   **[ ] Subtask 1.0.3: Character Generation Flash Integration**
+        *   [ ] **`character_generation/field_generator.rs`**: Replace hardcoded model selection with `config.agentic_extraction_model` for consistent Flash-Lite usage across character field generation
+        *   **`chat/generation.rs`**: ✅ **SKIP** - Already properly architected with session-configurable models and sophisticated AI client integration. This service serves as the **Operational Layer** endpoint for hierarchical agents and requires no Flash integration - future `TacticalAgent` will provide `EnrichedContext` payloads to the existing, unchanged generation service.
     *   **[ ] Subtask 1.0.4: Template & Prompt Framework**
         *   [ ] **`prompt_templates.rs`**: Convert hardcoded reasoning prompts to Flash template system
         *   [ ] **`prompt_builder.rs`**: Integrate Flash dynamic prompt construction

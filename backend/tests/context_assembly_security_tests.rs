@@ -249,7 +249,7 @@ async fn test_a04_insecure_design_secure_planning() {
     
     // Verify risk assessment is included
     assert!(!enriched_context.validated_plan.risk_assessment.identified_risks.is_empty() ||
-            enriched_context.validated_plan.risk_assessment.overall_risk != "Unknown");
+            !matches!(enriched_context.validated_plan.risk_assessment.overall_risk, scribe_backend::services::context_assembly_engine::RiskLevel::Low));
 }
 
 /// OWASP A05: Security Misconfiguration
@@ -363,7 +363,7 @@ async fn test_a06_vulnerable_components_ai_response_validation() {
     
     // Verify that dangerous operations are blocked
     assert!(matches!(enriched_context.plan_validation_status, 
-                    PlanValidationStatus::Validated | PlanValidationStatus::ValidationFailed));
+                    PlanValidationStatus::Validated | PlanValidationStatus::Failed(_)));
 }
 
 /// OWASP A07: Identification and Authentication Failures

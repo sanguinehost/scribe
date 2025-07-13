@@ -102,7 +102,7 @@ impl FieldGenerator {
             tokens_used,
             generation_time_ms: generation_time.as_millis() as u64,
             style_detected: Some(style.clone()),
-            model_used: self.state.config.token_counter_default_model.clone(),
+            model_used: self.state.config.agentic_extraction_model.clone(),
             timestamp: chrono::Utc::now(),
             debug_info: Some(full_debug_info),
         };
@@ -850,7 +850,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
             debug!("Character generation attempt {} of {}", retry_count + 1, MAX_RETRIES + 1);
             
             match self.state.ai_client
-                .exec_chat(&self.state.config.token_counter_default_model, chat_req, Some(genai_chat_options.clone()))
+                .exec_chat(&self.state.config.agentic_extraction_model, chat_req, Some(genai_chat_options.clone()))
                 .await
             {
                 Ok(response) => {
