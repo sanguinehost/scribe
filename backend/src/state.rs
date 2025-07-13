@@ -26,7 +26,13 @@ use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::narrative_intelligence_service::NarrativeIntelligenceService;
 // ECS Services
-use crate::services::{EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, ChronicleEventListener, ChronicleEcsTranslator, ChronicleService, WorldModelService, AgenticOrchestrator, AgenticStateUpdateService};
+use crate::services::{
+    EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, 
+    ChronicleEventListener, ChronicleEcsTranslator, ChronicleService, WorldModelService, 
+    AgenticOrchestrator, AgenticStateUpdateService, HierarchicalContextAssembler,
+    IntentDetectionService, QueryStrategyPlanner,
+    agentic::entity_resolution_tool::EntityResolutionTool,
+};
 use crate::config::NarrativeFeatureFlags;
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
@@ -62,6 +68,7 @@ pub struct AppStateServices {
     pub world_model_service: Arc<WorldModelService>,
     pub agentic_orchestrator: Arc<AgenticOrchestrator>,
     pub agentic_state_update_service: Arc<AgenticStateUpdateService>,
+    pub hierarchical_context_assembler: Option<Arc<HierarchicalContextAssembler>>,
 }
 
 // --- Shared application state ---
@@ -105,6 +112,7 @@ pub struct AppState {
     pub world_model_service: Arc<WorldModelService>,
     pub agentic_orchestrator: Arc<AgenticOrchestrator>,
     pub agentic_state_update_service: Arc<AgenticStateUpdateService>,
+    pub hierarchical_context_assembler: Option<Arc<HierarchicalContextAssembler>>,
 }
 
 // Manual Debug implementation for AppState
@@ -140,6 +148,7 @@ impl fmt::Debug for AppState {
             .field("world_model_service", &"<Arc<WorldModelService>>") // ECS world model service
             .field("agentic_orchestrator", &"<Arc<AgenticOrchestrator>>") // Agentic context orchestration
             .field("agentic_state_update_service", &"<Arc<AgenticStateUpdateService>>") // Agentic state updates
+            .field("hierarchical_context_assembler", &"<Option<Arc<HierarchicalContextAssembler>>>") // Hierarchical context assembly
             .finish()
     }
 }
@@ -179,6 +188,7 @@ impl AppState {
             world_model_service: services.world_model_service,
             agentic_orchestrator: services.agentic_orchestrator,
             agentic_state_update_service: services.agentic_state_update_service,
+            hierarchical_context_assembler: services.hierarchical_context_assembler,
         }
     }
 
@@ -186,5 +196,20 @@ impl AppState {
     /// This is needed to break the circular dependency during construction
     pub fn set_narrative_intelligence_service(&mut self, service: Arc<NarrativeIntelligenceService>) {
         self.narrative_intelligence_service = Some(service);
+    }
+    
+    /// Set the hierarchical context assembler after AppState construction
+    /// This is needed to break the circular dependency since EntityResolutionTool needs AppState
+    pub fn set_hierarchical_context_assembler(&mut self, entity_resolution_tool: Arc<EntityResolutionTool>) {
+        // Create new HierarchicalContextAssembler with the proper EntityResolutionTool
+        let assembler = Arc::new(HierarchicalContextAssembler::new(
+            self.ai_client.clone(),
+            Arc::new(IntentDetectionService::new(self.ai_client.clone())),
+            Arc::new(QueryStrategyPlanner::new(self.ai_client.clone())),
+            entity_resolution_tool,
+            self.encryption_service.clone(),
+            Arc::new(self.pool.clone()),
+        ));
+        self.hierarchical_context_assembler = Some(assembler);
     }
 }

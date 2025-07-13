@@ -43,6 +43,7 @@ pub mod prompt_templates;
 pub mod query_strategy_planner;
 pub mod context_assembly_engine;
 pub mod context_optimization_service;
+pub mod hierarchical_context_assembler;
 pub mod agentic_orchestrator;
 pub mod agentic_query_cache;
 pub mod agentic_metrics;
@@ -123,6 +124,7 @@ pub use context_assembly_engine::{
 pub use context_optimization_service::{
     ContextOptimizationService, ContextOptimization, OptimizedEntity, PrunedContent, OptimizationStrategy
 };
+pub use hierarchical_context_assembler::HierarchicalContextAssembler;
 pub use agentic_orchestrator::{
     AgenticOrchestrator, AgenticRequest, AgenticResponse, QualityMode, ExecutionSummary, TokenUsageSummary
 };

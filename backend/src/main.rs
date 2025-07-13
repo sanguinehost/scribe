@@ -64,6 +64,7 @@ use scribe_backend::services::lorebook::LorebookService;
 use scribe_backend::services::narrative_intelligence_service::NarrativeIntelligenceService;
 use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
+use scribe_backend::services::agentic::entity_resolution_tool::EntityResolutionTool;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService;
 // ECS Services imports
@@ -316,6 +317,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         world_model_service: ecs_services.world_model_service,
         agentic_orchestrator,
         agentic_state_update_service,
+        hierarchical_context_assembler: None, // Will be set after AppState is built
     })
 }
 
@@ -586,6 +588,12 @@ fn setup_app_state_and_auth(
         )?
     );
     app_state.set_narrative_intelligence_service(narrative_intelligence_service);
+    
+    // Initialize HierarchicalContextAssembler after AppState creation to avoid circular dependency
+    let entity_resolution_tool = Arc::new(EntityResolutionTool::new(
+        Arc::new(app_state.clone()),
+    ));
+    app_state.set_hierarchical_context_assembler(entity_resolution_tool);
 
     Ok((app_state, auth_layer))
 }

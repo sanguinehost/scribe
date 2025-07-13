@@ -525,24 +525,114 @@ pub async fn generate_chat_response(
         None
     };
 
-    // Call the new prompt builder with ECS-enhanced RAG context
-    let (final_system_prompt_str, final_genai_message_list) =
+    // --- Hierarchical Context Assembly Integration ---
+    // Use HierarchicalContextAssembler to create EnrichedContext if available
+    let enriched_context = if let Some(ref assembler) = state_arc.hierarchical_context_assembler {
+        info!(%session_id, "Using HierarchicalContextAssembler for enriched context generation");
+        
+        match assembler.assemble_enriched_context(
+            &current_user_content,
+            &gen_ai_recent_history,
+            Some(&character_metadata_for_prompt_builder),
+            user_id_value,
+            Some(&session_dek_arc),
+        ).await {
+            Ok(enriched_ctx) => {
+                info!(
+                    %session_id,
+                    execution_time_ms = enriched_ctx.execution_time_ms,
+                    ai_calls = enriched_ctx.ai_model_calls,
+                    tokens_used = enriched_ctx.total_tokens_used,
+                    "Successfully assembled hierarchical enriched context"
+                );
+                Some(enriched_ctx)
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to assemble enriched context, falling back to standard flow");
+                None
+            }
+        }
+    } else {
+        debug!(%session_id, "HierarchicalContextAssembler not available, using standard flow");
+        None
+    };
+
+    // Determine whether to use enriched context prompt building or standard
+    let (final_system_prompt_str, final_genai_message_list) = if let Some(enriched_ctx) = enriched_context {
+        // Use the new enriched context prompt builder
+        info!(%session_id, "Building prompt with hierarchical enriched context");
+        
+        match prompt_builder::build_enriched_context_prompt(prompt_builder::EnrichedPromptBuildParams {
+            config: state_arc.config.clone(),
+            token_counter: state_arc.token_counter.clone(),
+            model_name: model_to_use.clone(),
+            user_id: user_id_value,
+            user_dek: Some(&*session_dek_arc),
+            enriched_context: Some(&enriched_ctx),
+            current_user_message: current_user_genai_message.clone(),
+            user_persona_name: user_persona_name.clone(),
+            legacy_params: Some(prompt_builder::PromptBuildParams {
+                config: state_arc.config.clone(),
+                token_counter: state_arc.token_counter.clone(),
+                recent_history: gen_ai_recent_history.clone(),
+                rag_items: enhanced_rag_context_items.clone(),
+                system_prompt_base: system_prompt_from_service.clone(),
+                raw_character_system_prompt: raw_character_system_prompt.clone(),
+                character_metadata: Some(&character_metadata_for_prompt_builder),
+                current_user_message: current_user_genai_message.clone(),
+                model_name: model_to_use.clone(),
+                user_dek: Some(&*session_dek_arc),
+                user_persona_name: user_persona_name.clone(),
+                world_state_context: world_state_context.clone(),
+                user_id: Some(user_id_value),
+                chronicle_id: player_chronicle_id,
+                agentic_context: agentic_optimized_context.clone(),
+            }),
+        })
+        .await
+        {
+            Ok(prompt_data) => prompt_data,
+            Err(e) => {
+                error!(%session_id, error = ?e, "Failed to build enriched context prompt, falling back to standard");
+                // Fallback to standard prompt building
+                prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
+                    config: state_arc.config.clone(),
+                    token_counter: state_arc.token_counter.clone(),
+                    recent_history: gen_ai_recent_history.clone(),
+                    rag_items: enhanced_rag_context_items.clone(),
+                    system_prompt_base: system_prompt_from_service.clone(),
+                    raw_character_system_prompt: raw_character_system_prompt.clone(),
+                    character_metadata: Some(&character_metadata_for_prompt_builder),
+                    current_user_message: current_user_genai_message.clone(),
+                    model_name: model_to_use.clone(),
+                    user_dek: Some(&*session_dek_arc),
+                    user_persona_name: user_persona_name.clone(),
+                    world_state_context: world_state_context.clone(),
+                    user_id: Some(user_id_value),
+                    chronicle_id: player_chronicle_id,
+                    agentic_context: agentic_optimized_context.clone(),
+                })
+                .await?
+            }
+        }
+    } else {
+        // Standard prompt building without enriched context
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
             config: state_arc.config.clone(),
             token_counter: state_arc.token_counter.clone(),
             recent_history: gen_ai_recent_history,
-            rag_items: enhanced_rag_context_items, // Use ECS-enhanced RAG context (supplementary to agentic)
-            system_prompt_base: system_prompt_from_service, // This is the system_prompt_base (persona/override only)
-            raw_character_system_prompt, // This is the new raw_character_system_prompt
+            rag_items: enhanced_rag_context_items,
+            system_prompt_base: system_prompt_from_service,
+            raw_character_system_prompt,
             character_metadata: Some(&character_metadata_for_prompt_builder),
             current_user_message: current_user_genai_message,
             model_name: model_to_use.clone(),
-            user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
-            user_persona_name,                 // Pass user persona name for template substitution
-            world_state_context,               // ECS world state context
-            user_id: Some(user_id_value),      // User ID for ECS queries
-            chronicle_id: player_chronicle_id, // Chronicle ID for ECS context
-            agentic_context: agentic_optimized_context, // Pre-assembled agentic intelligence
+            user_dek: Some(&*session_dek_arc),
+            user_persona_name,
+            world_state_context,
+            user_id: Some(user_id_value),
+            chronicle_id: player_chronicle_id,
+            agentic_context: agentic_optimized_context,
         })
         .await
         {
@@ -551,7 +641,8 @@ pub async fn generate_chat_response(
                 error!(%session_id, error = ?e, "Failed to build final LLM prompt");
                 return Err(e);
             }
-        };
+        }
+    };
 
     trace!(history_len = final_genai_message_list.len(), %session_id, "Prepared final message list for AI using new prompt builder.");
 

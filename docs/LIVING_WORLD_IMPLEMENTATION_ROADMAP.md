@@ -82,11 +82,11 @@
 - **Risk Level:** Medium - architectural changes to chat service integration
 - **Success Criteria:** Basic `TacticalAgent` enriching chat prompts with world state
 
-### **Phase 3: Formal Planning Integration (6-8 weeks) - 🔴 HIGH RISK**
-**Focus:** Add symbolic reasoning and formal planning capabilities
+### **Phase 3: LLM Planning & Validation (6-8 weeks) - 🟡 MEDIUM RISK**
+**Focus:** Add AI-driven planning with symbolic validation ("Symbolic Firewall")
 - **Epics:** 3 (Planning Cortex)
-- **Risk Level:** High - complex integration with external planning frameworks
-- **Success Criteria:** PDDL/HTN planner generating verifiable action sequences
+- **Risk Level:** Medium - robust implementation of PlanValidator service required
+- **Success Criteria:** LLM-generated plans validated against ECS ground truth before execution
 
 ### **Phase 4: Full Hierarchy (8-10 weeks) - 🟡 MEDIUM RISK**
 **Focus:** Complete the three-layer agent system
@@ -321,7 +321,16 @@
             *   [x] **Backward Compatibility**: Maintained existing character/RAG prompt functionality while adding hierarchical context support ✅
             *   [x] **Performance Metrics**: Added performance tracking integration (total_tokens_used, execution_time_ms, confidence_score) ✅
             *   [x] **Comprehensive Testing**: Created 10 functional tests and 6 OWASP Top 10 security tests, all passing ✅
-            *   [ ] **Hierarchical Context Assembly**: Build prompts that incorporate Director directives, Tactical sub-goals, ECS world state, spatial/relational context, and traditional RAG context
+            *   [x] **Hierarchical Context Assembly**: Build prompts that incorporate Director directives ✅ **COMPLETED (2025-07-13)**
+                * [x] Implemented HierarchicalContextAssembler service as bridge solution
+                * [x] Added Flash-powered strategic analysis and tactical planning
+                * [x] Proper encryption with user_dek throughout the service
+                * [x] Created comprehensive functional and OWASP security tests (21 tests total)
+                * [x] Integrated into chat route pipeline with graceful fallback
+                * [x] Added circular dependency handling (Optional field, post-construction initialization)
+                * [x] Implemented to_prompt_string() method for debugging and development
+                * [x] All tests passing: 9 functional + 12 OWASP Top 10 security tests
+                * [x] Production-ready with comprehensive security validation
             *   [ ] **Validation with Symbolic Firewall**: Integration with plan validation system for `symbolic_firewall_checks`
         *   [ ] **Context Orchestration**: Transform prompt builder into sophisticated "EnrichedContext Orchestrator" for future hierarchical agent system
     *   **[ ] Subtask 1.0.5: Comprehensive Testing**

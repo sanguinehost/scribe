@@ -1473,6 +1473,7 @@ impl TestAppStateBuilder {
                     entity_manager,
                 ))
             },
+            hierarchical_context_assembler: None, // Will be set after AppState is built
             // narrative_intelligence_service will be added after AppState is built
         };
 
@@ -1488,6 +1489,12 @@ impl TestAppStateBuilder {
         
         // Set the narrative intelligence service
         app_state.set_narrative_intelligence_service(narrative_intelligence_service);
+        
+        // Initialize HierarchicalContextAssembler after AppState creation
+        let entity_resolution_tool = Arc::new(crate::services::agentic::entity_resolution_tool::EntityResolutionTool::new(
+            Arc::new(app_state.clone()),
+        ));
+        app_state.set_hierarchical_context_assembler(entity_resolution_tool);
         
         Ok(app_state)
     }

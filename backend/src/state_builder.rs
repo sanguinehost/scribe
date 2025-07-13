@@ -318,6 +318,9 @@ impl AppStateServicesBuilder {
             agentic_state_update_service.clone(),
         ));
 
+        // HierarchicalContextAssembler will be set after AppState creation
+        // due to circular dependency with EntityResolutionTool
+
         Ok(AppStateServices {
             ai_client,
             embedding_client,
@@ -344,6 +347,7 @@ impl AppStateServicesBuilder {
             world_model_service,
             agentic_orchestrator,
             agentic_state_update_service,
+            hierarchical_context_assembler: None, // Will be set after AppState is built
             // narrative_intelligence_service will be added after AppState is built
         })
     }
