@@ -279,10 +279,34 @@
                 *   `narrative_tools_security_tests.rs` - Tool-specific security validation
             *   [x] **Integration Tests**: Smoke tests verify Flash integration works correctly
                 *   `flash_integration_smoke_test.rs` - Verifies all components instantiate and configure properly
-    *   **[ ] Subtask 1.0.2: AI Analysis Services**
-        *   [ ] **`intent_detection_service.rs`**: Replace hardcoded intent analysis prompts with Flash
-        *   [ ] **`context_optimization_service.rs`**: Replace hardcoded context filtering prompts with Flash-Lite
-        *   [ ] **`query_strategy_planner.rs`**: Replace hardcoded query planning prompts with Flash
+    *   **[x] Subtask 1.0.2: AI Analysis Services** ✅ COMPLETED (2025-07-13)
+        *   [x] **`intent_detection_service.rs`**: Replace hardcoded intent analysis prompts with Flash ✅
+            *   [x] Implemented Flash-Lite for structured intent detection (7 intent types)
+            *   [x] Implemented Flash for narrative intent analysis
+            *   [x] Created 12 functional tests covering all intent types
+            *   [x] Created 12 OWASP Top 10 security tests
+            *   [x] Fixed security vulnerability: Added confidence value validation (.clamp)
+        *   [x] **`context_optimization_service.rs`**: Replace hardcoded context filtering prompts with Flash-Lite ✅
+            *   [x] Implemented Flash-Lite for AI-driven context optimization
+            *   [x] Added `optimize_for_narrative` method with Flash integration
+            *   [x] Introduced new AI strategies: NarrativeCoherence, EmotionalResonance, ActionPotential
+            *   [x] Created 11 functional tests covering all optimization strategies
+            *   [x] Created 12 OWASP Top 10 security tests
+            *   [x] Fixed security issues: Added validation for all score values
+            *   [x] Added compatibility method for existing code integration
+        *   [x] **`query_strategy_planner.rs`**: Replace hardcoded query planning prompts with Flash ✅
+            *   [x] Implemented Flash integration for AI-driven query strategy planning
+            *   [x] Added `create_adaptive_strategy` method with sophisticated Flash-powered analysis
+            *   [x] Created 11 functional tests covering all strategy types and edge cases
+            *   [x] Created 10 OWASP Top 10 security tests covering all vulnerability categories
+            *   [x] Maintained backward compatibility with legacy `plan_queries` method
+        *   [x] **`context_assembly_engine.rs`**: Refactor to create `EnrichedContext` payloads (COMPLETED) ✅
+            *   [x] **Complete Living World Architecture Implementation**: Transformed from reactive `AssembledContext` to proactive `EnrichedContext`
+            *   [x] **Hierarchical Agent Framework Integration**: Full support for Strategic, Tactical, and Operational layers
+            *   [x] **Flash AI Integration**: Primary `enrich_context()` method using Flash for complex planning and Flash-Lite for extraction
+            *   [x] **EnrichedContext Structure**: Complete implementation with strategic directives, validated plans, sub-goals, entity context, and symbolic firewall checks
+            *   [x] **Backward Compatibility**: Legacy `execute_plan()` method maintained for existing code integration
+            *   [x] **Comprehensive Testing**: 11 functional tests and 10 OWASP Top 10 security tests
     *   **[ ] Subtask 1.0.3: Character & Chat Generation**
         *   [ ] **`character_generation/field_generator.rs`**: Replace hardcoded character generation prompts with Flash
         *   [ ] **`chat/generation.rs`**: Replace hardcoded conversation generation with Flash integration

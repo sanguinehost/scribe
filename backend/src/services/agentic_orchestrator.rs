@@ -96,10 +96,10 @@ impl AgenticOrchestrator {
         let strategy_planner = Arc::new(QueryStrategyPlanner::new(ai_client.clone()));
         let encryption_service = Arc::new(crate::services::EncryptionService::new());
         let context_engine = Arc::new(ContextAssemblyEngine::new(
+            ai_client.clone(),
             hybrid_query_service,
             db_pool.clone(),
             encryption_service,
-            ai_client.clone(),
         ));
         let optimization_service = Arc::new(ContextOptimizationService::new(ai_client.clone()));
         
@@ -289,7 +289,7 @@ impl AgenticOrchestrator {
         let phase_timer = tracker.start_phase_timing("context_optimization");
         let optimization_start = std::time::Instant::now();
         
-        let optimization = self.optimization_service.optimize_context(
+        let optimization = self.optimization_service.optimize_context_legacy(
             &assembled_context,
             request.token_budget,
             &request.user_query,
