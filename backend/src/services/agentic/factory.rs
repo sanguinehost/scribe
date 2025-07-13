@@ -182,6 +182,17 @@ impl AgenticNarrativeFactory {
         let update_entity_tool = Arc::new(super::tools::world_interaction_tools::UpdateEntityTool::new(app_state.ecs_entity_manager.clone()));
         registry.add_tool(update_entity_tool);
 
+        // Spatial query tools for hierarchy traversal
+        let get_contained_entities_tool = Arc::new(super::tools::world_interaction_tools::GetContainedEntitiesTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(get_contained_entities_tool);
+
+        let get_spatial_context_tool = Arc::new(super::tools::world_interaction_tools::GetSpatialContextTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(get_spatial_context_tool);
+        
+        // Entity movement tool
+        let move_entity_tool = Arc::new(super::tools::world_interaction_tools::MoveEntityTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(move_entity_tool);
+
         info!("Registered {} core tools", registry.list_tools().len());
     }
 
@@ -265,6 +276,17 @@ impl AgenticNarrativeFactory {
 
         let update_entity_tool = Arc::new(super::tools::world_interaction_tools::UpdateEntityTool::new(app_state.ecs_entity_manager.clone()));
         registry.add_tool(update_entity_tool);
+
+        // Spatial query tools for hierarchy traversal
+        let get_contained_entities_tool = Arc::new(super::tools::world_interaction_tools::GetContainedEntitiesTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(get_contained_entities_tool);
+
+        let get_spatial_context_tool = Arc::new(super::tools::world_interaction_tools::GetSpatialContextTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(get_spatial_context_tool);
+        
+        // Entity movement tool
+        let move_entity_tool = Arc::new(super::tools::world_interaction_tools::MoveEntityTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(move_entity_tool);
 
         info!("Registered {} core tools", registry.list_tools().len());
     }

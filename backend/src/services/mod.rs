@@ -76,7 +76,8 @@ pub use ecs_component_lifecycle_manager::{EcsComponentLifecycleManager, Componen
 pub use ecs_entity_manager::{
     EcsEntityManager, EntityManagerConfig, EntityQueryResult, ComponentUpdate, ComponentOperation, 
     ComponentQuery, EntityQueryOptions, ComponentSort, SortDirection, QueryExecutionStats, AdvancedQueryResult,
-    CacheWarmingStats, CacheWarmingResult, CacheWarmingRecommendations
+    CacheWarmingStats, CacheWarmingResult, CacheWarmingRecommendations, EntityHierarchyInfo, EntityContainmentTree,
+    MoveEntityOptions, MoveEntityResult, PositionData
 };
 pub use ecs_enhanced_rag_service::{
     EcsEnhancedRagService, EcsEnhancedRagConfig, EnhancedRagQuery, EnhancedRagResult,

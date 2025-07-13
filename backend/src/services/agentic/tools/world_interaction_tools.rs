@@ -1020,3 +1020,784 @@ impl ScribeTool for UpdateEntityTool {
         Ok(serde_json::to_value(output)?)
     }
 }
+
+/// Tool for getting contained entities within a parent (spatial hierarchy queries)
+#[derive(Clone)]
+pub struct GetContainedEntitiesTool {
+    entity_manager: Arc<EcsEntityManager>,
+}
+
+impl GetContainedEntitiesTool {
+    pub fn new(entity_manager: Arc<EcsEntityManager>) -> Self {
+        Self { entity_manager }
+    }
+}
+
+/// Input parameters for getting contained entities
+#[derive(Debug, Deserialize)]
+pub struct GetContainedEntitiesInput {
+    /// User ID performing the operation
+    pub user_id: String,
+    /// ID of the parent entity to query
+    pub parent_entity_id: String,
+    /// Query options
+    pub options: Option<ContainedEntitiesOptions>,
+}
+
+/// Options for contained entities queries
+#[derive(Debug, Deserialize)]
+pub struct ContainedEntitiesOptions {
+    /// Maximum depth to traverse (null for unlimited)
+    pub depth: Option<u32>,
+    /// Whether to include the parent entity in results
+    pub include_parent: Option<bool>,
+    /// Filter by spatial scale
+    pub scale_filter: Option<String>,
+    /// Filter by component type
+    pub component_filter: Option<String>,
+    /// Maximum number of results
+    pub limit: Option<usize>,
+}
+
+/// Output from contained entities query
+#[derive(Debug, Serialize)]
+pub struct GetContainedEntitiesOutput {
+    /// Parent entity ID
+    pub parent_id: String,
+    /// List of contained entities
+    pub entities: Vec<ContainedEntityInfo>,
+    /// Total count of entities found
+    pub total_count: usize,
+    /// Whether results were truncated due to limit
+    pub truncated: bool,
+}
+
+/// Information about a contained entity
+#[derive(Debug, Serialize)]
+pub struct ContainedEntityInfo {
+    pub entity_id: String,
+    pub name: String,
+    pub depth_from_parent: u32,
+    pub scale: Option<String>,
+    pub component_types: Vec<String>,
+    pub parent_id: Option<String>,
+}
+
+#[async_trait]
+impl ScribeTool for GetContainedEntitiesTool {
+    fn name(&self) -> &'static str {
+        "get_contained_entities"
+    }
+
+    fn description(&self) -> &'static str {
+        "Retrieves entities contained within a parent entity, supporting hierarchical \
+         traversal with depth control, scale filtering, and component filtering. \
+         Useful for exploring spatial hierarchies and entity relationships."
+    }
+
+    fn input_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "The UUID of the user performing the operation"
+                },
+                "parent_entity_id": {
+                    "type": "string",
+                    "description": "UUID of the parent entity to query"
+                },
+                "options": {
+                    "type": "object",
+                    "description": "Query options",
+                    "properties": {
+                        "depth": {
+                            "type": ["integer", "null"],
+                            "description": "Maximum depth to traverse (1 for immediate children, null for all descendants)",
+                            "minimum": 1
+                        },
+                        "include_parent": {
+                            "type": "boolean",
+                            "description": "Whether to include the parent entity in results",
+                            "default": false
+                        },
+                        "scale_filter": {
+                            "type": "string",
+                            "enum": ["Cosmic", "Planetary", "Intimate"],
+                            "description": "Filter results by spatial scale"
+                        },
+                        "component_filter": {
+                            "type": "string",
+                            "description": "Filter results to entities with this component type"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results to return",
+                            "minimum": 1,
+                            "maximum": 1000
+                        }
+                    }
+                }
+            },
+            "required": ["user_id", "parent_entity_id"]
+        })
+    }
+
+    #[instrument(skip(self, params), fields(tool = self.name()))]
+    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+        debug!("Executing get_contained_entities with input: {}", params);
+        
+        // Parse input
+        let input_params: GetContainedEntitiesInput = serde_json::from_value(params.clone())
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid input parameters: {}", e)))?;
+
+        // Parse user ID
+        let user_id = Uuid::parse_str(&input_params.user_id)
+            .map_err(|_| ToolError::InvalidParams(format!("Invalid user_id UUID: {}", input_params.user_id)))?;
+
+        // Parse parent entity ID
+        let parent_id = Uuid::parse_str(&input_params.parent_entity_id)
+            .map_err(|_| ToolError::InvalidParams(format!("Invalid parent_entity_id UUID: {}", input_params.parent_entity_id)))?;
+
+        // Verify parent entity exists and is owned by user
+        let parent_result = self.entity_manager.get_entity(user_id, parent_id).await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to find parent entity: {}", e)))?;
+        
+        if parent_result.is_none() {
+            return Err(ToolError::ExecutionFailed(format!("Parent entity {} not found or not owned by user", parent_id)));
+        }
+
+        // Parse options
+        let options = input_params.options.unwrap_or(ContainedEntitiesOptions {
+            depth: Some(1), // Default to immediate children only
+            include_parent: Some(false),
+            scale_filter: None,
+            component_filter: None,
+            limit: Some(100), // Default limit
+        });
+
+        let limit = options.limit.unwrap_or(100).min(1000); // Cap at 1000
+
+        // Execute appropriate query based on options
+        let results = if let Some(depth) = options.depth {
+            if depth == 1 {
+                // Get immediate children only
+                self.entity_manager.get_children_entities(user_id, parent_id, Some(limit)).await
+                    .map_err(|e| ToolError::AppError(e))?
+            } else {
+                // Get descendants with depth limit
+                self.entity_manager.get_descendants_entities(user_id, parent_id, Some(depth), Some(limit)).await
+                    .map_err(|e| ToolError::AppError(e))?
+            }
+        } else if let Some(scale_str) = &options.scale_filter {
+            // Get descendants filtered by scale
+            let scale = match scale_str.as_str() {
+                "Cosmic" => SpatialScale::Cosmic,
+                "Planetary" => SpatialScale::Planetary,
+                "Intimate" => SpatialScale::Intimate,
+                _ => return Err(ToolError::InvalidParams(format!("Invalid scale: {}", scale_str))),
+            };
+            self.entity_manager.get_descendants_by_scale(user_id, parent_id, scale, Some(limit)).await
+                .map_err(|e| ToolError::AppError(e))?
+        } else if let Some(component_type) = &options.component_filter {
+            // Get descendants with specific component
+            self.entity_manager.get_descendants_with_component(user_id, parent_id, &component_type, Some(limit)).await
+                .map_err(|e| ToolError::AppError(e))?
+        } else {
+            // Get all descendants (unlimited depth)
+            self.entity_manager.get_descendants_entities(user_id, parent_id, None, Some(limit)).await
+                .map_err(|e| ToolError::AppError(e))?
+        };
+
+        // Convert results to output format
+        let mut entities = Vec::new();
+        for result in &results {
+            // Extract name from components
+            let name = result.components.iter()
+                .find(|c| c.component_type == "Name")
+                .and_then(|c| c.component_data.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("Unnamed")
+                .to_string();
+
+            // Extract scale from SpatialArchetype component
+            let scale = result.components.iter()
+                .find(|c| c.component_type == "SpatialArchetype")
+                .and_then(|c| c.component_data.get("scale"))
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string());
+
+            // Extract parent from ParentLink component
+            let parent_entity_id = result.components.iter()
+                .find(|c| c.component_type == "ParentLink")
+                .and_then(|c| c.component_data.get("parent_entity_id"))
+                .and_then(|p| p.as_str())
+                .map(|p| p.to_string());
+
+            // Calculate depth from parent (this is approximate since we don't track exact depth in results)
+            let depth_from_parent = if parent_entity_id.as_ref() == Some(&parent_id.to_string()) {
+                1
+            } else {
+                2 // For deeper descendants, we'd need to track this in the query
+            };
+
+            entities.push(ContainedEntityInfo {
+                entity_id: result.entity.id.to_string(),
+                name,
+                depth_from_parent,
+                scale,
+                component_types: result.components.iter().map(|c| c.component_type.clone()).collect(),
+                parent_id: parent_entity_id,
+            });
+        }
+
+        let total_count = entities.len();
+        let truncated = total_count == limit;
+
+        // Include parent if requested
+        if options.include_parent.unwrap_or(false) {
+            if let Some(parent_data) = parent_result {
+                let parent_name = parent_data.components.iter()
+                    .find(|c| c.component_type == "Name")
+                    .and_then(|c| c.component_data.get("name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("Unnamed")
+                    .to_string();
+
+                let parent_scale = parent_data.components.iter()
+                    .find(|c| c.component_type == "SpatialArchetype")
+                    .and_then(|c| c.component_data.get("scale"))
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
+
+                entities.insert(0, ContainedEntityInfo {
+                    entity_id: parent_id.to_string(),
+                    name: parent_name,
+                    depth_from_parent: 0,
+                    scale: parent_scale,
+                    component_types: parent_data.components.iter().map(|c| c.component_type.clone()).collect(),
+                    parent_id: None,
+                });
+            }
+        }
+
+        let output = GetContainedEntitiesOutput {
+            parent_id: parent_id.to_string(),
+            entities,
+            total_count,
+            truncated,
+        };
+
+        info!("Retrieved {} contained entities for parent {}", total_count, parent_id);
+        Ok(serde_json::to_value(output)?)
+    }
+}
+
+/// Tool for getting full spatial context (ancestors and descendants)
+#[derive(Clone)]
+pub struct GetSpatialContextTool {
+    entity_manager: Arc<EcsEntityManager>,
+}
+
+impl GetSpatialContextTool {
+    pub fn new(entity_manager: Arc<EcsEntityManager>) -> Self {
+        Self { entity_manager }
+    }
+}
+
+/// Input parameters for getting spatial context
+#[derive(Debug, Deserialize)]
+pub struct GetSpatialContextInput {
+    /// User ID performing the operation
+    pub user_id: String,
+    /// ID of the entity to get context for
+    pub entity_id: String,
+    /// Context options
+    pub options: Option<SpatialContextOptions>,
+}
+
+/// Options for spatial context queries
+#[derive(Debug, Deserialize)]
+pub struct SpatialContextOptions {
+    /// Include ancestors up to this many levels (null for all)
+    pub ancestor_levels: Option<u32>,
+    /// Include descendants down to this depth (null for all)
+    pub descendant_depth: Option<u32>,
+    /// Include sibling entities (same parent)
+    pub include_siblings: Option<bool>,
+    /// Maximum descendants to return
+    pub descendant_limit: Option<usize>,
+}
+
+/// Output from spatial context query
+#[derive(Debug, Serialize)]
+pub struct GetSpatialContextOutput {
+    /// The focal entity
+    pub entity: EntitySummary,
+    /// Ancestor hierarchy (from root to parent)
+    pub ancestors: Vec<EntitySummary>,
+    /// Descendant tree
+    pub descendants: Vec<ContainedEntityInfo>,
+    /// Sibling entities (if requested)
+    pub siblings: Option<Vec<EntitySummary>>,
+    /// Full hierarchical path as string
+    pub path: String,
+}
+
+#[async_trait]
+impl ScribeTool for GetSpatialContextTool {
+    fn name(&self) -> &'static str {
+        "get_spatial_context"
+    }
+
+    fn description(&self) -> &'static str {
+        "Retrieves the full spatial context for an entity, including its ancestors \
+         (up the hierarchy), descendants (down the hierarchy), and optionally siblings. \
+         Provides a complete view of an entity's position in the spatial hierarchy."
+    }
+
+    fn input_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "The UUID of the user performing the operation"
+                },
+                "entity_id": {
+                    "type": "string",
+                    "description": "UUID of the entity to get context for"
+                },
+                "options": {
+                    "type": "object",
+                    "description": "Context query options",
+                    "properties": {
+                        "ancestor_levels": {
+                            "type": ["integer", "null"],
+                            "description": "Number of ancestor levels to include (null for all)",
+                            "minimum": 1
+                        },
+                        "descendant_depth": {
+                            "type": ["integer", "null"],
+                            "description": "Depth of descendants to include (null for all)",
+                            "minimum": 1
+                        },
+                        "include_siblings": {
+                            "type": "boolean",
+                            "description": "Whether to include sibling entities",
+                            "default": false
+                        },
+                        "descendant_limit": {
+                            "type": "integer",
+                            "description": "Maximum number of descendants to return",
+                            "minimum": 1,
+                            "maximum": 1000
+                        }
+                    }
+                }
+            },
+            "required": ["user_id", "entity_id"]
+        })
+    }
+
+    #[instrument(skip(self, params), fields(tool = self.name()))]
+    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+        debug!("Executing get_spatial_context with input: {}", params);
+        
+        // Parse input
+        let input_params: GetSpatialContextInput = serde_json::from_value(params.clone())
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid input parameters: {}", e)))?;
+
+        // Parse user ID
+        let user_id = Uuid::parse_str(&input_params.user_id)
+            .map_err(|_| ToolError::InvalidParams(format!("Invalid user_id UUID: {}", input_params.user_id)))?;
+
+        // Parse entity ID
+        let entity_id = Uuid::parse_str(&input_params.entity_id)
+            .map_err(|_| ToolError::InvalidParams(format!("Invalid entity_id UUID: {}", input_params.entity_id)))?;
+
+        // Get the focal entity
+        let entity_result = self.entity_manager.get_entity(user_id, entity_id).await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to find entity: {}", e)))?;
+        
+        let entity_data = entity_result
+            .ok_or_else(|| ToolError::ExecutionFailed(format!("Entity {} not found or not owned by user", entity_id)))?;
+
+        // Parse options
+        let options = input_params.options.unwrap_or(SpatialContextOptions {
+            ancestor_levels: None, // All ancestors by default
+            descendant_depth: Some(2), // Two levels of descendants by default
+            include_siblings: Some(false),
+            descendant_limit: Some(100),
+        });
+
+        // Convert focal entity to summary
+        let entity_summary = convert_to_entity_summary(&entity_data);
+
+        // Get ancestors using existing hierarchy path method
+        let hierarchy_path = self.entity_manager.get_entity_hierarchy_path(user_id, entity_id).await
+            .map_err(|e| ToolError::AppError(e))?;
+
+        let ancestors: Vec<EntitySummary> = if !hierarchy_path.is_empty() {
+            let mut ancestor_list = Vec::new();
+            
+            // Convert ancestors to summaries (they're already in order from root to parent)
+            // Skip the last element as it's the entity itself
+            let ancestor_count = hierarchy_path.len().saturating_sub(1);
+            for (idx, ancestor) in hierarchy_path.into_iter().take(ancestor_count).enumerate() {
+                // Skip based on ancestor_levels if specified
+                if let Some(levels) = options.ancestor_levels {
+                    if idx >= levels as usize {
+                        break;
+                    }
+                }
+                
+                // Get full entity data for each ancestor
+                if let Ok(Some(ancestor_data)) = self.entity_manager.get_entity(user_id, ancestor.entity_id).await {
+                    ancestor_list.push(convert_to_entity_summary(&ancestor_data));
+                }
+            }
+            
+            ancestor_list
+        } else {
+            Vec::new()
+        };
+
+        // Get descendants
+        let descendant_limit = options.descendant_limit.unwrap_or(100).min(1000);
+        let descendant_results = if let Some(depth) = options.descendant_depth {
+            self.entity_manager.get_descendants_entities(user_id, entity_id, Some(depth), Some(descendant_limit)).await
+                .map_err(|e| ToolError::AppError(e))?
+        } else {
+            self.entity_manager.get_descendants_entities(user_id, entity_id, None, Some(descendant_limit)).await
+                .map_err(|e| ToolError::AppError(e))?
+        };
+
+        // Convert descendants to output format
+        let descendants: Vec<ContainedEntityInfo> = descendant_results.into_iter()
+            .map(|result| {
+                let name = result.components.iter()
+                    .find(|c| c.component_type == "Name")
+                    .and_then(|c| c.component_data.get("name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("Unnamed")
+                    .to_string();
+
+                let scale = result.components.iter()
+                    .find(|c| c.component_type == "SpatialArchetype")
+                    .and_then(|c| c.component_data.get("scale"))
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
+
+                let parent_entity_id = result.components.iter()
+                    .find(|c| c.component_type == "ParentLink")
+                    .and_then(|c| c.component_data.get("parent_entity_id"))
+                    .and_then(|p| p.as_str())
+                    .map(|p| p.to_string());
+
+                ContainedEntityInfo {
+                    entity_id: result.entity.id.to_string(),
+                    name,
+                    depth_from_parent: 1, // Would need to calculate actual depth
+                    scale,
+                    component_types: result.components.iter().map(|c| c.component_type.clone()).collect(),
+                    parent_id: parent_entity_id,
+                }
+            })
+            .collect();
+
+        // Get siblings if requested
+        let siblings = if options.include_siblings.unwrap_or(false) {
+            // Extract parent ID from focal entity
+            if let Some(parent_id_str) = entity_data.components.iter()
+                .find(|c| c.component_type == "ParentLink")
+                .and_then(|c| c.component_data.get("parent_entity_id"))
+                .and_then(|p| p.as_str()) {
+                
+                if let Ok(parent_id) = Uuid::parse_str(parent_id_str) {
+                    // Get all children of the parent
+                    let siblings_results = self.entity_manager.get_children_entities(user_id, parent_id, Some(50)).await
+                        .map_err(|e| ToolError::AppError(e))?;
+                    
+                    // Filter out the focal entity and convert to summaries
+                    let sibling_summaries: Vec<EntitySummary> = siblings_results.into_iter()
+                        .filter(|r| r.entity.id != entity_id)
+                        .map(|r| convert_to_entity_summary(&r))
+                        .collect();
+                    
+                    Some(sibling_summaries)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Build hierarchical path string
+        let mut path_parts = Vec::new();
+        for ancestor in &ancestors {
+            path_parts.push(ancestor.name.clone());
+        }
+        path_parts.push(entity_summary.name.clone());
+        let path = path_parts.join(" > ");
+
+        let output = GetSpatialContextOutput {
+            entity: entity_summary,
+            ancestors,
+            descendants,
+            siblings,
+            path,
+        };
+
+        info!("Retrieved spatial context for entity {} with {} ancestors and {} descendants", 
+              entity_id, output.ancestors.len(), output.descendants.len());
+        Ok(serde_json::to_value(output)?)
+    }
+}
+
+/// Helper function to convert EntityQueryResult to EntitySummary
+fn convert_to_entity_summary(result: &EntityQueryResult) -> EntitySummary {
+    let name = result.components.iter()
+        .find(|c| c.component_type == "Name")
+        .and_then(|c| c.component_data.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("Unnamed")
+        .to_string();
+
+    let scale = result.components.iter()
+        .find(|c| c.component_type == "SpatialArchetype")
+        .and_then(|c| c.component_data.get("scale"))
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string());
+
+    let position = result.components.iter()
+        .find(|c| c.component_type == "Position")
+        .and_then(|c| {
+            let x = c.component_data.get("x")?.as_f64()?;
+            let y = c.component_data.get("y")?.as_f64()?;
+            let z = c.component_data.get("z")?.as_f64()?;
+            Some(PositionSummary { x, y, z, scale: scale.clone() })
+        });
+
+    let parent_id = result.components.iter()
+        .find(|c| c.component_type == "ParentLink")
+        .and_then(|c| c.component_data.get("parent_entity_id"))
+        .and_then(|p| p.as_str())
+        .map(|s| s.to_string());
+
+    EntitySummary {
+        entity_id: result.entity.id.to_string(),
+        name,
+        scale,
+        position,
+        parent_id,
+        component_types: result.components.iter().map(|c| c.component_type.clone()).collect(),
+    }
+}
+
+/// Tool for moving entities between locations with validation
+#[derive(Clone)]
+pub struct MoveEntityTool {
+    entity_manager: Arc<EcsEntityManager>,
+}
+
+impl MoveEntityTool {
+    pub fn new(entity_manager: Arc<EcsEntityManager>) -> Self {
+        Self { entity_manager }
+    }
+}
+
+/// Input parameters for moving entities
+#[derive(Debug, Deserialize)]
+pub struct MoveEntityInput {
+    /// User ID performing the operation
+    pub user_id: String,
+    /// ID of the entity to move
+    pub entity_id: String,
+    /// ID of the destination entity
+    pub destination_id: String,
+    /// Movement options
+    pub options: Option<MoveEntityToolOptions>,
+}
+
+/// Movement options for the tool
+#[derive(Debug, Deserialize)]
+pub struct MoveEntityToolOptions {
+    /// Whether to validate scale compatibility
+    pub validate_scale_compatibility: Option<bool>,
+    /// Whether to validate movement path
+    pub validate_movement_path: Option<bool>,
+    /// Whether to validate destination capacity
+    pub validate_destination_capacity: Option<bool>,
+    /// Whether to update position
+    pub update_position: Option<bool>,
+    /// New position data
+    pub new_position: Option<MoveEntityPosition>,
+    /// Spatial relationship type
+    pub spatial_relationship: Option<String>,
+    /// Movement type
+    pub movement_type: Option<String>,
+}
+
+/// Position data for movement
+#[derive(Debug, Deserialize)]
+pub struct MoveEntityPosition {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub zone: String,
+}
+
+/// Output from entity movement
+#[derive(Debug, Serialize)]
+pub struct MoveEntityOutput {
+    pub success: bool,
+    pub entity_id: String,
+    pub old_parent_id: Option<String>,
+    pub new_parent_id: String,
+    pub position_updated: bool,
+    pub movement_type: String,
+    pub validations_performed: std::collections::HashMap<String, JsonValue>,
+    pub timestamp: String,
+    pub operation_type: String,
+    pub user_id: String,
+}
+
+#[async_trait]
+impl ScribeTool for MoveEntityTool {
+    fn name(&self) -> &'static str {
+        "move_entity"
+    }
+
+    fn description(&self) -> &'static str {
+        "Move an entity to a new location with validation and position updates. Supports scale-aware movement with comprehensive validation."
+    }
+
+    fn input_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "User ID performing the operation"
+                },
+                "entity_id": {
+                    "type": "string", 
+                    "description": "ID of the entity to move"
+                },
+                "destination_id": {
+                    "type": "string",
+                    "description": "ID of the destination entity"
+                },
+                "options": {
+                    "type": "object",
+                    "description": "Movement options",
+                    "properties": {
+                        "validate_scale_compatibility": {
+                            "type": "boolean",
+                            "description": "Whether to validate scale compatibility"
+                        },
+                        "validate_movement_path": {
+                            "type": "boolean", 
+                            "description": "Whether to validate movement path"
+                        },
+                        "validate_destination_capacity": {
+                            "type": "boolean",
+                            "description": "Whether to validate destination capacity"
+                        },
+                        "update_position": {
+                            "type": "boolean",
+                            "description": "Whether to update position"
+                        },
+                        "new_position": {
+                            "type": "object",
+                            "description": "New position data",
+                            "properties": {
+                                "x": {"type": "number"},
+                                "y": {"type": "number"},
+                                "z": {"type": "number"},
+                                "zone": {"type": "string"}
+                            }
+                        },
+                        "spatial_relationship": {
+                            "type": "string",
+                            "description": "Spatial relationship type"
+                        },
+                        "movement_type": {
+                            "type": "string",
+                            "description": "Movement type"
+                        }
+                    }
+                }
+            },
+            "required": ["user_id", "entity_id", "destination_id"]
+        })
+    }
+
+    #[instrument(skip(self), fields(tool = "move_entity"))]
+    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+        let input: MoveEntityInput = serde_json::from_value(params.clone())
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid move entity parameters: {}", e)))?;
+
+        let user_id = Uuid::parse_str(&input.user_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid user ID format".to_string()))?;
+
+        let entity_id = Uuid::parse_str(&input.entity_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid entity ID format".to_string()))?;
+
+        let destination_id = Uuid::parse_str(&input.destination_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid destination ID format".to_string()))?;
+
+        // Convert tool options to EcsEntityManager options
+        let options = if let Some(tool_opts) = input.options {
+            Some(crate::services::MoveEntityOptions {
+                validate_scale_compatibility: tool_opts.validate_scale_compatibility.unwrap_or(true),
+                validate_movement_path: tool_opts.validate_movement_path.unwrap_or(true),
+                validate_destination_capacity: tool_opts.validate_destination_capacity.unwrap_or(false),
+                update_position: tool_opts.update_position.unwrap_or(false),
+                new_position: tool_opts.new_position.map(|pos| crate::services::PositionData {
+                    x: pos.x,
+                    y: pos.y,
+                    z: pos.z,
+                    zone: pos.zone,
+                }),
+                spatial_relationship: tool_opts.spatial_relationship,
+                movement_type: tool_opts.movement_type,
+            })
+        } else {
+            None
+        };
+
+        // Execute the movement
+        let result = self.entity_manager.move_entity(user_id, entity_id, destination_id, options).await
+            .map_err(|e| {
+                match &e {
+                    AppError::NotFound(_) => ToolError::ExecutionFailed(format!("Entity not found: {}", e)),
+                    AppError::ValidationError(_) => ToolError::ExecutionFailed(format!("Movement validation failed: {}", e)),
+                    _ => ToolError::AppError(e),
+                }
+            })?;
+
+        let output = MoveEntityOutput {
+            success: result.success,
+            entity_id: result.entity_id.to_string(),
+            old_parent_id: result.old_parent_id.map(|id| id.to_string()),
+            new_parent_id: result.new_parent_id.to_string(),
+            position_updated: result.position_updated,
+            movement_type: result.movement_type,
+            validations_performed: result.validations_performed,
+            timestamp: result.timestamp.to_rfc3339(),
+            operation_type: "move_entity".to_string(),
+            user_id: input.user_id,
+        };
+
+        info!("Successfully moved entity {} to destination {} for user {}", 
+              entity_id, destination_id, user_id);
+
+        Ok(serde_json::to_value(output)?)
+    }
+}
+

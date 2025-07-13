@@ -7,8 +7,8 @@
 
 use std::sync::Arc;
 use uuid::Uuid;
-use serde_json::{Value as JsonValue};
-use tracing::{info, warn, debug, instrument};
+use serde_json::{json, Value as JsonValue};
+use tracing::{info, warn, debug, instrument, error};
 use redis::{AsyncCommands, RedisResult};
 
 use crate::{
@@ -16,6 +16,7 @@ use crate::{
     errors::AppError,
     models::{
         ecs_diesel::{EcsEntity, EcsComponent, NewEcsComponent, NewEcsEntity},
+        ecs::ParentLinkComponent,
     },
     schema::{ecs_entities, ecs_components},
 };
@@ -127,6 +128,49 @@ impl EcsEntityManager {
             redis_client,
             config,
         }
+    }
+
+    /// Sanitize HTML content to prevent script injection
+    /// Removes script tags, javascript URLs, and other potentially harmful content
+    fn sanitize_html_content(input: &str) -> String {
+        let mut sanitized = input.to_string();
+        
+        // Remove script tags (case insensitive)
+        sanitized = regex::Regex::new(r"(?i)<script[^>]*>.*?</script>")
+            .unwrap()
+            .replace_all(&sanitized, "")
+            .to_string();
+        
+        // Remove javascript: URLs (case insensitive) 
+        sanitized = regex::Regex::new(r"(?i)javascript:")
+            .unwrap()
+            .replace_all(&sanitized, "")
+            .to_string();
+        
+        // Remove HTML tags that could contain scripts
+        sanitized = regex::Regex::new(r"(?i)<(iframe|object|embed|link|meta)[^>]*>")
+            .unwrap()
+            .replace_all(&sanitized, "")
+            .to_string();
+        
+        // Remove event handlers (onclick, onload, etc.) - simple approach
+        sanitized = regex::Regex::new(r"(?i)\bon\w+\s*=")
+            .unwrap()
+            .replace_all(&sanitized, "")
+            .to_string();
+        
+        // Remove template injection patterns
+        sanitized = regex::Regex::new(r"\$\{[^}]*\}")
+            .unwrap()
+            .replace_all(&sanitized, "")
+            .to_string();
+        
+        sanitized = regex::Regex::new(r"\{\{[^}]*\}\}")
+            .unwrap()
+            .replace_all(&sanitized, "")
+            .to_string();
+            
+        sanitized
     }
 
     /// Get entity with all components (read-through caching)
@@ -1614,6 +1658,584 @@ impl EcsEntityManager {
     }
     
     // ============================================================================
+    // Spatial Hierarchy Query Methods (Task 2.3)
+    // ============================================================================
+    
+    /// Get immediate children of an entity (direct descendants only)
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), parent_id = %parent_id))]
+    pub async fn get_children_entities(
+        &self,
+        user_id: Uuid,
+        parent_id: Uuid,
+        limit: Option<usize>,
+    ) -> Result<Vec<EntityQueryResult>, AppError> {
+        info!("Getting immediate children of entity {} for user {}", parent_id, user_id);
+        
+        // Query for entities with ParentLink pointing to this parent
+        let queries = vec![ComponentQuery::ComponentDataEquals(
+            "ParentLink".to_string(),
+            "parent_entity_id".to_string(),
+            json!(parent_id.to_string()),
+        )];
+        
+        let results = self.query_entities(user_id, queries, limit.map(|l| l as i64), None).await?;
+        
+        info!("Found {} immediate children for entity {}", results.len(), parent_id);
+        Ok(results)
+    }
+    
+    /// Get all descendants of an entity with optional depth limit
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), parent_id = %parent_id))]
+    pub async fn get_descendants_entities(
+        &self,
+        user_id: Uuid,
+        parent_id: Uuid,
+        max_depth: Option<u32>,
+        limit: Option<usize>,
+    ) -> Result<Vec<EntityQueryResult>, AppError> {
+        info!("Getting descendants of entity {} with max_depth {:?}", parent_id, max_depth);
+        
+        let mut all_descendants = Vec::new();
+        let mut current_level = vec![parent_id];
+        let mut depth = 0u32;
+        
+        // Breadth-first search through hierarchy
+        while !current_level.is_empty() {
+            if let Some(max) = max_depth {
+                if depth >= max {
+                    break;
+                }
+            }
+            
+            let mut next_level = Vec::new();
+            
+            for current_parent in current_level {
+                // Get immediate children of current entity
+                let children = self.get_children_entities(user_id, current_parent, None).await?;
+                
+                for child in children {
+                    all_descendants.push(child.clone());
+                    next_level.push(child.entity.id);
+                    
+                    // Check limit
+                    if let Some(lim) = limit {
+                        if all_descendants.len() >= lim {
+                            info!("Reached limit of {} descendants", lim);
+                            return Ok(all_descendants);
+                        }
+                    }
+                }
+            }
+            
+            current_level = next_level;
+            depth += 1;
+        }
+        
+        info!("Found {} total descendants for entity {}", all_descendants.len(), parent_id);
+        Ok(all_descendants)
+    }
+    
+    /// Get descendants filtered by spatial scale
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), parent_id = %parent_id))]
+    pub async fn get_descendants_by_scale(
+        &self,
+        user_id: Uuid,
+        parent_id: Uuid,
+        target_scale: crate::models::ecs::SpatialScale,
+        limit: Option<usize>,
+    ) -> Result<Vec<EntityQueryResult>, AppError> {
+        info!("Getting descendants of scale {:?} for entity {}", target_scale, parent_id);
+        
+        // Get all descendants first
+        let all_descendants = self.get_descendants_entities(user_id, parent_id, None, None).await?;
+        
+        // Filter by scale
+        let mut scale_filtered = Vec::new();
+        
+        for descendant in all_descendants {
+            // Check if entity has SpatialArchetype component with matching scale
+            if let Some(spatial_comp) = descendant.components.iter()
+                .find(|c| c.component_type == "SpatialArchetype") {
+                
+                if let Ok(scale_value) = spatial_comp.component_data.get("scale")
+                    .and_then(|s| s.as_str())
+                    .ok_or_else(|| AppError::SerializationError("Missing scale field".to_string())) {
+                    
+                    if scale_value == format!("{:?}", target_scale) {
+                        scale_filtered.push(descendant);
+                        
+                        // Check limit
+                        if let Some(lim) = limit {
+                            if scale_filtered.len() >= lim {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        info!("Found {} descendants of scale {:?}", scale_filtered.len(), target_scale);
+        Ok(scale_filtered)
+    }
+    
+    /// Get descendants filtered by component type
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), parent_id = %parent_id))]
+    pub async fn get_descendants_with_component(
+        &self,
+        user_id: Uuid,
+        parent_id: Uuid,
+        component_type: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<EntityQueryResult>, AppError> {
+        info!("Getting descendants with component {} for entity {}", component_type, parent_id);
+        
+        // Get all descendants first
+        let all_descendants = self.get_descendants_entities(user_id, parent_id, None, None).await?;
+        
+        // Filter by component presence
+        let mut component_filtered = Vec::new();
+        
+        for descendant in all_descendants {
+            if descendant.components.iter().any(|c| c.component_type == component_type) {
+                component_filtered.push(descendant);
+                
+                // Check limit
+                if let Some(lim) = limit {
+                    if component_filtered.len() >= lim {
+                        break;
+                    }
+                }
+            }
+        }
+        
+        info!("Found {} descendants with component {}", component_filtered.len(), component_type);
+        Ok(component_filtered)
+    }
+    
+    /// Get the full containment tree structure for an entity
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), root_id = %root_id))]
+    pub async fn get_entity_containment_tree(
+        &self,
+        user_id: Uuid,
+        root_id: Uuid,
+        max_depth: Option<u32>,
+    ) -> Result<EntityContainmentTree, AppError> {
+        info!("Building containment tree for entity {}", root_id);
+        
+        // Get root entity details
+        let root_entity = self.get_entity(user_id, root_id).await?
+            .ok_or_else(|| AppError::NotFound(format!("Root entity {} not found", root_id)))?;
+        
+        // Build tree recursively
+        let tree = self.build_containment_subtree(user_id, root_entity, 0, max_depth).await?;
+        
+        Ok(tree)
+    }
+    
+    /// Helper method to build containment tree recursively
+    async fn build_containment_subtree(
+        &self,
+        user_id: Uuid,
+        entity: EntityQueryResult,
+        current_depth: u32,
+        max_depth: Option<u32>,
+    ) -> Result<EntityContainmentTree, AppError> {
+        let mut node = EntityContainmentTree {
+            entity_id: entity.entity.id,
+            name: self.extract_entity_name(&entity),
+            scale: self.extract_entity_scale(&entity),
+            depth: current_depth,
+            children: Vec::new(),
+        };
+        
+        // Check if we've reached max depth
+        if let Some(max) = max_depth {
+            if current_depth >= max {
+                return Ok(node);
+            }
+        }
+        
+        // Get children and build their subtrees
+        let children = self.get_children_entities(user_id, entity.entity.id, None).await?;
+        
+        for child in children {
+            let child_tree = Box::pin(
+                self.build_containment_subtree(user_id, child, current_depth + 1, max_depth)
+            ).await?;
+            node.children.push(child_tree);
+        }
+        
+        Ok(node)
+    }
+    
+    /// Extract entity name from components
+    fn extract_entity_name(&self, entity: &EntityQueryResult) -> String {
+        entity.components.iter()
+            .find(|c| c.component_type == "Name")
+            .and_then(|c| c.component_data.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unknown")
+            .to_string()
+    }
+    
+    /// Extract entity scale from components
+    fn extract_entity_scale(&self, entity: &EntityQueryResult) -> Option<crate::models::ecs::SpatialScale> {
+        entity.components.iter()
+            .find(|c| c.component_type == "SpatialArchetype")
+            .and_then(|c| c.component_data.get("scale"))
+            .and_then(|s| s.as_str())
+            .and_then(|s| match s {
+                "Cosmic" => Some(crate::models::ecs::SpatialScale::Cosmic),
+                "Planetary" => Some(crate::models::ecs::SpatialScale::Planetary),
+                "Intimate" => Some(crate::models::ecs::SpatialScale::Intimate),
+                _ => None,
+            })
+    }
+    
+    // ============================================================================
+    // Entity Movement Operations (Task 2.3.4)
+    // ============================================================================
+    
+    /// Move an entity to a new parent location with validation and position updates
+    #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), entity_id = %entity_id, destination_id = %destination_id))]
+    pub async fn move_entity(
+        &self,
+        user_id: Uuid,
+        entity_id: Uuid,
+        destination_id: Uuid,
+        options: Option<MoveEntityOptions>,
+    ) -> Result<MoveEntityResult, AppError> {
+        info!("Moving entity {} to destination {} for user {}", entity_id, destination_id, user_id);
+        
+        let options = options.unwrap_or_default();
+        let mut validations_performed = std::collections::HashMap::new();
+        
+        // Step 1: Validate entity exists and is owned by user
+        let entity = self.get_entity(user_id, entity_id).await?
+            .ok_or_else(|| AppError::NotFound(format!("Entity {} not found", entity_id)))?;
+        
+        // Step 2: Validate destination exists and is owned by user
+        let destination = self.get_entity(user_id, destination_id).await?
+            .ok_or_else(|| AppError::NotFound(format!("Destination entity {} not found", destination_id)))?;
+        
+        // Step 3: Prevent moving entity to itself
+        if entity_id == destination_id {
+            return Err(AppError::InvalidInput("Entity cannot be moved to itself".to_string()));
+        }
+        
+        // Step 4: Scale compatibility validation
+        if options.validate_scale_compatibility {
+            self.validate_movement_scale_compatibility(&entity, &destination).await?;
+            validations_performed.insert("scale_compatibility".to_string(), json!(true));
+        }
+        
+        // Step 5: Prevent circular parent relationships
+        if options.validate_movement_path {
+            self.validate_no_circular_parent(&entity, &destination, user_id).await?;
+            validations_performed.insert("circular_parent_check".to_string(), json!(true));
+        }
+        
+        // Step 6: Validate destination capacity if requested
+        if options.validate_destination_capacity {
+            self.validate_destination_capacity(&destination, user_id).await?;
+            validations_performed.insert("destination_capacity".to_string(), json!(true));
+        }
+        
+        // Step 7: Update ParentLink component
+        let parent_link_json = json!({
+            "parent_entity_id": destination_id.to_string(),
+            "spatial_relationship": options.spatial_relationship.unwrap_or("contained_within".to_string()),
+            "depth_from_root": 0  // Will be calculated properly in a future enhancement
+        });
+        
+        // Update ParentLink component using database interaction
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        
+        conn.interact({
+            let entity_id = entity_id;
+            let user_id = user_id;
+            let parent_link_json = parent_link_json.clone();
+            
+            move |conn| -> Result<(), AppError> {
+                conn.transaction(|conn| {
+                    // Try to update existing ParentLink component
+                    let updated_count = diesel::update(
+                        ecs_components::table
+                            .filter(ecs_components::entity_id.eq(&entity_id))
+                            .filter(ecs_components::component_type.eq("ParentLink"))
+                            .filter(ecs_components::user_id.eq(&user_id))
+                    )
+                    .set(ecs_components::component_data.eq(&parent_link_json))
+                    .execute(conn)
+                    .map_err(|e| {
+                        error!("Failed to update ParentLink component: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?;
+
+                    // If no ParentLink component exists, insert one
+                    if updated_count == 0 {
+                        let new_component = NewEcsComponent {
+                            id: Uuid::new_v4(),
+                            entity_id,
+                            component_type: "ParentLink".to_string(),
+                            component_data: parent_link_json,
+                            user_id,
+                        };
+
+                        diesel::insert_into(ecs_components::table)
+                            .values(&new_component)
+                            .execute(conn)
+                            .map_err(|e| {
+                                error!("Failed to insert ParentLink component: {}", e);
+                                AppError::DatabaseQueryError(e.to_string())
+                            })?;
+                    }
+                    
+                    Ok(())
+                })
+            }
+        }).await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+        
+        // Step 8: Update Position component if requested
+        let mut position_updated = false;
+        if options.update_position {
+            if let Some(new_position) = options.new_position {
+                // Sanitize zone field to prevent script injection
+                let sanitized_zone = Self::sanitize_html_content(&new_position.zone);
+                
+                let position_json = json!({
+                    "x": new_position.x,
+                    "y": new_position.y,
+                    "z": new_position.z,
+                    "zone": sanitized_zone
+                });
+                
+                conn.interact({
+                    let entity_id = entity_id;
+                    let user_id = user_id;
+                    let position_json = position_json.clone();
+                    
+                    move |conn| -> Result<(), AppError> {
+                        conn.transaction(|conn| {
+                            // Try to update existing Position component
+                            let updated_count = diesel::update(
+                                ecs_components::table
+                                    .filter(ecs_components::entity_id.eq(&entity_id))
+                                    .filter(ecs_components::component_type.eq("Position"))
+                                    .filter(ecs_components::user_id.eq(&user_id))
+                            )
+                            .set(ecs_components::component_data.eq(&position_json))
+                            .execute(conn)
+                            .map_err(|e| {
+                                error!("Failed to update Position component: {}", e);
+                                AppError::DatabaseQueryError(e.to_string())
+                            })?;
+
+                            // If no Position component exists, insert one
+                            if updated_count == 0 {
+                                let new_component = NewEcsComponent {
+                                    id: Uuid::new_v4(),
+                                    entity_id,
+                                    component_type: "Position".to_string(),
+                                    component_data: position_json,
+                                    user_id,
+                                };
+
+                                diesel::insert_into(ecs_components::table)
+                                    .values(&new_component)
+                                    .execute(conn)
+                                    .map_err(|e| {
+                                        error!("Failed to insert Position component: {}", e);
+                                        AppError::DatabaseQueryError(e.to_string())
+                                    })?;
+                            }
+                            
+                            Ok(())
+                        })
+                    }
+                }).await
+                .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+                
+                position_updated = true;
+            }
+        }
+        
+        // Step 9: Invalidate cache entries
+        if let Ok(mut conn) = self.redis_client.get_multiplexed_async_connection().await {
+            // Invalidate specific entity cache key
+            let entity_cache_key = self.entity_cache_key(user_id, entity_id);
+            let _: () = redis::cmd("DEL")
+                .arg(&entity_cache_key)
+                .query_async(&mut conn)
+                .await
+                .unwrap_or_default();
+            
+            // Invalidate any component caches related to this entity
+            let component_patterns = vec![
+                format!("ecs:component:{}:{}:*", Self::hash_user_id(user_id), entity_id),
+                format!("ecs:children:{}:*", Self::hash_user_id(user_id)),
+                format!("ecs:descendants:{}:*", Self::hash_user_id(user_id)),
+            ];
+            
+            for pattern in component_patterns {
+                let keys: Vec<String> = redis::cmd("KEYS")
+                    .arg(&pattern)
+                    .query_async(&mut conn)
+                    .await
+                    .unwrap_or_default();
+                
+                if !keys.is_empty() {
+                    let _: () = redis::cmd("DEL")
+                        .arg(&keys)
+                        .query_async(&mut conn)
+                        .await
+                        .unwrap_or_default();
+                }
+            }
+        }
+        
+        info!("Successfully moved entity {} to destination {}", entity_id, destination_id);
+        
+        Ok(MoveEntityResult {
+            success: true,
+            entity_id,
+            old_parent_id: self.extract_current_parent_id(&entity),
+            new_parent_id: destination_id,
+            position_updated,
+            movement_type: self.determine_movement_type(&entity, &destination).await,
+            validations_performed,
+            timestamp: chrono::Utc::now(),
+        })
+    }
+    
+    /// Validate that movement between entities is scale-compatible
+    async fn validate_movement_scale_compatibility(
+        &self,
+        entity: &EntityQueryResult,
+        destination: &EntityQueryResult,
+    ) -> Result<(), AppError> {
+        let entity_scale = self.extract_entity_scale(entity);
+        let dest_scale = self.extract_entity_scale(destination);
+        
+        match (entity_scale, dest_scale) {
+            (Some(entity_s), Some(dest_s)) => {
+                use crate::models::ecs::SpatialScale;
+                
+                // Define scale compatibility rules
+                let is_compatible = match (&entity_s, &dest_s) {
+                    // Same scale movements are generally allowed
+                    (SpatialScale::Cosmic, SpatialScale::Cosmic) => true,
+                    (SpatialScale::Planetary, SpatialScale::Planetary) => true,
+                    (SpatialScale::Intimate, SpatialScale::Intimate) => true,
+                    
+                    // Cross-scale movements with restrictions
+                    (SpatialScale::Planetary, SpatialScale::Cosmic) => true,  // Planets can move in cosmic space
+                    (SpatialScale::Intimate, SpatialScale::Planetary) => true, // Intimate objects can move on planets
+                    (SpatialScale::Intimate, SpatialScale::Cosmic) => false,   // Direct intimate-to-cosmic blocked
+                    
+                    // Reverse movements (generally more restrictive)
+                    (SpatialScale::Cosmic, SpatialScale::Planetary) => false, // Can't put cosmic objects on planets
+                    (SpatialScale::Cosmic, SpatialScale::Intimate) => false,  // Can't put cosmic objects in intimate spaces
+                    (SpatialScale::Planetary, SpatialScale::Intimate) => false, // Can't put planets in intimate spaces
+                };
+                
+                if !is_compatible {
+                    return Err(AppError::InvalidInput(
+                        format!("Scale incompatible: cannot move {:?} scale entity to {:?} scale destination", 
+                               entity_s, dest_s)
+                    ));
+                }
+            },
+            _ => {
+                // If scale information is missing, log warning but allow movement
+                warn!("Scale information missing for movement validation");
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate that movement doesn't create circular parent relationships
+    async fn validate_no_circular_parent(
+        &self,
+        entity: &EntityQueryResult,
+        destination: &EntityQueryResult,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        // Check if destination is a descendant of the entity being moved
+        let descendants = self.get_descendants_entities(user_id, entity.entity.id, Some(10), Some(100)).await?;
+        
+        for descendant in descendants {
+            if descendant.entity.id == destination.entity.id {
+                return Err(AppError::InvalidInput(
+                    "Cannot move entity to its own descendant - would create circular relationship".to_string()
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate destination has capacity for new entity
+    async fn validate_destination_capacity(
+        &self,
+        destination: &EntityQueryResult,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        // Get current children count
+        let children = self.get_children_entities(user_id, destination.entity.id, None).await?;
+        
+        // Basic capacity limits based on scale/type
+        let max_capacity = self.extract_entity_scale(destination)
+            .map(|scale| match scale {
+                crate::models::ecs::SpatialScale::Cosmic => 1000,    // Systems can contain many objects
+                crate::models::ecs::SpatialScale::Planetary => 500,  // Planets can contain many locations  
+                crate::models::ecs::SpatialScale::Intimate => 50,    // Intimate spaces have lower capacity
+            })
+            .unwrap_or(100); // Default capacity
+        
+        if children.len() >= max_capacity {
+            return Err(AppError::InvalidInput(
+                format!("Destination at capacity: {}/{}", children.len(), max_capacity)
+            ));
+        }
+        
+        Ok(())
+    }
+    
+    /// Extract current parent ID from entity's ParentLink component
+    fn extract_current_parent_id(&self, entity: &EntityQueryResult) -> Option<Uuid> {
+        entity.components.iter()
+            .find(|c| c.component_type == "ParentLink")
+            .and_then(|c| c.component_data.get("parent_entity_id"))
+            .and_then(|id| id.as_str())
+            .and_then(|id_str| Uuid::parse_str(id_str).ok())
+    }
+    
+    /// Determine the type of movement being performed
+    async fn determine_movement_type(&self, entity: &EntityQueryResult, destination: &EntityQueryResult) -> String {
+        let entity_scale = self.extract_entity_scale(entity);
+        let dest_scale = self.extract_entity_scale(destination);
+        
+        match (entity_scale, dest_scale) {
+            (Some(entity_s), Some(dest_s)) => {
+                use crate::models::ecs::SpatialScale;
+                match (entity_s, dest_s) {
+                    (SpatialScale::Planetary, SpatialScale::Cosmic) => "interplanetary".to_string(),
+                    (SpatialScale::Cosmic, SpatialScale::Cosmic) => "interstellar".to_string(),
+                    (SpatialScale::Intimate, SpatialScale::Planetary) => "surface_movement".to_string(),
+                    (SpatialScale::Intimate, SpatialScale::Intimate) => "local_movement".to_string(),
+                    _ => "cross_scale_movement".to_string(),
+                }
+            },
+            _ => "standard_movement".to_string(),
+        }
+    }
+    
+    // ============================================================================
     // Salience-Aware Entity Management (Task 0.2.2)
     // ============================================================================
     
@@ -2181,6 +2803,79 @@ pub struct EntityHierarchyInfo {
     pub depth_from_root: u32,
     pub parent_id: Option<Uuid>,
     pub relationship: Option<String>,
+}
+
+/// Options for entity movement operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveEntityOptions {
+    /// Whether to validate scale compatibility between entity and destination
+    pub validate_scale_compatibility: bool,
+    /// Whether to validate that movement doesn't create circular relationships
+    pub validate_movement_path: bool,
+    /// Whether to validate that destination has capacity for new entity
+    pub validate_destination_capacity: bool,
+    /// Whether to update the entity's position component
+    pub update_position: bool,
+    /// New position data if update_position is true
+    pub new_position: Option<PositionData>,
+    /// Spatial relationship type (default: "contained_within")
+    pub spatial_relationship: Option<String>,
+    /// Movement type classification (e.g., "interplanetary", "local")
+    pub movement_type: Option<String>,
+}
+
+impl Default for MoveEntityOptions {
+    fn default() -> Self {
+        Self {
+            validate_scale_compatibility: true,
+            validate_movement_path: true,
+            validate_destination_capacity: false,
+            update_position: false,
+            new_position: None,
+            spatial_relationship: None,
+            movement_type: None,
+        }
+    }
+}
+
+/// Position data for entity movement
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PositionData {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub zone: String,
+}
+
+/// Result of entity movement operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveEntityResult {
+    /// Whether the movement was successful
+    pub success: bool,
+    /// ID of the entity that was moved
+    pub entity_id: Uuid,
+    /// Previous parent entity ID (if any)
+    pub old_parent_id: Option<Uuid>,
+    /// New parent entity ID
+    pub new_parent_id: Uuid,
+    /// Whether position was updated during movement
+    pub position_updated: bool,
+    /// Type of movement performed
+    pub movement_type: String,
+    /// Validations that were performed
+    pub validations_performed: std::collections::HashMap<String, JsonValue>,
+    /// Timestamp of the movement
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+/// Tree structure representing entity containment hierarchy
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityContainmentTree {
+    pub entity_id: Uuid,
+    pub name: String,
+    pub scale: Option<crate::models::ecs::SpatialScale>,
+    pub depth: u32,
+    pub children: Vec<EntityContainmentTree>,
 }
 
 /// Component query criteria for entity filtering
