@@ -331,8 +331,13 @@
                 * [x] Implemented to_prompt_string() method for debugging and development
                 * [x] All tests passing: 9 functional + 12 OWASP Top 10 security tests
                 * [x] Production-ready with comprehensive security validation
-            *   [ ] **Validation with Symbolic Firewall**: Integration with plan validation system for `symbolic_firewall_checks`
-        *   [ ] **Context Orchestration**: Transform prompt builder into sophisticated "EnrichedContext Orchestrator" for future hierarchical agent system
+                * [x] **Note**: Symbolic Firewall integration will be implemented in Epic 3 (Planning & Reasoning Cortex)
+        *   [x] **Context Orchestration**: Transform prompt builder into sophisticated "EnrichedContext Orchestrator" for future hierarchical agent system ✅ **COMPLETED (2025-07-13)**
+            * [x] **Prompt Mode Intelligence**: Implemented PromptMode enum (Legacy, Enriched, Hybrid) with intelligent routing
+            * [x] **Flash Optimization**: Flash/Flash-Lite routing based on context complexity and model capabilities
+            * [x] **Template Management**: Sophisticated section builders for strategic directives, tactical plans, entity context, spatial/temporal context
+            * [x] **Performance Integration**: Added token counting, execution time tracking, and confidence scoring
+            * [x] **Comprehensive Testing**: 10 functional tests covering all prompt modes and context types
     *   **[ ] Subtask 1.0.5: Comprehensive Testing**
         *   [ ] Write integration tests for all Flash migrations
         *   [ ] Verify performance and cost optimization with Flash routing
@@ -462,7 +467,7 @@
 
 *   **[ ] Task 3.3: Implement the Plan Validator (The "Symbolic Firewall")**
     *   **Objective:** Create the critical service that validates the AI's plan against the ground truth of the ECS. **No action is executed without passing this check.**
-    *   **Current State:** ❌ No plan validation logic exists.
+    *   **Current State:** 🟡 **Basic placeholder validation exists** - HierarchicalContextAssembler has simple `create_basic_validation_checks()` but needs full Symbolic Firewall implementation
     *   **[ ] Subtask 3.3.1:** Create a `PlanValidatorService` in the `planning` module.
     *   **[ ] Subtask 3.3.2:** Implement a `PlanValidatorService::validate_plan` method that takes the JSON plan from the LLM and the current `EcsSnapshot`.
     *   **[ ] Subtask 3.3.3:** For each step in the plan, the validator must check:
