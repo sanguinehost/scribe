@@ -193,6 +193,17 @@ impl AgenticNarrativeFactory {
         let move_entity_tool = Arc::new(super::tools::world_interaction_tools::MoveEntityTool::new(app_state.ecs_entity_manager.clone()));
         registry.add_tool(move_entity_tool);
 
+        // Inventory management tools
+        let add_item_to_inventory_tool = Arc::new(super::tools::world_interaction_tools::AddItemToInventoryTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(add_item_to_inventory_tool);
+
+        let remove_item_from_inventory_tool = Arc::new(super::tools::world_interaction_tools::RemoveItemFromInventoryTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(remove_item_from_inventory_tool);
+
+        // Relationship management tools
+        let update_relationship_tool = Arc::new(super::tools::world_interaction_tools::UpdateRelationshipTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(update_relationship_tool);
+
         info!("Registered {} core tools", registry.list_tools().len());
     }
 
@@ -287,6 +298,17 @@ impl AgenticNarrativeFactory {
         // Entity movement tool
         let move_entity_tool = Arc::new(super::tools::world_interaction_tools::MoveEntityTool::new(app_state.ecs_entity_manager.clone()));
         registry.add_tool(move_entity_tool);
+
+        // Inventory management tools
+        let add_item_to_inventory_tool = Arc::new(super::tools::world_interaction_tools::AddItemToInventoryTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(add_item_to_inventory_tool);
+
+        let remove_item_from_inventory_tool = Arc::new(super::tools::world_interaction_tools::RemoveItemFromInventoryTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(remove_item_from_inventory_tool);
+
+        // Relationship management tools
+        let update_relationship_tool = Arc::new(super::tools::world_interaction_tools::UpdateRelationshipTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(update_relationship_tool);
 
         info!("Registered {} core tools", registry.list_tools().len());
     }

@@ -2643,6 +2643,279 @@ impl EcsEntityManager {
         Ok(filtered_entities)
     }
     
+    // ============================================================================
+    // Inventory Management (Task 2.4)
+    // ============================================================================
+    
+    /// Add an item to an entity's inventory
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn add_item_to_inventory(
+        &self,
+        user_id: Uuid,
+        character_entity_id: Uuid,
+        item_entity_id: Uuid,
+        quantity: u32,
+        slot: Option<usize>,
+    ) -> Result<InventoryItem, AppError> {
+        use crate::models::ecs::{InventoryComponent, InventoryItem, Component};
+        use diesel::prelude::*;
+        
+        // Validate that both entities exist and belong to the user
+        let character = self.get_entity_details(user_id, character_entity_id).await?;
+        let _item = self.get_entity_details(user_id, item_entity_id).await?;
+        
+        // Find the inventory component
+        let inventory_comp = character.components.iter()
+            .find(|c| c.component_type == "Inventory")
+            .ok_or_else(|| AppError::NotFound("Entity does not have an Inventory component".to_string()))?;
+        
+        let mut inventory: InventoryComponent = serde_json::from_value(inventory_comp.component_data.clone())
+            .map_err(|e| AppError::SerializationError(format!("Failed to deserialize inventory: {}", e)))?;
+        
+        // Check if adding this item would exceed capacity
+        let current_item_count = inventory.items.len();
+        if current_item_count >= inventory.capacity {
+            return Err(AppError::InvalidInput(
+                format!("Inventory at capacity: {}/{}", current_item_count, inventory.capacity)
+            ));
+        }
+        
+        // Check if item already exists, if so, add to existing quantity
+        if let Some(existing_item) = inventory.items.iter_mut().find(|item| item.entity_id == item_entity_id) {
+            existing_item.quantity += quantity;
+            if slot.is_some() {
+                existing_item.slot = slot;
+            }
+        } else {
+            // Add new item
+            let new_item = InventoryItem {
+                entity_id: item_entity_id,
+                quantity,
+                slot,
+            };
+            inventory.items.push(new_item.clone());
+        }
+        
+        // Update the inventory component in the database
+        let updated_inventory_json = serde_json::to_value(&inventory)
+            .map_err(|e| AppError::SerializationError(format!("Failed to serialize updated inventory: {}", e)))?;
+        
+        self.db_pool.interact(move |conn| {
+            diesel::update(crate::schema::ecs_components::table)
+                .filter(crate::schema::ecs_components::entity_id.eq(character_entity_id))
+                .filter(crate::schema::ecs_components::component_type.eq("Inventory"))
+                .set(crate::schema::ecs_components::component_data.eq(&updated_inventory_json))
+                .execute(conn)
+        }).await
+        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update inventory: {}", e)))?;
+        
+        // Invalidate cache
+        let user_hash = Self::hash_user_id(user_id);
+        let cache_key = format!("ecs:entity:{}:{}", user_hash, character_entity_id);
+        if let Ok(mut redis_conn) = self.redis_client.get_multiplexed_async_connection().await {
+            let _: Result<(), _> = redis::Cmd::del(&cache_key).query_async(&mut redis_conn).await;
+        }
+        
+        // Return the added item
+        let added_item = inventory.items.iter()
+            .find(|item| item.entity_id == item_entity_id)
+            .cloned()
+            .ok_or_else(|| AppError::InternalServerError("Failed to find added item".to_string()))?;
+        
+        Ok(added_item)
+    }
+    
+    /// Remove an item from an entity's inventory
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn remove_item_from_inventory(
+        &self,
+        user_id: Uuid,
+        character_entity_id: Uuid,
+        item_entity_id: Uuid,
+        quantity: u32,
+    ) -> Result<InventoryItem, AppError> {
+        use crate::models::ecs::{InventoryComponent, InventoryItem, Component};
+        use diesel::prelude::*;
+        
+        // Validate that character exists and belongs to the user
+        let character = self.get_entity_details(user_id, character_entity_id).await?;
+        
+        // Find the inventory component
+        let inventory_comp = character.components.iter()
+            .find(|c| c.component_type == "Inventory")
+            .ok_or_else(|| AppError::NotFound("Entity does not have an Inventory component".to_string()))?;
+        
+        let mut inventory: InventoryComponent = serde_json::from_value(inventory_comp.component_data.clone())
+            .map_err(|e| AppError::SerializationError(format!("Failed to deserialize inventory: {}", e)))?;
+        
+        // Find the item to remove
+        let item_index = inventory.items.iter().position(|item| item.entity_id == item_entity_id)
+            .ok_or_else(|| AppError::NotFound("Item not found in inventory".to_string()))?;
+        
+        let current_item = &mut inventory.items[item_index];
+        
+        // Check if we have enough quantity to remove
+        if current_item.quantity < quantity {
+            return Err(AppError::InvalidInput(
+                format!("Insufficient quantity: has {}, trying to remove {}", current_item.quantity, quantity)
+            ));
+        }
+        
+        let removed_item = InventoryItem {
+            entity_id: item_entity_id,
+            quantity,
+            slot: current_item.slot,
+        };
+        
+        // Update quantity or remove item completely
+        if current_item.quantity == quantity {
+            inventory.items.remove(item_index);
+        } else {
+            current_item.quantity -= quantity;
+        }
+        
+        // Update the inventory component in the database
+        let updated_inventory_json = serde_json::to_value(&inventory)
+            .map_err(|e| AppError::SerializationError(format!("Failed to serialize updated inventory: {}", e)))?;
+        
+        self.db_pool.interact(move |conn| {
+            diesel::update(crate::schema::ecs_components::table)
+                .filter(crate::schema::ecs_components::entity_id.eq(character_entity_id))
+                .filter(crate::schema::ecs_components::component_type.eq("Inventory"))
+                .set(crate::schema::ecs_components::component_data.eq(&updated_inventory_json))
+                .execute(conn)
+        }).await
+        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update inventory: {}", e)))?;
+        
+        // Invalidate cache
+        let user_hash = Self::hash_user_id(user_id);
+        let cache_key = format!("ecs:entity:{}:{}", user_hash, character_entity_id);
+        if let Ok(mut redis_conn) = self.redis_client.get_multiplexed_async_connection().await {
+            let _: Result<(), _> = redis::Cmd::del(&cache_key).query_async(&mut redis_conn).await;
+        }
+        
+        Ok(removed_item)
+    }
+    
+    // ============================================================================
+    // Relationship Management (Task 2.4)
+    // ============================================================================
+    
+    /// Update or create a relationship between two entities
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn update_relationship(
+        &self,
+        user_id: Uuid,
+        source_entity_id: Uuid,
+        target_entity_id: Uuid,
+        relationship_type: String,
+        trust: f32,
+        affection: f32,
+        metadata: HashMap<String, JsonValue>,
+    ) -> Result<Relationship, AppError> {
+        use crate::models::ecs::{RelationshipsComponent, Relationship, Component};
+        use diesel::prelude::*;
+        use std::collections::HashMap;
+        
+        // Validate trust and affection bounds
+        if trust < -1.0 || trust > 1.0 {
+            return Err(AppError::InvalidInput(
+                format!("Trust value must be between -1.0 and 1.0, got: {}", trust)
+            ));
+        }
+        if affection < -1.0 || affection > 1.0 {
+            return Err(AppError::InvalidInput(
+                format!("Affection value must be between -1.0 and 1.0, got: {}", affection)
+            ));
+        }
+        
+        // Prevent self-relationships
+        if source_entity_id == target_entity_id {
+            return Err(AppError::InvalidInput("Entity cannot have a relationship with itself".to_string()));
+        }
+        
+        // Validate that both entities exist and belong to the user
+        let source_entity = self.get_entity_details(user_id, source_entity_id).await?;
+        let _target_entity = self.get_entity_details(user_id, target_entity_id).await?;
+        
+        // Find the relationships component
+        let relationships_comp = source_entity.components.iter()
+            .find(|c| c.component_type == "Relationships")
+            .ok_or_else(|| AppError::NotFound("Entity does not have a Relationships component".to_string()))?;
+        
+        let mut relationships: RelationshipsComponent = serde_json::from_value(relationships_comp.component_data.clone())
+            .map_err(|e| AppError::SerializationError(format!("Failed to deserialize relationships: {}", e)))?;
+        
+        // Find existing relationship or create new one
+        let new_relationship = Relationship {
+            target_entity_id,
+            relationship_type: relationship_type.clone(),
+            trust,
+            affection,
+            metadata: metadata.clone(),
+        };
+        
+        if let Some(existing_rel) = relationships.relationships.iter_mut()
+            .find(|rel| rel.target_entity_id == target_entity_id) {
+            // Update existing relationship
+            *existing_rel = new_relationship.clone();
+        } else {
+            // Add new relationship
+            relationships.relationships.push(new_relationship.clone());
+        }
+        
+        // Update the relationships component in the database
+        let updated_relationships_json = serde_json::to_value(&relationships)
+            .map_err(|e| AppError::SerializationError(format!("Failed to serialize updated relationships: {}", e)))?;
+        
+        self.db_pool.interact(move |conn| {
+            diesel::update(crate::schema::ecs_components::table)
+                .filter(crate::schema::ecs_components::entity_id.eq(source_entity_id))
+                .filter(crate::schema::ecs_components::component_type.eq("Relationships"))
+                .set(crate::schema::ecs_components::component_data.eq(&updated_relationships_json))
+                .execute(conn)
+        }).await
+        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update relationships: {}", e)))?;
+        
+        // Invalidate cache
+        let user_hash = Self::hash_user_id(user_id);
+        let cache_key = format!("ecs:entity:{}:{}", user_hash, source_entity_id);
+        if let Ok(mut redis_conn) = self.redis_client.get_multiplexed_async_connection().await {
+            let _: Result<(), _> = redis::Cmd::del(&cache_key).query_async(&mut redis_conn).await;
+        }
+        
+        Ok(new_relationship)
+    }
+    
+    /// Get all relationships for an entity
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn get_relationships(
+        &self,
+        user_id: Uuid,
+        entity_id: Uuid,
+    ) -> Result<Vec<Relationship>, AppError> {
+        use crate::models::ecs::{RelationshipsComponent, Component};
+        
+        // Get entity and validate ownership
+        let entity = self.get_entity_details(user_id, entity_id).await?;
+        
+        // Find the relationships component
+        if let Some(relationships_comp) = entity.components.iter()
+            .find(|c| c.component_type == "Relationships") {
+            
+            let relationships: RelationshipsComponent = serde_json::from_value(relationships_comp.component_data.clone())
+                .map_err(|e| AppError::SerializationError(format!("Failed to deserialize relationships: {}", e)))?;
+            
+            Ok(relationships.relationships)
+        } else {
+            // Entity has no relationships component, return empty list
+            Ok(Vec::new())
+        }
+    }
+
     // Helper methods for salience management
     
     /// Create a default component of the given type

@@ -1801,3 +1801,472 @@ impl ScribeTool for MoveEntityTool {
     }
 }
 
+// ============================================================================
+// Inventory Management Tools (Task 2.4)
+// ============================================================================
+
+/// Tool for adding items to entity inventories
+#[derive(Clone)]
+pub struct AddItemToInventoryTool {
+    entity_manager: Arc<EcsEntityManager>,
+}
+
+impl AddItemToInventoryTool {
+    pub fn new(entity_manager: Arc<EcsEntityManager>) -> Self {
+        Self { entity_manager }
+    }
+}
+
+/// Input parameters for adding items to inventory
+#[derive(Debug, Deserialize)]
+pub struct AddItemToInventoryInput {
+    /// User ID performing the operation
+    pub user_id: String,
+    /// ID of the character entity with inventory
+    pub character_entity_id: String,
+    /// ID of the item entity to add
+    pub item_entity_id: String,
+    /// Quantity of the item to add
+    pub quantity: u32,
+    /// Optional inventory slot (if supported)
+    pub slot: Option<usize>,
+}
+
+/// Output from adding item to inventory
+#[derive(Debug, Serialize)]
+pub struct AddItemToInventoryOutput {
+    /// Whether the operation succeeded
+    pub success: bool,
+    /// Details of the added item
+    pub item_added: InventoryItemInfo,
+    /// Operation type identifier
+    pub operation_type: String,
+    /// User ID who performed the operation
+    pub user_id: String,
+    /// Timestamp of operation
+    pub timestamp: String,
+}
+
+/// Information about an inventory item
+#[derive(Debug, Serialize)]
+pub struct InventoryItemInfo {
+    /// ID of the item entity
+    pub entity_id: String,
+    /// Quantity in inventory
+    pub quantity: u32,
+    /// Slot position (if any)
+    pub slot: Option<usize>,
+}
+
+#[async_trait]
+impl ScribeTool for AddItemToInventoryTool {
+    fn name(&self) -> &'static str {
+        "add_item_to_inventory"
+    }
+
+    fn description(&self) -> &'static str {
+        "Add an item to a character's inventory with specified quantity and optional slot"
+    }
+
+    fn parameters_json_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "UUID of the user performing the operation"
+                },
+                "character_entity_id": {
+                    "type": "string",
+                    "description": "UUID of the character entity with inventory"
+                },
+                "item_entity_id": {
+                    "type": "string",
+                    "description": "UUID of the item entity to add"
+                },
+                "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Quantity of the item to add"
+                },
+                "slot": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Optional inventory slot position"
+                }
+            },
+            "required": ["user_id", "character_entity_id", "item_entity_id", "quantity"]
+        })
+    }
+
+    #[instrument(skip(self, params), fields(tool_name = %self.name()))]
+    async fn execute(&self, params: &JsonValue) -> Result<JsonValue, ToolError> {
+        let input: AddItemToInventoryInput = serde_json::from_value(params.clone())
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid parameters: {}", e)))?;
+
+        let user_id = Uuid::parse_str(&input.user_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid user ID format".to_string()))?;
+
+        let character_id = Uuid::parse_str(&input.character_entity_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid character entity ID format".to_string()))?;
+
+        let item_id = Uuid::parse_str(&input.item_entity_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid item entity ID format".to_string()))?;
+
+        // Validate quantity
+        if input.quantity == 0 {
+            return Err(ToolError::InvalidParams("Quantity must be greater than 0".to_string()));
+        }
+
+        // Execute the inventory addition
+        let result = self.entity_manager
+            .add_item_to_inventory(user_id, character_id, item_id, input.quantity, input.slot)
+            .await
+            .map_err(|e| {
+                match &e {
+                    AppError::NotFound(_) => ToolError::ExecutionFailed(format!("Entity not found: {}", e)),
+                    AppError::InvalidInput(_) => ToolError::ExecutionFailed(format!("Inventory operation failed: {}", e)),
+                    _ => ToolError::AppError(e),
+                }
+            })?;
+
+        let output = AddItemToInventoryOutput {
+            success: true,
+            item_added: InventoryItemInfo {
+                entity_id: result.entity_id.to_string(),
+                quantity: result.quantity,
+                slot: result.slot,
+            },
+            operation_type: "add_item_to_inventory".to_string(),
+            user_id: input.user_id,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        info!("Successfully added {} of item {} to character {} for user {}", 
+              input.quantity, item_id, character_id, user_id);
+
+        Ok(serde_json::to_value(output)?)
+    }
+}
+
+/// Tool for removing items from entity inventories
+#[derive(Clone)]
+pub struct RemoveItemFromInventoryTool {
+    entity_manager: Arc<EcsEntityManager>,
+}
+
+impl RemoveItemFromInventoryTool {
+    pub fn new(entity_manager: Arc<EcsEntityManager>) -> Self {
+        Self { entity_manager }
+    }
+}
+
+/// Input parameters for removing items from inventory
+#[derive(Debug, Deserialize)]
+pub struct RemoveItemFromInventoryInput {
+    /// User ID performing the operation
+    pub user_id: String,
+    /// ID of the character entity with inventory
+    pub character_entity_id: String,
+    /// ID of the item entity to remove
+    pub item_entity_id: String,
+    /// Quantity of the item to remove
+    pub quantity: u32,
+}
+
+/// Output from removing item from inventory
+#[derive(Debug, Serialize)]
+pub struct RemoveItemFromInventoryOutput {
+    /// Whether the operation succeeded
+    pub success: bool,
+    /// Details of the removed item
+    pub item_removed: InventoryItemInfo,
+    /// Operation type identifier
+    pub operation_type: String,
+    /// User ID who performed the operation
+    pub user_id: String,
+    /// Timestamp of operation
+    pub timestamp: String,
+}
+
+#[async_trait]
+impl ScribeTool for RemoveItemFromInventoryTool {
+    fn name(&self) -> &'static str {
+        "remove_item_from_inventory"
+    }
+
+    fn description(&self) -> &'static str {
+        "Remove a specified quantity of an item from a character's inventory"
+    }
+
+    fn parameters_json_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "UUID of the user performing the operation"
+                },
+                "character_entity_id": {
+                    "type": "string",
+                    "description": "UUID of the character entity with inventory"
+                },
+                "item_entity_id": {
+                    "type": "string",
+                    "description": "UUID of the item entity to remove"
+                },
+                "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Quantity of the item to remove"
+                }
+            },
+            "required": ["user_id", "character_entity_id", "item_entity_id", "quantity"]
+        })
+    }
+
+    #[instrument(skip(self, params), fields(tool_name = %self.name()))]
+    async fn execute(&self, params: &JsonValue) -> Result<JsonValue, ToolError> {
+        let input: RemoveItemFromInventoryInput = serde_json::from_value(params.clone())
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid parameters: {}", e)))?;
+
+        let user_id = Uuid::parse_str(&input.user_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid user ID format".to_string()))?;
+
+        let character_id = Uuid::parse_str(&input.character_entity_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid character entity ID format".to_string()))?;
+
+        let item_id = Uuid::parse_str(&input.item_entity_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid item entity ID format".to_string()))?;
+
+        // Validate quantity
+        if input.quantity == 0 {
+            return Err(ToolError::InvalidParams("Quantity must be greater than 0".to_string()));
+        }
+
+        // Execute the inventory removal
+        let result = self.entity_manager
+            .remove_item_from_inventory(user_id, character_id, item_id, input.quantity)
+            .await
+            .map_err(|e| {
+                match &e {
+                    AppError::NotFound(_) => ToolError::ExecutionFailed(format!("Item not found: {}", e)),
+                    AppError::InvalidInput(_) => ToolError::ExecutionFailed(format!("Insufficient quantity: {}", e)),
+                    _ => ToolError::AppError(e),
+                }
+            })?;
+
+        let output = RemoveItemFromInventoryOutput {
+            success: true,
+            item_removed: InventoryItemInfo {
+                entity_id: result.entity_id.to_string(),
+                quantity: result.quantity,
+                slot: result.slot,
+            },
+            operation_type: "remove_item_from_inventory".to_string(),
+            user_id: input.user_id,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        info!("Successfully removed {} of item {} from character {} for user {}", 
+              input.quantity, item_id, character_id, user_id);
+
+        Ok(serde_json::to_value(output)?)
+    }
+}
+
+// ============================================================================
+// Relationship Management Tools (Task 2.4)
+// ============================================================================
+
+/// Tool for updating entity relationships
+#[derive(Clone)]
+pub struct UpdateRelationshipTool {
+    entity_manager: Arc<EcsEntityManager>,
+}
+
+impl UpdateRelationshipTool {
+    pub fn new(entity_manager: Arc<EcsEntityManager>) -> Self {
+        Self { entity_manager }
+    }
+}
+
+/// Input parameters for updating relationships
+#[derive(Debug, Deserialize)]
+pub struct UpdateRelationshipInput {
+    /// User ID performing the operation
+    pub user_id: String,
+    /// ID of the source entity (who has the relationship)
+    pub source_entity_id: String,
+    /// ID of the target entity (relationship target)
+    pub target_entity_id: String,
+    /// Type/description of the relationship
+    pub relationship_type: String,
+    /// Trust level (-1.0 to 1.0)
+    pub trust: f32,
+    /// Affection level (-1.0 to 1.0)
+    pub affection: f32,
+    /// Additional metadata about the relationship
+    pub metadata: Option<JsonValue>,
+}
+
+/// Output from updating relationship
+#[derive(Debug, Serialize)]
+pub struct UpdateRelationshipOutput {
+    /// Whether the operation succeeded
+    pub success: bool,
+    /// Details of the updated relationship
+    pub relationship: RelationshipInfo,
+    /// Operation type identifier
+    pub operation_type: String,
+    /// User ID who performed the operation
+    pub user_id: String,
+    /// Timestamp of operation
+    pub timestamp: String,
+}
+
+/// Information about a relationship
+#[derive(Debug, Serialize)]
+pub struct RelationshipInfo {
+    /// ID of the target entity
+    pub target_entity_id: String,
+    /// Type/description of the relationship
+    pub relationship_type: String,
+    /// Trust level
+    pub trust: f32,
+    /// Affection level
+    pub affection: f32,
+    /// Additional metadata
+    pub metadata: JsonValue,
+}
+
+#[async_trait]
+impl ScribeTool for UpdateRelationshipTool {
+    fn name(&self) -> &'static str {
+        "update_relationship"
+    }
+
+    fn description(&self) -> &'static str {
+        "Create or update a relationship between two entities with trust, affection, and metadata"
+    }
+
+    fn parameters_json_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "UUID of the user performing the operation"
+                },
+                "source_entity_id": {
+                    "type": "string",
+                    "description": "UUID of the source entity (who has the relationship)"
+                },
+                "target_entity_id": {
+                    "type": "string",
+                    "description": "UUID of the target entity (relationship target)"
+                },
+                "relationship_type": {
+                    "type": "string",
+                    "description": "Type or description of the relationship (e.g., 'trusts', 'fears', 'loves')"
+                },
+                "trust": {
+                    "type": "number",
+                    "minimum": -1.0,
+                    "maximum": 1.0,
+                    "description": "Trust level from -1.0 (complete distrust) to 1.0 (complete trust)"
+                },
+                "affection": {
+                    "type": "number",
+                    "minimum": -1.0,
+                    "maximum": 1.0,
+                    "description": "Affection level from -1.0 (hatred) to 1.0 (love)"
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Additional metadata about the relationship"
+                }
+            },
+            "required": ["user_id", "source_entity_id", "target_entity_id", "relationship_type", "trust", "affection"]
+        })
+    }
+
+    #[instrument(skip(self, params), fields(tool_name = %self.name()))]
+    async fn execute(&self, params: &JsonValue) -> Result<JsonValue, ToolError> {
+        let input: UpdateRelationshipInput = serde_json::from_value(params.clone())
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid parameters: {}", e)))?;
+
+        let user_id = Uuid::parse_str(&input.user_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid user ID format".to_string()))?;
+
+        let source_id = Uuid::parse_str(&input.source_entity_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid source entity ID format".to_string()))?;
+
+        let target_id = Uuid::parse_str(&input.target_entity_id)
+            .map_err(|_| ToolError::InvalidParams("Invalid target entity ID format".to_string()))?;
+
+        // Validate trust and affection bounds
+        if input.trust < -1.0 || input.trust > 1.0 {
+            return Err(ToolError::InvalidParams(
+                format!("Trust must be between -1.0 and 1.0, got: {}", input.trust)
+            ));
+        }
+        if input.affection < -1.0 || input.affection > 1.0 {
+            return Err(ToolError::InvalidParams(
+                format!("Affection must be between -1.0 and 1.0, got: {}", input.affection)
+            ));
+        }
+
+        // Convert metadata to HashMap
+        let metadata = if let Some(meta) = input.metadata {
+            if let JsonValue::Object(map) = meta {
+                map.into_iter().collect()
+            } else {
+                return Err(ToolError::InvalidParams("Metadata must be an object".to_string()));
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        // Execute the relationship update
+        let result = self.entity_manager
+            .update_relationship(
+                user_id,
+                source_id,
+                target_id,
+                input.relationship_type.clone(),
+                input.trust,
+                input.affection,
+                metadata,
+            )
+            .await
+            .map_err(|e| {
+                match &e {
+                    AppError::NotFound(_) => ToolError::ExecutionFailed(format!("Entity not found: {}", e)),
+                    AppError::InvalidInput(_) => ToolError::ExecutionFailed(format!("Relationship update failed: {}", e)),
+                    _ => ToolError::AppError(e),
+                }
+            })?;
+
+        let output = UpdateRelationshipOutput {
+            success: true,
+            relationship: RelationshipInfo {
+                target_entity_id: result.target_entity_id.to_string(),
+                relationship_type: result.relationship_type,
+                trust: result.trust,
+                affection: result.affection,
+                metadata: serde_json::to_value(&result.metadata)
+                    .unwrap_or_else(|_| JsonValue::Object(serde_json::Map::new())),
+            },
+            operation_type: "update_relationship".to_string(),
+            user_id: input.user_id,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        info!("Successfully updated relationship from {} to {} for user {}", 
+              source_id, target_id, user_id);
+
+        Ok(serde_json::to_value(output)?)
+    }
+}
+
