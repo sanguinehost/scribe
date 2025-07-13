@@ -169,6 +169,13 @@ impl AgenticNarrativeFactory {
         let update_salience_tool = Arc::new(UpdateSalienceTool::new(app_state.clone()));
         registry.add_tool(update_salience_tool);
 
+        // World interaction tools for entity management
+        let find_entity_tool = Arc::new(super::tools::world_interaction_tools::FindEntityTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(find_entity_tool);
+
+        let get_entity_details_tool = Arc::new(super::tools::world_interaction_tools::GetEntityDetailsTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(get_entity_details_tool);
+
         info!("Registered {} core tools", registry.list_tools().len());
     }
 
@@ -239,6 +246,13 @@ impl AgenticNarrativeFactory {
 
         let update_salience_tool = Arc::new(UpdateSalienceTool::new(app_state.clone()));
         registry.add_tool(update_salience_tool);
+
+        // World interaction tools for entity management
+        let find_entity_tool = Arc::new(super::tools::world_interaction_tools::FindEntityTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(find_entity_tool);
+
+        let get_entity_details_tool = Arc::new(super::tools::world_interaction_tools::GetEntityDetailsTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(get_entity_details_tool);
 
         info!("Registered {} core tools", registry.list_tools().len());
     }

@@ -4,6 +4,7 @@ pub mod hierarchy_tools;
 pub mod ai_powered_tools;
 pub mod ai_entity_resolution;
 pub mod ai_narrative_analysis;
+pub mod world_interaction_tools;
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -73,5 +74,11 @@ impl Error for ToolError {
 impl From<AppError> for ToolError {
     fn from(err: AppError) -> Self {
         ToolError::AppError(err)
+    }
+}
+
+impl From<serde_json::Error> for ToolError {
+    fn from(err: serde_json::Error) -> Self {
+        ToolError::InvalidParams(format!("JSON serialization error: {}", err))
     }
 }
