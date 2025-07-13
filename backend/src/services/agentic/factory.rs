@@ -176,6 +176,12 @@ impl AgenticNarrativeFactory {
         let get_entity_details_tool = Arc::new(super::tools::world_interaction_tools::GetEntityDetailsTool::new(app_state.ecs_entity_manager.clone()));
         registry.add_tool(get_entity_details_tool);
 
+        let create_entity_tool = Arc::new(super::tools::world_interaction_tools::CreateEntityTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(create_entity_tool);
+
+        let update_entity_tool = Arc::new(super::tools::world_interaction_tools::UpdateEntityTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(update_entity_tool);
+
         info!("Registered {} core tools", registry.list_tools().len());
     }
 
@@ -253,6 +259,12 @@ impl AgenticNarrativeFactory {
 
         let get_entity_details_tool = Arc::new(super::tools::world_interaction_tools::GetEntityDetailsTool::new(app_state.ecs_entity_manager.clone()));
         registry.add_tool(get_entity_details_tool);
+
+        let create_entity_tool = Arc::new(super::tools::world_interaction_tools::CreateEntityTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(create_entity_tool);
+
+        let update_entity_tool = Arc::new(super::tools::world_interaction_tools::UpdateEntityTool::new(app_state.ecs_entity_manager.clone()));
+        registry.add_tool(update_entity_tool);
 
         info!("Registered {} core tools", registry.list_tools().len());
     }

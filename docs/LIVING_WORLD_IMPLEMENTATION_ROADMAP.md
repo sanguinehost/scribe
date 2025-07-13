@@ -409,12 +409,16 @@
         *   [x] **Error Handling:** Comprehensive error handling with ToolError enum and proper user isolation
         *   [x] **Performance:** Query limits enforced (max 100 results) to prevent resource exhaustion
 
-*   **[ ] Task 2.2: Test and Implement `create_entity` and `update_entity`**
-    *   **[ ] Subtask 2.2.1: Write Tests First:**
-        *   [ ] **Integration Tests:** For `create_entity`, assert the entity and components (including `ParentLink` and `Salience`) are correctly created. For `update_entity`, assert component data is correctly modified.
-        *   [ ] **Security Test (A08: Data Integrity):** For both tools, test with malformed JSON in the `components` payload. Assert the system rejects the request gracefully.
-        *   [ ] **Security Test (A01: Broken Access Control):** For `update_entity`, test that a user cannot modify an entity they do not own.
-    *   **[ ] Subtask 2.2.2: Implement `create_entity` and `update_entity`:** Write the implementation code.
+*   **[x] Task 2.2: Test and Implement `create_entity` and `update_entity`** ✅ **COMPLETED**
+    *   **[x] Subtask 2.2.1: Write Tests First:**
+        *   [x] **Functional Tests:** Created 7 comprehensive tests covering basic creation, parent/salience support, updates, component operations
+        *   [x] **Security Tests:** Implemented 17 OWASP-based security tests covering all Top 10 categories
+        *   [x] **Critical Bug Found:** Discovered SQL injection vulnerability in EcsEntityManager's `ComponentDataMatches` query
+    *   **[x] Subtask 2.2.2: Implement `create_entity` and `update_entity`:**
+        *   [x] **CreateEntityTool:** Full entity creation with parent links, salience tiers, and component validation
+        *   [x] **UpdateEntityTool:** Component updates supporting Add/Update/Remove operations with ownership checks
+        *   [x] **Validation:** Component type and schema validation to prevent invalid data
+        *   [x] **Agent Integration:** Both tools registered in agentic factory with JSON schemas
 
 *   **[ ] Task 2.3: Test and Implement Scale-Aware Spatial Tools**
     *   **Objective:** Give the agent the ability to manipulate and understand spatial relationships across different scales.

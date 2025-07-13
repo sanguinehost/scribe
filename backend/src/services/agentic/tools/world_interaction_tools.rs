@@ -12,8 +12,8 @@ use async_trait::async_trait;
 use tracing::{info, debug, instrument, error};
 
 use crate::{
-    services::{EcsEntityManager, ComponentQuery, EntityQueryResult},
-    models::ecs::{SpatialScale, PositionType},
+    services::{EcsEntityManager, ComponentQuery, EntityQueryResult, ComponentUpdate, ComponentOperation},
+    models::ecs::{SpatialScale, PositionType, SalienceTier, ParentLinkComponent, SalienceComponent, Component},
     services::agentic::tools::{ScribeTool, ToolError, ToolParams, ToolResult},
     errors::AppError,
 };
@@ -557,6 +557,466 @@ impl ScribeTool for GetEntityDetailsTool {
         };
 
         info!("Retrieved details for entity {}", entity_id);
+        Ok(serde_json::to_value(output)?)
+    }
+}
+
+/// Tool for creating new entities in the world
+#[derive(Clone)]
+pub struct CreateEntityTool {
+    entity_manager: Arc<EcsEntityManager>,
+}
+
+impl CreateEntityTool {
+    pub fn new(entity_manager: Arc<EcsEntityManager>) -> Self {
+        Self { entity_manager }
+    }
+}
+
+/// Input parameters for creating entities
+#[derive(Debug, Deserialize)]
+pub struct CreateEntityInput {
+    /// User ID performing the operation
+    pub user_id: String,
+    /// Name for the entity
+    pub entity_name: String,
+    /// Archetype signature (e.g., "Name|Position|SpatialArchetype")
+    pub archetype_signature: String,
+    /// Component data for the entity
+    pub components: serde_json::Map<String, JsonValue>,
+    /// Optional parent entity ID for hierarchical relationships
+    pub parent_entity_id: Option<String>,
+    /// Optional salience tier (Core, Secondary, Flavor)
+    pub salience_tier: Option<String>,
+}
+
+/// Output from entity creation
+#[derive(Debug, Serialize)]
+pub struct CreateEntityOutput {
+    /// ID of the newly created entity
+    pub entity_id: String,
+    /// Name of the entity
+    pub name: String,
+    /// Whether creation was successful
+    pub created: bool,
+    /// Parent entity ID if applicable
+    pub parent_id: Option<String>,
+    /// Salience tier if set
+    pub salience: Option<String>,
+    /// Message about the creation
+    pub message: String,
+}
+
+#[async_trait]
+impl ScribeTool for CreateEntityTool {
+    fn name(&self) -> &'static str {
+        "create_entity"
+    }
+
+    fn description(&self) -> &'static str {
+        "Creates a new entity in the world with specified components. \
+         Supports hierarchical relationships via parent_entity_id and \
+         salience management for narrative importance."
+    }
+
+    fn input_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "The UUID of the user performing the operation"
+                },
+                "entity_name": {
+                    "type": "string",
+                    "description": "Name for the new entity"
+                },
+                "archetype_signature": {
+                    "type": "string",
+                    "description": "Pipe-separated list of component types (e.g., 'Name|Position|SpatialArchetype')"
+                },
+                "components": {
+                    "type": "object",
+                    "description": "Component data keyed by component type",
+                    "additionalProperties": true
+                },
+                "parent_entity_id": {
+                    "type": "string",
+                    "description": "Optional UUID of parent entity for hierarchical relationships"
+                },
+                "salience_tier": {
+                    "type": "string",
+                    "enum": ["Core", "Secondary", "Flavor"],
+                    "description": "Optional salience tier for narrative importance"
+                }
+            },
+            "required": ["user_id", "entity_name", "archetype_signature", "components"]
+        })
+    }
+
+    #[instrument(skip(self, params), fields(tool = self.name()))]
+    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+        debug!("Executing create_entity with input: {}", params);
+        
+        // Parse input
+        let input_params: CreateEntityInput = serde_json::from_value(params.clone())
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid input parameters: {}", e)))?;
+
+        // Define valid component types
+        const VALID_COMPONENT_TYPES: &[&str] = &[
+            "Health", "Position", "EnhancedPosition", "Inventory", "Relationships",
+            "Name", "ParentLink", "SpatialArchetype", "Temporal", "Salience", "Spatial"
+        ];
+
+        // Validate component types in archetype signature
+        let archetype_components: Vec<&str> = input_params.archetype_signature.split('|')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        for comp_type in &archetype_components {
+            if !VALID_COMPONENT_TYPES.contains(comp_type) {
+                return Err(ToolError::InvalidParams(format!("Invalid component type in archetype: {}", comp_type)));
+            }
+        }
+
+        // Validate component data keys match archetype
+        for comp_type in input_params.components.keys() {
+            if !archetype_components.contains(&comp_type.as_str()) {
+                return Err(ToolError::InvalidParams(format!(
+                    "Component '{}' not listed in archetype signature", comp_type
+                )));
+            }
+        }
+
+        // Validate component data schema for known types
+        for (comp_type, comp_data) in &input_params.components {
+            match comp_type.as_str() {
+                "Name" => {
+                    if !comp_data.get("name").and_then(|v| v.as_str()).is_some() {
+                        return Err(ToolError::InvalidParams(format!(
+                            "Name component requires 'name' field"
+                        )));
+                    }
+                }
+                "Position" => {
+                    if !comp_data.get("x").and_then(|v| v.as_f64()).is_some() ||
+                       !comp_data.get("y").and_then(|v| v.as_f64()).is_some() ||
+                       !comp_data.get("z").and_then(|v| v.as_f64()).is_some() ||
+                       !comp_data.get("zone").and_then(|v| v.as_str()).is_some() {
+                        return Err(ToolError::InvalidParams(format!(
+                            "Position component requires 'x', 'y', 'z' (numbers) and 'zone' (string) fields"
+                        )));
+                    }
+                }
+                "SpatialArchetype" => {
+                    if !comp_data.get("scale").and_then(|v| v.as_str()).is_some() ||
+                       !comp_data.get("hierarchical_level").and_then(|v| v.as_u64()).is_some() ||
+                       !comp_data.get("level_name").and_then(|v| v.as_str()).is_some() {
+                        return Err(ToolError::InvalidParams(format!(
+                            "SpatialArchetype component requires 'scale', 'hierarchical_level', and 'level_name' fields"
+                        )));
+                    }
+                    
+                    // Validate scale value
+                    let scale = comp_data.get("scale").and_then(|v| v.as_str()).unwrap();
+                    if !matches!(scale, "Cosmic" | "Planetary" | "Intimate") {
+                        return Err(ToolError::InvalidParams(format!(
+                            "Invalid scale value: {}. Must be Cosmic, Planetary, or Intimate", scale
+                        )));
+                    }
+                }
+                "Temporal" => {
+                    if !comp_data.get("temporal_mode").and_then(|v| v.as_str()).is_some() {
+                        return Err(ToolError::InvalidParams(format!(
+                            "Temporal component requires 'temporal_mode' field"
+                        )));
+                    }
+                }
+                // ParentLink and Salience are handled specially later
+                "ParentLink" | "Salience" => {}
+                // For other components, we'll allow them through for now
+                _ => {}
+            }
+        }
+
+        // Parse user ID
+        let user_id = Uuid::parse_str(&input_params.user_id)
+            .map_err(|_| ToolError::InvalidParams(format!("Invalid user_id UUID: {}", input_params.user_id)))?;
+
+        // Parse parent entity ID if provided
+        let parent_entity_id = if let Some(parent_id_str) = &input_params.parent_entity_id {
+            Some(Uuid::parse_str(parent_id_str)
+                .map_err(|_| ToolError::InvalidParams(format!("Invalid parent_entity_id UUID: {}", parent_id_str)))?)
+        } else {
+            None
+        };
+
+        // Validate parent entity ownership if provided
+        if let Some(parent_id) = parent_entity_id {
+            let parent_result = self.entity_manager.get_entity(user_id, parent_id).await
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to validate parent entity: {}", e)))?;
+            
+            if parent_result.is_none() {
+                return Err(ToolError::ExecutionFailed(format!("Parent entity {} not found or not owned by user", parent_id)));
+            }
+        }
+
+        // Parse salience tier if provided
+        let salience_tier = if let Some(tier_str) = &input_params.salience_tier {
+            Some(match tier_str.as_str() {
+                "Core" => SalienceTier::Core,
+                "Secondary" => SalienceTier::Secondary,
+                "Flavor" => SalienceTier::Flavor,
+                _ => return Err(ToolError::InvalidParams(format!("Invalid salience tier: {}", tier_str))),
+            })
+        } else {
+            None
+        };
+
+        // Prepare components
+        let mut components: Vec<(String, JsonValue)> = Vec::new();
+        
+        // Add user-provided components
+        for (comp_type, comp_data) in input_params.components {
+            components.push((comp_type, comp_data));
+        }
+
+        // Add ParentLink component if parent is specified
+        if let Some(parent_id) = parent_entity_id {
+            let parent_link = ParentLinkComponent {
+                parent_entity_id: parent_id,
+                depth_from_root: 1, // Will be updated by entity manager
+                spatial_relationship: "contained_within".to_string(),
+            };
+            components.push(("ParentLink".to_string(), serde_json::to_value(parent_link)?));
+        }
+
+        // Create entity
+        let entity_result = if let Some(tier) = salience_tier {
+            // Extract spatial scale from components if available
+            let spatial_scale = components.iter()
+                .find(|(t, _)| t == "SpatialArchetype")
+                .and_then(|(_, data)| data.get("scale"))
+                .and_then(|s| s.as_str())
+                .and_then(|s| match s {
+                    "Cosmic" => Some(SpatialScale::Cosmic),
+                    "Planetary" => Some(SpatialScale::Planetary),
+                    "Intimate" => Some(SpatialScale::Intimate),
+                    _ => None,
+                });
+
+            self.entity_manager.create_entity_with_salience(
+                user_id,
+                None, // Let entity manager generate ID
+                input_params.archetype_signature.clone(),
+                tier,
+                spatial_scale,
+                components,
+            ).await
+        } else {
+            self.entity_manager.create_entity(
+                user_id,
+                None, // Let entity manager generate ID
+                input_params.archetype_signature.clone(),
+                components,
+            ).await
+        };
+
+        let entity = entity_result.map_err(|e| ToolError::AppError(e))?;
+
+        let output = CreateEntityOutput {
+            entity_id: entity.entity.id.to_string(),
+            name: input_params.entity_name.clone(),
+            created: true,
+            parent_id: parent_entity_id.map(|id| id.to_string()),
+            salience: input_params.salience_tier,
+            message: format!("Successfully created entity '{}'", input_params.entity_name),
+        };
+
+        info!("Created entity {} with name '{}'", entity.entity.id, input_params.entity_name);
+        Ok(serde_json::to_value(output)?)
+    }
+}
+
+/// Tool for updating existing entities
+#[derive(Clone)]
+pub struct UpdateEntityTool {
+    entity_manager: Arc<EcsEntityManager>,
+}
+
+impl UpdateEntityTool {
+    pub fn new(entity_manager: Arc<EcsEntityManager>) -> Self {
+        Self { entity_manager }
+    }
+}
+
+/// Input parameters for updating entities
+#[derive(Debug, Deserialize)]
+pub struct UpdateEntityInput {
+    /// User ID performing the operation
+    pub user_id: String,
+    /// ID of the entity to update
+    pub entity_id: String,
+    /// List of component updates
+    pub updates: Vec<ComponentUpdateInput>,
+}
+
+/// Component update specification
+#[derive(Debug, Deserialize)]
+pub struct ComponentUpdateInput {
+    /// Type of component to update
+    pub component_type: String,
+    /// Operation to perform (Add, Update, Remove)
+    pub operation: String,
+    /// Component data (not required for Remove operation)
+    pub data: Option<JsonValue>,
+}
+
+/// Output from entity update
+#[derive(Debug, Serialize)]
+pub struct UpdateEntityOutput {
+    /// ID of the updated entity
+    pub entity_id: String,
+    /// List of components that were updated
+    pub updated_components: Vec<UpdatedComponentInfo>,
+    /// Whether update was successful
+    pub success: bool,
+    /// Message about the update
+    pub message: String,
+}
+
+/// Information about an updated component
+#[derive(Debug, Serialize)]
+pub struct UpdatedComponentInfo {
+    pub component_type: String,
+    pub operation: String,
+}
+
+#[async_trait]
+impl ScribeTool for UpdateEntityTool {
+    fn name(&self) -> &'static str {
+        "update_entity"
+    }
+
+    fn description(&self) -> &'static str {
+        "Updates components of an existing entity. Supports adding new components, \
+         updating existing ones, or removing components. Only entities owned by the \
+         user can be modified."
+    }
+
+    fn input_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "The UUID of the user performing the operation"
+                },
+                "entity_id": {
+                    "type": "string",
+                    "description": "UUID of the entity to update"
+                },
+                "updates": {
+                    "type": "array",
+                    "description": "List of component updates to perform",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "component_type": {
+                                "type": "string",
+                                "description": "Type of component to update"
+                            },
+                            "operation": {
+                                "type": "string",
+                                "enum": ["Add", "Update", "Remove"],
+                                "description": "Operation to perform on the component"
+                            },
+                            "data": {
+                                "type": "object",
+                                "description": "Component data (not required for Remove operation)"
+                            }
+                        },
+                        "required": ["component_type", "operation"]
+                    }
+                }
+            },
+            "required": ["user_id", "entity_id", "updates"]
+        })
+    }
+
+    #[instrument(skip(self, params), fields(tool = self.name()))]
+    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+        debug!("Executing update_entity with input: {}", params);
+        
+        // Parse input
+        let input_params: UpdateEntityInput = serde_json::from_value(params.clone())
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid input parameters: {}", e)))?;
+
+        // Parse user ID
+        let user_id = Uuid::parse_str(&input_params.user_id)
+            .map_err(|_| ToolError::InvalidParams(format!("Invalid user_id UUID: {}", input_params.user_id)))?;
+
+        // Parse entity ID
+        let entity_id = Uuid::parse_str(&input_params.entity_id)
+            .map_err(|_| ToolError::InvalidParams(format!("Invalid entity_id UUID: {}", input_params.entity_id)))?;
+
+        // Verify entity exists and is owned by user
+        let entity_result = self.entity_manager.get_entity(user_id, entity_id).await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to find entity: {}", e)))?;
+        
+        if entity_result.is_none() {
+            return Err(ToolError::ExecutionFailed(format!("Entity {} not found or not owned by user", entity_id)));
+        }
+
+        // Prepare component updates
+        let mut component_updates: Vec<ComponentUpdate> = Vec::new();
+        let mut updated_info: Vec<UpdatedComponentInfo> = Vec::new();
+
+        for update in input_params.updates {
+            // Parse operation
+            let operation = match update.operation.as_str() {
+                "Add" => ComponentOperation::Add,
+                "Update" => ComponentOperation::Update,
+                "Remove" => ComponentOperation::Remove,
+                _ => return Err(ToolError::InvalidParams(format!("Invalid operation: {}", update.operation))),
+            };
+
+            // Validate data is provided for Add/Update operations
+            if matches!(operation, ComponentOperation::Add | ComponentOperation::Update) && update.data.is_none() {
+                return Err(ToolError::InvalidParams(format!(
+                    "Component data required for {} operation on {}",
+                    update.operation, update.component_type
+                )));
+            }
+
+            let component_data = update.data.unwrap_or(json!({}));
+
+            component_updates.push(ComponentUpdate {
+                entity_id,
+                component_type: update.component_type.clone(),
+                component_data,
+                operation,
+            });
+
+            updated_info.push(UpdatedComponentInfo {
+                component_type: update.component_type,
+                operation: update.operation,
+            });
+        }
+
+        // Execute updates
+        self.entity_manager.update_components(user_id, entity_id, component_updates).await
+            .map_err(|e| ToolError::AppError(e))?;
+
+        let output = UpdateEntityOutput {
+            entity_id: entity_id.to_string(),
+            updated_components: updated_info,
+            success: true,
+            message: format!("Successfully updated entity {}", entity_id),
+        };
+
+        info!("Updated entity {} with {} component changes", entity_id, output.updated_components.len());
         Ok(serde_json::to_value(output)?)
     }
 }
