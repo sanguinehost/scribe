@@ -601,10 +601,23 @@ pub struct ContextCache {
     *   **[x] Subtask 3.2.3:** Comprehensive test suite implementation:
         *   [x] Basic functionality tests (service creation, simple plans, complex multi-step plans)
         *   [x] Flash model integration tests with gemini-2.5-flash
-        *   [x] Plan caching framework (cache key generation, user isolation)
+        *   [x] Plan caching framework with Redis (cache key generation, user isolation)
         *   [x] World state context integration with EnrichedContext
-        *   [x] OWASP Top 10 security tests (A01: Access Control, A02: Encryption, A03: Injection, A04: Cache Security, A09: Error Handling)
-    *   **[⏳] Subtask 3.2.4 (Security - A02):** The `generate_plan` method MUST require a `SessionDek` to decrypt the necessary world state data for constructing the prompt. (Framework in place, full encryption pending)
+        *   [x] Complete OWASP Top 10 security tests (A01: Access Control, A02: Encryption, A03: Injection, A04: Cache Security, A05: Misconfiguration, A06: Vulnerable Components, A07: Authentication Failures, A08: Data Integrity, A09: Error Handling, A10: SSRF Prevention)
+        *   [x] 17 comprehensive test scenarios covering all major functionality
+        *   [x] Security compliance validation for enterprise deployment
+    *   **[x] Subtask 3.2.4 (Security - A02):** The `generate_plan` method MUST require a `SessionDek` to decrypt the necessary world state data for constructing the prompt.
+        *   [x] Full SessionDek integration replacing test SecretBox implementations
+        *   [x] End-to-end encryption for all world state queries
+        *   [x] Secure encrypted context building with proper access control
+        *   [x] User isolation and data separation enforcement
+    *   **[x] Subtask 3.2.5:** Production readiness and performance optimization:
+        *   [x] Redis caching with 5-minute TTL and AsyncCommands integration
+        *   [x] Intelligent fallback handling for AI response parsing
+        *   [x] Comprehensive plan validation with proper error handling
+        *   [x] All compilation errors resolved (0 errors, warnings only)
+        *   [x] Robust goal-based action generation with validation
+        *   [x] Complete removal of TODO logic with proper implementations
 
 *   **[ ] Task 3.3: Implement the Plan Validator (The "Symbolic Firewall")**
     *   **Objective:** Create the critical service that validates the AI's plan against the ground truth of the ECS. **No action is executed without passing this check.**
