@@ -353,6 +353,7 @@ async fn test_complete_narrative_to_ecs_flow() {
         )),
         agentic_orchestrator: agentic_orchestrator.clone(),
         agentic_state_update_service: state_update_service.clone(),
+        hierarchical_context_assembler: None,
     };
     
     let app_state = Arc::new(scribe_backend::state::AppState::new(
@@ -719,6 +720,7 @@ async fn test_entity_extraction_with_existing_entities() {
         )),
         agentic_orchestrator: agentic_orchestrator.clone(),
         agentic_state_update_service: state_update_service.clone(),
+        hierarchical_context_assembler: None,
     };
     
     let app_state = Arc::new(scribe_backend::state::AppState::new(

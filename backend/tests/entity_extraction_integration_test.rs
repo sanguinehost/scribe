@@ -160,6 +160,7 @@ async fn test_entity_extraction_fallback_compilation() {
         world_model_service: world_model_service.clone(),
         agentic_orchestrator: agentic_orchestrator.clone(),
         agentic_state_update_service: agentic_state_update_service.clone(),
+        hierarchical_context_assembler: None,
     };
     
     let app_state = Arc::new(scribe_backend::state::AppState::new(

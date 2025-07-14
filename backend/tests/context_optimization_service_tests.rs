@@ -604,7 +604,7 @@ async fn test_optimize_with_relationships_and_events() {
                 to_entity: "Darth Vader".to_string(),
                 relationship_type: "FAMILY".to_string(),
                 strength: 1.0,
-                relevance_score: 0.95,
+                context: "Father and son".to_string(),
             }
         ],
         max_depth: 1,
@@ -615,11 +615,11 @@ async fn test_optimize_with_relationships_and_events() {
         entity_names: vec!["Luke Skywalker".to_string()],
         timeline: vec![
             TimelineEvent {
+                event_id: Uuid::new_v4(),
                 timestamp: chrono::Utc::now(),
-                event_summary: "Luke learns about his father".to_string(),
-                entities_involved: vec!["Luke Skywalker".to_string(), "Darth Vader".to_string()],
-                category: "DIALOGUE".to_string(),
-                impact_score: 0.9,
+                description: "Luke learns about his father".to_string(),
+                participants: vec!["Luke Skywalker".to_string(), "Darth Vader".to_string()],
+                significance: 0.9,
             }
         ],
         event_categories: vec!["DIALOGUE".to_string()],

@@ -40,14 +40,14 @@ async fn test_enrich_context_basic_functionality() {
 
     // Create services using established patterns
     let hybrid_service = Arc::new(create_test_hybrid_query_service(
-        test_app.ai_client.clone(),
+        test_app.mock_ai_client.as_ref().unwrap().clone(),
         Arc::new(test_app.db_pool.clone())
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     let db_pool = Arc::new(test_app.db_pool.clone());
 
     let engine = ContextAssemblyEngine::new(
-        test_app.ai_client.clone(),
+        test_app.mock_ai_client.as_ref().unwrap().clone(),
         hybrid_service,
         db_pool,
         encryption_service,
@@ -563,14 +563,14 @@ async fn test_error_handling_invalid_intent() {
 // Helper functions for test setup
 fn create_test_context_assembly_engine(test_app: &scribe_backend::test_helpers::TestApp) -> ContextAssemblyEngine {
     let hybrid_service = Arc::new(create_test_hybrid_query_service(
-        test_app.ai_client.clone(),
+        test_app.mock_ai_client.as_ref().unwrap().clone(),
         Arc::new(test_app.db_pool.clone())
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     let db_pool = Arc::new(test_app.db_pool.clone());
 
     ContextAssemblyEngine::new(
-        test_app.ai_client.clone(),
+        test_app.mock_ai_client.as_ref().unwrap().clone(),
         hybrid_service,
         db_pool,
         encryption_service,

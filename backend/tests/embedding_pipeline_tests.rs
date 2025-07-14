@@ -887,6 +887,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
                 entity_manager,
             ))
         },
+        hierarchical_context_assembler: None,
     };
 
     let app_state = Arc::new(AppState::new(
@@ -1220,6 +1221,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                 entity_manager,
             ))
         },
+        hierarchical_context_assembler: None,
     };
 
     let app_state_arc = Arc::new(AppState::new(
@@ -1549,6 +1551,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                 agentic_state_update_service,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1908,6 +1911,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                 entity_manager,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2198,6 +2202,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                 agentic_state_update_service,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2569,6 +2574,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
                 agentic_state_update_service,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2952,6 +2958,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
                 agentic_state_update_service,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -3343,6 +3350,7 @@ async fn test_rag_context_injection_with_qdrant() {
                 entity_manager,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -3936,6 +3944,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
                 entity_manager,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -4497,6 +4506,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
                 entity_manager,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),

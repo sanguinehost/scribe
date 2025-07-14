@@ -9,9 +9,12 @@ use scribe_backend::{
     },
     services::{
         EcsEntityManager, EntityManagerConfig,
-        agentic::tools::{ScribeTool, ToolError},
+        agentic::tools::{
+            ScribeTool, ToolError,
+            world_interaction_tools::{UpdateRelationshipTool, CreateEntityTool}
+        },
     },
-    test_helpers::{spawn_app, db::create_test_user},
+    test_helpers::spawn_app,
     errors::AppError,
     PgPool,
 };
@@ -40,9 +43,6 @@ async fn create_entity_manager(db_pool: PgPool) -> Arc<EcsEntityManager> {
     ))
 }
 
-use scribe_backend::services::agentic::tools::world_interaction_tools::{
-    CreateEntityTool, UpdateRelationshipTool,
-};
 
 #[cfg(test)]
 mod relationship_functional_tests {
@@ -100,12 +100,12 @@ mod relationship_functional_tests {
         (sol_id, borga_id, jenna_id)
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_create_new_relationship_basic_functionality(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_create_new_relationship_basic_functionality() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (sol_id, borga_id, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -134,7 +134,7 @@ mod relationship_functional_tests {
         assert_eq!(result.get("relationship").unwrap().get("affection").unwrap().as_f64().unwrap(), -0.9);
 
         // Verify relationship was added to database
-        let sol_details = entity_manager.get_entity_details(user_id, sol_id).await.unwrap();
+        let sol_details = entity_manager.get_entity(user_id, sol_id).await.unwrap().unwrap();
         let relationships_component = sol_details.components.iter()
             .find(|c| c.component_type == "Relationships")
             .expect("Sol should have relationships component");
@@ -150,12 +150,12 @@ mod relationship_functional_tests {
         assert_eq!(relationships.relationships[0].metadata.get("reason").unwrap().as_str().unwrap(), "Borga is a dangerous crime lord");
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_update_existing_relationship(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_update_existing_relationship() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (sol_id, borga_id, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -197,7 +197,7 @@ mod relationship_functional_tests {
         assert_eq!(result.get("relationship").unwrap().get("trust").unwrap().as_f64().unwrap(), -0.8);
 
         // Verify only one relationship exists (updated, not duplicated)
-        let sol_details = entity_manager.get_entity_details(user_id, sol_id).await.unwrap();
+        let sol_details = entity_manager.get_entity(user_id, sol_id).await.unwrap().unwrap();
         let relationships_component = sol_details.components.iter()
             .find(|c| c.component_type == "Relationships")
             .expect("Sol should have relationships component");
@@ -212,12 +212,12 @@ mod relationship_functional_tests {
         assert_eq!(relationships.relationships[0].metadata.get("reason").unwrap().as_str().unwrap(), "Borga threatened Sol's contacts");
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_multiple_relationships_same_entity(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_multiple_relationships_same_entity() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (sol_id, borga_id, jenna_id) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -251,7 +251,7 @@ mod relationship_functional_tests {
         tool.execute(&jenna_params).await.expect("Jenna relationship should succeed");
 
         // Verify both relationships exist
-        let sol_details = entity_manager.get_entity_details(user_id, sol_id).await.unwrap();
+        let sol_details = entity_manager.get_entity(user_id, sol_id).await.unwrap().unwrap();
         let relationships_component = sol_details.components.iter()
             .find(|c| c.component_type == "Relationships")
             .expect("Sol should have relationships component");
@@ -275,12 +275,12 @@ mod relationship_functional_tests {
         assert_eq!(jenna_rel.trust, 0.7);
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_relationship_with_complex_metadata(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_relationship_with_complex_metadata() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (sol_id, jenna_id, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -316,7 +316,7 @@ mod relationship_functional_tests {
         assert_eq!(metadata.get("financial_dealings").unwrap().get("total_value").unwrap().as_u64().unwrap(), 150000);
 
         // Verify in database
-        let sol_details = entity_manager.get_entity_details(user_id, sol_id).await.unwrap();
+        let sol_details = entity_manager.get_entity(user_id, sol_id).await.unwrap().unwrap();
         let relationships_component = sol_details.components.iter()
             .find(|c| c.component_type == "Relationships")
             .expect("Sol should have relationships component");
@@ -329,12 +329,12 @@ mod relationship_functional_tests {
         assert_eq!(rel.metadata.get("shared_projects").unwrap().as_array().unwrap().len(), 2);
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_relationship_trust_affection_bounds(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_relationship_trust_affection_bounds() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (sol_id, borga_id, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -370,12 +370,12 @@ mod relationship_functional_tests {
         assert_eq!(result.get("relationship").unwrap().get("affection").unwrap().as_f64().unwrap(), 1.0);
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_relationship_with_invalid_trust_values(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_relationship_with_invalid_trust_values() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (sol_id, borga_id, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -409,12 +409,12 @@ mod relationship_functional_tests {
         assert!(result.is_err(), "Trust value < -1.0 should be rejected");
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_relationship_with_nonexistent_entities(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_relationship_with_nonexistent_entities() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (sol_id, _, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let fake_entity_id = Uuid::new_v4();
@@ -449,12 +449,12 @@ mod relationship_functional_tests {
         assert!(result2.is_err());
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_relationship_self_reference_prevention(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_relationship_self_reference_prevention() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (sol_id, _, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -480,12 +480,12 @@ mod relationship_functional_tests {
         }
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_relationship_missing_component_handling(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_relationship_missing_component_handling() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
 
         // Create entity without Relationships component
         let create_tool = CreateEntityTool::new(entity_manager.clone());

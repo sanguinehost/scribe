@@ -13,7 +13,7 @@ use scribe_backend::{
         EcsEntityManager, EntityManagerConfig,
         agentic::tools::{ScribeTool, ToolError},
     },
-    test_helpers::{spawn_app, db::create_test_user},
+    test_helpers::spawn_app,
     errors::AppError,
     PgPool,
 };
@@ -103,18 +103,18 @@ mod inventory_relationship_security_tests {
     // A01:2021 - Broken Access Control
     // ========================================================================================
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a01_inventory_cross_user_access_control(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
+    #[tokio::test]
+    async fn test_a01_inventory_cross_user_access_control() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
         
         // Create entities for user A
-        let user_a_id = create_test_user(&ctx.db_pool).await;
+        let user_a_id = Uuid::new_v4();
         let (character_a_id, item_a_id, _) = create_test_entities_for_security(entity_manager.clone(), user_a_id).await;
         
         // Create user B
-        let user_b_id = create_test_user(&ctx.db_pool).await;
+        let user_b_id = Uuid::new_v4();
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
         
@@ -138,18 +138,18 @@ mod inventory_relationship_security_tests {
         }
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a01_relationship_cross_user_access_control(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
+    #[tokio::test]
+    async fn test_a01_relationship_cross_user_access_control() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
         
         // Create entities for user A
-        let user_a_id = create_test_user(&ctx.db_pool).await;
+        let user_a_id = Uuid::new_v4();
         let (character_a_id, _, target_a_id) = create_test_entities_for_security(entity_manager.clone(), user_a_id).await;
         
         // Create user B
-        let user_b_id = create_test_user(&ctx.db_pool).await;
+        let user_b_id = Uuid::new_v4();
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());
         
@@ -175,12 +175,12 @@ mod inventory_relationship_security_tests {
         }
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a01_privilege_escalation_prevention(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a01_privilege_escalation_prevention() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, item_id, _) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -203,12 +203,12 @@ mod inventory_relationship_security_tests {
     // A02:2021 - Cryptographic Failures  
     // ========================================================================================
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a02_sensitive_relationship_data_encryption(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a02_sensitive_relationship_data_encryption() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, target_id) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -239,12 +239,12 @@ mod inventory_relationship_security_tests {
             .get("access_codes").is_some());
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a02_inventory_data_integrity(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a02_inventory_data_integrity() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, item_id, _) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -271,12 +271,12 @@ mod inventory_relationship_security_tests {
     // A03:2021 - Injection
     // ========================================================================================
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a03_sql_injection_in_relationship_metadata(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a03_sql_injection_in_relationship_metadata() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, target_id) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -311,12 +311,12 @@ mod inventory_relationship_security_tests {
         }
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a03_nosql_injection_in_inventory_operations(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a03_nosql_injection_in_inventory_operations() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
         
@@ -333,12 +333,12 @@ mod inventory_relationship_security_tests {
         assert!(result.is_err(), "NoSQL injection should be prevented by UUID validation");
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a03_json_injection_prevention(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a03_json_injection_prevention() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, target_id) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -374,12 +374,12 @@ mod inventory_relationship_security_tests {
     // A04:2021 - Insecure Design
     // ========================================================================================
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a04_inventory_capacity_business_logic(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a04_inventory_capacity_business_logic() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         
         // Create character with limited capacity
         let create_tool = CreateEntityTool::new(entity_manager.clone());
@@ -425,12 +425,12 @@ mod inventory_relationship_security_tests {
         assert!(result.is_err(), "Capacity overflow should be prevented");
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a04_relationship_trust_bounds_validation(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a04_relationship_trust_bounds_validation() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, target_id) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -454,12 +454,12 @@ mod inventory_relationship_security_tests {
     // A05:2021 - Security Misconfiguration
     // ========================================================================================
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a05_input_validation_enforcement(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a05_input_validation_enforcement() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
         
@@ -486,12 +486,12 @@ mod inventory_relationship_security_tests {
         assert!(result2.is_err(), "Wrong data types should be rejected");
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a05_schema_enforcement_relationships(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a05_schema_enforcement_relationships() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, _) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -511,12 +511,12 @@ mod inventory_relationship_security_tests {
         assert!(result.is_err(), "Malformed UUID should be rejected");
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a05_default_secure_configuration(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a05_default_secure_configuration() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, item_id, _) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -534,19 +534,19 @@ mod inventory_relationship_security_tests {
             .expect("Minimal valid params should succeed");
         
         // Verify secure defaults are applied
-        assert!(result.get("item_added").unwrap().get("slot").is_null());
+        assert!(result.get("item_added").unwrap().get("slot").map(|v| v.is_null()).unwrap_or(true));
     }
 
     // ========================================================================================
     // A07:2021 - Identification and Authentication Failures
     // ========================================================================================
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a07_user_id_validation(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a07_user_id_validation() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, item_id, _) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -576,12 +576,12 @@ mod inventory_relationship_security_tests {
         assert!(result2.is_err(), "Empty user ID should be rejected");
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a07_session_context_integrity(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a07_session_context_integrity() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, target_id) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -607,12 +607,12 @@ mod inventory_relationship_security_tests {
     // A08:2021 - Software and Data Integrity Failures
     // ========================================================================================
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a08_inventory_data_consistency(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a08_inventory_data_consistency() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, item_id, _) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -640,7 +640,7 @@ mod inventory_relationship_security_tests {
         remove_tool.execute(&remove_params).await.expect("Remove should succeed");
         
         // Verify data consistency: should have 70 items remaining
-        let character_details = entity_manager.get_entity_details(user_id, character_id).await.unwrap();
+        let character_details = entity_manager.get_entity(user_id, character_id).await.unwrap().unwrap();
         let inventory_component = character_details.components.iter()
             .find(|c| c.component_type == "Inventory")
             .expect("Character should have inventory component");
@@ -652,12 +652,12 @@ mod inventory_relationship_security_tests {
         assert_eq!(inventory.items[0].quantity, 70);
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a08_relationship_data_integrity(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a08_relationship_data_integrity() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, target_id) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -692,13 +692,13 @@ mod inventory_relationship_security_tests {
     // A09:2021 - Security Logging and Monitoring Failures
     // ========================================================================================
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a09_security_event_logging_inventory(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
-        let user_b_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a09_security_event_logging_inventory() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
+        let user_b_id = Uuid::new_v4();
         let (character_id, item_id, _) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -720,12 +720,12 @@ mod inventory_relationship_security_tests {
         // in integration/system tests
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a09_audit_trail_for_relationship_changes(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a09_audit_trail_for_relationship_changes() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, target_id) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());
@@ -765,12 +765,12 @@ mod inventory_relationship_security_tests {
     // A10:2021 - Server-Side Request Forgery (SSRF)
     // ========================================================================================
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a10_prevent_external_entity_references(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a10_prevent_external_entity_references() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, _) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let add_tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -800,12 +800,12 @@ mod inventory_relationship_security_tests {
         assert!(result2.is_err(), "File URL references should be blocked");
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_a10_relationship_metadata_ssrf_prevention(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_a10_relationship_metadata_ssrf_prevention() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::new_v4();
         let (character_id, _, target_id) = create_test_entities_for_security(entity_manager.clone(), user_id).await;
         
         let update_tool = UpdateRelationshipTool::new(entity_manager.clone());

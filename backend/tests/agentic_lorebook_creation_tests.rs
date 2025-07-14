@@ -264,6 +264,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                 entity_manager,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

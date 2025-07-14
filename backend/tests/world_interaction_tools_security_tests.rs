@@ -1,7 +1,7 @@
 //! Security Tests for World Interaction Tools
 //!
 //! This test suite validates security requirements based on OWASP Top 10 (2021)
-//! for the find_entity and get_entity_details tools to ensure they cannot be
+//! for the find_entity and get_entity tools to ensure they cannot be
 //! exploited for malicious purposes.
 
 use scribe_backend::{
@@ -139,7 +139,7 @@ mod world_interaction_tools_security_tests {
         }
 
         #[tokio::test]
-        async fn test_user_isolation_get_entity_details() {
+        async fn test_user_isolation_get_entity() {
             let _app = spawn_app(false, false, false).await;
             let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
             let details_tool = GetEntityDetailsTool::new(entity_manager.clone());

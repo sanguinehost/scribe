@@ -1,6 +1,6 @@
 //! Tests for World Interaction Tools
 //!
-//! This test suite validates the find_entity and get_entity_details tools
+//! This test suite validates the find_entity and get_entity tools
 //! ensuring they correctly interact with the ECS system and return proper results.
 
 use scribe_backend::{
@@ -291,7 +291,7 @@ mod world_interaction_tools_tests {
     }
 
     #[tokio::test]
-    async fn test_get_entity_details_basic() {
+    async fn test_get_entity_basic() {
         let _app = spawn_app(false, false, false).await;
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         let details_tool = GetEntityDetailsTool::new(entity_manager.clone());
@@ -327,7 +327,7 @@ mod world_interaction_tools_tests {
     }
 
     #[tokio::test]
-    async fn test_get_entity_details_with_hierarchy() {
+    async fn test_get_entity_with_hierarchy() {
         let _app = spawn_app(false, false, false).await;
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         let details_tool = GetEntityDetailsTool::new(entity_manager.clone());
@@ -380,7 +380,7 @@ mod world_interaction_tools_tests {
     }
 
     #[tokio::test]
-    async fn test_get_entity_details_with_relationships() {
+    async fn test_get_entity_with_relationships() {
         let _app = spawn_app(false, false, false).await;
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         let details_tool = GetEntityDetailsTool::new(entity_manager.clone());
@@ -478,7 +478,7 @@ mod world_interaction_tools_tests {
     }
 
     #[tokio::test]
-    async fn test_get_entity_details_not_found() {
+    async fn test_get_entity_not_found() {
         let _app = spawn_app(false, false, false).await;
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         let details_tool = GetEntityDetailsTool::new(entity_manager.clone());

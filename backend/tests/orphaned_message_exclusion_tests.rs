@@ -387,6 +387,7 @@ async fn test_frontend_history_vs_database_history() {
                 None,
             )),
         )),
+        hierarchical_context_assembler: None,
     };
 
     let state = AppState::new(test_app.db_pool.clone(), test_app.config.clone(), services);
@@ -773,6 +774,7 @@ async fn test_orphaned_message_exclusion_scenario() {
                 None,
             )),
         )),
+        hierarchical_context_assembler: None,
     };
 
     let state = AppState::new(test_app.db_pool.clone(), test_app.config.clone(), services);

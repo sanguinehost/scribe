@@ -504,6 +504,7 @@ async fn test_deduplication_failure_multiple_everest_events() {
                 agentic_state_update_service,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

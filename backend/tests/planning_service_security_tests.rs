@@ -3,6 +3,7 @@ use scribe_backend::services::context_assembly_engine::{
     EnrichedContext, SubGoal, ValidatedPlan, RiskAssessment, RiskLevel, PlanValidationStatus
 };
 use scribe_backend::test_helpers::*;
+use scribe_backend::auth::session_dek::SessionDek;
 use uuid::Uuid;
 use std::sync::Arc;
 use secrecy::SecretBox;
@@ -25,8 +26,8 @@ async fn test_a01_planning_service_user_isolation() {
     );
 
     // Create test user DEKs
-    let user_dek1 = Arc::new(SecretBox::new(Box::new(vec![0u8; 32])));
-    let user_dek2 = Arc::new(SecretBox::new(Box::new(vec![1u8; 32])));
+    let user_dek1 = SessionDek::new(vec![0u8; 32]);
+    let user_dek2 = SessionDek::new(vec![1u8; 32]);
 
     // User 1 creates a plan
     let plan1 = planning_service.generate_plan(
@@ -61,7 +62,7 @@ async fn test_a01_cache_key_includes_user_context() {
         Arc::new(app.db_pool.clone()),
     );
 
-    let user_dek = Arc::new(SecretBox::new(Box::new(vec![0u8; 32])));
+    let user_dek = SessionDek::new(vec![0u8; 32]);
 
     // Test that cache key generation includes user ID
     let cache_key = planning_service.build_plan_cache_key(
@@ -115,7 +116,7 @@ async fn test_a03_plan_goal_injection_prevention() {
         Arc::new(app.db_pool.clone()),
     );
 
-    let user_dek = Arc::new(SecretBox::new(Box::new(vec![0u8; 32])));
+    let user_dek = SessionDek::new(vec![0u8; 32]);
 
     // Attempt injection in goal
     let malicious_goal = "Find entity'; DROP TABLE ecs_entities; --";
@@ -148,7 +149,7 @@ async fn test_a04_plan_complexity_limits() {
         Arc::new(app.db_pool.clone()),
     );
 
-    let user_dek = Arc::new(SecretBox::new(Box::new(vec![0u8; 32])));
+    let user_dek = SessionDek::new(vec![0u8; 32]);
 
     // Create extremely complex goal
     let complex_goal = (0..100).map(|i| format!("Step {}: Do complex thing", i)).collect::<Vec<_>>().join("; ");
@@ -197,7 +198,7 @@ async fn test_a07_user_id_required_for_planning() {
         Arc::new(app.db_pool.clone()),
     );
 
-    let user_dek = Arc::new(SecretBox::new(Box::new(vec![0u8; 32])));
+    let user_dek = SessionDek::new(vec![0u8; 32]);
 
     // All planning operations require a user ID
     let user_id = Uuid::new_v4();
@@ -227,7 +228,7 @@ async fn test_a08_plan_validation_fields() {
         Arc::new(app.db_pool.clone()),
     );
 
-    let user_dek = Arc::new(SecretBox::new(Box::new(vec![0u8; 32])));
+    let user_dek = SessionDek::new(vec![0u8; 32]);
 
     let context = create_test_enriched_context("Test goal");
     
@@ -260,7 +261,7 @@ async fn test_a09_planning_includes_metadata() {
         Arc::new(app.db_pool.clone()),
     );
 
-    let user_dek = Arc::new(SecretBox::new(Box::new(vec![0u8; 32])));
+    let user_dek = SessionDek::new(vec![0u8; 32]);
 
     let context = create_test_enriched_context("Test goal");
     
@@ -294,7 +295,7 @@ async fn test_a10_no_external_references_allowed() {
         Arc::new(app.db_pool.clone()),
     );
 
-    let user_dek = Arc::new(SecretBox::new(Box::new(vec![0u8; 32])));
+    let user_dek = SessionDek::new(vec![0u8; 32]);
 
     // Attempt to include external reference
     let malicious_goal = "Fetch data from http://evil.com/steal-data";

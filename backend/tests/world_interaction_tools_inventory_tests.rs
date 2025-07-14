@@ -9,9 +9,12 @@ use scribe_backend::{
     },
     services::{
         EcsEntityManager, EntityManagerConfig,
-        agentic::tools::{ScribeTool, ToolError},
+        agentic::tools::{
+            ScribeTool, ToolError,
+            world_interaction_tools::{AddItemToInventoryTool, RemoveItemFromInventoryTool, CreateEntityTool}
+        },
     },
-    test_helpers::{spawn_app, db::create_test_user},
+    test_helpers::spawn_app,
     errors::AppError,
     PgPool,
 };
@@ -40,9 +43,6 @@ async fn create_entity_manager(db_pool: PgPool) -> Arc<EcsEntityManager> {
     ))
 }
 
-use scribe_backend::services::agentic::tools::world_interaction_tools::{
-    CreateEntityTool, AddItemToInventoryTool, RemoveItemFromInventoryTool,
-};
 
 #[cfg(test)]
 mod inventory_functional_tests {
@@ -98,12 +98,12 @@ mod inventory_functional_tests {
         (character_id, blaster_id, credits_id)
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_add_item_to_inventory_basic_functionality(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_add_item_to_inventory_basic_functionality() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (character_id, blaster_id, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -124,7 +124,7 @@ mod inventory_functional_tests {
         assert_eq!(result.get("item_added").unwrap().get("quantity").unwrap().as_u64().unwrap(), 1);
 
         // Verify inventory was updated in database
-        let character_details = entity_manager.get_entity_details(user_id, character_id).await.unwrap();
+        let character_details = entity_manager.get_entity(user_id, character_id).await.unwrap().unwrap();
         let inventory_component = character_details.components.iter()
             .find(|c| c.component_type == "Inventory")
             .expect("Character should have inventory component");
@@ -137,12 +137,12 @@ mod inventory_functional_tests {
         assert_eq!(inventory.items[0].quantity, 1);
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_add_item_with_specific_slot(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_add_item_with_specific_slot() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (character_id, blaster_id, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -161,7 +161,7 @@ mod inventory_functional_tests {
         assert_eq!(result.get("item_added").unwrap().get("slot").unwrap().as_u64().unwrap(), 5);
 
         // Verify in database
-        let character_details = entity_manager.get_entity_details(user_id, character_id).await.unwrap();
+        let character_details = entity_manager.get_entity(user_id, character_id).await.unwrap().unwrap();
         let inventory_component = character_details.components.iter()
             .find(|c| c.component_type == "Inventory")
             .expect("Character should have inventory component");
@@ -172,12 +172,12 @@ mod inventory_functional_tests {
         assert_eq!(inventory.items[0].slot, Some(5));
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_add_item_with_quantity(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_add_item_with_quantity() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (character_id, _, credits_id) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let tool = AddItemToInventoryTool::new(entity_manager.clone());
@@ -196,7 +196,7 @@ mod inventory_functional_tests {
         assert_eq!(result.get("item_added").unwrap().get("quantity").unwrap().as_u64().unwrap(), 1000);
 
         // Verify in database
-        let character_details = entity_manager.get_entity_details(user_id, character_id).await.unwrap();
+        let character_details = entity_manager.get_entity(user_id, character_id).await.unwrap().unwrap();
         let inventory_component = character_details.components.iter()
             .find(|c| c.component_type == "Inventory")
             .expect("Character should have inventory component");
@@ -207,12 +207,12 @@ mod inventory_functional_tests {
         assert_eq!(inventory.items[0].quantity, 1000);
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_remove_item_from_inventory_basic_functionality(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_remove_item_from_inventory_basic_functionality() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (character_id, blaster_id, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         // First add item
@@ -243,7 +243,7 @@ mod inventory_functional_tests {
         assert_eq!(result.get("item_removed").unwrap().get("quantity").unwrap().as_u64().unwrap(), 1);
 
         // Verify inventory is now empty
-        let character_details = entity_manager.get_entity_details(user_id, character_id).await.unwrap();
+        let character_details = entity_manager.get_entity(user_id, character_id).await.unwrap().unwrap();
         let inventory_component = character_details.components.iter()
             .find(|c| c.component_type == "Inventory")
             .expect("Character should have inventory component");
@@ -254,12 +254,12 @@ mod inventory_functional_tests {
         assert_eq!(inventory.items.len(), 0);
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_remove_partial_quantity(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_remove_partial_quantity() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (character_id, _, credits_id) = create_test_entities(entity_manager.clone(), user_id).await;
 
         // Add 1000 credits
@@ -288,7 +288,7 @@ mod inventory_functional_tests {
         assert_eq!(result.get("item_removed").unwrap().get("quantity").unwrap().as_u64().unwrap(), 300);
 
         // Verify 700 credits remain
-        let character_details = entity_manager.get_entity_details(user_id, character_id).await.unwrap();
+        let character_details = entity_manager.get_entity(user_id, character_id).await.unwrap().unwrap();
         let inventory_component = character_details.components.iter()
             .find(|c| c.component_type == "Inventory")
             .expect("Character should have inventory component");
@@ -300,12 +300,12 @@ mod inventory_functional_tests {
         assert_eq!(inventory.items[0].quantity, 700);
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_add_item_capacity_exceeded(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_add_item_capacity_exceeded() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
 
         // Create character with very small inventory capacity
         let create_tool = CreateEntityTool::new(entity_manager.clone());
@@ -355,12 +355,12 @@ mod inventory_functional_tests {
         }
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_remove_item_not_found(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_remove_item_not_found() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (character_id, blaster_id, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let remove_tool = RemoveItemFromInventoryTool::new(entity_manager.clone());
@@ -381,12 +381,12 @@ mod inventory_functional_tests {
         }
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_remove_insufficient_quantity(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_remove_insufficient_quantity() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (character_id, _, credits_id) = create_test_entities(entity_manager.clone(), user_id).await;
 
         // Add 100 credits
@@ -419,12 +419,12 @@ mod inventory_functional_tests {
         }
     }
 
-    #[test_context(test::TestContext)]
     #[serial_test::serial]
-    #[test]
-    async fn test_inventory_operations_with_nonexistent_entities(ctx: &mut test::TestContext) {
-        let entity_manager = create_entity_manager(ctx.db_pool.clone()).await;
-        let user_id = create_test_user(&ctx.db_pool).await;
+    #[tokio::test]
+    async fn test_inventory_operations_with_nonexistent_entities() {
+        let app = spawn_app(false, false, false).await;
+        let entity_manager = create_entity_manager(app.db_pool.clone()).await;
+        let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").expect("Valid test UUID");
         let (character_id, _, _) = create_test_entities(entity_manager.clone(), user_id).await;
 
         let fake_item_id = Uuid::new_v4();
