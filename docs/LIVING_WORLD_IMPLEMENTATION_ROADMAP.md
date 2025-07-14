@@ -503,7 +503,7 @@
 
 **Goal:** To create the "Blueprint" for the narrative by implementing an **LLM-as-a-Planner**. This system uses a sophisticated, AI-driven prompt construction process to generate a sequence of actions as a structured JSON object. This plan is then rigorously validated against the ECS ground truth by a "Symbolic Firewall" before execution, ensuring causal consistency without the rigidity of an external formal planning engine.
 
-**Current State:** 🟢 **75% Complete** - Action Schema, Planning Types, LLM-based Planning Service, and Plan Validator (Symbolic Firewall) implemented with comprehensive test coverage and Flash integration. Redis caching infrastructure fully implemented.
+**Current State:** 🟡 **60% Complete** - Action Schema, Planning Types, LLM-based Planning Service, and Plan Validator (Symbolic Firewall) implemented with comprehensive test coverage and Flash integration. **New Task 3.5 added** for ECS State Reconciliation to handle cases where ECS is inconsistent rather than plans being invalid.
 
 **Risk Assessment:** 🟡 **MEDIUM RISK** - The core challenge is not integration with an external framework, but the robust implementation of the `PlanValidator` service. This service is the critical "Symbolic Firewall" that must correctly interpret the AI's plan and prevent any invalid actions from being executed.
 
@@ -651,6 +651,54 @@ pub struct ContextCache {
         *   [x] **Redis Caching:** Validation results cached with 3-minute TTL for performance optimization
         *   [x] **User Isolation:** All cache keys include user context for multi-tenant security
         *   [x] **Performance Metrics:** Validation timing and caching effectiveness tracking
+
+*   **[ ] Task 3.5: ECS State Reconciliation & Intelligent Plan Repair** 🆕 **NEW TASK**
+    *   **Objective:** Handle cases where the ECS is inconsistent or missing expected state, enabling the planner to intelligently repair world state or adapt plans based on narrative context.
+    *   **Problem:** Current Plan Validator rigidly rejects plans based on ECS state, but sometimes the ECS is wrong/incomplete rather than the plan being invalid.
+    *   **Examples:**
+        *   **Missing Entity Movement**: "Sol should be in the cantina based on last turn's narrative, but ECS still shows them in the chamber"
+        *   **Missing Component Creation**: "This character should have a 'Reputation' component based on recent interactions, but it was never created"
+        *   **Inconsistent Relationships**: "The narrative established trust between characters, but the ECS relationship doesn't reflect this"
+        *   **Temporal Inconsistencies**: "The plan assumes it's nighttime based on narrative context, but ECS has no time tracking"
+    *   **[ ] Subtask 3.5.1: Implement ECS Inconsistency Detection**
+        *   [ ] **`EcsConsistencyAnalyzer`**: New service that uses Flash to analyze narrative context vs ECS state
+        *   [ ] **Inconsistency Types**: Define categories of common ECS/narrative mismatches
+        *   [ ] **Context Analysis**: Compare recent chat history against current ECS state to identify discrepancies
+        *   [ ] **Confidence Scoring**: Rate the likelihood that ECS is wrong vs plan is invalid
+    *   **[ ] Subtask 3.5.2: Implement Intelligent Plan Repair**
+        *   [ ] **`PlanRepairService`**: Service that generates "corrective actions" to fix ECS inconsistencies
+        *   [ ] **Repair Strategies**:
+            *   [ ] **State Backfill**: Generate actions to create missing components/relationships
+            *   [ ] **Position Correction**: Generate movement actions to sync entity locations
+            *   [ ] **Temporal Synchronization**: Create time-tracking components when needed
+            *   [ ] **Relationship Repair**: Update relationship states to match narrative context
+        *   [ ] **Repair Plan Generation**: Use Flash to generate minimal corrective action sequences
+        *   [ ] **User Approval**: Flag major repairs for user confirmation (optional safety mode)
+    *   **[ ] Subtask 3.5.3: Integrate with Plan Validator**
+        *   [ ] **Enhanced Validation Flow**:
+            1. [ ] Standard validation against current ECS state
+            2. [ ] If validation fails, trigger inconsistency analysis
+            3. [ ] If inconsistency detected (high confidence), generate repair plan
+            4. [ ] Validate repair plan + original plan as combined sequence
+            5. [ ] Return `RepairableInvalidPlan` with both original and repair actions
+        *   [ ] **New Return Types**:
+            *   [ ] `ValidPlan`: Plan passes validation as-is
+            *   [ ] `InvalidPlan`: Plan genuinely invalid, cannot be repaired
+            *   [ ] `RepairableInvalidPlan`: Plan invalid but ECS inconsistency detected, includes repair actions
+    *   **[ ] Subtask 3.5.4: Comprehensive Testing**
+        *   [ ] **Functional Tests**: Test all repair scenarios (missing movement, components, relationships, temporal)
+        *   [ ] **Confidence Testing**: Verify the system correctly distinguishes ECS errors from invalid plans
+        *   [ ] **Safety Testing**: Ensure repairs don't create new inconsistencies or break existing state
+        *   [ ] **Performance Testing**: Verify repair analysis doesn't significantly slow validation
+        *   [ ] **Security Tests**: Ensure repair actions respect user ownership and access control
+    *   **[ ] Subtask 3.5.5: Example Scenario Implementation**
+        *   [ ] **Scenario**: User says "Sol greets Borga warmly" but ECS shows no relationship between them
+        *   [ ] **Current Behavior**: Plan to update relationship fails validation (no existing relationship)
+        *   [ ] **New Behavior**: 
+            1. [ ] Detect missing relationship based on narrative context ("greets warmly" implies familiarity)
+            2. [ ] Generate repair action: `create_relationship(Sol, Borga, "acquaintance", trust=0.6)`
+            3. [ ] Return combined plan: [repair_action, original_relationship_update]
+            4. [ ] Log repair for user awareness: "Created missing relationship based on narrative context"
 
 *   **[ ] Task 3.4: Planning and Validation Integration Tests**
     *   **Objective:** Verify that the entire planning and validation loop works correctly.

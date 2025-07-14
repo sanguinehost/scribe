@@ -247,6 +247,216 @@ The `PlanValidatorService` acts as a **"symbolic firewall"** that prevents the g
 
 This is the definitive path to creating a true world simulator that leverages the best of both deterministic logic and generative AI.
 
+### **🔧 ECS State Reconciliation & Intelligent Plan Repair**
+
+**Problem Identified:** The current Plan Validator acts as a "rigid firewall" that blindly rejects plans based on ECS state, but in narrative contexts there are legitimate cases where the ECS has fallen behind the narrative rather than the plan being invalid.
+
+**Solution:** **Task 3.5** implements an intelligent reconciliation system that can distinguish between genuine plan invalidity and ECS inconsistency, automatically repairing the latter while maintaining safety through validation.
+
+#### **Real-World Scenarios**
+
+```typescript
+// Scenario 1: Missing Movement Update
+User: "Sol walks into the cantina and orders a drink"
+ECS State: Sol.parent_link = "Chamber" (outdated)
+Plan: add_item_to_inventory(Sol, "Drink") 
+Current Result: ❌ INVALID - Sol not in cantina
+Intelligent Result: ✅ REPAIRABLE - Generate repair: move_entity(Sol, "Cantina") + original plan
+
+// Scenario 2: Missing Relationship
+User: "Sol greets his old friend Borga warmly"  
+ECS State: No relationship between Sol and Borga
+Plan: update_relationship(Sol, Borga, trust=0.8)
+Current Result: ❌ INVALID - No existing relationship
+Intelligent Result: ✅ REPAIRABLE - Generate repair: create_relationship(Sol, Borga, "friend", 0.6) + update
+
+// Scenario 3: Missing Component Evolution  
+User: "Sol's reputation as a skilled pilot spreads"
+ECS State: Sol has no Reputation component
+Plan: update_component(Sol, "Reputation", pilot_skill=0.9)
+Current Result: ❌ INVALID - Component doesn't exist
+Intelligent Result: ✅ REPAIRABLE - Generate repair: add_component(Sol, "Reputation", {}) + update
+```
+
+#### **Enhanced Validation Architecture**
+
+```rust
+pub enum PlanValidationResult {
+    Valid(ValidPlan),
+    Invalid(InvalidPlan),
+    RepairableInvalid(RepairableInvalidPlan), // 🆕 NEW
+}
+
+pub struct RepairableInvalidPlan {
+    pub original_plan: Plan,
+    pub repair_actions: Vec<PlannedAction>,  // Actions to fix ECS
+    pub combined_plan: Plan,                 // Repair + Original
+    pub inconsistency_analysis: InconsistencyAnalysis,
+    pub confidence_score: f32,               // How sure we are ECS is wrong
+}
+
+pub struct InconsistencyAnalysis {
+    pub inconsistency_type: InconsistencyType,
+    pub narrative_evidence: Vec<String>,     // Chat excerpts supporting repair
+    pub ecs_state_summary: String,          // Current state that seems wrong
+    pub repair_reasoning: String,           // Why this repair makes sense
+}
+
+pub enum InconsistencyType {
+    MissingMovement,      // Entity should be elsewhere
+    MissingComponent,     // Component should exist but doesn't  
+    MissingRelationship,  // Relationship implied but not recorded
+    OutdatedState,        // ECS state is stale/outdated
+    TemporalMismatch,     // Time-based inconsistency
+}
+```
+
+#### **Intelligent Validation Flow**
+
+```rust
+impl PlanValidatorService {
+    pub async fn validate_plan_with_repair(
+        &self, 
+        plan: &Plan, 
+        user_id: Uuid,
+        recent_context: &[ChatMessage] // 🆕 NEW - For inconsistency analysis
+    ) -> Result<PlanValidationResult, AppError> {
+        
+        // 1. Standard validation first
+        let validation_result = self.validate_plan(plan, user_id).await?;
+        
+        match validation_result {
+            PlanValidationResult::Valid(valid) => Ok(PlanValidationResult::Valid(valid)),
+            PlanValidationResult::Invalid(invalid) => {
+                
+                // 2. 🆕 NEW - Analyze if ECS might be inconsistent
+                let inconsistency = self.analyze_ecs_inconsistency(
+                    plan, 
+                    &invalid.failures, 
+                    user_id,
+                    recent_context
+                ).await?;
+                
+                if let Some(analysis) = inconsistency {
+                    if analysis.confidence_score > 0.7 { // High confidence ECS is wrong
+                        
+                        // 3. 🆕 NEW - Generate repair plan
+                        let repair_plan = self.generate_repair_plan(
+                            &analysis, 
+                            user_id
+                        ).await?;
+                        
+                        // 4. 🆕 NEW - Validate combined plan
+                        let combined = self.combine_plans(&repair_plan, plan);
+                        let combined_validation = self.validate_plan(&combined, user_id).await?;
+                        
+                        match combined_validation {
+                            PlanValidationResult::Valid(_) => {
+                                Ok(PlanValidationResult::RepairableInvalid(RepairableInvalidPlan {
+                                    original_plan: plan.clone(),
+                                    repair_actions: repair_plan.actions,
+                                    combined_plan: combined,
+                                    inconsistency_analysis: analysis,
+                                    confidence_score: analysis.confidence_score,
+                                }))
+                            }
+                            _ => Ok(PlanValidationResult::Invalid(invalid)) // Repair didn't work
+                        }
+                    } else {
+                        Ok(PlanValidationResult::Invalid(invalid)) // Low confidence, probably invalid plan
+                    }
+                } else {
+                    Ok(PlanValidationResult::Invalid(invalid)) // No inconsistency detected
+                }
+            }
+        }
+    }
+}
+```
+
+#### **Flash-Powered Inconsistency Detection**
+
+```rust
+impl EcsConsistencyAnalyzer {
+    pub async fn analyze_inconsistency(
+        &self,
+        plan: &Plan,
+        failures: &[ValidationFailure], 
+        user_id: Uuid,
+        recent_context: &[ChatMessage]
+    ) -> Result<Option<InconsistencyAnalysis>, AppError> {
+        
+        let prompt = format!(r#"
+Analyze if the following plan validation failures might be due to ECS inconsistency 
+rather than an invalid plan:
+
+RECENT CONVERSATION:
+{}
+
+PLAN GOAL: {}
+VALIDATION FAILURES: {}
+CURRENT ECS STATE: {}
+
+QUESTION: Based on the conversation context, do any of these failures suggest 
+the ECS state is outdated/incomplete rather than the plan being invalid?
+
+For each failure, rate confidence (0.0-1.0) that it's an ECS inconsistency and 
+provide specific evidence from the conversation.
+"#, 
+            self.format_context(recent_context),
+            plan.goal,
+            self.format_failures(failures),
+            self.get_relevant_ecs_state(plan, user_id).await?
+        );
+        
+        let analysis = self.flash_client.analyze(&prompt).await?;
+        
+        // Parse Flash response into InconsistencyAnalysis
+        self.parse_inconsistency_analysis(analysis).await
+    }
+}
+```
+
+#### **Benefits of State Reconciliation**
+
+1. **🎯 Intelligent vs Rigid**: Distinguishes between genuine plan invalidity and ECS inconsistency
+2. **🔄 Self-Healing**: Automatically repairs common ECS/narrative mismatches  
+3. **📊 Confidence-Based**: Only repairs when highly confident ECS is wrong
+4. **🛡️ Safety**: Still validates repair plans to prevent new inconsistencies
+5. **📝 Transparency**: Logs all repairs for user awareness and debugging
+6. **⚡ Performance**: Only triggers on validation failures, minimal overhead
+
+#### **Integration Example**
+
+```rust
+// In TacticalAgent or similar
+let validation_result = plan_validator.validate_plan_with_repair(
+    &plan, 
+    user_id, 
+    &recent_chat_messages
+).await?;
+
+match validation_result {
+    PlanValidationResult::Valid(plan) => {
+        // Execute normally
+        execute_plan(plan).await
+    }
+    PlanValidationResult::RepairableInvalid(repairable) => {
+        // Log repair for transparency
+        info!("🔧 Repairing ECS inconsistency: {}", repairable.inconsistency_analysis.repair_reasoning);
+        
+        // Execute repair + original plan
+        execute_plan(repairable.combined_plan).await
+    }
+    PlanValidationResult::Invalid(invalid) => {
+        // Genuinely invalid plan
+        return Err(PlanningError::InvalidPlan(invalid.failures));
+    }
+}
+```
+
+This transforms the "rigid firewall" into an **"intelligent state reconciliation system"** that maintains the safety of symbolic validation while adding the flexibility to handle real-world narrative inconsistencies.
+
 ## 🚀 **Implementation Readiness & Next Steps**
 
 **Overall Assessment: READY FOR IMPLEMENTATION**
