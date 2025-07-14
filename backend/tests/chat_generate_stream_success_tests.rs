@@ -713,6 +713,7 @@ async fn test_first_mes_included_in_history() {
                 )),
             ))
         },
+        hierarchical_context_assembler: None,
     };
 
     let state_for_service =

@@ -301,7 +301,8 @@ async fn create_minimal_app_services(test_app: &TestApp) -> AppStateServices {
                 Arc::new(test_app.db_pool.clone()),
                 state_update_service,
             ))
-        }
+        },
+        hierarchical_context_assembler: None,
     }
 }
 

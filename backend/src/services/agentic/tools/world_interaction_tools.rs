@@ -1868,7 +1868,7 @@ impl ScribeTool for AddItemToInventoryTool {
         "Add an item to a character's inventory with specified quantity and optional slot"
     }
 
-    fn parameters_json_schema(&self) -> JsonValue {
+    fn input_schema(&self) -> JsonValue {
         json!({
             "type": "object",
             "properties": {
@@ -1999,7 +1999,7 @@ impl ScribeTool for RemoveItemFromInventoryTool {
         "Remove a specified quantity of an item from a character's inventory"
     }
 
-    fn parameters_json_schema(&self) -> JsonValue {
+    fn input_schema(&self) -> JsonValue {
         json!({
             "type": "object",
             "properties": {
@@ -2110,34 +2110,30 @@ pub struct UpdateRelationshipInput {
     pub metadata: Option<JsonValue>,
 }
 
+/// Detailed relationship information for update operations
+#[derive(Debug, Serialize)]
+pub struct DetailedRelationshipInfo {
+    pub target_entity_id: String,
+    pub target_name: String,
+    pub relationship_type: String,
+    pub trust: f64,
+    pub affection: f64,
+    pub metadata: JsonValue,
+}
+
 /// Output from updating relationship
 #[derive(Debug, Serialize)]
 pub struct UpdateRelationshipOutput {
     /// Whether the operation succeeded
     pub success: bool,
     /// Details of the updated relationship
-    pub relationship: RelationshipInfo,
+    pub relationship: DetailedRelationshipInfo,
     /// Operation type identifier
     pub operation_type: String,
     /// User ID who performed the operation
     pub user_id: String,
     /// Timestamp of operation
     pub timestamp: String,
-}
-
-/// Information about a relationship
-#[derive(Debug, Serialize)]
-pub struct RelationshipInfo {
-    /// ID of the target entity
-    pub target_entity_id: String,
-    /// Type/description of the relationship
-    pub relationship_type: String,
-    /// Trust level
-    pub trust: f32,
-    /// Affection level
-    pub affection: f32,
-    /// Additional metadata
-    pub metadata: JsonValue,
 }
 
 #[async_trait]
@@ -2150,7 +2146,7 @@ impl ScribeTool for UpdateRelationshipTool {
         "Create or update a relationship between two entities with trust, affection, and metadata"
     }
 
-    fn parameters_json_schema(&self) -> JsonValue {
+    fn input_schema(&self) -> JsonValue {
         json!({
             "type": "object",
             "properties": {
@@ -2250,11 +2246,12 @@ impl ScribeTool for UpdateRelationshipTool {
 
         let output = UpdateRelationshipOutput {
             success: true,
-            relationship: RelationshipInfo {
+            relationship: DetailedRelationshipInfo {
                 target_entity_id: result.target_entity_id.to_string(),
+                target_name: result.target_entity_id.to_string(), // TODO: Get actual target name
                 relationship_type: result.relationship_type,
-                trust: result.trust,
-                affection: result.affection,
+                trust: result.trust as f64,
+                affection: result.affection as f64,
                 metadata: serde_json::to_value(&result.metadata)
                     .unwrap_or_else(|_| JsonValue::Object(serde_json::Map::new())),
             },

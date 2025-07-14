@@ -711,6 +711,7 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
                 )),
             ))
         },
+        hierarchical_context_assembler: None,
     };
 
     Arc::new(AppState::new(

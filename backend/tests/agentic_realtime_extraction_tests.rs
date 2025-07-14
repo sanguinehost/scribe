@@ -374,6 +374,7 @@ mod realtime_extraction_tests {
             let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
             agentic_orchestrator
         },
+        hierarchical_context_assembler: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -622,6 +623,7 @@ mod realtime_extraction_tests {
             let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
             agentic_orchestrator
         },
+        hierarchical_context_assembler: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -889,6 +891,7 @@ mod realtime_extraction_tests {
             let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
             agentic_orchestrator
         },
+        hierarchical_context_assembler: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -1154,6 +1157,7 @@ mod realtime_extraction_tests {
             let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
             agentic_orchestrator
         },
+        hierarchical_context_assembler: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -1424,6 +1428,7 @@ mod realtime_extraction_tests {
             let (_, agentic_orchestrator, _) = create_agentic_services(&test_app);
             agentic_orchestrator
         },
+        hierarchical_context_assembler: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),

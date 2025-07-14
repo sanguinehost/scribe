@@ -1665,6 +1665,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
                 )),
             ))
         },
+        hierarchical_context_assembler: None,
     };
 
     let app_state_arc = Arc::new(AppState::new(

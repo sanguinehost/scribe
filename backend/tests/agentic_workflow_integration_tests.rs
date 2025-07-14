@@ -328,6 +328,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
                 None,
             )),
         )),
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -690,6 +691,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
                 None,
             )),
         )),
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -1037,6 +1039,7 @@ async fn test_dual_mode_extraction_comparison() {
                 None,
             )),
         )),
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -1388,6 +1391,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
                 None,
             )),
         )),
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

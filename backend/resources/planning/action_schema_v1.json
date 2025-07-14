@@ -1,0 +1,315 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sanguine Scribe Action Schema v1.0",
+  "description": "Formal schema defining the language for LLM-generated plans. Each action maps to a world interaction tool from the Tactical Toolkit.",
+  "type": "object",
+  "properties": {
+    "plan": {
+      "type": "object",
+      "required": ["goal", "actions", "metadata"],
+      "properties": {
+        "goal": {
+          "type": "string",
+          "description": "High-level narrative goal to achieve"
+        },
+        "actions": {
+          "type": "array",
+          "description": "Sequence of actions to execute",
+          "items": {
+            "$ref": "#/definitions/action"
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "estimated_duration": {
+              "type": "integer",
+              "description": "Estimated time in narrative seconds"
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "AI confidence in plan success"
+            },
+            "alternative_considered": {
+              "type": "string",
+              "description": "Alternative approach considered but not chosen"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "action": {
+      "type": "object",
+      "required": ["id", "name", "parameters"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this action step"
+        },
+        "name": {
+          "type": "string",
+          "enum": [
+            "find_entity",
+            "get_entity_details",
+            "create_entity",
+            "update_entity",
+            "move_entity",
+            "get_contained_entities",
+            "get_spatial_context",
+            "add_item_to_inventory",
+            "remove_item_from_inventory",
+            "update_relationship"
+          ],
+          "description": "Action name matching a tool from the Tactical Toolkit"
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Parameters specific to the action type"
+        },
+        "preconditions": {
+          "$ref": "#/definitions/preconditions"
+        },
+        "effects": {
+          "$ref": "#/definitions/effects"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of actions that must complete before this one"
+        }
+      }
+    },
+    "preconditions": {
+      "type": "object",
+      "description": "State requirements that must be true before action execution",
+      "properties": {
+        "entity_exists": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "entity_id": {"type": "string"},
+              "entity_name": {"type": "string"}
+            }
+          }
+        },
+        "entity_at_location": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "entity_id": {"type": "string"},
+              "location_id": {"type": "string"}
+            }
+          }
+        },
+        "entity_has_component": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "entity_id": {"type": "string"},
+              "component_type": {"type": "string"}
+            }
+          }
+        },
+        "inventory_has_space": {
+          "type": "object",
+          "properties": {
+            "entity_id": {"type": "string"},
+            "required_slots": {"type": "integer"}
+          }
+        },
+        "relationship_exists": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source_entity": {"type": "string"},
+              "target_entity": {"type": "string"},
+              "min_trust": {"type": "number"}
+            }
+          }
+        }
+      }
+    },
+    "effects": {
+      "type": "object",
+      "description": "Expected state changes after successful action execution",
+      "properties": {
+        "entity_moved": {
+          "type": "object",
+          "properties": {
+            "entity_id": {"type": "string"},
+            "new_location": {"type": "string"}
+          }
+        },
+        "entity_created": {
+          "type": "object",
+          "properties": {
+            "entity_name": {"type": "string"},
+            "entity_type": {"type": "string"},
+            "parent_id": {"type": "string"}
+          }
+        },
+        "component_updated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "entity_id": {"type": "string"},
+              "component_type": {"type": "string"},
+              "operation": {
+                "type": "string",
+                "enum": ["add", "update", "remove"]
+              }
+            }
+          }
+        },
+        "inventory_changed": {
+          "type": "object",
+          "properties": {
+            "entity_id": {"type": "string"},
+            "item_id": {"type": "string"},
+            "quantity_change": {"type": "integer"}
+          }
+        },
+        "relationship_changed": {
+          "type": "object",
+          "properties": {
+            "source_entity": {"type": "string"},
+            "target_entity": {"type": "string"},
+            "trust_change": {"type": "number"},
+            "affection_change": {"type": "number"}
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "plan": {
+        "goal": "Sol needs to get the datapad from Borga",
+        "actions": [
+          {
+            "id": "step1",
+            "name": "find_entity",
+            "parameters": {
+              "criteria": {
+                "type": "ByName",
+                "name": "Sol"
+              }
+            },
+            "preconditions": {
+              "entity_exists": [{"entity_name": "Sol"}]
+            },
+            "effects": {},
+            "dependencies": []
+          },
+          {
+            "id": "step2",
+            "name": "find_entity",
+            "parameters": {
+              "criteria": {
+                "type": "ByName",
+                "name": "Borga"
+              }
+            },
+            "preconditions": {
+              "entity_exists": [{"entity_name": "Borga"}]
+            },
+            "effects": {},
+            "dependencies": []
+          },
+          {
+            "id": "step3",
+            "name": "move_entity",
+            "parameters": {
+              "entity_to_move": "Sol",
+              "new_parent": "Borga's Location"
+            },
+            "preconditions": {
+              "entity_exists": [
+                {"entity_id": "Sol"},
+                {"entity_id": "Borga's Location"}
+              ]
+            },
+            "effects": {
+              "entity_moved": {
+                "entity_id": "Sol",
+                "new_location": "Borga's Location"
+              }
+            },
+            "dependencies": ["step1", "step2"]
+          },
+          {
+            "id": "step4",
+            "name": "remove_item_from_inventory",
+            "parameters": {
+              "owner_entity_id": "Borga",
+              "item_entity_id": "datapad",
+              "quantity": 1
+            },
+            "preconditions": {
+              "entity_at_location": [
+                {
+                  "entity_id": "Sol",
+                  "location_id": "Borga's Location"
+                }
+              ],
+              "relationship_exists": [
+                {
+                  "source_entity": "Sol",
+                  "target_entity": "Borga",
+                  "min_trust": 0.3
+                }
+              ]
+            },
+            "effects": {
+              "inventory_changed": {
+                "entity_id": "Borga",
+                "item_id": "datapad",
+                "quantity_change": -1
+              }
+            },
+            "dependencies": ["step3"]
+          },
+          {
+            "id": "step5",
+            "name": "add_item_to_inventory",
+            "parameters": {
+              "owner_entity_id": "Sol",
+              "item_entity_id": "datapad",
+              "quantity": 1
+            },
+            "preconditions": {
+              "inventory_has_space": {
+                "entity_id": "Sol",
+                "required_slots": 1
+              }
+            },
+            "effects": {
+              "inventory_changed": {
+                "entity_id": "Sol",
+                "item_id": "datapad",
+                "quantity_change": 1
+              }
+            },
+            "dependencies": ["step4"]
+          }
+        ],
+        "metadata": {
+          "estimated_duration": 300,
+          "confidence": 0.85,
+          "alternative_considered": "Sol could try to steal the datapad without Borga's consent"
+        }
+      }
+    }
+  ]
+}

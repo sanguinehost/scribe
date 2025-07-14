@@ -498,7 +498,8 @@ async fn test_agentic_tools_with_mock_ai() {
                 test_app.db_pool.clone().into(),
                 state_update_service,
             ))
-        }
+        },
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

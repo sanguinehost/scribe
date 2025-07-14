@@ -6,6 +6,7 @@
 // caching to achieve sub-100ms response times for ECS queries.
 
 use std::sync::Arc;
+use std::collections::HashMap;
 use uuid::Uuid;
 use serde_json::{json, Value as JsonValue};
 use tracing::{info, warn, debug, instrument, error};
@@ -16,7 +17,7 @@ use crate::{
     errors::AppError,
     models::{
         ecs_diesel::{EcsEntity, EcsComponent, NewEcsComponent, NewEcsEntity},
-        ecs::ParentLinkComponent,
+        ecs::{ParentLinkComponent, InventoryItem, Relationship},
     },
     schema::{ecs_entities, ecs_components},
 };
@@ -2661,8 +2662,10 @@ impl EcsEntityManager {
         use diesel::prelude::*;
         
         // Validate that both entities exist and belong to the user
-        let character = self.get_entity_details(user_id, character_entity_id).await?;
-        let _item = self.get_entity_details(user_id, item_entity_id).await?;
+        let character = self.get_entity(user_id, character_entity_id).await?
+            .ok_or_else(|| AppError::NotFound("Character entity not found".to_string()))?;
+        let _item = self.get_entity(user_id, item_entity_id).await?
+            .ok_or_else(|| AppError::NotFound("Item entity not found".to_string()))?;
         
         // Find the inventory component
         let inventory_comp = character.components.iter()
@@ -2700,15 +2703,20 @@ impl EcsEntityManager {
         let updated_inventory_json = serde_json::to_value(&inventory)
             .map_err(|e| AppError::SerializationError(format!("Failed to serialize updated inventory: {}", e)))?;
         
-        self.db_pool.interact(move |conn| {
-            diesel::update(crate::schema::ecs_components::table)
-                .filter(crate::schema::ecs_components::entity_id.eq(character_entity_id))
-                .filter(crate::schema::ecs_components::component_type.eq("Inventory"))
-                .set(crate::schema::ecs_components::component_data.eq(&updated_inventory_json))
-                .execute(conn)
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        
+        conn.interact(move |conn| {
+            conn.transaction(|conn| {
+                diesel::update(crate::schema::ecs_components::table)
+                    .filter(crate::schema::ecs_components::entity_id.eq(character_entity_id))
+                    .filter(crate::schema::ecs_components::component_type.eq("Inventory"))
+                    .set(crate::schema::ecs_components::component_data.eq(&updated_inventory_json))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update inventory: {}", e)))
+            })
         }).await
-        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update inventory: {}", e)))?;
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))??;
         
         // Invalidate cache
         let user_hash = Self::hash_user_id(user_id);
@@ -2721,7 +2729,7 @@ impl EcsEntityManager {
         let added_item = inventory.items.iter()
             .find(|item| item.entity_id == item_entity_id)
             .cloned()
-            .ok_or_else(|| AppError::InternalServerError("Failed to find added item".to_string()))?;
+            .ok_or_else(|| AppError::InternalServerErrorGeneric("Failed to find added item".to_string()))?;
         
         Ok(added_item)
     }
@@ -2739,7 +2747,8 @@ impl EcsEntityManager {
         use diesel::prelude::*;
         
         // Validate that character exists and belongs to the user
-        let character = self.get_entity_details(user_id, character_entity_id).await?;
+        let character = self.get_entity(user_id, character_entity_id).await?
+            .ok_or_else(|| AppError::NotFound("Character entity not found".to_string()))?;
         
         // Find the inventory component
         let inventory_comp = character.components.iter()
@@ -2779,15 +2788,20 @@ impl EcsEntityManager {
         let updated_inventory_json = serde_json::to_value(&inventory)
             .map_err(|e| AppError::SerializationError(format!("Failed to serialize updated inventory: {}", e)))?;
         
-        self.db_pool.interact(move |conn| {
-            diesel::update(crate::schema::ecs_components::table)
-                .filter(crate::schema::ecs_components::entity_id.eq(character_entity_id))
-                .filter(crate::schema::ecs_components::component_type.eq("Inventory"))
-                .set(crate::schema::ecs_components::component_data.eq(&updated_inventory_json))
-                .execute(conn)
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        
+        conn.interact(move |conn| {
+            conn.transaction(|conn| {
+                diesel::update(crate::schema::ecs_components::table)
+                    .filter(crate::schema::ecs_components::entity_id.eq(character_entity_id))
+                    .filter(crate::schema::ecs_components::component_type.eq("Inventory"))
+                    .set(crate::schema::ecs_components::component_data.eq(&updated_inventory_json))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update inventory: {}", e)))
+            })
         }).await
-        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update inventory: {}", e)))?;
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))??;
         
         // Invalidate cache
         let user_hash = Self::hash_user_id(user_id);
@@ -2837,8 +2851,10 @@ impl EcsEntityManager {
         }
         
         // Validate that both entities exist and belong to the user
-        let source_entity = self.get_entity_details(user_id, source_entity_id).await?;
-        let _target_entity = self.get_entity_details(user_id, target_entity_id).await?;
+        let source_entity = self.get_entity(user_id, source_entity_id).await?
+            .ok_or_else(|| AppError::NotFound("Source entity not found".to_string()))?;
+        let _target_entity = self.get_entity(user_id, target_entity_id).await?
+            .ok_or_else(|| AppError::NotFound("Target entity not found".to_string()))?;
         
         // Find the relationships component
         let relationships_comp = source_entity.components.iter()
@@ -2870,15 +2886,20 @@ impl EcsEntityManager {
         let updated_relationships_json = serde_json::to_value(&relationships)
             .map_err(|e| AppError::SerializationError(format!("Failed to serialize updated relationships: {}", e)))?;
         
-        self.db_pool.interact(move |conn| {
-            diesel::update(crate::schema::ecs_components::table)
-                .filter(crate::schema::ecs_components::entity_id.eq(source_entity_id))
-                .filter(crate::schema::ecs_components::component_type.eq("Relationships"))
-                .set(crate::schema::ecs_components::component_data.eq(&updated_relationships_json))
-                .execute(conn)
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        
+        conn.interact(move |conn| {
+            conn.transaction(|conn| {
+                diesel::update(crate::schema::ecs_components::table)
+                    .filter(crate::schema::ecs_components::entity_id.eq(source_entity_id))
+                    .filter(crate::schema::ecs_components::component_type.eq("Relationships"))
+                    .set(crate::schema::ecs_components::component_data.eq(&updated_relationships_json))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update relationships: {}", e)))
+            })
         }).await
-        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update relationships: {}", e)))?;
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))??;
         
         // Invalidate cache
         let user_hash = Self::hash_user_id(user_id);
@@ -2900,7 +2921,8 @@ impl EcsEntityManager {
         use crate::models::ecs::{RelationshipsComponent, Component};
         
         // Get entity and validate ownership
-        let entity = self.get_entity_details(user_id, entity_id).await?;
+        let entity = self.get_entity(user_id, entity_id).await?
+            .ok_or_else(|| AppError::NotFound("Entity not found".to_string()))?;
         
         // Find the relationships component
         if let Some(relationships_comp) = entity.components.iter()

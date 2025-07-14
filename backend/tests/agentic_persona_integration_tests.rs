@@ -717,6 +717,7 @@ async fn test_persona_context_missing_in_events() {
                 agentic_state_update_service,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -1319,6 +1320,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 agentic_state_update_service,
             ))
         },
+        hierarchical_context_assembler: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

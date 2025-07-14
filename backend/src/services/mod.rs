@@ -39,6 +39,7 @@ pub mod user_persona_service;
 pub mod user_settings_service;
 pub mod world_model_service;
 pub mod nlp_query_handler;
+pub mod planning;
 pub mod prompt_templates;
 pub mod query_strategy_planner;
 pub mod context_assembly_engine;
