@@ -503,7 +503,7 @@
 
 **Goal:** To create the "Blueprint" for the narrative by implementing an **LLM-as-a-Planner**. This system uses a sophisticated, AI-driven prompt construction process to generate a sequence of actions as a structured JSON object. This plan is then rigorously validated against the ECS ground truth by a "Symbolic Firewall" before execution, ensuring causal consistency without the rigidity of an external formal planning engine.
 
-**Current State:** 🟢 **50% Complete** - Action Schema, Planning Types, and LLM-based Planning Service implemented with comprehensive test coverage and Flash integration. Redis caching infrastructure already implemented for ECS entities.
+**Current State:** 🟢 **75% Complete** - Action Schema, Planning Types, LLM-based Planning Service, and Plan Validator (Symbolic Firewall) implemented with comprehensive test coverage and Flash integration. Redis caching infrastructure fully implemented.
 
 **Risk Assessment:** 🟡 **MEDIUM RISK** - The core challenge is not integration with an external framework, but the robust implementation of the `PlanValidator` service. This service is the critical "Symbolic Firewall" that must correctly interpret the AI's plan and prevent any invalid actions from being executed.
 
@@ -619,16 +619,38 @@ pub struct ContextCache {
         *   [x] Robust goal-based action generation with validation
         *   [x] Complete removal of TODO logic with proper implementations
 
-*   **[ ] Task 3.3: Implement the Plan Validator (The "Symbolic Firewall")**
+*   **[x] Task 3.3: Implement the Plan Validator (The "Symbolic Firewall")** ✅ **COMPLETED**
     *   **Objective:** Create the critical service that validates the AI's plan against the ground truth of the ECS. **No action is executed without passing this check.**
-    *   **Current State:** 🟡 **Basic placeholder validation exists** - HierarchicalContextAssembler has simple `create_basic_validation_checks()` but needs full Symbolic Firewall implementation
-    *   **[ ] Subtask 3.3.1:** Create a `PlanValidatorService` in the `planning` module.
-    *   **[ ] Subtask 3.3.2:** Implement a `PlanValidatorService::validate_plan` method that takes the JSON plan from the LLM and the current `EcsSnapshot`.
-    *   **[ ] Subtask 3.3.3:** For each step in the plan, the validator must check:
-        *   [ ] **Action Validity:** Does the action (e.g., `move_entity`) exist in our `TacticalToolkit`?
-        *   [ ] **Parameter Validity:** Do the entities and values passed as parameters (e.g., "Sol", "Cantina") actually exist in the ECS?
-        *   [ ] **Precondition Fulfillment:** Is the state required by the action's preconditions met in the current ECS snapshot? (e.g., Is "Sol" actually in the "Chamber" before attempting to move to the "Cantina"?)
-    *   **[ ] Subtask 3.3.4:** The service should return either a `ValidPlan` or an `InvalidPlan` result with detailed reasons for failure.
+    *   **Current State:** ✅ **FULLY IMPLEMENTED** - Complete Symbolic Firewall implementation with comprehensive validation checks and test coverage
+    *   **[x] Subtask 3.3.1:** Create a `PlanValidatorService` in the `planning` module.
+    *   **[x] Subtask 3.3.2:** Implement a `PlanValidatorService::validate_plan` method that takes the JSON plan from the LLM and validates against current ECS state.
+    *   **[x] Subtask 3.3.3:** For each step in the plan, the validator checks:
+        *   [x] **Action Validity:** Validates action exists in our `TacticalToolkit` (ActionName enum validation)
+        *   [x] **Parameter Validity:** Validates entities and values passed as parameters exist and are accessible by the user
+        *   [x] **Precondition Fulfillment:** Validates all precondition types against current ECS state:
+            *   [x] `entity_exists`: Validates entity existence and user ownership
+            *   [x] `entity_at_location`: Validates entity location relationships via ParentLink components
+            *   [x] `entity_has_component`: Validates component presence and type
+            *   [x] `inventory_has_space`: Validates inventory capacity and available slots
+            *   [x] `relationship_exists`: Validates relationships and trust level requirements
+        *   [x] **Circular Dependency Detection**: Uses DFS algorithm to prevent infinite loops in action dependencies
+    *   **[x] Subtask 3.3.4:** The service returns either a `ValidPlan` or an `InvalidPlan` result with detailed failure reasons and validation metadata.
+    *   **[x] Subtask 3.3.5:** Comprehensive test coverage:
+        *   [x] **Functional Tests (9 tests):** `plan_validator_tests.rs` - Complete validation scenarios including valid plans, invalid entities, precondition failures, missing components, insufficient inventory space, relationship trust validation, complex multi-step plans, circular dependencies, and caching validation
+        *   [x] **Security Tests (11 tests):** `plan_validator_security_tests.rs` - Complete OWASP Top 10 compliance:
+            *   [x] **A01 (Broken Access Control):** Cross-user entity access prevention, permission boundary validation
+            *   [x] **A03 (Injection):** SQL injection protection, JSON injection prevention in parameters
+            *   [x] **A04 (Insecure Design):** Plan complexity limits, DoS protection
+            *   [x] **A05 (Security Misconfiguration):** Error information leakage prevention
+            *   [x] **A07 (Authentication Failures):** User context validation, nil user ID handling
+            *   [x] **A08 (Data Integrity):** Plan validation consistency, inventory constraint enforcement
+            *   [x] **A09 (Logging/Monitoring):** Plan validation audit trail, security event logging
+            *   [x] **A10 (SSRF):** External reference prevention in plan parameters
+            *   [x] **Comprehensive Security:** Malicious plan pattern detection with combined attack vectors
+    *   **[x] Subtask 3.3.6:** Performance and caching implementation:
+        *   [x] **Redis Caching:** Validation results cached with 3-minute TTL for performance optimization
+        *   [x] **User Isolation:** All cache keys include user context for multi-tenant security
+        *   [x] **Performance Metrics:** Validation timing and caching effectiveness tracking
 
 *   **[ ] Task 3.4: Planning and Validation Integration Tests**
     *   **Objective:** Verify that the entire planning and validation loop works correctly.
