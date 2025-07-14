@@ -652,7 +652,7 @@ pub struct ContextCache {
         *   [x] **User Isolation:** All cache keys include user context for multi-tenant security
         *   [x] **Performance Metrics:** Validation timing and caching effectiveness tracking
 
-*   **[ ] Task 3.5: ECS State Reconciliation & Intelligent Plan Repair** 🆕 **NEW TASK**
+*   **[ ] Task 3.4: ECS State Reconciliation & Intelligent Plan Repair** 🆕 **NEW TASK**
     *   **Objective:** Handle cases where the ECS is inconsistent or missing expected state, enabling the planner to intelligently repair world state or adapt plans based on narrative context.
     *   **Problem:** Current Plan Validator rigidly rejects plans based on ECS state, but sometimes the ECS is wrong/incomplete rather than the plan being invalid.
     *   **Examples:**
@@ -660,12 +660,12 @@ pub struct ContextCache {
         *   **Missing Component Creation**: "This character should have a 'Reputation' component based on recent interactions, but it was never created"
         *   **Inconsistent Relationships**: "The narrative established trust between characters, but the ECS relationship doesn't reflect this"
         *   **Temporal Inconsistencies**: "The plan assumes it's nighttime based on narrative context, but ECS has no time tracking"
-    *   **[ ] Subtask 3.5.1: Implement ECS Inconsistency Detection**
+    *   **[ ] Subtask 3.4.1: Implement ECS Inconsistency Detection**
         *   [ ] **`EcsConsistencyAnalyzer`**: New service that uses Flash to analyze narrative context vs ECS state
         *   [ ] **Inconsistency Types**: Define categories of common ECS/narrative mismatches
         *   [ ] **Context Analysis**: Compare recent chat history against current ECS state to identify discrepancies
         *   [ ] **Confidence Scoring**: Rate the likelihood that ECS is wrong vs plan is invalid
-    *   **[ ] Subtask 3.5.2: Implement Intelligent Plan Repair**
+    *   **[ ] Subtask 3.4.2: Implement Intelligent Plan Repair**
         *   [ ] **`PlanRepairService`**: Service that generates "corrective actions" to fix ECS inconsistencies
         *   [ ] **Repair Strategies**:
             *   [ ] **State Backfill**: Generate actions to create missing components/relationships
@@ -674,7 +674,7 @@ pub struct ContextCache {
             *   [ ] **Relationship Repair**: Update relationship states to match narrative context
         *   [ ] **Repair Plan Generation**: Use Flash to generate minimal corrective action sequences
         *   [ ] **User Approval**: Flag major repairs for user confirmation (optional safety mode)
-    *   **[ ] Subtask 3.5.3: Integrate with Plan Validator**
+    *   **[ ] Subtask 3.4.3: Integrate with Plan Validator**
         *   [ ] **Enhanced Validation Flow**:
             1. [ ] Standard validation against current ECS state
             2. [ ] If validation fails, trigger inconsistency analysis
@@ -685,13 +685,13 @@ pub struct ContextCache {
             *   [ ] `ValidPlan`: Plan passes validation as-is
             *   [ ] `InvalidPlan`: Plan genuinely invalid, cannot be repaired
             *   [ ] `RepairableInvalidPlan`: Plan invalid but ECS inconsistency detected, includes repair actions
-    *   **[ ] Subtask 3.5.4: Comprehensive Testing**
+    *   **[ ] Subtask 3.4.4: Comprehensive Testing**
         *   [ ] **Functional Tests**: Test all repair scenarios (missing movement, components, relationships, temporal)
         *   [ ] **Confidence Testing**: Verify the system correctly distinguishes ECS errors from invalid plans
         *   [ ] **Safety Testing**: Ensure repairs don't create new inconsistencies or break existing state
         *   [ ] **Performance Testing**: Verify repair analysis doesn't significantly slow validation
         *   [ ] **Security Tests**: Ensure repair actions respect user ownership and access control
-    *   **[ ] Subtask 3.5.5: Example Scenario Implementation**
+    *   **[ ] Subtask 3.4.5: Example Scenario Implementation**
         *   [ ] **Scenario**: User says "Sol greets Borga warmly" but ECS shows no relationship between them
         *   [ ] **Current Behavior**: Plan to update relationship fails validation (no existing relationship)
         *   [ ] **New Behavior**: 
@@ -699,22 +699,65 @@ pub struct ContextCache {
             2. [ ] Generate repair action: `create_relationship(Sol, Borga, "acquaintance", trust=0.6)`
             3. [ ] Return combined plan: [repair_action, original_relationship_update]
             4. [ ] Log repair for user awareness: "Created missing relationship based on narrative context"
+    *   **[ ] Subtask 3.4.6: End-to-End Integration Testing**
+        *   [ ] **Full Pipeline Tests**: Test complete planning → validation → repair → execution flow
+        *   [ ] **Multi-Turn Conversation Tests**: Verify repairs persist correctly across conversation turns
+        *   [ ] **Repair Chain Tests**: Test scenarios where repairs trigger additional repairs (with safety limits)
+        *   [ ] **Integration with Planning Service**: Test `PlanningService` → `PlanValidatorService` with repair integration
+        *   [ ] **Integration with Tactical Agent**: Test repair flow within full hierarchical agent pipeline  
+        *   [ ] **Performance Integration**: Verify repair analysis doesn't significantly impact chat response times
+        *   [ ] **Security Integration**: Test repair functionality within full OWASP Top 10 security framework
+        *   [ ] **Example End-to-End Scenarios**:
+            *   [ ] **Missing Movement Scenario**: 
+                1. [ ] User: "Sol walks to cantina and orders drink"
+                2. [ ] ECS: Sol still in chamber (outdated)
+                3. [ ] Planning: Generate plan to add drink to inventory
+                4. [ ] Validation: Fails (Sol not in cantina)
+                5. [ ] Repair: Detect missing movement, generate move action
+                6. [ ] Combined Execution: Move Sol to cantina → Add drink → Update ECS
+                7. [ ] Verification: Assert Sol is in cantina with drink in next turn
+            *   [ ] **Missing Relationship Scenario**:
+                1. [ ] User: "Sol warmly greets his old friend Borga"
+                2. [ ] ECS: No relationship between Sol and Borga
+                3. [ ] Planning: Generate plan to update relationship warmth
+                4. [ ] Validation: Fails (no existing relationship)
+                5. [ ] Repair: Detect implied friendship, create base relationship
+                6. [ ] Combined Execution: Create relationship → Update warmth → Log interaction
+                7. [ ] Verification: Assert relationship exists with appropriate trust level
+            *   [ ] **Missing Component Scenario**:
+                1. [ ] User: "Sol's reputation as a pilot grows after the successful mission"
+                2. [ ] ECS: Sol has no Reputation component
+                3. [ ] Planning: Generate plan to update pilot reputation
+                4. [ ] Validation: Fails (component doesn't exist)
+                5. [ ] Repair: Detect missing component, create with base values
+                6. [ ] Combined Execution: Add Reputation component → Update pilot skill → Record achievement
+                7. [ ] Verification: Assert Reputation component exists with updated pilot skill
+        *   [ ] **Failure Mode Testing**:
+            *   [ ] **Low Confidence Repairs**: Test scenarios where repair confidence is below threshold (should not repair)
+            *   [ ] **Repair Validation Failures**: Test cases where repair plan itself fails validation
+            *   [ ] **Circular Repair Detection**: Prevent infinite repair loops with safety mechanisms
+            *   [ ] **User Override Testing**: Test optional user approval mechanisms for major repairs
+        *   [ ] **Logging and Observability**:
+            *   [ ] **Repair Decision Logging**: Verify all repair decisions are logged with reasoning
+            *   [ ] **Performance Metrics**: Track repair analysis time, success rates, confidence distributions
+            *   [ ] **User Transparency**: Test repair notifications and explanations in chat context
+            *   [ ] **Debug Integration**: Ensure repair flows are debuggable with sufficient diagnostic information
 
-*   **[ ] Task 3.4: Planning and Validation Integration Tests**
+*   **[ ] Task 3.5: Planning and Validation Integration Tests**
     *   **Objective:** Verify that the entire planning and validation loop works correctly.
     *   **File:** `backend/tests/planning_service_tests.rs` (new)
     *   **Current State:** ✅ Excellent test infrastructure exists with `test_helpers`.
-    *   **[ ] Subtask 3.4.1: Write a "Valid Plan" Test:**
+    *   **[ ] Subtask 3.5.1: Write a "Valid Plan" Test:**
         1.  [ ] Use `test_helpers` to set up an initial world state (e.g., "Sol is in the Chamber").
         2.  [ ] Define a goal: "Sol wants to go to the Cantina."
         3.  [ ] Mock the AI call in `PlanningService` to return a correct, hardcoded JSON plan: `{"actions": [{"name": "move_entity", "parameters": ["Sol", "Cantina"]}]}`.
         4.  [ ] Call the `PlanningService`, then pass its output to the `PlanValidatorService`.
         5.  [ ] Assert that the plan is validated successfully.
-    *   **[ ] Subtask 3.4.2: Write an "Invalid Plan" Test (Precondition Fail):**
+    *   **[ ] Subtask 3.5.2: Write an "Invalid Plan" Test (Precondition Fail):**
         1.  [ ] Set up a world state where a precondition is not met (e.g., Sol needs a "keycard" to move, but doesn't have one).
         2.  [ ] Mock the AI to return the same plan as above.
         3.  [ ] Call the services and assert that the `PlanValidatorService` rejects the plan with a specific "PreconditionNotMet" error.
-    *   **[ ] Subtask 3.4.3 (Security - A01):** Add a test where the goal involves an entity not owned by the user. Assert that the `PlanningService`'s world state query returns no data for that entity, leading to the `PlanValidatorService` rejecting any plan involving it.
+    *   **[ ] Subtask 3.5.3 (Security - A01):** Add a test where the goal involves an entity not owned by the user. Assert that the `PlanningService`'s world state query returns no data for that entity, leading to the `PlanValidatorService` rejecting any plan involving it.
 
 ---
 
