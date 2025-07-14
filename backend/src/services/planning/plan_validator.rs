@@ -152,11 +152,10 @@ impl PlanValidatorService {
                         Some(analysis) => {
                             info!("Inconsistency detected: {:?} with confidence {}", 
                                   analysis.inconsistency_type, 
-                                  // We'll extract confidence from analysis in next implementation
-                                  "high");
+                                  analysis.confidence_score);
 
-                            // Check confidence threshold (hardcoded for now, could be configurable)
-                            let confidence_score = 0.8; // TODO: Extract from analysis
+                            // Check confidence threshold (could be configurable)
+                            let confidence_score = analysis.confidence_score;
                             
                             if confidence_score > 0.7 {
                                 debug!("High confidence inconsistency, generating repair plan");

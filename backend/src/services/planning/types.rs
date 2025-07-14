@@ -272,6 +272,7 @@ pub struct InconsistencyAnalysis {
     pub narrative_evidence: Vec<String>,     // Chat excerpts supporting repair
     pub ecs_state_summary: String,          // Current state that seems inconsistent
     pub repair_reasoning: String,           // Why this repair makes sense
+    pub confidence_score: f32,              // How confident we are that ECS is wrong (0.0-1.0)
     pub detection_timestamp: DateTime<Utc>,
 }
 

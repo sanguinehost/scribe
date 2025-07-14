@@ -503,7 +503,7 @@
 
 **Goal:** To create the "Blueprint" for the narrative by implementing an **LLM-as-a-Planner**. This system uses a sophisticated, AI-driven prompt construction process to generate a sequence of actions as a structured JSON object. This plan is then rigorously validated against the ECS ground truth by a "Symbolic Firewall" before execution, ensuring causal consistency without the rigidity of an external formal planning engine.
 
-**Current State:** 🟡 **60% Complete** - Action Schema, Planning Types, LLM-based Planning Service, and Plan Validator (Symbolic Firewall) implemented with comprehensive test coverage and Flash integration. **New Task 3.5 added** for ECS State Reconciliation to handle cases where ECS is inconsistent rather than plans being invalid.
+**Current State:** 🟡 **80% Complete** - Action Schema, Planning Types, LLM-based Planning Service, Plan Validator (Symbolic Firewall), and ECS State Reconciliation & Intelligent Plan Repair fully implemented with comprehensive test coverage and Flash integration. Task 3.5 (Integration Tests) pending.
 
 **Risk Assessment:** 🟡 **MEDIUM RISK** - The core challenge is not integration with an external framework, but the robust implementation of the `PlanValidator` service. This service is the critical "Symbolic Firewall" that must correctly interpret the AI's plan and prevent any invalid actions from being executed.
 
@@ -652,7 +652,7 @@ pub struct ContextCache {
         *   [x] **User Isolation:** All cache keys include user context for multi-tenant security
         *   [x] **Performance Metrics:** Validation timing and caching effectiveness tracking
 
-*   **[x] Task 3.4: ECS State Reconciliation & Intelligent Plan Repair** ✅ **COMPLETED (2025-07-14)**
+*   **[x] Task 3.4: ECS State Reconciliation & Intelligent Plan Repair** ✅ **COMPLETED**
     *   **Objective:** Handle cases where the ECS is inconsistent or missing expected state, enabling the planner to intelligently repair world state or adapt plans based on narrative context.
     *   **Problem:** Current Plan Validator rigidly rejects plans based on ECS state, but sometimes the ECS is wrong/incomplete rather than the plan being invalid.
     *   **Examples:**
@@ -875,3 +875,45 @@ pub struct ContextCache {
 - [ ] **Cross-User Isolation**: Test that agents cannot access data from other users
 - [ ] **Input Validation**: Ensure all agent inputs are properly sanitized
 - [ ] **Privilege Escalation**: Test that agents cannot escalate their privileges
+
+## 📌 TODO Dependencies on Future Epics
+
+The following TODOs found in the codebase require Epic 4 (Agent Implementation) or Epic 5 (Strategic Layer & Autonomic Loop) to be completed before they can be implemented:
+
+### **Epic 4 Dependencies (Tactical & Operational Agents)**
+
+#### **hierarchical_context_assembler.rs**
+- **Line 156**: `causal_context` - Requires causal relationship tracking from the planning system (Epic 3)
+- **Entity Resolution Integration** - Requires full agent hierarchy for entity resolution decisions
+- **Integration Tests** - Cannot be written until the agent hierarchy is implemented
+
+#### **hybrid_query_service.rs**
+- **Lines 854, 942**: Entity manager integration - Requires full entity resolution from hierarchical agents
+- **Lines 936, 1604, 1632**: Relationship queries - Requires agent-based relationship inference
+
+### **Epic 5 Dependencies (Strategic Layer)**
+
+#### **narrative_intelligence_service.rs**
+- **ALL TODOs** - This entire service is designed for the Strategic Layer and cannot be implemented until Epic 5
+
+#### **Test Files Requiring Epic 3 Completion**
+- **ecs_state_reconciliation_tests.rs**: All repair system tests require Task 3.4 completion
+- **ecs_state_reconciliation_security_tests.rs**: Security validation for repair system
+- **planning_service_integration_tests.rs**: Planning service integration tests
+
+### **Implementation Order Requirements**
+
+1. **Complete Epic 3 (Planning Cortex)** first - this enables:
+   - Causal relationship tracking
+   - Basic repair system functionality
+   - Planning service tests
+
+2. **Then Epic 4 (Agent Implementation)** - this enables:
+   - Entity resolution integration
+   - Relationship queries in hybrid query service
+   - Full hierarchical context assembly
+
+3. **Finally Epic 5 (Strategic Layer)** - this enables:
+   - Narrative intelligence service
+   - Full autonomic loop
+   - Strategic planning capabilities

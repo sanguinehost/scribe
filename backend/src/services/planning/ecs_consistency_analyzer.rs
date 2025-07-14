@@ -373,6 +373,7 @@ Analyze the failures and provide your assessment:
                     narrative_evidence,
                     ecs_state_summary,
                     repair_reasoning,
+                    confidence_score,
                     detection_timestamp: chrono::Utc::now(),
                 }))
             }
@@ -390,6 +391,7 @@ Analyze the failures and provide your assessment:
                         ],
                         ecs_state_summary: "Unable to parse detailed state analysis".to_string(),
                         repair_reasoning: "Fallback analysis indicated potential repair needed".to_string(),
+                        confidence_score: 0.6, // Conservative fallback confidence
                         detection_timestamp: chrono::Utc::now(),
                     }))
                 } else {
