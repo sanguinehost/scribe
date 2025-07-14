@@ -199,6 +199,7 @@ pub struct RelationshipChangeEffect {
 pub enum PlanValidationResult {
     Valid(ValidatedPlan),
     Invalid(InvalidPlan),
+    RepairableInvalid(RepairableInvalidPlan), // 🆕 NEW - Plan invalid but ECS inconsistency detected
 }
 
 /// A plan that has passed all validation checks
@@ -252,4 +253,34 @@ pub struct ContextCache {
     pub recent_entities: HashMap<Uuid, CachedEntityState>,
     pub recent_plans: Vec<(String, ValidatedPlan)>,
     pub cache_timestamp: DateTime<Utc>,
+}
+
+/// A plan that failed validation but has been identified as repairable due to ECS inconsistency
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepairableInvalidPlan {
+    pub original_plan: Plan,
+    pub repair_actions: Vec<PlannedAction>,  // Actions to fix ECS state
+    pub combined_plan: Plan,                 // Repair + Original combined
+    pub inconsistency_analysis: InconsistencyAnalysis,
+    pub confidence_score: f32,               // How confident we are that ECS is wrong (0.0-1.0)
+}
+
+/// Analysis of detected ECS inconsistency
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InconsistencyAnalysis {
+    pub inconsistency_type: InconsistencyType,
+    pub narrative_evidence: Vec<String>,     // Chat excerpts supporting repair
+    pub ecs_state_summary: String,          // Current state that seems inconsistent
+    pub repair_reasoning: String,           // Why this repair makes sense
+    pub detection_timestamp: DateTime<Utc>,
+}
+
+/// Types of ECS inconsistencies that can be detected and repaired
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum InconsistencyType {
+    MissingMovement,      // Entity should be elsewhere based on narrative
+    MissingComponent,     // Component should exist but doesn't
+    MissingRelationship,  // Relationship implied by narrative but not recorded
+    OutdatedState,        // ECS state appears stale/outdated
+    TemporalMismatch,     // Time-based inconsistency
 }

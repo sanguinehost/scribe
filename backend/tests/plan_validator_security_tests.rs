@@ -144,6 +144,9 @@ async fn test_a01_broken_access_control_cross_user_entity_access() {
                 f.failure_type == ValidationFailureType::PermissionDenied
             ));
         }
+        PlanValidationResult::RepairableInvalid(_) => {
+            panic!("Expected standard invalid plan, not repairable invalid plan");
+        }
     }
 }
 
@@ -219,6 +222,9 @@ async fn test_a01_broken_access_control_permission_boundaries() {
         }
         PlanValidationResult::Invalid(_) => {
             // Plan should be rejected due to access control
+        }
+        PlanValidationResult::RepairableInvalid(_) => {
+            panic!("Expected standard invalid plan, not repairable invalid plan");
         }
     }
 }

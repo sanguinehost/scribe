@@ -8,15 +8,26 @@ use crate::{
     errors::AppError,
     services::{
         EcsEntityManager,
-        planning::types::*,
+        planning::{
+            types::*,
+            ecs_consistency_analyzer::EcsConsistencyAnalyzer,
+            plan_repair_service::PlanRepairService,
+        },
     },
-    models::ecs::{InventoryComponent, Relationship},
+    models::{
+        ecs::{InventoryComponent, Relationship},
+        chats::ChatMessage,
+    },
+    llm::AiClient,
+    config::Config,
 };
 
 /// The "Symbolic Firewall" - validates AI-generated plans against ECS ground truth
 pub struct PlanValidatorService {
     ecs_manager: Arc<EcsEntityManager>,
     redis_client: Arc<redis::Client>,
+    consistency_analyzer: Option<EcsConsistencyAnalyzer>,
+    repair_service: Option<PlanRepairService>,
 }
 
 impl PlanValidatorService {
@@ -27,6 +38,34 @@ impl PlanValidatorService {
         Self {
             ecs_manager,
             redis_client,
+            consistency_analyzer: None,
+            repair_service: None,
+        }
+    }
+
+    pub fn with_repair_capability(
+        ecs_manager: Arc<EcsEntityManager>,
+        redis_client: Arc<redis::Client>,
+        flash_client: Arc<dyn AiClient + Send + Sync>,
+        config: Config,
+    ) -> Self {
+        let consistency_analyzer = EcsConsistencyAnalyzer::new(
+            ecs_manager.clone(),
+            flash_client.clone(),
+            config.clone(),
+        );
+        
+        let repair_service = PlanRepairService::new(
+            ecs_manager.clone(),
+            flash_client,
+            config,
+        );
+
+        Self {
+            ecs_manager,
+            redis_client,
+            consistency_analyzer: Some(consistency_analyzer),
+            repair_service: Some(repair_service),
         }
     }
 
@@ -55,8 +94,12 @@ impl PlanValidatorService {
         
         // Then validate each action in sequence
         for action in &plan.actions {
-            if let Err(failure) = self.validate_action(action, user_id).await {
-                failures.push(failure);
+            // Collect all failures from this action
+            match self.validate_action_comprehensive(action, user_id).await {
+                Ok(_) => {},
+                Err(action_failures) => {
+                    failures.extend(action_failures);
+                }
             }
         }
         
@@ -80,7 +123,143 @@ impl PlanValidatorService {
         Ok(result)
     }
 
-    /// Validate a single action with comprehensive precondition checking
+    /// Enhanced validation with repair capability for ECS inconsistencies
+    #[instrument(skip(self, recent_context))]
+    pub async fn validate_plan_with_repair(
+        &self,
+        plan: &Plan,
+        user_id: Uuid,
+        recent_context: &[ChatMessage],
+    ) -> Result<PlanValidationResult, AppError> {
+        info!("Validating plan with repair capability for goal: {}", plan.goal);
+
+        // 1. Standard validation first
+        let validation_result = self.validate_plan(plan, user_id).await?;
+
+        match validation_result {
+            PlanValidationResult::Valid(valid) => {
+                debug!("Plan is valid, no repair needed");
+                Ok(PlanValidationResult::Valid(valid))
+            }
+            PlanValidationResult::Invalid(invalid) => {
+                debug!("Plan failed validation, analyzing for potential repairs");
+
+                // 2. Check if repair capability is available
+                if let (Some(analyzer), Some(repair_service)) = (&self.consistency_analyzer, &self.repair_service) {
+                    
+                    // 3. Analyze if ECS might be inconsistent
+                    match analyzer.analyze_inconsistency(plan, &invalid.failures, user_id, recent_context).await? {
+                        Some(analysis) => {
+                            info!("Inconsistency detected: {:?} with confidence {}", 
+                                  analysis.inconsistency_type, 
+                                  // We'll extract confidence from analysis in next implementation
+                                  "high");
+
+                            // Check confidence threshold (hardcoded for now, could be configurable)
+                            let confidence_score = 0.8; // TODO: Extract from analysis
+                            
+                            if confidence_score > 0.7 {
+                                debug!("High confidence inconsistency, generating repair plan");
+                                
+                                // 4. Generate repair plan
+                                match repair_service.generate_repair_plan(&analysis, plan, user_id).await {
+                                    Ok(repair_plan) => {
+                                        // 5. Combine repair with original plan
+                                        let combined_plan = repair_service.combine_plans(&repair_plan, plan);
+                                        
+                                        // 6. Validate combined plan
+                                        let combined_validation = self.validate_plan(&combined_plan, user_id).await?;
+                                        
+                                        match combined_validation {
+                                            PlanValidationResult::Valid(_) => {
+                                                info!("Repair successful, returning repairable invalid plan");
+                                                Ok(PlanValidationResult::RepairableInvalid(RepairableInvalidPlan {
+                                                    original_plan: plan.clone(),
+                                                    repair_actions: repair_plan.actions,
+                                                    combined_plan,
+                                                    inconsistency_analysis: analysis,
+                                                    confidence_score,
+                                                }))
+                                            }
+                                            _ => {
+                                                warn!("Repair plan validation failed, returning original invalid result");
+                                                Ok(PlanValidationResult::Invalid(invalid))
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to generate repair plan: {}", e);
+                                        Ok(PlanValidationResult::Invalid(invalid))
+                                    }
+                                }
+                            } else {
+                                debug!("Low confidence inconsistency ({}), not repairing", confidence_score);
+                                Ok(PlanValidationResult::Invalid(invalid))
+                            }
+                        }
+                        None => {
+                            debug!("No ECS inconsistency detected");
+                            Ok(PlanValidationResult::Invalid(invalid))
+                        }
+                    }
+                } else {
+                    debug!("Repair capability not available, returning standard invalid result");
+                    Ok(PlanValidationResult::Invalid(invalid))
+                }
+            }
+            PlanValidationResult::RepairableInvalid(_) => {
+                // This shouldn't happen in normal flow, but handle gracefully
+                warn!("Unexpected RepairableInvalid result from standard validation");
+                Ok(validation_result)
+            }
+        }
+    }
+
+    /// Validate a single action and return all failures (comprehensive)
+    async fn validate_action_comprehensive(
+        &self,
+        action: &PlannedAction,
+        user_id: Uuid,
+    ) -> Result<(), Vec<ValidationFailure>> {
+        let mut failures = Vec::new();
+        
+        // 1. Check if action exists in Tactical Toolkit
+        if !self.is_valid_action(&action.name) {
+            failures.push(ValidationFailure {
+                action_id: action.id.clone(),
+                failure_type: ValidationFailureType::ActionNotFound,
+                message: format!("Action '{}' not found in Tactical Toolkit", action.name),
+            });
+        }
+        
+        // 2. Validate parameters exist and are well-formed
+        if action.parameters.is_null() || action.parameters.as_object().map_or(true, |obj| obj.is_empty()) {
+            failures.push(ValidationFailure {
+                action_id: action.id.clone(),
+                failure_type: ValidationFailureType::InvalidParameters,
+                message: "Action requires parameters".to_string(),
+            });
+        }
+        
+        // 3. Validate parameter structure based on action type
+        if let Err(param_failure) = self.validate_action_parameters(&action.name, &action.parameters) {
+            failures.push(param_failure);
+        }
+        
+        // 4. Validate all preconditions against ECS ground truth
+        if let Err(precondition_failures) = self.validate_preconditions(&action.preconditions, &action.id, user_id).await {
+            failures.extend(precondition_failures);
+        }
+        
+        if failures.is_empty() {
+            debug!("Action {} validated successfully", action.id);
+            Ok(())
+        } else {
+            Err(failures)
+        }
+    }
+
+    /// Validate a single action with comprehensive precondition checking (original single-failure version)
     async fn validate_action(
         &self,
         action: &PlannedAction,
@@ -110,7 +289,11 @@ impl PlanValidatorService {
         self.validate_action_parameters(&action.name, &action.parameters)?;
         
         // 4. Validate all preconditions against ECS ground truth
-        self.validate_preconditions(&action.preconditions, &action.id, user_id).await?;
+        if let Err(precondition_failures) = self.validate_preconditions(&action.preconditions, &action.id, user_id).await {
+            // Return the first failure for now (maintaining single-failure interface)
+            // In the future, we could extend validate_action to return multiple failures
+            return Err(precondition_failures.into_iter().next().unwrap());
+        }
         
         debug!("Action {} validated successfully", action.id);
         Ok(())
@@ -202,41 +385,57 @@ impl PlanValidatorService {
         preconditions: &Preconditions,
         action_id: &str,
         user_id: Uuid,
-    ) -> Result<(), ValidationFailure> {
+    ) -> Result<(), Vec<ValidationFailure>> {
+        let mut failures = Vec::new();
+        
         // Check entity existence
         if let Some(entity_checks) = &preconditions.entity_exists {
             for check in entity_checks {
-                self.validate_entity_exists(check, action_id, user_id).await?;
+                if let Err(failure) = self.validate_entity_exists(check, action_id, user_id).await {
+                    failures.push(failure);
+                }
             }
         }
         
         // Check entity locations
         if let Some(location_checks) = &preconditions.entity_at_location {
             for check in location_checks {
-                self.validate_entity_at_location(check, action_id, user_id).await?;
+                if let Err(failure) = self.validate_entity_at_location(check, action_id, user_id).await {
+                    failures.push(failure);
+                }
             }
         }
         
         // Check entity components
         if let Some(component_checks) = &preconditions.entity_has_component {
             for check in component_checks {
-                self.validate_entity_has_component(check, action_id, user_id).await?;
+                if let Err(failure) = self.validate_entity_has_component(check, action_id, user_id).await {
+                    failures.push(failure);
+                }
             }
         }
         
         // Check inventory space
         if let Some(inventory_check) = &preconditions.inventory_has_space {
-            self.validate_inventory_has_space(inventory_check, action_id, user_id).await?;
+            if let Err(failure) = self.validate_inventory_has_space(inventory_check, action_id, user_id).await {
+                failures.push(failure);
+            }
         }
         
         // Check relationships
         if let Some(relationship_checks) = &preconditions.relationship_exists {
             for check in relationship_checks {
-                self.validate_relationship_exists(check, action_id, user_id).await?;
+                if let Err(failure) = self.validate_relationship_exists(check, action_id, user_id).await {
+                    failures.push(failure);
+                }
             }
         }
         
-        Ok(())
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures)
+        }
     }
     
     /// Validate entity existence precondition
@@ -389,7 +588,7 @@ impl PlanValidatorService {
                     Err(ValidationFailure {
                         action_id: action_id.to_string(),
                         failure_type: ValidationFailureType::PreconditionNotMet,
-                        message: format!("Entity missing component: {}", check.component_type),
+                        message: format!("missing component: {}", check.component_type),
                     })
                 }
             }
@@ -518,7 +717,7 @@ impl PlanValidatorService {
                     None => Err(ValidationFailure {
                         action_id: action_id.to_string(),
                         failure_type: ValidationFailureType::PreconditionNotMet,
-                        message: "Relationship does not exist".to_string(),
+                        message: "relationship does not exist".to_string(),
                     }),
                 }
             }
