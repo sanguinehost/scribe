@@ -363,8 +363,8 @@ Respond with valid JSON only."#,
                 id: "move_action".to_string(),
                 name: ActionName::MoveEntity,
                 parameters: json!({
-                    "entity_name": "character",
-                    "target_location": "destination"
+                    "entity_id": "character_entity_id",
+                    "destination_id": "destination_entity_id"
                 }),
                 preconditions: Preconditions::default(),
                 effects: Effects::default(),

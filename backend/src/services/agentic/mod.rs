@@ -21,6 +21,7 @@ pub mod factory;
 pub mod registry;
 pub mod tools;
 pub mod persona_context;
+pub mod tactical_agent;
 
 
 // Re-export key types for convenience
@@ -34,3 +35,4 @@ pub use narrative_tools::{
     SearchKnowledgeBaseTool, UpdateLorebookEntryTool
 };
 pub use entity_resolution_tool::{EntityResolutionTool, ProcessingMode};
+pub use tactical_agent::TacticalAgent;

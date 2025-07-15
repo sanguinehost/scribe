@@ -19,6 +19,14 @@ use crate::{
 use secrecy::{ExposeSecret, SecretBox};
 use std::fmt::Write;
 
+// Sub-modules for enhanced context assembly
+pub mod enriched_context_validator;
+
+// Re-export key types from sub-modules
+pub use enriched_context_validator::{
+    EnrichedContextValidator, ValidationReport, ValidationIssue, ValidationIssueType
+};
+
 /// Enhanced context structure designed for the Hierarchical Agent Framework
 /// This represents the evolution from reactive AssembledContext to proactive EnrichedContext
 #[derive(Debug, Clone, Serialize, Deserialize)]

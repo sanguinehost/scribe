@@ -344,11 +344,11 @@ impl PlanValidatorService {
         // Validate required parameters for each action type
         match action_name {
             ActionName::MoveEntity => {
-                if !obj.contains_key("entity_to_move") || !obj.contains_key("new_parent") {
+                if !obj.contains_key("entity_id") || !obj.contains_key("destination_id") {
                     return Err(ValidationFailure {
                         action_id: "unknown".to_string(),
                         failure_type: ValidationFailureType::InvalidParameters,
-                        message: "MoveEntity requires 'entity_to_move' and 'new_parent'".to_string(),
+                        message: "MoveEntity requires 'entity_id' and 'destination_id'".to_string(),
                     });
                 }
             }

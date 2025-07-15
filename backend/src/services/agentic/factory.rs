@@ -17,6 +17,7 @@ use super::{
         SearchKnowledgeBaseTool, UpdateLorebookEntryTool
     },
     entity_resolution_tool::EntityResolutionTool,
+    tactical_agent::TacticalAgent,
     tools::{
         hierarchy_tools::{PromoteEntityHierarchyTool, GetEntityHierarchyTool},
         ai_powered_tools::{AnalyzeHierarchyRequestTool, SuggestHierarchyPromotionTool, UpdateSalienceTool},
@@ -341,5 +342,41 @@ impl AgenticNarrativeFactory {
             max_tool_executions: 5,
             enable_cost_optimizations: true,
         }
+    }
+
+    /// Create a TacticalAgent instance with proper dependencies
+    /// 
+    /// This factory method creates a TacticalAgent with all required dependencies
+    /// instantiated from the provided AppState. This ensures proper service integration
+    /// and dependency injection for the hierarchical agent framework.
+    pub fn create_tactical_agent(app_state: &Arc<AppState>) -> Arc<TacticalAgent> {
+        use crate::services::planning::{PlanningService, PlanValidatorService};
+        
+        info!("Creating TacticalAgent with dependencies");
+        
+        // Create PlanningService and PlanValidatorService dependencies
+        let planning_service = Arc::new(PlanningService::new(
+            app_state.ai_client.clone(),
+            app_state.ecs_entity_manager.clone(),
+            app_state.redis_client.clone(),
+            Arc::new(app_state.pool.clone()),
+        ));
+        
+        let plan_validator = Arc::new(PlanValidatorService::new(
+            app_state.ecs_entity_manager.clone(),
+            app_state.redis_client.clone(),
+        ));
+        
+        // Create TacticalAgent with all dependencies
+        let tactical_agent = Arc::new(TacticalAgent::new(
+            app_state.ai_client.clone(),
+            app_state.ecs_entity_manager.clone(),
+            planning_service,
+            plan_validator,
+            app_state.redis_client.clone(),
+        ));
+        
+        info!("TacticalAgent created successfully");
+        tactical_agent
     }
 }

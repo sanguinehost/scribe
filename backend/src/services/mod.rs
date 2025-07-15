@@ -53,7 +53,7 @@ pub mod agentic_state_update_service;
 // Re-export agentic components
 pub use agentic::{
     AgenticNarrativeFactory, NarrativeAgentRunner, NarrativeWorkflowConfig, 
-    ScribeTool, ToolRegistry
+    ScribeTool, ToolRegistry, TacticalAgent
 };
 
 pub use character_service::CharacterService;
