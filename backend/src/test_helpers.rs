@@ -135,46 +135,120 @@ impl MockAiClient {
     
     /// Create a MockAiClient configured for narrative processing tests
     pub fn new_for_narrative_processing() -> Self {
-        // Create a valid JSON response for narrative processing tests
-        // This will be used for both triage and planning phases
-        let narrative_json_response = r#"{
-            "is_significant": true,
-            "summary": "Mock narrative event for testing",
-            "event_type": "INTERACTION.DIALOGUE.CASUAL",
-            "confidence": 0.8,
-            "reasoning": "This is a mock event for testing chronicle generation",
-            "actions": [
+        // Create proper JSON responses for PerceptionAgent tests
+        // WorldStateAnalysis structure for analyze_response_for_world_state
+        let world_state_analysis_response = r#"{
+            "entities_mentioned": [
                 {
-                    "tool_name": "create_chronicle_event",
-                    "parameters": {
-                        "event_type": "INTERACTION.DIALOGUE.CASUAL",
-                        "summary": "Mock characters had an important conversation",
-                        "actors": [
-                            {"id": "character_1", "role": "Agent"},
-                            {"id": "character_2", "role": "Patient"}
-                        ]
-                    },
-                    "reasoning": "This conversation contains significant character development"
+                    "name": "Sir Galahad",
+                    "entity_type": "character",
+                    "context": "knight entering throne room"
+                },
+                {
+                    "name": "Queen Isabella",
+                    "entity_type": "character", 
+                    "context": "sitting on throne"
+                },
+                {
+                    "name": "Castle Throne Room",
+                    "entity_type": "location",
+                    "context": "setting of the scene"
+                }
+            ],
+            "potential_state_changes": [
+                "Sir Galahad enters throne room",
+                "Queen Isabella receives ancient scroll",
+                "Trust relationship between characters deepens"
+            ],
+            "relationship_implications": [
+                "Loyalty demonstrated between knight and queen",
+                "Trust strengthened through act of service"
+            ],
+            "inventory_implications": [
+                "Ancient scroll transferred from Sir Galahad to Queen Isabella"
+            ],
+            "confidence": 0.85
+        }"#;
+        
+        // ExtractionResult structure for extract_world_state_changes
+        let extraction_result_response = r#"{
+            "entities_found": [
+                {
+                    "name": "Sir Galahad",
+                    "entity_type": "character",
+                    "properties": {
+                        "title": "Knight",
+                        "armor": "plate mail",
+                        "location": "Castle Throne Room"
+                    }
+                },
+                {
+                    "name": "Queen Isabella",
+                    "entity_type": "character",
+                    "properties": {
+                        "title": "Queen",
+                        "throne": "golden throne",
+                        "location": "Castle Throne Room"
+                    }
+                }
+            ],
+            "state_changes": [
+                {
+                    "entity_name": "Sir Galahad",
+                    "change_type": "movement",
+                    "details": {
+                        "new_location": "Castle Throne Room",
+                        "action": "enters"
+                    }
+                },
+                {
+                    "entity_name": "Queen Isabella",
+                    "change_type": "expression",
+                    "details": {
+                        "emotion": "softened",
+                        "trigger": "recognizing seal"
+                    }
+                }
+            ],
+            "relationships": [
+                {
+                    "source": "Sir Galahad",
+                    "target": "Queen Isabella",
+                    "relationship_type": "loyalty",
+                    "trust_delta": 0.2
+                }
+            ],
+            "inventory_changes": [
+                {
+                    "entity_name": "Sir Galahad",
+                    "item_name": "ancient scroll",
+                    "action": "transfer",
+                    "quantity": 1
                 }
             ]
         }"#;
         
+        // Initialize with both responses for PerceptionAgent tests
+        let mut response_queue = VecDeque::new();
+        response_queue.push_back(world_state_analysis_response.to_string());
+        response_queue.push_back(extraction_result_response.to_string());
+        
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            // Default to a valid JSON response for narrative processing
+            // Default to first response for compatibility
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 contents: vec![genai::chat::MessageContent::Text(
-                    narrative_json_response.to_string(),
+                    world_state_analysis_response.to_string(),
                 )],
                 reasoning_content: None,
                 usage: Usage::default(),
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            responses: Arc::new(Mutex::new(VecDeque::new())),
+            responses: Arc::new(Mutex::new(response_queue)),
             current_response: Arc::new(Mutex::new(0)),
         }
     }
@@ -297,6 +371,69 @@ impl MockAiClient {
         let mut responses = self.responses.lock().unwrap();
         responses.clear();
         responses.push_back(response);
+    }
+    
+    /// Configure MockAiClient specifically for PerceptionAgent tests
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
+    pub fn configure_for_perception_agent(&self) {
+        let world_state_analysis = r#"{
+            "entities_mentioned": [
+                {
+                    "name": "Test Entity",
+                    "entity_type": "character",
+                    "context": "test context"
+                }
+            ],
+            "potential_state_changes": ["test state change"],
+            "relationship_implications": ["test relationship"],
+            "inventory_implications": ["test inventory"],
+            "confidence": 0.8
+        }"#;
+        
+        let extraction_result = r#"{
+            "entities_found": [
+                {
+                    "name": "Test Entity",
+                    "entity_type": "character",
+                    "properties": {
+                        "test_property": "test_value"
+                    }
+                }
+            ],
+            "state_changes": [
+                {
+                    "entity_name": "Test Entity",
+                    "change_type": "test_change",
+                    "details": {
+                        "test_detail": "test_value"
+                    }
+                }
+            ],
+            "relationships": [
+                {
+                    "source": "Entity A",
+                    "target": "Entity B",
+                    "relationship_type": "friendship",
+                    "trust_delta": 0.1
+                }
+            ],
+            "inventory_changes": [
+                {
+                    "entity_name": "Test Entity",
+                    "item_name": "test item",
+                    "action": "add",
+                    "quantity": 1
+                }
+            ]
+        }"#;
+        
+        let mut responses = self.responses.lock().unwrap();
+        responses.clear();
+        responses.push_back(world_state_analysis.to_string());
+        responses.push_back(extraction_result.to_string());
     }
 
     /// Create a new MockAiClient that returns an error

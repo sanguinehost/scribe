@@ -8,6 +8,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use super::{
+    EnrichedContext, StrategicDirective, ValidatedPlan, SubGoal, 
+    PlotSignificance, WorldImpactLevel, RiskAssessment, RiskLevel,
+    PlanValidationStatus
+};
 
 /// Schema version for EnrichedContext
 /// This allows for schema evolution without breaking changes

@@ -18,6 +18,7 @@ use super::{
     },
     entity_resolution_tool::EntityResolutionTool,
     tactical_agent::TacticalAgent,
+    perception_agent::PerceptionAgent,
     tools::{
         hierarchy_tools::{PromoteEntityHierarchyTool, GetEntityHierarchyTool},
         ai_powered_tools::{AnalyzeHierarchyRequestTool, SuggestHierarchyPromotionTool, UpdateSalienceTool},
@@ -378,5 +379,40 @@ impl AgenticNarrativeFactory {
         
         info!("TacticalAgent created successfully");
         tactical_agent
+    }
+    
+    /// Create a PerceptionAgent instance with proper dependencies
+    /// 
+    /// This factory method creates a PerceptionAgent with all required dependencies
+    /// for asynchronous world state processing from AI responses.
+    pub fn create_perception_agent(app_state: &Arc<AppState>) -> Arc<PerceptionAgent> {
+        use crate::services::planning::{PlanningService, PlanValidatorService};
+        
+        info!("Creating PerceptionAgent with dependencies");
+        
+        // Create PlanningService and PlanValidatorService dependencies
+        let planning_service = Arc::new(PlanningService::new(
+            app_state.ai_client.clone(),
+            app_state.ecs_entity_manager.clone(),
+            app_state.redis_client.clone(),
+            Arc::new(app_state.pool.clone()),
+        ));
+        
+        let plan_validator = Arc::new(PlanValidatorService::new(
+            app_state.ecs_entity_manager.clone(),
+            app_state.redis_client.clone(),
+        ));
+        
+        // Create PerceptionAgent with all dependencies
+        let perception_agent = Arc::new(PerceptionAgent::new(
+            app_state.ai_client.clone(),
+            app_state.ecs_entity_manager.clone(),
+            planning_service,
+            plan_validator,
+            app_state.redis_client.clone(),
+        ));
+        
+        info!("PerceptionAgent created successfully");
+        perception_agent
     }
 }
