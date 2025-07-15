@@ -525,10 +525,73 @@ pub async fn generate_chat_response(
         None
     };
 
-    // --- Hierarchical Context Assembly Integration ---
-    // Use HierarchicalContextAssembler to create EnrichedContext if available
-    let enriched_context = if let Some(ref assembler) = state_arc.hierarchical_context_assembler {
-        info!(%session_id, "Using HierarchicalContextAssembler for enriched context generation");
+    // --- Hierarchical Agent Framework Integration ---
+    // Use TacticalAgent to create EnrichedContext if available
+    let enriched_context = if let Some(ref tactical_agent) = state_arc.tactical_agent {
+        info!(%session_id, "Using TacticalAgent for enriched context generation");
+        
+        // Create a simplified strategic directive from user input
+        // In Epic 5, this will come from the Strategic Layer
+        let strategic_directive = crate::services::context_assembly_engine::StrategicDirective {
+            directive_id: Uuid::new_v4(),
+            directive_type: "general_interaction".to_string(), // Will be determined by Strategic Layer
+            narrative_arc: current_user_content.clone(),
+            plot_significance: crate::services::context_assembly_engine::PlotSignificance::Moderate,
+            emotional_tone: "neutral".to_string(),
+            character_focus: vec![
+                character_metadata_for_prompt_builder.name.clone()
+            ],
+            world_impact_level: crate::services::context_assembly_engine::WorldImpactLevel::Local,
+        };
+        
+        // Create a SessionDek from the Arc<SecretBox<Vec<u8>>>
+        let dek_bytes = session_dek_arc.expose_secret().clone();
+        let session_dek = crate::auth::session_dek::SessionDek::new(dek_bytes);
+        
+        match tactical_agent.process_directive(
+            &strategic_directive,
+            user_id_value,
+            &session_dek,
+        ).await {
+            Ok(enriched_ctx) => {
+                info!(
+                    %session_id,
+                    execution_time_ms = enriched_ctx.execution_time_ms,
+                    ai_calls = enriched_ctx.ai_model_calls,
+                    tokens_used = enriched_ctx.total_tokens_used,
+                    "Successfully processed tactical directive into enriched context"
+                );
+                Some(enriched_ctx)
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to process tactical directive, falling back to HierarchicalContextAssembler");
+                
+                // Fallback to HierarchicalContextAssembler if TacticalAgent fails
+                if let Some(ref assembler) = state_arc.hierarchical_context_assembler {
+                    match assembler.assemble_enriched_context(
+                        &current_user_content,
+                        &gen_ai_recent_history,
+                        Some(&character_metadata_for_prompt_builder),
+                        user_id_value,
+                        Some(&session_dek_arc),
+                    ).await {
+                        Ok(enriched_ctx) => {
+                            info!(%session_id, "Successfully fell back to HierarchicalContextAssembler");
+                            Some(enriched_ctx)
+                        }
+                        Err(e2) => {
+                            warn!(%session_id, error = %e2, "HierarchicalContextAssembler fallback also failed");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    } else if let Some(ref assembler) = state_arc.hierarchical_context_assembler {
+        // Use HierarchicalContextAssembler if TacticalAgent not available
+        info!(%session_id, "TacticalAgent not available, using HierarchicalContextAssembler for enriched context generation");
         
         match assembler.assemble_enriched_context(
             &current_user_content,
@@ -553,7 +616,7 @@ pub async fn generate_chat_response(
             }
         }
     } else {
-        debug!(%session_id, "HierarchicalContextAssembler not available, using standard flow");
+        debug!(%session_id, "No hierarchical agent available, using standard flow");
         None
     };
 

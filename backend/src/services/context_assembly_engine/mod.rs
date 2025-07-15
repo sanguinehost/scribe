@@ -21,10 +21,16 @@ use std::fmt::Write;
 
 // Sub-modules for enhanced context assembly
 pub mod enriched_context_validator;
+pub mod schema;
 
 // Re-export key types from sub-modules
 pub use enriched_context_validator::{
     EnrichedContextValidator, ValidationReport, ValidationIssue, ValidationIssueType
+};
+pub use schema::{
+    SchemaVersion, VersionedEnrichedContext, ValidationResult, 
+    ValidationError, ValidationWarning, CompactEnrichedContext,
+    validate_enriched_context
 };
 
 /// Enhanced context structure designed for the Hierarchical Agent Framework

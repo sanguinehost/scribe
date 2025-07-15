@@ -318,6 +318,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         agentic_orchestrator,
         agentic_state_update_service,
         hierarchical_context_assembler: None, // Will be set after AppState is built
+        tactical_agent: None, // Will be set after AppState is built
     })
 }
 
@@ -594,6 +595,9 @@ fn setup_app_state_and_auth(
         Arc::new(app_state.clone()),
     ));
     app_state.set_hierarchical_context_assembler(entity_resolution_tool);
+    
+    // Initialize TacticalAgent for the hierarchical agent framework
+    app_state.set_tactical_agent();
 
     Ok((app_state, auth_layer))
 }

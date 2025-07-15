@@ -219,6 +219,24 @@ impl TacticalAgent {
             .validate_enriched_context(&enriched_context, user_id)
             .await?;
         let context_validation_time_ms = validation_start.elapsed().as_millis() as u64;
+        
+        // Step 6b: Perform schema validation
+        let schema_validation = crate::services::context_assembly_engine::validate_enriched_context(&enriched_context);
+        if !schema_validation.is_valid {
+            warn!(
+                errors = ?schema_validation.errors,
+                "EnrichedContext failed schema validation"
+            );
+            // Log errors but don't fail - we'll improve the schema over time
+            for error in &schema_validation.errors {
+                warn!(field = %error.field, message = %error.message, "Schema validation error");
+            }
+        }
+        if !schema_validation.warnings.is_empty() {
+            for warning in &schema_validation.warnings {
+                debug!(field = %warning.field, message = %warning.message, "Schema validation warning");
+            }
+        }
 
         // Log context assembly for compliance monitoring
         let context_size = std::mem::size_of_val(&enriched_context);

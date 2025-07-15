@@ -1474,6 +1474,7 @@ impl TestAppStateBuilder {
                 ))
             },
             hierarchical_context_assembler: None, // Will be set after AppState is built
+            tactical_agent: None, // Will be set after AppState is built
             // narrative_intelligence_service will be added after AppState is built
         };
 
@@ -1495,6 +1496,9 @@ impl TestAppStateBuilder {
             Arc::new(app_state.clone()),
         ));
         app_state.set_hierarchical_context_assembler(entity_resolution_tool);
+        
+        // Initialize TacticalAgent for tests
+        app_state.set_tactical_agent();
         
         Ok(app_state)
     }

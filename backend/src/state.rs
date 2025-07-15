@@ -32,6 +32,7 @@ use crate::services::{
     AgenticOrchestrator, AgenticStateUpdateService, HierarchicalContextAssembler,
     IntentDetectionService, QueryStrategyPlanner,
     agentic::entity_resolution_tool::EntityResolutionTool,
+    agentic::tactical_agent::TacticalAgent,
 };
 use crate::config::NarrativeFeatureFlags;
 use std::fmt;
@@ -69,6 +70,7 @@ pub struct AppStateServices {
     pub agentic_orchestrator: Arc<AgenticOrchestrator>,
     pub agentic_state_update_service: Arc<AgenticStateUpdateService>,
     pub hierarchical_context_assembler: Option<Arc<HierarchicalContextAssembler>>,
+    pub tactical_agent: Option<Arc<TacticalAgent>>,
 }
 
 // --- Shared application state ---
@@ -113,6 +115,7 @@ pub struct AppState {
     pub agentic_orchestrator: Arc<AgenticOrchestrator>,
     pub agentic_state_update_service: Arc<AgenticStateUpdateService>,
     pub hierarchical_context_assembler: Option<Arc<HierarchicalContextAssembler>>,
+    pub tactical_agent: Option<Arc<TacticalAgent>>,
 }
 
 // Manual Debug implementation for AppState
@@ -149,6 +152,7 @@ impl fmt::Debug for AppState {
             .field("agentic_orchestrator", &"<Arc<AgenticOrchestrator>>") // Agentic context orchestration
             .field("agentic_state_update_service", &"<Arc<AgenticStateUpdateService>>") // Agentic state updates
             .field("hierarchical_context_assembler", &"<Option<Arc<HierarchicalContextAssembler>>>") // Hierarchical context assembly
+            .field("tactical_agent", &"<Option<Arc<TacticalAgent>>>") // Tactical layer agent
             .finish()
     }
 }
@@ -189,6 +193,7 @@ impl AppState {
             agentic_orchestrator: services.agentic_orchestrator,
             agentic_state_update_service: services.agentic_state_update_service,
             hierarchical_context_assembler: services.hierarchical_context_assembler,
+            tactical_agent: services.tactical_agent,
         }
     }
 
@@ -211,5 +216,13 @@ impl AppState {
             Arc::new(self.pool.clone()),
         ));
         self.hierarchical_context_assembler = Some(assembler);
+    }
+    
+    /// Set the tactical agent after AppState construction
+    /// This uses the factory method to create a properly configured TacticalAgent
+    pub fn set_tactical_agent(&mut self) {
+        use crate::services::agentic::factory::AgenticNarrativeFactory;
+        let tactical_agent = AgenticNarrativeFactory::create_tactical_agent(&Arc::new(self.clone()));
+        self.tactical_agent = Some(tactical_agent);
     }
 }
