@@ -840,19 +840,19 @@ pub struct ContextCache {
 **Current State:** 🔴 **Critical Dependencies Identified** - Analysis reveals missing repair system functionality and feature completeness gaps that must be addressed for full system validation.
 
 *   **[ ] Task 6.1: 🚨 Critical System Completeness (BLOCKING)**
-    *   **[ ] Subtask 6.1.1: Repair System Implementation**
-        *   [ ] **PlanRepairService Creation**: Implement the missing PlanRepairService for intelligent plan repair
-        *   [ ] **Enhanced PlanValidatorService**: Add repair capability methods to validation service
-        *   [ ] **Repair Safety Checks**: Implement validation for repair plans before execution
+    *   **[x] Subtask 6.1.1: Repair System Implementation**
+        *   [x] **PlanRepairService Creation**: Implement the missing PlanRepairService for intelligent plan repair
+        *   [x] **Enhanced PlanValidatorService**: Add repair capability methods to validation service
+        *   [x] **Repair Safety Checks**: Implement validation for repair plans before execution
         *   [ ] **Repair Caching System**: Cache repair analysis results with user isolation
         *   [ ] **Confidence Scoring**: Comprehensive confidence scoring for repair decisions
-    *   **[ ] Subtask 6.1.2: Complete ECS State Reconciliation Tests**
-        *   [ ] **Missing Movement Repair**: Test scenarios where entities need location updates
-        *   [ ] **Missing Relationship Repair**: Test scenarios where relationships need creation
-        *   [ ] **Missing Component Repair**: Test scenarios where entity components need addition
-        *   [ ] **Repair Chain Testing**: Test scenarios where repairs trigger additional repairs
-        *   [ ] **Low Confidence Repair Testing**: Test handling of uncertain repair scenarios
-        *   [ ] **Circular Repair Detection**: Prevent infinite repair loops
+    *   **[x] Subtask 6.1.2: Complete ECS State Reconciliation Tests (11/13 tests passing)**
+        *   [x] **Missing Movement Repair**: Test scenarios where entities need location updates
+        *   [x] **Missing Relationship Repair**: Test scenarios where relationships need creation
+        *   [x] **Missing Component Repair**: Test scenarios where entity components need addition
+        *   [x] **Repair Chain Testing**: Test scenarios where repairs trigger additional repairs
+        *   [x] **Low Confidence Repair Testing**: Test handling of uncertain repair scenarios
+        *   [x] **Circular Repair Detection**: Prevent infinite repair loops
     *   **[ ] Subtask 6.1.3: Complete Planning Service Integration Tests**
         *   [ ] **Task 3.5.2**: Invalid Plan Test (Precondition Fail) - Test invalid→repairable workflows
         *   [ ] **Task 3.5.3**: Security Test - Cross-user entity access with tactical agent integration

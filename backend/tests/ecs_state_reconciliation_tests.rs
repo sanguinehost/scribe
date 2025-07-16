@@ -1,7 +1,17 @@
+// NOTE: These tests validate Task 6.1.2 - ECS State Reconciliation & Intelligent Plan Repair
+// 
+// This test suite focuses specifically on the ECS State Reconciliation system's ability to:
+// 1. Detect when ECS state has fallen behind narrative (rather than plan being invalid)
+// 2. Generate appropriate repair actions to fix ECS inconsistencies
+// 3. Combine repair plans with original plans safely
+// 4. Validate that repair chains don't create infinite loops
+// 5. Handle low confidence repair scenarios appropriately
+// 6. Test the complete repair workflow integration
+
 use scribe_backend::{
     services::{
         planning::{
-            PlanValidatorService,
+            PlanValidatorService, PlanRepairService,
             types::*,
         },
         EcsEntityManager,
@@ -9,13 +19,15 @@ use scribe_backend::{
     models::{
         ecs::*,
         chats::{ChatMessage, MessageRole},
+        users::User as DbUser,
     },
-    test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
+    test_helpers::{spawn_app_permissive_rate_limiting, TestDataGuard, MockAiClient, db::create_test_user, ai_tool_testing::create_test_user_id},
     PgPool,
 };
 use std::sync::Arc;
 use uuid::Uuid;
 use chrono::Utc;
+use serde_json::json;
 
 /// Helper to create test entity manager
 async fn create_test_entity_manager(db_pool: PgPool) -> Arc<EcsEntityManager> {
@@ -31,14 +43,18 @@ async fn create_test_entity_manager(db_pool: PgPool) -> Arc<EcsEntityManager> {
     ))
 }
 
-/// Helper to create test entities for reconciliation scenarios
+/// Helper to create test entities for reconciliation scenarios  
 async fn create_test_entities_for_reconciliation(
     entity_manager: &Arc<EcsEntityManager>,
     db_pool: &PgPool,
 ) -> (Uuid, Uuid, Uuid, Uuid, Uuid) {
-    // Create test user
-    let user = create_test_user(db_pool, "reconciliation_user".to_string(), "password123".to_string()).await.unwrap();
-    let user_id = user.id;
+    // Create a test user and use the actual returned user ID
+    let test_user = create_test_user(
+        db_pool,
+        "testuser".to_string(),
+        "testpassword".to_string()
+    ).await.expect("Failed to create test user");
+    let user_id = test_user.id;
 
     // Create Sol character in the Chamber
     let sol_result = entity_manager.create_entity(
@@ -197,7 +213,7 @@ fn create_mock_chat_messages(scenario: &str) -> Vec<ChatMessage> {
 #[tokio::test]
 async fn test_ecs_consistency_analyzer_missing_movement_detection() {
     // Test that the analyzer correctly identifies missing movement as an ECS inconsistency
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;
@@ -274,7 +290,7 @@ async fn test_ecs_consistency_analyzer_missing_movement_detection() {
 #[tokio::test]
 async fn test_ecs_consistency_analyzer_missing_relationship_detection() {
     // Test detection of missing relationships implied by narrative context
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;
@@ -336,7 +352,7 @@ async fn test_ecs_consistency_analyzer_missing_relationship_detection() {
 #[tokio::test]
 async fn test_ecs_consistency_analyzer_missing_component_detection() {
     // Test detection of missing components that should exist based on narrative
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;
@@ -397,41 +413,181 @@ async fn test_ecs_consistency_analyzer_missing_component_detection() {
     }
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_plan_repair_service_movement_repair() {
     // Test that repair service can generate movement repair actions
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
-    // This test will validate the repair action generation logic
-    // TODO: Implement once PlanRepairService is created
+    let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;
+    let (sol_id, chamber_id, cantina_id, _borga_id, user_id) = 
+        create_test_entities_for_reconciliation(&entity_manager, &test_app.db_pool).await;
+
+    // Setup mock AI for movement repair
+    let mock_ai = Arc::new(MockAiClient::new_with_response(
+        json!({
+            "goal": "Repair missing movement for entity",
+            "actions": [{
+                "id": "repair_movement",
+                "name": "move_entity",
+                "parameters": {
+                    "entity_to_move": sol_id.to_string(),
+                    "new_parent": cantina_id.to_string()
+                },
+                "preconditions": {
+                    "entity_exists": [{
+                        "entity_id": sol_id.to_string()
+                    }]
+                },
+                "effects": {
+                    "entity_moved": {
+                        "entity_id": sol_id.to_string(),
+                        "new_location": cantina_id.to_string()
+                    }
+                },
+                "dependencies": []
+            }],
+            "metadata": {
+                "estimated_duration": 30,
+                "confidence": 0.8,
+                "alternative_considered": "Auto-generated movement repair"
+            }
+        }).to_string()
+    ));
+
+    let repair_service = PlanRepairService::new(
+        entity_manager.clone(),
+        mock_ai,
+        (*test_app.config).clone(),
+    );
+
+    // Create inconsistency analysis for missing movement
+    let analysis = InconsistencyAnalysis {
+        inconsistency_type: InconsistencyType::MissingMovement,
+        narrative_evidence: vec!["Sol walks into the cantina".to_string()],
+        ecs_state_summary: "Sol is in Chamber but should be in Cantina".to_string(),
+        repair_reasoning: "Sol needs to move to cantina based on narrative".to_string(),
+        confidence_score: 0.85,
+        detection_timestamp: Utc::now(),
+    };
+
+    let original_plan = Plan {
+        goal: "Sol orders a drink".to_string(),
+        actions: vec![],
+        metadata: PlanMetadata {
+            estimated_duration: Some(60),
+            confidence: 0.8,
+            alternative_considered: None,
+        },
+    };
+
+    // Generate repair plan
+    let repair_plan = repair_service.generate_repair_plan(&analysis, &original_plan, user_id).await.unwrap();
     
-    // Expected behavior:
-    // 1. Detect that Sol should be in cantina based on chat context
-    // 2. Generate move_entity action from chamber to cantina
-    // 3. Combine with original plan
-    // 4. Validate combined plan succeeds
+    // Verify repair plan
+    assert!(!repair_plan.actions.is_empty());
+    assert!(repair_plan.goal.contains("movement"));
+    
+    // Test plan combination
+    let combined_plan = repair_service.combine_plans(&repair_plan, &original_plan);
+    assert!(combined_plan.actions.len() >= repair_plan.actions.len());
+    assert!(combined_plan.goal.contains("Repair"));
 }
 
 #[tokio::test]
 async fn test_plan_repair_service_relationship_repair() {
     // Test repair of missing relationships
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
-    // TODO: Implement once PlanRepairService is created
+    let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;
+    let (sol_id, _chamber_id, _cantina_id, borga_id, user_id) = 
+        create_test_entities_for_reconciliation(&entity_manager, &test_app.db_pool).await;
+
+    // Setup mock AI for relationship repair
+    let mock_ai = Arc::new(MockAiClient::new_with_response(
+        json!({
+            "goal": "Repair missing relationship between entities",
+            "actions": [{
+                "id": "repair_relationship",
+                "name": "update_relationship",
+                "parameters": {
+                    "source_entity_id": sol_id.to_string(),
+                    "target_entity_id": borga_id.to_string(),
+                    "trust": 0.5,
+                    "affection": 0.0,
+                    "relationship_type": "acquaintance"
+                },
+                "preconditions": {
+                    "entity_exists": [
+                        {"entity_id": sol_id.to_string()},
+                        {"entity_id": borga_id.to_string()}
+                    ]
+                },
+                "effects": {
+                    "relationship_changed": {
+                        "source_entity": sol_id.to_string(),
+                        "target_entity": borga_id.to_string(),
+                        "trust_change": 0.5,
+                        "affection_change": 0.0
+                    }
+                },
+                "dependencies": []
+            }],
+            "metadata": {
+                "estimated_duration": 20,
+                "confidence": 0.6,
+                "alternative_considered": "Auto-generated relationship repair"
+            }
+        }).to_string()
+    ));
+
+    let repair_service = PlanRepairService::new(
+        entity_manager.clone(),
+        mock_ai,
+        (*test_app.config).clone(),
+    );
+
+    // Create inconsistency analysis for missing relationship
+    let analysis = InconsistencyAnalysis {
+        inconsistency_type: InconsistencyType::MissingRelationship,
+        narrative_evidence: vec!["Sol greets his old friend Borga".to_string()],
+        ecs_state_summary: "No relationship exists between Sol and Borga".to_string(),
+        repair_reasoning: "Sol and Borga need friendship relationship".to_string(),
+        confidence_score: 0.90,
+        detection_timestamp: Utc::now(),
+    };
+
+    let original_plan = Plan {
+        goal: "Sol expresses trust in Borga".to_string(),
+        actions: vec![],
+        metadata: PlanMetadata {
+            estimated_duration: Some(30),
+            confidence: 0.8,
+            alternative_considered: None,
+        },
+    };
+
+    // Generate repair plan
+    let repair_plan = repair_service.generate_repair_plan(&analysis, &original_plan, user_id).await.unwrap();
     
-    // Expected behavior:
-    // 1. Detect missing friendship based on "old friend" in chat
-    // 2. Generate create_relationship action with appropriate trust level
-    // 3. Combine with original relationship update
-    // 4. Validate combined plan succeeds
+    // Verify repair plan
+    assert!(!repair_plan.actions.is_empty());
+    assert!(repair_plan.goal.contains("relationship"));
+    
+    // Verify repair action has relationship parameters
+    let repair_action = &repair_plan.actions[0];
+    assert_eq!(repair_action.name, ActionName::UpdateRelationship);
+    
+    // Test plan combination
+    let combined_plan = repair_service.combine_plans(&repair_plan, &original_plan);
+    assert!(combined_plan.actions.len() >= repair_plan.actions.len());
 }
 
 #[tokio::test]
 async fn test_plan_repair_service_component_repair() {
     // Test repair of missing components
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // TODO: Implement once PlanRepairService is created
@@ -446,36 +602,190 @@ async fn test_plan_repair_service_component_repair() {
 #[tokio::test]
 async fn test_enhanced_plan_validator_integration() {
     // Test full integration of enhanced plan validator with repair capability
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
-    // TODO: Implement once enhanced PlanValidatorService is complete
-    
-    // Expected behavior:
-    // 1. validate_plan_with_repair method exists and works
-    // 2. Returns RepairableInvalidPlan when appropriate
-    // 3. Returns standard Invalid when confidence is low
-    // 4. Returns Valid when no repairs needed
+    let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;
+    let (sol_id, chamber_id, cantina_id, _borga_id, user_id) = 
+        create_test_entities_for_reconciliation(&entity_manager, &test_app.db_pool).await;
+
+    // Setup mock AI for inconsistency analysis with high confidence
+    let mock_ai = Arc::new(MockAiClient::new_with_response(
+        json!({
+            "has_inconsistency": true,
+            "inconsistency_type": "MissingMovement",
+            "confidence_score": 0.85,
+            "narrative_evidence": ["Sol walks into cantina"],
+            "ecs_state_summary": "Sol in chamber, should be cantina",
+            "repair_reasoning": "Movement needed for narrative consistency"
+        }).to_string()
+    ));
+
+    // Create enhanced validator with repair capability
+    let plan_validator = PlanValidatorService::with_repair_capability(
+        entity_manager.clone(),
+        test_app.redis_client.clone(),
+        mock_ai,
+        (*test_app.config).clone(),
+    );
+
+    // Create a plan that should trigger repair (Sol in wrong location)
+    let plan = Plan {
+        goal: "Sol orders a drink at the cantina".to_string(),
+        actions: vec![
+            PlannedAction {
+                id: "action_1".to_string(),
+                name: ActionName::UpdateEntity,
+                parameters: json!({
+                    "entity_id": sol_id.to_string(),
+                    "component_updates": {"has_drink": true}
+                }),
+                preconditions: Preconditions {
+                    entity_at_location: Some(vec![
+                        EntityLocationCheck {
+                            entity_id: sol_id.to_string(),
+                            location_id: cantina_id.to_string(),
+                        }
+                    ]),
+                    ..Default::default()
+                },
+                effects: Effects::default(),
+                dependencies: vec![],
+            }
+        ],
+        metadata: PlanMetadata {
+            estimated_duration: Some(60),
+            confidence: 0.8,
+            alternative_considered: None,
+        },
+    };
+
+    // Create chat context supporting repair
+    let recent_context = create_mock_chat_messages("missing_movement");
+
+    // Test 1: validate_plan_with_repair method exists and works
+    let result = plan_validator.validate_plan_with_repair(&plan, user_id, &recent_context).await;
+    assert!(result.is_ok(), "validate_plan_with_repair should not fail");
+
+    // Test 2: Should return RepairableInvalidPlan when appropriate (high confidence)
+    match result.unwrap() {
+        PlanValidationResult::RepairableInvalid(repairable) => {
+            assert_eq!(repairable.original_plan.goal, plan.goal);
+            assert!(!repairable.repair_actions.is_empty());
+            assert!(repairable.confidence_score > 0.7);
+            assert!(matches!(repairable.inconsistency_analysis.inconsistency_type, InconsistencyType::MissingMovement));
+        }
+        other => panic!("Expected RepairableInvalid but got: {:?}", other),
+    }
+
+    // Test 3: Standard validation should fail for comparison
+    let standard_result = plan_validator.validate_plan(&plan, user_id).await.unwrap();
+    assert!(matches!(standard_result, PlanValidationResult::Invalid(_)));
 }
 
 #[tokio::test]
 async fn test_confidence_scoring_accuracy() {
     // Test that confidence scoring correctly distinguishes valid repairs from invalid plans
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
-    // TODO: Implement comprehensive confidence scoring tests
-    
-    // Test cases:
-    // High confidence: Clear narrative evidence for ECS inconsistency
-    // Low confidence: Ambiguous or contradictory evidence  
-    // Zero confidence: Genuinely invalid plan with no repair possibility
+    let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;
+    let (sol_id, _chamber_id, cantina_id, _borga_id, user_id) = 
+        create_test_entities_for_reconciliation(&entity_manager, &test_app.db_pool).await;
+
+    // Test Case 1: High confidence - Clear narrative evidence
+    let high_confidence_ai = Arc::new(MockAiClient::new_with_response(
+        json!({
+            "has_inconsistency": true,
+            "inconsistency_type": "MissingMovement",
+            "confidence_score": 0.95,
+            "narrative_evidence": ["Sol walks into cantina", "Sol is now in the cantina"],
+            "ecs_state_summary": "Sol in chamber, narrative says cantina",
+            "repair_reasoning": "Clear movement indicated in narrative"
+        }).to_string()
+    ));
+
+    let high_confidence_validator = PlanValidatorService::with_repair_capability(
+        entity_manager.clone(),
+        test_app.redis_client.clone(),
+        high_confidence_ai,
+        (*test_app.config).clone(),
+    );
+
+    // Test Case 2: Low confidence - Ambiguous evidence
+    let low_confidence_ai = Arc::new(MockAiClient::new_with_response(
+        json!({
+            "has_inconsistency": true,
+            "inconsistency_type": "OutdatedState",
+            "confidence_score": 0.45,
+            "narrative_evidence": ["Ambiguous statement"],
+            "ecs_state_summary": "Unclear state",
+            "repair_reasoning": "Uncertain if repair needed"
+        }).to_string()
+    ));
+
+    let low_confidence_validator = PlanValidatorService::with_repair_capability(
+        entity_manager.clone(),
+        test_app.redis_client.clone(),
+        low_confidence_ai,
+        (*test_app.config).clone(),
+    );
+
+    let plan = Plan {
+        goal: "Test confidence scoring".to_string(),
+        actions: vec![
+            PlannedAction {
+                id: "action_1".to_string(),
+                name: ActionName::UpdateEntity,
+                parameters: json!({"entity_id": sol_id.to_string()}),
+                preconditions: Preconditions {
+                    entity_at_location: Some(vec![
+                        EntityLocationCheck {
+                            entity_id: sol_id.to_string(),
+                            location_id: cantina_id.to_string(),
+                        }
+                    ]),
+                    ..Default::default()
+                },
+                effects: Effects::default(),
+                dependencies: vec![],
+            }
+        ],
+        metadata: PlanMetadata {
+            estimated_duration: Some(30),
+            confidence: 0.8,
+            alternative_considered: None,
+        },
+    };
+
+    let context = create_mock_chat_messages("missing_movement");
+
+    // High confidence should produce RepairableInvalid
+    let high_result = high_confidence_validator.validate_plan_with_repair(&plan, user_id, &context).await.unwrap();
+    match high_result {
+        PlanValidationResult::RepairableInvalid(repairable) => {
+            assert!(repairable.confidence_score > 0.7);
+        }
+        _ => panic!("High confidence should produce RepairableInvalid"),
+    }
+
+    // Low confidence should produce standard Invalid
+    let low_result = low_confidence_validator.validate_plan_with_repair(&plan, user_id, &context).await.unwrap();
+    match low_result {
+        PlanValidationResult::Invalid(_) => {
+            // Expected for low confidence
+        }
+        PlanValidationResult::RepairableInvalid(repairable) => {
+            assert!(repairable.confidence_score <= 0.7, "Low confidence should not be repairable");
+        }
+        _ => panic!("Low confidence should produce Invalid result"),
+    }
 }
 
 #[tokio::test]
 async fn test_repair_validation_prevents_new_inconsistencies() {
     // Test that repair plans themselves are validated to prevent new problems
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // TODO: Implement safety checks for repair plans
@@ -489,7 +799,7 @@ async fn test_repair_validation_prevents_new_inconsistencies() {
 #[tokio::test]
 async fn test_repair_caching_and_performance() {
     // Test that repair analysis results are cached appropriately
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     // TODO: Implement caching tests
@@ -503,7 +813,7 @@ async fn test_repair_caching_and_performance() {
 #[tokio::test]
 async fn test_end_to_end_missing_movement_scenario() {
     // Complete end-to-end test for missing movement repair
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;
@@ -530,7 +840,7 @@ async fn test_end_to_end_missing_movement_scenario() {
 #[tokio::test]
 async fn test_end_to_end_missing_relationship_scenario() {
     // Complete end-to-end test for missing relationship repair
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;
@@ -552,7 +862,7 @@ async fn test_end_to_end_missing_relationship_scenario() {
 #[tokio::test]
 async fn test_end_to_end_missing_component_scenario() {
     // Complete end-to-end test for missing component repair
-    let test_app = spawn_app(false, false, false).await;
+    let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let entity_manager = create_test_entity_manager(test_app.db_pool.clone()).await;

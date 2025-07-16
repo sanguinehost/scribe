@@ -131,8 +131,8 @@ impl PlanRepairService {
                     id: "repair_movement".to_string(),
                     name: ActionName::MoveEntity,
                     parameters: serde_json::json!({
-                        "entity_to_move": entity_id.to_string(),
-                        "new_parent": expected_location.to_string(),
+                        "entity_id": entity_id.to_string(),
+                        "destination_id": expected_location.to_string(),
                     }),
                     preconditions: Preconditions {
                         entity_exists: Some(vec![
