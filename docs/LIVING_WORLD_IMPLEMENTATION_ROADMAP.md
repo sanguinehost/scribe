@@ -884,20 +884,22 @@ pub struct ContextCache {
             - [x] **Phase 2**: Component projection (ComponentUpdateEffect + entity_has_component preconditions) - ✅ Infrastructure complete
             - [x] **Phase 3**: Relationship & inventory projection (full effect/precondition coverage) - ✅ Infrastructure complete
         *   [x] **Expected Outcome**: Test success rate 13/13 (100%) ✅ **ACHIEVED** - Full ECS State Reconciliation system operational
-    *   **[~] Subtask 6.1.3: Complete Planning Service Integration Tests** ⚠️ **PARTIAL** (7/11 tests passing)
+    *   **[x] Subtask 6.1.3: Complete Planning Service Integration Tests** ✅ **COMPLETED** (11/11 tests passing)
         *   [x] **Planning Service Core Tests**: Basic planning service functionality with AI generation and caching
         *   [x] **Plan Validation Tests**: Core validation workflow for valid and invalid plans
         *   [x] **Security Tests**: Cross-user entity access prevention and user isolation
         *   [x] **Error Handling Tests**: Service degradation and failure mode testing
         *   [x] **Performance Tests**: Repair system performance impact validation
-        *   [~] **Task 3.5.2**: Invalid Plan Test (Precondition Fail) - ⚠️ **JSON mapping issues in mock AI responses**
-        *   [~] **Task 3.5.3**: Security Test - ⚠️ **Complex consistency analyzer mock setup required**
-        *   [~] **Task 3.5.4**: End-to-End Integration Testing - ⚠️ **Field name mismatches in structured JSON**
-        *   **Remaining Issues**: 
-            - Mock AI JSON responses need field name alignment (`source_entity_id` vs `source_entity`)
-            - Consistency analyzer expects different JSON format than repair service
-            - Complex scenarios require sophisticated AI mock setup for ECS inconsistency detection
-        *   **Test Status**: 7 passed, 4 failed - Core functionality validated, edge case scenarios need mock refinement
+        *   [x] **Task 3.5.2**: Invalid Plan Test (Precondition Fail) - ✅ **FIXED** - JSON mapping issues in mock AI responses resolved
+        *   [x] **Task 3.5.3**: Security Test - ✅ **FIXED** - Complex consistency analyzer mock setup implemented
+        *   [x] **Task 3.5.4**: End-to-End Integration Testing - ✅ **FIXED** - Field name mismatches in structured JSON resolved
+        *   [x] **Task 6.1.3**: Planning Service Validator Integration - ✅ **FIXED** - Dependency validation with state projection implemented
+        *   **Issues Resolved**: 
+            - ✅ Mock AI JSON responses aligned with field names (`source_entity_id` vs `source_entity`)
+            - ✅ Consistency analyzer and repair service now use separate mock AI clients
+            - ✅ Complex scenarios with sophisticated AI mock setup for ECS inconsistency detection working
+            - ✅ Plan validator now properly handles action dependencies with state projection
+        *   **Test Status**: 11 passed, 0 failed - ✅ **ALL INTEGRATION TESTS PASSING** - Complete Planning Service Integration validated
 
 *   **[ ] Task 6.2: System Feature Completeness**
     *   **[ ] Subtask 6.2.1: Hierarchical Context Assembler Enhancements**

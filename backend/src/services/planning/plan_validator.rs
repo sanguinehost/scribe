@@ -83,6 +83,21 @@ impl PlanValidatorService {
             repair_service: Some(repair_service),
         }
     }
+    
+    /// Constructor for tests that allows passing both consistency analyzer and repair service
+    pub fn new_with_both_services(
+        ecs_manager: Arc<EcsEntityManager>,
+        redis_client: Arc<redis::Client>,
+        consistency_analyzer: EcsConsistencyAnalyzer,
+        repair_service: PlanRepairService,
+    ) -> Self {
+        Self {
+            ecs_manager,
+            redis_client,
+            consistency_analyzer: Some(consistency_analyzer),
+            repair_service: Some(repair_service),
+        }
+    }
 
     /// Validate a plan against the current world state
     #[instrument(skip(self))]
