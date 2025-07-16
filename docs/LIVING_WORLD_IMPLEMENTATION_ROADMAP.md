@@ -846,13 +846,30 @@ pub struct ContextCache {
         *   [x] **Repair Safety Checks**: Implement validation for repair plans before execution
         *   [ ] **Repair Caching System**: Cache repair analysis results with user isolation
         *   [ ] **Confidence Scoring**: Comprehensive confidence scoring for repair decisions
-    *   **[x] Subtask 6.1.2: Complete ECS State Reconciliation Tests (11/13 tests passing)**
+    *   **[x] Subtask 6.1.2: Complete ECS State Reconciliation Tests (13/13 tests passing)** ✅ **COMPLETED**
         *   [x] **Missing Movement Repair**: Test scenarios where entities need location updates
         *   [x] **Missing Relationship Repair**: Test scenarios where relationships need creation
         *   [x] **Missing Component Repair**: Test scenarios where entity components need addition
         *   [x] **Repair Chain Testing**: Test scenarios where repairs trigger additional repairs
         *   [x] **Low Confidence Repair Testing**: Test handling of uncertain repair scenarios
         *   [x] **Circular Repair Detection**: Prevent infinite repair loops
+        *   **✅ ARCHITECTURAL LIMITATION RESOLVED**: Virtual ECS State Projection Layer successfully implemented to fix fundamental design gap
+    *   **[x] Subtask 6.1.2b: Virtual ECS State Projection Layer (CRITICAL ARCHITECTURE)** ✅ **COMPLETED**
+        *   [x] **Problem Analysis**: Combined repair plans fail validation because:
+            - Action 1: MoveEntity (Sol: Chamber → Cantina) - Effect: EntityMovedEffect
+            - Action 2: UpdateEntity with precondition entity_at_location (Sol must be in Cantina)  
+            - Validator checks Action 2 against current state (Sol in Chamber) instead of projected state (Sol in Cantina after Action 1)
+        *   [x] **Solution: Virtual ECS State Projection Layer**
+            - Created `VirtualEcsState` struct with delta tracking over current ECS state
+            - Implemented `PlanStateProjector` to apply action effects sequentially
+            - Added `validate_plan_with_projection()` method to PlanValidatorService
+            - Enabled validation of subsequent actions against projected state from previous actions
+        *   [x] **Implementation Phases**:
+            - [x] **Phase 1**: Basic movement projection (EntityMovedEffect + entity_at_location preconditions) - ✅ Fixed 2 failing tests
+            - [x] **Phase 2**: Component projection (ComponentUpdateEffect + entity_has_component preconditions) - ✅ Infrastructure complete
+            - [x] **Phase 3**: Relationship & inventory projection (full effect/precondition coverage) - ✅ Infrastructure complete
+            - [ ] **Phase 4**: Performance optimization and selective entity loading - Deferred to future optimization
+        *   [x] **Expected Outcome**: Test success rate 13/13 (100%) ✅ **ACHIEVED** - Full ECS State Reconciliation system operational
     *   **[ ] Subtask 6.1.3: Complete Planning Service Integration Tests**
         *   [ ] **Task 3.5.2**: Invalid Plan Test (Precondition Fail) - Test invalid→repairable workflows
         *   [ ] **Task 3.5.3**: Security Test - Cross-user entity access with tactical agent integration

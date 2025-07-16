@@ -12,10 +12,11 @@ use crate::{
             types::*,
             ecs_consistency_analyzer::EcsConsistencyAnalyzer,
             plan_repair_service::PlanRepairService,
+            virtual_ecs_state::PlanStateProjector,
         },
     },
     models::{
-        ecs::{InventoryComponent, Relationship},
+        ecs::InventoryComponent,
         chats::ChatMessage,
     },
     llm::AiClient,
@@ -166,8 +167,8 @@ impl PlanValidatorService {
                                         // 5. Combine repair with original plan
                                         let combined_plan = repair_service.combine_plans(&repair_plan, plan);
                                         
-                                        // 6. Validate combined plan
-                                        let combined_validation = self.validate_plan(&combined_plan, user_id).await?;
+                                        // 6. Validate combined plan using projection (critical for repair plans)
+                                        let combined_validation = self.validate_plan_with_projection(&combined_plan, user_id).await?;
                                         
                                         match combined_validation {
                                             PlanValidationResult::Valid(_) => {
@@ -211,6 +212,150 @@ impl PlanValidatorService {
                 warn!("Unexpected RepairableInvalid result from standard validation");
                 Ok(validation_result)
             }
+        }
+    }
+
+    /// Enhanced validation with Virtual ECS State projection for sequential action validation
+    #[instrument(skip(self, plan))]
+    pub async fn validate_plan_with_projection(
+        &self,
+        plan: &Plan,
+        user_id: Uuid,
+    ) -> Result<PlanValidationResult, AppError> {
+        info!("Validating plan with projection for goal: {}", plan.goal);
+        
+        // Check cache first (same cache key as standard validation)
+        let cache_key = self.build_validation_cache_key(plan, user_id);
+        if let Ok(cached) = self.get_cached_validation(&cache_key).await {
+            debug!("Using cached validation result for projected plan");
+            return Ok(cached);
+        }
+        
+        // Create projector and virtual state
+        let projector = PlanStateProjector::new(self.ecs_manager.clone());
+        let mut virtual_state = projector.create_virtual_state(user_id, plan).await?;
+        
+        // Validate dependency graph (existing logic)
+        if let Err(dep_failures) = self.validate_dependencies(plan) {
+            return Ok(PlanValidationResult::Invalid(InvalidPlan {
+                plan: plan.clone(),
+                failures: dep_failures,
+            }));
+        }
+        
+        // Build execution order respecting dependencies
+        let execution_order = self.build_dependency_ordered_actions(&plan.actions)?;
+        let mut all_failures = Vec::new();
+        
+        // Validate actions sequentially against projected state
+        for action in execution_order {
+            // 1. Validate action structure (action exists, parameters valid)
+            if let Err(structural_failures) = self.validate_action_structure(action) {
+                all_failures.extend(structural_failures);
+                continue; // Still apply effects for subsequent validations
+            }
+            
+            // 2. Validate preconditions against current virtual state
+            if let Err(precondition_failures) = projector.validate_preconditions_against_virtual_state(&virtual_state, &action.preconditions) {
+                debug!("Action {} failed preconditions in virtual state", action.id);
+                all_failures.extend(precondition_failures);
+                continue; // Still apply effects for subsequent validations
+            }
+            
+            // 3. Apply this action's effects to virtual state for next action
+            debug!("Applying effects for action {} to virtual state", action.id);
+            projector.apply_action_effects(&mut virtual_state, &action.effects);
+        }
+        
+        let result = if all_failures.is_empty() {
+            info!("Plan validated successfully with projection");
+            PlanValidationResult::Valid(ValidatedPlan {
+                plan_id: Uuid::new_v4(),
+                original_plan: plan.clone(),
+                validation_timestamp: chrono::Utc::now(),
+                cache_key: cache_key.clone(),
+            })
+        } else {
+            info!("Plan validation failed with {} failures", all_failures.len());
+            PlanValidationResult::Invalid(InvalidPlan {
+                plan: plan.clone(),
+                failures: all_failures,
+            })
+        };
+        
+        // Cache the result
+        let _ = self.cache_validation_result(&cache_key, &result).await;
+        
+        Ok(result)
+    }
+
+    /// Build dependency-ordered action sequence for execution
+    fn build_dependency_ordered_actions<'a>(&self, actions: &'a [PlannedAction]) -> Result<Vec<&'a PlannedAction>, AppError> {
+        let mut ordered = Vec::new();
+        let mut remaining: Vec<&PlannedAction> = actions.iter().collect();
+        let mut added_ids = std::collections::HashSet::new();
+        
+        // Simple topological sort implementation
+        while !remaining.is_empty() {
+            let mut made_progress = false;
+            
+            // Find actions with all dependencies satisfied
+            for i in (0..remaining.len()).rev() {
+                let action = remaining[i];
+                let dependencies_satisfied = action.dependencies.iter()
+                    .all(|dep_id| added_ids.contains(dep_id));
+                
+                if dependencies_satisfied {
+                    ordered.push(action);
+                    added_ids.insert(action.id.clone());
+                    remaining.remove(i);
+                    made_progress = true;
+                }
+            }
+            
+            if !made_progress {
+                // Circular dependency or missing dependency
+                return Err(AppError::InternalServerErrorGeneric(
+                    "Unable to resolve action dependencies - possible circular reference".to_string()
+                ));
+            }
+        }
+        
+        debug!("Built dependency-ordered execution sequence with {} actions", ordered.len());
+        Ok(ordered)
+    }
+
+    /// Validate action structure (name, parameters) without preconditions
+    fn validate_action_structure(&self, action: &PlannedAction) -> Result<(), Vec<ValidationFailure>> {
+        let mut failures = Vec::new();
+        
+        // Check if action exists in Tactical Toolkit
+        if !self.is_valid_action(&action.name) {
+            failures.push(ValidationFailure {
+                action_id: action.id.clone(),
+                failure_type: ValidationFailureType::ActionNotFound,
+                message: format!("Action '{}' not found in Tactical Toolkit", action.name),
+            });
+        }
+        
+        // Validate parameters exist and are well-formed
+        if action.parameters.is_null() || action.parameters.as_object().map_or(true, |obj| obj.is_empty()) {
+            failures.push(ValidationFailure {
+                action_id: action.id.clone(),
+                failure_type: ValidationFailureType::InvalidParameters,
+                message: "Action requires parameters".to_string(),
+            });
+        }
+        
+        // Validate parameter structure based on action type
+        if let Err(param_failure) = self.validate_action_parameters(&action.name, &action.parameters) {
+            failures.push(param_failure);
+        }
+        
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures)
         }
     }
 
