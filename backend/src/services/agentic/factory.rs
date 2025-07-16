@@ -19,6 +19,7 @@ use super::{
     entity_resolution_tool::EntityResolutionTool,
     tactical_agent::TacticalAgent,
     perception_agent::PerceptionAgent,
+    strategic_agent::StrategicAgent,
     tools::{
         hierarchy_tools::{PromoteEntityHierarchyTool, GetEntityHierarchyTool},
         ai_powered_tools::{AnalyzeHierarchyRequestTool, SuggestHierarchyPromotionTool, UpdateSalienceTool},
@@ -414,5 +415,23 @@ impl AgenticNarrativeFactory {
         
         info!("PerceptionAgent created successfully");
         perception_agent
+    }
+
+    /// Create a StrategicAgent instance with proper dependencies
+    /// 
+    /// This factory method creates a StrategicAgent with all required dependencies
+    /// for high-level narrative direction and strategic planning.
+    pub fn create_strategic_agent(app_state: &Arc<AppState>) -> Arc<StrategicAgent> {
+        info!("Creating StrategicAgent with dependencies");
+        
+        // Create StrategicAgent with minimal dependencies (doesn't need planning services)
+        let strategic_agent = Arc::new(StrategicAgent::new(
+            app_state.ai_client.clone(),
+            app_state.ecs_entity_manager.clone(),
+            app_state.redis_client.clone(),
+        ));
+        
+        info!("StrategicAgent created successfully");
+        strategic_agent
     }
 }

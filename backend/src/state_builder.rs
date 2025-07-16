@@ -349,6 +349,7 @@ impl AppStateServicesBuilder {
             agentic_state_update_service,
             hierarchical_context_assembler: None, // Will be set after AppState is built
             tactical_agent: None, // Will be set after AppState is built
+            strategic_agent: None, // Will be set after AppState is built
             // narrative_intelligence_service will be added after AppState is built
         })
     }

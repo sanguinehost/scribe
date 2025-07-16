@@ -24,6 +24,8 @@ use crate::{
 
 use diesel::prelude::*;
 use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods};
+use diesel::sql_types::{Text, Float, Bool};
+use diesel::dsl::sql;
 
 /// Configuration for entity manager caching behavior
 #[derive(Debug, Clone)]
@@ -173,6 +175,7 @@ impl EcsEntityManager {
             
         sanitized
     }
+
 
     /// Get entity with all components (read-through caching)
     #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
@@ -524,23 +527,20 @@ impl EcsEntityManager {
                             );
                         }
                         ComponentQuery::ComponentDataEquals(component_type, path, value) => {
-                            // Use JSONB path operator for exact matching
+                            // Use Diesel's JSONB contains operator - much safer than raw SQL
+                            let json_query = json!({ path: value });
                             query = query.filter(
                                 ecs_entities::id.eq_any(
                                     ecs_components::table
                                         .select(ecs_components::entity_id)
                                         .filter(ecs_components::component_type.eq(component_type))
                                         .filter(ecs_components::user_id.eq(user_id))
-                                        .filter(
-                                            diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                                                "component_data->'{}' = '{}'::jsonb",
-                                                path, value
-                                            ))
-                                        )
+                                        .filter(ecs_components::component_data.contains(json_query))
                                 )
                             );
                         }
                         ComponentQuery::ComponentDataInRange(component_type, path, min_val, max_val) => {
+                            use diesel::sql_types::Double;
                             query = query.filter(
                                 ecs_entities::id.eq_any(
                                     ecs_components::table
@@ -548,15 +548,18 @@ impl EcsEntityManager {
                                         .filter(ecs_components::component_type.eq(component_type))
                                         .filter(ecs_components::user_id.eq(user_id))
                                         .filter(
-                                            diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                                                "cast(component_data->>'{}' as float) BETWEEN {} AND {}",
-                                                path, min_val, max_val
-                                            ))
+                                            sql::<Bool>("CAST(component_data->>")
+                                                .bind::<Text, _>(path)
+                                                .sql(" AS FLOAT) BETWEEN ")
+                                                .bind::<Double, _>(min_val)
+                                                .sql(" AND ")
+                                                .bind::<Double, _>(max_val)
                                         )
                                 )
                             );
                         }
                         ComponentQuery::ComponentDataGreaterThan(component_type, path, value) => {
+                            use diesel::sql_types::Double;
                             query = query.filter(
                                 ecs_entities::id.eq_any(
                                     ecs_components::table
@@ -564,15 +567,16 @@ impl EcsEntityManager {
                                         .filter(ecs_components::component_type.eq(component_type))
                                         .filter(ecs_components::user_id.eq(user_id))
                                         .filter(
-                                            diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                                                "cast(component_data->>'{}' as float) > {}",
-                                                path, value
-                                            ))
+                                            sql::<Bool>("CAST(component_data->>")
+                                                .bind::<Text, _>(path)
+                                                .sql(" AS FLOAT) > ")
+                                                .bind::<Double, _>(value)
                                         )
                                 )
                             );
                         }
                         ComponentQuery::ComponentDataLessThan(component_type, path, value) => {
+                            use diesel::sql_types::Double;
                             query = query.filter(
                                 ecs_entities::id.eq_any(
                                     ecs_components::table
@@ -580,16 +584,16 @@ impl EcsEntityManager {
                                         .filter(ecs_components::component_type.eq(component_type))
                                         .filter(ecs_components::user_id.eq(user_id))
                                         .filter(
-                                            diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                                                "cast(component_data->>'{}' as float) < {}",
-                                                path, value
-                                            ))
+                                            sql::<Bool>("CAST(component_data->>")
+                                                .bind::<Text, _>(path)
+                                                .sql(" AS FLOAT) < ")
+                                                .bind::<Double, _>(value)
                                         )
                                 )
                             );
                         }
                         ComponentQuery::WithinDistance(component_type, max_distance, center_x, center_y, center_z) => {
-                            // Spatial query using PostgreSQL functions for 3D distance
+                            use diesel::sql_types::Double;
                             query = query.filter(
                                 ecs_entities::id.eq_any(
                                     ecs_components::table
@@ -597,12 +601,14 @@ impl EcsEntityManager {
                                         .filter(ecs_components::component_type.eq(component_type))
                                         .filter(ecs_components::user_id.eq(user_id))
                                         .filter(
-                                            diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                                                "sqrt(power(cast(component_data->>'x' as float) - {}, 2) + \
-                                                      power(cast(component_data->>'y' as float) - {}, 2) + \
-                                                      power(cast(component_data->>'z' as float) - {}, 2)) <= {}",
-                                                center_x, center_y, center_z, max_distance
-                                            ))
+                                            sql::<Bool>("SQRT(POWER(CAST(component_data->>'x' AS FLOAT) - ")
+                                                .bind::<Double, _>(center_x)
+                                                .sql(", 2) + POWER(CAST(component_data->>'y' AS FLOAT) - ")
+                                                .bind::<Double, _>(center_y)
+                                                .sql(", 2) + POWER(CAST(component_data->>'z' AS FLOAT) - ")
+                                                .bind::<Double, _>(center_z)
+                                                .sql(", 2)) <= ")
+                                                .bind::<Double, _>(max_distance)
                                         )
                                 )
                             );
@@ -630,6 +636,9 @@ impl EcsEntityManager {
                             );
                         }
                         ComponentQuery::ComponentDataMatches(component_type, path, pattern) => {
+                            // For text matching, we need to use ILIKE on the extracted JSON field
+                            // This properly handles partial matches for name searches
+                            let pattern_with_wildcards = format!("%{}%", pattern);
                             query = query.filter(
                                 ecs_entities::id.eq_any(
                                     ecs_components::table
@@ -637,10 +646,10 @@ impl EcsEntityManager {
                                         .filter(ecs_components::component_type.eq(component_type))
                                         .filter(ecs_components::user_id.eq(user_id))
                                         .filter(
-                                            diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                                                "component_data->>'{}' ILIKE '%{}%'",
-                                                path, pattern
-                                            ))
+                                            sql::<Bool>("component_data->>")
+                                                .bind::<Text, _>(path)
+                                                .sql(" ILIKE ")
+                                                .bind::<Text, _>(pattern_with_wildcards)
                                         )
                                 )
                             );
@@ -1054,9 +1063,10 @@ impl EcsEntityManager {
                     .filter(ecs_entities::user_id.eq(user_id))
                     .filter(ecs_components::component_type.eq("ChronicleSource"))
                     .filter(
-                        diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                            "cast(component_data->>'chronicle_id' as uuid) = '{}'", chronicle_id
-                        ))
+                        diesel::dsl::sql::<diesel::sql_types::Bool>(
+                            "cast(component_data->>'chronicle_id' as uuid) = $1"
+                        )
+                        .bind::<diesel::sql_types::Uuid, _>(chronicle_id)
                     )
                     .select(ecs_entities::id)
                     .distinct()
@@ -1104,9 +1114,10 @@ impl EcsEntityManager {
                     .filter(ecs_entities::user_id.eq(user_id))
                     .filter(ecs_components::component_type.eq("ChronicleSource"))
                     .filter(
-                        diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                            "cast(component_data->>'chronicle_id' as uuid) = '{}'", chronicle_id
-                        ))
+                        diesel::dsl::sql::<diesel::sql_types::Bool>(
+                            "cast(component_data->>'chronicle_id' as uuid) = $1"
+                        )
+                        .bind::<diesel::sql_types::Uuid, _>(chronicle_id)
                     )
                     .select(ecs_entities::id)
                     .distinct()

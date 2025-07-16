@@ -49,6 +49,7 @@ pub mod agentic_orchestrator;
 pub mod agentic_query_cache;
 pub mod agentic_metrics;
 pub mod agentic_state_update_service;
+pub mod agent_prompt_templates;
 
 // Re-export agentic components
 pub use agentic::{
@@ -144,4 +145,7 @@ pub use agentic_metrics::{
 pub use agentic_state_update_service::{
     AgenticStateUpdateService, StateUpdateConfig, StateUpdateResult,
     SpatialUpdateSummary, RelationshipUpdateSummary, TemporalUpdateSummary
+};
+pub use agent_prompt_templates::{
+    AgentPromptTemplates, PromptTemplateVersion, TemplateValidationResult
 };

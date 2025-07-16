@@ -952,13 +952,13 @@ impl TacticalAgent {
             return Err(AppError::BadRequest("Content cannot be empty".to_string()));
         }
 
-        // Validate reasonable character set (allow narrative text with limited punctuation)
-        // Allow common narrative punctuation but exclude SQL/HTML/script injection characters
+        // Validate reasonable character set (allow narrative text with extended punctuation)
+        // Allow common narrative and markdown punctuation but exclude dangerous injection characters
         if !trimmed.chars().all(|c| {
             c.is_alphabetic() || 
             c.is_numeric() || 
             c.is_whitespace() ||
-            ".,!?()[]_-'".contains(c)  // Allow apostrophes for possessives/contractions
+            ".,!?()[]_-':;\"*–—…#/\\@$%^&+=~|{}`.".contains(c)  // Extended punctuation for narrative and markdown
         }) {
             return Err(AppError::BadRequest("Content contains invalid characters".to_string()));
         }
@@ -966,16 +966,20 @@ impl TacticalAgent {
         Ok(trimmed.to_string())
     }
 
-    /// Validate directive type using strict whitelisting
+    /// Validate directive type using whitelisting
     fn validate_directive_type(&self, input: &str) -> Result<String, AppError> {
         let trimmed = input.trim();
         
-        // Only allow alphanumeric characters and underscores for directive types
-        if !trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        // Allow directive types with reasonable punctuation for AI responses
+        if !trimmed.chars().all(|c| {
+            c.is_alphanumeric() || 
+            c.is_whitespace() ||
+            "_-:–—,.()[]'\" ".contains(c)  // Allow common separators and punctuation in directive types
+        }) {
             return Err(AppError::BadRequest("Invalid directive type format".to_string()));
         }
 
-        if trimmed.len() > 50 {
+        if trimmed.len() > 500 {  // Increased limit for AI-generated directive types with descriptions
             return Err(AppError::BadRequest("Directive type too long".to_string()));
         }
 
@@ -986,22 +990,30 @@ impl TacticalAgent {
     fn validate_emotional_tone(&self, input: &str) -> Result<String, AppError> {
         let trimmed = input.trim();
         
-        // Validate reasonable length
-        if trimmed.is_empty() || trimmed.len() > 50 {
-            return Err(AppError::BadRequest("Emotional tone must be 1-50 characters".to_string()));
+        // Validate not empty
+        if trimmed.is_empty() {
+            return Err(AppError::BadRequest("Emotional tone cannot be empty".to_string()));
         }
         
-        // Validate it's a reasonable descriptive word/phrase (alphanumeric + spaces/hyphens)
-        if !trimmed.chars().all(|c| {
+        // Truncate if too long instead of rejecting
+        let truncated = if trimmed.len() > 100 {
+            warn!("Emotional tone truncated from {} to 100 characters", trimmed.len());
+            &trimmed[..100]
+        } else {
+            trimmed
+        };
+        
+        // Validate it's a reasonable descriptive word/phrase (alphanumeric + spaces/hyphens/punctuation)
+        if !truncated.chars().all(|c| {
             c.is_alphabetic() || 
             c.is_whitespace() || 
-            c == '-'
+            "-,/().*:'".contains(c)  // Allow common punctuation in emotional descriptions
         }) {
             return Err(AppError::BadRequest("Emotional tone contains invalid characters".to_string()));
         }
         
         // Ensure it's not trying to inject commands or scripts
-        let lower = trimmed.to_lowercase();
+        let lower = truncated.to_lowercase();
         let suspicious_patterns = ["script", "eval", "exec", "system", "cmd", "<", ">", "&", "|"];
         for pattern in suspicious_patterns {
             if lower.contains(pattern) {
@@ -1009,15 +1021,17 @@ impl TacticalAgent {
             }
         }
 
-        Ok(trimmed.to_string())
+        Ok(truncated.to_string())
     }
 
     /// Validate entity name (character focus)
     fn validate_entity_name(&self, input: &str) -> Result<String, AppError> {
         let trimmed = input.trim();
         
-        // Allow alphanumeric, spaces, hyphens, apostrophes for character names
-        if !trimmed.chars().all(|c| c.is_alphanumeric() || " -'".contains(c)) {
+        // Allow alphanumeric, spaces, hyphens, apostrophes, periods, commas, colons for character names
+        // This includes titles like "Dr.", "Mrs.", descriptive phrases like "the ancient dragon", 
+        // and complex names like "Commander Zhao, First Battalion"
+        if !trimmed.chars().all(|c| c.is_alphanumeric() || " -'.,:".contains(c)) {
             return Err(AppError::BadRequest("Invalid character name format".to_string()));
         }
 

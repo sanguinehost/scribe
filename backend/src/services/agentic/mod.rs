@@ -23,6 +23,11 @@ pub mod tools;
 pub mod persona_context;
 pub mod tactical_agent;
 pub mod perception_agent;
+pub mod strategic_agent;
+pub mod hierarchical_pipeline;
+pub mod strategic_structured_output;
+pub mod tactical_structured_output;
+pub mod types;
 
 
 // Re-export key types for convenience
@@ -38,3 +43,10 @@ pub use narrative_tools::{
 pub use entity_resolution_tool::{EntityResolutionTool, ProcessingMode};
 pub use tactical_agent::TacticalAgent;
 pub use perception_agent::{PerceptionAgent, PerceptionContext, PerceptionResult};
+pub use strategic_agent::StrategicAgent;
+pub use hierarchical_pipeline::{
+    HierarchicalAgentPipeline, HierarchicalPipelineConfig, 
+    HierarchicalPipelineResult, PipelineMetrics
+};
+pub use strategic_structured_output::*;
+pub use tactical_structured_output::*;

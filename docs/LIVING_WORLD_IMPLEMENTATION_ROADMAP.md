@@ -764,9 +764,11 @@ pub struct ContextCache {
 
 ---
 
-## ⚡ Epic 5: The Strategic Layer & Autonomic Loop (The "Autonomic System")
+## ✅ Epic 5: The Strategic Layer & Autonomic Loop (The "Autonomic System") - ✅ **COMPLETED**
 
 **Goal:** Develop the high-level "Director" and the parallel "Perception" agent, creating a fully autonomous, self-correcting system.
+
+**Current State:** ✅ **FULLY COMPLETED** - All strategic agents implemented with comprehensive hierarchical pipeline, prompt templates, and full autonomic loop capability.
 
 *   **[x] Task 5.1: Test and Implement the `PerceptionAgent` (Foresight Engine)** ✅ **COMPLETED (2025-07-14)**
     *   **Objective:** Create the agent that processes the AI's response in the background, updating the world state for the next turn.
@@ -818,30 +820,83 @@ pub struct ContextCache {
             *   [x] Integration with PerceptionAgent changes
         *   [x] **Security & Performance:** All tests include proper user isolation, error handling, and performance validation
 
-*   **[ ] Task 5.3: Implement the `StrategicAgent` (The "Director")**
+*   **[x] Task 5.3: Implement the `StrategicAgent` (The "Director")** ✅ **COMPLETED**
     *   **Objective:** Create the high-level agent for long-term narrative management.
-    *   **[ ] Subtask 5.3.1:** Create a new `StrategicAgent` service. Initially, it can be a simple pass-through that converts user intent into a goal for the `TacticalAgent`.
-    *   **[ ] Subtask 5.3.2:** Develop a system prompt for the `StrategicAgent` that instructs it to analyze the overall chat history and define high-level narrative goals (e.g., "initiate combat," "introduce mystery," "resolve conflict").
-    *   **[ ] Subtask 5.3.3:** Integrate the `StrategicAgent` into the `chat_service` so it runs before the `TacticalAgent`, providing the initial directive.
-    *   **[ ] Subtask 5.3.4: Define Agent-Specific Prompt Templates (CRITICAL)**
-        *   [ ] **StrategicAgent Prompt Template**: High-level prompt that receives chat history and world events, asks Gemini to "propose a narrative direction" like 'introduce mystery' or 'escalate conflict'
-        *   [ ] **RoleplayAI Prompt Template**: Detailed prompt that receives rich `EnrichedContext` payload from `TacticalAgent` to generate final narrative output
-        *   [ ] **Prompt Template Versioning**: Implement versioning system for prompt templates to enable A/B testing and iterative improvement
-        *   [ ] **Template Validation**: Add validation to ensure prompt templates produce consistent, parseable outputs
+    *   **[x] Subtask 5.3.1:** ✅ **COMPLETED** - Create a new `StrategicAgent` service. Initially, it can be a simple pass-through that converts user intent into a goal for the `TacticalAgent`.
+    *   **[x] Subtask 5.3.2:** ✅ **COMPLETED** - Develop a system prompt for the `StrategicAgent` that instructs it to analyze the overall chat history and define high-level narrative goals (e.g., "initiate combat," "introduce mystery," "resolve conflict").
+    *   **[x] Subtask 5.3.3:** ✅ **COMPLETED** - Integrate the `StrategicAgent` into the `chat_service` so it runs before the `TacticalAgent`, providing the initial directive.
+    *   **[x] Subtask 5.3.4: Define Agent-Specific Prompt Templates (CRITICAL)** ✅ **COMPLETED**
+        *   [x] **StrategicAgent Prompt Template**: High-level prompt that receives chat history and world events, asks Gemini to "propose a narrative direction" like 'introduce mystery' or 'escalate conflict'
+        *   [x] **RoleplayAI Prompt Template**: Detailed prompt that receives rich `EnrichedContext` payload from `TacticalAgent` to generate final narrative output
+        *   [x] **Prompt Template Versioning**: Implement versioning system for prompt templates to enable A/B testing and iterative improvement
+        *   [x] **Template Validation**: Add validation to ensure prompt templates produce consistent, parseable outputs
 
 ---
 
 ## ✅ Epic 6: Full System Validation & Hardening
 
-**Goal:** Verify the entire hierarchical pipeline works cohesively and is secure.
+**Goal:** Verify the entire hierarchical pipeline works cohesively and is secure, completing all remaining system functionality.
 
-*   **[ ] Task 6.1: End-to-End Scenario Testing**
-    *   **[ ] Subtask 6.1.1: Write Full Loop Test:** Write an integration test simulating a multi-turn conversation, asserting the world state in the database is correctly and consistently updated by the full `Strategic -> Tactical -> Perception` loop.
-*   **[ ] Task 6.2: Security and Logging Validation**
-    *   **[ ] Subtask 6.2.1: Security Review:**
+**Current State:** 🔴 **Critical Dependencies Identified** - Analysis reveals missing repair system functionality and feature completeness gaps that must be addressed for full system validation.
+
+*   **[ ] Task 6.1: 🚨 Critical System Completeness (BLOCKING)**
+    *   **[ ] Subtask 6.1.1: Repair System Implementation**
+        *   [ ] **PlanRepairService Creation**: Implement the missing PlanRepairService for intelligent plan repair
+        *   [ ] **Enhanced PlanValidatorService**: Add repair capability methods to validation service
+        *   [ ] **Repair Safety Checks**: Implement validation for repair plans before execution
+        *   [ ] **Repair Caching System**: Cache repair analysis results with user isolation
+        *   [ ] **Confidence Scoring**: Comprehensive confidence scoring for repair decisions
+    *   **[ ] Subtask 6.1.2: Complete ECS State Reconciliation Tests**
+        *   [ ] **Missing Movement Repair**: Test scenarios where entities need location updates
+        *   [ ] **Missing Relationship Repair**: Test scenarios where relationships need creation
+        *   [ ] **Missing Component Repair**: Test scenarios where entity components need addition
+        *   [ ] **Repair Chain Testing**: Test scenarios where repairs trigger additional repairs
+        *   [ ] **Low Confidence Repair Testing**: Test handling of uncertain repair scenarios
+        *   [ ] **Circular Repair Detection**: Prevent infinite repair loops
+    *   **[ ] Subtask 6.1.3: Complete Planning Service Integration Tests**
+        *   [ ] **Task 3.5.2**: Invalid Plan Test (Precondition Fail) - Test invalid→repairable workflows
+        *   [ ] **Task 3.5.3**: Security Test - Cross-user entity access with tactical agent integration
+        *   [ ] **Task 3.5.4**: End-to-End Integration Testing with Repair System including:
+            - Full pipeline tests (planning → validation → repair → execution)
+            - Multi-turn conversation repair persistence
+            - Integration with Tactical Agent
+            - Performance integration (repair impact on response times)
+            - Security integration within agent framework
+            - Failure mode testing and logging/observability
+
+*   **[ ] Task 6.2: System Feature Completeness**
+    *   **[ ] Subtask 6.2.1: Hierarchical Context Assembler Enhancements**
+        *   [ ] **Causal Context Implementation**: Implement causal relationship tracking between entities
+        *   [ ] **Entity Dependencies Extraction**: Extract entity dependencies from plan steps
+        *   [ ] **Risk Identification System**: Implement comprehensive risk identification
+        *   [ ] **Spatial Location Integration**: Integrate with ECS spatial components
+        *   [ ] **Relationship Extraction**: Extract relationships from chat context
+        *   [ ] **Action History Tracking**: Implement recent actions tracking
+        *   [ ] **Emotional State Analysis**: Add emotional state analysis
+        *   [ ] **Entity Resolution Tool Integration**: Integrate tool to find additional relevant entities
+        *   [ ] **Event Systems**: Extract recent events and implement future event scheduling
+    *   **[ ] Subtask 6.2.2: Hybrid Query Service Completeness**
+        *   [ ] **Event Participants Finding**: Implement event participant discovery
+        *   [ ] **Query Relevance Scoring**: Calculate relevance scores based on query context
+        *   [ ] **Entity Manager Integration**: Complete integration for current state queries
+        *   [ ] **Historical State Reconstruction**: Reconstruct entity states at specific event times
+        *   [ ] **Event Significance Scoring**: Implement significance calculation for events
+        *   [ ] **Entity Context Building**: Parse events to build entity contexts
+        *   [ ] **Narrative Answer Generation**: Generate narrative responses to queries
+        *   [ ] **Relationship Analysis**: Implement relationship strength analysis over time
+        *   [ ] **Item Systems**: Add item ownership timelines and usage patterns
+
+*   **[ ] Task 6.3: End-to-End Scenario Testing**
+    *   **[ ] Subtask 6.3.1: Write Full Loop Test:** Write an integration test simulating a multi-turn conversation, asserting the world state in the database is correctly and consistently updated by the full `Strategic -> Tactical -> Perception` loop.
+    *   **[ ] Subtask 6.3.2: Repair System Integration Testing:** Validate repair system works end-to-end within agent workflows
+    *   **[ ] Subtask 6.3.3: Performance Validation:** Ensure repair analysis and enhanced features don't impact response times
+
+*   **[ ] Task 6.4: Security and Logging Validation**
+    *   **[ ] Subtask 6.4.1: Security Review:**
         *   [ ] **A09: Logging Failures:** Review the full system to ensure all agent decisions, tool calls, and state changes are logged with sufficient detail for security auditing.
         *   [ ] **A05: Security Misconfiguration:** Ensure all new services and agents have appropriate, hardened configurations and do not expose unnecessary information in error messages.
-    *   **[ ] Subtask 6.2.2: Manual QA:** Perform manual testing of the full flow to catch any issues not covered by automated tests.
+        *   [ ] **Repair System Security**: Validate repair functionality within full agent security framework
+    *   **[ ] Subtask 6.4.2: Manual QA:** Perform manual testing of the full flow to catch any issues not covered by automated tests.
 
 ---
 
@@ -880,58 +935,3 @@ pub struct ContextCache {
 - [ ] **Input Validation**: Ensure all agent inputs are properly sanitized
 - [ ] **Privilege Escalation**: Test that agents cannot escalate their privileges
 
-## 📌 TODO Dependencies on Future Epics
-
-The following TODOs found in the codebase require Epic 4 (Agent Implementation) or Epic 5 (Strategic Layer & Autonomic Loop) to be completed before they can be implemented:
-
-### **Epic 4 Dependencies (Tactical & Operational Agents)**
-
-#### **hierarchical_context_assembler.rs**
-- **Line 156**: `causal_context` - Requires causal relationship tracking from the planning system (Epic 3)
-- **Entity Resolution Integration** - Requires full agent hierarchy for entity resolution decisions
-- **Integration Tests** - Cannot be written until the agent hierarchy is implemented
-
-#### **hybrid_query_service.rs**
-- **Lines 854, 942**: Entity manager integration - Requires full entity resolution from hierarchical agents
-- **Lines 936, 1604, 1632**: Relationship queries - Requires agent-based relationship inference
-
-#### **planning_service_integration_tests.rs (Epic 3 Task 3.5 Moved Items)**
-- **Task 3.5.2: Invalid Plan Test (Precondition Fail)** - Requires repair system functionality to test invalid→repairable workflows
-- **Task 3.5.3: Security Test - Cross-user entity access** - Requires tactical agent integration for complete security validation  
-- **Task 3.5.4: End-to-End Integration Testing with Repair System** - Requires full agent hierarchy for complete integration testing:
-  - **Full Pipeline Tests**: Test complete planning → validation → repair → execution flow within agent context
-  - **Multi-Turn Conversation Tests**: Verify repairs persist correctly across agent-managed conversation turns
-  - **Repair Chain Tests**: Test scenarios where repairs trigger additional repairs within agent decision loops
-  - **Integration with Tactical Agent**: Test repair flow within full hierarchical agent pipeline
-  - **Performance Integration**: Verify repair analysis doesn't impact agent response times
-  - **Security Integration**: Test repair functionality within full agent security framework
-  - **Missing Movement/Relationship/Component Scenarios**: End-to-end testing requiring agent coordination
-  - **Failure Mode Testing**: Low confidence repairs, repair validation failures, circular repair detection
-  - **Logging and Observability**: Repair decision logging within agent workflows, user transparency
-
-### **Epic 5 Dependencies (Strategic Layer)**
-
-#### **narrative_intelligence_service.rs**
-- **ALL TODOs** - This entire service is designed for the Strategic Layer and cannot be implemented until Epic 5
-
-#### **Test Files Requiring Epic 3 Completion**
-- **ecs_state_reconciliation_tests.rs**: All repair system tests require Task 3.4 completion
-- **ecs_state_reconciliation_security_tests.rs**: Security validation for repair system
-- **planning_service_integration_tests.rs**: Planning service integration tests
-
-### **Implementation Order Requirements**
-
-1. **Complete Epic 3 (Planning Cortex)** first - this enables:
-   - Causal relationship tracking
-   - Basic repair system functionality
-   - Planning service tests
-
-2. **Then Epic 4 (Agent Implementation)** - this enables:
-   - Entity resolution integration
-   - Relationship queries in hybrid query service
-   - Full hierarchical context assembly
-
-3. **Finally Epic 5 (Strategic Layer)** - this enables:
-   - Narrative intelligence service
-   - Full autonomic loop
-   - Strategic planning capabilities

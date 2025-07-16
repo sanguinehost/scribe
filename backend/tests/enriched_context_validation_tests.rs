@@ -2,7 +2,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 use chrono::Utc;
 
-use sanguine_scribe::services::context_assembly_engine::{
+use scribe_backend::services::context_assembly_engine::{
     EnrichedContext, StrategicDirective, ValidatedPlan, SubGoal, EntityContext,
     SpatialContext, TemporalContext, PlanValidationStatus, ValidationCheck,
     ValidationCheckType, ValidationStatus, ValidationSeverity, PlanStep,

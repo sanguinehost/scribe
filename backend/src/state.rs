@@ -33,6 +33,7 @@ use crate::services::{
     IntentDetectionService, QueryStrategyPlanner,
     agentic::entity_resolution_tool::EntityResolutionTool,
     agentic::tactical_agent::TacticalAgent,
+    agentic::strategic_agent::StrategicAgent,
 };
 use crate::config::NarrativeFeatureFlags;
 use std::fmt;
@@ -71,6 +72,7 @@ pub struct AppStateServices {
     pub agentic_state_update_service: Arc<AgenticStateUpdateService>,
     pub hierarchical_context_assembler: Option<Arc<HierarchicalContextAssembler>>,
     pub tactical_agent: Option<Arc<TacticalAgent>>,
+    pub strategic_agent: Option<Arc<StrategicAgent>>,
 }
 
 // --- Shared application state ---
@@ -116,6 +118,7 @@ pub struct AppState {
     pub agentic_state_update_service: Arc<AgenticStateUpdateService>,
     pub hierarchical_context_assembler: Option<Arc<HierarchicalContextAssembler>>,
     pub tactical_agent: Option<Arc<TacticalAgent>>,
+    pub strategic_agent: Option<Arc<StrategicAgent>>,
 }
 
 // Manual Debug implementation for AppState
@@ -153,6 +156,7 @@ impl fmt::Debug for AppState {
             .field("agentic_state_update_service", &"<Arc<AgenticStateUpdateService>>") // Agentic state updates
             .field("hierarchical_context_assembler", &"<Option<Arc<HierarchicalContextAssembler>>>") // Hierarchical context assembly
             .field("tactical_agent", &"<Option<Arc<TacticalAgent>>>") // Tactical layer agent
+            .field("strategic_agent", &"<Option<Arc<StrategicAgent>>>") // Strategic layer agent
             .finish()
     }
 }
@@ -194,6 +198,7 @@ impl AppState {
             agentic_state_update_service: services.agentic_state_update_service,
             hierarchical_context_assembler: services.hierarchical_context_assembler,
             tactical_agent: services.tactical_agent,
+            strategic_agent: services.strategic_agent,
         }
     }
 
@@ -224,5 +229,13 @@ impl AppState {
         use crate::services::agentic::factory::AgenticNarrativeFactory;
         let tactical_agent = AgenticNarrativeFactory::create_tactical_agent(&Arc::new(self.clone()));
         self.tactical_agent = Some(tactical_agent);
+    }
+    
+    /// Set the strategic agent after AppState construction
+    /// This uses the factory method to create a properly configured StrategicAgent
+    pub fn set_strategic_agent(&mut self) {
+        use crate::services::agentic::factory::AgenticNarrativeFactory;
+        let strategic_agent = AgenticNarrativeFactory::create_strategic_agent(&Arc::new(self.clone()));
+        self.strategic_agent = Some(strategic_agent);
     }
 }
