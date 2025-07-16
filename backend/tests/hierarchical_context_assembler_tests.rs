@@ -10,7 +10,10 @@ use scribe_backend::{
             ValidationStatus, PlanValidationStatus, RiskLevel,
         },
     },
-    models::characters::CharacterMetadata,
+    models::{
+        characters::CharacterMetadata,
+        chats::MessageRole,
+    },
     test_helpers::{MockAiClient, spawn_app_with_options, TestDataGuard, db::create_test_user},
     crypto::{generate_dek, encrypt_gcm},
 };
@@ -119,8 +122,52 @@ async fn create_functional_assembler(test_app: &scribe_backend::test_helpers::Te
         "reasoning": "Extracted character entity from user query"
     }"#.to_string();
     
+    // Add spatial location response
+    let spatial_response = r#"{
+        "location_name": "Castle Hall",
+        "location_type": "Room",
+        "parent_location": "Castle",
+        "description": "A grand hall within the castle"
+    }"#.to_string();
+    
+    // Add relationship extraction response
+    let relationship_response = r#"[{
+        "from_entity": "Sir Galahad",
+        "to_entity": "Princess Guinevere",
+        "relationship_type": "acquaintance",
+        "strength": 0.7,
+        "context": "Talking to the princess"
+    }, {
+        "from_entity": "Sir Galahad",
+        "to_entity": "Merlin",
+        "relationship_type": "student",
+        "strength": 0.8,
+        "context": "Seeks guidance from mentor"
+    }]"#.to_string();
+    
+    // Add recent actions response
+    let recent_actions_response = r#"[{
+        "description": "Spoke to Princess Guinevere",
+        "action_type": "social",
+        "impact_level": 0.7,
+        "timestamp_relative": "recently"
+    }, {
+        "description": "Sought guidance from mentor",
+        "action_type": "social",
+        "impact_level": 0.8,
+        "timestamp_relative": "just now"
+    }]"#.to_string();
+    
+    let emotional_state_response = r#"{
+        "primary_emotion": "grief",
+        "intensity": 0.8,
+        "contributing_factors": ["loss of friend", "doubt about mission", "seeking redemption"]
+    }"#.to_string();
+    
     // Create mock AI client with multiple responses
-    let responses = vec![intent_response, strategic_response, tactical_response, entity_response];
+    // Order: intent, strategic, tactical, spatial, relationship, recent_actions, emotional_state
+    // Note: entity_response is not used because EntityResolutionTool doesn't make AI calls in this test
+    let responses = vec![intent_response, strategic_response, tactical_response, spatial_response, relationship_response, recent_actions_response, emotional_state_response];
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
     
     let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
@@ -471,6 +518,85 @@ async fn test_multiple_entity_context_assembly() {
 }
 
 #[tokio::test]
+async fn test_risk_identification() {
+    let test_app = spawn_app_with_options(false, false, false, false).await;
+    let assembler = create_functional_assembler(&test_app).await;
+    
+    let user_id = Uuid::new_v4();
+    let chat_history = vec![];
+    
+    let result = assembler.assemble_enriched_context(
+        "I want to attack the dragon in the dangerous cave",
+        &chat_history,
+        None,
+        user_id,
+        None,
+    ).await;
+    
+    if result.is_err() {
+        eprintln!("Error in assemble_enriched_context: {:?}", result.as_ref().unwrap_err());
+    }
+    assert!(result.is_ok());
+    let context = result.unwrap();
+    
+    // Should have identified risks in the validated plan
+    assert!(!context.validated_plan.risk_assessment.identified_risks.is_empty());
+    
+    // Should have at least one risk identified
+    let identified_risks = &context.validated_plan.risk_assessment.identified_risks;
+    assert!(identified_risks.len() > 0);
+    
+    // Should have risk description
+    assert!(identified_risks[0].len() > 0);
+    
+    // For dangerous scenarios, overall risk should be Medium or higher
+    assert!(matches!(context.validated_plan.risk_assessment.overall_risk, 
+        RiskLevel::Medium | RiskLevel::High | RiskLevel::Critical));
+}
+
+#[tokio::test]
+async fn test_spatial_location_extraction() {
+    let test_app = spawn_app_with_options(false, false, false, false).await;
+    let assembler = create_functional_assembler(&test_app).await;
+    
+    let user_dek = Arc::new(generate_dek().unwrap());
+    let character = create_encrypted_test_character(&user_dek).await;
+    
+    let chat_history = vec![];
+    
+    let result = assembler.assemble_enriched_context(
+        "I am standing in the grand castle hall",
+        &chat_history,
+        Some(&character),
+        character.user_id,
+        Some(&user_dek),
+    ).await;
+    
+    assert!(result.is_ok());
+    let context = result.unwrap();
+    
+    // Should have at least the character entity
+    assert!(context.relevant_entities.len() >= 1);
+    
+    // Find the character entity
+    let character_entity = context.relevant_entities.iter()
+        .find(|e| e.entity_name == "Sir Galahad")
+        .expect("Character entity should be present");
+    
+    // Should have spatial location information
+    assert!(character_entity.spatial_location.is_some());
+    
+    let spatial_location = character_entity.spatial_location.as_ref().unwrap();
+    assert!(!spatial_location.name.is_empty());
+    assert_eq!(spatial_location.location_type, "Scene");
+    
+    // Should have spatial context in the overall context
+    assert!(context.spatial_context.is_some());
+    let spatial_context = context.spatial_context.as_ref().unwrap();
+    assert!(!spatial_context.current_location.name.is_empty());
+}
+
+#[tokio::test]
 async fn test_performance_metrics() {
     let test_app = spawn_app_with_options(false, false, false, false).await;
     let assembler = create_functional_assembler(&test_app).await;
@@ -510,4 +636,576 @@ async fn test_performance_metrics() {
     
     // Validation time should be minimal for bridge implementation
     assert!(context.validation_time_ms <= 50);
+}
+
+#[tokio::test]
+async fn test_entity_resolution_integration() {
+    let test_app = spawn_app_with_options(false, false, false, false).await;
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    
+    // Create test user and DEK
+    let user = create_test_user(
+        &test_app.db_pool,
+        format!("test_entity_resolution_{}", Uuid::new_v4()),
+        "password123".to_string(),
+    ).await.unwrap();
+    guard.add_user(user.id);
+    
+    let user_dek = Arc::new(generate_dek().unwrap());
+    let character = create_encrypted_test_character(&user_dek).await;
+    
+    // Create assembler with entity resolution response
+    let strategic_response = r#"{
+        "directive_type": "Character Development",
+        "narrative_arc": "Hero's Journey",
+        "plot_significance": "Major",
+        "emotional_tone": "Determined",
+        "character_focus": ["Sir Galahad"],
+        "world_impact_level": "Regional"
+    }"#.to_string();
+    
+    let tactical_response = r#"{
+        "steps": [{
+            "description": "Establish character's current emotional state",
+            "preconditions": ["Character context available"],
+            "expected_outcomes": ["Emotional foundation set"],
+            "required_entities": ["Sir Galahad"],
+            "estimated_duration": 1000
+        }],
+        "overall_risk": "Low",
+        "mitigation_strategies": ["Maintain character consistency"]
+    }"#.to_string();
+    
+    let intent_response = r#"{
+        "intent_type": "NarrativeGeneration",
+        "focus_entities": [{
+            "name": "Sir Galahad",
+            "entity_type": "CHARACTER",
+            "priority": 1.0,
+            "required": true
+        }],
+        "time_scope": {"type": "Current"},
+        "reasoning_depth": "Deep",
+        "context_priorities": ["Entities"],
+        "confidence": 0.9
+    }"#.to_string();
+    
+    // Entity resolution response with additional entities
+    let entity_response = r#"{
+        "resolved_entities": [
+            {
+                "entity_id": "11111111-1111-1111-1111-111111111111",
+                "name": "Sir Galahad",
+                "display_name": "Sir Galahad",
+                "entity_type": "CHARACTER",
+                "confidence": 0.9,
+                "is_new": false,
+                "context": "Knight mentioned in the query",
+                "properties": ["Noble", "Knight"],
+                "components": ["Position", "Health"]
+            },
+            {
+                "entity_id": "22222222-2222-2222-2222-222222222222",
+                "name": "Kingdom of Camelot",
+                "display_name": "Kingdom of Camelot",
+                "entity_type": "LOCATION",
+                "confidence": 0.8,
+                "is_new": true,
+                "context": "Referenced kingdom in the story",
+                "properties": ["Kingdom", "Castle"],
+                "components": ["Spatial", "Political"]
+            }
+        ],
+        "relationships": [
+            {
+                "from_entity": "11111111-1111-1111-1111-111111111111",
+                "to_entity": "22222222-2222-2222-2222-222222222222",
+                "relationship_type": "SERVES",
+                "confidence": 0.9
+            }
+        ],
+        "user_id": "5f53b14b-6a44-420e-a0bd-2242e349b60e",
+        "chronicle_id": null,
+        "processing_metadata": {
+            "total_entities_processed": 2,
+            "new_entities_created": 1,
+            "relationships_identified": 1,
+            "confidence_average": 0.85
+        }
+    }"#.to_string();
+    
+    let responses = vec![intent_response, strategic_response, tactical_response, entity_response];
+    let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
+    
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let db_pool = Arc::new(test_app.db_pool.clone());
+    let app_state = test_app.app_state.clone();
+    let entity_tool = Arc::new(EntityResolutionTool::new(app_state));
+    let encryption_service = Arc::new(EncryptionService);
+    
+    let assembler = HierarchicalContextAssembler::new(
+        mock_ai_client,
+        intent_service,
+        query_planner,
+        entity_tool,
+        encryption_service,
+        db_pool,
+    );
+    
+    let chat_history = vec![];
+    
+    let result = assembler.assemble_enriched_context(
+        "Tell me about Sir Galahad's adventures in the kingdom",
+        &chat_history,
+        Some(&character),
+        user.id,
+        Some(&user_dek),
+    ).await;
+    
+    assert!(result.is_ok());
+    let context = result.unwrap();
+    
+    // Should have multiple entities from entity resolution
+    assert!(context.relevant_entities.len() >= 2);
+    
+    // Should have the character entity
+    let character_entity = context.relevant_entities.iter()
+        .find(|e| e.entity_name == "Sir Galahad")
+        .expect("Character entity should be present");
+    
+    // Should have high narrative importance
+    assert!(character_entity.narrative_importance >= 0.8);
+    
+    // Should have AI insights about entity resolution
+    assert!(character_entity.ai_insights.iter()
+        .any(|insight| insight.contains("confidence") || insight.contains("resolved")));
+    
+    // Entity resolution should have added additional entities
+    let has_additional_entities = context.relevant_entities.iter()
+        .any(|e| e.entity_name != "Sir Galahad");
+    assert!(has_additional_entities, "Entity resolution should add additional entities");
+}
+
+#[tokio::test]
+async fn test_entity_resolution_error_handling() {
+    let test_app = spawn_app_with_options(false, false, false, false).await;
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    
+    // Create test user and DEK
+    let user = create_test_user(
+        &test_app.db_pool,
+        format!("test_entity_error_{}", Uuid::new_v4()),
+        "password123".to_string(),
+    ).await.unwrap();
+    guard.add_user(user.id);
+    
+    let user_dek = Arc::new(generate_dek().unwrap());
+    let character = create_encrypted_test_character(&user_dek).await;
+    
+    // Create assembler with failing entity resolution
+    let strategic_response = r#"{
+        "directive_type": "Character Development",
+        "narrative_arc": "Hero's Journey",
+        "plot_significance": "Major",
+        "emotional_tone": "Determined",
+        "character_focus": ["Sir Galahad"],
+        "world_impact_level": "Regional"
+    }"#.to_string();
+    
+    let tactical_response = r#"{
+        "steps": [{
+            "description": "Establish character's current emotional state",
+            "preconditions": ["Character context available"],
+            "expected_outcomes": ["Emotional foundation set"],
+            "required_entities": ["Sir Galahad"],
+            "estimated_duration": 1000
+        }],
+        "overall_risk": "Low",
+        "mitigation_strategies": ["Maintain character consistency"]
+    }"#.to_string();
+    
+    let intent_response = r#"{
+        "intent_type": "NarrativeGeneration",
+        "focus_entities": [{
+            "name": "Sir Galahad",
+            "entity_type": "CHARACTER",
+            "priority": 1.0,
+            "required": true
+        }],
+        "time_scope": {"type": "Current"},
+        "reasoning_depth": "Deep",
+        "context_priorities": ["Entities"],
+        "confidence": 0.9
+    }"#.to_string();
+    
+    // Invalid entity response that should cause error
+    let invalid_entity_response = "INVALID_JSON_FOR_ENTITY_RESOLUTION".to_string();
+    
+    let responses = vec![intent_response, strategic_response, tactical_response, invalid_entity_response];
+    let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
+    
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let db_pool = Arc::new(test_app.db_pool.clone());
+    let app_state = test_app.app_state.clone();
+    let entity_tool = Arc::new(EntityResolutionTool::new(app_state));
+    let encryption_service = Arc::new(EncryptionService);
+    
+    let assembler = HierarchicalContextAssembler::new(
+        mock_ai_client,
+        intent_service,
+        query_planner,
+        entity_tool,
+        encryption_service,
+        db_pool,
+    );
+    
+    let chat_history = vec![];
+    
+    let result = assembler.assemble_enriched_context(
+        "Tell me about Sir Galahad's adventures in the kingdom",
+        &chat_history,
+        Some(&character),
+        user.id,
+        Some(&user_dek),
+    ).await;
+    
+    // Should still succeed even with entity resolution failure
+    assert!(result.is_ok());
+    let context = result.unwrap();
+    
+    // Should have at least the character entity (graceful fallback)
+    assert!(context.relevant_entities.len() >= 1);
+    
+    // Should have the character entity
+    let character_entity = context.relevant_entities.iter()
+        .find(|e| e.entity_name == "Sir Galahad")
+        .expect("Character entity should be present even with entity resolution failure");
+    
+    // Should have high narrative importance
+    assert!(character_entity.narrative_importance >= 0.8);
+}
+
+#[tokio::test]
+async fn test_entity_dependencies_extraction() {
+    let test_app = spawn_app_with_options(false, false, false, false).await;
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    
+    // Create test user and DEK
+    let user = create_test_user(
+        &test_app.db_pool,
+        format!("test_entity_deps_{}", Uuid::new_v4()),
+        "password123".to_string(),
+    ).await.unwrap();
+    guard.add_user(user.id);
+    
+    let user_dek = Arc::new(generate_dek().unwrap());
+    let character = create_encrypted_test_character(&user_dek).await;
+    
+    // Create assembler with tactical response that includes entity dependencies
+    let strategic_response = r#"{
+        "directive_type": "Character Development",
+        "narrative_arc": "Hero's Journey",
+        "plot_significance": "Major",
+        "emotional_tone": "Determined",
+        "character_focus": ["Sir Galahad"],
+        "world_impact_level": "Regional"
+    }"#.to_string();
+    
+    let tactical_response = r#"{
+        "steps": [{
+            "description": "Establish character's current emotional state",
+            "preconditions": ["Character context available"],
+            "expected_outcomes": ["Emotional foundation set"],
+            "required_entities": ["Sir Galahad", "Kingdom"],
+            "estimated_duration": 1000
+        }, {
+            "description": "Introduce supporting characters",
+            "preconditions": ["Emotional state established"],
+            "expected_outcomes": ["Supporting cast introduced"],
+            "required_entities": ["Sir Galahad", "Merlin", "Arthur"],
+            "estimated_duration": 1500
+        }],
+        "overall_risk": "Low",
+        "mitigation_strategies": ["Maintain character consistency"]
+    }"#.to_string();
+    
+    let intent_response = r#"{
+        "intent_type": "NarrativeGeneration",
+        "focus_entities": [{
+            "name": "Sir Galahad",
+            "entity_type": "CHARACTER",
+            "priority": 1.0,
+            "required": true
+        }],
+        "time_scope": {"type": "Current"},
+        "reasoning_depth": "Deep",
+        "context_priorities": ["Entities"],
+        "confidence": 0.9
+    }"#.to_string();
+    
+    let entity_response = r#"{
+        "entities": [{
+            "name": "Sir Galahad",
+            "entity_type": "CHARACTER",
+            "confidence": 0.9,
+            "context": "Knight mentioned in the query"
+        }],
+        "relationships": [],
+        "reasoning": "Extracted character entity from user query"
+    }"#.to_string();
+    
+    let responses = vec![intent_response, strategic_response, tactical_response, entity_response];
+    let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
+    
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let db_pool = Arc::new(test_app.db_pool.clone());
+    let app_state = test_app.app_state.clone();
+    let entity_tool = Arc::new(EntityResolutionTool::new(app_state));
+    let encryption_service = Arc::new(EncryptionService);
+    
+    let assembler = HierarchicalContextAssembler::new(
+        mock_ai_client,
+        intent_service,
+        query_planner,
+        entity_tool,
+        encryption_service,
+        db_pool,
+    );
+    
+    let chat_history = vec![];
+    
+    let result = assembler.assemble_enriched_context(
+        "Tell me about Sir Galahad's adventures with Arthur and Merlin",
+        &chat_history,
+        Some(&character),
+        user.id,
+        Some(&user_dek),
+    ).await;
+    
+    assert!(result.is_ok());
+    let context = result.unwrap();
+    
+    // Should have entity dependencies extracted from the plan steps
+    assert!(context.validated_plan.entity_dependencies.len() > 0);
+    
+    // Each unique entity name should generate a UUID
+    // Expected entities: Sir Galahad, Kingdom, Merlin, Arthur (4 unique entities)
+    assert!(context.validated_plan.entity_dependencies.len() >= 4);
+    
+    // All entity dependencies should be unique
+    let mut unique_deps = std::collections::HashSet::new();
+    for dep in &context.validated_plan.entity_dependencies {
+        assert!(unique_deps.insert(dep), "Duplicate entity dependency found: {}", dep);
+    }
+    
+    // Should have 2 steps as defined in the tactical response
+    assert_eq!(context.validated_plan.steps.len(), 2);
+    
+    // First step should have 2 required entities
+    assert_eq!(context.validated_plan.steps[0].required_entities.len(), 2);
+    assert!(context.validated_plan.steps[0].required_entities.contains(&"Sir Galahad".to_string()));
+    assert!(context.validated_plan.steps[0].required_entities.contains(&"Kingdom".to_string()));
+    
+    // Second step should have 3 required entities
+    assert_eq!(context.validated_plan.steps[1].required_entities.len(), 3);
+    assert!(context.validated_plan.steps[1].required_entities.contains(&"Sir Galahad".to_string()));
+    assert!(context.validated_plan.steps[1].required_entities.contains(&"Merlin".to_string()));
+    assert!(context.validated_plan.steps[1].required_entities.contains(&"Arthur".to_string()));
+}
+
+#[tokio::test]
+async fn test_relationship_extraction() {
+    let test_app = spawn_app_with_options(false, false, false, false).await;
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    
+    // Create test user and DEK
+    let user = create_test_user(
+        &test_app.db_pool,
+        "test_user@example.com".to_string(),
+        "TestUser".to_string(),
+    ).await.unwrap();
+    
+    let user_dek = Arc::new(generate_dek().unwrap());
+    let character = create_encrypted_test_character(&user_dek).await;
+    
+    // Create a functional assembler
+    let assembler = create_functional_assembler(&test_app).await;
+    
+    // Create chat history that implies relationships
+    let chat_history = vec![
+        GenAiChatMessage::user("Sir Galahad is talking to Princess Guinevere"),
+        GenAiChatMessage::assistant("The knight bows respectfully to the princess."),
+        GenAiChatMessage::user("Merlin is Sir Galahad's mentor and guide"),
+    ];
+    
+    let result = assembler.assemble_enriched_context(
+        "Sir Galahad seeks guidance from his mentor about the princess",
+        &chat_history,
+        Some(&character),
+        user.id,
+        Some(&user_dek),
+    ).await;
+    
+    assert!(result.is_ok());
+    let context = result.unwrap();
+    
+    // Should find the character entity
+    let character_entity = context.relevant_entities.iter()
+        .find(|e| e.entity_name == "Sir Galahad")
+        .expect("Character entity should be present");
+    
+    // Debug: Print relationship count and details
+    println!("Character entity relationships count: {}", character_entity.relationships.len());
+    for (i, rel) in character_entity.relationships.iter().enumerate() {
+        println!("Relationship {}: {} -> {} ({}), strength: {}", i, rel.from_entity, rel.to_entity, rel.relationship_type, rel.strength);
+    }
+    
+    // Should have extracted relationships
+    assert!(character_entity.relationships.len() > 0);
+    
+    // Should have relationship with high confidence (>= 0.6)
+    assert!(character_entity.relationships.iter()
+        .any(|r| r.strength >= 0.6));
+    
+    // Should have meaningful relationship types
+    assert!(character_entity.relationships.iter()
+        .any(|r| !r.relationship_type.is_empty()));
+    
+    // Should have contextual information
+    assert!(character_entity.relationships.iter()
+        .any(|r| !r.context.is_empty()));
+}
+
+#[tokio::test]
+async fn test_recent_actions_extraction() {
+    let test_app = spawn_app_with_options(false, false, false, false).await;
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    
+    // Create test user and DEK
+    let user = create_test_user(
+        &test_app.db_pool,
+        "test_user@example.com".to_string(),
+        "TestUser".to_string(),
+    ).await.unwrap();
+    
+    let user_dek = Arc::new(generate_dek().unwrap());
+    let character = create_encrypted_test_character(&user_dek).await;
+    
+    // Create a functional assembler
+    let assembler = create_functional_assembler(&test_app).await;
+    
+    // Create chat history that implies recent actions
+    let chat_history = vec![
+        GenAiChatMessage::user("Sir Galahad fought the dragon yesterday"),
+        GenAiChatMessage::assistant("The brave knight strikes with his sword, wounding the beast."),
+        GenAiChatMessage::user("Then he spoke to the princess"),
+        GenAiChatMessage::assistant("The princess listens to the knight's tale of valor."),
+        GenAiChatMessage::user("Now he seeks guidance from his mentor"),
+    ];
+    
+    let result = assembler.assemble_enriched_context(
+        "Sir Galahad seeks guidance from his mentor about the dragon fight",
+        &chat_history,
+        Some(&character),
+        user.id,
+        Some(&user_dek),
+    ).await;
+    
+    assert!(result.is_ok());
+    let context = result.unwrap();
+    
+    // Should find the character entity
+    let character_entity = context.relevant_entities.iter()
+        .find(|e| e.entity_name == "Sir Galahad")
+        .expect("Character entity should be present");
+    
+    // Debug: Print recent actions count and details
+    println!("Character entity recent actions count: {}", character_entity.recent_actions.len());
+    for (i, action) in character_entity.recent_actions.iter().enumerate() {
+        println!("Action {}: {} ({}), impact: {}", i, action.description, action.action_type, action.impact_level);
+    }
+    
+    // Should have extracted recent actions
+    assert!(character_entity.recent_actions.len() > 0);
+    
+    // Should have actions with reasonable impact levels
+    assert!(character_entity.recent_actions.iter()
+        .any(|a| a.impact_level >= 0.5));
+    
+    // Should have meaningful action types
+    assert!(character_entity.recent_actions.iter()
+        .any(|a| !a.action_type.is_empty()));
+    
+    // Should have meaningful descriptions
+    assert!(character_entity.recent_actions.iter()
+        .any(|a| !a.description.is_empty()));
+}
+
+#[tokio::test]
+async fn test_emotional_state_extraction() {
+    let test_app = spawn_app_with_options(false, false, false, false).await;
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    
+    // Create test user and DEK
+    let user = create_test_user(
+        &test_app.db_pool,
+        "test_user@example.com".to_string(),
+        "TestUser".to_string(),
+    ).await.unwrap();
+    
+    let user_dek = Arc::new(generate_dek().unwrap());
+    let character = create_encrypted_test_character(&user_dek).await;
+    
+    // Create a functional assembler
+    let assembler = create_functional_assembler(&test_app).await;
+    
+    // Create chat history that implies emotional states
+    let chat_history = vec![
+        GenAiChatMessage::user("Sir Galahad is devastated by the loss of his closest friend"),
+        GenAiChatMessage::assistant("The knight's shoulders sag with grief as he mourns the fallen companion."),
+        GenAiChatMessage::user("He struggles with anger and doubt about his mission"),
+        GenAiChatMessage::assistant("Sir Galahad's usual noble composure cracks, revealing deep uncertainty."),
+        GenAiChatMessage::user("Now he seeks redemption and peace through meditation"),
+    ];
+    
+    let result = assembler.assemble_enriched_context(
+        "Sir Galahad meditates, seeking inner peace after his friend's death",
+        &chat_history,
+        Some(&character),
+        user.id,
+        Some(&user_dek),
+    ).await;
+    
+    assert!(result.is_ok());
+    let context = result.unwrap();
+    
+    // Should find the character entity
+    let character_entity = context.relevant_entities.iter()
+        .find(|e| e.entity_name == "Sir Galahad")
+        .expect("Character entity should be present");
+    
+    // Should have extracted emotional state
+    assert!(character_entity.emotional_state.is_some());
+    
+    let emotional_state = character_entity.emotional_state.as_ref().unwrap();
+    
+    // Debug: Print emotional state details
+    println!("Emotional state: {} (intensity: {})", emotional_state.primary_emotion, emotional_state.intensity);
+    println!("Contributing factors: {:?}", emotional_state.contributing_factors);
+    
+    // Should have a valid primary emotion
+    assert!(!emotional_state.primary_emotion.is_empty());
+    
+    // Should have reasonable intensity (0.0 to 1.0)
+    assert!(emotional_state.intensity >= 0.0 && emotional_state.intensity <= 1.0);
+    
+    // Should have some contributing factors
+    assert!(!emotional_state.contributing_factors.is_empty());
+    
+    // Should have meaningful contributing factors
+    assert!(emotional_state.contributing_factors.iter()
+        .any(|f| !f.is_empty()));
 }

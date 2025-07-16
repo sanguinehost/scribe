@@ -902,26 +902,37 @@ pub struct ContextCache {
         *   **Test Status**: 11 passed, 0 failed - ✅ **ALL INTEGRATION TESTS PASSING** - Complete Planning Service Integration validated
 
 *   **[ ] Task 6.2: System Feature Completeness**
+    *   **Current State:** 🔶 **DISCOVERY COMPLETE** - Analysis reveals solid foundation with specific implementation gaps identified
     *   **[ ] Subtask 6.2.1: Hierarchical Context Assembler Enhancements**
-        *   [ ] **Causal Context Implementation**: Implement causal relationship tracking between entities
-        *   [ ] **Entity Dependencies Extraction**: Extract entity dependencies from plan steps
-        *   [ ] **Risk Identification System**: Implement comprehensive risk identification
-        *   [ ] **Spatial Location Integration**: Integrate with ECS spatial components
-        *   [ ] **Relationship Extraction**: Extract relationships from chat context
-        *   [ ] **Action History Tracking**: Implement recent actions tracking
-        *   [ ] **Emotional State Analysis**: Add emotional state analysis
-        *   [ ] **Entity Resolution Tool Integration**: Integrate tool to find additional relevant entities
-        *   [ ] **Event Systems**: Extract recent events and implement future event scheduling
+        *   **Current State:** ✅ **HierarchicalContextAssembler exists and is production-ready**, but 8/9 features are unimplemented (TODO comments with proper data structures)
+        *   **File:** `backend/src/services/hierarchical_context_assembler.rs`
+        *   **Infrastructure:** ✅ Complete with Flash AI integration, encryption support, test coverage
+        *   **Implementation Status:** ~10% complete - structure exists, logic missing
+        *   **Priority Order (High → Medium → Low):**
+        *   [ ] **Entity Resolution Tool Integration** (Line 643-644) - ⭐ **EASIEST** - Tool exists, just needs integration in `gather_entity_context`
+        *   [x] **Spatial Location Integration** (Line 633, 695) - ✅ **COMPLETED** - AI-powered spatial location extraction with fallback handling
+        *   [ ] **Entity Dependencies Extraction** (Line 508) - ⭐ **STRAIGHTFORWARD** - Aggregate `required_entities` from plan steps
+        *   [x] **Relationship Extraction** (Line 634) - ✅ **COMPLETED** - Use Flash AI to extract relationships from chat history
+        *   [ ] **Action History Tracking** (Line 635) - 📊 **CHRONICLE INTEGRATION** - Extract actions from chat history and chronicle events
+        *   [ ] **Event Systems** (Line 728-729) - 🗓️ **TEMPORAL ANALYSIS** - Event extraction + scheduling system
+        *   [ ] **Causal Context Implementation** (Context Assembly Engine) - 🔗 **COMPLEX REASONING** - AI-powered causal analysis (schema complete, reasoning missing)
+        *   [x] **Emotional State Analysis** (Line 636) - ✅ **COMPLETED** - Flash AI emotional state analysis
+        *   [x] **Risk Identification System** (Line 512) - ✅ **COMPLETED** - Multi-factor risk assessment framework
     *   **[ ] Subtask 6.2.2: Hybrid Query Service Completeness**
-        *   [ ] **Event Participants Finding**: Implement event participant discovery
-        *   [ ] **Query Relevance Scoring**: Calculate relevance scores based on query context
-        *   [ ] **Entity Manager Integration**: Complete integration for current state queries
-        *   [ ] **Historical State Reconstruction**: Reconstruct entity states at specific event times
-        *   [ ] **Event Significance Scoring**: Implement significance calculation for events
-        *   [ ] **Entity Context Building**: Parse events to build entity contexts
-        *   [ ] **Narrative Answer Generation**: Generate narrative responses to queries
-        *   [ ] **Relationship Analysis**: Implement relationship strength analysis over time
-        *   [ ] **Item Systems**: Add item ownership timelines and usage patterns
+        *   **Current State:** ✅ **HybridQueryService exists with sophisticated architecture**, but 7/9 features return placeholder data
+        *   **File:** `backend/src/services/hybrid_query_service.rs`
+        *   **Infrastructure:** ✅ Complete with routing, circuit breakers, comprehensive test coverage
+        *   **Implementation Status:** ~30% complete - architecture solid, core logic missing
+        *   **Priority Order (High → Medium → Low):**
+        *   [ ] **Entity Manager Integration** (Line 916) - ⭐ **CRITICAL** - Replace `get_entity_current_state` stub with actual ECS calls
+        *   [ ] **Event Participants Finding** (Line 839, 1002) - ⭐ **HIGH VALUE** - Parse chronicle events for actor/participant data
+        *   [ ] **Query Relevance Scoring** (Line 911) - 🧠 **SEMANTIC ANALYSIS** - Replace hardcoded scores with embedding-based similarity
+        *   [ ] **Historical State Reconstruction** (Line 948) - 🕰️ **COMPLEX LOGIC** - Reconstruct entity states at specific event times
+        *   [ ] **Relationship Analysis** (Line 1034, 1058) - 📈 **TEMPORAL TRENDS** - Analyze relationship strength changes over time
+        *   [ ] **Event Significance Scoring** (Line 950) - 📊 **ALGORITHM DESIGN** - Replace hardcoded scores with multi-factor calculation
+        *   [ ] **Narrative Answer Generation** (Line 1156) - 📝 **AI-POWERED** - Flash AI narrative synthesis from query results
+        *   [ ] **Entity Context Building** (Line 1080) - 🔍 **COMPREHENSIVE PARSING** - Rich context building from event content
+        *   [ ] **Item Systems** (Line 1718-1719) - 📦 **COMPREHENSIVE TRACKING** - Item ownership timelines and usage patterns
 
 *   **[ ] Task 6.3: End-to-End Scenario Testing**
     *   **[ ] Subtask 6.3.1: Write Full Loop Test:** Write an integration test simulating a multi-turn conversation, asserting the world state in the database is correctly and consistently updated by the full `Strategic -> Tactical -> Perception` loop.

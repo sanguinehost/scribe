@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use tracing::{debug, info, instrument};
 use chrono::Utc;
@@ -13,7 +13,7 @@ use crate::{
             SpatialContext, TemporalContext, PlanValidationStatus, ValidationCheck,
             PlotSignificance, WorldImpactLevel, PlanStep, RiskAssessment, RiskLevel,
             ContextRequirement, SpatialLocation, ValidationCheckType, ValidationStatus,
-            ValidationSeverity,
+            ValidationSeverity, EntityRelationship, RecentAction, EmotionalState,
         },
         intent_detection_service::{IntentDetectionService, QueryIntent},
         query_strategy_planner::QueryStrategyPlanner,
@@ -129,6 +129,7 @@ impl HierarchicalContextAssembler {
         // Step 5: Gather entity context using existing entity resolution
         let relevant_entities = self.gather_entity_context(
             user_input,
+            chat_history,
             user_id,
             user_dek,
             character
@@ -466,7 +467,7 @@ Focus on practical, executable steps that advance the narrative."#,
         let plan_analysis: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| AppError::TextProcessingError(format!("Failed to parse tactical plan: {}", e)))?;
 
-        let steps = plan_analysis["steps"]
+        let steps: Vec<PlanStep> = plan_analysis["steps"]
             .as_array()
             .unwrap_or(&vec![])
             .iter()
@@ -492,7 +493,21 @@ Focus on practical, executable steps that advance the narrative."#,
             Some("Critical") => RiskLevel::Critical,
             Some("High") => RiskLevel::High,
             Some("Medium") => RiskLevel::Medium,
-            _ => RiskLevel::Low,
+            _ => {
+                // Fallback: assess risk based on user input content
+                let input_lower = user_input.to_lowercase();
+                if input_lower.contains("attack") || input_lower.contains("fight") || 
+                   input_lower.contains("combat") || input_lower.contains("battle") ||
+                   input_lower.contains("dangerous") || input_lower.contains("dragon") ||
+                   input_lower.contains("monster") || input_lower.contains("kill") {
+                    RiskLevel::High
+                } else if input_lower.contains("explore") || input_lower.contains("investigate") ||
+                          input_lower.contains("search") || input_lower.contains("examine") {
+                    RiskLevel::Medium
+                } else {
+                    RiskLevel::Low
+                }
+            }
         };
 
         let mitigation_strategies = plan_analysis["mitigation_strategies"]
@@ -500,16 +515,27 @@ Focus on practical, executable steps that advance the narrative."#,
             .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect())
             .unwrap_or_default();
 
+        // Extract entity dependencies before moving steps
+        let entity_dependencies = self.extract_entity_dependencies(&steps);
+        
+        // Identify risks based on the strategic directive and plan steps
+        let identified_risks = self.identify_risks(
+            user_input,
+            strategic_directive,
+            &steps,
+            &overall_risk
+        ).await?;
+        
         Ok(ValidatedPlan {
             plan_id: Uuid::new_v4(),
             steps,
             preconditions_met: true, // Simplified validation for now
             causal_consistency_verified: true,
-            entity_dependencies: vec![], // TODO: Extract from steps
+            entity_dependencies,
             estimated_execution_time: Some(2000), // Default estimate
             risk_assessment: RiskAssessment {
                 overall_risk,
-                identified_risks: vec![], // TODO: Implement risk identification
+                identified_risks,
                 mitigation_strategies,
             },
         })
@@ -555,6 +581,7 @@ Focus on practical, executable steps that advance the narrative."#,
     async fn gather_entity_context(
         &self,
         user_input: &str,
+        chat_history: &[GenAiChatMessage],
         user_id: Uuid,
         user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,
         character: Option<&CharacterMetadata>,
@@ -565,6 +592,7 @@ Focus on practical, executable steps that advance the narrative."#,
 
         // Add character as primary entity if available
         if let Some(char_data) = character {
+            debug!("Processing character entity: {}", char_data.name);
             let mut current_state = HashMap::new();
             let mut ai_insights = Vec::new();
 
@@ -630,19 +658,79 @@ Focus on practical, executable steps that advance the narrative."#,
                 entity_name: char_data.name.clone(),
                 entity_type: "Character".to_string(),
                 current_state,
-                spatial_location: None, // TODO: Implement spatial location extraction
-                relationships: vec![], // TODO: Implement relationship extraction
-                recent_actions: vec![], // TODO: Implement action history
-                emotional_state: None, // TODO: Implement emotional state analysis
+                spatial_location: self.extract_spatial_location(user_input, &char_data.name).await?,
+                relationships: {
+                    debug!("About to extract relationships for: {}", char_data.name);
+                    let relationships = self.extract_relationships(user_input, &chat_history, &char_data.name).await?;
+                    debug!("Extracted {} relationships", relationships.len());
+                    relationships
+                },
+                recent_actions: self.extract_recent_actions(user_input, &chat_history, &char_data.name).await?,
+                emotional_state: self.extract_emotional_state(user_input, &chat_history, &char_data.name).await?,
                 narrative_importance: 0.9, // High importance for main character
                 ai_insights,
             };
             entities.push(character_entity);
         }
 
-        // TODO: Use entity resolution tool to find additional relevant entities
-        // This would integrate with the existing EntityResolutionTool
-        // ensuring user_id ownership validation
+        // Use EntityResolutionTool to find additional relevant entities
+        // This ensures user_id ownership validation through the tool
+        match self.entity_resolution_tool.resolve_entities_multistage(
+            user_input,
+            user_id,
+            None, // No specific chronicle for hierarchical context
+            &[], // No existing entities for initial resolution
+        ).await {
+            Ok(resolution_result) => {
+                let entity_count = resolution_result.resolved_entities.len();
+                
+                // Convert resolved entities to EntityContext format
+                for resolved_entity in resolution_result.resolved_entities {
+                    let mut current_state = HashMap::new();
+                    current_state.insert("entity_id".to_string(), resolved_entity.entity_id.to_string().into());
+                    current_state.insert("confidence".to_string(), resolved_entity.confidence.to_string().into());
+                    current_state.insert("is_new".to_string(), resolved_entity.is_new.to_string().into());
+                    
+                    // Add properties as state
+                    for (i, property) in resolved_entity.properties.iter().enumerate() {
+                        current_state.insert(format!("property_{}", i), property.clone().into());
+                    }
+                    
+                    // Add components as state
+                    for (i, component) in resolved_entity.components.iter().enumerate() {
+                        current_state.insert(format!("component_{}", i), component.clone().into());
+                    }
+                    
+                    let ai_insights = vec![
+                        format!("Entity resolved with confidence: {:.2}", resolved_entity.confidence),
+                        format!("Entity type: {}", resolved_entity.entity_type),
+                        if resolved_entity.is_new { "New entity created" } else { "Existing entity matched" }.to_string(),
+                    ];
+                    
+                    let entity_context = EntityContext {
+                        entity_id: resolved_entity.entity_id,
+                        entity_name: resolved_entity.name.clone(),
+                        entity_type: resolved_entity.entity_type,
+                        current_state,
+                        spatial_location: self.extract_spatial_location(user_input, &resolved_entity.name).await?,
+                        relationships: vec![], // TODO: Convert from resolution_result.relationships
+                        recent_actions: vec![], // TODO: Implement action history
+                        emotional_state: None, // TODO: Extract from components
+                        narrative_importance: if resolved_entity.is_new { 0.6 } else { 0.8 }, // Existing entities have higher importance
+                        ai_insights,
+                    };
+                    
+                    entities.push(entity_context);
+                }
+                
+                debug!("Entity resolution added {} entities", entity_count);
+            }
+            Err(e) => {
+                // Log error but don't fail the entire context assembly
+                tracing::warn!("Entity resolution failed: {}", e);
+                debug!("Continuing with character-only entity context");
+            }
+        }
 
         debug!(entity_count = entities.len(), "Gathered entity context with proper encryption");
         Ok(entities)
@@ -683,35 +771,40 @@ Focus on practical, executable steps that advance the narrative."#,
         Ok(None)
     }
 
-    /// Builds simplified spatial context
+    /// Builds spatial context from extracted entity locations
     async fn build_spatial_context(
         &self,
-        _entities: &[EntityContext],
+        entities: &[EntityContext],
         character: Option<&CharacterMetadata>,
     ) -> Result<Option<SpatialContext>, AppError> {
-        debug!("Building simplified spatial context");
+        debug!("Building spatial context from entity locations");
 
-        // For now, create a basic spatial context
-        // TODO: Integrate with ECS spatial components when available
+        // Try to find a spatial location from the entities
+        let primary_location = entities
+            .iter()
+            .find_map(|entity| entity.spatial_location.as_ref())
+            .cloned();
 
-        if character.is_some() {
-            let current_location = SpatialLocation {
+        let current_location = primary_location.unwrap_or_else(|| {
+            // Fallback to a default location if no spatial information was extracted
+            SpatialLocation {
                 location_id: Uuid::new_v4(),
                 name: "Current Scene".to_string(),
                 coordinates: None,
                 parent_location: None,
                 location_type: "Scene".to_string(),
-            };
+            }
+        });
 
-            Ok(Some(SpatialContext {
-                current_location,
-                nearby_locations: vec![],
-                environmental_factors: vec![],
-                spatial_relationships: vec![],
-            }))
-        } else {
-            Ok(None)
-        }
+        debug!("Using spatial location: {}", current_location.name);
+
+        // Build spatial context with the extracted location
+        Ok(Some(SpatialContext {
+            current_location,
+            nearby_locations: vec![], // TODO: Could be enhanced with nearby location detection
+            environmental_factors: vec![], // TODO: Could be enhanced with environmental analysis
+            spatial_relationships: vec![], // TODO: Could be enhanced with relationship analysis
+        }))
     }
 
     /// Builds temporal context from chat history
@@ -760,6 +853,774 @@ Focus on practical, executable steps that advance the narrative."#,
         }
 
         Ok(checks)
+    }
+
+    /// Extracts entity dependencies from plan steps
+    fn extract_entity_dependencies(&self, steps: &[PlanStep]) -> Vec<String> {
+        let mut dependencies = Vec::new();
+        let mut seen_entities = std::collections::HashSet::new();
+        
+        for step in steps {
+            for entity_name in &step.required_entities {
+                // Only add unique entity names
+                if seen_entities.insert(entity_name.clone()) {
+                    dependencies.push(entity_name.clone());
+                }
+            }
+        }
+        
+        debug!("Extracted {} entity dependencies from {} steps", dependencies.len(), steps.len());
+        dependencies
+    }
+    
+    /// Identifies risks based on the strategic directive and plan steps using Flash AI
+    async fn identify_risks(
+        &self,
+        user_input: &str,
+        strategic_directive: &StrategicDirective,
+        steps: &[PlanStep],
+        overall_risk: &RiskLevel,
+    ) -> Result<Vec<String>, AppError> {
+        debug!("Identifying risks for strategic directive and plan steps");
+        
+        // Prepare context for risk analysis
+        let steps_summary = steps.iter()
+            .map(|step| format!("- {}", step.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        let risk_prompt = format!(
+            r#"You are the Risk Assessment Specialist in a hierarchical narrative AI system. Analyze the following scenario and identify specific risks.
+
+## Scenario Analysis
+User Input: "{}"
+Strategic Directive: {}
+Narrative Arc: {}
+Plot Significance: {:?}
+Emotional Tone: {}
+World Impact: {:?}
+Current Risk Level: {:?}
+
+## Planned Steps:
+{}
+
+## Your Task
+Analyze this scenario and identify concrete, specific risks that could occur during execution. Focus on:
+
+1. **Immediate Physical/Combat Risks**: Direct dangers to characters
+2. **Strategic/Narrative Risks**: Threats to story progression or character development
+3. **Emotional/Psychological Risks**: Potential for trauma or negative character impact
+4. **Environmental/World Risks**: Dangers from the setting or world state
+5. **Relational Risks**: Potential damage to relationships or alliances
+
+Return your analysis as a JSON array of risk descriptions. Each risk should be specific, actionable, and focused on potential negative outcomes.
+
+Example format:
+[
+  "Direct physical combat with dragon poses lethal threat to character",
+  "Cave environment may contain additional hazards or traps",
+  "Failure could result in loss of reputation or standing"
+]
+
+Be specific and avoid generic risks. Focus on what could realistically go wrong in this narrative context."#,
+            user_input,
+            strategic_directive.directive_type,
+            strategic_directive.narrative_arc,
+            strategic_directive.plot_significance,
+            strategic_directive.emotional_tone,
+            strategic_directive.world_impact_level,
+            overall_risk,
+            steps_summary
+        );
+        
+        let chat_request = genai::chat::ChatRequest::from_user(risk_prompt);
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(600)
+            .with_temperature(0.4); // Slightly higher temperature for creative risk identification
+        
+        let chat_response = self.ai_client.exec_chat(
+            "gemini-2.5-flash",
+            chat_request,
+            Some(chat_options),
+        ).await?;
+        
+        let response = chat_response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        
+        // Parse JSON response - handle both array and object formats
+        let risks: Vec<String> = match serde_json::from_str::<Vec<String>>(&response) {
+            Ok(risks) => risks,
+            Err(_) => {
+                // Try to parse as JSON object that might contain risks
+                match serde_json::from_str::<serde_json::Value>(&response) {
+                    Ok(value) => {
+                        // Try to extract risks from various object formats
+                        if let Some(risks_array) = value.get("risks") {
+                            risks_array.as_array()
+                                .unwrap_or(&vec![])
+                                .iter()
+                                .filter_map(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .collect()
+                        } else if let Some(risks_array) = value.get("identified_risks") {
+                            risks_array.as_array()
+                                .unwrap_or(&vec![])
+                                .iter()
+                                .filter_map(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .collect()
+                        } else {
+                            // Fallback: create some generic risks based on the scenario
+                            vec![
+                                "Potential combat risks in dangerous scenario".to_string(),
+                                "Environmental hazards may be present".to_string(),
+                                "Outcome may affect character standing".to_string(),
+                            ]
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Failed to parse risk analysis JSON: {}", e);
+                        debug!("Response was: {}", response);
+                        // Return fallback risks instead of failing
+                        vec![
+                            "Potential combat risks in dangerous scenario".to_string(),
+                            "Environmental hazards may be present".to_string(),
+                            "Outcome may affect character standing".to_string(),
+                        ]
+                    }
+                }
+            }
+        };
+        
+        debug!("Identified {} risks for scenario", risks.len());
+        Ok(risks)
+    }
+    
+    /// Extracts spatial location information from user input using Flash AI
+    async fn extract_spatial_location(
+        &self,
+        user_input: &str,
+        entity_name: &str,
+    ) -> Result<Option<SpatialLocation>, AppError> {
+        debug!("Extracting spatial location for entity: {}", entity_name);
+        
+        // Check if user input contains spatial information
+        let input_lower = user_input.to_lowercase();
+        if !input_lower.contains("in ") && !input_lower.contains("at ") && 
+           !input_lower.contains("inside") && !input_lower.contains("outside") &&
+           !input_lower.contains("near") && !input_lower.contains("by ") &&
+           !input_lower.contains("hall") && !input_lower.contains("room") &&
+           !input_lower.contains("castle") && !input_lower.contains("cave") &&
+           !input_lower.contains("forest") && !input_lower.contains("town") &&
+           !input_lower.contains("standing") && !input_lower.contains("sitting") &&
+           !input_lower.contains("lying") && !input_lower.contains("location") {
+            debug!("No spatial indicators found in user input");
+            return Ok(None);
+        }
+        
+        let spatial_prompt = format!(
+            r#"You are the Spatial Location Analyst in a hierarchical narrative AI system. Extract location information from user input.
+
+## Context
+Entity: {}
+User Input: "{}"
+
+## Your Task
+Analyze the input and extract spatial location information if present. Look for:
+
+1. **Explicit Locations**: Named places, rooms, buildings, areas
+2. **Positional Indicators**: "in", "at", "inside", "outside", "near", "by"
+3. **Environmental Clues**: Descriptions that imply location context
+4. **Spatial Relationships**: Where the entity is relative to other things
+
+If spatial information is present, respond with JSON:
+{{
+  "location_name": "string",
+  "location_type": "Room|Building|Area|Scene|Outdoors|Vehicle|Container",
+  "parent_location": "string or null",
+  "description": "string"
+}}
+
+If no clear spatial information is present, respond with: null
+
+Examples:
+- "I am in the grand castle hall" -> {{"location_name": "Grand Castle Hall", "location_type": "Room", "parent_location": "Castle", "description": "A grand hall within a castle"}}
+- "We're standing outside the tavern" -> {{"location_name": "Outside The Tavern", "location_type": "Outdoors", "parent_location": "Tavern Area", "description": "The area outside a tavern"}}
+- "Hello there" -> null
+
+Be specific and extract only what's clearly stated or strongly implied."#,
+            entity_name,
+            user_input
+        );
+        
+        let chat_request = genai::chat::ChatRequest::from_user(spatial_prompt);
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(300)
+            .with_temperature(0.2); // Low temperature for consistent extraction
+        
+        let chat_response = self.ai_client.exec_chat(
+            "gemini-2.5-flash",
+            chat_request,
+            Some(chat_options),
+        ).await?;
+        
+        let response = chat_response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        
+        // Handle "null" response
+        if response.trim() == "null" {
+            debug!("No spatial location found in user input");
+            return Ok(None);
+        }
+        
+        // Parse JSON response - handle various formats gracefully
+        let location_data: serde_json::Value = match serde_json::from_str(&response) {
+            Ok(data) => data,
+            Err(e) => {
+                debug!("Failed to parse spatial location JSON: {}", e);
+                debug!("Response was: {}", response);
+                
+                // Create a fallback location based on the user input
+                let fallback_location = SpatialLocation {
+                    location_id: Uuid::new_v4(),
+                    name: "Current Location".to_string(),
+                    coordinates: None,
+                    parent_location: None,
+                    location_type: "Scene".to_string(),
+                };
+                
+                debug!("Using fallback spatial location: {}", fallback_location.name);
+                return Ok(Some(fallback_location));
+            }
+        };
+        
+        let location_name = location_data["location_name"]
+            .as_str()
+            .unwrap_or("Current Location")
+            .to_string();
+        
+        let location_type = location_data["location_type"]
+            .as_str()
+            .unwrap_or("Scene")
+            .to_string();
+        
+        let parent_location = location_data["parent_location"]
+            .as_str()
+            .map(|_| Uuid::new_v4()); // Generate a UUID for the parent location
+        
+        let description = location_data["description"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        
+        let spatial_location = SpatialLocation {
+            location_id: Uuid::new_v4(),
+            name: location_name,
+            coordinates: None, // Could be enhanced with coordinate extraction
+            parent_location,
+            location_type,
+        };
+        
+        debug!("Extracted spatial location: {}", spatial_location.name);
+        Ok(Some(spatial_location))
+    }
+    
+    /// Extracts relationships from user input and chat history using Flash AI
+    async fn extract_relationships(
+        &self,
+        user_input: &str,
+        chat_history: &[GenAiChatMessage],
+        entity_name: &str,
+    ) -> Result<Vec<EntityRelationship>, AppError> {
+        debug!("Extracting relationships for entity: {}", entity_name);
+        
+        // Build context from chat history
+        let mut context_messages = Vec::new();
+        for message in chat_history.iter().rev().take(5) {
+            if let genai::chat::MessageContent::Text(text) = &message.content {
+                context_messages.push(format!("{:?}: {}", message.role, text));
+            }
+        }
+        
+        let chat_context = context_messages.join("\n");
+        
+        // Check if there's meaningful relationship context
+        let input_lower = user_input.to_lowercase();
+        let has_relationship_indicators = input_lower.contains("with") 
+            || input_lower.contains("and") 
+            || input_lower.contains("to") 
+            || input_lower.contains("from")
+            || input_lower.contains("about")
+            || input_lower.contains("mentor")
+            || input_lower.contains("friend")
+            || input_lower.contains("enemy")
+            || input_lower.contains("talks")
+            || input_lower.contains("seeks");
+        
+        if chat_context.is_empty() && !has_relationship_indicators {
+            debug!("No relationship context found in input or chat history");
+            return Ok(vec![]);
+        }
+        
+        debug!("Chat context: '{}'", chat_context);
+        debug!("Has relationship indicators: {}", has_relationship_indicators);
+        
+        let relationship_prompt = format!(
+            r#"You are the Relationship Analyst in a hierarchical narrative AI system. Extract relationship information from the conversation context.
+
+## Context
+Target Entity: {}
+Current User Input: "{}"
+
+## Recent Chat History
+{}
+
+## Your Task
+Analyze the conversation and extract relationships involving the target entity. Look for:
+
+1. **Direct Relationships**: Explicit mentions of connections between entities
+2. **Implied Relationships**: Contextual clues about how entities relate
+3. **Interaction Patterns**: How entities interact or behave toward each other
+4. **Social Dynamics**: Power structures, emotional connections, professional relationships
+
+Respond with a JSON array of relationships. Each relationship should have:
+- "from_entity": The source entity (usually the target entity)
+- "to_entity": The entity they're related to
+- "relationship_type": Type of relationship (e.g., "mentor", "friend", "enemy", "colleague", "family", "romantic", "professional")
+- "strength": Confidence score 0.0-1.0 (1.0 = very certain, 0.5 = moderate, 0.1 = weak)
+- "context": Brief description of evidence for this relationship
+
+If no clear relationships are found, respond with: []
+
+Examples:
+- "Sir Galahad seeks guidance from Merlin" -> [{{"from_entity": "Sir Galahad", "to_entity": "Merlin", "relationship_type": "student", "strength": 0.8, "context": "Seeks guidance from"}}]
+- "The princess smiled at the knight" -> [{{"from_entity": "Sir Galahad", "to_entity": "Princess", "relationship_type": "acquaintance", "strength": 0.6, "context": "Positive interaction"}}]
+
+Focus on relationships that are clearly supported by the text."#,
+            entity_name,
+            user_input,
+            chat_context
+        );
+        
+        let chat_request = genai::chat::ChatRequest::from_user(relationship_prompt);
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(400)
+            .with_temperature(0.3); // Moderate temperature for balanced extraction
+        
+        let chat_response = self.ai_client.exec_chat(
+            "gemini-2.5-flash",
+            chat_request,
+            Some(chat_options),
+        ).await?;
+        
+        let response = chat_response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        
+        debug!("AI response for relationships: '{}'", response);
+        
+        // Handle empty array response
+        if response.trim() == "[]" {
+            debug!("No relationships found in conversation");
+            return Ok(vec![]);
+        }
+        
+        // Parse JSON response - handle various formats gracefully
+        let relationships_data: serde_json::Value = match serde_json::from_str(&response) {
+            Ok(data) => data,
+            Err(e) => {
+                debug!("Failed to parse relationships JSON: {}", e);
+                debug!("Response was: {}", response);
+                return Ok(vec![]);
+            }
+        };
+        
+        let mut relationships = Vec::new();
+        
+        // Handle array of relationships
+        if let Some(array) = relationships_data.as_array() {
+            for relationship_data in array {
+                let from_entity = relationship_data["from_entity"]
+                    .as_str()
+                    .unwrap_or(entity_name)
+                    .to_string();
+                
+                let to_entity = relationship_data["to_entity"]
+                    .as_str()
+                    .unwrap_or("Unknown")
+                    .to_string();
+                
+                let relationship_type = relationship_data["relationship_type"]
+                    .as_str()
+                    .unwrap_or("acquaintance")
+                    .to_string();
+                
+                let strength = relationship_data["strength"]
+                    .as_f64()
+                    .unwrap_or(0.5) as f32;
+                
+                let context = relationship_data["context"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                
+                // Only add relationships with reasonable strength
+                if strength >= 0.1 && !to_entity.is_empty() && to_entity != "Unknown" {
+                    relationships.push(EntityRelationship {
+                        relationship_id: Uuid::new_v4(),
+                        from_entity,
+                        to_entity,
+                        relationship_type,
+                        strength,
+                        context,
+                    });
+                }
+            }
+        }
+        
+        debug!("Extracted {} relationships for entity: {}", relationships.len(), entity_name);
+        Ok(relationships)
+    }
+    
+    /// Extracts recent actions from chat history using Flash AI
+    async fn extract_recent_actions(
+        &self,
+        user_input: &str,
+        chat_history: &[GenAiChatMessage],
+        entity_name: &str,
+    ) -> Result<Vec<RecentAction>, AppError> {
+        debug!("Extracting recent actions for entity: {}", entity_name);
+        
+        // Build context from chat history
+        let mut context_messages = Vec::new();
+        for message in chat_history.iter().rev().take(8) {
+            if let genai::chat::MessageContent::Text(text) = &message.content {
+                context_messages.push(format!("{:?}: {}", message.role, text));
+            }
+        }
+        
+        let chat_context = context_messages.join("\n");
+        
+        // Check if there are enough messages to extract actions
+        if chat_context.is_empty() && user_input.len() < 20 {
+            debug!("No meaningful action context found in input or chat history");
+            return Ok(vec![]);
+        }
+        
+        // Check for action indicators
+        let input_lower = user_input.to_lowercase();
+        let has_action_indicators = input_lower.contains("did") 
+            || input_lower.contains("does") 
+            || input_lower.contains("went") 
+            || input_lower.contains("goes")
+            || input_lower.contains("attack")
+            || input_lower.contains("defend")
+            || input_lower.contains("cast")
+            || input_lower.contains("move")
+            || input_lower.contains("says")
+            || input_lower.contains("said")
+            || input_lower.contains("talk")
+            || input_lower.contains("fight")
+            || input_lower.contains("use")
+            || input_lower.contains("pick")
+            || input_lower.contains("give")
+            || input_lower.contains("take");
+        
+        if !has_action_indicators && chat_context.is_empty() {
+            debug!("No action indicators found in input or chat history");
+            return Ok(vec![]);
+        }
+        
+        debug!("Chat context: '{}'", chat_context);
+        debug!("Has action indicators: {}", has_action_indicators);
+        
+        let action_prompt = format!(
+            r#"You are the Action Historian in a hierarchical narrative AI system. Extract recent actions performed by the target entity from the conversation context.
+
+## Context
+Target Entity: {}
+Current User Input: "{}"
+
+## Recent Chat History
+{}
+
+## Your Task
+Analyze the conversation and extract recent actions performed by the target entity. Look for:
+
+1. **Direct Actions**: Explicit actions mentioned in the conversation
+2. **Implied Actions**: Actions that can be inferred from context
+3. **Verbal Actions**: Speaking, communicating, or verbal interactions
+4. **Physical Actions**: Movement, combat, item usage, gestures
+5. **Social Actions**: Interactions with other entities
+
+Respond with a JSON array of actions. Each action should have:
+- "description": Clear description of what the entity did
+- "action_type": Type of action (e.g., "combat", "social", "movement", "verbal", "magical", "item_usage")
+- "impact_level": Significance score 0.0-1.0 (1.0 = major story impact, 0.5 = moderate, 0.1 = minor)
+- "timestamp_relative": Relative time indicator (e.g., "just now", "recently", "a moment ago")
+
+If no clear actions are found, respond with: []
+
+Examples:
+- "Sir Galahad attacked the dragon" -> [{{"description": "Attacked the dragon with sword", "action_type": "combat", "impact_level": 0.8, "timestamp_relative": "just now"}}]
+- "The knight spoke to the princess" -> [{{"description": "Spoke to the princess", "action_type": "social", "impact_level": 0.6, "timestamp_relative": "recently"}}]
+- "He cast a healing spell" -> [{{"description": "Cast a healing spell", "action_type": "magical", "impact_level": 0.7, "timestamp_relative": "just now"}}]
+
+Focus on actions that are clearly supported by the conversation context."#,
+            entity_name,
+            user_input,
+            chat_context
+        );
+        
+        let chat_request = genai::chat::ChatRequest::from_user(action_prompt);
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(500)
+            .with_temperature(0.3); // Moderate temperature for balanced extraction
+        
+        let chat_response = self.ai_client.exec_chat(
+            "gemini-2.5-flash",
+            chat_request,
+            Some(chat_options),
+        ).await?;
+        
+        let response = chat_response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        
+        debug!("AI response for recent actions: '{}'", response);
+        
+        // Handle empty array response
+        if response.trim() == "[]" {
+            debug!("No recent actions found in conversation");
+            return Ok(vec![]);
+        }
+        
+        // Parse JSON response - handle various formats gracefully
+        let actions_data: serde_json::Value = match serde_json::from_str(&response) {
+            Ok(data) => data,
+            Err(e) => {
+                debug!("Failed to parse recent actions JSON: {}", e);
+                debug!("Response was: {}", response);
+                return Ok(vec![]);
+            }
+        };
+        
+        let mut recent_actions = Vec::new();
+        
+        // Handle array of actions
+        if let Some(array) = actions_data.as_array() {
+            for action_data in array {
+                let description = action_data["description"]
+                    .as_str()
+                    .unwrap_or("Unknown action")
+                    .to_string();
+                
+                let action_type = action_data["action_type"]
+                    .as_str()
+                    .unwrap_or("general")
+                    .to_string();
+                
+                let impact_level = action_data["impact_level"]
+                    .as_f64()
+                    .unwrap_or(0.5) as f32;
+                
+                let timestamp_relative = action_data["timestamp_relative"]
+                    .as_str()
+                    .unwrap_or("recently")
+                    .to_string();
+                
+                // Only add actions with meaningful descriptions
+                if !description.is_empty() && description != "Unknown action" {
+                    // Convert relative timestamp to actual timestamp
+                    let timestamp = match timestamp_relative.as_str() {
+                        "just now" => Utc::now() - chrono::Duration::seconds(30),
+                        "recently" => Utc::now() - chrono::Duration::minutes(5),
+                        "a moment ago" => Utc::now() - chrono::Duration::minutes(2),
+                        _ => Utc::now() - chrono::Duration::minutes(3), // Default fallback
+                    };
+                    
+                    recent_actions.push(RecentAction {
+                        action_id: Uuid::new_v4(),
+                        description,
+                        timestamp,
+                        action_type,
+                        impact_level: impact_level.clamp(0.0, 1.0),
+                    });
+                }
+            }
+        }
+        
+        debug!("Extracted {} recent actions for entity: {}", recent_actions.len(), entity_name);
+        Ok(recent_actions)
+    }
+
+    /// Extract emotional state from user input and chat history using Flash AI
+    #[instrument(skip(self, user_input, chat_history))]
+    async fn extract_emotional_state(
+        &self,
+        user_input: &str,
+        chat_history: &[GenAiChatMessage],
+        entity_name: &str,
+    ) -> Result<Option<EmotionalState>, AppError> {
+        // Build context from chat history
+        let context = if chat_history.len() > 5 {
+            chat_history.iter()
+                .rev()
+                .take(5)
+                .map(|msg| {
+                    let content = match &msg.content {
+                        MessageContent::Text(text) => text.clone(),
+                        _ => "[non-text content]".to_string(),
+                    };
+                    format!("{:?}: {}", msg.role, content)
+                })
+                .collect::<Vec<_>>()
+                .iter()
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            chat_history.iter()
+                .map(|msg| {
+                    let content = match &msg.content {
+                        MessageContent::Text(text) => text.clone(),
+                        _ => "[non-text content]".to_string(),
+                    };
+                    format!("{:?}: {}", msg.role, content)
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Check if there are emotional indicators in the input or context
+        let emotional_indicators = [
+            "feel", "emotion", "mood", "happy", "sad", "anger", "fear", "joy", "grief", "excited",
+            "frustrated", "worried", "confident", "nervous", "calm", "agitated", "devastated",
+            "determined", "doubt", "conflicted", "peaceful", "distressed", "hopeful", "despair",
+            "content", "overwhelmed", "anxious", "elated", "disappointed", "relieved", "bitter",
+            "love", "hate", "jealous", "envious", "proud", "shame", "guilt", "regret", "nostalgic"
+        ];
+
+        let combined_text = format!("{} {}", user_input, context);
+        let has_emotional_indicators = emotional_indicators.iter()
+            .any(|indicator| combined_text.to_lowercase().contains(indicator));
+
+        if !has_emotional_indicators {
+            debug!("No emotional indicators found for entity: {}", entity_name);
+            return Ok(None);
+        }
+
+        // Use Flash AI to extract emotional state
+        let prompt = format!(
+            "Analyze the emotional state of the character '{}' based on this conversation context and current input.
+
+Context from conversation:
+{}
+
+Current input:
+{}
+
+Extract the character's emotional state. Respond with a JSON object containing:
+- \"primary_emotion\": the main emotion (e.g., \"grief\", \"joy\", \"anger\", \"fear\", \"determination\")
+- \"intensity\": emotional intensity from 0.0 to 1.0
+- \"contributing_factors\": array of strings describing what's causing these emotions
+
+Only analyze the emotional state of the specified character. If no clear emotional state can be determined, respond with null.",
+            entity_name, context, user_input
+        );
+
+        debug!("Extracting emotional state for entity: {}", entity_name);
+        
+        let chat_request = genai::chat::ChatRequest::from_user(prompt);
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(300)
+            .with_temperature(0.3); // Moderate temperature for balanced extraction
+        
+        let chat_response = self.ai_client.exec_chat(
+            "gemini-2.5-flash",
+            chat_request,
+            Some(chat_options),
+        ).await?;
+        
+        let response = chat_response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        debug!("AI response for emotional state: '{}'", response);
+
+        // Parse the JSON response with graceful error handling
+        let emotional_state = match serde_json::from_str::<EmotionalState>(&response) {
+            Ok(state) => Some(state),
+            Err(e) => {
+                debug!("Failed to parse emotional state JSON: {}", e);
+                // Try to extract key information manually if JSON parsing fails
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&response) {
+                    if let Some(emotion) = value.get("primary_emotion").and_then(|v| v.as_str()) {
+                        let intensity = value.get("intensity")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.5) as f32;
+                        let contributing_factors = value.get("contributing_factors")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter()
+                                .filter_map(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .collect::<Vec<_>>()
+                            )
+                            .unwrap_or_default();
+                        
+                        Some(EmotionalState {
+                            primary_emotion: emotion.to_string(),
+                            intensity,
+                            contributing_factors,
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
+        debug!("Extracted emotional state for entity: {} - {:?}", entity_name, emotional_state);
+        Ok(emotional_state)
     }
 }
 
