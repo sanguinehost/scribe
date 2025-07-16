@@ -902,13 +902,16 @@ impl HybridQueryService {
             Vec::new()
         };
 
+        // Calculate relevance score based on query and entity context
+        let relevance_score = self.calculate_entity_relevance_score(entity_id, &timeline_events, &current_state, query).await?;
+
         Ok(EntityTimelineContext {
             entity_id,
             entity_name: self.extract_entity_name(entity_id).await?,
             current_state,
             timeline_events,
             relationships,
-            relevance_score: 0.8, // TODO: Calculate based on query relevance
+            relevance_score,
         })
     }
 
@@ -994,11 +997,12 @@ impl HybridQueryService {
         for event in events {
             // Check if entity was involved in this event
             if self.entity_involved_in_event(entity_id, event).await? {
+                let significance_score = self.calculate_event_significance(entity_id, event).await?;
                 let timeline_event = TimelineEvent {
                     event: event.clone(),
                     entity_state_at_time: None, // TODO: Reconstruct state at event time
                     co_participants: self.extract_co_participants(entity_id, event).await?,
-                    significance_score: 0.7, // TODO: Calculate significance
+                    significance_score,
                 };
                 timeline_events.push(timeline_event);
             }
@@ -1995,5 +1999,380 @@ impl HybridQueryService {
         }
 
         Ok(narrative)
+    }
+
+    /// Calculate entity relevance score based on query and entity context
+    async fn calculate_entity_relevance_score(
+        &self,
+        entity_id: Uuid,
+        timeline_events: &[TimelineEvent],
+        current_state: &Option<EntityStateSnapshot>,
+        query: &HybridQuery,
+    ) -> Result<f32, AppError> {
+        let mut relevance_score = 0.0f32;
+        let mut scoring_factors = 0;
+
+        // Get query text for comparison
+        let query_text = match &query.query_type {
+            HybridQueryType::NarrativeQuery { query_text, .. } => query_text.as_str(),
+            HybridQueryType::RelationshipHistory { entity_a, entity_b, .. } => {
+                // For relationship queries, consider both entity names
+                return Ok(if entity_a.to_lowercase().contains(&entity_id.to_string()) || 
+                            entity_b.to_lowercase().contains(&entity_id.to_string()) {
+                    0.9 // High relevance for entities directly involved in relationship query
+                } else {
+                    0.3 // Lower relevance for other entities
+                });
+            }
+            HybridQueryType::LocationQuery { location_name, .. } => {
+                // For location queries, check if entity is at that location
+                if let Some(state) = current_state {
+                    if let Some(position_data) = state.components.get("position") {
+                        if position_data.to_string().to_lowercase().contains(&location_name.to_lowercase()) {
+                            return Ok(0.85); // High relevance for entities at the queried location
+                        }
+                    }
+                }
+                return Ok(0.2); // Lower relevance for entities not at the location
+            }
+            HybridQueryType::EntityTimeline { .. } => {
+                // Entity timeline queries are always relevant to the entity
+                return Ok(0.9);
+            }
+            HybridQueryType::EventParticipants { .. } => {
+                // Event participant queries have moderate relevance
+                return Ok(0.6);
+            }
+            HybridQueryType::EntityStateAtTime { .. } => {
+                // Entity state queries are highly relevant to the entity
+                return Ok(0.9);
+            }
+            _ => {
+                // For other query types, use default relevance
+                return Ok(0.5);
+            }
+        };
+
+        // Factor 1: Entity name similarity to query (30% weight)
+        if let Ok(Some(entity_name)) = self.extract_entity_name(entity_id).await {
+            let name_similarity = self.calculate_text_similarity(&entity_name, query_text);
+            relevance_score += name_similarity * 0.3;
+            scoring_factors += 1;
+        }
+
+        // Factor 2: Current state relevance (25% weight)
+        if let Some(state) = current_state {
+            let state_similarity = self.calculate_state_relevance(state, query_text);
+            relevance_score += state_similarity * 0.25;
+            scoring_factors += 1;
+        }
+
+        // Factor 3: Timeline event relevance (30% weight)
+        if !timeline_events.is_empty() {
+            let event_similarity = self.calculate_timeline_relevance(timeline_events, query_text);
+            relevance_score += event_similarity * 0.3;
+            scoring_factors += 1;
+        }
+
+        // Factor 4: Recency boost (15% weight)
+        if !timeline_events.is_empty() {
+            let recency_score = self.calculate_recency_score(timeline_events);
+            relevance_score += recency_score * 0.15;
+            scoring_factors += 1;
+        }
+
+        // Normalize by number of factors and clamp to [0.0, 1.0]
+        let final_score = if scoring_factors > 0 {
+            (relevance_score / scoring_factors as f32).min(1.0).max(0.0)
+        } else {
+            0.1 // Default minimal relevance if no factors available
+        };
+
+        debug!("Entity {} relevance score: {:.3} (factors: {})", entity_id, final_score, scoring_factors);
+        Ok(final_score)
+    }
+
+    /// Calculate text similarity using simple keyword matching
+    /// TODO: Replace with embedding-based similarity when available
+    fn calculate_text_similarity(&self, text1: &str, text2: &str) -> f32 {
+        let text1_lower = text1.to_lowercase();
+        let text2_lower = text2.to_lowercase();
+        
+        let words1: std::collections::HashSet<&str> = text1_lower.split_whitespace().collect();
+        let words2: std::collections::HashSet<&str> = text2_lower.split_whitespace().collect();
+        
+        if words1.is_empty() || words2.is_empty() {
+            return 0.0;
+        }
+
+        let intersection = words1.intersection(&words2).count();
+        let union = words1.union(&words2).count();
+        
+        if union == 0 {
+            0.0
+        } else {
+            intersection as f32 / union as f32
+        }
+    }
+
+    /// Calculate relevance based on entity state components
+    fn calculate_state_relevance(&self, state: &EntityStateSnapshot, query_text: &str) -> f32 {
+        let mut relevance = 0.0f32;
+        let mut component_count = 0;
+
+        // Check component types for relevance
+        for (component_type, component_data) in &state.components {
+            component_count += 1;
+            
+            // Check if component type matches query
+            if query_text.to_lowercase().contains(&component_type.to_lowercase()) {
+                relevance += 0.7;
+            }
+            
+            // Check component data for keyword matches
+            let data_str = component_data.to_string().to_lowercase();
+            if data_str.contains(&query_text.to_lowercase()) {
+                relevance += 0.5;
+            }
+        }
+
+        // Check status indicators
+        for indicator in &state.status_indicators {
+            if query_text.to_lowercase().contains(&indicator.to_lowercase()) {
+                relevance += 0.3;
+            }
+        }
+
+        // Normalize by component count
+        if component_count > 0 {
+            relevance / component_count as f32
+        } else {
+            0.0
+        }
+    }
+
+    /// Calculate relevance based on timeline events
+    fn calculate_timeline_relevance(&self, timeline_events: &[TimelineEvent], query_text: &str) -> f32 {
+        if timeline_events.is_empty() {
+            return 0.0;
+        }
+
+        let mut total_relevance = 0.0f32;
+        
+        for event in timeline_events {
+            let mut event_relevance = 0.0f32;
+            
+            // Check event summary for relevance
+            if event.event.summary.to_lowercase().contains(&query_text.to_lowercase()) {
+                event_relevance += 0.8;
+            }
+            
+            // Check event type for relevance
+            if query_text.to_lowercase().contains(&event.event.event_type.to_lowercase()) {
+                event_relevance += 0.6;
+            }
+            
+            // Weight by significance score
+            event_relevance *= event.significance_score;
+            
+            total_relevance += event_relevance;
+        }
+
+        // Average relevance across all events
+        total_relevance / timeline_events.len() as f32
+    }
+
+    /// Calculate recency score (more recent events get higher scores)
+    fn calculate_recency_score(&self, timeline_events: &[TimelineEvent]) -> f32 {
+        if timeline_events.is_empty() {
+            return 0.0;
+        }
+
+        let now = chrono::Utc::now();
+        let mut weighted_score = 0.0f32;
+        let mut total_weight = 0.0f32;
+
+        for event in timeline_events {
+            let event_age = now.signed_duration_since(event.event.created_at);
+            let days_ago = event_age.num_days() as f32;
+            
+            // Exponential decay: more recent events get higher weights
+            let recency_weight = (-days_ago / 30.0).exp(); // 30-day half-life
+            
+            weighted_score += recency_weight * event.significance_score;
+            total_weight += recency_weight;
+        }
+
+        if total_weight > 0.0 {
+            weighted_score / total_weight
+        } else {
+            0.0
+        }
+    }
+
+    /// Calculate event significance score using multi-factor analysis
+    async fn calculate_event_significance(&self, entity_id: Uuid, event: &ChronicleEvent) -> Result<f32, AppError> {
+        let mut significance_score = 0.0f32;
+        let mut scoring_factors = 0;
+
+        // Factor 1: Event type significance (25% weight)
+        let event_type_score = self.calculate_event_type_significance(&event.event_type);
+        significance_score += event_type_score * 0.25;
+        scoring_factors += 1;
+
+        // Factor 2: Entity role in event (30% weight)
+        let entity_role_score = self.calculate_entity_role_significance(entity_id, event).await?;
+        significance_score += entity_role_score * 0.30;
+        scoring_factors += 1;
+
+        // Factor 3: Event complexity/richness (20% weight)
+        let complexity_score = self.calculate_event_complexity_significance(event);
+        significance_score += complexity_score * 0.20;
+        scoring_factors += 1;
+
+        // Factor 4: Event recency (15% weight)
+        let recency_score = self.calculate_event_recency_significance(event);
+        significance_score += recency_score * 0.15;
+        scoring_factors += 1;
+
+        // Factor 5: Co-participant count (10% weight)
+        let co_participants = self.extract_co_participants(entity_id, event).await?;
+        let participant_score = self.calculate_participant_significance(&co_participants);
+        significance_score += participant_score * 0.10;
+        scoring_factors += 1;
+
+        // Normalize and clamp to [0.0, 1.0]
+        let final_score = if scoring_factors > 0 {
+            (significance_score / scoring_factors as f32).min(1.0).max(0.0)
+        } else {
+            0.5 // Default significance if no factors available
+        };
+
+        debug!("Event {} significance for entity {}: {:.3}", event.id, entity_id, final_score);
+        Ok(final_score)
+    }
+
+    /// Calculate significance based on event type
+    fn calculate_event_type_significance(&self, event_type: &str) -> f32 {
+        // Assign significance scores based on event type
+        match event_type.to_lowercase().as_str() {
+            // High significance events
+            "death" | "birth" | "marriage" | "battle" | "betrayal" | "discovery" => 0.9,
+            "transformation" | "revelation" | "conquest" | "defeat" | "creation" => 0.9,
+            
+            // Medium-high significance events
+            "combat" | "conflict" | "alliance" | "romance" | "quest_completion" => 0.8,
+            "trade" | "negotiation" | "ceremony" | "ritual" | "magic_use" => 0.8,
+            
+            // Medium significance events
+            "movement" | "exploration" | "conversation" | "meeting" | "departure" => 0.6,
+            "acquisition" | "crafting" | "learning" | "teaching" | "healing" => 0.6,
+            
+            // Lower significance events
+            "observation" | "rest" | "maintenance" | "routine" | "preparation" => 0.4,
+            "eating" | "sleeping" | "waiting" | "thinking" | "planning" => 0.4,
+            
+            // Default for unknown event types
+            _ => 0.5
+        }
+    }
+
+    /// Calculate significance based on entity's role in the event
+    async fn calculate_entity_role_significance(&self, entity_id: Uuid, event: &ChronicleEvent) -> Result<f32, AppError> {
+        let mut role_score = 0.5f32; // Default score
+        
+        // Check if entity is primary actor
+        if let Ok(actors) = event.get_actors() {
+            let actor_count = actors.len();
+            let is_primary_actor = actors.iter().any(|actor| actor.entity_id == entity_id);
+            
+            if is_primary_actor {
+                // Primary actor gets higher significance
+                role_score = match actor_count {
+                    1 => 0.9,        // Sole actor - highest significance
+                    2..=3 => 0.8,    // Small group - high significance
+                    4..=6 => 0.7,    // Medium group - medium-high significance
+                    _ => 0.6,        // Large group - medium significance
+                };
+            }
+        }
+        
+        // Check event data for additional role indicators
+        if let Some(event_data) = &event.event_data {
+            // Check if entity is mentioned as initiator, target, or subject
+            let data_str = event_data.to_string().to_lowercase();
+            let entity_str = entity_id.to_string().to_lowercase();
+            
+            if data_str.contains(&format!("\"initiator\":\"{}", entity_str)) ||
+               data_str.contains(&format!("\"subject\":\"{}", entity_str)) {
+                role_score += 0.2; // Boost for being initiator/subject
+            }
+            
+            if data_str.contains(&format!("\"target\":\"{}", entity_str)) {
+                role_score += 0.15; // Boost for being target
+            }
+        }
+        
+        Ok(role_score.min(1.0))
+    }
+
+    /// Calculate significance based on event complexity and data richness
+    fn calculate_event_complexity_significance(&self, event: &ChronicleEvent) -> f32 {
+        let mut complexity_score = 0.3f32; // Base score
+        
+        // Factor in summary length and detail
+        let summary_length = event.summary.len();
+        complexity_score += match summary_length {
+            0..=50 => 0.0,      // Very short - low complexity
+            51..=150 => 0.2,    // Short - medium complexity
+            151..=300 => 0.4,   // Medium - good complexity
+            301..=500 => 0.6,   // Long - high complexity
+            _ => 0.8,           // Very long - very high complexity
+        };
+        
+        // Factor in event data richness
+        if let Some(event_data) = &event.event_data {
+            let data_fields = if let Some(obj) = event_data.as_object() {
+                obj.len()
+            } else {
+                0
+            };
+            
+            complexity_score += match data_fields {
+                0..=2 => 0.0,     // Minimal data
+                3..=5 => 0.2,     // Basic data
+                6..=10 => 0.4,    // Rich data
+                11..=15 => 0.6,   // Very rich data
+                _ => 0.8,         // Extremely rich data
+            };
+        }
+        
+        complexity_score.min(1.0)
+    }
+
+    /// Calculate significance based on event recency
+    fn calculate_event_recency_significance(&self, event: &ChronicleEvent) -> f32 {
+        let now = chrono::Utc::now();
+        let event_age = now.signed_duration_since(event.created_at);
+        let hours_ago = event_age.num_hours() as f32;
+        
+        // Exponential decay for recency - recent events are more significant
+        if hours_ago < 0.0 {
+            1.0 // Future events (edge case) get max significance
+        } else {
+            // 24-hour half-life for recency significance
+            (-hours_ago / 24.0).exp().min(1.0)
+        }
+    }
+
+    /// Calculate significance based on number of co-participants
+    fn calculate_participant_significance(&self, co_participants: &[Uuid]) -> f32 {
+        match co_participants.len() {
+            0 => 0.3,        // Solo event - lower significance
+            1 => 0.5,        // Two-person event - medium significance
+            2..=3 => 0.7,    // Small group - higher significance
+            4..=6 => 0.9,    // Medium group - high significance
+            _ => 1.0,        // Large group - maximum significance
+        }
     }
 }

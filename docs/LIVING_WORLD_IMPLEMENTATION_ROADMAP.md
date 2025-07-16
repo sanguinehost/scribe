@@ -919,13 +919,13 @@ pub struct ContextCache {
         *   [x] **Emotional State Analysis** (Line 636) - ✅ **IMPLEMENTED** - Flash AI emotional state analysis
         *   [x] **Risk Identification System** (Line 512) - ✅ **IMPLEMENTED** - Multi-factor risk assessment framework
     *   **[ ] Subtask 6.2.2: Hybrid Query Service Completeness**
-        *   **Current State:** ✅ **HybridQueryService exists with sophisticated architecture**, but 7/9 features return placeholder data
+        *   **Current State:** ✅ **HybridQueryService exists with sophisticated architecture**, 2/9 critical features implemented
         *   **File:** `backend/src/services/hybrid_query_service.rs`
         *   **Infrastructure:** ✅ Complete with routing, circuit breakers, comprehensive test coverage
-        *   **Implementation Status:** ~30% complete - architecture solid, core logic missing
+        *   **Implementation Status:** ~50% complete - architecture solid, core integrations working
         *   **Priority Order (High → Medium → Low):**
-        *   [ ] **Entity Manager Integration** (Line 916) - ⭐ **CRITICAL** - Replace `get_entity_current_state` stub with actual ECS calls
-        *   [ ] **Event Participants Finding** (Line 839, 1002) - ⭐ **HIGH VALUE** - Parse chronicle events for actor/participant data
+        *   [x] **Entity Manager Integration** (Line 916) - ⭐ **CRITICAL** - ✅ **COMPLETED** - Replace `get_entity_current_state` stub with actual ECS calls
+        *   [x] **Event Participants Finding** (Line 839, 1002) - ⭐ **HIGH VALUE** - ✅ **COMPLETED** - Parse chronicle events for actor/participant data
         *   [ ] **Query Relevance Scoring** (Line 911) - 🧠 **SEMANTIC ANALYSIS** - Replace hardcoded scores with embedding-based similarity
         *   [ ] **Historical State Reconstruction** (Line 948) - 🕰️ **COMPLEX LOGIC** - Reconstruct entity states at specific event times
         *   [ ] **Relationship Analysis** (Line 1034, 1058) - 📈 **TEMPORAL TRENDS** - Analyze relationship strength changes over time
