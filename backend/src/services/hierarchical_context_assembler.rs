@@ -10,7 +10,8 @@ use crate::{
     services::{
         context_assembly_engine::{
             EnrichedContext, StrategicDirective, ValidatedPlan, SubGoal, EntityContext,
-            SpatialContext, TemporalContext, PlanValidationStatus, ValidationCheck,
+            SpatialContext, TemporalContext, CausalContext, CausalChain, CausalEvent,
+            PotentialConsequence, HistoricalPrecedent, PlanValidationStatus, ValidationCheck,
             PlotSignificance, WorldImpactLevel, PlanStep, RiskAssessment, RiskLevel,
             ContextRequirement, SpatialLocation, ValidationCheckType, ValidationStatus,
             ValidationSeverity, EntityRelationship, RecentAction, EmotionalState,
@@ -143,8 +144,11 @@ impl HierarchicalContextAssembler {
 
         // Step 7: Build temporal context
         let temporal_context = self.build_temporal_context(user_input, chat_history).await?;
+        
+        // Step 8: Build causal context
+        let causal_context = self.build_causal_context(user_input, chat_history, &relevant_entities).await?;
 
-        // Step 8: Create basic validation checks (placeholder for future symbolic firewall)
+        // Step 9: Create basic validation checks (placeholder for future symbolic firewall)
         let symbolic_firewall_checks = self.create_basic_validation_checks(&validated_plan)?;
 
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -155,7 +159,7 @@ impl HierarchicalContextAssembler {
             current_sub_goal,
             relevant_entities,
             spatial_context,
-            causal_context: None, // TODO: Implement in future iterations
+            causal_context,
             temporal_context,
             plan_validation_status: PlanValidationStatus::Validated, // Simplified validation
             symbolic_firewall_checks,
@@ -1980,6 +1984,232 @@ Example:
 
         debug!("Extracted {} future scheduled events", scheduled_events.len());
         Ok(scheduled_events)
+    }
+
+    /// Builds causal context by analyzing cause-and-effect relationships
+    async fn build_causal_context(
+        &self,
+        user_input: &str,
+        chat_history: &[GenAiChatMessage],
+        relevant_entities: &[EntityContext],
+    ) -> Result<Option<CausalContext>, AppError> {
+        debug!("Building causal context from user input and chat history");
+        
+        // If there's no chat history, skip causal analysis
+        if chat_history.is_empty() {
+            debug!("No chat history available for causal analysis");
+            return Ok(None);
+        }
+        
+        // Build context for AI analysis
+        let chat_context = chat_history.iter()
+            .map(|msg| format!("{:?}: {}", msg.role, 
+                match &msg.content {
+                    MessageContent::Text(text) => text.clone(),
+                    _ => "[non-text content]".to_string(),
+                }
+            ))
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        let entity_context = relevant_entities.iter()
+            .map(|entity| format!("- {}: {}", entity.entity_name, entity.entity_type))
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        let causal_prompt = format!(
+            r#"You are the Causal Analysis Specialist in a hierarchical narrative AI system. Analyze the following scenario to identify cause-and-effect relationships, potential consequences, and relevant historical precedents.
+
+## Context
+User Input: "{}"
+Relevant Entities:
+{}
+
+## Chat History
+{}
+
+## Your Task
+Analyze the causal relationships in this narrative scenario and provide a structured analysis. Focus on:
+
+1. **Causal Chains**: Identify sequences of events where one action leads to another
+2. **Potential Consequences**: What might happen next based on current actions
+3. **Historical Precedents**: Similar situations from the conversation history
+
+Return your analysis in the following JSON format:
+{{
+    "causal_chains": [
+        {{
+            "events": [
+                {{
+                    "description": "Brief description of the causal event",
+                    "timestamp": "2024-01-15T10:00:00Z"
+                }}
+            ],
+            "confidence": 0.85
+        }}
+    ],
+    "potential_consequences": [
+        {{
+            "description": "What might happen as a result",
+            "probability": 0.6,
+            "impact_severity": 0.8
+        }}
+    ],
+    "historical_precedents": [
+        {{
+            "event_description": "Similar event from history",
+            "outcome": "What happened as a result",
+            "similarity_score": 0.75,
+            "timestamp": "2024-01-10T14:30:00Z"
+        }}
+    ],
+    "causal_confidence": 0.8
+}}
+
+Guidelines:
+- Focus on narrative causality, not real-world physics
+- Probability and impact_severity should be between 0.0 and 1.0
+- Include timestamps in ISO format
+- Confidence scores should reflect your certainty in the analysis
+- If no clear causal relationships exist, return empty arrays"#,
+            user_input, entity_context, chat_context
+        );
+        
+        debug!("Sending causal analysis prompt to AI");
+        
+        let chat_request = genai::chat::ChatRequest::from_user(causal_prompt);
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(1000)
+            .with_temperature(0.4); // Moderate temperature for balanced analysis
+        
+        let chat_response = self.ai_client.exec_chat(
+            "gemini-2.5-flash",
+            chat_request,
+            Some(chat_options),
+        ).await?;
+        
+        let response = chat_response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        
+        debug!("AI response for causal analysis: '{}'", response);
+        
+        // Parse the JSON response
+        let causal_data: serde_json::Value = match serde_json::from_str(&response) {
+            Ok(data) => data,
+            Err(e) => {
+                debug!("Failed to parse causal analysis JSON: {}", e);
+                return Ok(None);
+            }
+        };
+        
+        // Extract causal chains
+        let causal_chains = causal_data["causal_chains"]
+            .as_array()
+            .map(|chains| chains.iter()
+                .filter_map(|chain| {
+                    let events = chain["events"].as_array()?.iter()
+                        .filter_map(|event| {
+                            let description = event["description"].as_str()?.to_string();
+                            let timestamp_str = event["timestamp"].as_str()?;
+                            let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp_str)
+                                .map(|dt| dt.with_timezone(&Utc))
+                                .unwrap_or_else(|_| Utc::now());
+                            
+                            Some(CausalEvent {
+                                event_id: Uuid::new_v4(),
+                                description,
+                                timestamp,
+                                cause_strength: 0.8, // Default strength for extracted causal events
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    
+                    let confidence = chain["confidence"].as_f64().unwrap_or(0.5) as f32;
+                    
+                    if !events.is_empty() {
+                        Some(CausalChain {
+                            chain_id: Uuid::new_v4(),
+                            events,
+                            confidence,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+            )
+            .unwrap_or_default();
+        
+        // Extract potential consequences
+        let potential_consequences = causal_data["potential_consequences"]
+            .as_array()
+            .map(|consequences| consequences.iter()
+                .filter_map(|consequence| {
+                    let description = consequence["description"].as_str()?.to_string();
+                    let probability = consequence["probability"].as_f64().unwrap_or(0.5) as f32;
+                    let impact_severity = consequence["impact_severity"].as_f64().unwrap_or(0.5) as f32;
+                    
+                    Some(PotentialConsequence {
+                        description,
+                        probability,
+                        impact_severity,
+                    })
+                })
+                .collect::<Vec<_>>()
+            )
+            .unwrap_or_default();
+        
+        // Extract historical precedents
+        let historical_precedents = causal_data["historical_precedents"]
+            .as_array()
+            .map(|precedents| precedents.iter()
+                .filter_map(|precedent| {
+                    let event_description = precedent["event_description"].as_str()?.to_string();
+                    let outcome = precedent["outcome"].as_str()?.to_string();
+                    let similarity_score = precedent["similarity_score"].as_f64().unwrap_or(0.5) as f32;
+                    let timestamp_str = precedent["timestamp"].as_str()?;
+                    let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp_str)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now());
+                    
+                    Some(HistoricalPrecedent {
+                        event_description,
+                        outcome,
+                        similarity_score,
+                        timestamp,
+                    })
+                })
+                .collect::<Vec<_>>()
+            )
+            .unwrap_or_default();
+        
+        let causal_confidence = causal_data["causal_confidence"]
+            .as_f64()
+            .unwrap_or(0.5) as f32;
+        
+        // Return causal context if we have meaningful data
+        if !causal_chains.is_empty() || !potential_consequences.is_empty() || !historical_precedents.is_empty() {
+            debug!("Extracted causal context with {} chains, {} consequences, {} precedents", 
+                causal_chains.len(), potential_consequences.len(), historical_precedents.len());
+            
+            Ok(Some(CausalContext {
+                causal_chains,
+                potential_consequences,
+                historical_precedents,
+                causal_confidence,
+            }))
+        } else {
+            debug!("No meaningful causal relationships detected");
+            Ok(None)
+        }
     }
 }
 
