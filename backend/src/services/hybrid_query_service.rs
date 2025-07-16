@@ -1158,13 +1158,48 @@ impl HybridQueryService {
     }
 
     /// Get relationships for an entity
-    async fn get_entity_relationships(&self, _entity_id: Uuid, _user_id: Uuid) -> Result<Vec<RelationshipContext>, AppError> {
-        // TODO: Query ECS for current relationships
-        
-        // Record database query for relationship lookup
+    async fn get_entity_relationships(&self, entity_id: Uuid, user_id: Uuid) -> Result<Vec<RelationshipContext>, AppError> {
+        // Query ECS for current relationships
         self.metrics.record_db_query();
         
-        Ok(Vec::new())
+        // Check cache first
+        if self.config.enable_entity_caching {
+            // For now, cache miss - in production we'd check Redis here
+            self.metrics.record_cache_miss();
+        }
+        
+        // Get relationships from entity manager
+        let relationships = self.entity_manager.get_relationships(user_id, entity_id).await?;
+        
+        // Convert ECS relationships to RelationshipContext format
+        let mut relationship_contexts = Vec::new();
+        for relationship in relationships {
+            // Create relationship data JSON from trust, affection, and metadata
+            let mut relationship_data = serde_json::json!({
+                "trust": relationship.trust,
+                "affection": relationship.affection
+            });
+            
+            // Merge metadata into relationship data
+            if let serde_json::Value::Object(data_obj) = &mut relationship_data {
+                for (key, value) in &relationship.metadata {
+                    data_obj.insert(key.clone(), value.clone());
+                }
+            }
+            
+            let relationship_context = RelationshipContext {
+                from_entity_id: entity_id,
+                to_entity_id: relationship.target_entity_id,
+                relationship_type: relationship.relationship_type.clone(),
+                relationship_data,
+                established_at: None, // ECS Relationship doesn't have this field
+                last_updated: None,   // ECS Relationship doesn't have this field
+            };
+            relationship_contexts.push(relationship_context);
+        }
+        
+        debug!("Retrieved {} relationships for entity {}", relationship_contexts.len(), entity_id);
+        Ok(relationship_contexts)
     }
 
     /// Extract entity name
@@ -1212,20 +1247,51 @@ impl HybridQueryService {
         &self,
         entity_a: Uuid,
         entity_b: Uuid,
-        _events: &[ChronicleEvent],
+        events: &[ChronicleEvent],
     ) -> Result<RelationshipAnalysis, AppError> {
-        // TODO: Analyze relationship history and current state
+        // Get current relationships for both entities
+        let mut current_relationship = None;
+        
+        // Check relationships from entity A to entity B
+        if let Ok(relationships_a) = self.get_entity_relationships(entity_a, 
+            self.get_user_id_from_events(events).unwrap_or(Uuid::nil())
+        ).await {
+            current_relationship = relationships_a.into_iter()
+                .find(|r| r.to_entity_id == entity_b);
+        }
+        
+        // If no direct relationship found, check from B to A
+        if current_relationship.is_none() {
+            if let Ok(relationships_b) = self.get_entity_relationships(entity_b, 
+                self.get_user_id_from_events(events).unwrap_or(Uuid::nil())
+            ).await {
+                current_relationship = relationships_b.into_iter()
+                    .find(|r| r.to_entity_id == entity_a)
+                    .map(|mut r| {
+                        // Reverse the relationship direction for consistency
+                        r.from_entity_id = entity_a;
+                        r.to_entity_id = entity_b;
+                        r
+                    });
+            }
+        }
+        
+        // Analyze relationship history from chronicle events
+        let relationship_history = self.extract_relationship_history(entity_a, entity_b, events).await?;
+        
+        // Calculate relationship metrics
+        let metrics = self.calculate_relationship_metrics(
+            &current_relationship,
+            &relationship_history,
+            events
+        ).await?;
+        
         Ok(RelationshipAnalysis {
             from_entity_id: entity_a,
             to_entity_id: entity_b,
-            current_relationship: None,
-            relationship_history: Vec::new(),
-            analysis: RelationshipMetrics {
-                stability: 0.5,
-                strength: 0.5,
-                trend: RelationshipTrend::Unknown,
-                interaction_count: 0,
-            },
+            current_relationship,
+            relationship_history,
+            analysis: metrics,
         })
     }
 
@@ -1840,8 +1906,56 @@ impl HybridQueryService {
             );
         }
 
-        // TODO: Add relationship strength analysis over time
-        // TODO: Identify key turning points in the relationship
+        // Add relationship strength analysis over time
+        if let Some(first_entity) = result.entities.first() {
+            if let Some(second_entity) = result.entities.get(1) {
+                // Analyze relationship between first two entities
+                let relationship_analysis = self.analyze_entity_pair_relationship(
+                    first_entity.entity_id,
+                    second_entity.entity_id,
+                    &result.chronicle_events
+                ).await?;
+                
+                // Add strength analysis to insights
+                result.summary.key_insights.push(format!(
+                    "Relationship strength: {:.2}, stability: {:.2}, trend: {:?}",
+                    relationship_analysis.analysis.strength,
+                    relationship_analysis.analysis.stability,
+                    relationship_analysis.analysis.trend
+                ));
+                
+                // Identify key turning points in the relationship
+                if relationship_analysis.relationship_history.len() >= 2 {
+                    let turning_points = self.identify_relationship_turning_points(
+                        &relationship_analysis.relationship_history
+                    );
+                    
+                    if !turning_points.is_empty() {
+                        result.summary.key_insights.push(format!(
+                            "Key turning points identified: {} significant relationship changes",
+                            turning_points.len()
+                        ));
+                        
+                        // Add details about the most significant turning point
+                        if let Some(most_significant) = turning_points.first() {
+                            result.summary.key_insights.push(format!(
+                                "Most significant change: {} (strength change: {:.2})",
+                                most_significant.relationship_type,
+                                most_significant.strength_change
+                            ));
+                        }
+                    }
+                }
+                
+                // Add historical context
+                if relationship_analysis.analysis.interaction_count > 0 {
+                    result.summary.key_insights.push(format!(
+                        "Total interactions tracked: {}",
+                        relationship_analysis.analysis.interaction_count
+                    ));
+                }
+            }
+        }
 
         Ok(result)
     }
@@ -2720,4 +2834,306 @@ impl HybridQueryService {
             status_indicators,
         })
     }
+
+    /// Extract relationship history from chronicle events
+    async fn extract_relationship_history(
+        &self,
+        entity_a: Uuid,
+        entity_b: Uuid,
+        events: &[ChronicleEvent],
+    ) -> Result<Vec<RelationshipHistoryEntry>, AppError> {
+        let mut relationship_history = Vec::new();
+        
+        for event in events {
+            // Check if this event involves both entities
+            if let Ok(actors) = event.get_actors() {
+                let actor_ids: Vec<Uuid> = actors.iter().map(|a| a.entity_id).collect();
+                if actor_ids.contains(&entity_a) && actor_ids.contains(&entity_b) {
+                    // Look for relationship changes in event data
+                    if let Some(event_data) = &event.event_data {
+                        if let Some(relationship_changes) = event_data.get("relationship_changes") {
+                            if let Some(changes_array) = relationship_changes.as_array() {
+                                for change in changes_array {
+                                    if let Some(change_obj) = change.as_object() {
+                                        if let (Some(from_id), Some(to_id)) = (
+                                            change_obj.get("from_entity_id").and_then(|v| v.as_str()),
+                                            change_obj.get("to_entity_id").and_then(|v| v.as_str())
+                                        ) {
+                                            let from_uuid = Uuid::parse_str(from_id).ok();
+                                            let to_uuid = Uuid::parse_str(to_id).ok();
+                                            
+                                            // Check if this relationship change involves our entity pair
+                                            if let (Some(from), Some(to)) = (from_uuid, to_uuid) {
+                                                if (from == entity_a && to == entity_b) || 
+                                                   (from == entity_b && to == entity_a) {
+                                                    let relationship_type = change_obj.get("relationship_type")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("unknown").to_string();
+                                                    
+                                                    let relationship_data = change_obj.get("relationship_data")
+                                                        .cloned()
+                                                        .unwrap_or(serde_json::Value::Null);
+                                                    
+                                                    relationship_history.push(RelationshipHistoryEntry {
+                                                        timestamp: event.created_at,
+                                                        triggering_event: Some(event.id),
+                                                        relationship_type,
+                                                        relationship_data,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Also check for implicit relationship changes through interactions
+                        if let Some(interaction_type) = event_data.get("interaction_type").and_then(|v| v.as_str()) {
+                            // Infer relationship implications from interaction types
+                            let inferred_relationship = match interaction_type {
+                                "combat" => Some(("hostile", -0.5)),
+                                "trade" => Some(("neutral", 0.2)),
+                                "dialogue" => Some(("acquaintance", 0.1)),
+                                "alliance" => Some(("allied", 0.8)),
+                                "betrayal" => Some(("hostile", -0.8)),
+                                _ => None,
+                            };
+                            
+                            if let Some((rel_type, strength)) = inferred_relationship {
+                                let mut relationship_data = serde_json::Map::new();
+                                relationship_data.insert("inferred_strength".to_string(), 
+                                    serde_json::Value::Number(serde_json::Number::from_f64(strength).unwrap())
+                                );
+                                relationship_data.insert("interaction_type".to_string(), 
+                                    serde_json::Value::String(interaction_type.to_string())
+                                );
+                                
+                                relationship_history.push(RelationshipHistoryEntry {
+                                    timestamp: event.created_at,
+                                    triggering_event: Some(event.id),
+                                    relationship_type: rel_type.to_string(),
+                                    relationship_data: serde_json::Value::Object(relationship_data),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Sort by timestamp
+        relationship_history.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        Ok(relationship_history)
+    }
+
+    /// Calculate relationship metrics from current state and history
+    async fn calculate_relationship_metrics(
+        &self,
+        current_relationship: &Option<RelationshipContext>,
+        relationship_history: &[RelationshipHistoryEntry],
+        events: &[ChronicleEvent],
+    ) -> Result<RelationshipMetrics, AppError> {
+        let mut stability = 0.5;
+        let mut strength = 0.0;
+        let mut trend = RelationshipTrend::Unknown;
+        let interaction_count = relationship_history.len();
+        
+        // Calculate current strength from current relationship
+        if let Some(current) = current_relationship {
+            strength = self.extract_relationship_strength(&current.relationship_data);
+        }
+        
+        // Calculate stability based on relationship history
+        if relationship_history.len() >= 2 {
+            stability = self.calculate_relationship_stability(relationship_history);
+        }
+        
+        // Calculate trend based on recent history
+        if relationship_history.len() >= 3 {
+            trend = self.calculate_relationship_trend(relationship_history);
+        }
+        
+        // Adjust metrics based on interaction frequency
+        let interaction_frequency = self.calculate_interaction_frequency(events).await?;
+        if interaction_frequency > 0.8 {
+            // High interaction frequency can increase stability
+            stability = (stability + 0.1).min(1.0);
+        }
+        
+        Ok(RelationshipMetrics {
+            stability,
+            strength,
+            trend,
+            interaction_count,
+        })
+    }
+
+    /// Extract relationship strength from relationship data
+    fn extract_relationship_strength(&self, relationship_data: &serde_json::Value) -> f32 {
+        // Look for various strength indicators
+        if let Some(strength) = relationship_data.get("strength").and_then(|v| v.as_f64()) {
+            return strength as f32;
+        }
+        
+        if let Some(trust) = relationship_data.get("trust").and_then(|v| v.as_f64()) {
+            return trust as f32;
+        }
+        
+        if let Some(affection) = relationship_data.get("affection").and_then(|v| v.as_f64()) {
+            return affection as f32;
+        }
+        
+        if let Some(valence) = relationship_data.get("valence").and_then(|v| v.as_f64()) {
+            return (valence / 100.0) as f32; // Assuming valence is -100 to 100
+        }
+        
+        if let Some(inferred_strength) = relationship_data.get("inferred_strength").and_then(|v| v.as_f64()) {
+            return inferred_strength as f32;
+        }
+        
+        // Default neutral strength
+        0.5
+    }
+
+    /// Calculate relationship stability based on history
+    fn calculate_relationship_stability(&self, history: &[RelationshipHistoryEntry]) -> f32 {
+        if history.len() < 2 {
+            return 0.5;
+        }
+        
+        let mut strength_changes = Vec::new();
+        let mut previous_strength = 0.5;
+        
+        for entry in history {
+            let current_strength = self.extract_relationship_strength(&entry.relationship_data);
+            let change = (current_strength - previous_strength).abs();
+            strength_changes.push(change);
+            previous_strength = current_strength;
+        }
+        
+        // Calculate variance of changes
+        let mean_change: f32 = strength_changes.iter().sum::<f32>() / strength_changes.len() as f32;
+        let variance: f32 = strength_changes.iter()
+            .map(|change| (change - mean_change).powi(2))
+            .sum::<f32>() / strength_changes.len() as f32;
+        
+        // Lower variance means higher stability
+        (1.0 - variance.sqrt()).max(0.0)
+    }
+
+    /// Calculate relationship trend based on recent history
+    fn calculate_relationship_trend(&self, history: &[RelationshipHistoryEntry]) -> RelationshipTrend {
+        if history.len() < 3 {
+            return RelationshipTrend::Unknown;
+        }
+        
+        // Look at the last 3 entries to determine trend
+        let recent_entries = &history[history.len().saturating_sub(3)..];
+        let mut strengths = Vec::new();
+        
+        for entry in recent_entries {
+            strengths.push(self.extract_relationship_strength(&entry.relationship_data));
+        }
+        
+        // Calculate trend direction
+        let first_strength = strengths[0];
+        let last_strength = strengths[strengths.len() - 1];
+        let overall_change = last_strength - first_strength;
+        
+        // Calculate volatility
+        let mut changes = Vec::new();
+        for i in 1..strengths.len() {
+            changes.push((strengths[i] - strengths[i-1]).abs());
+        }
+        let volatility: f32 = changes.iter().sum::<f32>() / changes.len() as f32;
+        
+        // Determine trend
+        if volatility > 0.3 {
+            RelationshipTrend::Volatile
+        } else if overall_change > 0.1 {
+            RelationshipTrend::Improving
+        } else if overall_change < -0.1 {
+            RelationshipTrend::Declining
+        } else {
+            RelationshipTrend::Stable
+        }
+    }
+
+    /// Calculate interaction frequency from events
+    async fn calculate_interaction_frequency(&self, events: &[ChronicleEvent]) -> Result<f32, AppError> {
+        if events.is_empty() {
+            return Ok(0.0);
+        }
+        
+        // Calculate frequency based on event distribution over time
+        let first_event = events.first().unwrap();
+        let last_event = events.last().unwrap();
+        
+        let time_span = last_event.created_at - first_event.created_at;
+        let days_span = time_span.num_days() as f32;
+        
+        if days_span <= 0.0 {
+            return Ok(1.0); // All events in one day = high frequency
+        }
+        
+        let frequency = events.len() as f32 / days_span;
+        
+        // Normalize frequency to 0.0-1.0 range
+        // Assume 1 interaction per day = 1.0 frequency
+        Ok(frequency.min(1.0))
+    }
+
+    /// Get user ID from events (helper method)
+    fn get_user_id_from_events(&self, events: &[ChronicleEvent]) -> Option<Uuid> {
+        events.first().map(|event| event.user_id)
+    }
+
+    /// Identify key turning points in relationship history
+    fn identify_relationship_turning_points(&self, history: &[RelationshipHistoryEntry]) -> Vec<RelationshipTurningPoint> {
+        if history.len() < 2 {
+            return Vec::new();
+        }
+        
+        let mut turning_points = Vec::new();
+        let mut previous_strength = 0.5;
+        
+        for (i, entry) in history.iter().enumerate() {
+            let current_strength = self.extract_relationship_strength(&entry.relationship_data);
+            let strength_change = current_strength - previous_strength;
+            
+            // Consider a turning point if the change is significant (>0.2)
+            if strength_change.abs() > 0.2 {
+                turning_points.push(RelationshipTurningPoint {
+                    timestamp: entry.timestamp,
+                    relationship_type: entry.relationship_type.clone(),
+                    strength_change,
+                    triggering_event: entry.triggering_event,
+                    significance: strength_change.abs(), // Use absolute change as significance
+                });
+            }
+            
+            previous_strength = current_strength;
+        }
+        
+        // Sort by significance (most significant first)
+        turning_points.sort_by(|a, b| b.significance.partial_cmp(&a.significance).unwrap());
+        
+        turning_points
+    }
+}
+
+/// Represents a significant turning point in a relationship
+#[derive(Debug, Clone)]
+pub struct RelationshipTurningPoint {
+    /// When the turning point occurred
+    pub timestamp: DateTime<Utc>,
+    /// The relationship type at this point
+    pub relationship_type: String,
+    /// The strength change that occurred
+    pub strength_change: f32,
+    /// The event that triggered this change
+    pub triggering_event: Option<Uuid>,
+    /// The significance of this turning point (0.0-1.0)
+    pub significance: f32,
 }
