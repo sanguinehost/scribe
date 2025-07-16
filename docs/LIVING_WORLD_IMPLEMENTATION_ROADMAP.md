@@ -840,12 +840,27 @@ pub struct ContextCache {
 **Current State:** 🔴 **Critical Dependencies Identified** - Analysis reveals missing repair system functionality and feature completeness gaps that must be addressed for full system validation.
 
 *   **[ ] Task 6.1: 🚨 Critical System Completeness (BLOCKING)**
-    *   **[x] Subtask 6.1.1: Repair System Implementation**
+    *   **[x] Subtask 6.1.1: Repair System Implementation** ✅ **COMPLETED**
         *   [x] **PlanRepairService Creation**: Implement the missing PlanRepairService for intelligent plan repair
         *   [x] **Enhanced PlanValidatorService**: Add repair capability methods to validation service
         *   [x] **Repair Safety Checks**: Implement validation for repair plans before execution
-        *   [ ] **Repair Caching System**: Cache repair analysis results with user isolation
-        *   [ ] **Confidence Scoring**: Comprehensive confidence scoring for repair decisions
+        *   [x] **Repair Caching System**: Cache repair analysis results with user isolation ✅ **COMPLETED**
+            - **RepairCacheService Implementation**: Redis-based caching with comprehensive TTL management
+            - **User Isolation**: User-specific cache keys with `user_id` prefixes for security
+            - **Multi-tier Caching**: Separate TTLs for repair plans (30min), analysis (60min), failures (5min)
+            - **Content-Addressed Keys**: Hash-based cache keys for efficient lookup and invalidation
+            - **Negative Caching**: Failed repair attempts cached to avoid repeated expensive operations
+            - **Cache Validation**: Hash verification for repair plans and analysis consistency
+            - **Integration**: Full integration with PlanRepairService with fallback when cache unavailable
+        *   [x] **Confidence Scoring**: Comprehensive confidence scoring for repair decisions ✅ **COMPLETED**
+            - **ConfidenceCalculator Service**: Multi-factor confidence analysis with configurable weights
+            - **5-Factor Scoring Model**: Consistency (30%), Complexity (20%), Relationships (20%), Temporal (15%), Plan Quality (15%)
+            - **Entity Complexity Analysis**: Count, component diversity, relationship depth, inventory complexity
+            - **Temporal Freshness**: State age assessment with configurable decay (5min threshold)
+            - **Plan Quality Metrics**: Action completeness, preconditions, effects, goal clarity assessment
+            - **Detailed Breakdown**: ConfidenceBreakdown with warnings and factor-specific scores
+            - **Workflow Integration**: generate_repair_plan_with_confidence() method with fallback logic
+            - **Comprehensive Testing**: Unit tests for all scoring factors and configuration serialization
     *   **[x] Subtask 6.1.2: Complete ECS State Reconciliation Tests (13/13 tests passing)** ✅ **COMPLETED**
         *   [x] **Missing Movement Repair**: Test scenarios where entities need location updates
         *   [x] **Missing Relationship Repair**: Test scenarios where relationships need creation
@@ -910,7 +925,7 @@ pub struct ContextCache {
 
 *   **[ ] Task 6.4: Security and Logging Validation**
     *   **[ ] Subtask 6.4.1: Security Review:**
-        *   [ ] **A09: Logging Failures:** Review the full system to ensure all agent decisions, tool calls, and state changes are logged with sufficient detail for security auditing.
+        *   [ ] **A09: Logging Failures:** Review the full system to ensure all agent decisions, tool calls, and state changes are logged with sufficient detail for security auditing. But remember that we implicitly never log any user data or encrypted data beyond what is absolutely necessary for diagnostics as per our end-to-end encryption and privacy guarantees.
         *   [ ] **A05: Security Misconfiguration:** Ensure all new services and agents have appropriate, hardened configurations and do not expose unnecessary information in error messages.
         *   [ ] **Repair System Security**: Validate repair functionality within full agent security framework
     *   **[ ] Subtask 6.4.2: Manual QA:** Perform manual testing of the full flow to catch any issues not covered by automated tests.

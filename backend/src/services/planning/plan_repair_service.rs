@@ -6,7 +6,11 @@ use crate::{
     errors::AppError,
     services::{
         EcsEntityManager,
-        planning::types::*,
+        planning::{
+            types::*,
+            repair_cache_service::RepairCacheService,
+            confidence_calculator::{ConfidenceCalculator, ConfidenceBreakdown},
+        },
         ecs_entity_manager::EntityQueryResult,
     },
     models::{
@@ -23,6 +27,8 @@ pub struct PlanRepairService {
     ecs_manager: Arc<EcsEntityManager>,
     flash_client: Arc<dyn AiClient + Send + Sync>,
     config: Config,
+    cache_service: Option<RepairCacheService>,
+    confidence_calculator: Option<ConfidenceCalculator>,
 }
 
 impl PlanRepairService {
@@ -35,6 +41,54 @@ impl PlanRepairService {
             ecs_manager,
             flash_client,
             config,
+            cache_service: None,
+            confidence_calculator: None,
+        }
+    }
+
+    pub fn with_cache(
+        ecs_manager: Arc<EcsEntityManager>,
+        flash_client: Arc<dyn AiClient + Send + Sync>,
+        config: Config,
+        cache_service: RepairCacheService,
+    ) -> Self {
+        Self {
+            ecs_manager,
+            flash_client,
+            config,
+            cache_service: Some(cache_service),
+            confidence_calculator: None,
+        }
+    }
+
+    pub fn with_confidence_scoring(
+        ecs_manager: Arc<EcsEntityManager>,
+        flash_client: Arc<dyn AiClient + Send + Sync>,
+        config: Config,
+        confidence_calculator: ConfidenceCalculator,
+    ) -> Self {
+        Self {
+            ecs_manager,
+            flash_client,
+            config,
+            cache_service: None,
+            confidence_calculator: Some(confidence_calculator),
+        }
+    }
+
+    pub fn with_cache_and_confidence(
+        ecs_manager: Arc<EcsEntityManager>,
+        flash_client: Arc<dyn AiClient + Send + Sync>,
+        config: Config,
+        cache_service: RepairCacheService,
+        confidence_calculator: ConfidenceCalculator,
+    ) -> Self {
+        Self {
+            ecs_manager,
+            flash_client,
+            config,
+            cache_service: Some(cache_service),
+            confidence_calculator: Some(confidence_calculator),
         }
     }
 
@@ -48,7 +102,25 @@ impl PlanRepairService {
     ) -> Result<Plan, AppError> {
         info!("Generating repair plan for {:?} inconsistency", analysis.inconsistency_type);
 
-        match analysis.inconsistency_type {
+        // Check cache first if caching is enabled
+        if let Some(cache_service) = &self.cache_service {
+            // Check for recent failures to avoid repeated attempts
+            if let Ok(Some(failure)) = cache_service.is_repair_recently_failed(user_id, analysis, original_plan).await {
+                warn!("Repair recently failed for this combination, skipping: {}", failure.error_message);
+                return Err(AppError::InternalServerErrorGeneric(
+                    format!("Repair recently failed: {}. Retry after: {}", failure.error_message, failure.retry_after)
+                ));
+            }
+
+            // Check for cached repair plan
+            if let Ok(Some(cached_repair)) = cache_service.get_cached_repair_plan(user_id, original_plan, analysis).await {
+                info!("Using cached repair plan from: {}", cached_repair.cached_at);
+                return Ok(cached_repair.plan);
+            }
+        }
+
+        // Generate the repair plan
+        let repair_result = match analysis.inconsistency_type {
             InconsistencyType::MissingMovement => {
                 self.generate_movement_repair(analysis, original_plan, user_id).await
             }
@@ -64,7 +136,79 @@ impl PlanRepairService {
             InconsistencyType::TemporalMismatch => {
                 self.generate_temporal_repair(analysis, original_plan, user_id).await
             }
+        };
+
+        // Cache the result if caching is enabled
+        if let Some(cache_service) = &self.cache_service {
+            match &repair_result {
+                Ok(repair_plan) => {
+                    // Cache successful repair plan
+                    if let Err(cache_error) = cache_service.cache_repair_plan(user_id, repair_plan, original_plan, analysis).await {
+                        warn!("Failed to cache repair plan: {}", cache_error);
+                    }
+                },
+                Err(error) => {
+                    // Cache failure to avoid repeated attempts
+                    if let Err(cache_error) = cache_service.cache_repair_failure(user_id, analysis, original_plan, error).await {
+                        warn!("Failed to cache repair failure: {}", cache_error);
+                    }
+                }
+            }
         }
+
+        repair_result
+    }
+
+    /// Generate repair plan with comprehensive confidence scoring
+    #[instrument(skip(self, analysis))]
+    pub async fn generate_repair_plan_with_confidence(
+        &self,
+        analysis: &InconsistencyAnalysis,
+        original_plan: &Plan,
+        user_id: Uuid,
+    ) -> Result<(Plan, ConfidenceBreakdown), AppError> {
+        info!("Generating repair plan with confidence scoring for {:?} inconsistency", analysis.inconsistency_type);
+
+        // First generate the repair plan using existing logic
+        let repair_plan = self.generate_repair_plan(analysis, original_plan, user_id).await?;
+
+        // Calculate comprehensive confidence if calculator is available
+        let confidence_breakdown = if let Some(confidence_calculator) = &self.confidence_calculator {
+            confidence_calculator.calculate_repair_confidence(
+                analysis,
+                &repair_plan,
+                original_plan,
+                user_id,
+            ).await?
+        } else {
+            // Fallback to basic confidence from analysis
+            warn!("No confidence calculator available, using basic confidence from analysis");
+            ConfidenceBreakdown {
+                final_confidence: analysis.confidence_score,
+                consistency_score: analysis.confidence_score,
+                complexity_score: 0.8, // Default assumption
+                relationship_score: 0.8, // Default assumption
+                temporal_score: 0.9, // Default assumption
+                plan_quality_score: repair_plan.metadata.confidence,
+                weights: Default::default(),
+                entities_analyzed: 0,
+                relationships_analyzed: 0,
+                max_relationship_depth: 0,
+                state_age_seconds: 0,
+                plan_action_count: repair_plan.actions.len() as u32,
+                warnings: vec!["No confidence calculator configured".to_string()],
+            }
+        };
+
+        info!("Repair plan generated with final confidence: {:.3}", confidence_breakdown.final_confidence);
+        
+        // Log warnings if confidence is low
+        if confidence_breakdown.final_confidence < 0.5 {
+            warn!("Low confidence repair plan generated ({}). Warnings: {:?}", 
+                  confidence_breakdown.final_confidence, confidence_breakdown.warnings);
+        }
+
+        Ok((repair_plan, confidence_breakdown))
     }
 
     /// Combine repair plan with original plan

@@ -37,7 +37,7 @@ pub struct PlannedAction {
 }
 
 /// Enumeration of all available actions (matching Tactical Toolkit)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionName {
     FindEntity,
@@ -227,7 +227,7 @@ pub struct ValidationFailure {
 }
 
 /// Types of validation failures
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
 pub enum ValidationFailureType {
     ActionNotFound,
     InvalidParameters,
@@ -263,6 +263,7 @@ pub struct RepairableInvalidPlan {
     pub combined_plan: Plan,                 // Repair + Original combined
     pub inconsistency_analysis: InconsistencyAnalysis,
     pub confidence_score: f32,               // How confident we are that ECS is wrong (0.0-1.0)
+    pub confidence_breakdown: Option<serde_json::Value>, // Detailed confidence analysis (serialized ConfidenceBreakdown)
 }
 
 /// Analysis of detected ECS inconsistency
@@ -277,7 +278,7 @@ pub struct InconsistencyAnalysis {
 }
 
 /// Types of ECS inconsistencies that can be detected and repaired
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
 pub enum InconsistencyType {
     MissingMovement,      // Entity should be elsewhere based on narrative
     MissingComponent,     // Component should exist but doesn't
