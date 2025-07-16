@@ -348,6 +348,19 @@ struct QueryMetrics {
     cache_misses: AtomicUsize,
 }
 
+/// Represents a state change extracted from an event
+#[derive(Debug, Clone)]
+struct StateChange {
+    /// The component type being changed
+    component_type: String,
+    /// The type of change (increase, decrease, set, add_item, remove_item)
+    change_type: String,
+    /// The magnitude of the change (for numeric values)
+    change_value: f64,
+    /// The specific field being changed
+    field_name: String,
+}
+
 impl QueryMetrics {
     fn new() -> Self {
         Self::default()
@@ -893,7 +906,7 @@ impl HybridQueryService {
         };
 
         // Build timeline events for this entity
-        let timeline_events = self.build_entity_timeline(entity_id, events).await?;
+        let timeline_events = self.build_entity_timeline(entity_id, events, query.user_id).await?;
 
         // Get current relationships
         let relationships = if query.include_relationships {
@@ -991,7 +1004,7 @@ impl HybridQueryService {
     }
 
     /// Build timeline events for an entity
-    async fn build_entity_timeline(&self, entity_id: Uuid, events: &[ChronicleEvent]) -> Result<Vec<TimelineEvent>, AppError> {
+    async fn build_entity_timeline(&self, entity_id: Uuid, events: &[ChronicleEvent], user_id: Uuid) -> Result<Vec<TimelineEvent>, AppError> {
         let mut timeline_events = Vec::new();
 
         for event in events {
@@ -1000,7 +1013,12 @@ impl HybridQueryService {
                 let significance_score = self.calculate_event_significance(entity_id, event).await?;
                 let timeline_event = TimelineEvent {
                     event: event.clone(),
-                    entity_state_at_time: None, // TODO: Reconstruct state at event time
+                    entity_state_at_time: {
+                        match self.reconstruct_entity_state_at_event(entity_id, event, user_id).await? {
+                            Some(state) => Some(serde_json::to_value(state).unwrap_or(serde_json::Value::Null)),
+                            None => None,
+                        }
+                    },
                     co_participants: self.extract_co_participants(entity_id, event).await?,
                     significance_score,
                 };
@@ -2374,5 +2392,332 @@ impl HybridQueryService {
             4..=6 => 0.9,    // Medium group - high significance
             _ => 1.0,        // Large group - maximum significance
         }
+    }
+
+    /// Reconstruct entity state at the time of a specific event
+    async fn reconstruct_entity_state_at_event(
+        &self,
+        entity_id: Uuid,
+        event: &ChronicleEvent,
+        user_id: Uuid,
+    ) -> Result<Option<EntityStateSnapshot>, AppError> {
+        // If we have current state, try to reconstruct historical state
+        if let Ok(current_state) = self.get_entity_current_state(entity_id, user_id).await {
+            // For reconstruction, we need to work backwards from current state
+            // using chronicle events to determine what changed
+            
+            // Get all events after this event timestamp to work backwards
+            let events_after = self.get_events_after_timestamp(entity_id, event.created_at).await?;
+            
+            // Start with current state and work backwards
+            let mut reconstructed_state = current_state.clone();
+            
+            // Process events in reverse chronological order
+            for later_event in events_after.iter().rev() {
+                // Apply reverse changes from this event
+                if let Ok(state_changes) = self.extract_state_changes_from_event(later_event).await {
+                    self.apply_reverse_state_changes(&mut reconstructed_state, &state_changes)?;
+                }
+            }
+            
+            // Apply any state changes from the target event itself
+            if let Ok(state_changes) = self.extract_state_changes_from_event(event).await {
+                self.apply_state_changes(&mut reconstructed_state, &state_changes)?;
+            }
+            
+            // Update the snapshot time to the event time
+            reconstructed_state.snapshot_time = event.created_at;
+            
+            Ok(Some(reconstructed_state))
+        } else {
+            // No current state available, try to reconstruct from event data
+            if let Ok(state_from_event) = self.build_state_from_event(entity_id, event).await {
+                Ok(Some(state_from_event))
+            } else {
+                // Unable to reconstruct state
+                Ok(None)
+            }
+        }
+    }
+
+    /// Get chronicle events after a specific timestamp for an entity
+    async fn get_events_after_timestamp(
+        &self,
+        entity_id: Uuid,
+        timestamp: DateTime<Utc>,
+    ) -> Result<Vec<ChronicleEvent>, AppError> {
+        use diesel::prelude::*;
+        use crate::schema::chronicle_events;
+        
+        let conn = self.db_pool.get().await?;
+        
+        // Query for events after the timestamp where entity is involved
+        let events = conn
+            .interact(move |conn| {
+                chronicle_events::table
+                    .filter(chronicle_events::created_at.gt(timestamp))
+                    .order(chronicle_events::created_at.asc())
+                    .load::<ChronicleEvent>(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(format!("Failed to query events: {e}")))?
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to load events: {e}")))?;
+        
+        // Filter for events involving this entity
+        let mut relevant_events = Vec::new();
+        for event in events {
+            if self.entity_involved_in_event(entity_id, &event).await? {
+                relevant_events.push(event);
+            }
+        }
+        
+        Ok(relevant_events)
+    }
+
+    /// Extract state changes from an event
+    async fn extract_state_changes_from_event(
+        &self,
+        event: &ChronicleEvent,
+    ) -> Result<Vec<StateChange>, AppError> {
+        let mut state_changes = Vec::new();
+        
+        // Parse event data for state changes
+        if let Some(event_data) = &event.event_data {
+            // Look for common state change patterns
+            if let Some(health_change) = event_data.get("health_change") {
+                if let Some(change_value) = health_change.as_f64() {
+                    state_changes.push(StateChange {
+                        component_type: "health".to_string(),
+                        change_type: if change_value > 0.0 { "increase" } else { "decrease" }.to_string(),
+                        change_value: change_value.abs(),
+                        field_name: "current_health".to_string(),
+                    });
+                }
+            }
+            
+            if let Some(location_change) = event_data.get("location_change") {
+                if let Some(new_location) = location_change.as_str() {
+                    state_changes.push(StateChange {
+                        component_type: "position".to_string(),
+                        change_type: "set".to_string(),
+                        change_value: 0.0,
+                        field_name: "location".to_string(),
+                    });
+                }
+            }
+            
+            if let Some(inventory_change) = event_data.get("inventory_change") {
+                if let Some(item_added) = inventory_change.get("added") {
+                    state_changes.push(StateChange {
+                        component_type: "inventory".to_string(),
+                        change_type: "add_item".to_string(),
+                        change_value: 1.0,
+                        field_name: "items".to_string(),
+                    });
+                }
+                if let Some(item_removed) = inventory_change.get("removed") {
+                    state_changes.push(StateChange {
+                        component_type: "inventory".to_string(),
+                        change_type: "remove_item".to_string(),
+                        change_value: 1.0,
+                        field_name: "items".to_string(),
+                    });
+                }
+            }
+            
+            // Look for experience/level changes
+            if let Some(exp_change) = event_data.get("experience_change") {
+                if let Some(exp_value) = exp_change.as_f64() {
+                    state_changes.push(StateChange {
+                        component_type: "character_stats".to_string(),
+                        change_type: if exp_value > 0.0 { "increase" } else { "decrease" }.to_string(),
+                        change_value: exp_value.abs(),
+                        field_name: "experience".to_string(),
+                    });
+                }
+            }
+        }
+        
+        Ok(state_changes)
+    }
+
+    /// Apply reverse state changes to reconstruct earlier state
+    fn apply_reverse_state_changes(
+        &self,
+        state: &mut EntityStateSnapshot,
+        changes: &[StateChange],
+    ) -> Result<(), AppError> {
+        for change in changes {
+            if let Some(component) = state.components.get_mut(&change.component_type) {
+                match change.change_type.as_str() {
+                    "increase" => {
+                        // Reverse an increase by decreasing
+                        if let Some(current_value) = component.get(&change.field_name).and_then(|v| v.as_f64()) {
+                            let new_value = current_value - change.change_value;
+                            component[&change.field_name] = serde_json::Value::Number(
+                                serde_json::Number::from_f64(new_value).unwrap_or(serde_json::Number::from(0))
+                            );
+                        }
+                    }
+                    "decrease" => {
+                        // Reverse a decrease by increasing
+                        if let Some(current_value) = component.get(&change.field_name).and_then(|v| v.as_f64()) {
+                            let new_value = current_value + change.change_value;
+                            component[&change.field_name] = serde_json::Value::Number(
+                                serde_json::Number::from_f64(new_value).unwrap_or(serde_json::Number::from(0))
+                            );
+                        }
+                    }
+                    "add_item" => {
+                        // Reverse item addition by removing item
+                        if let Some(items) = component.get_mut(&change.field_name).and_then(|v| v.as_array_mut()) {
+                            if let Some(last_item) = items.last() {
+                                items.pop();
+                            }
+                        }
+                    }
+                    "remove_item" => {
+                        // Cannot reliably reverse item removal without more context
+                        // This would require storing the removed item data
+                        debug!("Cannot reverse item removal without original item data");
+                    }
+                    _ => {
+                        debug!("Unknown change type for reversal: {}", change.change_type);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply state changes to an entity state
+    fn apply_state_changes(
+        &self,
+        state: &mut EntityStateSnapshot,
+        changes: &[StateChange],
+    ) -> Result<(), AppError> {
+        for change in changes {
+            if let Some(component) = state.components.get_mut(&change.component_type) {
+                match change.change_type.as_str() {
+                    "increase" => {
+                        if let Some(current_value) = component.get(&change.field_name).and_then(|v| v.as_f64()) {
+                            let new_value = current_value + change.change_value;
+                            component[&change.field_name] = serde_json::Value::Number(
+                                serde_json::Number::from_f64(new_value).unwrap_or(serde_json::Number::from(0))
+                            );
+                        }
+                    }
+                    "decrease" => {
+                        if let Some(current_value) = component.get(&change.field_name).and_then(|v| v.as_f64()) {
+                            let new_value = current_value - change.change_value;
+                            component[&change.field_name] = serde_json::Value::Number(
+                                serde_json::Number::from_f64(new_value).unwrap_or(serde_json::Number::from(0))
+                            );
+                        }
+                    }
+                    "set" => {
+                        // Set operations would need the new value from event data
+                        debug!("Set operation needs implementation with event data");
+                    }
+                    "add_item" => {
+                        if let Some(items) = component.get_mut(&change.field_name).and_then(|v| v.as_array_mut()) {
+                            // Add placeholder item (real implementation would need item data)
+                            items.push(serde_json::Value::String("reconstructed_item".to_string()));
+                        }
+                    }
+                    "remove_item" => {
+                        if let Some(items) = component.get_mut(&change.field_name).and_then(|v| v.as_array_mut()) {
+                            items.pop();
+                        }
+                    }
+                    _ => {
+                        debug!("Unknown change type: {}", change.change_type);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Build entity state from event data when no current state exists
+    async fn build_state_from_event(
+        &self,
+        entity_id: Uuid,
+        event: &ChronicleEvent,
+    ) -> Result<EntityStateSnapshot, AppError> {
+        let mut components = HashMap::new();
+        
+        // Try to extract entity state from event data
+        if let Some(event_data) = &event.event_data {
+            // Look for entity state snapshots in event data
+            if let Some(entity_states) = event_data.get("entity_states") {
+                if let Some(entity_state) = entity_states.get(entity_id.to_string()) {
+                    if let Some(state_obj) = entity_state.as_object() {
+                        for (key, value) in state_obj {
+                            let mut component_data = HashMap::new();
+                            component_data.insert("data".to_string(), value.clone());
+                            components.insert(key.clone(), serde_json::Value::Object(
+                                component_data.into_iter().collect()
+                            ));
+                        }
+                    }
+                }
+            }
+            
+            // If no direct state, infer from event context
+            if components.is_empty() {
+                // Infer basic components from event participation
+                if let Ok(actors) = event.get_actors() {
+                    for actor in actors {
+                        if actor.entity_id == entity_id {
+                            // Add basic character component
+                            let mut character_data = HashMap::new();
+                            character_data.insert("entity_id".to_string(), serde_json::Value::String(actor.entity_id.to_string()));
+                            character_data.insert("role".to_string(), serde_json::Value::String(format!("{:?}", actor.role)));
+                            if let Some(context) = &actor.context {
+                                character_data.insert("context".to_string(), serde_json::Value::String(context.clone()));
+                            }
+                            components.insert("character".to_string(), serde_json::Value::Object(
+                                character_data.into_iter().collect()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Generate status indicators
+        let mut status_indicators = Vec::new();
+        if components.contains_key("health") {
+            status_indicators.push("has_health".to_string());
+        }
+        if components.contains_key("position") {
+            status_indicators.push("has_position".to_string());
+        }
+        if components.contains_key("inventory") {
+            status_indicators.push("has_inventory".to_string());
+        }
+        if components.is_empty() {
+            status_indicators.push("reconstructed_minimal".to_string());
+        } else {
+            status_indicators.push("reconstructed_from_event".to_string());
+        }
+        
+        // Generate archetype signature
+        let mut comp_types: Vec<_> = components.keys().cloned().collect();
+        comp_types.sort();
+        let archetype_signature = if comp_types.is_empty() {
+            "unknown".to_string()
+        } else {
+            comp_types.join(",")
+        };
+        
+        Ok(EntityStateSnapshot {
+            entity_id,
+            archetype_signature,
+            components,
+            snapshot_time: event.created_at,
+            status_indicators,
+        })
     }
 }
