@@ -913,8 +913,7 @@ impl HybridQueryService {
     }
 
     /// Get current state for an entity
-    async fn get_entity_current_state(&self, entity_id: Uuid, _user_id: Uuid) -> Result<EntityStateSnapshot, AppError> {
-        // TODO: Use entity manager to get current state
+    async fn get_entity_current_state(&self, entity_id: Uuid, user_id: Uuid) -> Result<EntityStateSnapshot, AppError> {
         debug!("Getting current state for entity: {}", entity_id);
         
         // Check if we would use cache (based on config)
@@ -927,13 +926,65 @@ impl HybridQueryService {
         // Record that we're querying the entity manager (DB)
         self.metrics.record_db_query();
         
-        Ok(EntityStateSnapshot {
-            entity_id,
-            archetype_signature: "unknown".to_string(),
-            components: HashMap::new(),
-            snapshot_time: chrono::Utc::now(),
-            status_indicators: Vec::new(),
-        })
+        // Use entity manager to get current state
+        match self.entity_manager.get_entity(user_id, entity_id).await {
+            Ok(Some(entity_query_result)) => {
+                // Convert ECS entity query result to EntityStateSnapshot
+                let mut components: HashMap<String, serde_json::Value> = HashMap::new();
+                
+                // Process each component
+                for ecs_component in entity_query_result.components {
+                    components.insert(ecs_component.component_type.clone(), ecs_component.component_data);
+                }
+                
+                // Generate status indicators based on components
+                let mut status_indicators = Vec::new();
+                if components.contains_key("health") {
+                    status_indicators.push("has_health".to_string());
+                }
+                if components.contains_key("position") {
+                    status_indicators.push("has_position".to_string());
+                }
+                if components.contains_key("inventory") {
+                    status_indicators.push("has_inventory".to_string());
+                }
+                
+                // Generate archetype signature from component types
+                let mut comp_types: Vec<_> = components.keys().cloned().collect();
+                comp_types.sort();
+                let archetype_signature = comp_types.join(",");
+                
+                Ok(EntityStateSnapshot {
+                    entity_id,
+                    archetype_signature,
+                    components,
+                    snapshot_time: entity_query_result.entity.updated_at,
+                    status_indicators,
+                })
+            }
+            Ok(None) => {
+                debug!("Entity not found: {}", entity_id);
+                // Entity doesn't exist
+                Ok(EntityStateSnapshot {
+                    entity_id,
+                    archetype_signature: "not_found".to_string(),
+                    components: HashMap::new(),
+                    snapshot_time: chrono::Utc::now(),
+                    status_indicators: vec!["entity_not_found".to_string()],
+                })
+            }
+            Err(e) => {
+                debug!("Entity manager unavailable or error: {}", e);
+                // Fallback to empty snapshot if entity manager fails
+                Ok(EntityStateSnapshot {
+                    entity_id,
+                    archetype_signature: "unknown".to_string(),
+                    components: HashMap::new(),
+                    snapshot_time: chrono::Utc::now(),
+                    status_indicators: vec!["ecs_unavailable".to_string()],
+                })
+            }
+        }
     }
 
     /// Build timeline events for an entity
@@ -999,9 +1050,89 @@ impl HybridQueryService {
     }
 
     /// Extract co-participants from an event
-    async fn extract_co_participants(&self, _entity_id: Uuid, _event: &ChronicleEvent) -> Result<Vec<Uuid>, AppError> {
-        // TODO: Parse event data to find other entities
-        Ok(Vec::new())
+    async fn extract_co_participants(&self, entity_id: Uuid, event: &ChronicleEvent) -> Result<Vec<Uuid>, AppError> {
+        let mut co_participants = Vec::new();
+        
+        // Extract from actors list
+        if let Ok(actors) = event.get_actors() {
+            for actor in actors {
+                if actor.entity_id != entity_id {
+                    co_participants.push(actor.entity_id);
+                }
+            }
+        }
+        
+        // Extract from event_data JSON
+        if let Some(event_data) = &event.event_data {
+            // Check actors array in event_data
+            if let Some(actors_value) = event_data.get("actors") {
+                if let Some(actors_array) = actors_value.as_array() {
+                    for actor_value in actors_array {
+                        if let Some(actor_entity_id) = actor_value.get("entity_id") {
+                            if let Some(actor_id_str) = actor_entity_id.as_str() {
+                                if let Ok(actor_uuid) = Uuid::parse_str(actor_id_str) {
+                                    if actor_uuid != entity_id {
+                                        co_participants.push(actor_uuid);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check participants array in event_data
+            if let Some(participants_value) = event_data.get("participants") {
+                if let Some(participants_array) = participants_value.as_array() {
+                    for participant_value in participants_array {
+                        if let Some(participant_str) = participant_value.as_str() {
+                            if let Ok(participant_uuid) = Uuid::parse_str(participant_str) {
+                                if participant_uuid != entity_id {
+                                    co_participants.push(participant_uuid);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check for target/subject entity IDs in event_data
+            for field in &["target_entity_id", "subject_entity_id", "related_entity_id"] {
+                if let Some(target_value) = event_data.get(field) {
+                    if let Some(target_str) = target_value.as_str() {
+                        if let Ok(target_uuid) = Uuid::parse_str(target_str) {
+                            if target_uuid != entity_id {
+                                co_participants.push(target_uuid);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check for entities mentioned in nested objects
+            if let Some(details) = event_data.get("details") {
+                if let Some(details_obj) = details.as_object() {
+                    for (_, value) in details_obj {
+                        if let Some(entity_str) = value.as_str() {
+                            if let Ok(entity_uuid) = Uuid::parse_str(entity_str) {
+                                if entity_uuid != entity_id {
+                                    co_participants.push(entity_uuid);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Remove duplicates
+        co_participants.sort();
+        co_participants.dedup();
+        
+        debug!("Extracted {} co-participants for entity {} from event {}", 
+               co_participants.len(), entity_id, event.id);
+        
+        Ok(co_participants)
     }
 
     /// Get relationships for an entity
