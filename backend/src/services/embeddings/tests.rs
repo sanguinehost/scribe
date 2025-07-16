@@ -385,6 +385,7 @@ mod tests {
             agentic_state_update_service: state_update_service.clone(), // Add this line
             hierarchical_context_assembler: None, // Will be set after AppState is built
             tactical_agent: None, // No tactical agent needed for embedding tests
+            strategic_agent: None, // No strategic agent needed for embedding tests
         };
 
         let config = crate::config::Config::load()

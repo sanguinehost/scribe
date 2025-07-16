@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
+use super::types::*;
 
 /// Structured output schema for planning service
 /// This ensures AI always generates valid JSON with proper types
@@ -244,8 +245,7 @@ pub fn get_plan_generation_schema() -> serde_json::Value {
 
 /// Convert structured output to internal Plan type
 impl PlanGenerationOutput {
-    pub fn to_plan(&self) -> Result<super::types::Plan, AppError> {
-        use super::types::*;
+    pub fn to_plan(&self) -> Result<Plan, AppError> {
         
         let mut actions = Vec::new();
         for action_output in &self.actions {
@@ -271,10 +271,84 @@ impl PlanGenerationOutput {
                     format!("Failed to serialize parameters: {}", e)
                 ))?;
             
-            // For now, use default preconditions and effects
-            // In a full implementation, these would be converted from the output structs
-            let preconditions = Preconditions::default();
-            let effects = Effects::default();
+            // Convert preconditions
+            let preconditions = if let Some(prec) = &action_output.preconditions {
+                Preconditions {
+                    entity_exists: prec.entity_exists.as_ref().map(|checks| 
+                        checks.iter().map(|check| EntityExistenceCheck {
+                            entity_id: check.entity_id.clone(),
+                            entity_name: check.entity_name.clone(),
+                        }).collect()
+                    ),
+                    entity_at_location: prec.entity_at_location.as_ref().map(|checks|
+                        checks.iter().map(|check| EntityLocationCheck {
+                            entity_id: check.entity_id.clone(),
+                            location_id: check.location_id.clone(),
+                        }).collect()
+                    ),
+                    entity_has_component: prec.entity_has_component.as_ref().map(|checks|
+                        checks.iter().map(|check| EntityComponentCheck {
+                            entity_id: check.entity_id.clone(),
+                            component_type: check.component_type.clone(),
+                        }).collect()
+                    ),
+                    inventory_has_space: prec.inventory_has_space.as_ref().map(|check|
+                        InventorySpaceCheck {
+                            entity_id: check.entity_id.clone(),
+                            required_slots: check.required_slots,
+                        }
+                    ),
+                    relationship_exists: prec.relationship_exists.as_ref().map(|checks|
+                        checks.iter().map(|check| RelationshipCheck {
+                            source_entity: check.source_entity_id.clone(),
+                            target_entity: check.target_entity_id.clone(),
+                            min_trust: check.min_trust,
+                        }).collect()
+                    ),
+                }
+            } else {
+                Preconditions::default()
+            };
+            
+            // Convert effects
+            let effects = if let Some(eff) = &action_output.effects {
+                Effects {
+                    entity_moved: eff.entity_moved.as_ref().map(|moved| EntityMovedEffect {
+                        entity_id: moved.entity_id.clone(),
+                        new_location: moved.new_location.clone(),
+                    }),
+                    entity_created: eff.entity_created.as_ref().map(|created| EntityCreatedEffect {
+                        entity_name: created.entity_name.clone(),
+                        entity_type: created.entity_type.clone(),
+                        parent_id: created.parent_id.clone(),
+                    }),
+                    component_updated: eff.component_updated.as_ref().map(|updates|
+                        updates.iter().map(|update| ComponentUpdateEffect {
+                            entity_id: update.entity_id.clone(),
+                            component_type: update.component_type.clone(),
+                            operation: match update.operation.as_str() {
+                                "add" => ComponentOperation::Add,
+                                "update" => ComponentOperation::Update,
+                                "remove" => ComponentOperation::Remove,
+                                _ => ComponentOperation::Update, // default
+                            },
+                        }).collect()
+                    ),
+                    inventory_changed: eff.inventory_changed.as_ref().map(|changed| InventoryChangeEffect {
+                        entity_id: changed.entity_id.clone(),
+                        item_id: changed.item_id.clone(),
+                        quantity_change: changed.quantity_change,
+                    }),
+                    relationship_changed: eff.relationship_changed.as_ref().map(|changed| RelationshipChangeEffect {
+                        source_entity: changed.source_entity_id.clone(),
+                        target_entity: changed.target_entity_id.clone(),
+                        trust_change: changed.trust_change,
+                        affection_change: changed.affection_change,
+                    }),
+                }
+            } else {
+                Effects::default()
+            };
             
             actions.push(PlannedAction {
                 id: action_output.id.clone(),

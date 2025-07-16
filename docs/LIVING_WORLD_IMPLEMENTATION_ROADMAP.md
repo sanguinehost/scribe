@@ -883,18 +883,21 @@ pub struct ContextCache {
             - [x] **Phase 1**: Basic movement projection (EntityMovedEffect + entity_at_location preconditions) - ✅ Fixed 2 failing tests
             - [x] **Phase 2**: Component projection (ComponentUpdateEffect + entity_has_component preconditions) - ✅ Infrastructure complete
             - [x] **Phase 3**: Relationship & inventory projection (full effect/precondition coverage) - ✅ Infrastructure complete
-            - [ ] **Phase 4**: Performance optimization and selective entity loading - Deferred to future optimization
         *   [x] **Expected Outcome**: Test success rate 13/13 (100%) ✅ **ACHIEVED** - Full ECS State Reconciliation system operational
-    *   **[ ] Subtask 6.1.3: Complete Planning Service Integration Tests**
-        *   [ ] **Task 3.5.2**: Invalid Plan Test (Precondition Fail) - Test invalid→repairable workflows
-        *   [ ] **Task 3.5.3**: Security Test - Cross-user entity access with tactical agent integration
-        *   [ ] **Task 3.5.4**: End-to-End Integration Testing with Repair System including:
-            - Full pipeline tests (planning → validation → repair → execution)
-            - Multi-turn conversation repair persistence
-            - Integration with Tactical Agent
-            - Performance integration (repair impact on response times)
-            - Security integration within agent framework
-            - Failure mode testing and logging/observability
+    *   **[~] Subtask 6.1.3: Complete Planning Service Integration Tests** ⚠️ **PARTIAL** (7/11 tests passing)
+        *   [x] **Planning Service Core Tests**: Basic planning service functionality with AI generation and caching
+        *   [x] **Plan Validation Tests**: Core validation workflow for valid and invalid plans
+        *   [x] **Security Tests**: Cross-user entity access prevention and user isolation
+        *   [x] **Error Handling Tests**: Service degradation and failure mode testing
+        *   [x] **Performance Tests**: Repair system performance impact validation
+        *   [~] **Task 3.5.2**: Invalid Plan Test (Precondition Fail) - ⚠️ **JSON mapping issues in mock AI responses**
+        *   [~] **Task 3.5.3**: Security Test - ⚠️ **Complex consistency analyzer mock setup required**
+        *   [~] **Task 3.5.4**: End-to-End Integration Testing - ⚠️ **Field name mismatches in structured JSON**
+        *   **Remaining Issues**: 
+            - Mock AI JSON responses need field name alignment (`source_entity_id` vs `source_entity`)
+            - Consistency analyzer expects different JSON format than repair service
+            - Complex scenarios require sophisticated AI mock setup for ECS inconsistency detection
+        *   **Test Status**: 7 passed, 4 failed - Core functionality validated, edge case scenarios need mock refinement
 
 *   **[ ] Task 6.2: System Feature Completeness**
     *   **[ ] Subtask 6.2.1: Hierarchical Context Assembler Enhancements**
@@ -966,4 +969,43 @@ pub struct ContextCache {
 - [ ] **Cross-User Isolation**: Test that agents cannot access data from other users
 - [ ] **Input Validation**: Ensure all agent inputs are properly sanitized
 - [ ] **Privilege Escalation**: Test that agents cannot escalate their privileges
+
+## 🔮 **Future Optimizations**
+
+**Note:** This section contains optimizations and enhancements that have been deferred from the main implementation phases. These are not critical for core functionality but would improve performance, scalability, or user experience.
+
+### **Performance & Scalability**
+
+*   **[ ] Task F.1: Virtual ECS State Projection Performance Optimization** (from Task 6.1.2b Phase 4)
+    *   **Objective:** Optimize the Virtual ECS State Projection system for high-performance scenarios
+    *   **Context:** Deferred from Task 6.1.2b Phase 4 - system is functional but could benefit from optimization
+    *   **[ ] Subtask F.1.1: Selective Entity Loading**
+        *   [ ] Implement lazy loading for entity components not required for validation
+        *   [ ] Create entity access patterns analysis to predict needed components
+        *   [ ] Add partial entity loading for large inventory or relationship sets
+    *   **[ ] Subtask F.1.2: Projection State Caching**
+        *   [ ] Cache intermediate projection states for common action sequences
+        *   [ ] Implement projection state diffing for incremental updates
+        *   [ ] Add memory-efficient representation for large projection deltas
+    *   **[ ] Subtask F.1.3: Parallel Validation**
+        *   [ ] Identify independent action branches for parallel validation
+        *   [ ] Implement concurrent projection state management
+        *   [ ] Add validation result aggregation for parallel branches
+    *   **Expected Impact:** 50-80% reduction in validation time for complex plans with many entities
+
+### **Advanced Features**
+
+*   **[ ] Task F.2: Predictive Plan Repair**
+    *   **Objective:** Proactively identify and repair potential ECS inconsistencies before validation
+    *   **[ ] Subtask F.2.1: Pattern Recognition**
+        *   [ ] Analyze historical repair patterns to identify common inconsistencies
+        *   [ ] Build predictive models for likely ECS state drift scenarios
+        *   [ ] Implement preemptive repair suggestions
+
+*   **[ ] Task F.3: Multi-Model Repair Consensus**
+    *   **Objective:** Use multiple AI models to validate repair suggestions for critical scenarios
+    *   **[ ] Subtask F.3.1: Consensus Framework**
+        *   [ ] Implement multi-model voting for repair confidence
+        *   [ ] Add model-specific repair strategy preferences
+        *   [ ] Create consensus thresholds for different repair types
 

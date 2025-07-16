@@ -69,6 +69,20 @@ impl PlanValidatorService {
             repair_service: Some(repair_service),
         }
     }
+    
+    /// Constructor for tests that allows passing a pre-configured repair service
+    pub fn new_with_repair_service(
+        ecs_manager: Arc<EcsEntityManager>,
+        redis_client: Arc<redis::Client>,
+        repair_service: PlanRepairService,
+    ) -> Self {
+        Self {
+            ecs_manager,
+            redis_client,
+            consistency_analyzer: None,
+            repair_service: Some(repair_service),
+        }
+    }
 
     /// Validate a plan against the current world state
     #[instrument(skip(self))]
@@ -179,6 +193,7 @@ impl PlanValidatorService {
                                                     combined_plan,
                                                     inconsistency_analysis: analysis,
                                                     confidence_score,
+                                                    confidence_breakdown: None, // TODO: Add detailed confidence breakdown
                                                 }))
                                             }
                                             _ => {
