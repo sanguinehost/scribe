@@ -14,6 +14,7 @@ use crate::{
             PlotSignificance, WorldImpactLevel, PlanStep, RiskAssessment, RiskLevel,
             ContextRequirement, SpatialLocation, ValidationCheckType, ValidationStatus,
             ValidationSeverity, EntityRelationship, RecentAction, EmotionalState,
+            TemporalEvent, ScheduledEvent,
         },
         intent_detection_service::{IntentDetectionService, QueryIntent},
         query_strategy_planner::QueryStrategyPlanner,
@@ -141,7 +142,7 @@ impl HierarchicalContextAssembler {
         let spatial_context = self.build_spatial_context(&relevant_entities, character).await?;
 
         // Step 7: Build temporal context
-        let temporal_context = self.build_temporal_context(chat_history).await?;
+        let temporal_context = self.build_temporal_context(user_input, chat_history).await?;
 
         // Step 8: Create basic validation checks (placeholder for future symbolic firewall)
         let symbolic_firewall_checks = self.create_basic_validation_checks(&validated_plan)?;
@@ -810,17 +811,33 @@ Focus on practical, executable steps that advance the narrative."#,
     /// Builds temporal context from chat history
     async fn build_temporal_context(
         &self,
+        user_input: &str,
         chat_history: &[GenAiChatMessage],
     ) -> Result<Option<TemporalContext>, AppError> {
         debug!("Building temporal context from chat history");
 
         let current_time = Utc::now();
         
+        // Extract recent events from chat history
+        let recent_events = self.extract_recent_events(user_input, chat_history).await?;
+        
+        // Extract future scheduled events
+        let future_scheduled_events = self.extract_future_events(user_input, chat_history).await?;
+        
+        // Calculate temporal significance based on event density and recency
+        let temporal_significance = if !recent_events.is_empty() || !future_scheduled_events.is_empty() {
+            0.8 // High significance if events are present
+        } else if chat_history.len() > 5 {
+            0.5 // Medium significance for longer conversations
+        } else {
+            0.3 // Low significance otherwise
+        };
+        
         Ok(Some(TemporalContext {
             current_time,
-            recent_events: vec![], // TODO: Extract events from chat history
-            future_scheduled_events: vec![], // TODO: Implement event scheduling
-            temporal_significance: if chat_history.len() > 5 { 0.7 } else { 0.3 },
+            recent_events,
+            future_scheduled_events,
+            temporal_significance,
         }))
     }
 
@@ -1621,6 +1638,348 @@ Only analyze the emotional state of the specified character. If no clear emotion
 
         debug!("Extracted emotional state for entity: {} - {:?}", entity_name, emotional_state);
         Ok(emotional_state)
+    }
+
+    /// Extract recent events from chat history using Flash AI
+    #[instrument(skip(self, user_input, chat_history))]
+    async fn extract_recent_events(
+        &self,
+        user_input: &str,
+        chat_history: &[GenAiChatMessage],
+    ) -> Result<Vec<TemporalEvent>, AppError> {
+        debug!("Extracting recent events from chat history");
+        
+        // Build context from chat history
+        let context = if chat_history.len() > 8 {
+            chat_history.iter()
+                .rev()
+                .take(8)
+                .map(|msg| {
+                    let content = match &msg.content {
+                        MessageContent::Text(text) => text.clone(),
+                        _ => "[non-text content]".to_string(),
+                    };
+                    format!("{:?}: {}", msg.role, content)
+                })
+                .collect::<Vec<_>>()
+                .iter()
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            chat_history.iter()
+                .map(|msg| {
+                    let content = match &msg.content {
+                        MessageContent::Text(text) => text.clone(),
+                        _ => "[non-text content]".to_string(),
+                    };
+                    format!("{:?}: {}", msg.role, content)
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Check if there are temporal indicators in the input or context
+        let temporal_indicators = [
+            "yesterday", "today", "earlier", "ago", "last", "previous", "recently",
+            "morning", "afternoon", "evening", "night", "dawn", "dusk",
+            "defended", "received", "fought", "arrived", "departed", "happened",
+            "occurred", "took place", "witnessed", "experienced"
+        ];
+
+        let combined_text = format!("{} {}", user_input, context).to_lowercase();
+        let has_temporal_indicators = temporal_indicators.iter()
+            .any(|indicator| combined_text.contains(indicator));
+
+        if !has_temporal_indicators {
+            debug!("No temporal indicators found for recent events");
+            return Ok(vec![]);
+        }
+
+        // Use Flash AI to extract recent events
+        let prompt = format!(
+            "Analyze the following conversation and extract recent events that have already occurred.
+
+Context from conversation:
+{}
+
+Current input:
+{}
+
+Extract recent events from the conversation. For each event, provide:
+- \"description\": A brief description of what happened
+- \"significance\": How important this event is (0.0 to 1.0)
+- \"time_ago\": When it happened relative to now (e.g., \"yesterday\", \"this morning\", \"last week\")
+
+Focus on actions, occurrences, and happenings that are described as having already taken place.
+Respond with a JSON array of events. If no recent events are found, respond with an empty array: []
+
+Example response:
+[
+  {{
+    \"description\": \"Knight defeated the dragon\",
+    \"significance\": 0.9,
+    \"time_ago\": \"yesterday\"
+  }}
+]",
+            context, user_input
+        );
+
+        let chat_request = genai::chat::ChatRequest::from_user(prompt);
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(500)
+            .with_temperature(0.3);
+
+        let chat_response = self.ai_client.exec_chat(
+            "gemini-2.5-flash",
+            chat_request,
+            Some(chat_options),
+        ).await?;
+
+        let response = chat_response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
+        debug!("AI response for recent events: '{}'", response);
+
+        // Parse the JSON response
+        let events_data: Vec<serde_json::Value> = match serde_json::from_str(&response) {
+            Ok(data) => data,
+            Err(e) => {
+                debug!("Failed to parse recent events JSON: {}", e);
+                return Ok(vec![]);
+            }
+        };
+
+        let mut recent_events = Vec::new();
+        let current_time = Utc::now();
+
+        for event_data in events_data {
+            let description = event_data["description"]
+                .as_str()
+                .unwrap_or("Unknown event")
+                .to_string();
+
+            let significance = event_data["significance"]
+                .as_f64()
+                .unwrap_or(0.5) as f32;
+
+            let time_ago = event_data["time_ago"]
+                .as_str()
+                .unwrap_or("recently");
+
+            // Convert relative time to approximate timestamp
+            let timestamp = match time_ago {
+                "just now" | "now" => current_time,
+                "minutes ago" => current_time - chrono::Duration::minutes(30),
+                "an hour ago" => current_time - chrono::Duration::hours(1),
+                "hours ago" => current_time - chrono::Duration::hours(3),
+                "this morning" => current_time.date_naive().and_hms_opt(9, 0, 0)
+                    .map(|dt| dt.and_local_timezone(Utc).unwrap())
+                    .unwrap_or(current_time - chrono::Duration::hours(6)),
+                "yesterday" => current_time - chrono::Duration::days(1),
+                "last night" => (current_time - chrono::Duration::days(1)).date_naive().and_hms_opt(21, 0, 0)
+                    .map(|dt| dt.and_local_timezone(Utc).unwrap())
+                    .unwrap_or(current_time - chrono::Duration::hours(12)),
+                "days ago" => current_time - chrono::Duration::days(3),
+                "last week" => current_time - chrono::Duration::weeks(1),
+                _ => current_time - chrono::Duration::hours(2), // Default to 2 hours ago
+            };
+
+            recent_events.push(TemporalEvent {
+                event_id: Uuid::new_v4(),
+                description,
+                timestamp,
+                significance,
+            });
+        }
+
+        debug!("Extracted {} recent events", recent_events.len());
+        Ok(recent_events)
+    }
+
+    /// Extract future scheduled events from user input and chat history using Flash AI
+    #[instrument(skip(self, user_input, chat_history))]
+    async fn extract_future_events(
+        &self,
+        user_input: &str,
+        chat_history: &[GenAiChatMessage],
+    ) -> Result<Vec<ScheduledEvent>, AppError> {
+        debug!("Extracting future scheduled events");
+
+        // Build context from recent chat history
+        let context = if chat_history.len() > 5 {
+            chat_history.iter()
+                .rev()
+                .take(5)
+                .map(|msg| {
+                    let content = match &msg.content {
+                        MessageContent::Text(text) => text.clone(),
+                        _ => "[non-text content]".to_string(),
+                    };
+                    format!("{:?}: {}", msg.role, content)
+                })
+                .collect::<Vec<_>>()
+                .iter()
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            chat_history.iter()
+                .map(|msg| {
+                    let content = match &msg.content {
+                        MessageContent::Text(text) => text.clone(),
+                        _ => "[non-text content]".to_string(),
+                    };
+                    format!("{:?}: {}", msg.role, content)
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Check for future event indicators
+        let future_indicators = [
+            "tomorrow", "will", "must", "should", "going to", "plan", "scheduled",
+            "deadline", "appointment", "meeting", "arrive", "need to", "have to",
+            "by", "until", "before", "after", "soon", "later", "next", "upcoming"
+        ];
+
+        let combined_text = format!("{} {}", user_input, context).to_lowercase();
+        let has_future_indicators = future_indicators.iter()
+            .any(|indicator| combined_text.contains(indicator));
+
+        if !has_future_indicators {
+            debug!("No future event indicators found");
+            return Ok(vec![]);
+        }
+
+        // Use Flash AI to extract future events
+        let prompt = format!(
+            "Analyze the following conversation and extract future scheduled events or deadlines.
+
+Context from conversation:
+{}
+
+Current input:
+{}
+
+Extract future events, appointments, deadlines, or planned activities. For each event, provide:
+- \"description\": What needs to happen
+- \"time_until\": When it's scheduled (e.g., \"tomorrow evening\", \"next week\", \"in 3 days\")
+- \"participants\": Array of people/entities involved
+- \"urgency\": How urgent/important (0.0 to 1.0)
+
+Focus on things that are planned, scheduled, or must happen in the future.
+Respond with a JSON array. If no future events are found, respond with: []
+
+Example:
+[
+  {{
+    \"description\": \"Meeting with the council\",
+    \"time_until\": \"tomorrow morning\",
+    \"participants\": [\"Player\", \"Council Members\"],
+    \"urgency\": 0.8
+  }}
+]",
+            context, user_input
+        );
+
+        let chat_request = genai::chat::ChatRequest::from_user(prompt);
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(400)
+            .with_temperature(0.3);
+
+        let chat_response = self.ai_client.exec_chat(
+            "gemini-2.5-flash",
+            chat_request,
+            Some(chat_options),
+        ).await?;
+
+        let response = chat_response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
+        debug!("AI response for future events: '{}'", response);
+
+        // Parse the JSON response
+        let events_data: Vec<serde_json::Value> = match serde_json::from_str(&response) {
+            Ok(data) => data,
+            Err(e) => {
+                debug!("Failed to parse future events JSON: {}", e);
+                return Ok(vec![]);
+            }
+        };
+
+        let mut scheduled_events = Vec::new();
+        let current_time = Utc::now();
+
+        for event_data in events_data {
+            let description = event_data["description"]
+                .as_str()
+                .unwrap_or("Unknown event")
+                .to_string();
+
+            let time_until = event_data["time_until"]
+                .as_str()
+                .unwrap_or("soon");
+
+            let participants = event_data["participants"]
+                .as_array()
+                .map(|arr| arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+                )
+                .unwrap_or_default();
+
+            // Convert relative future time to approximate timestamp
+            let scheduled_time = match time_until {
+                "immediately" | "right now" => current_time + chrono::Duration::minutes(5),
+                "soon" | "shortly" => current_time + chrono::Duration::hours(1),
+                "today" | "later today" => current_time.date_naive().and_hms_opt(18, 0, 0)
+                    .map(|dt| dt.and_local_timezone(Utc).unwrap())
+                    .unwrap_or(current_time + chrono::Duration::hours(6)),
+                "tonight" => current_time.date_naive().and_hms_opt(21, 0, 0)
+                    .map(|dt| dt.and_local_timezone(Utc).unwrap())
+                    .unwrap_or(current_time + chrono::Duration::hours(9)),
+                "tomorrow" => current_time + chrono::Duration::days(1),
+                "tomorrow morning" => (current_time + chrono::Duration::days(1)).date_naive().and_hms_opt(9, 0, 0)
+                    .map(|dt| dt.and_local_timezone(Utc).unwrap())
+                    .unwrap_or(current_time + chrono::Duration::hours(15)),
+                "tomorrow evening" => (current_time + chrono::Duration::days(1)).date_naive().and_hms_opt(18, 0, 0)
+                    .map(|dt| dt.and_local_timezone(Utc).unwrap())
+                    .unwrap_or(current_time + chrono::Duration::hours(24)),
+                "next week" => current_time + chrono::Duration::weeks(1),
+                "in a few days" => current_time + chrono::Duration::days(3),
+                _ => current_time + chrono::Duration::days(1), // Default to tomorrow
+            };
+
+            scheduled_events.push(ScheduledEvent {
+                event_id: Uuid::new_v4(),
+                description,
+                scheduled_time,
+                participants,
+            });
+        }
+
+        debug!("Extracted {} future scheduled events", scheduled_events.len());
+        Ok(scheduled_events)
     }
 }
 

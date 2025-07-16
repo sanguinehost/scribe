@@ -67,6 +67,15 @@ async fn create_encrypted_test_character(user_dek: &Arc<SecretBox<Vec<u8>>>) -> 
 
 /// Helper to create a functional HierarchicalContextAssembler with real services
 async fn create_functional_assembler(test_app: &scribe_backend::test_helpers::TestApp) -> HierarchicalContextAssembler {
+    create_functional_assembler_with_options(test_app, true, true).await
+}
+
+/// Helper to create a functional HierarchicalContextAssembler with options for including responses
+async fn create_functional_assembler_with_options(
+    test_app: &scribe_backend::test_helpers::TestApp,
+    include_emotional_state: bool,
+    include_spatial_location: bool,
+) -> HierarchicalContextAssembler {
     // Use real AI client responses for functional testing
     let strategic_response = r#"{
         "directive_type": "Character Development",
@@ -164,10 +173,49 @@ async fn create_functional_assembler(test_app: &scribe_backend::test_helpers::Te
         "contributing_factors": ["loss of friend", "doubt about mission", "seeking redemption"]
     }"#.to_string();
     
+    let recent_events_response = r#"[{
+        "description": "Defended the village from bandits",
+        "significance": 0.8,
+        "time_ago": "yesterday"
+    }, {
+        "description": "Received urgent message from the king",
+        "significance": 0.9,
+        "time_ago": "this morning"
+    }]"#.to_string();
+    
+    let future_events_response = r#"[{
+        "description": "Must arrive at castle to meet the king",
+        "time_until": "tomorrow evening",
+        "participants": ["Sir Galahad", "The King"],
+        "urgency": 0.9
+    }]"#.to_string();
+    
     // Create mock AI client with multiple responses
-    // Order: intent, strategic, tactical, spatial, relationship, recent_actions, emotional_state
-    // Note: entity_response is not used because EntityResolutionTool doesn't make AI calls in this test
-    let responses = vec![intent_response, strategic_response, tactical_response, spatial_response, relationship_response, recent_actions_response, emotional_state_response];
+    // Build response list based on what will actually be called
+    let mut responses = vec![
+        intent_response, 
+        strategic_response, 
+        tactical_response,
+    ];
+    
+    // Character entity extraction responses (if character is present)
+    if include_spatial_location {
+        responses.push(spatial_response);
+    }
+    responses.push(relationship_response);
+    responses.push(recent_actions_response);
+    if include_emotional_state {
+        responses.push(emotional_state_response);
+    }
+    
+    // Entity resolution responses
+    responses.push(entity_response.clone()); // narrative context
+    responses.push(r#"{"entity_names": []}"#.to_string()); // entity names
+    
+    // Temporal event extraction
+    responses.push(recent_events_response);
+    responses.push(future_events_response);
+    
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
     
     let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
@@ -1208,4 +1256,160 @@ async fn test_emotional_state_extraction() {
     // Should have meaningful contributing factors
     assert!(emotional_state.contributing_factors.iter()
         .any(|f| !f.is_empty()));
+}
+
+#[tokio::test]
+async fn test_temporal_event_extraction() {
+    let test_app = spawn_app_with_options(false, false, false, false).await;
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    
+    // Create test user and DEK
+    let user = create_test_user(
+        &test_app.db_pool,
+        "test_user@example.com".to_string(),
+        "TestUser".to_string(),
+    ).await.unwrap();
+    
+    let user_dek = Arc::new(generate_dek().unwrap());
+    
+    // Create a mock AI client that properly handles the temporal extraction flow
+    // We'll set up the mocks to avoid the entity resolution complexity
+    let mock_responses = vec![
+        // 1. Intent detection
+        r#"{
+            "intent_type": "NarrativeGeneration",
+            "focus_entities": [{
+                "name": "Sir Galahad",
+                "entity_type": "CHARACTER",
+                "priority": 1.0,
+                "required": true
+            }],
+            "time_scope": {"type": "Current"},
+            "spatial_scope": null,
+            "reasoning_depth": "Deep",
+            "context_priorities": ["Entities", "CausalChains", "TemporalState"],
+            "confidence": 0.9
+        }"#.to_string(),
+        
+        // 2. Strategic directive
+        r#"{
+            "directive_type": "Journey Preparation",
+            "narrative_arc": "Hero's Journey",
+            "plot_significance": "Major",
+            "emotional_tone": "Urgent",
+            "character_focus": ["Sir Galahad"],
+            "world_impact_level": "Regional"
+        }"#.to_string(),
+        
+        // 3. Tactical plan
+        r#"{
+            "steps": [{
+                "description": "Plan journey route",
+                "preconditions": ["Ready to travel"],
+                "expected_outcomes": ["Route determined"],
+                "required_entities": ["Sir Galahad"],
+                "estimated_duration": 1000
+            }],
+            "overall_risk": "Low",
+            "mitigation_strategies": ["Account for delays"]
+        }"#.to_string(),
+        
+        // 4. Entity resolution will fail but that's ok
+        r#"{"error": "mock failure"}"#.to_string(),
+        
+        // 5. Recent events extraction
+        r#"[{
+            "description": "Defended the village from bandits",
+            "significance": 0.8,
+            "time_ago": "yesterday"
+        }, {
+            "description": "Received urgent message from the king",
+            "significance": 0.9,
+            "time_ago": "this morning"
+        }]"#.to_string(),
+        
+        // 6. Future events extraction  
+        r#"[{
+            "description": "Must arrive at castle to meet the king",
+            "time_until": "tomorrow evening",
+            "participants": ["Sir Galahad", "The King"],
+            "urgency": 0.9
+        }]"#.to_string(),
+    ];
+    
+    let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(mock_responses));
+    
+    // Create services
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let entity_tool = Arc::new(EntityResolutionTool::new(test_app.app_state.clone()));
+    let encryption_service = Arc::new(EncryptionService);
+    let db_pool = Arc::new(test_app.db_pool.clone());
+    
+    let assembler = HierarchicalContextAssembler::new(
+        mock_ai_client,
+        intent_service,
+        query_planner,
+        entity_tool,
+        encryption_service,
+        db_pool,
+    );
+    
+    // Create chat history with temporal indicators
+    let chat_history = vec![
+        GenAiChatMessage::user("Yesterday, Sir Galahad defended the village from bandits"),
+        GenAiChatMessage::assistant("The knight fought valiantly."),
+        GenAiChatMessage::user("This morning he received an urgent royal summons"),
+        GenAiChatMessage::assistant("The king requires his presence."),
+        GenAiChatMessage::user("He must arrive by tomorrow evening"),
+    ];
+    
+    // Test without character to avoid encryption/entity extraction complexity
+    let result = assembler.assemble_enriched_context(
+        "Sir Galahad prepares for the journey to meet the king's deadline",
+        &chat_history,
+        None, // No character to simplify the test
+        user.id,
+        Some(&user_dek),
+    ).await;
+    
+    if let Err(ref e) = result {
+        eprintln!("Error assembling enriched context: {:?}", e);
+    }
+    assert!(result.is_ok(), "Should successfully assemble enriched context");
+    let context = result.unwrap();
+    
+    // Should have temporal context
+    assert!(context.temporal_context.is_some(), "Temporal context should be populated");
+    
+    let temporal_context = context.temporal_context.unwrap();
+    
+    // Debug: Print temporal event details
+    println!("Recent events count: {}", temporal_context.recent_events.len());
+    for (i, event) in temporal_context.recent_events.iter().enumerate() {
+        println!("Event {}: {} (significance: {})", i, event.description, event.significance);
+    }
+    
+    println!("Future scheduled events count: {}", temporal_context.future_scheduled_events.len());
+    for (i, event) in temporal_context.future_scheduled_events.iter().enumerate() {
+        println!("Scheduled Event {}: {} at {:?}", i, event.description, event.scheduled_time);
+    }
+    
+    // Should have extracted recent events
+    assert!(!temporal_context.recent_events.is_empty());
+    
+    // Should have events with reasonable significance
+    assert!(temporal_context.recent_events.iter()
+        .any(|e| e.significance > 0.0));
+    
+    // Should have meaningful descriptions
+    assert!(temporal_context.recent_events.iter()
+        .any(|e| !e.description.is_empty()));
+    
+    // Should have extracted future scheduled events
+    assert!(!temporal_context.future_scheduled_events.is_empty());
+    
+    // Should have future events with participants
+    assert!(temporal_context.future_scheduled_events.iter()
+        .any(|e| !e.participants.is_empty()));
 }

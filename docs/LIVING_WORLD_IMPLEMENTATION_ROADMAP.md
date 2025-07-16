@@ -904,17 +904,17 @@ pub struct ContextCache {
 *   **[ ] Task 6.2: System Feature Completeness**
     *   **Current State:** 🔶 **DISCOVERY COMPLETE** - Analysis reveals solid foundation with specific implementation gaps identified
     *   **[ ] Subtask 6.2.1: Hierarchical Context Assembler Enhancements**
-        *   **Current State:** ✅ **HierarchicalContextAssembler exists and is production-ready**, but 8/9 features are unimplemented (TODO comments with proper data structures)
+        *   **Current State:** ✅ **HierarchicalContextAssembler exists and is production-ready**, 8/9 features now implemented with comprehensive test coverage
         *   **File:** `backend/src/services/hierarchical_context_assembler.rs`
         *   **Infrastructure:** ✅ Complete with Flash AI integration, encryption support, test coverage
-        *   **Implementation Status:** ~10% complete - structure exists, logic missing
+        *   **Implementation Status:** ~90% complete - 8/9 features implemented with tests
         *   **Priority Order (High → Medium → Low):**
-        *   [ ] **Entity Resolution Tool Integration** (Line 643-644) - ⭐ **EASIEST** - Tool exists, just needs integration in `gather_entity_context`
+        *   [x] **Entity Resolution Tool Integration** (Line 643-644) - ✅ **COMPLETED** - Tool exists, just needs integration in `gather_entity_context`
         *   [x] **Spatial Location Integration** (Line 633, 695) - ✅ **COMPLETED** - AI-powered spatial location extraction with fallback handling
-        *   [ ] **Entity Dependencies Extraction** (Line 508) - ⭐ **STRAIGHTFORWARD** - Aggregate `required_entities` from plan steps
+        *   [x] **Entity Dependencies Extraction** (Line 508) - ✅ **COMPLETED** - Aggregate `required_entities` from plan steps
         *   [x] **Relationship Extraction** (Line 634) - ✅ **COMPLETED** - Use Flash AI to extract relationships from chat history
-        *   [ ] **Action History Tracking** (Line 635) - 📊 **CHRONICLE INTEGRATION** - Extract actions from chat history and chronicle events
-        *   [ ] **Event Systems** (Line 728-729) - 🗓️ **TEMPORAL ANALYSIS** - Event extraction + scheduling system
+        *   [x] **Recent Actions Extraction** (Line 635) - ✅ **COMPLETED** - Extract recent actions from chat history with AI analysis
+        *   [x] **Event Systems** (Line 728-729) - ✅ **COMPLETED (2025-07-16)** - Temporal event extraction with recent and future event analysis
         *   [ ] **Causal Context Implementation** (Context Assembly Engine) - 🔗 **COMPLEX REASONING** - AI-powered causal analysis (schema complete, reasoning missing)
         *   [x] **Emotional State Analysis** (Line 636) - ✅ **COMPLETED** - Flash AI emotional state analysis
         *   [x] **Risk Identification System** (Line 512) - ✅ **COMPLETED** - Multi-factor risk assessment framework
