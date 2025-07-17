@@ -28,6 +28,7 @@ pub mod hierarchical_pipeline;
 pub mod strategic_structured_output;
 pub mod tactical_structured_output;
 pub mod entity_dependency_structured_output;
+pub mod event_participants_structured_output;
 pub mod types;
 
 

@@ -1552,88 +1552,129 @@ impl HybridQueryService {
         Ok(false)
     }
 
-    /// Extract co-participants from an event
+    /// Extract co-participants from an event using AI analysis
     async fn extract_co_participants(&self, entity_id: Uuid, event: &ChronicleEvent) -> Result<Vec<Uuid>, AppError> {
-        let mut co_participants = Vec::new();
+        use crate::services::agentic::event_participants_structured_output::{
+            get_event_participants_schema, EventParticipantsOutput
+        };
+        use genai::chat::{ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, MessageContent};
         
-        // Extract from actors list
+        debug!("Extracting co-participants for entity {} from event {} using AI", entity_id, event.id);
+        
+        // Build comprehensive event context for AI analysis
+        let mut event_context = format!(
+            "Event Type: {}\nEvent Action: {}\nSummary: {}\nTimestamp: {}",
+            event.event_type,
+            event.action.as_deref().unwrap_or("Unknown"),
+            event.summary,
+            event.timestamp_iso8601
+        );
+        
+        // Add actors information if available
         if let Ok(actors) = event.get_actors() {
-            for actor in actors {
-                if actor.entity_id != entity_id {
-                    co_participants.push(actor.entity_id);
-                }
+            event_context.push_str("\n\nActors:");
+            for actor in &actors {
+                event_context.push_str(&format!(
+                    "\n- Entity ID: {}, Role: {:?}, Context: {:?}",
+                    actor.entity_id,
+                    actor.role,
+                    actor.context
+                ));
             }
         }
         
-        // Extract from event_data JSON
+        // Add event data if available
         if let Some(event_data) = &event.event_data {
-            // Check actors array in event_data
-            if let Some(actors_value) = event_data.get("actors") {
-                if let Some(actors_array) = actors_value.as_array() {
-                    for actor_value in actors_array {
-                        if let Some(actor_entity_id) = actor_value.get("entity_id") {
-                            if let Some(actor_id_str) = actor_entity_id.as_str() {
-                                if let Ok(actor_uuid) = Uuid::parse_str(actor_id_str) {
-                                    if actor_uuid != entity_id {
-                                        co_participants.push(actor_uuid);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Check participants array in event_data
-            if let Some(participants_value) = event_data.get("participants") {
-                if let Some(participants_array) = participants_value.as_array() {
-                    for participant_value in participants_array {
-                        if let Some(participant_str) = participant_value.as_str() {
-                            if let Ok(participant_uuid) = Uuid::parse_str(participant_str) {
-                                if participant_uuid != entity_id {
-                                    co_participants.push(participant_uuid);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Check for target/subject entity IDs in event_data
-            for field in &["target_entity_id", "subject_entity_id", "related_entity_id"] {
-                if let Some(target_value) = event_data.get(field) {
-                    if let Some(target_str) = target_value.as_str() {
-                        if let Ok(target_uuid) = Uuid::parse_str(target_str) {
-                            if target_uuid != entity_id {
-                                co_participants.push(target_uuid);
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Check for entities mentioned in nested objects
-            if let Some(details) = event_data.get("details") {
-                if let Some(details_obj) = details.as_object() {
-                    for (_, value) in details_obj {
-                        if let Some(entity_str) = value.as_str() {
-                            if let Ok(entity_uuid) = Uuid::parse_str(entity_str) {
-                                if entity_uuid != entity_id {
-                                    co_participants.push(entity_uuid);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            event_context.push_str(&format!("\n\nEvent Data: {}", 
+                serde_json::to_string_pretty(event_data).unwrap_or_else(|_| event_data.to_string())
+            ));
         }
         
-        // Remove duplicates
-        co_participants.sort();
-        co_participants.dedup();
+        let prompt = format!(
+            r#"Analyze the following chronicle event and extract ALL participants with their roles and relationships.
+
+Event Context:
+{}
+
+Instructions:
+1. Identify PRIMARY participants - those directly performing actions or being acted upon
+2. Identify SECONDARY participants - those in supporting roles, facilitating, or observing
+3. Identify MENTIONED participants - entities referenced but not directly involved
+4. Analyze relationships between participants in the context of this event
+5. Consider both explicit mentions and implicit involvement
+
+Look for participants in:
+- The actors list
+- The event summary
+- Event data fields (actors, participants, targets, subjects)
+- Narrative descriptions that imply involvement
+- Contextual references to entities
+
+For each participant, determine:
+- Their role (agent, patient, observer, etc.)
+- Their involvement type (active, passive, mentioned, etc.)
+- What actions they performed
+- Their relationships to other participants
+
+Return a comprehensive participant analysis with confidence scores."#,
+            event_context
+        );
         
-        debug!("Extracted {} co-participants for entity {} from event {}", 
-               co_participants.len(), entity_id, event.id);
+        // Get the JSON schema for structured output
+        let schema = get_event_participants_schema();
+        
+        // Create chat request with structured output
+        let chat_options = ChatOptions::default()
+            .with_temperature(0.3)
+            .with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+                schema: schema.clone(),
+            }));
+        
+        let messages = vec![
+            ChatMessage::system("You are an expert narrative analyst specializing in identifying event participants and their roles."),
+            ChatMessage::user(MessageContent::Text(prompt)),
+        ];
+        
+        let chat_request = ChatRequest::new(messages);
+        
+        let response = self.ai_client.exec_chat("gemini-2.5-flash-lite", chat_request, Some(chat_options)).await
+            .map_err(|e| AppError::AiServiceError(format!("Failed to analyze event participants: {}", e)))?;
+        
+        // Parse the structured response
+        let content = response.contents
+            .first()
+            .and_then(|c| match c {
+                MessageContent::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| AppError::AiServiceError("No content in participant analysis response".to_string()))?;
+        
+        let participants_output: EventParticipantsOutput = serde_json::from_str(&content)
+            .map_err(|e| AppError::AiServiceError(format!("Failed to parse participant analysis: {}", e)))?;
+        
+        // Validate the output
+        participants_output.validate()?;
+        
+        // Convert to UUID list, excluding the requesting entity
+        let co_participants = participants_output.to_participant_ids(Some(entity_id));
+        
+        debug!("AI extracted {} co-participants (confidence: {:.2}): {} primary, {} secondary, {} mentioned", 
+               co_participants.len(),
+               participants_output.confidence_score,
+               participants_output.primary_participants.len(),
+               participants_output.secondary_participants.len(),
+               participants_output.mentioned_participants.len()
+        );
+        
+        // Log participant relationships for debugging
+        for rel in &participants_output.participant_relationships {
+            debug!("  Relationship: {} {} {} (strength: {:.2})",
+                   rel.from_participant,
+                   rel.relationship_type,
+                   rel.to_participant,
+                   rel.strength
+            );
+        }
         
         Ok(co_participants)
     }

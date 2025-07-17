@@ -948,12 +948,13 @@ pub struct ContextCache {
             *   [ ] All tests must pass before marking feature as complete
         *   **Priority Order (High → Medium → Low):**
         *   [x] **Entity Manager Integration** (Line 916) - ⭐ **CRITICAL** - ✅ **COMPLETED** - Replace `get_entity_current_state` stub with actual ECS calls
-        *   [ ] **Event Participants Finding** (Line 839, 1002) - ⭐ **HIGH VALUE** - ❌ **HARDCODED** - Currently just extracts actor data from events
-            *   **Refactoring Required:**
-                *   [ ] Create structured output schema for event participant analysis (follow `tactical_structured_output.rs` pattern)
-                *   [ ] Replace direct JSON extraction with Flash-Lite AI call using prompt: "Analyze this event and extract all participants, their roles, and relationships"
-                *   [ ] Add entity resolution for participant names to IDs
-                *   [ ] Include confidence scores for each identified participant
+        *   [x] **Event Participants Finding** (Line 839, 1002) - ⭐ **HIGH VALUE** - ✅ **REFACTORED** - Now uses Flash-Lite AI with structured output
+            *   **Refactoring Completed:**
+                *   [x] Created structured output schema in `event_participants_structured_output.rs`
+                *   [x] Replaced direct JSON extraction with Flash-Lite AI analysis
+                *   [x] Analyzes primary, secondary, and mentioned participants with roles
+                *   [x] Includes confidence scores and participant relationships
+                *   [x] Converts participant names to UUIDs for backward compatibility
         *   [ ] **Query Relevance Scoring** (Line 911) - 🧠 **SEMANTIC ANALYSIS** - ❌ **HARDCODED** - Using hardcoded scores by query type
             *   **Refactoring Required:**
                 *   [ ] Create structured output schema for relevance scoring with multi-factor analysis
