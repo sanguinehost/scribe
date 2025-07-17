@@ -1,7 +1,9 @@
 use scribe_backend::services::agentic::perception_agent::{PerceptionAgent, PerceptionResult};
 use scribe_backend::services::context_assembly_engine::{
     EnrichedContext, SpatialContext, TemporalContext, SpatialLocation,
-    RiskAssessment, RiskLevel
+    RiskAssessment, RiskLevel, ValidatedPlan, SubGoal, PlanValidationStatus,
+    PlanStep, EnvironmentalFactor, SpatialRelationship, TemporalEvent,
+    ScheduledEvent, ValidationCheck
 };
 use scribe_backend::services::planning::{PlanningService, PlanValidatorService};
 use scribe_backend::test_helpers::*;
@@ -537,33 +539,56 @@ async fn test_perception_agent_background_resource_cleanup() {
 // Helper function
 fn create_test_context() -> EnrichedContext {
     EnrichedContext {
-        strategic_directives: vec![],
-        validated_plans: vec![],
-        sub_goals: vec![],
-        entity_context: HashMap::new(),
-        spatial_context: SpatialContext {
-            primary_location: SpatialLocation {
-                entity_id: Uuid::new_v4(),
+        strategic_directive: None,
+        validated_plan: ValidatedPlan {
+            plan_id: Uuid::new_v4(),
+            steps: vec![],
+            preconditions_met: true,
+            causal_consistency_verified: true,
+            entity_dependencies: vec![],
+            estimated_execution_time: None,
+            risk_assessment: RiskAssessment {
+                overall_risk: RiskLevel::Low,
+                identified_risks: vec![],
+                mitigation_strategies: vec![],
+            },
+        },
+        current_sub_goal: SubGoal {
+            goal_id: Uuid::new_v4(),
+            description: "Test sub-goal".to_string(),
+            actionable_directive: "Test directive".to_string(),
+            required_entities: vec![],
+            success_criteria: vec![],
+            context_requirements: vec![],
+            priority_level: 1.0,
+        },
+        relevant_entities: vec![],
+        spatial_context: Some(SpatialContext {
+            current_location: SpatialLocation {
+                location_id: Uuid::new_v4(),
                 name: "Test Location".to_string(),
-                scale: "room".to_string(),
                 coordinates: None,
-                parent_id: None,
+                parent_location: None,
+                location_type: "room".to_string(),
             },
             nearby_locations: vec![],
-            scale_context: "intimate".to_string(),
-        },
-        temporal_context: TemporalContext {
+            environmental_factors: vec![],
+            spatial_relationships: vec![],
+        }),
+        causal_context: None,
+        temporal_context: Some(TemporalContext {
             current_time: Utc::now(),
-            time_period: "day".to_string(),
             recent_events: vec![],
-            time_constraints: vec![],
-        },
-        risk_assessment: RiskAssessment {
-            overall_risk: RiskLevel::Low,
-            identified_risks: vec![],
-            mitigation_strategies: vec![],
-        },
-        performance_metrics: HashMap::new(),
-        context_cache: None,
+            future_scheduled_events: vec![],
+            temporal_significance: 0.5,
+        }),
+        plan_validation_status: PlanValidationStatus::Validated,
+        symbolic_firewall_checks: vec![],
+        assembled_context: None,
+        total_tokens_used: 0,
+        execution_time_ms: 0,
+        validation_time_ms: 0,
+        ai_model_calls: 0,
+        confidence_score: 0.8,
     }
 }

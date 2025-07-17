@@ -303,6 +303,8 @@ async fn create_minimal_app_services(test_app: &TestApp) -> AppStateServices {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     }
 }
 

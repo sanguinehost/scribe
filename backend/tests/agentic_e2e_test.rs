@@ -340,6 +340,8 @@ async fn test_chronicle_event_creation_tool() {
             agentic_state_update_service
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -672,6 +674,8 @@ async fn test_tool_registry_integration() {
             agentic_state_update_service
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state = Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

@@ -322,6 +322,8 @@ async fn create_entity_resolution_tool(test_app: &TestApp) -> Arc<EntityResoluti
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     
     let app_state = Arc::new(AppState::new(

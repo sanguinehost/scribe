@@ -888,6 +888,8 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
 
     let app_state = Arc::new(AppState::new(
@@ -1222,6 +1224,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
 
     let app_state_arc = Arc::new(AppState::new(
@@ -1552,6 +1556,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1912,6 +1918,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2203,6 +2211,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2575,6 +2585,8 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2959,6 +2971,8 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -3351,6 +3365,8 @@ async fn test_rag_context_injection_with_qdrant() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -3945,6 +3961,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -4507,6 +4525,8 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),

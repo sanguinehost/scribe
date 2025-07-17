@@ -125,23 +125,26 @@ async fn test_flash_integration_epic_fantasy_narrative_direction() {
     let session_dek = SessionDek::new(vec![0u8; 32]);
     let epic_fantasy_history = create_complex_chat_scenario(user_id, "epic_fantasy");
 
-    let result = strategic_agent.generate_narrative_direction(
+    let result = strategic_agent.analyze_conversation(
         &epic_fantasy_history,
         user_id,
         &session_dek,
     ).await;
 
     assert!(result.is_ok());
-    let direction = result.unwrap();
+    let directive = result.unwrap();
     
     // Flash should identify epic fantasy elements and appropriate direction
-    assert!(direction.len() > 20); // Substantial response
-    assert!(direction.to_lowercase().contains("epic") ||
-            direction.to_lowercase().contains("fantasy") ||
-            direction.to_lowercase().contains("dragon") ||
-            direction.to_lowercase().contains("adventure") ||
-            direction.to_lowercase().contains("confrontation") ||
-            direction.to_lowercase().contains("magic"));
+    assert!(!directive.directive_type.is_empty()); // Has directive type
+    assert!(directive.directive_type.to_lowercase().contains("epic") ||
+            directive.directive_type.to_lowercase().contains("fantasy") ||
+            directive.directive_type.to_lowercase().contains("dragon") ||
+            directive.directive_type.to_lowercase().contains("adventure") ||
+            directive.directive_type.to_lowercase().contains("confrontation") ||
+            directive.directive_type.to_lowercase().contains("magic") ||
+            directive.narrative_arc.to_lowercase().contains("epic") ||
+            directive.narrative_arc.to_lowercase().contains("fantasy") ||
+            directive.narrative_arc.to_lowercase().contains("dragon"));
 }
 
 #[tokio::test]
@@ -168,7 +171,7 @@ async fn test_flash_integration_sci_fi_thriller_plot_significance() {
     let significance = result.unwrap();
     
     // Flash should recognize high-stakes sci-fi scenario
-    assert!(matches!(significance, PlotSignificance::Major | PlotSignificance::Critical));
+    assert!(matches!(significance, PlotSignificance::Major));
 }
 
 #[tokio::test]
@@ -298,7 +301,7 @@ async fn test_flash_integration_full_directive_creation_epic() {
             directive.directive_type.to_lowercase().contains("epic"));
     
     // Should have appropriate significance and impact for epic scenario
-    assert!(matches!(directive.plot_significance, PlotSignificance::Major | PlotSignificance::Critical));
+    assert!(matches!(directive.plot_significance, PlotSignificance::Major));
     assert!(matches!(directive.world_impact_level, WorldImpactLevel::Regional | WorldImpactLevel::Global));
 }
 
@@ -362,33 +365,35 @@ async fn test_flash_integration_narrative_direction_generation_quality() {
     let session_dek = SessionDek::new(vec![0u8; 32]);
     let complex_history = create_complex_chat_scenario(user_id, "sci_fi_thriller");
 
-    let result = strategic_agent.generate_narrative_direction(
+    let result = strategic_agent.analyze_conversation(
         &complex_history,
         user_id,
         &session_dek,
     ).await;
 
     assert!(result.is_ok());
-    let direction = result.unwrap();
+    let directive = result.unwrap();
     
-    // Verify quality of Flash-generated direction
-    assert!(direction.len() >= 10); // Substantial content
-    assert!(direction.len() <= 500); // Not excessively long
+    // Verify quality of Flash-generated directive
+    assert!(!directive.directive_type.is_empty()); // Has content
+    assert!(directive.directive_type.len() <= 200); // Not excessively long
     
     // Should be actionable directive, not just description
-    assert!(direction.to_lowercase().contains("escalate") ||
-            direction.to_lowercase().contains("resolve") ||
-            direction.to_lowercase().contains("investigate") ||
-            direction.to_lowercase().contains("confront") ||
-            direction.to_lowercase().contains("escape") ||
-            direction.to_lowercase().contains("negotiate"));
+    assert!(directive.directive_type.to_lowercase().contains("escalate") ||
+            directive.directive_type.to_lowercase().contains("resolve") ||
+            directive.directive_type.to_lowercase().contains("investigate") ||
+            directive.directive_type.to_lowercase().contains("confront") ||
+            directive.directive_type.to_lowercase().contains("escape") ||
+            directive.directive_type.to_lowercase().contains("negotiate") ||
+            directive.narrative_arc.to_lowercase().contains("action") ||
+            directive.narrative_arc.to_lowercase().contains("thriller"));
     
     // Should not contain template placeholders or AI artifacts
-    assert!(!direction.contains("["));
-    assert!(!direction.contains("TODO"));
-    assert!(!direction.contains("{{"));
-    assert!(!direction.contains("INSERT"));
-    assert!(!direction.contains("PLACEHOLDER"));
+    assert!(!directive.directive_type.contains("["));
+    assert!(!directive.directive_type.contains("TODO"));
+    assert!(!directive.directive_type.contains("{{"));
+    assert!(!directive.directive_type.contains("INSERT"));
+    assert!(!directive.directive_type.contains("PLACEHOLDER"));
 }
 
 #[tokio::test]
@@ -424,7 +429,7 @@ async fn test_flash_integration_comprehensive_directive_with_caching() {
     assert!(directive1.character_focus.len() > 0);
     assert!(matches!(directive1.plot_significance, 
                      PlotSignificance::Minor | PlotSignificance::Moderate | 
-                     PlotSignificance::Major | PlotSignificance::Critical));
+                     PlotSignificance::Major));
     assert!(matches!(directive1.world_impact_level,
                      WorldImpactLevel::Personal | WorldImpactLevel::Local | 
                      WorldImpactLevel::Regional | WorldImpactLevel::Global));

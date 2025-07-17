@@ -369,6 +369,7 @@ async fn test_end_to_end_component_repair_workflow() {
         ecs_state_summary: "Character lacks Reputation component".to_string(),
         repair_reasoning: "Add Reputation component based on narrative evidence".to_string(),
         detection_timestamp: Utc::now(),
+        confidence_score: 0.9,
     };
     
     let repair_plan = repair_service.generate_repair_plan(
@@ -521,6 +522,7 @@ async fn test_end_to_end_relationship_repair_workflow() {
         ecs_state_summary: "No relationship exists between Alice and Bob".to_string(),
         repair_reasoning: "Create friendship relationship based on narrative".to_string(),
         detection_timestamp: Utc::now(),
+        confidence_score: 0.85,
     };
     
     let repair_plan = repair_service.generate_repair_plan(
@@ -773,6 +775,7 @@ async fn test_repair_system_handles_multiple_inconsistencies() {
         ecs_state_summary: "Character missing location and components".to_string(),
         repair_reasoning: "Multiple state updates needed based on narrative".to_string(),
         detection_timestamp: Utc::now(),
+        confidence_score: 0.92,
     };
     
     let repair_plan = repair_service.generate_repair_plan(

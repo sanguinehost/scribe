@@ -263,6 +263,8 @@ async fn test_entity_resolution_tool_basic_functionality() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     
     let app_state = Arc::new(scribe_backend::state::AppState::new(

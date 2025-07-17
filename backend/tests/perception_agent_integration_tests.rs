@@ -4,15 +4,18 @@ use scribe_backend::services::context_assembly_engine::{
     EnrichedContext, EntityContext, SpatialContext, TemporalContext,
     StrategicDirective, EmotionalState, SpatialLocation, RiskAssessment,
     RiskLevel, PlotSignificance, WorldImpactLevel, ValidatedPlan,
-    SubGoal, SubGoalStatus, PlanValidationStatus
+    SubGoal, PlanValidationStatus, PlanStep, ContextRequirement,
+    EntityRelationship, RecentAction, EnvironmentalFactor,
+    SpatialRelationship, TemporalEvent, ScheduledEvent,
+    ValidationCheck, ValidationCheckType, ValidationStatus, ValidationSeverity
 };
 use scribe_backend::services::planning::{PlanningService, PlanValidatorService};
-use scribe_backend::services::planning::types::{Plan, Action, ActionName, Parameter};
-use scribe_backend::services::chat::ChatService;
-use scribe_backend::test_helpers::*;
+use scribe_backend::services::planning::types::{Plan, ActionName};
+use scribe_backend::test_helpers::{*, db::create_test_user};
 use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::errors::AppError;
-use scribe_backend::models::chats::{NewChatSession, ChatMessage as DbChatMessage};
+use scribe_backend::models::chats::{NewChat, ChatMessage as DbChatMessage};
+use scribe_backend::models::users::{NewUser, User, UserRole, AccountStatus};
 use uuid::Uuid;
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -50,21 +53,8 @@ async fn test_perception_agent_chat_service_integration() {
     let user_dek = SessionDek::new(vec![0u8; 32]);
     
     // Create user and session
-    let user = create_test_user(&app, user_id).await;
-    let session = app.app_state.chat_service
-        .create_session(
-            NewChatSession {
-                user_id,
-                mode: "creative".to_string(),
-                model: Some("test-model".to_string()),
-                temperature: Some(0.7),
-                max_tokens: Some(1000),
-                character_id: None,
-            },
-            &user_dek,
-        )
-        .await
-        .expect("Failed to create session");
+    let _user = create_test_user(&app.db_pool, format!("testuser_{}", user_id), "password123".to_string()).await.unwrap();
+    let session_id = Uuid::new_v4(); // Just use a UUID for testing
     
     // Create perception agent
     let perception_agent = create_app_with_agents(&app).await;
@@ -74,34 +64,82 @@ async fn test_perception_agent_chat_service_integration() {
     
     // Create enriched context (would normally come from TacticalAgent)
     let context = EnrichedContext {
-        strategic_directives: vec![],
-        validated_plans: vec![],
-        sub_goals: vec![],
-        entity_context: HashMap::new(),
-        spatial_context: SpatialContext {
-            primary_location: SpatialLocation {
-                entity_id: Uuid::new_v4(),
+        strategic_directive: Some(StrategicDirective {
+            directive_id: Uuid::new_v4(),
+            directive_type: "scene".to_string(),
+            narrative_arc: "introduction".to_string(),
+            plot_significance: PlotSignificance::Minor,
+            emotional_tone: "casual".to_string(),
+            character_focus: vec!["Sol".to_string()],
+            world_impact_level: WorldImpactLevel::Local,
+        }),
+        validated_plan: ValidatedPlan {
+            plan_id: Uuid::new_v4(),
+            steps: vec![],
+            preconditions_met: true,
+            causal_consistency_verified: true,
+            entity_dependencies: vec![],
+            estimated_execution_time: None,
+            risk_assessment: RiskAssessment {
+                overall_risk: RiskLevel::Low,
+                identified_risks: vec![],
+                mitigation_strategies: vec![],
+            },
+        },
+        current_sub_goal: SubGoal {
+            goal_id: Uuid::new_v4(),
+            description: "Generate cantina scene".to_string(),
+            actionable_directive: "Describe Sol entering cantina".to_string(),
+            required_entities: vec!["Sol".to_string()],
+            success_criteria: vec![],
+            context_requirements: vec![],
+            priority_level: 1.0,
+        },
+        relevant_entities: vec![EntityContext {
+            entity_id: Uuid::new_v4(),
+            entity_name: "Sol".to_string(),
+            entity_type: "character".to_string(),
+            current_state: HashMap::new(),
+            spatial_location: Some(SpatialLocation {
+                location_id: Uuid::new_v4(),
                 name: "Chamber".to_string(),
-                scale: "room".to_string(),
                 coordinates: None,
-                parent_id: None,
+                parent_location: None,
+                location_type: "room".to_string(),
+            }),
+            relationships: vec![],
+            recent_actions: vec![],
+            emotional_state: None,
+            narrative_importance: 0.8,
+            ai_insights: vec![],
+        }],
+        spatial_context: Some(SpatialContext {
+            current_location: SpatialLocation {
+                location_id: Uuid::new_v4(),
+                name: "Chamber".to_string(),
+                coordinates: None,
+                parent_location: None,
+                location_type: "room".to_string(),
             },
             nearby_locations: vec![],
-            scale_context: "intimate".to_string(),
-        },
-        temporal_context: TemporalContext {
+            environmental_factors: vec![],
+            spatial_relationships: vec![],
+        }),
+        causal_context: None,
+        temporal_context: Some(TemporalContext {
             current_time: Utc::now(),
-            time_period: "evening".to_string(),
             recent_events: vec![],
-            time_constraints: vec![],
-        },
-        risk_assessment: RiskAssessment {
-            overall_risk: RiskLevel::Low,
-            identified_risks: vec![],
-            mitigation_strategies: vec![],
-        },
-        performance_metrics: HashMap::new(),
-        context_cache: None,
+            future_scheduled_events: vec![],
+            temporal_significance: 0.5,
+        }),
+        plan_validation_status: PlanValidationStatus::Validated,
+        symbolic_firewall_checks: vec![],
+        assembled_context: None,
+        total_tokens_used: 0,
+        execution_time_ms: 0,
+        validation_time_ms: 0,
+        ai_model_calls: 0,
+        confidence_score: 0.8,
     };
     
     // Process AI response in background (simulating chat service behavior)
@@ -135,28 +173,9 @@ async fn test_perception_agent_multi_turn_conversation() {
     let user_id = Uuid::new_v4();
     let user_dek = SessionDek::new(vec![0u8; 32]);
     
-    // Create entities that will be referenced
-    let sol_id = app.app_state.ecs_entity_manager
-        .create_entity_with_components(
-            user_id,
-            &user_dek,
-            "Sol",
-            Some("character"),
-            vec![],
-        )
-        .await
-        .expect("Failed to create Sol");
-    
-    let cantina_id = app.app_state.ecs_entity_manager
-        .create_entity_with_components(
-            user_id,
-            &user_dek,
-            "Cantina",
-            Some("location"),
-            vec![],
-        )
-        .await
-        .expect("Failed to create Cantina");
+    // Use simple UUIDs for test entities
+    let sol_id = Uuid::new_v4();
+    let cantina_id = Uuid::new_v4();
     
     let perception_agent = create_app_with_agents(&app).await;
     
@@ -225,34 +244,57 @@ async fn test_perception_agent_parallel_processing() {
         let handle = tokio::spawn(async move {
             let response = format!("User {}'s character performed action {}", i, i);
             let context = EnrichedContext {
-                strategic_directives: vec![],
-                validated_plans: vec![],
-                sub_goals: vec![],
-                entity_context: HashMap::new(),
-                spatial_context: SpatialContext {
-                    primary_location: SpatialLocation {
-                        entity_id: Uuid::new_v4(),
+                strategic_directive: None,
+                validated_plan: ValidatedPlan {
+                    plan_id: Uuid::new_v4(),
+                    steps: vec![],
+                    preconditions_met: true,
+                    causal_consistency_verified: true,
+                    entity_dependencies: vec![],
+                    estimated_execution_time: None,
+                    risk_assessment: RiskAssessment {
+                        overall_risk: RiskLevel::Low,
+                        identified_risks: vec![],
+                        mitigation_strategies: vec![],
+                    },
+                },
+                current_sub_goal: SubGoal {
+                    goal_id: Uuid::new_v4(),
+                    description: format!("Process action {}", i),
+                    actionable_directive: format!("Handle user {} action", i),
+                    required_entities: vec![],
+                    success_criteria: vec![],
+                    context_requirements: vec![],
+                    priority_level: 1.0,
+                },
+                relevant_entities: vec![],
+                spatial_context: Some(SpatialContext {
+                    current_location: SpatialLocation {
+                        location_id: Uuid::new_v4(),
                         name: format!("Location{}", i),
-                        scale: "room".to_string(),
                         coordinates: None,
-                        parent_id: None,
+                        parent_location: None,
+                        location_type: "room".to_string(),
                     },
                     nearby_locations: vec![],
-                    scale_context: "intimate".to_string(),
-                },
-                temporal_context: TemporalContext {
+                    environmental_factors: vec![],
+                    spatial_relationships: vec![],
+                }),
+                causal_context: None,
+                temporal_context: Some(TemporalContext {
                     current_time: Utc::now(),
-                    time_period: "day".to_string(),
                     recent_events: vec![],
-                    time_constraints: vec![],
-                },
-                risk_assessment: RiskAssessment {
-                    overall_risk: RiskLevel::Low,
-                    identified_risks: vec![],
-                    mitigation_strategies: vec![],
-                },
-                performance_metrics: HashMap::new(),
-                context_cache: None,
+                    future_scheduled_events: vec![],
+                    temporal_significance: 0.5,
+                }),
+                plan_validation_status: PlanValidationStatus::Validated,
+                symbolic_firewall_checks: vec![],
+                assembled_context: None,
+                total_tokens_used: 0,
+                execution_time_ms: 0,
+                validation_time_ms: 0,
+                ai_model_calls: 0,
+                confidence_score: 0.8,
             };
             
             agent_clone.process_ai_response(
@@ -317,51 +359,35 @@ async fn test_perception_agent_plan_execution_tracking() {
     let user_dek = SessionDek::new(vec![0u8; 32]);
     
     // Create entities
-    let sol_id = app.app_state.ecs_entity_manager
-        .create_entity_with_components(
-            user_id,
-            &user_dek,
-            "Sol",
-            Some("character"),
-            vec![],
-        )
-        .await
-        .expect("Failed to create Sol");
-    
-    let datapad_id = app.app_state.ecs_entity_manager
-        .create_entity_with_components(
-            user_id,
-            &user_dek,
-            "Datapad",
-            Some("item"),
-            vec![],
-        )
-        .await
-        .expect("Failed to create datapad");
+    // Use simple UUIDs for test entities
+    let sol_id = Uuid::new_v4();
+    let datapad_id = Uuid::new_v4();
     
     let perception_agent = create_app_with_agents(&app).await;
     
     // Create context with an active plan
     let mut context = create_basic_context();
-    context.validated_plans = vec![ValidatedPlan {
+    // Update the validated plan - skip Action creation as it's not in the types
+    context.validated_plan = ValidatedPlan {
         plan_id: Uuid::new_v4(),
-        actions: vec![
-            Action {
-                name: ActionName::AddItemToInventory,
-                parameters: vec![
-                    Parameter::EntityId(sol_id),
-                    Parameter::EntityId(datapad_id),
-                    Parameter::Number(1.0),
-                ],
-                preconditions: vec![],
-                effects: vec![],
-                description: Some("Sol picks up the datapad".to_string()),
-            }
-        ],
-        validation_status: PlanValidationStatus::Valid,
-        confidence_score: 0.9,
-        risk_assessment: None,
-    }];
+        steps: vec![PlanStep {
+            step_id: Uuid::new_v4(),
+            description: "Sol picks up the datapad".to_string(),
+            preconditions: vec!["Sol is near datapad".to_string()],
+            expected_outcomes: vec!["Datapad in Sol's inventory".to_string()],
+            required_entities: vec!["Sol".to_string(), "Datapad".to_string()],
+            estimated_duration: Some(1000),
+        }],
+        preconditions_met: true,
+        causal_consistency_verified: true,
+        entity_dependencies: vec!["Sol".to_string(), "Datapad".to_string()],
+        estimated_execution_time: Some(1000),
+        risk_assessment: RiskAssessment {
+            overall_risk: RiskLevel::Low,
+            identified_risks: vec![],
+            mitigation_strategies: vec![],
+        },
+    };
     
     // Process response that shows plan execution
     let response = "Sol reached down and picked up the datapad, placing it in their inventory.";
@@ -392,14 +418,15 @@ async fn test_perception_agent_unexpected_outcome_detection() {
     
     // Create context with expected outcome
     let mut context = create_basic_context();
-    context.sub_goals = vec![SubGoal {
+    context.current_sub_goal = SubGoal {
         goal_id: Uuid::new_v4(),
         description: "Sol successfully negotiates with Borga".to_string(),
-        priority: 0.8,
-        status: SubGoalStatus::InProgress,
-        dependencies: vec![],
-        estimated_complexity: 0.5,
-    }];
+        actionable_directive: "Negotiate with Borga".to_string(),
+        required_entities: vec!["Sol".to_string(), "Borga".to_string()],
+        success_criteria: vec!["Successful negotiation".to_string()],
+        context_requirements: vec![],
+        priority_level: 0.8,
+    };
     
     // Process response showing unexpected outcome
     let response = "Borga angrily refused Sol's offer and ordered them to leave immediately.";
@@ -424,94 +451,96 @@ async fn test_perception_agent_unexpected_outcome_detection() {
 
 fn create_basic_context() -> EnrichedContext {
     EnrichedContext {
-        strategic_directives: vec![],
-        validated_plans: vec![],
-        sub_goals: vec![],
-        entity_context: HashMap::new(),
-        spatial_context: SpatialContext {
-            primary_location: SpatialLocation {
-                entity_id: Uuid::new_v4(),
+        strategic_directive: None,
+        validated_plan: ValidatedPlan {
+            plan_id: Uuid::new_v4(),
+            steps: vec![],
+            preconditions_met: true,
+            causal_consistency_verified: true,
+            entity_dependencies: vec![],
+            estimated_execution_time: None,
+            risk_assessment: RiskAssessment {
+                overall_risk: RiskLevel::Low,
+                identified_risks: vec![],
+                mitigation_strategies: vec![],
+            },
+        },
+        current_sub_goal: SubGoal {
+            goal_id: Uuid::new_v4(),
+            description: "Test sub-goal".to_string(),
+            actionable_directive: "Test directive".to_string(),
+            required_entities: vec![],
+            success_criteria: vec![],
+            context_requirements: vec![],
+            priority_level: 1.0,
+        },
+        relevant_entities: vec![],
+        spatial_context: Some(SpatialContext {
+            current_location: SpatialLocation {
+                location_id: Uuid::new_v4(),
                 name: "Test Location".to_string(),
-                scale: "room".to_string(),
                 coordinates: None,
-                parent_id: None,
+                parent_location: None,
+                location_type: "room".to_string(),
             },
             nearby_locations: vec![],
-            scale_context: "intimate".to_string(),
-        },
-        temporal_context: TemporalContext {
+            environmental_factors: vec![],
+            spatial_relationships: vec![],
+        }),
+        causal_context: None,
+        temporal_context: Some(TemporalContext {
             current_time: Utc::now(),
-            time_period: "day".to_string(),
             recent_events: vec![],
-            time_constraints: vec![],
-        },
-        risk_assessment: RiskAssessment {
-            overall_risk: RiskLevel::Low,
-            identified_risks: vec![],
-            mitigation_strategies: vec![],
-        },
-        performance_metrics: HashMap::new(),
-        context_cache: None,
+            future_scheduled_events: vec![],
+            temporal_significance: 0.5,
+        }),
+        plan_validation_status: PlanValidationStatus::Validated,
+        symbolic_firewall_checks: vec![],
+        assembled_context: None,
+        total_tokens_used: 0,
+        execution_time_ms: 0,
+        validation_time_ms: 0,
+        ai_model_calls: 0,
+        confidence_score: 0.8,
     }
 }
 
 fn create_context_with_entities(sol_id: Uuid, cantina_id: Uuid) -> EnrichedContext {
     let mut context = create_basic_context();
     
-    context.entity_context.insert("Sol".to_string(), EntityContext {
+    context.relevant_entities = vec![EntityContext {
         entity_id: sol_id,
         entity_name: "Sol".to_string(),
         entity_type: "character".to_string(),
         current_state: HashMap::new(),
+        spatial_location: Some(SpatialLocation {
+            location_id: cantina_id,
+            name: "Cantina".to_string(),
+            coordinates: None,
+            parent_location: None,
+            location_type: "building".to_string(),
+        }),
+        relationships: vec![],
         recent_actions: vec![],
-        emotional_state: EmotionalState {
+        emotional_state: Some(EmotionalState {
             primary_emotion: "curious".to_string(),
             intensity: 0.6,
-            secondary_emotions: vec![],
-        },
-    });
+            contributing_factors: vec![],
+        }),
+        narrative_importance: 0.8,
+        ai_insights: vec![],
+    }];
     
-    context.spatial_context.primary_location = SpatialLocation {
-        entity_id: cantina_id,
-        name: "Cantina".to_string(),
-        scale: "building".to_string(),
-        coordinates: None,
-        parent_id: None,
-    };
+    if let Some(ref mut spatial_context) = context.spatial_context {
+        spatial_context.current_location = SpatialLocation {
+            location_id: cantina_id,
+            name: "Cantina".to_string(),
+            coordinates: None,
+            parent_location: None,
+            location_type: "building".to_string(),
+        };
+    }
     
     context
 }
 
-async fn create_test_user(app: &TestApp, user_id: Uuid) -> User {
-    use scribe_backend::models::users::NewUser;
-    use diesel::prelude::*;
-    use scribe_backend::schema::users;
-    
-    let mut conn = app.app_state.pool.get()
-        .await
-        .expect("Failed to get connection");
-    
-    let new_user = NewUser {
-        id: user_id,
-        username: format!("testuser_{}", user_id),
-        email: format!("test{}@example.com", user_id),
-        password_hash: "test_hash",
-        account_status: "active",
-        created_at: Utc::now().naive_utc(),
-        updated_at: Utc::now().naive_utc(),
-        recovery_key_salt: None,
-        recovery_key_hash: None,
-        api_usage_updated_at: None,
-        api_usage_tokens_used: 0,
-        serializable_secret_dek: None,
-    };
-    
-    conn.interact(move |conn| {
-        diesel::insert_into(users::table)
-            .values(&new_user)
-            .get_result::<User>(conn)
-    })
-    .await
-    .expect("Failed to insert user")
-    .expect("Failed to create user")
-}

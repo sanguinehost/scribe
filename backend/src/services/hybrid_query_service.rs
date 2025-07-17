@@ -637,12 +637,20 @@ impl HybridQueryService {
         // Build basic entity contexts without current state
         let entity_contexts = self.build_basic_entity_contexts(&chronicle_events, query).await?;
 
+        // Generate narrative even for fallback queries
+        let narrative_answer = self.generate_narrative_answer(
+            &entity_contexts,
+            &chronicle_events,
+            &[], // No relationships in fallback mode
+            query
+        ).await?;
+
         let summary = HybridQuerySummary {
             entities_found: entity_contexts.len(),
             events_analyzed: chronicle_events.len(),
             relationships_found: 0,
             key_insights: vec!["Limited analysis - ECS data unavailable".to_string()],
-            narrative_answer: None,
+            narrative_answer: Some(narrative_answer),
         };
 
         Ok(HybridQueryResult {
@@ -1299,16 +1307,70 @@ impl HybridQueryService {
     async fn build_basic_entity_contexts(
         &self,
         events: &[ChronicleEvent],
-        _query: &HybridQuery,
+        query: &HybridQuery,
     ) -> Result<Vec<EntityTimelineContext>, AppError> {
-        let contexts = Vec::new();
-
+        use std::collections::HashMap;
+        
+        let mut entity_map: HashMap<Uuid, EntityTimelineContext> = HashMap::new();
+        
         // Extract entities mentioned in events
         for event in events {
-            // TODO: Parse event to extract entities and build basic contexts
-            debug!("Building basic context from event: {}", event.id);
+            // Process actors in the event
+            if let Some(actors) = &event.actors {
+                if let Some(actors_array) = actors.as_array() {
+                    for actor in actors_array {
+                        if let Some(actor_obj) = actor.as_object() {
+                            if let Some(entity_id) = actor_obj.get("entity_id")
+                                .and_then(|id| id.as_str())
+                                .and_then(|id| Uuid::parse_str(id).ok()) {
+                                
+                                // Get or create entity context
+                                let entity_context = entity_map.entry(entity_id).or_insert_with(|| {
+                                    EntityTimelineContext {
+                                        entity_id,
+                                        entity_name: actor_obj.get("context")
+                                            .and_then(|c| c.as_str())
+                                            .map(|s| s.to_string()),
+                                        current_state: None,
+                                        timeline_events: Vec::new(),
+                                        relationships: Vec::new(),
+                                        relevance_score: 1.0, // Default relevance for fallback mode
+                                    }
+                                });
+                                
+                                // Add this event to the entity's timeline
+                                entity_context.timeline_events.push(TimelineEvent {
+                                    event: event.clone(),
+                                    entity_state_at_time: None, // No state info in fallback mode
+                                    co_participants: Vec::new(), // Could be extracted from other actors
+                                    significance_score: 1.0, // Default significance
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Also check for entity references in the event summary
+            // This is a simple heuristic for when actors aren't properly structured
+            if entity_map.is_empty() && !event.summary.is_empty() {
+                // Try to extract entity names from the summary
+                // This is a fallback for events without proper actor data
+                debug!("No actors found in event {}, checking summary for entity names", event.id);
+            }
         }
-
+        
+        // Convert map to vector and sort by relevance/timeline
+        let mut contexts: Vec<EntityTimelineContext> = entity_map.into_values().collect();
+        
+        // Sort by number of events (most active entities first)
+        contexts.sort_by(|a, b| b.timeline_events.len().cmp(&a.timeline_events.len()));
+        
+        // Apply any query-specific filtering
+        if let HybridQueryType::EntityTimeline { entity_id: Some(target_id), .. } = &query.query_type {
+            contexts.retain(|ctx| ctx.entity_id == *target_id);
+        }
+        
         Ok(contexts)
     }
 
@@ -1367,12 +1429,20 @@ impl HybridQueryService {
             }
         }
 
+        // Generate narrative answer based on query results
+        let narrative_answer = self.generate_narrative_answer(
+            entities,
+            events,
+            relationships,
+            query
+        ).await?;
+
         Ok(HybridQuerySummary {
             entities_found: entities.len(),
             events_analyzed: events.len(),
             relationships_found: relationships.len(),
             key_insights,
-            narrative_answer: None, // TODO: Generate narrative answer
+            narrative_answer: Some(narrative_answer),
         })
     }
 
@@ -3120,6 +3190,617 @@ impl HybridQueryService {
         turning_points.sort_by(|a, b| b.significance.partial_cmp(&a.significance).unwrap());
         
         turning_points
+    }
+
+    /// Generate narrative answer from query results
+    async fn generate_narrative_answer(
+        &self,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+        relationships: &[RelationshipAnalysis],
+        query: &HybridQuery,
+    ) -> Result<String, AppError> {
+        debug!("Generating narrative answer for query type: {:?}", query.query_type);
+
+        // If we have no data, return a default response
+        if entities.is_empty() && events.is_empty() && relationships.is_empty() {
+            return Ok("No relevant information found for your query.".to_string());
+        }
+
+        // Generate narrative based on query type
+        let narrative = match &query.query_type {
+            HybridQueryType::EntityTimeline { entity_name, .. } => {
+                self.generate_entity_timeline_narrative(entity_name, entities, events).await?
+            }
+            HybridQueryType::EventParticipants { event_description, .. } => {
+                self.generate_event_participants_narrative(event_description, entities, events).await?
+            }
+            HybridQueryType::RelationshipHistory { entity_a, entity_b, .. } => {
+                self.generate_relationship_history_narrative(entity_a, entity_b, relationships, events).await?
+            }
+            HybridQueryType::LocationQuery { location_name, .. } => {
+                self.generate_location_query_narrative(location_name, entities, events).await?
+            }
+            HybridQueryType::NarrativeQuery { query_text, .. } => {
+                self.generate_narrative_query_response(query_text, entities, events, relationships).await?
+            }
+            HybridQueryType::EntityStateAtTime { entity_id, timestamp, .. } => {
+                self.generate_entity_state_narrative(*entity_id, *timestamp, entities).await?
+            }
+            HybridQueryType::CausalChain { from_event, to_entity, .. } => {
+                self.generate_causal_chain_narrative(from_event, to_entity, events).await?
+            }
+            HybridQueryType::TemporalPath { entity_id, .. } => {
+                self.generate_temporal_path_narrative(*entity_id, entities, events).await?
+            }
+            HybridQueryType::RelationshipNetwork { center_entity_id, .. } => {
+                self.generate_relationship_network_narrative(*center_entity_id, relationships).await?
+            }
+            HybridQueryType::CausalInfluences { entity_id, .. } => {
+                self.generate_causal_influences_narrative(*entity_id, events).await?
+            }
+            HybridQueryType::WorldModelSnapshot { .. } => {
+                self.generate_world_model_snapshot_narrative(entities, events, relationships).await?
+            }
+        };
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for entity timeline queries
+    async fn generate_entity_timeline_narrative(
+        &self,
+        entity_name: &str,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        // If we have no entity contexts but have chronicle events, generate narrative from events
+        if entities.is_empty() && !events.is_empty() {
+            // Filter events that involve this entity
+            let entity_events: Vec<&ChronicleEvent> = events.iter()
+                .filter(|event| {
+                    // Check if entity is mentioned in summary or actors
+                    event.summary.contains(entity_name) ||
+                    event.actors.as_ref().map_or(false, |actors| {
+                        actors.as_array().map_or(false, |arr| {
+                            arr.iter().any(|actor| {
+                                actor.as_object().map_or(false, |obj| {
+                                    obj.get("context").and_then(|c| c.as_str())
+                                        .map_or(false, |context| context.contains(entity_name))
+                                })
+                            })
+                        })
+                    })
+                })
+                .collect();
+                
+            if entity_events.is_empty() {
+                return Ok(format!("No timeline information found for {}.", entity_name));
+            }
+            
+            let mut narrative = format!("**{}'s Timeline:**\n\n", entity_name);
+            narrative.push_str(&format!("**Recent Activity:** {} has been involved in {} events. ", 
+                entity_name, entity_events.len()));
+                
+            narrative.push_str("Here are the most recent activities:\n\n");
+            for (i, event) in entity_events.iter().take(5).enumerate() {
+                let time_ago = self.format_relative_time(event.created_at);
+                narrative.push_str(&format!("{}. **{}** - {} ({})\n", 
+                    i + 1, event.event_type, event.summary, time_ago));
+            }
+            
+            return Ok(narrative);
+        }
+        
+        if entities.is_empty() {
+            return Ok(format!("No timeline information found for {}.", entity_name));
+        }
+
+        let entity = &entities[0];
+        let timeline_events = &entity.timeline_events;
+        
+        if timeline_events.is_empty() {
+            return Ok(format!("{} has no recorded activity in the timeline.", entity_name));
+        }
+
+        let recent_events = timeline_events.iter()
+            .take(5) // Most recent 5 events
+            .collect::<Vec<_>>();
+
+        let mut narrative = format!("**{}'s Timeline:**\n\n", entity_name);
+        
+        if let Some(current_state) = &entity.current_state {
+            narrative.push_str(&format!("**Current Status:** {} is currently active with {} components tracked.\n\n", 
+                entity_name, current_state.components.len()));
+        }
+
+        narrative.push_str(&format!("**Recent Activity:** {} has been involved in {} events. ", 
+            entity_name, timeline_events.len()));
+
+        if recent_events.len() > 0 {
+            narrative.push_str("Here are the most recent activities:\n\n");
+            for (i, event) in recent_events.iter().enumerate() {
+                let time_ago = self.format_relative_time(event.event.created_at);
+                narrative.push_str(&format!("{}. **{}** - {} ({})\n", 
+                    i + 1, event.event.event_type, event.event.summary, time_ago));
+            }
+        }
+
+        if !entity.relationships.is_empty() {
+            narrative.push_str(&format!("\n**Relationships:** {} has {} active relationships affecting their current status.", 
+                entity_name, entity.relationships.len()));
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for event participants queries
+    async fn generate_event_participants_narrative(
+        &self,
+        event_description: &str,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        if events.is_empty() {
+            return Ok(format!("No events found matching '{}'.", event_description));
+        }
+
+        let mut narrative = format!("**Participants in '{}':**\n\n", event_description);
+        
+        if entities.is_empty() {
+            narrative.push_str("No specific participants could be identified in these events.\n\n");
+        } else {
+            narrative.push_str(&format!("**Identified Participants:** {} entities were involved:\n\n", entities.len()));
+            
+            for (i, entity) in entities.iter().enumerate() {
+                let name = entity.entity_name.as_ref().map(|s| s.as_str()).unwrap_or("Unknown Entity");
+                let involvement = entity.timeline_events.len();
+                narrative.push_str(&format!("{}. **{}** - Involved in {} related events", 
+                    i + 1, name, involvement));
+                
+                if entity.relevance_score > 0.7 {
+                    narrative.push_str(" (High relevance)");
+                }
+                narrative.push('\n');
+            }
+        }
+
+        narrative.push_str(&format!("\n**Event Analysis:** {} events were analyzed for this query. ", events.len()));
+        
+        if events.len() > 1 {
+            let time_span = self.calculate_event_time_span(events);
+            narrative.push_str(&format!("These events span approximately {}.", time_span));
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for relationship history queries
+    async fn generate_relationship_history_narrative(
+        &self,
+        entity_a: &str,
+        entity_b: &str,
+        relationships: &[RelationshipAnalysis],
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        if relationships.is_empty() {
+            return Ok(format!("No relationship history found between {} and {}.", entity_a, entity_b));
+        }
+
+        let relationship = &relationships[0];
+        let mut narrative = format!("**Relationship between {} and {}:**\n\n", entity_a, entity_b);
+
+        // Current relationship status
+        if let Some(current_rel) = &relationship.current_relationship {
+            narrative.push_str(&format!("**Current Status:** {} and {} have a {} relationship.\n\n", 
+                entity_a, entity_b, current_rel.relationship_type));
+        } else {
+            narrative.push_str(&format!("**Current Status:** No direct relationship currently exists between {} and {}.\n\n", 
+                entity_a, entity_b));
+        }
+
+        // Relationship metrics
+        let metrics = &relationship.analysis;
+        narrative.push_str(&format!("**Relationship Metrics:**\n"));
+        narrative.push_str(&format!("- **Strength:** {:.1}/10\n", metrics.strength * 10.0));
+        narrative.push_str(&format!("- **Stability:** {:.1}/10\n", metrics.stability * 10.0));
+        narrative.push_str(&format!("- **Trend:** {:?}\n", metrics.trend));
+        narrative.push_str(&format!("- **Interactions:** {} recorded\n\n", metrics.interaction_count));
+
+        // Historical evolution
+        if !relationship.relationship_history.is_empty() {
+            narrative.push_str(&format!("**Historical Evolution:** The relationship has evolved through {} key moments:\n\n", 
+                relationship.relationship_history.len()));
+            
+            for (i, history_entry) in relationship.relationship_history.iter().take(3).enumerate() {
+                let time_ago = self.format_relative_time(history_entry.timestamp);
+                narrative.push_str(&format!("{}. **{}** - {} ({})\n", 
+                    i + 1, history_entry.relationship_type, 
+                    self.format_relationship_data(&history_entry.relationship_data), time_ago));
+            }
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for location queries
+    async fn generate_location_query_narrative(
+        &self,
+        location_name: &str,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = format!("**Activity at {}:**\n\n", location_name);
+
+        if entities.is_empty() {
+            narrative.push_str(&format!("No entities are currently tracked at {}.\n\n", location_name));
+        } else {
+            narrative.push_str(&format!("**Current Occupants:** {} entities are present at {}:\n\n", 
+                entities.len(), location_name));
+            
+            for (i, entity) in entities.iter().enumerate() {
+                let name = entity.entity_name.as_ref().map(|s| s.as_str()).unwrap_or("Unknown Entity");
+                narrative.push_str(&format!("{}. **{}**", i + 1, name));
+                
+                if let Some(current_state) = &entity.current_state {
+                    if let Some(position) = current_state.components.get("position") {
+                        narrative.push_str(&format!(" - {}", self.format_position_data(position)));
+                    }
+                }
+                narrative.push('\n');
+            }
+        }
+
+        if !events.is_empty() {
+            narrative.push_str(&format!("\n**Recent Activity:** {} events have occurred at {} recently. ", 
+                events.len(), location_name));
+            
+            let recent_events = events.iter().take(3).collect::<Vec<_>>();
+            narrative.push_str("Most recent activities:\n\n");
+            
+            for (i, event) in recent_events.iter().enumerate() {
+                let time_ago = self.format_relative_time(event.created_at);
+                narrative.push_str(&format!("{}. **{}** - {} ({})\n", 
+                    i + 1, event.event_type, event.summary, time_ago));
+            }
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for general narrative queries
+    async fn generate_narrative_query_response(
+        &self,
+        query_text: &str,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+        relationships: &[RelationshipAnalysis],
+    ) -> Result<String, AppError> {
+        let mut narrative = format!("**Query Results for: \"{}\"**\n\n", query_text);
+
+        let total_data_points = entities.len() + events.len() + relationships.len();
+        if total_data_points == 0 {
+            return Ok("No relevant information found for your query.".to_string());
+        }
+
+        // Entities section
+        if !entities.is_empty() {
+            narrative.push_str(&format!("**Relevant Entities ({}):**\n", entities.len()));
+            for (i, entity) in entities.iter().take(5).enumerate() {
+                let name = entity.entity_name.as_ref().map(|s| s.as_str()).unwrap_or("Unknown Entity");
+                narrative.push_str(&format!("{}. **{}** - Relevance: {:.1}/10\n", 
+                    i + 1, name, entity.relevance_score * 10.0));
+            }
+            narrative.push('\n');
+        }
+
+        // Events section
+        if !events.is_empty() {
+            narrative.push_str(&format!("**Related Events ({}):**\n", events.len()));
+            for (i, event) in events.iter().take(5).enumerate() {
+                let time_ago = self.format_relative_time(event.created_at);
+                narrative.push_str(&format!("{}. **{}** - {} ({})\n", 
+                    i + 1, event.event_type, event.summary, time_ago));
+            }
+            narrative.push('\n');
+        }
+
+        // Relationships section
+        if !relationships.is_empty() {
+            narrative.push_str(&format!("**Relationship Insights ({}):**\n", relationships.len()));
+            for (i, relationship) in relationships.iter().take(3).enumerate() {
+                let strength = relationship.analysis.strength;
+                let trend = &relationship.analysis.trend;
+                narrative.push_str(&format!("{}. Relationship strength: {:.1}/10, Trend: {:?}\n", 
+                    i + 1, strength * 10.0, trend));
+            }
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for entity state at time queries
+    async fn generate_entity_state_narrative(
+        &self,
+        entity_id: Uuid,
+        timestamp: DateTime<Utc>,
+        entities: &[EntityTimelineContext],
+    ) -> Result<String, AppError> {
+        let time_desc = self.format_relative_time(timestamp);
+        let mut narrative = format!("**Entity State at {}:**\n\n", time_desc);
+
+        if let Some(entity) = entities.first() {
+            if let Some(state) = &entity.current_state {
+                narrative.push_str(&format!("**Components ({}):**\n", state.components.len()));
+                for (component_type, data) in &state.components {
+                    narrative.push_str(&format!("- **{}:** {}\n", component_type, 
+                        self.format_component_data(data)));
+                }
+            } else {
+                narrative.push_str("No state information available for this entity at the specified time.\n");
+            }
+        } else {
+            narrative.push_str("Entity not found or no data available at the specified time.\n");
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for causal chain queries
+    async fn generate_causal_chain_narrative(
+        &self,
+        from_event: &Option<Uuid>,
+        to_entity: &Option<Uuid>,
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = "**Causal Chain Analysis:**\n\n".to_string();
+
+        if events.is_empty() {
+            narrative.push_str("No causal relationships found in the event chain.\n");
+            return Ok(narrative);
+        }
+
+        narrative.push_str(&format!("**Chain Length:** {} events in the causal sequence.\n\n", events.len()));
+
+        narrative.push_str("**Causal Sequence:**\n");
+        for (i, event) in events.iter().enumerate() {
+            let time_ago = self.format_relative_time(event.created_at);
+            narrative.push_str(&format!("{}. **{}** - {} ({})\n", 
+                i + 1, event.event_type, event.summary, time_ago));
+            
+            if i < events.len() - 1 {
+                narrative.push_str("   ↓ *caused by*\n");
+            }
+        }
+
+        if let (Some(from_id), Some(to_id)) = (from_event, to_entity) {
+            narrative.push_str(&format!("\n**Analysis:** Chain traces from event {} to entity {}.", 
+                from_id, to_id));
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for temporal path queries
+    async fn generate_temporal_path_narrative(
+        &self,
+        entity_id: Uuid,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = format!("**Temporal Path for Entity {}:**\n\n", entity_id);
+
+        if let Some(entity) = entities.first() {
+            let timeline_events = &entity.timeline_events;
+            
+            if timeline_events.is_empty() {
+                narrative.push_str("No temporal path data available for this entity.\n");
+                return Ok(narrative);
+            }
+
+            narrative.push_str(&format!("**Path Length:** {} events tracked over time.\n\n", timeline_events.len()));
+            
+            narrative.push_str("**Temporal Sequence:**\n");
+            for (i, event) in timeline_events.iter().enumerate() {
+                let time_ago = self.format_relative_time(event.event.created_at);
+                narrative.push_str(&format!("{}. **{}** - {} ({})\n", 
+                    i + 1, event.event.event_type, event.event.summary, time_ago));
+            }
+        } else {
+            narrative.push_str("Entity not found in the current context.\n");
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for relationship network queries
+    async fn generate_relationship_network_narrative(
+        &self,
+        entity_id: Uuid,
+        relationships: &[RelationshipAnalysis],
+    ) -> Result<String, AppError> {
+        let mut narrative = format!("**Relationship Network for Entity {}:**\n\n", entity_id);
+
+        if relationships.is_empty() {
+            narrative.push_str("No relationship network data available for this entity.\n");
+            return Ok(narrative);
+        }
+
+        narrative.push_str(&format!("**Network Size:** {} relationships analyzed.\n\n", relationships.len()));
+
+        narrative.push_str("**Network Analysis:**\n");
+        for (i, relationship) in relationships.iter().enumerate() {
+            let metrics = &relationship.analysis;
+            narrative.push_str(&format!("{}. **Relationship {}:** Strength {:.1}/10, Trend {:?}\n", 
+                i + 1, i + 1, metrics.strength * 10.0, metrics.trend));
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for causal influences queries
+    async fn generate_causal_influences_narrative(
+        &self,
+        entity_id: Uuid,
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = format!("**Causal Influences on Entity {}:**\n\n", entity_id);
+
+        if events.is_empty() {
+            narrative.push_str("No causal influences found for this entity.\n");
+            return Ok(narrative);
+        }
+
+        narrative.push_str(&format!("**Influence Analysis:** {} events have influenced this entity.\n\n", events.len()));
+
+        narrative.push_str("**Key Influences:**\n");
+        for (i, event) in events.iter().take(5).enumerate() {
+            let time_ago = self.format_relative_time(event.created_at);
+            narrative.push_str(&format!("{}. **{}** - {} ({})\n", 
+                i + 1, event.event_type, event.summary, time_ago));
+        }
+
+        Ok(narrative)
+    }
+
+    /// Generate narrative for world model snapshot queries
+    async fn generate_world_model_snapshot_narrative(
+        &self,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+        relationships: &[RelationshipAnalysis],
+    ) -> Result<String, AppError> {
+        let mut narrative = "**World Model Snapshot:**\n\n".to_string();
+
+        let total_elements = entities.len() + events.len() + relationships.len();
+        if total_elements == 0 {
+            narrative.push_str("No world model data available for this snapshot.\n");
+            return Ok(narrative);
+        }
+
+        narrative.push_str(&format!("**Snapshot Summary:** {} entities, {} events, {} relationships captured.\n\n", 
+            entities.len(), events.len(), relationships.len()));
+
+        if !entities.is_empty() {
+            narrative.push_str(&format!("**Active Entities ({}):**\n", entities.len()));
+            for (i, entity) in entities.iter().take(5).enumerate() {
+                let name = entity.entity_name.as_ref().map(|s| s.as_str()).unwrap_or("Unknown Entity");
+                narrative.push_str(&format!("{}. **{}**\n", i + 1, name));
+            }
+            narrative.push('\n');
+        }
+
+        if !events.is_empty() {
+            narrative.push_str(&format!("**Recent Events ({}):**\n", events.len()));
+            for (i, event) in events.iter().take(3).enumerate() {
+                let time_ago = self.format_relative_time(event.created_at);
+                narrative.push_str(&format!("{}. **{}** - {} ({})\n", 
+                    i + 1, event.event_type, event.summary, time_ago));
+            }
+            narrative.push('\n');
+        }
+
+        if !relationships.is_empty() {
+            narrative.push_str(&format!("**Relationship Overview ({}):**\n", relationships.len()));
+            let avg_strength: f32 = relationships.iter()
+                .map(|r| r.analysis.strength)
+                .sum::<f32>() / relationships.len() as f32;
+            narrative.push_str(&format!("- **Average Relationship Strength:** {:.1}/10\n", avg_strength * 10.0));
+        }
+
+        Ok(narrative)
+    }
+
+    // Helper methods for formatting
+    
+    /// Format relative time from timestamp
+    fn format_relative_time(&self, timestamp: DateTime<Utc>) -> String {
+        let now = chrono::Utc::now();
+        let duration = now.signed_duration_since(timestamp);
+        
+        if duration.num_days() > 0 {
+            format!("{} days ago", duration.num_days())
+        } else if duration.num_hours() > 0 {
+            format!("{} hours ago", duration.num_hours())
+        } else if duration.num_minutes() > 0 {
+            format!("{} minutes ago", duration.num_minutes())
+        } else {
+            "Just now".to_string()
+        }
+    }
+
+    /// Calculate time span between events
+    fn calculate_event_time_span(&self, events: &[ChronicleEvent]) -> String {
+        if events.len() < 2 {
+            return "single event".to_string();
+        }
+
+        let earliest = events.iter().min_by_key(|e| e.created_at);
+        let latest = events.iter().max_by_key(|e| e.created_at);
+        
+        if let (Some(earliest), Some(latest)) = (earliest, latest) {
+            let duration = latest.created_at.signed_duration_since(earliest.created_at);
+            if duration.num_days() > 0 {
+                format!("{} days", duration.num_days())
+            } else if duration.num_hours() > 0 {
+                format!("{} hours", duration.num_hours())
+            } else {
+                format!("{} minutes", duration.num_minutes())
+            }
+        } else {
+            "unknown timespan".to_string()
+        }
+    }
+
+    /// Format relationship data for display
+    fn format_relationship_data(&self, data: &serde_json::Value) -> String {
+        if let Some(trust) = data.get("trust").and_then(|v| v.as_f64()) {
+            format!("Trust: {:.1}/10", trust * 10.0)
+        } else if let Some(strength) = data.get("strength").and_then(|v| v.as_f64()) {
+            format!("Strength: {:.1}/10", strength * 10.0)
+        } else {
+            "Relationship data".to_string()
+        }
+    }
+
+    /// Format position data for display
+    fn format_position_data(&self, position: &serde_json::Value) -> String {
+        if let Some(position_obj) = position.as_object() {
+            if let (Some(x), Some(y)) = (
+                position_obj.get("x").and_then(|v| v.as_f64()),
+                position_obj.get("y").and_then(|v| v.as_f64())
+            ) {
+                format!("Position ({:.1}, {:.1})", x, y)
+            } else {
+                "Position data".to_string()
+            }
+        } else {
+            "Position data".to_string()
+        }
+    }
+
+    /// Format component data for display
+    fn format_component_data(&self, data: &serde_json::Value) -> String {
+        match data {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Number(n) => n.to_string(),
+            serde_json::Value::Bool(b) => b.to_string(),
+            serde_json::Value::Object(obj) => {
+                if obj.len() <= 3 {
+                    // Show key-value pairs for small objects
+                    obj.iter()
+                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                } else {
+                    format!("Complex data ({} fields)", obj.len())
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                format!("Array with {} items", arr.len())
+            }
+            serde_json::Value::Null => "No data".to_string(),
+        }
     }
 }
 

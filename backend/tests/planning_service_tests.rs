@@ -1,14 +1,12 @@
-use scribe_backend::services::planning::{PlanningService, Plan, AiGeneratedPlan, ActionName, PlannedAction};
+use scribe_backend::services::planning::PlanningService;
 use scribe_backend::services::context_assembly_engine::{
-    EnrichedContext, SubGoal, ValidatedPlan, StrategicDirective, PlotSignificance, 
-    WorldImpactLevel, PlanStep, RiskAssessment, RiskLevel, PlanValidationStatus
+    EnrichedContext, SubGoal, ValidatedPlan, RiskAssessment, RiskLevel, PlanValidationStatus
 };
 use scribe_backend::test_helpers::*;
-use scribe_backend::errors::AppError;
 use scribe_backend::auth::session_dek::SessionDek;
 use uuid::Uuid;
 use std::sync::Arc;
-use secrecy::SecretBox;
+use serde_json;
 
 #[tokio::test]
 async fn test_planning_service_creation() {
@@ -39,6 +37,11 @@ async fn test_generate_simple_movement_plan() {
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
     );
+
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Sol needs to go to the cantina");
+    }
 
     // Create a test SessionDek for encrypted access
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -76,6 +79,11 @@ async fn test_plan_caching_same_goal() {
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
     );
+
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Sol needs to find Borga");
+    }
 
     // Create a test SessionDek for encrypted access
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -116,6 +124,14 @@ async fn test_plan_caching_different_users() {
         Arc::new(app.db_pool.clone()),
     );
 
+    // Configure mock AI to return valid planning responses for both calls
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_multiple_planning_calls(mock_ai, vec![
+            "Sol needs to find Borga".to_string(),
+            "Sol needs to find Borga".to_string()
+        ]);
+    }
+
     // Create test SessionDeks for encrypted access
     let session_dek1 = SessionDek::new(vec![0u8; 32]);
     let session_dek2 = SessionDek::new(vec![1u8; 32]);
@@ -155,6 +171,11 @@ async fn test_complex_plan_generation() {
         Arc::new(app.db_pool.clone()),
     );
 
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Sol needs to find Borga, negotiate for the datapad, and return to base");
+    }
+
     // Create a test SessionDek for encrypted access
     let session_dek = SessionDek::new(vec![0u8; 32]);
 
@@ -191,6 +212,11 @@ async fn test_flash_model_integration() {
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
     );
+
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Move character to location");
+    }
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
 
@@ -248,6 +274,11 @@ async fn test_planning_with_world_state_context() {
         Arc::new(app.db_pool.clone()),
     );
 
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Sol needs to travel to the cantina");
+    }
+
     let session_dek = SessionDek::new(vec![0u8; 32]);
 
     let result = planning_service.generate_plan(
@@ -265,10 +296,147 @@ async fn test_planning_with_world_state_context() {
     assert!(!plan.plan.actions.is_empty(), "Should generate actions based on world state");
 }
 
+// Helper function to configure mock AI for planning tests
+fn configure_mock_for_planning(mock_ai: &Arc<MockAiClient>, goal: &str) {
+    let valid_plan_response = serde_json::json!({
+        "goal": goal,
+        "actions": [
+            {
+                "id": "action_1",
+                "name": "find_entity",
+                "parameters": {
+                    "entity_name": "Sol"
+                },
+                "dependencies": []
+            },
+            {
+                "id": "action_2",
+                "name": "get_spatial_context",
+                "parameters": {
+                    "location_id": "current_location"
+                },
+                "dependencies": []
+            },
+            {
+                "id": "action_3",
+                "name": "move_entity",
+                "parameters": {
+                    "entity_name": "Sol",
+                    "destination_id": "target_location"
+                },
+                "dependencies": ["action_1", "action_2"]
+            }
+        ],
+        "metadata": {
+            "confidence": 0.85,
+            "estimated_duration": 200,
+            "alternative_considered": "Alternative approach considered"
+        }
+    });
+    mock_ai.set_next_chat_response(valid_plan_response.to_string());
+}
+
+// Helper function to configure mock AI for planning tests with multiple calls
+fn configure_mock_for_multiple_planning_calls(mock_ai: &Arc<MockAiClient>, goals: Vec<String>) {
+    // Set the first response using set_next_chat_response to ensure it's queued properly
+    if let Some(first_goal) = goals.first() {
+        // Handle empty goal case by providing a default
+        let goal_text = if first_goal.is_empty() { 
+            "Default goal for empty input" 
+        } else { 
+            first_goal.as_str() 
+        };
+        
+        let first_response = serde_json::json!({
+            "goal": goal_text,
+            "actions": [
+                {
+                    "id": "action_1",
+                    "name": "find_entity",
+                    "parameters": {
+                        "entity_name": "Sol"
+                    },
+                    "dependencies": []
+                },
+                {
+                    "id": "action_2",
+                    "name": "get_spatial_context",
+                    "parameters": {
+                        "location_id": "current_location"
+                    },
+                    "dependencies": []
+                },
+                {
+                    "id": "action_3",
+                    "name": "move_entity",
+                    "parameters": {
+                        "entity_name": "Sol",
+                        "destination_id": "target_location"
+                    },
+                    "dependencies": ["action_1", "action_2"]
+                }
+            ],
+            "metadata": {
+                "confidence": 0.85,
+                "estimated_duration": 200,
+                "alternative_considered": "Alternative approach considered"
+            }
+        }).to_string();
+        
+        mock_ai.set_next_chat_response(first_response);
+        
+        // Add the rest of the responses
+        for goal in goals.iter().skip(1) {
+            // Handle empty goal case by providing a default
+            let goal_text = if goal.is_empty() { 
+                "Default goal for empty input" 
+            } else { 
+                goal.as_str() 
+            };
+            
+            let response = serde_json::json!({
+                "goal": goal_text,
+                "actions": [
+                    {
+                        "id": "action_1",
+                        "name": "find_entity",
+                        "parameters": {
+                            "entity_name": "Sol"
+                        },
+                        "dependencies": []
+                    },
+                    {
+                        "id": "action_2",
+                        "name": "get_spatial_context",
+                        "parameters": {
+                            "location_id": "current_location"
+                        },
+                        "dependencies": []
+                    },
+                    {
+                        "id": "action_3",
+                        "name": "move_entity",
+                        "parameters": {
+                            "entity_name": "Sol",
+                            "destination_id": "target_location"
+                        },
+                        "dependencies": ["action_1", "action_2"]
+                    }
+                ],
+                "metadata": {
+                    "confidence": 0.85,
+                    "estimated_duration": 200,
+                    "alternative_considered": "Alternative approach considered"
+                }
+            }).to_string();
+            
+            mock_ai.add_response(response);
+        }
+    }
+}
+
 // Helper function to create test EnrichedContext
 fn create_test_enriched_context(goal: &str) -> EnrichedContext {
-    use scribe_backend::services::planning::types::ContextCache;
-    use std::collections::HashMap;
     
     EnrichedContext {
         strategic_directive: None,
@@ -327,6 +495,11 @@ async fn test_planning_service_user_isolation_a01() {
         Arc::new(app.db_pool.clone()),
     );
 
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "User 1 specific goal");
+    }
+
     let user1_dek = SessionDek::new(vec![1u8; 32]);
     let user2_dek = SessionDek::new(vec![2u8; 32]);
 
@@ -337,6 +510,11 @@ async fn test_planning_service_user_isolation_a01() {
         user1_id,
         &user1_dek,
     ).await;
+
+    // Configure mock AI for user 2's different goal
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "User 2 specific goal");
+    }
 
     let result2 = planning_service.generate_plan(
         "User 2 specific goal", 
@@ -370,6 +548,11 @@ async fn test_planning_service_encryption_a02() {
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
     );
+
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Test encryption handling");
+    }
 
     // Test with proper SessionDek
     let valid_session_dek = SessionDek::new(vec![42u8; 32]);
@@ -407,6 +590,11 @@ async fn test_planning_service_input_validation_a03() {
 
     // Test with potentially malicious input
     let malicious_goal = "'; DROP TABLE plans; --";
+    
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, malicious_goal);
+    }
     
     let result = planning_service.generate_plan(
         malicious_goal,
@@ -469,6 +657,11 @@ async fn test_planning_service_error_handling_a09() {
     // Test with invalid UUID to trigger error path
     let invalid_user_id = Uuid::nil();
     
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Test error handling");
+    }
+    
     let result = planning_service.generate_plan(
         "Test error handling",
         &context,
@@ -507,6 +700,11 @@ async fn test_planning_service_security_misconfiguration_a05() {
         Arc::new(app.db_pool.clone()),
     );
 
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Test secure configuration");
+    }
+
     let session_dek = SessionDek::new(vec![0u8; 32]);
 
     // Test with valid configuration
@@ -541,6 +739,11 @@ async fn test_planning_service_vulnerable_components_a06() {
         Arc::new(app.db_pool.clone()),
     );
 
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Test dependency handling");
+    }
+
     let session_dek = SessionDek::new(vec![0u8; 32]);
 
     // Test that planning service handles dependencies securely
@@ -574,6 +777,11 @@ async fn test_planning_service_authentication_failures_a07() {
         Arc::new(app.db_pool.clone()),
     );
 
+    // Configure mock AI to return a valid planning response
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Test valid authentication");
+    }
+
     let session_dek = SessionDek::new(vec![0u8; 32]);
 
     // Test with valid user ID
@@ -585,6 +793,11 @@ async fn test_planning_service_authentication_failures_a07() {
     ).await;
 
     assert!(valid_result.is_ok());
+
+    // Configure mock AI for invalid authentication test
+    if let Some(mock_ai) = &app.mock_ai_client {
+        configure_mock_for_planning(mock_ai, "Test invalid authentication");
+    }
 
     // Test with invalid user ID - should still work but with proper isolation
     let invalid_result = planning_service.generate_plan(
@@ -634,7 +847,22 @@ async fn test_planning_service_data_integrity_a08() {
         &long_goal,
     ];
 
+    // Configure mock AI for all goals at once
+    if let Some(mock_ai) = &app.mock_ai_client {
+        // Convert &str goals to owned Strings for the mock configuration
+        // We need to provide enough responses for potential retries (3 per goal)
+        let mut all_goals = Vec::new();
+        for goal in &test_goals {
+            // Add 3 copies of each goal to handle retries
+            for _ in 0..3 {
+                all_goals.push(goal.to_string());
+            }
+        }
+        configure_mock_for_multiple_planning_calls(mock_ai, all_goals);
+    }
+
     for goal in test_goals {
+        
         let result = planning_service.generate_plan(
             goal,
             &context,
@@ -678,6 +906,11 @@ async fn test_planning_service_ssrf_prevention_a10() {
     ];
 
     for malicious_goal in malicious_goals {
+        // Configure mock AI for each malicious goal
+        if let Some(mock_ai) = &app.mock_ai_client {
+            configure_mock_for_planning(mock_ai, malicious_goal);
+        }
+        
         let result = planning_service.generate_plan(
             malicious_goal,
             &context,

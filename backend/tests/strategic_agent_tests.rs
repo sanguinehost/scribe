@@ -113,19 +113,21 @@ async fn test_generate_narrative_direction_mystery() {
         },
     ];
 
-    let result = strategic_agent.generate_narrative_direction(
+    let result = strategic_agent.analyze_conversation(
         &mystery_history,
         user_id,
         &session_dek,
     ).await;
 
     assert!(result.is_ok());
-    let direction = result.unwrap();
+    let directive = result.unwrap();
     
-    // Should identify mystery elements
-    assert!(direction.to_lowercase().contains("mystery") || 
-            direction.to_lowercase().contains("investigate") ||
-            direction.to_lowercase().contains("suspicious"));
+    // Should identify mystery elements in the directive type or narrative arc
+    assert!(directive.directive_type.to_lowercase().contains("mystery") || 
+            directive.directive_type.to_lowercase().contains("investigate") ||
+            directive.directive_type.to_lowercase().contains("suspicious") ||
+            directive.narrative_arc.to_lowercase().contains("mystery") ||
+            directive.narrative_arc.to_lowercase().contains("investigate"));
 }
 
 #[tokio::test]
@@ -158,8 +160,7 @@ async fn test_create_strategic_directive_social_interaction() {
         },
     ];
 
-    let result = strategic_agent.create_strategic_directive(
-        &narrative_direction,
+    let result = strategic_agent.analyze_conversation(
         &social_history,
         user_id,
         &session_dek,

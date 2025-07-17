@@ -375,6 +375,8 @@ mod realtime_extraction_tests {
             agentic_orchestrator
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -624,6 +626,8 @@ mod realtime_extraction_tests {
             agentic_orchestrator
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -892,6 +896,8 @@ mod realtime_extraction_tests {
             agentic_orchestrator
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -1158,6 +1164,8 @@ mod realtime_extraction_tests {
             agentic_orchestrator
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -1429,6 +1437,8 @@ mod realtime_extraction_tests {
             agentic_orchestrator
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),

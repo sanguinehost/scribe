@@ -265,6 +265,8 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

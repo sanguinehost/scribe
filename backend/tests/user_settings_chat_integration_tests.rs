@@ -444,6 +444,8 @@ async fn test_chat_session_uses_user_default_model() {
             ))
         },
         hierarchical_context_assembler: None,
+        tactical_agent: None,
+        strategic_agent: None,
     };
 
     let app_state_for_session = Arc::new(AppState::new(db_pool, config, app_services));
