@@ -919,20 +919,56 @@ pub struct ContextCache {
         *   [x] **Emotional State Analysis** (Line 636) - ✅ **IMPLEMENTED** - Flash AI emotional state analysis
         *   [x] **Risk Identification System** (Line 512) - ✅ **IMPLEMENTED** - Multi-factor risk assessment framework
     *   **[ ] Subtask 6.2.2: Hybrid Query Service Completeness**
-        *   **Current State:** ✅ **HybridQueryService exists with sophisticated architecture**, 6/9 critical features implemented
+        *   **Current State:** ⚠️ **HybridQueryService exists but only 2/9 features use AI** - Major refactoring needed
         *   **File:** `backend/src/services/hybrid_query_service.rs`
         *   **Infrastructure:** ✅ Complete with routing, circuit breakers, comprehensive test coverage
-        *   **Implementation Status:** ~75% complete - architecture solid, core integrations working, relationship analysis implemented
+        *   **Implementation Status:** ~22% AI-compliant - Only Entity Context Building and Item Systems use Flash-Lite
+        *   **🚨 CRITICAL REQUIREMENT:** ALL features MUST use Flash/Flash-Lite AI models - NO hardcoded logic beyond JSON parsing
+        *   **Reference Architecture:** See `docs/SANGUINE_SCRIBE_LIVING_WORLD_ARCHITECTURE.md` for AI-driven design principles
+        *   **🧪 TESTING REQUIREMENT:** Each refactored feature MUST have:
+            *   [ ] Functional tests covering all use cases (see existing pattern in `backend/tests/`)
+            *   [ ] OWASP Top 10 security tests (follow pattern from `hybrid_query_entity_context_security_tests.rs`)
+            *   [ ] All tests must pass before marking feature as complete
         *   **Priority Order (High → Medium → Low):**
         *   [x] **Entity Manager Integration** (Line 916) - ⭐ **CRITICAL** - ✅ **COMPLETED** - Replace `get_entity_current_state` stub with actual ECS calls
-        *   [x] **Event Participants Finding** (Line 839, 1002) - ⭐ **HIGH VALUE** - ✅ **COMPLETED** - Parse chronicle events for actor/participant data
-        *   [x] **Query Relevance Scoring** (Line 911) - 🧠 **SEMANTIC ANALYSIS** - ✅ **COMPLETED** - Replace hardcoded scores with multi-factor similarity analysis
-        *   [x] **Historical State Reconstruction** (Line 948) - 🕰️ **COMPLEX LOGIC** - ✅ **COMPLETED** - Reconstruct entity states at specific event times
-        *   [x] **Event Significance Scoring** (Line 950) - 📊 **ALGORITHM DESIGN** - ✅ **COMPLETED** - Replace hardcoded scores with multi-factor calculation
-        *   [x] **Relationship Analysis** (Line 1034, 1058) - 📈 **TEMPORAL TRENDS** - ✅ **COMPLETED** - Analyze relationship strength changes over time
-        *   [x] **Narrative Answer Generation** (Line 1156) - 📝 **AI-POWERED** - Flash AI narrative synthesis from query results - ✅ **COMPLETED**
-        *   [ ] **Entity Context Building** (Line 1080) - 🔍 **COMPREHENSIVE PARSING** - Rich context building from event content
-        *   [ ] **Item Systems** (Line 1718-1719) - 📦 **COMPREHENSIVE TRACKING** - Item ownership timelines and usage patterns
+        *   [ ] **Event Participants Finding** (Line 839, 1002) - ⭐ **HIGH VALUE** - ❌ **HARDCODED** - Currently just extracts actor data from events
+            *   **Refactoring Required:**
+                *   [ ] Create structured output schema for event participant analysis (follow `tactical_structured_output.rs` pattern)
+                *   [ ] Replace direct JSON extraction with Flash-Lite AI call using prompt: "Analyze this event and extract all participants, their roles, and relationships"
+                *   [ ] Add entity resolution for participant names to IDs
+                *   [ ] Include confidence scores for each identified participant
+        *   [ ] **Query Relevance Scoring** (Line 911) - 🧠 **SEMANTIC ANALYSIS** - ❌ **HARDCODED** - Using hardcoded scores by query type
+            *   **Refactoring Required:**
+                *   [ ] Create structured output schema for relevance scoring with multi-factor analysis
+                *   [ ] Use Flash-Lite to analyze: query text, entity context, event summaries, and temporal relevance
+                *   [ ] Replace hardcoded match statements with AI-driven relevance calculation
+                *   [ ] Include factors: semantic similarity, temporal proximity, entity involvement, event significance
+        *   [ ] **Historical State Reconstruction** (Line 948) - 🕰️ **COMPLEX LOGIC** - ❌ **HARDCODED** - Uses procedural logic for state reconstruction
+            *   **Refactoring Required:**
+                *   [ ] Create structured output schema for historical state analysis
+                *   [ ] Use Flash-Lite to analyze event sequence and infer state changes
+                *   [ ] Replace procedural reconstruction with AI-driven state inference
+                *   [ ] Include confidence levels for reconstructed states
+        *   [ ] **Event Significance Scoring** (Line 950) - 📊 **ALGORITHM DESIGN** - ❌ **HARDCODED** - Using hardcoded significance values by event type
+            *   **Refactoring Required:**
+                *   [ ] Create structured output schema for significance scoring
+                *   [ ] Use Flash-Lite to analyze: event type, participant count, narrative impact, causal relationships
+                *   [ ] Replace hardcoded event type matching with AI-driven significance analysis
+                *   [ ] Include multi-factor scoring: narrative weight, character impact, world state changes
+        *   [ ] **Relationship Analysis** (Line 1034, 1058) - 📈 **TEMPORAL TRENDS** - ❌ **HARDCODED** - Using hardcoded calculations for relationship metrics
+            *   **Refactoring Required:**
+                *   [ ] Create structured output schema for relationship analysis (strength, type, evolution)
+                *   [ ] Use Flash-Lite to analyze interaction patterns and relationship evolution
+                *   [ ] Replace hardcoded strength calculations with AI-driven relationship assessment
+                *   [ ] Include temporal analysis, emotional valence, and relationship trajectory prediction
+        *   [ ] **Narrative Answer Generation** (Line 1156) - 📝 **AI-POWERED** - ❌ **HARDCODED** - Using template-based string formatting
+            *   **Refactoring Required:**
+                *   [ ] Create structured output schema for narrative generation
+                *   [ ] Use Flash or Flash-Lite to generate contextual, engaging narratives from query results
+                *   [ ] Replace template strings with AI-generated narrative that adapts to context
+                *   [ ] Include narrative elements: tone, perspective, detail level based on query type
+        *   [x] **Entity Context Building** (Line 1080) - 🔍 **COMPREHENSIVE PARSING** - Rich context building from event content - ✅ **COMPLETED** - AI-driven entity context extraction with Flash-Lite integration
+        *   [x] **Item Systems** (Line 1718-1719) - 📦 **COMPREHENSIVE TRACKING** - Item ownership timelines and usage patterns - ✅ **COMPLETED** - Comprehensive item tracking with AI-driven analysis
 
 *   **[ ] Task 6.3: End-to-End Scenario Testing**
     *   **[ ] Subtask 6.3.1: Write Full Loop Test:** Write an integration test simulating a multi-turn conversation, asserting the world state in the database is correctly and consistently updated by the full `Strategic -> Tactical -> Perception` loop.
