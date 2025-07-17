@@ -32,6 +32,8 @@ pub mod event_participants_structured_output;
 pub mod query_relevance_structured_output;
 pub mod historical_state_reconstruction_structured_output;
 pub mod event_significance_structured_output;
+pub mod relationship_analysis_structured_output;
+pub mod narrative_answer_generation_structured_output;
 pub mod types;
 
 

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue};
 use tracing::{info, warn, debug, instrument};
 use chrono::{DateTime, Utc};
-use genai::chat::{ChatMessage, ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, ChatResponse, MessageContent};
+use genai::chat::{ChatMessage, ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, ChatResponse, MessageContent, ChatRole};
 
 use crate::{
     PgPool,
@@ -30,6 +30,12 @@ use crate::{
     llm::AiClient,
     models::chronicle_event::ChronicleEvent,
     services::{
+        agentic::relationship_analysis_structured_output::{
+            RelationshipAnalysisOutput, get_relationship_analysis_schema
+        },
+        agentic::narrative_answer_generation_structured_output::{
+            NarrativeGenerationOutput, get_narrative_generation_schema
+        },
         ecs_entity_manager::EcsEntityManager,
         ecs_enhanced_rag_service::{
             EcsEnhancedRagService, EnhancedRagQuery,
@@ -2568,7 +2574,7 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         Ok(relationships)
     }
 
-    /// Analyze relationship between two specific entities
+    /// Analyze relationship between two specific entities using AI-driven analysis
     async fn analyze_entity_pair_relationship(
         &self,
         entity_a: Uuid,
@@ -2605,12 +2611,22 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         // Analyze relationship history from chronicle events
         let relationship_history = self.extract_relationship_history(entity_a, entity_b, events).await?;
         
-        // Calculate relationship metrics
-        let metrics = self.calculate_relationship_metrics(
+        // Use AI to analyze relationship instead of hardcoded logic
+        let ai_analysis = self.analyze_relationship_with_ai(
+            entity_a,
+            entity_b,
+            events,
             &current_relationship,
-            &relationship_history,
-            events
+            &relationship_history
         ).await?;
+        
+        // Convert AI analysis to legacy RelationshipMetrics format for backward compatibility
+        let metrics = RelationshipMetrics {
+            stability: ai_analysis.relationship_metrics.stability,
+            strength: ai_analysis.relationship_metrics.strength,
+            trend: self.convert_ai_trend_to_legacy(&ai_analysis.relationship_metrics.trend),
+            interaction_count: relationship_history.len(),
+        };
         
         Ok(RelationshipAnalysis {
             from_entity_id: entity_a,
@@ -2619,6 +2635,138 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
             relationship_history,
             analysis: metrics,
         })
+    }
+    
+    /// Analyze relationship using AI with structured output
+    async fn analyze_relationship_with_ai(
+        &self,
+        entity_a: Uuid,
+        entity_b: Uuid,
+        events: &[ChronicleEvent],
+        current_relationship: &Option<RelationshipContext>,
+        relationship_history: &[RelationshipHistoryEntry],
+    ) -> Result<RelationshipAnalysisOutput, AppError> {
+        // Prepare context for AI analysis
+        let mut context_data = serde_json::json!({
+            "entity_a_id": entity_a,
+            "entity_b_id": entity_b,
+            "events_count": events.len(),
+            "relationship_history_count": relationship_history.len()
+        });
+        
+        // Add current relationship data if available
+        if let Some(current) = current_relationship {
+            context_data["current_relationship"] = serde_json::json!({
+                "relationship_type": current.relationship_type,
+                "relationship_data": current.relationship_data
+            });
+        }
+        
+        // Add relationship history data
+        context_data["relationship_history"] = serde_json::json!(
+            relationship_history.iter().map(|entry| {
+                serde_json::json!({
+                    "timestamp": entry.timestamp,
+                    "relationship_type": entry.relationship_type,
+                    "relationship_data": entry.relationship_data,
+                    "triggering_event": entry.triggering_event
+                })
+            }).collect::<Vec<_>>()
+        );
+        
+        // Add relevant events for context
+        context_data["relevant_events"] = serde_json::json!(
+            events.iter().take(10).map(|event| {
+                serde_json::json!({
+                    "event_type": event.event_type,
+                    "summary": event.summary,
+                    "timestamp": event.timestamp_iso8601,
+                    "actors": event.actors
+                })
+            }).collect::<Vec<_>>()
+        );
+        
+        // Create AI prompt for relationship analysis
+        let system_prompt = format!(
+            "You are an expert relationship analyst specializing in analyzing complex relationships between entities based on historical events and interactions. Your task is to provide a comprehensive analysis of the relationship between two entities.
+
+            Analyze the relationship between Entity A (ID: {}) and Entity B (ID: {}) based on the provided context data, events, and relationship history.
+
+            Consider the following aspects in your analysis:
+            1. **Relationship Type & Nature**: Identify the type of relationship (friendship, rivalry, family, professional, romantic, etc.) and its current nature
+            2. **Power Dynamics**: Analyze the power balance, authority structures, and influence patterns
+            3. **Communication Patterns**: Assess frequency, quality, directness, and conflict resolution styles
+            4. **Emotional Dynamics**: Evaluate emotional intensity, valence, stability, and dominant emotions
+            5. **Trust & Loyalty**: Measure trust levels, loyalty strength, reliability, and commitment factors
+            6. **Relationship Metrics**: Calculate strength, stability, interaction frequency, quality, and mutual dependence
+            7. **Historical Analysis**: Identify relationship phases, turning points, milestones, and patterns
+            8. **Trend Analysis**: Determine relationship direction, trend strength, and predict future development
+
+            Provide a comprehensive analysis with specific metrics, detailed explanations, and evidence-based insights.",
+            entity_a, entity_b
+        );
+        
+        let user_prompt = format!(
+            "Analyze the relationship between these two entities based on the following context:
+
+            Context Data:
+            {}
+
+            Please provide a detailed relationship analysis including:
+            - Comprehensive relationship details with power dynamics, communication patterns, emotional dynamics, and trust/loyalty analysis
+            - Quantitative metrics for strength, stability, interaction frequency, quality, and mutual dependence
+            - Historical analysis with phases, turning points, milestones, and patterns
+            - Trend analysis with direction, strength, confidence, and predictions
+            - Overall confidence score and detailed justification
+
+            Focus on evidence-based analysis using the provided events and relationship history. Ensure all numerical values are within their specified ranges (0.0-1.0 for most metrics, -1.0 to 1.0 for emotional valence).",
+            serde_json::to_string_pretty(&context_data).unwrap_or_else(|_| "{}".to_string())
+        );
+        
+        // Set up structured output
+        let schema = get_relationship_analysis_schema();
+        let chat_options = ChatOptions {
+            response_format: Some(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+                schema,
+            })),
+            ..Default::default()
+        };
+        
+        let messages = vec![
+            ChatMessage::system(&system_prompt),
+            ChatMessage::user(MessageContent::Text(user_prompt)),
+        ];
+        
+        let chat_request = ChatRequest::new(messages);
+        
+        // Use Flash-Lite for relationship analysis
+        let ai_response = self.ai_client
+            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_request, Some(chat_options))
+            .await?;
+        
+        // Parse the AI response
+        let content = ai_response.first_content_text_as_str().unwrap_or("{}");
+        let analysis: RelationshipAnalysisOutput = serde_json::from_str(content)
+            .map_err(|e| AppError::BadRequest(format!("Failed to parse AI relationship analysis response: {}", e)))?;
+        
+        // Validate the analysis
+        analysis.validate()?;
+        
+        debug!("AI relationship analysis completed for entities {} and {} with confidence {}", 
+            entity_a, entity_b, analysis.confidence_score);
+        
+        Ok(analysis)
+    }
+    
+    /// Convert AI trend direction to legacy RelationshipTrend enum
+    fn convert_ai_trend_to_legacy(&self, ai_trend: &crate::services::agentic::relationship_analysis_structured_output::RelationshipTrendOutput) -> RelationshipTrend {
+        match ai_trend.direction.as_str() {
+            "improving" => RelationshipTrend::Improving,
+            "declining" => RelationshipTrend::Declining,
+            "stable" => RelationshipTrend::Stable,
+            "volatile" => RelationshipTrend::Volatile,
+            _ => RelationshipTrend::Unknown,
+        }
     }
 
     /// Build basic entity contexts for fallback mode
@@ -3341,28 +3489,9 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
                     relationship_analysis.analysis.trend
                 ));
                 
-                // Identify key turning points in the relationship
-                if relationship_analysis.relationship_history.len() >= 2 {
-                    let turning_points = self.identify_relationship_turning_points(
-                        &relationship_analysis.relationship_history
-                    );
-                    
-                    if !turning_points.is_empty() {
-                        result.summary.key_insights.push(format!(
-                            "Key turning points identified: {} significant relationship changes",
-                            turning_points.len()
-                        ));
-                        
-                        // Add details about the most significant turning point
-                        if let Some(most_significant) = turning_points.first() {
-                            result.summary.key_insights.push(format!(
-                                "Most significant change: {} (strength change: {:.2})",
-                                most_significant.relationship_type,
-                                most_significant.strength_change
-                            ));
-                        }
-                    }
-                }
+                // Note: Relationship turning points are now analyzed by AI
+                // This provides more contextual and intelligent analysis
+                // compared to the previous hardcoded approach
                 
                 // Add historical context
                 if relationship_analysis.analysis.interaction_count > 0 {
@@ -4629,199 +4758,12 @@ Return a structured JSON analysis following the exact schema provided."#
     }
 
     /// Calculate relationship metrics from current state and history
-    async fn calculate_relationship_metrics(
-        &self,
-        current_relationship: &Option<RelationshipContext>,
-        relationship_history: &[RelationshipHistoryEntry],
-        events: &[ChronicleEvent],
-    ) -> Result<RelationshipMetrics, AppError> {
-        let mut stability = 0.5;
-        let mut strength = 0.0;
-        let mut trend = RelationshipTrend::Unknown;
-        let interaction_count = relationship_history.len();
-        
-        // Calculate current strength from current relationship
-        if let Some(current) = current_relationship {
-            strength = self.extract_relationship_strength(&current.relationship_data);
-        }
-        
-        // Calculate stability based on relationship history
-        if relationship_history.len() >= 2 {
-            stability = self.calculate_relationship_stability(relationship_history);
-        }
-        
-        // Calculate trend based on recent history
-        if relationship_history.len() >= 3 {
-            trend = self.calculate_relationship_trend(relationship_history);
-        }
-        
-        // Adjust metrics based on interaction frequency
-        let interaction_frequency = self.calculate_interaction_frequency(events).await?;
-        if interaction_frequency > 0.8 {
-            // High interaction frequency can increase stability
-            stability = (stability + 0.1).min(1.0);
-        }
-        
-        Ok(RelationshipMetrics {
-            stability,
-            strength,
-            trend,
-            interaction_count,
-        })
-    }
-
-    /// Extract relationship strength from relationship data
-    fn extract_relationship_strength(&self, relationship_data: &serde_json::Value) -> f32 {
-        // Look for various strength indicators
-        if let Some(strength) = relationship_data.get("strength").and_then(|v| v.as_f64()) {
-            return strength as f32;
-        }
-        
-        if let Some(trust) = relationship_data.get("trust").and_then(|v| v.as_f64()) {
-            return trust as f32;
-        }
-        
-        if let Some(affection) = relationship_data.get("affection").and_then(|v| v.as_f64()) {
-            return affection as f32;
-        }
-        
-        if let Some(valence) = relationship_data.get("valence").and_then(|v| v.as_f64()) {
-            return (valence / 100.0) as f32; // Assuming valence is -100 to 100
-        }
-        
-        if let Some(inferred_strength) = relationship_data.get("inferred_strength").and_then(|v| v.as_f64()) {
-            return inferred_strength as f32;
-        }
-        
-        // Default neutral strength
-        0.5
-    }
-
-    /// Calculate relationship stability based on history
-    fn calculate_relationship_stability(&self, history: &[RelationshipHistoryEntry]) -> f32 {
-        if history.len() < 2 {
-            return 0.5;
-        }
-        
-        let mut strength_changes = Vec::new();
-        let mut previous_strength = 0.5;
-        
-        for entry in history {
-            let current_strength = self.extract_relationship_strength(&entry.relationship_data);
-            let change = (current_strength - previous_strength).abs();
-            strength_changes.push(change);
-            previous_strength = current_strength;
-        }
-        
-        // Calculate variance of changes
-        let mean_change: f32 = strength_changes.iter().sum::<f32>() / strength_changes.len() as f32;
-        let variance: f32 = strength_changes.iter()
-            .map(|change| (change - mean_change).powi(2))
-            .sum::<f32>() / strength_changes.len() as f32;
-        
-        // Lower variance means higher stability
-        (1.0 - variance.sqrt()).max(0.0)
-    }
-
-    /// Calculate relationship trend based on recent history
-    fn calculate_relationship_trend(&self, history: &[RelationshipHistoryEntry]) -> RelationshipTrend {
-        if history.len() < 3 {
-            return RelationshipTrend::Unknown;
-        }
-        
-        // Look at the last 3 entries to determine trend
-        let recent_entries = &history[history.len().saturating_sub(3)..];
-        let mut strengths = Vec::new();
-        
-        for entry in recent_entries {
-            strengths.push(self.extract_relationship_strength(&entry.relationship_data));
-        }
-        
-        // Calculate trend direction
-        let first_strength = strengths[0];
-        let last_strength = strengths[strengths.len() - 1];
-        let overall_change = last_strength - first_strength;
-        
-        // Calculate volatility
-        let mut changes = Vec::new();
-        for i in 1..strengths.len() {
-            changes.push((strengths[i] - strengths[i-1]).abs());
-        }
-        let volatility: f32 = changes.iter().sum::<f32>() / changes.len() as f32;
-        
-        // Determine trend
-        if volatility > 0.3 {
-            RelationshipTrend::Volatile
-        } else if overall_change > 0.1 {
-            RelationshipTrend::Improving
-        } else if overall_change < -0.1 {
-            RelationshipTrend::Declining
-        } else {
-            RelationshipTrend::Stable
-        }
-    }
-
-    /// Calculate interaction frequency from events
-    async fn calculate_interaction_frequency(&self, events: &[ChronicleEvent]) -> Result<f32, AppError> {
-        if events.is_empty() {
-            return Ok(0.0);
-        }
-        
-        // Calculate frequency based on event distribution over time
-        let first_event = events.first().unwrap();
-        let last_event = events.last().unwrap();
-        
-        let time_span = last_event.created_at - first_event.created_at;
-        let days_span = time_span.num_days() as f32;
-        
-        if days_span <= 0.0 {
-            return Ok(1.0); // All events in one day = high frequency
-        }
-        
-        let frequency = events.len() as f32 / days_span;
-        
-        // Normalize frequency to 0.0-1.0 range
-        // Assume 1 interaction per day = 1.0 frequency
-        Ok(frequency.min(1.0))
-    }
 
     /// Get user ID from events (helper method)
     fn get_user_id_from_events(&self, events: &[ChronicleEvent]) -> Option<Uuid> {
         events.first().map(|event| event.user_id)
     }
 
-    /// Identify key turning points in relationship history
-    fn identify_relationship_turning_points(&self, history: &[RelationshipHistoryEntry]) -> Vec<RelationshipTurningPoint> {
-        if history.len() < 2 {
-            return Vec::new();
-        }
-        
-        let mut turning_points = Vec::new();
-        let mut previous_strength = 0.5;
-        
-        for (i, entry) in history.iter().enumerate() {
-            let current_strength = self.extract_relationship_strength(&entry.relationship_data);
-            let strength_change = current_strength - previous_strength;
-            
-            // Consider a turning point if the change is significant (>0.2)
-            if strength_change.abs() > 0.2 {
-                turning_points.push(RelationshipTurningPoint {
-                    timestamp: entry.timestamp,
-                    relationship_type: entry.relationship_type.clone(),
-                    strength_change,
-                    triggering_event: entry.triggering_event,
-                    significance: strength_change.abs(), // Use absolute change as significance
-                });
-            }
-            
-            previous_strength = current_strength;
-        }
-        
-        // Sort by significance (most significant first)
-        turning_points.sort_by(|a, b| b.significance.partial_cmp(&a.significance).unwrap());
-        
-        turning_points
-    }
 
     /// Generate narrative answer from query results
     async fn generate_narrative_answer(
@@ -4831,73 +4773,268 @@ Return a structured JSON analysis following the exact schema provided."#
         relationships: &[RelationshipAnalysis],
         query: &HybridQuery,
     ) -> Result<String, AppError> {
-        debug!("Generating narrative answer for query type: {:?}", query.query_type);
+        debug!("Generating AI-driven narrative answer for query type: {:?}", query.query_type);
 
         // If we have no data, return a default response
         if entities.is_empty() && events.is_empty() && relationships.is_empty() {
             return Ok("No relevant information found for your query.".to_string());
         }
 
-        // Generate narrative based on query type
-        let narrative = match &query.query_type {
+        // Generate narrative using AI with structured output
+        let narrative_output = self.generate_narrative_with_ai(entities, events, relationships, query).await?;
+        
+        // Generate the final narrative text from the structured output
+        let final_narrative = narrative_output.generate_final_narrative();
+        
+        debug!("Generated narrative answer with quality assessment: {}", 
+               narrative_output.get_quality_assessment());
+
+        Ok(final_narrative)
+    }
+
+    /// Generate narrative using AI with structured output
+    async fn generate_narrative_with_ai(
+        &self,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+        relationships: &[RelationshipAnalysis],
+        query: &HybridQuery,
+    ) -> Result<NarrativeGenerationOutput, AppError> {
+        debug!("Generating AI-driven narrative for query: {:?}", query.query_type);
+
+        // Prepare context data for AI analysis
+        let context_data = self.prepare_narrative_context_data(entities, events, relationships, query).await?;
+        
+        // Create AI prompt for narrative generation
+        let system_prompt = self.build_narrative_generation_prompt(query, &context_data).await?;
+        
+        // Create chat request with structured output
+        let schema = get_narrative_generation_schema();
+        let chat_options = ChatOptions {
+            response_format: Some(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+                schema,
+            })),
+            ..Default::default()
+        };
+
+        let chat_request = ChatRequest::new(vec![
+            ChatMessage {
+                role: ChatRole::System,
+                content: MessageContent::Text(system_prompt),
+                options: None,
+            },
+            ChatMessage {
+                role: ChatRole::User,
+                content: MessageContent::Text(context_data),
+                options: None,
+            },
+        ]);
+
+        // Make AI request - use Flash-Lite model for narrative generation
+        let response = self.ai_client.exec_chat(
+            "gemini-2.5-flash-lite-preview-06-17",
+            chat_request,
+            Some(chat_options),
+        ).await
+        .map_err(|e| AppError::BadRequest(format!("AI narrative generation failed: {}", e)))?;
+
+        // Parse AI response
+        let response_text = response.first_content_text_as_str().unwrap_or_default();
+        
+        let narrative_output: NarrativeGenerationOutput = serde_json::from_str(&response_text)
+            .map_err(|e| AppError::SerializationError(format!("Failed to parse AI narrative response: {}", e)))?;
+
+        // Validate the output
+        narrative_output.validate()?;
+
+        debug!("AI narrative generation completed with confidence: {:.2}", narrative_output.confidence_score);
+
+        Ok(narrative_output)
+    }
+
+    /// Prepare context data for AI narrative generation
+    async fn prepare_narrative_context_data(
+        &self,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+        relationships: &[RelationshipAnalysis],
+        query: &HybridQuery,
+    ) -> Result<String, AppError> {
+        let mut context = String::new();
+        
+        // Add query context
+        context.push_str(&format!("Query Type: {:?}\n", query.query_type));
+        context.push_str(&format!("User ID: {}\n", query.user_id));
+        context.push_str(&format!("Chronicle ID: {:?}\n", query.chronicle_id));
+        context.push_str(&format!("Max Results: {}\n", query.max_results));
+        context.push_str(&format!("Include Current State: {}\n", query.include_current_state));
+        context.push_str(&format!("Include Relationships: {}\n", query.include_relationships));
+        context.push_str("\n");
+
+        // Add entities context
+        if !entities.is_empty() {
+            context.push_str(&format!("Entities ({} total):\n", entities.len()));
+            for (i, entity) in entities.iter().take(10).enumerate() {
+                let name = entity.entity_name.as_ref().map(|s| s.as_str()).unwrap_or("Unknown Entity");
+                context.push_str(&format!("{}. {} (Relevance: {:.2})\n", i + 1, name, entity.relevance_score));
+                
+                // Add current state if available
+                if let Some(current_state) = &entity.current_state {
+                    context.push_str(&format!("   Current State: {} components\n", current_state.components.len()));
+                }
+                
+                // Add timeline events
+                if !entity.timeline_events.is_empty() {
+                    context.push_str(&format!("   Timeline Events: {}\n", entity.timeline_events.len()));
+                    for (j, timeline_event) in entity.timeline_events.iter().take(3).enumerate() {
+                        context.push_str(&format!("     {}. {} - {}\n", 
+                                                j + 1, 
+                                                timeline_event.event.event_type, 
+                                                timeline_event.event.summary));
+                    }
+                }
+            }
+            context.push_str("\n");
+        }
+
+        // Add events context
+        if !events.is_empty() {
+            context.push_str(&format!("Events ({} total):\n", events.len()));
+            for (i, event) in events.iter().take(10).enumerate() {
+                context.push_str(&format!("{}. {} - {} ({})\n", 
+                                        i + 1, 
+                                        event.event_type, 
+                                        event.summary, 
+                                        event.created_at.format("%Y-%m-%d %H:%M")));
+                
+                // Add event data if available
+                if let Some(data) = &event.event_data {
+                    context.push_str(&format!("   Data: {}\n", data.to_string()));
+                }
+            }
+            context.push_str("\n");
+        }
+
+        // Add relationships context
+        if !relationships.is_empty() {
+            context.push_str(&format!("Relationships ({} total):\n", relationships.len()));
+            for (i, relationship) in relationships.iter().take(5).enumerate() {
+                context.push_str(&format!("{}. Strength: {:.2}, Trend: {:?}\n", 
+                                        i + 1, 
+                                        relationship.analysis.strength, 
+                                        relationship.analysis.trend));
+            }
+            context.push_str("\n");
+        }
+
+        Ok(context)
+    }
+
+    /// Build AI prompt for narrative generation
+    async fn build_narrative_generation_prompt(
+        &self,
+        query: &HybridQuery,
+        context_data: &str,
+    ) -> Result<String, AppError> {
+        let query_type_description = match &query.query_type {
             HybridQueryType::EntityTimeline { entity_name, .. } => {
-                self.generate_entity_timeline_narrative(entity_name, entities, events).await?
+                format!("Generate a comprehensive timeline narrative for entity: {}", entity_name)
             }
             HybridQueryType::EventParticipants { event_description, .. } => {
-                self.generate_event_participants_narrative(event_description, entities, events).await?
+                format!("Generate a narrative about participants in event: {}", event_description)
             }
             HybridQueryType::RelationshipHistory { entity_a, entity_b, .. } => {
-                self.generate_relationship_history_narrative(entity_a, entity_b, relationships, events).await?
+                format!("Generate a narrative about the relationship history between: {} and {}", entity_a, entity_b)
             }
             HybridQueryType::LocationQuery { location_name, .. } => {
-                self.generate_location_query_narrative(location_name, entities, events).await?
+                format!("Generate a narrative about location: {}", location_name)
             }
             HybridQueryType::NarrativeQuery { query_text, .. } => {
-                self.generate_narrative_query_response(query_text, entities, events, relationships).await?
+                format!("Generate a narrative response to: {}", query_text)
             }
             HybridQueryType::EntityStateAtTime { entity_id, timestamp, .. } => {
-                self.generate_entity_state_narrative(*entity_id, *timestamp, entities).await?
+                format!("Generate a narrative about entity {} at time {}", entity_id, timestamp)
             }
             HybridQueryType::CausalChain { from_event, to_entity, .. } => {
-                self.generate_causal_chain_narrative(from_event, to_entity, events).await?
+                match (from_event, to_entity) {
+                    (Some(event_id), Some(entity_id)) => format!("Generate a narrative about causal chain from event {} to entity {}", event_id, entity_id),
+                    (Some(event_id), None) => format!("Generate a narrative about causal chain from event {}", event_id),
+                    (None, Some(entity_id)) => format!("Generate a narrative about causal chain affecting entity {}", entity_id),
+                    (None, None) => "Generate a narrative about causal chain analysis".to_string(),
+                }
             }
             HybridQueryType::TemporalPath { entity_id, .. } => {
-                self.generate_temporal_path_narrative(*entity_id, entities, events).await?
+                format!("Generate a narrative about temporal path for entity: {}", entity_id)
             }
             HybridQueryType::RelationshipNetwork { center_entity_id, .. } => {
-                self.generate_relationship_network_narrative(*center_entity_id, relationships).await?
+                format!("Generate a narrative about relationship network centered on: {}", center_entity_id)
             }
             HybridQueryType::CausalInfluences { entity_id, .. } => {
-                self.generate_causal_influences_narrative(*entity_id, events).await?
+                format!("Generate a narrative about causal influences for entity: {}", entity_id)
             }
             HybridQueryType::WorldModelSnapshot { .. } => {
-                self.generate_world_model_snapshot_narrative(entities, events, relationships).await?
+                "Generate a narrative about the current world model snapshot".to_string()
             }
-            // Item query types
             HybridQueryType::ItemTimeline => {
-                self.generate_item_timeline_narrative(events).await?
+                "Generate a narrative about item timeline".to_string()
             }
             HybridQueryType::ItemUsage => {
-                self.generate_item_usage_narrative(events).await?
+                "Generate a narrative about item usage".to_string()
             }
             HybridQueryType::ItemLocation => {
-                self.generate_item_location_narrative(events).await?
+                "Generate a narrative about item location".to_string()
             }
             HybridQueryType::ItemLifecycle => {
-                self.generate_item_lifecycle_narrative(events).await?
+                "Generate a narrative about item lifecycle".to_string()
             }
             HybridQueryType::ItemInteractions => {
-                self.generate_item_interactions_narrative(entities, events).await?
+                "Generate a narrative about item interactions".to_string()
             }
             HybridQueryType::ItemSearch => {
-                self.generate_item_search_narrative(events).await?
+                "Generate a narrative about item search results".to_string()
             }
         };
 
-        Ok(narrative)
+        let prompt = format!(
+            r#"You are an expert narrative generator for the Sanguine Scribe Living World system. Your task is to create engaging, informative, and well-structured narrative responses based on the provided data.
+
+Task: {}
+
+Instructions:
+1. Create a comprehensive narrative that addresses the specific query type and user request
+2. Use the provided context data to inform your narrative, but don't just list facts - weave them into a coherent story
+3. Structure your response with clear sections and logical flow
+4. Ensure the narrative is engaging and readable while being informative
+5. Include relevant details from entities, events, and relationships when available
+6. Maintain consistency with the established world and character information
+7. Use appropriate tone and style for the context (formal, conversational, analytical, etc.)
+8. Provide supporting details and evidence for your narrative claims
+9. Include a clear opening statement and conclusion
+10. Assess the quality of your narrative across multiple dimensions
+
+Quality Requirements:
+- Clarity: The narrative should be easy to understand and follow
+- Completeness: Cover all relevant aspects of the query
+- Engagement: Keep the reader interested throughout
+- Accuracy: Ensure all information is faithful to the provided context
+- Readability: Use appropriate language and structure
+- Cohesion: Maintain logical flow and connections between ideas
+- Information Density: Balance detail with readability
+
+Context Data:
+{}"#,
+            query_type_description,
+            context_data
+        );
+
+        Ok(prompt)
     }
 
-    /// Generate narrative for entity timeline queries
+    // NOTE: All hardcoded narrative generation methods below have been replaced with AI-driven generation
+    // They are kept for reference but are no longer called from generate_narrative_answer
+    
+    /// Generate narrative for entity timeline queries (DEPRECATED: Now uses AI)
+    #[allow(dead_code)]
     async fn generate_entity_timeline_narrative(
         &self,
         entity_name: &str,
@@ -4984,7 +5121,8 @@ Return a structured JSON analysis following the exact schema provided."#
         Ok(narrative)
     }
 
-    /// Generate narrative for event participants queries
+    /// Generate narrative for event participants queries (DEPRECATED: Now uses AI)
+    #[allow(dead_code)]
     async fn generate_event_participants_narrative(
         &self,
         event_description: &str,
@@ -5025,7 +5163,8 @@ Return a structured JSON analysis following the exact schema provided."#
         Ok(narrative)
     }
 
-    /// Generate narrative for relationship history queries
+    /// Generate narrative for relationship history queries (DEPRECATED: Now uses AI)
+    #[allow(dead_code)]
     async fn generate_relationship_history_narrative(
         &self,
         entity_a: &str,
@@ -5073,7 +5212,8 @@ Return a structured JSON analysis following the exact schema provided."#
         Ok(narrative)
     }
 
-    /// Generate narrative for location queries
+    /// Generate narrative for location queries (DEPRECATED: Now uses AI)
+    #[allow(dead_code)]
     async fn generate_location_query_narrative(
         &self,
         location_name: &str,
@@ -5118,7 +5258,8 @@ Return a structured JSON analysis following the exact schema provided."#
         Ok(narrative)
     }
 
-    /// Generate narrative for general narrative queries
+    /// Generate narrative for general narrative queries (DEPRECATED: Now uses AI)
+    #[allow(dead_code)]
     async fn generate_narrative_query_response(
         &self,
         query_text: &str,
@@ -5169,7 +5310,8 @@ Return a structured JSON analysis following the exact schema provided."#
         Ok(narrative)
     }
 
-    /// Generate narrative for entity state at time queries
+    /// Generate narrative for entity state at time queries (DEPRECATED: Now uses AI)
+    #[allow(dead_code)]
     async fn generate_entity_state_narrative(
         &self,
         entity_id: Uuid,
