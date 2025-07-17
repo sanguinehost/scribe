@@ -391,6 +391,7 @@ async fn initialize_ecs_services(
         Arc::new(pool.clone()),
         Default::default(), // Use default config
         feature_flags.clone(),
+        ai_client_arc.clone(),
         ecs_entity_manager.clone(),
         ecs_enhanced_rag_service.clone(),
         ecs_graceful_degradation.clone(),

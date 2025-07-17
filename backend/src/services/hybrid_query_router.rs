@@ -506,6 +506,43 @@ impl HybridQueryRouter {
                 estimated_entity_count = focus_entities.as_ref().map(|e| e.len()).unwrap_or(100);
                 data_volume = DataVolume::Large;
             },
+            // Item-related query types
+            HybridQueryType::ItemTimeline { .. } => {
+                complexity_score += 0.3;
+                requires_current_state = true;
+                estimated_entity_count = 1;
+                data_volume = DataVolume::Medium;
+            },
+            HybridQueryType::ItemUsage { .. } => {
+                complexity_score += 0.4;
+                requires_current_state = true;
+                estimated_entity_count = 5;
+                data_volume = DataVolume::Medium;
+            },
+            HybridQueryType::ItemLocation { .. } => {
+                complexity_score += 0.2;
+                requires_current_state = true;
+                estimated_entity_count = 1;
+                data_volume = DataVolume::Small;
+            },
+            HybridQueryType::ItemLifecycle { .. } => {
+                complexity_score += 0.5;
+                requires_current_state = true;
+                estimated_entity_count = 1;
+                data_volume = DataVolume::Medium;
+            },
+            HybridQueryType::ItemInteractions { .. } => {
+                complexity_score += 0.4;
+                requires_current_state = true;
+                estimated_entity_count = 5;
+                data_volume = DataVolume::Medium;
+            },
+            HybridQueryType::ItemSearch { .. } => {
+                complexity_score += 0.3;
+                requires_current_state = true;
+                estimated_entity_count = 10;
+                data_volume = DataVolume::Medium;
+            },
         }
 
         // Adjust for max results

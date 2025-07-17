@@ -258,6 +258,7 @@ mod tests {
                 pool.clone(),
                 Default::default(),
                 Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                ai_client.clone(),
                 entity_manager.clone(),
                 Arc::new(crate::services::EcsEnhancedRagService::new(
                     pool.clone(),
@@ -317,6 +318,7 @@ mod tests {
                     pool.clone(),
                     Default::default(),
                     Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                    ai_client.clone(),
                     entity_manager.clone(),
                     Arc::new(crate::services::EcsEnhancedRagService::new(
                         pool.clone(),
@@ -352,6 +354,7 @@ mod tests {
                     pool.clone(),
                     Default::default(),
                     Arc::new(crate::config::NarrativeFeatureFlags::default()),
+                    ai_client.clone(),
                     entity_manager.clone(),
                     Arc::new(crate::services::EcsEnhancedRagService::new(
                         pool.clone(),

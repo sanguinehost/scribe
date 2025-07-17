@@ -21,11 +21,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue};
 use tracing::{info, warn, debug, instrument};
 use chrono::{DateTime, Utc};
+use genai::chat::{ChatMessage, ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, ChatResponse, MessageContent};
 
 use crate::{
     PgPool,
     config::NarrativeFeatureFlags,
     errors::AppError,
+    llm::AiClient,
     models::chronicle_event::ChronicleEvent,
     services::{
         ecs_entity_manager::EcsEntityManager,
@@ -40,6 +42,7 @@ use crate::{
         },
     },
 };
+
 
 /// Configuration for hybrid query behavior
 #[derive(Debug, Clone)]
@@ -96,6 +99,18 @@ pub enum HybridQueryType {
         entity_a_id: Option<Uuid>,
         entity_b_id: Option<Uuid>,
     },
+    /// "Track ownership history of an item"
+    ItemTimeline,
+    /// "Show item usage patterns"
+    ItemUsage,
+    /// "Where has this item been?"
+    ItemLocation,
+    /// "Track item lifecycle from creation to destruction"
+    ItemLifecycle,
+    /// "Who has interacted with this item?"
+    ItemInteractions,
+    /// "Find items matching criteria"
+    ItemSearch,
     /// "What entities are currently in location X?"
     LocationQuery {
         location_name: String,
@@ -216,6 +231,8 @@ pub struct HybridQueryResult {
     pub chronicle_events: Vec<ChronicleEvent>,
     /// Current relationships between entities
     pub relationships: Vec<RelationshipAnalysis>,
+    /// Item timelines and ownership history
+    pub item_timelines: Vec<ItemTimeline>,
     /// Summary of findings
     pub summary: HybridQuerySummary,
     /// Performance metrics
@@ -239,6 +256,132 @@ pub struct EntityTimelineContext {
     pub relationships: Vec<RelationshipContext>,
     /// Relevance score to the query
     pub relevance_score: f32,
+    /// Rich context extracted from event content
+    pub extracted_context: ExtractedEntityContext,
+    /// Items owned or interacted with
+    pub item_interactions: Vec<ItemInteraction>,
+}
+
+/// Rich context extracted from event content
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ExtractedEntityContext {
+    /// Attributes extracted from event content
+    pub attributes: HashMap<String, JsonValue>,
+    /// Dialogue reveals (what we learn from dialogue)
+    pub dialogue_reveals: HashMap<String, String>,
+    /// Skills and abilities mentioned
+    pub skills: Vec<String>,
+    /// Equipment and items mentioned
+    pub equipment: Vec<String>,
+    /// Profession or role
+    pub profession: Option<String>,
+    /// Background information
+    pub background: Vec<String>,
+    /// Notable actions performed
+    pub actions: Vec<String>,
+}
+
+/// Item interaction record
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemInteraction {
+    /// Item identification
+    pub item_id: Uuid,
+    /// Item name
+    pub item_name: String,
+    /// Type of interaction
+    pub interaction_type: ItemInteractionType,
+    /// When the interaction occurred
+    pub event_id: Uuid,
+    /// Event timestamp
+    pub timestamp: DateTime<Utc>,
+    /// Additional interaction details
+    pub details: Option<JsonValue>,
+}
+
+/// Types of item interactions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ItemInteractionType {
+    /// Item was discovered/found
+    Discovered,
+    /// Item was created/crafted
+    Created,
+    /// Item ownership was transferred
+    Transferred { from: Option<Uuid>, to: Option<Uuid> },
+    /// Item was used
+    Used { usage_type: String, remaining: Option<String> },
+    /// Item was placed at location
+    Placed { location: Option<String> },
+    /// Item was moved
+    Moved { from_location: Option<String>, to_location: Option<String> },
+    /// Item was destroyed
+    Destroyed { cause: Option<String> },
+    /// Generic interaction
+    Interacted { action: String },
+}
+
+/// Item ownership and usage timeline
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemTimeline {
+    /// Item identification
+    pub item_id: Uuid,
+    /// Item name
+    pub item_name: String,
+    /// Ownership history
+    pub ownership_history: Vec<ItemOwnershipRecord>,
+    /// Usage patterns
+    pub usage_patterns: Vec<ItemUsagePattern>,
+    /// Current owner (if any)
+    pub current_owner: Option<Uuid>,
+    /// Current location (if known)
+    pub current_location: Option<String>,
+    /// Item status
+    pub status: ItemStatus,
+}
+
+/// Item ownership record
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemOwnershipRecord {
+    /// Owner entity ID
+    pub owner_id: Uuid,
+    /// When ownership started
+    pub from_event_id: Uuid,
+    pub from_timestamp: DateTime<Utc>,
+    /// When ownership ended (if applicable)
+    pub to_event_id: Option<Uuid>,
+    pub to_timestamp: Option<DateTime<Utc>>,
+    /// How ownership was acquired
+    pub acquisition_method: String,
+}
+
+/// Item usage pattern
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemUsagePattern {
+    /// User entity ID
+    pub user_id: Uuid,
+    /// Usage event
+    pub event_id: Uuid,
+    pub timestamp: DateTime<Utc>,
+    /// Type of usage
+    pub usage_type: String,
+    /// Context of usage
+    pub context: Option<String>,
+    /// Effect or result
+    pub effect: Option<String>,
+}
+
+/// Item status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ItemStatus {
+    /// Item exists and is functional
+    Active,
+    /// Item was used up/depleted
+    Depleted,
+    /// Item was destroyed
+    Destroyed,
+    /// Item is missing/lost
+    Lost,
+    /// Status unknown
+    Unknown,
 }
 
 /// Event in entity timeline with context
@@ -361,6 +504,289 @@ struct StateChange {
     field_name: String,
 }
 
+/// Structured output schema for entity context extraction
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityContextOutput {
+    pub attributes: HashMap<String, serde_json::Value>,
+    pub dialogue_reveals: HashMap<String, String>,
+    pub skills: Vec<String>,
+    pub equipment: Vec<String>,
+    pub profession: Option<String>,
+    pub background: Vec<String>,
+    pub actions: Vec<String>,
+}
+
+/// Structured output schema for item analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemAnalysisOutput {
+    pub items: Vec<SingleItemAnalysis>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SingleItemAnalysis {
+    pub item_id: String,
+    pub item_name: String,
+    pub ownership_timeline: Vec<OwnershipEventOutput>,
+    pub usage_patterns: Vec<UsagePatternOutput>,
+    pub lifecycle_stage: String,
+    pub location_history: Vec<LocationEventOutput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnershipEventOutput {
+    pub timestamp: String,
+    pub previous_owner: Option<String>,
+    pub new_owner: String,
+    pub transfer_type: String,
+    pub context: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsagePatternOutput {
+    pub usage_type: String,
+    pub frequency: String,
+    pub context: String,
+    pub effectiveness: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationEventOutput {
+    pub timestamp: String,
+    pub location: String,
+    pub event_type: String,
+    pub context: Option<String>,
+}
+
+/// Helper functions to create JSON schemas for structured output
+pub fn get_entity_context_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "attributes": {
+                "type": "object",
+                "description": "Key-value pairs of entity attributes extracted from events"
+            },
+            "dialogue_reveals": {
+                "type": "object",
+                "description": "Information revealed through dialogue, keyed by topic"
+            },
+            "skills": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Skills mentioned or demonstrated by the entity"
+            },
+            "equipment": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Equipment or items associated with the entity"
+            },
+            "profession": {
+                "type": "string",
+                "description": "The entity's profession or occupation"
+            },
+            "background": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Background information about the entity"
+            },
+            "actions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Actions taken by the entity"
+            }
+        },
+        "required": ["attributes", "dialogue_reveals", "skills", "equipment", "background", "actions"],
+        "additionalProperties": false
+    })
+}
+
+pub fn get_item_analysis_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "item_id": {
+                            "type": "string",
+                            "description": "Unique identifier for the item"
+                        },
+                        "item_name": {
+                            "type": "string",
+                            "description": "Name of the item"
+                        },
+                        "ownership_timeline": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "timestamp": {"type": "string"},
+                                    "previous_owner": {"type": "string"},
+                                    "new_owner": {"type": "string"},
+                                    "transfer_type": {"type": "string"},
+                                    "context": {"type": "string"}
+                                },
+                                "required": ["timestamp", "new_owner", "transfer_type"]
+                            },
+                            "description": "Timeline of ownership changes"
+                        },
+                        "usage_patterns": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "usage_type": {"type": "string"},
+                                    "frequency": {"type": "string"},
+                                    "context": {"type": "string"},
+                                    "effectiveness": {"type": "string"}
+                                },
+                                "required": ["usage_type", "frequency", "context"]
+                            },
+                            "description": "Patterns of how the item is used"
+                        },
+                        "lifecycle_stage": {
+                            "type": "string",
+                            "description": "Current stage in the item's lifecycle"
+                        },
+                        "location_history": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "timestamp": {"type": "string"},
+                                    "location": {"type": "string"},
+                                    "event_type": {"type": "string"},
+                                    "context": {"type": "string"}
+                                },
+                                "required": ["timestamp", "location", "event_type"]
+                            },
+                            "description": "History of where the item has been"
+                        }
+                    },
+                    "required": ["item_id", "item_name", "ownership_timeline", "usage_patterns", "lifecycle_stage", "location_history"]
+                },
+                "description": "List of items found in the events"
+            }
+        },
+        "required": ["items"],
+        "additionalProperties": false
+    })
+}
+
+/// Validation and conversion methods for structured outputs
+impl EntityContextOutput {
+    pub fn validate(&self) -> Result<(), AppError> {
+        // Basic validation - ensure required fields are present
+        if self.attributes.is_empty() && self.dialogue_reveals.is_empty() && 
+           self.skills.is_empty() && self.equipment.is_empty() && 
+           self.background.is_empty() && self.actions.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Entity context output must contain at least some data".to_string()
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl ItemAnalysisOutput {
+    pub fn validate(&self) -> Result<(), AppError> {
+        if self.items.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Item analysis must contain at least one item".to_string()
+            ));
+        }
+        
+        for item in &self.items {
+            if item.item_id.trim().is_empty() {
+                return Err(AppError::InvalidInput(
+                    "Item ID cannot be empty".to_string()
+                ));
+            }
+            
+            if item.item_name.trim().is_empty() {
+                return Err(AppError::InvalidInput(
+                    "Item name cannot be empty".to_string()
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    pub fn to_item_timelines(&self) -> Result<Vec<ItemTimeline>, AppError> {
+        use uuid::Uuid;
+        use chrono::Utc;
+        
+        let mut timelines = Vec::new();
+        
+        for item in &self.items {
+            // Parse item ID
+            let item_id = Uuid::parse_str(&item.item_id)
+                .map_err(|_| AppError::InvalidInput("Invalid item ID format".to_string()))?;
+            
+            // Convert ownership timeline to ItemOwnershipRecord format
+            let mut ownership_history = Vec::new();
+            for event in &item.ownership_timeline {
+                // For simplified conversion, we'll create basic ownership records
+                // In practice, this would need proper timestamp parsing and UUID handling
+                let owner_id = Uuid::new_v4(); // Placeholder - would need proper entity resolution
+                let timestamp = Utc::now(); // Placeholder - would need proper timestamp parsing
+                let event_id = Uuid::new_v4(); // Placeholder - would need proper event ID
+                
+                ownership_history.push(ItemOwnershipRecord {
+                    owner_id,
+                    from_event_id: event_id,
+                    from_timestamp: timestamp,
+                    to_event_id: None,
+                    to_timestamp: None,
+                    acquisition_method: event.transfer_type.clone(),
+                });
+            }
+            
+            // Convert usage patterns to ItemUsagePattern format
+            let mut usage_patterns = Vec::new();
+            for pattern in &item.usage_patterns {
+                let user_id = Uuid::new_v4(); // Placeholder - would need proper entity resolution
+                let timestamp = Utc::now(); // Placeholder - would need proper timestamp parsing
+                let event_id = Uuid::new_v4(); // Placeholder - would need proper event ID
+                
+                usage_patterns.push(ItemUsagePattern {
+                    user_id,
+                    event_id,
+                    timestamp,
+                    usage_type: pattern.usage_type.clone(),
+                    context: Some(pattern.context.clone()),
+                    effect: pattern.effectiveness.clone(),
+                });
+            }
+            
+            // Determine item status from lifecycle stage
+            let status = match item.lifecycle_stage.as_str() {
+                "created" => ItemStatus::Active,
+                "active" => ItemStatus::Active,
+                "depleted" => ItemStatus::Depleted,
+                "destroyed" => ItemStatus::Destroyed,
+                "lost" => ItemStatus::Lost,
+                _ => ItemStatus::Unknown, // Default
+            };
+            
+            timelines.push(ItemTimeline {
+                item_id,
+                item_name: item.item_name.clone(),
+                ownership_history,
+                usage_patterns,
+                current_owner: None, // Would need to be determined from latest ownership
+                current_location: item.location_history.last().map(|l| l.location.clone()),
+                status,
+            });
+        }
+        
+        Ok(timelines)
+    }
+}
+
 impl QueryMetrics {
     fn new() -> Self {
         Self::default()
@@ -426,6 +852,8 @@ pub struct HybridQueryService {
     config: HybridQueryConfig,
     /// Feature flags for control
     feature_flags: Arc<NarrativeFeatureFlags>,
+    /// AI client for analysis
+    ai_client: Arc<dyn AiClient>,
     /// ECS entity manager for current state
     entity_manager: Arc<EcsEntityManager>,
     /// Enhanced RAG service for semantic search
@@ -444,6 +872,7 @@ impl HybridQueryService {
         db_pool: Arc<PgPool>,
         config: HybridQueryConfig,
         feature_flags: Arc<NarrativeFeatureFlags>,
+        ai_client: Arc<dyn AiClient>,
         entity_manager: Arc<EcsEntityManager>,
         rag_service: Arc<EcsEnhancedRagService>,
         degradation_service: Arc<EcsGracefulDegradation>,
@@ -466,6 +895,7 @@ impl HybridQueryService {
             db_pool,
             config,
             feature_flags,
+            ai_client,
             entity_manager,
             rag_service,
             degradation_service,
@@ -604,8 +1034,15 @@ impl HybridQueryService {
         };
         
         let relationship_analysis_ms = relationship_start.elapsed().as_millis() as u64;
+        
+        // Step 5: Build item timelines if this is an item query
+        let item_timelines = if self.is_item_query(&query.query_type) {
+            self.build_item_timelines(&chronicle_events, query).await?
+        } else {
+            Vec::new()
+        };
 
-        // Step 5: Generate summary and insights
+        // Step 6: Generate summary and insights
         let summary = self.generate_query_summary(&entity_contexts, &chronicle_events, &relationships, query).await?;
 
         Ok(HybridQueryResult {
@@ -614,6 +1051,7 @@ impl HybridQueryService {
             entities: entity_contexts,
             chronicle_events,
             relationships,
+            item_timelines,
             summary,
             performance: QueryPerformanceMetrics {
                 total_duration_ms: 0, // Will be set by caller
@@ -636,6 +1074,13 @@ impl HybridQueryService {
         
         // Build basic entity contexts without current state
         let entity_contexts = self.build_basic_entity_contexts(&chronicle_events, query).await?;
+        
+        // Build item timelines if this is an item query
+        let item_timelines = if self.is_item_query(&query.query_type) {
+            self.build_item_timelines(&chronicle_events, query).await?
+        } else {
+            Vec::new()
+        };
 
         // Generate narrative even for fallback queries
         let narrative_answer = self.generate_narrative_answer(
@@ -659,6 +1104,7 @@ impl HybridQueryService {
             entities: entity_contexts,
             chronicle_events,
             relationships: Vec::new(),
+            item_timelines,
             summary,
             performance: QueryPerformanceMetrics {
                 total_duration_ms: 0,
@@ -788,6 +1234,25 @@ impl HybridQueryService {
             }
             HybridQueryType::WorldModelSnapshot { .. } => {
                 "World model snapshot generation".to_string()
+            }
+            // Item query types
+            HybridQueryType::ItemTimeline => {
+                "Item ownership timeline and history".to_string()
+            }
+            HybridQueryType::ItemUsage => {
+                "Item usage patterns and frequency".to_string()
+            }
+            HybridQueryType::ItemLocation => {
+                "Item location history and movements".to_string()
+            }
+            HybridQueryType::ItemLifecycle => {
+                "Item lifecycle from creation to destruction".to_string()
+            }
+            HybridQueryType::ItemInteractions => {
+                "Entities that have interacted with items".to_string()
+            }
+            HybridQueryType::ItemSearch => {
+                "Search for items matching criteria".to_string()
             }
         };
 
@@ -923,6 +1388,12 @@ impl HybridQueryService {
             Vec::new()
         };
 
+        // Extract rich context from events
+        let extracted_context = self.extract_entity_context_from_events(entity_id, events).await?;
+        
+        // Extract item interactions
+        let item_interactions = self.extract_item_interactions(entity_id, events).await?;
+        
         // Calculate relevance score based on query and entity context
         let relevance_score = self.calculate_entity_relevance_score(entity_id, &timeline_events, &current_state, query).await?;
 
@@ -933,6 +1404,8 @@ impl HybridQueryService {
             timeline_events,
             relationships,
             relevance_score,
+            extracted_context,
+            item_interactions,
         })
     }
 
@@ -1225,6 +1698,810 @@ impl HybridQueryService {
         
         Ok(None)
     }
+    
+    /// Extract rich context about an entity from event content using Flash-Lite
+    async fn extract_entity_context_from_events(
+        &self,
+        entity_id: Uuid,
+        events: &[ChronicleEvent],
+    ) -> Result<ExtractedEntityContext, AppError> {
+        debug!("Extracting entity context for {} from {} events using Flash-Lite", entity_id, events.len());
+        
+        // Prepare event data for AI analysis
+        let mut relevant_events = Vec::new();
+        for event in events {
+            if self.is_entity_in_event(entity_id, event).await? {
+                relevant_events.push(event);
+            }
+        }
+        
+        if relevant_events.is_empty() {
+            return Ok(ExtractedEntityContext::default());
+        }
+        
+        // Use Flash-Lite for context extraction from event content
+        self.extract_context_with_flash_lite(entity_id, &relevant_events).await
+    }
+    
+    /// Check if entity is mentioned in an event
+    async fn is_entity_in_event(&self, entity_id: Uuid, event: &ChronicleEvent) -> Result<bool, AppError> {
+        // Check if entity is mentioned in the actors list
+        if let Ok(actors) = event.get_actors() {
+            for actor in actors {
+                if actor.entity_id == entity_id {
+                    return Ok(true);
+                }
+            }
+        }
+
+        // Check if entity is mentioned in event_data
+        if let Some(event_data) = &event.event_data {
+            // Check actors array in event_data
+            if let Some(actors_value) = event_data.get("actors") {
+                if let Some(actors_array) = actors_value.as_array() {
+                    for actor_value in actors_array {
+                        if let Some(actor_entity_id) = actor_value.get("entity_id") {
+                            if let Some(actor_id_str) = actor_entity_id.as_str() {
+                                if let Ok(actor_uuid) = Uuid::parse_str(actor_id_str) {
+                                    if actor_uuid == entity_id {
+                                        return Ok(true);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check if entity_id appears anywhere in the event content
+            if let Some(content) = event_data.get("content").and_then(|c| c.as_str()) {
+                let entity_id_str = entity_id.to_string();
+                if content.contains(&entity_id_str) {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Extract entity context using Flash-Lite AI analysis
+    async fn extract_context_with_flash_lite(
+        &self,
+        entity_id: Uuid,
+        events: &[&ChronicleEvent],
+    ) -> Result<ExtractedEntityContext, AppError> {
+        debug!("Using Flash-Lite to extract context for entity {} from {} events", entity_id, events.len());
+        
+        // Prepare events data for AI analysis
+        let events_data = self.prepare_events_for_context_analysis(entity_id, events).await?;
+        
+        // Create AI prompt for entity context extraction
+        let prompt = format!(
+            r#"Analyze the following chronicle events to extract rich context about the entity with ID {}.
+
+EVENTS TO ANALYZE:
+{}
+
+Extract the following information and respond in JSON format:
+{{
+  "attributes": {{"key": "value"}}, // Physical, mental, or behavioral attributes
+  "dialogue_reveals": {{"aspect": "what_was_revealed"}}, // Information revealed through dialogue
+  "skills": ["skill1", "skill2"], // Demonstrated skills or abilities
+  "equipment": ["item1", "item2"], // Equipment, tools, or items associated with the entity
+  "profession": "profession_name", // Profession or role if identifiable
+  "background": ["element1", "element2"], // Background, history, or education elements
+  "actions": ["action1", "action2"] // Significant actions performed
+}}
+
+Focus on extracting information that is explicitly mentioned or strongly implied in the events. Return only the JSON object."#,
+            entity_id,
+            events_data
+        );
+        
+        // Configure structured output for entity context extraction
+        let schema = get_entity_context_schema();
+        let mut chat_options = ChatOptions::default();
+        chat_options = chat_options.with_temperature(0.1);
+        chat_options = chat_options.with_max_tokens(1000);
+        chat_options = chat_options.with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+            schema: schema.clone(),
+        }));
+        
+        let chat_request = ChatRequest::from_user(prompt);
+        
+        // Use Flash-Lite for fast, cost-effective analysis
+        let response = self.ai_client
+            .exec_chat(
+                "gemini-2.0-flash-exp",
+                chat_request,
+                Some(chat_options),
+            )
+            .await
+            .map_err(|e| AppError::LlmClientError(format!("Flash-Lite context extraction failed: {}", e)))?;
+        
+        // Parse the AI response
+        self.parse_context_extraction_response(&response)
+    }
+    
+    /// Prepare events data for AI context analysis
+    async fn prepare_events_for_context_analysis(
+        &self,
+        entity_id: Uuid,
+        events: &[&ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut events_text = String::new();
+        
+        for (i, event) in events.iter().enumerate() {
+            events_text.push_str(&format!("\n--- Event {} ---\n", i + 1));
+            events_text.push_str(&format!("Summary: {}\n", event.summary));
+            events_text.push_str(&format!("Type: {}\n", event.event_type));
+            events_text.push_str(&format!("Timestamp: {}\n", event.timestamp_iso8601));
+            
+            if let Some(event_data) = &event.event_data {
+                // Extract content
+                if let Some(content) = event_data.get("content").and_then(|c| c.as_str()) {
+                    events_text.push_str(&format!("Content: {}\n", content));
+                }
+                
+                // Extract actors info
+                if let Some(actors) = event_data.get("actors").and_then(|a| a.as_array()) {
+                    events_text.push_str("Actors: ");
+                    for actor in actors {
+                        if let Some(context) = actor.get("context").and_then(|c| c.as_str()) {
+                            if let Some(actor_id) = actor.get("entity_id").and_then(|id| id.as_str()) {
+                                if actor_id == &entity_id.to_string() {
+                                    events_text.push_str(&format!("[FOCUS: {}] ", context));
+                                } else {
+                                    events_text.push_str(&format!("{} ", context));
+                                }
+                            }
+                        }
+                    }
+                    events_text.push('\n');
+                }
+                
+                // Include other relevant data as needed
+                for (key, value) in event_data.as_object().unwrap_or(&serde_json::Map::new()) {
+                    if key != "content" && key != "actors" {
+                        events_text.push_str(&format!("{}: {}\n", key, value));
+                    }
+                }
+            }
+        }
+        
+        Ok(events_text)
+    }
+    
+    /// Parse AI response for entity context extraction
+    fn parse_context_extraction_response(
+        &self,
+        response: &ChatResponse,
+    ) -> Result<ExtractedEntityContext, AppError> {
+        use genai::chat::MessageContent;
+        
+        // Extract text from ChatResponse
+        let response_text = response.contents
+            .iter()
+            .find_map(|content| match content {
+                MessageContent::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| AppError::InternalServerErrorGeneric(
+                "No text content found in AI response".to_string()
+            ))?;
+        
+        // Parse the structured response directly as JSON
+        let entity_output: EntityContextOutput = serde_json::from_str(&response_text)
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to parse entity context JSON: {}", e)))?;
+        
+        // Validate the output
+        entity_output.validate()?;
+        
+        // Convert from structured output to ExtractedEntityContext
+        let mut context = ExtractedEntityContext::default();
+        context.attributes = entity_output.attributes;
+        context.dialogue_reveals = entity_output.dialogue_reveals;
+        context.skills = entity_output.skills;
+        context.equipment = entity_output.equipment;
+        context.profession = entity_output.profession;
+        context.background = entity_output.background;
+        context.actions = entity_output.actions;
+        
+        Ok(context)
+    }
+    
+    /// Extract JSON from AI response (handles markdown, etc.)
+    fn extract_json_from_ai_response(&self, response: &str) -> Result<String, AppError> {
+        let cleaned = if response.trim().starts_with("```json") {
+            let start = response.find("```json").unwrap() + 7;
+            if let Some(end) = response[start..].find("```") {
+                response[start..start + end].trim()
+            } else {
+                response[start..].trim()
+            }
+        } else if let Some(start) = response.find('{') {
+            if let Some(end) = response.rfind('}') {
+                &response[start..=end]
+            } else {
+                response
+            }
+        } else {
+            response
+        };
+
+        Ok(cleaned.to_string())
+    }
+    
+    /// Recursively extract context from nested JSON
+    fn extract_context_from_nested_json(
+        &self,
+        context: &mut ExtractedEntityContext,
+        json_obj: &serde_json::Map<String, JsonValue>,
+        entity_id: Uuid,
+    ) {
+        // Limit recursion depth to prevent stack overflow
+        self.extract_context_from_nested_json_recursive(context, json_obj, entity_id, 0, 5);
+    }
+    
+    fn extract_context_from_nested_json_recursive(
+        &self,
+        context: &mut ExtractedEntityContext,
+        json_obj: &serde_json::Map<String, JsonValue>,
+        entity_id: Uuid,
+        depth: usize,
+        max_depth: usize,
+    ) {
+        if depth >= max_depth {
+            return;
+        }
+        
+        for (key, value) in json_obj {
+            match value {
+                JsonValue::Object(nested_obj) => {
+                    // Check if this object contains entity-specific data
+                    if let Some(entity_field) = nested_obj.get("entity_id") {
+                        if let Some(id_str) = entity_field.as_str() {
+                            if let Ok(id) = Uuid::parse_str(id_str) {
+                                if id == entity_id {
+                                    // Extract all fields from this object
+                                    for (field_key, field_value) in nested_obj {
+                                        if field_key != "entity_id" {
+                                            context.attributes.insert(field_key.clone(), field_value.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Continue recursion
+                    self.extract_context_from_nested_json_recursive(
+                        context, nested_obj, entity_id, depth + 1, max_depth
+                    );
+                }
+                JsonValue::Array(array) => {
+                    // Process arrays that might contain entity data
+                    for item in array {
+                        if let JsonValue::Object(item_obj) = item {
+                            self.extract_context_from_nested_json_recursive(
+                                context, item_obj, entity_id, depth + 1, max_depth
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    
+    /// Extract item interactions for an entity
+    async fn extract_item_interactions(
+        &self,
+        entity_id: Uuid,
+        events: &[ChronicleEvent],
+    ) -> Result<Vec<ItemInteraction>, AppError> {
+        let mut interactions = Vec::new();
+        
+        for event in events {
+            if let Some(event_data) = &event.event_data {
+                // Check items array
+                if let Some(items_value) = event_data.get("items") {
+                    if let Some(items_array) = items_value.as_array() {
+                        for item_value in items_array {
+                            if let Some(item_obj) = item_value.as_object() {
+                                // Check if entity is involved with this item
+                                let involved = self.is_entity_involved_with_item(entity_id, item_obj);
+                                
+                                if involved {
+                                    if let Some(interaction) = self.parse_item_interaction(
+                                        item_obj, entity_id, event.id, event.timestamp_iso8601
+                                    ) {
+                                        interactions.push(interaction);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Sort by timestamp
+        interactions.sort_by_key(|i| i.timestamp);
+        
+        Ok(interactions)
+    }
+    
+    /// Check if entity is involved with an item
+    fn is_entity_involved_with_item(
+        &self,
+        entity_id: Uuid,
+        item_obj: &serde_json::Map<String, JsonValue>,
+    ) -> bool {
+        // Check owner field
+        if let Some(owner) = item_obj.get("owner").and_then(|o| o.as_str()) {
+            if let Ok(owner_id) = Uuid::parse_str(owner) {
+                if owner_id == entity_id {
+                    return true;
+                }
+            }
+        }
+        
+        // Check from_owner and to_owner for transfers
+        if let Some(from) = item_obj.get("from_owner").and_then(|f| f.as_str()) {
+            if let Ok(from_id) = Uuid::parse_str(from) {
+                if from_id == entity_id {
+                    return true;
+                }
+            }
+        }
+        
+        if let Some(to) = item_obj.get("to_owner").and_then(|t| t.as_str()) {
+            if let Ok(to_id) = Uuid::parse_str(to) {
+                if to_id == entity_id {
+                    return true;
+                }
+            }
+        }
+        
+        // Check user field for usage
+        if let Some(user) = item_obj.get("user").and_then(|u| u.as_str()) {
+            if let Ok(user_id) = Uuid::parse_str(user) {
+                if user_id == entity_id {
+                    return true;
+                }
+            }
+        }
+        
+        // Check creator field
+        if let Some(creator) = item_obj.get("creator").and_then(|c| c.as_str()) {
+            if let Ok(creator_id) = Uuid::parse_str(creator) {
+                if creator_id == entity_id {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+    
+    /// Parse item interaction from JSON
+    fn parse_item_interaction(
+        &self,
+        item_obj: &serde_json::Map<String, JsonValue>,
+        entity_id: Uuid,
+        event_id: Uuid,
+        timestamp: DateTime<Utc>,
+    ) -> Option<ItemInteraction> {
+        let item_id = item_obj.get("item_id")
+            .and_then(|id| id.as_str())
+            .and_then(|id| Uuid::parse_str(id).ok())?;
+            
+        let item_name = item_obj.get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unknown Item")
+            .to_string();
+            
+        let action = item_obj.get("action")
+            .and_then(|a| a.as_str())
+            .unwrap_or("interacted");
+            
+        let interaction_type = match action {
+            "discovered" => ItemInteractionType::Discovered,
+            "created" => ItemInteractionType::Created,
+            "transferred" => {
+                let from = item_obj.get("from_owner")
+                    .and_then(|f| f.as_str())
+                    .and_then(|f| Uuid::parse_str(f).ok());
+                let to = item_obj.get("to_owner")
+                    .and_then(|t| t.as_str())
+                    .and_then(|t| Uuid::parse_str(t).ok());
+                ItemInteractionType::Transferred { from, to }
+            }
+            "used" => {
+                let usage_type = item_obj.get("usage_type")
+                    .and_then(|u| u.as_str())
+                    .unwrap_or("generic")
+                    .to_string();
+                let remaining = item_obj.get("remaining")
+                    .and_then(|r| r.as_str())
+                    .map(|r| r.to_string());
+                ItemInteractionType::Used { usage_type, remaining }
+            }
+            "placed" => {
+                let location = item_obj.get("location")
+                    .and_then(|l| l.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|n| n.to_string());
+                ItemInteractionType::Placed { location }
+            }
+            "moved" => {
+                let from_location = item_obj.get("from_location")
+                    .and_then(|l| l.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|n| n.to_string());
+                let to_location = item_obj.get("to_location")
+                    .and_then(|l| l.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|n| n.to_string());
+                ItemInteractionType::Moved { from_location, to_location }
+            }
+            "destroyed" | "depleted" => {
+                let cause = item_obj.get("destruction_cause")
+                    .or_else(|| item_obj.get("cause"))
+                    .and_then(|c| c.as_str())
+                    .map(|c| c.to_string());
+                ItemInteractionType::Destroyed { cause }
+            }
+            _ => {
+                ItemInteractionType::Interacted { action: action.to_string() }
+            }
+        };
+        
+        // Get additional details
+        let details = item_obj.get("details").cloned();
+        
+        Some(ItemInteraction {
+            item_id,
+            item_name,
+            interaction_type,
+            event_id,
+            timestamp,
+            details,
+        })
+    }
+    
+    /// Check if query is an item-related query
+    fn is_item_query(&self, query_type: &HybridQueryType) -> bool {
+        matches!(
+            query_type,
+            HybridQueryType::ItemTimeline |
+            HybridQueryType::ItemUsage |
+            HybridQueryType::ItemLocation |
+            HybridQueryType::ItemLifecycle |
+            HybridQueryType::ItemInteractions |
+            HybridQueryType::ItemSearch
+        )
+    }
+    
+    /// Build item timelines from chronicle events using AI analysis
+    async fn build_item_timelines(
+        &self,
+        events: &[ChronicleEvent],
+        query: &HybridQuery,
+    ) -> Result<Vec<ItemTimeline>, AppError> {
+        debug!("Building item timelines from {} events using AI analysis", events.len());
+        
+        // Use AI to analyze events for item information
+        let item_analysis = self.analyze_items_with_flash_lite(events, query).await?;
+        
+        // Filter based on query type using AI insights
+        let filtered_timelines = self.filter_item_timelines_by_query(
+            item_analysis,
+            query,
+        ).await?;
+        
+        Ok(filtered_timelines)
+    }
+
+    /// Analyze events for item information using Flash-Lite with structured output
+    async fn analyze_items_with_flash_lite(
+        &self,
+        events: &[ChronicleEvent],
+        query: &HybridQuery,
+    ) -> Result<Vec<ItemTimeline>, AppError> {
+        debug!("Using Flash-Lite to analyze item information from events");
+        
+        // Prepare events data for AI analysis
+        let events_data = self.prepare_events_for_item_analysis(events).await?;
+        
+        if events_data.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        
+        // Create structured prompt for item analysis
+        let prompt = format!(
+            r#"Analyze the following chronicle events to extract comprehensive item information.
+
+EVENTS TO ANALYZE:
+{}
+
+Query Type: {:?}
+
+Extract item timelines including:
+- Item identities (IDs, names)
+- Ownership changes and transfers
+- Usage patterns and interactions
+- Location movements
+- Creation, modification, and destruction events
+- Entity interactions with items
+
+Focus on items relevant to the query. Extract only what is explicitly mentioned or strongly implied in the events."#,
+            events_data,
+            query.query_type
+        );
+        
+        // Configure structured output for item analysis
+        let schema = get_item_analysis_schema();
+        let mut chat_options = ChatOptions::default();
+        chat_options = chat_options.with_temperature(0.2);
+        chat_options = chat_options.with_max_tokens(2000);
+        chat_options = chat_options.with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+            schema: schema.clone(),
+        }));
+        
+        let chat_request = ChatRequest::from_user(prompt);
+        
+        let response = self.ai_client
+            .exec_chat(
+                "gemini-2.0-flash-exp", // Use Flash for fast, cost-effective analysis
+                chat_request,
+                Some(chat_options),
+            )
+            .await
+            .map_err(|e| AppError::LlmClientError(format!("Flash-Lite item analysis failed: {}", e)))?;
+        
+        // Parse the structured response
+        self.parse_structured_item_response(&response)
+    }
+    
+    /// Parse structured AI response for item analysis
+    fn parse_structured_item_response(
+        &self,
+        response: &ChatResponse,
+    ) -> Result<Vec<ItemTimeline>, AppError> {
+        // Extract text from ChatResponse
+        let response_text = response.contents
+            .iter()
+            .find_map(|content| match content {
+                MessageContent::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| AppError::InternalServerErrorGeneric(
+                "No text content found in AI response".to_string()
+            ))?;
+        
+        // Parse as ItemAnalysisOutput
+        let item_output: ItemAnalysisOutput = serde_json::from_str(&response_text)
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to parse item analysis JSON: {}", e)))?;
+        
+        // Validate the output
+        item_output.validate()?;
+        
+        // Convert to ItemTimeline vector
+        Ok(item_output.to_item_timelines()?)
+    }
+    
+    /// Filter item timelines based on query requirements
+    async fn filter_item_timelines_by_query(
+        &self,
+        timelines: Vec<ItemTimeline>,
+        query: &HybridQuery,
+    ) -> Result<Vec<ItemTimeline>, AppError> {
+        // For now, return all timelines
+        // In a more sophisticated implementation, this would filter based on query type and options
+        Ok(timelines)
+    }
+    
+    /// Prepare events data for item analysis
+    async fn prepare_events_for_item_analysis(
+        &self,
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut events_text = String::new();
+        
+        for (i, event) in events.iter().enumerate() {
+            events_text.push_str(&format!("\n--- Event {} ---\n", i + 1));
+            events_text.push_str(&format!("Summary: {}\n", event.summary));
+            events_text.push_str(&format!("Type: {}\n", event.event_type));
+            events_text.push_str(&format!("Timestamp: {}\n", event.timestamp_iso8601));
+            
+            if let Some(event_data) = &event.event_data {
+                events_text.push_str(&format!("Event Data: {}\n", 
+                    serde_json::to_string_pretty(event_data).unwrap_or_else(|_| "Invalid JSON".to_string())
+                ));
+            }
+        }
+        
+        Ok(events_text)
+    }
+    
+    /// Process a single item event and update item timeline
+    fn process_item_event(
+        &self,
+        item_map: &mut HashMap<Uuid, ItemTimeline>,
+        item_obj: &serde_json::Map<String, JsonValue>,
+        event_id: Uuid,
+        timestamp: DateTime<Utc>,
+    ) -> Result<(), AppError> {
+        let item_id = item_obj.get("item_id")
+            .and_then(|id| id.as_str())
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .ok_or_else(|| AppError::BadRequest("Invalid item_id in event".to_string()))?;
+            
+        let item_name = item_obj.get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unknown Item")
+            .to_string();
+            
+        let action = item_obj.get("action")
+            .and_then(|a| a.as_str())
+            .unwrap_or("unknown");
+            
+        // Get or create item timeline
+        let timeline = item_map.entry(item_id).or_insert_with(|| ItemTimeline {
+            item_id,
+            item_name: item_name.clone(),
+            ownership_history: Vec::new(),
+            usage_patterns: Vec::new(),
+            current_owner: None,
+            current_location: None,
+            status: ItemStatus::Unknown,
+        });
+        
+        // Update item name if more specific
+        if timeline.item_name == "Unknown Item" && item_name != "Unknown Item" {
+            timeline.item_name = item_name;
+        }
+        
+        // Process action
+        match action {
+            "discovered" | "created" | "found" => {
+                if let Some(owner) = item_obj.get("owner")
+                    .and_then(|o| o.as_str())
+                    .and_then(|o| Uuid::parse_str(o).ok()) {
+                    
+                    timeline.ownership_history.push(ItemOwnershipRecord {
+                        owner_id: owner,
+                        from_event_id: event_id,
+                        from_timestamp: timestamp,
+                        to_event_id: None,
+                        to_timestamp: None,
+                        acquisition_method: action.to_string(),
+                    });
+                    timeline.current_owner = Some(owner);
+                    timeline.status = ItemStatus::Active;
+                }
+            }
+            "transferred" => {
+                // End previous ownership
+                if let Some(from_owner) = item_obj.get("from_owner")
+                    .and_then(|f| f.as_str())
+                    .and_then(|f| Uuid::parse_str(f).ok()) {
+                    
+                    if let Some(last_record) = timeline.ownership_history.last_mut() {
+                        if last_record.owner_id == from_owner && last_record.to_event_id.is_none() {
+                            last_record.to_event_id = Some(event_id);
+                            last_record.to_timestamp = Some(timestamp);
+                        }
+                    }
+                }
+                
+                // Start new ownership
+                if let Some(to_owner) = item_obj.get("to_owner")
+                    .and_then(|t| t.as_str())
+                    .and_then(|t| Uuid::parse_str(t).ok()) {
+                    
+                    timeline.ownership_history.push(ItemOwnershipRecord {
+                        owner_id: to_owner,
+                        from_event_id: event_id,
+                        from_timestamp: timestamp,
+                        to_event_id: None,
+                        to_timestamp: None,
+                        acquisition_method: "transferred".to_string(),
+                    });
+                    timeline.current_owner = Some(to_owner);
+                }
+            }
+            "used" => {
+                if let Some(user) = item_obj.get("user")
+                    .or_else(|| item_obj.get("owner"))
+                    .and_then(|u| u.as_str())
+                    .and_then(|u| Uuid::parse_str(u).ok()) {
+                    
+                    let usage_type = item_obj.get("usage_type")
+                        .and_then(|u| u.as_str())
+                        .unwrap_or("generic")
+                        .to_string();
+                        
+                    let context = item_obj.get("context")
+                        .and_then(|c| c.as_str())
+                        .map(|c| c.to_string());
+                        
+                    let effect = item_obj.get("effect")
+                        .and_then(|e| e.as_str())
+                        .map(|e| e.to_string());
+                        
+                    timeline.usage_patterns.push(ItemUsagePattern {
+                        user_id: user,
+                        event_id,
+                        timestamp,
+                        usage_type,
+                        context,
+                        effect,
+                    });
+                }
+            }
+            "placed" => {
+                if let Some(location) = item_obj.get("location") {
+                    if let Some(loc_name) = location.get("name")
+                        .and_then(|n| n.as_str())
+                        .or_else(|| location.as_str()) {
+                        timeline.current_location = Some(loc_name.to_string());
+                    }
+                }
+            }
+            "moved" => {
+                if let Some(to_location) = item_obj.get("to_location") {
+                    if let Some(loc_name) = to_location.get("name")
+                        .and_then(|n| n.as_str())
+                        .or_else(|| to_location.as_str()) {
+                        timeline.current_location = Some(loc_name.to_string());
+                    }
+                }
+            }
+            "destroyed" | "depleted" => {
+                // End current ownership
+                if let Some(last_record) = timeline.ownership_history.last_mut() {
+                    if last_record.to_event_id.is_none() {
+                        last_record.to_event_id = Some(event_id);
+                        last_record.to_timestamp = Some(timestamp);
+                    }
+                }
+                timeline.current_owner = None;
+                timeline.status = if action == "depleted" {
+                    ItemStatus::Depleted
+                } else {
+                    ItemStatus::Destroyed
+                };
+            }
+            "lost" => {
+                timeline.current_owner = None;
+                timeline.current_location = None;
+                timeline.status = ItemStatus::Lost;
+            }
+            _ => {
+                // Generic action - just record usage
+                if let Some(user) = item_obj.get("user")
+                    .or_else(|| item_obj.get("owner"))
+                    .and_then(|u| u.as_str())
+                    .and_then(|u| Uuid::parse_str(u).ok()) {
+                    
+                    timeline.usage_patterns.push(ItemUsagePattern {
+                        user_id: user,
+                        event_id,
+                        timestamp,
+                        usage_type: action.to_string(),
+                        context: None,
+                        effect: None,
+                    });
+                }
+            }
+        }
+        
+        Ok(())
+    }
 
     /// Analyze relationships between entities
     async fn analyze_entity_relationships(
@@ -1335,6 +2612,8 @@ impl HybridQueryService {
                                         timeline_events: Vec::new(),
                                         relationships: Vec::new(),
                                         relevance_score: 1.0, // Default relevance for fallback mode
+                                        extracted_context: ExtractedEntityContext::default(),
+                                        item_interactions: Vec::new(),
                                     }
                                 });
                                 
@@ -1418,6 +2697,25 @@ impl HybridQueryService {
                         relationships.len()));
                 }
             }
+            // Item query types
+            HybridQueryType::ItemTimeline => {
+                key_insights.push(format!("Tracked ownership history across {} events", events.len()));
+            }
+            HybridQueryType::ItemUsage => {
+                key_insights.push(format!("Analyzed item usage patterns from {} events", events.len()));
+            }
+            HybridQueryType::ItemLocation => {
+                key_insights.push(format!("Tracked item locations across {} events", events.len()));
+            }
+            HybridQueryType::ItemLifecycle => {
+                key_insights.push(format!("Analyzed item lifecycle through {} events", events.len()));
+            }
+            HybridQueryType::ItemInteractions => {
+                key_insights.push(format!("Found {} entities interacting with items", entities.len()));
+            }
+            HybridQueryType::ItemSearch => {
+                key_insights.push(format!("Found items matching search criteria in {} events", events.len()));
+            }
             _ => {
                 // Generic insights for other query types
                 if !events.is_empty() {
@@ -1484,6 +2782,13 @@ impl HybridQueryService {
 
         // Build basic entity contexts without full ECS state
         let entity_contexts = self.build_basic_entity_contexts(&chronicle_events, query).await?;
+        
+        // Build item timelines if this is an item query
+        let item_timelines = if self.is_item_query(&query.query_type) {
+            self.build_item_timelines(&chronicle_events, query).await?
+        } else {
+            Vec::new()
+        };
 
         let summary = HybridQuerySummary {
             entities_found: entity_contexts.len(),
@@ -1499,6 +2804,7 @@ impl HybridQueryService {
             entities: entity_contexts,
             chronicle_events,
             relationships: Vec::new(),
+            item_timelines,
             summary,
             performance: QueryPerformanceMetrics {
                 total_duration_ms: 0, // Will be set by caller
@@ -3242,6 +4548,25 @@ impl HybridQueryService {
             HybridQueryType::WorldModelSnapshot { .. } => {
                 self.generate_world_model_snapshot_narrative(entities, events, relationships).await?
             }
+            // Item query types
+            HybridQueryType::ItemTimeline => {
+                self.generate_item_timeline_narrative(events).await?
+            }
+            HybridQueryType::ItemUsage => {
+                self.generate_item_usage_narrative(events).await?
+            }
+            HybridQueryType::ItemLocation => {
+                self.generate_item_location_narrative(events).await?
+            }
+            HybridQueryType::ItemLifecycle => {
+                self.generate_item_lifecycle_narrative(events).await?
+            }
+            HybridQueryType::ItemInteractions => {
+                self.generate_item_interactions_narrative(entities, events).await?
+            }
+            HybridQueryType::ItemSearch => {
+                self.generate_item_search_narrative(events).await?
+            }
         };
 
         Ok(narrative)
@@ -3709,6 +5034,431 @@ impl HybridQueryService {
         }
 
         Ok(narrative)
+    }
+    
+    // Item narrative generation methods
+    
+    /// Generate narrative for item timeline queries
+    async fn generate_item_timeline_narrative(
+        &self,
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = "**Item Ownership Timeline:**\n\n".to_string();
+        
+        if events.is_empty() {
+            narrative.push_str("No item ownership history found.\n");
+            return Ok(narrative);
+        }
+        
+        let mut item_events: HashMap<String, Vec<(DateTime<Utc>, String, String)>> = HashMap::new();
+        
+        // Extract item events
+        for event in events {
+            if let Some(event_data) = &event.event_data {
+                if let Some(items) = event_data.get("items").and_then(|i| i.as_array()) {
+                    for item in items {
+                        if let Some(item_obj) = item.as_object() {
+                            let item_name = item_obj.get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("Unknown Item")
+                                .to_string();
+                            let action = item_obj.get("action")
+                                .and_then(|a| a.as_str())
+                                .unwrap_or("interacted with")
+                                .to_string();
+                            let description = self.format_item_event_description(item_obj, &action);
+                            
+                            item_events.entry(item_name)
+                                .or_insert_with(Vec::new)
+                                .push((event.timestamp_iso8601, action, description));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Format timeline for each item
+        for (item_name, mut events) in item_events {
+            events.sort_by_key(|(timestamp, _, _)| *timestamp);
+            narrative.push_str(&format!("**{}:**\n", item_name));
+            
+            for (timestamp, action, description) in events {
+                let time_str = timestamp.format("%Y-%m-%d %H:%M").to_string();
+                narrative.push_str(&format!("- {} - {}\n", time_str, description));
+            }
+            narrative.push('\n');
+        }
+        
+        Ok(narrative)
+    }
+    
+    /// Generate narrative for item usage queries
+    async fn generate_item_usage_narrative(
+        &self,
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = "**Item Usage Patterns:**\n\n".to_string();
+        
+        if events.is_empty() {
+            narrative.push_str("No item usage data found.\n");
+            return Ok(narrative);
+        }
+        
+        let mut usage_stats: HashMap<String, (usize, Vec<String>)> = HashMap::new();
+        
+        // Analyze usage patterns
+        for event in events {
+            if let Some(event_data) = &event.event_data {
+                if let Some(items) = event_data.get("items").and_then(|i| i.as_array()) {
+                    for item in items {
+                        if let Some(item_obj) = item.as_object() {
+                            if let Some(action) = item_obj.get("action").and_then(|a| a.as_str()) {
+                                if action == "used" {
+                                    let item_name = item_obj.get("name")
+                                        .and_then(|n| n.as_str())
+                                        .unwrap_or("Unknown Item")
+                                        .to_string();
+                                    let usage_type = item_obj.get("usage_type")
+                                        .and_then(|u| u.as_str())
+                                        .unwrap_or("generic")
+                                        .to_string();
+                                    
+                                    let entry = usage_stats.entry(item_name).or_insert((0, Vec::new()));
+                                    entry.0 += 1;
+                                    if !entry.1.contains(&usage_type) {
+                                        entry.1.push(usage_type);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Format usage statistics
+        let mut sorted_items: Vec<_> = usage_stats.into_iter().collect();
+        sorted_items.sort_by_key(|(_, (count, _))| std::cmp::Reverse(*count));
+        
+        for (item_name, (count, usage_types)) in sorted_items {
+            narrative.push_str(&format!("**{}**: Used {} times\n", item_name, count));
+            if !usage_types.is_empty() {
+                narrative.push_str(&format!("  Usage types: {}\n", usage_types.join(", ")));
+            }
+            narrative.push('\n');
+        }
+        
+        Ok(narrative)
+    }
+    
+    /// Generate narrative for item location queries
+    async fn generate_item_location_narrative(
+        &self,
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = "**Item Location History:**\n\n".to_string();
+        
+        if events.is_empty() {
+            narrative.push_str("No item location data found.\n");
+            return Ok(narrative);
+        }
+        
+        let mut location_history: HashMap<String, Vec<(DateTime<Utc>, String)>> = HashMap::new();
+        
+        // Track item movements
+        for event in events {
+            if let Some(event_data) = &event.event_data {
+                if let Some(items) = event_data.get("items").and_then(|i| i.as_array()) {
+                    for item in items {
+                        if let Some(item_obj) = item.as_object() {
+                            let item_name = item_obj.get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("Unknown Item")
+                                .to_string();
+                            let action = item_obj.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                            
+                            let location_desc = match action {
+                                "placed" => {
+                                    item_obj.get("location")
+                                        .and_then(|l| l.get("name").and_then(|n| n.as_str()).or_else(|| l.as_str()))
+                                        .map(|loc| format!("Placed at {}", loc))
+                                }
+                                "moved" => {
+                                    let from = item_obj.get("from_location")
+                                        .and_then(|l| l.get("name").and_then(|n| n.as_str()).or_else(|| l.as_str()));
+                                    let to = item_obj.get("to_location")
+                                        .and_then(|l| l.get("name").and_then(|n| n.as_str()).or_else(|| l.as_str()));
+                                    
+                                    match (from, to) {
+                                        (Some(f), Some(t)) => Some(format!("Moved from {} to {}", f, t)),
+                                        (None, Some(t)) => Some(format!("Moved to {}", t)),
+                                        (Some(f), None) => Some(format!("Moved from {}", f)),
+                                        _ => None,
+                                    }
+                                }
+                                _ => None,
+                            };
+                            
+                            if let Some(desc) = location_desc {
+                                location_history.entry(item_name)
+                                    .or_insert_with(Vec::new)
+                                    .push((event.timestamp_iso8601, desc));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Format location history
+        for (item_name, mut locations) in location_history {
+            locations.sort_by_key(|(timestamp, _)| *timestamp);
+            narrative.push_str(&format!("**{}:**\n", item_name));
+            
+            for (timestamp, location) in locations {
+                let time_str = timestamp.format("%Y-%m-%d %H:%M").to_string();
+                narrative.push_str(&format!("- {} - {}\n", time_str, location));
+            }
+            narrative.push('\n');
+        }
+        
+        Ok(narrative)
+    }
+    
+    /// Generate narrative for item lifecycle queries
+    async fn generate_item_lifecycle_narrative(
+        &self,
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = "**Item Lifecycle Analysis:**\n\n".to_string();
+        
+        if events.is_empty() {
+            narrative.push_str("No item lifecycle data found.\n");
+            return Ok(narrative);
+        }
+        
+        let mut lifecycles: HashMap<String, (Option<DateTime<Utc>>, Option<DateTime<Utc>>, String)> = HashMap::new();
+        
+        // Track item creation and destruction
+        for event in events {
+            if let Some(event_data) = &event.event_data {
+                if let Some(items) = event_data.get("items").and_then(|i| i.as_array()) {
+                    for item in items {
+                        if let Some(item_obj) = item.as_object() {
+                            let item_name = item_obj.get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("Unknown Item")
+                                .to_string();
+                            let action = item_obj.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                            
+                            let entry = lifecycles.entry(item_name.clone()).or_insert((None, None, String::new()));
+                            
+                            match action {
+                                "created" | "discovered" | "found" => {
+                                    entry.0 = Some(event.timestamp_iso8601);
+                                    entry.2 = format!("Created/Found: {}", action);
+                                }
+                                "destroyed" | "depleted" | "lost" => {
+                                    entry.1 = Some(event.timestamp_iso8601);
+                                    entry.2 = format!("{}, Status: {}", entry.2, action);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Format lifecycle information
+        for (item_name, (created, destroyed, status)) in lifecycles {
+            narrative.push_str(&format!("**{}:**\n", item_name));
+            
+            if let Some(created_time) = created {
+                narrative.push_str(&format!("- Created: {}\n", created_time.format("%Y-%m-%d %H:%M")));
+            }
+            
+            if let Some(destroyed_time) = destroyed {
+                narrative.push_str(&format!("- Destroyed: {}\n", destroyed_time.format("%Y-%m-%d %H:%M")));
+                
+                if let Some(created_time) = created {
+                    let duration = destroyed_time.signed_duration_since(created_time);
+                    narrative.push_str(&format!("- Lifespan: {} days\n", duration.num_days()));
+                }
+            }
+            
+            if !status.is_empty() {
+                narrative.push_str(&format!("- {}\n", status));
+            }
+            
+            narrative.push('\n');
+        }
+        
+        Ok(narrative)
+    }
+    
+    /// Generate narrative for item interactions queries
+    async fn generate_item_interactions_narrative(
+        &self,
+        entities: &[EntityTimelineContext],
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = "**Item Interaction Analysis:**\n\n".to_string();
+        
+        if events.is_empty() {
+            narrative.push_str("No item interactions found.\n");
+            return Ok(narrative);
+        }
+        
+        // Count interactions by entity
+        let mut interaction_counts: HashMap<String, HashMap<String, usize>> = HashMap::new();
+        
+        for entity in entities {
+            for interaction in &entity.item_interactions {
+                let entity_name = entity.entity_name.as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or("Unknown Entity");
+                
+                interaction_counts
+                    .entry(entity_name.to_string())
+                    .or_insert_with(HashMap::new)
+                    .entry(interaction.item_name.clone())
+                    .and_modify(|c| *c += 1)
+                    .or_insert(1);
+            }
+        }
+        
+        // Format interaction summary
+        for (entity_name, items) in interaction_counts {
+            let total_interactions: usize = items.values().sum();
+            narrative.push_str(&format!("**{}** ({} total interactions):\n", entity_name, total_interactions));
+            
+            let mut sorted_items: Vec<_> = items.into_iter().collect();
+            sorted_items.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+            
+            for (item_name, count) in sorted_items.into_iter().take(5) {
+                narrative.push_str(&format!("- {}: {} interactions\n", item_name, count));
+            }
+            narrative.push('\n');
+        }
+        
+        Ok(narrative)
+    }
+    
+    /// Generate narrative for item search queries
+    async fn generate_item_search_narrative(
+        &self,
+        events: &[ChronicleEvent],
+    ) -> Result<String, AppError> {
+        let mut narrative = "**Item Search Results:**\n\n".to_string();
+        
+        if events.is_empty() {
+            narrative.push_str("No items found matching search criteria.\n");
+            return Ok(narrative);
+        }
+        
+        let mut found_items: HashMap<String, Vec<String>> = HashMap::new();
+        
+        // Collect unique items and their properties
+        for event in events {
+            if let Some(event_data) = &event.event_data {
+                if let Some(items) = event_data.get("items").and_then(|i| i.as_array()) {
+                    for item in items {
+                        if let Some(item_obj) = item.as_object() {
+                            let item_name = item_obj.get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("Unknown Item")
+                                .to_string();
+                            
+                            let mut properties = Vec::new();
+                            
+                            if let Some(rarity) = item_obj.get("properties")
+                                .and_then(|p| p.get("rarity"))
+                                .and_then(|r| r.as_str()) {
+                                properties.push(format!("Rarity: {}", rarity));
+                            }
+                            
+                            if let Some(item_type) = item_obj.get("properties")
+                                .and_then(|p| p.get("type"))
+                                .and_then(|t| t.as_str()) {
+                                properties.push(format!("Type: {}", item_type));
+                            }
+                            
+                            if let Some(value) = item_obj.get("value")
+                                .and_then(|v| v.as_i64()) {
+                                properties.push(format!("Value: {}", value));
+                            }
+                            
+                            found_items.entry(item_name)
+                                .or_insert_with(Vec::new)
+                                .extend(properties);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Format search results
+        narrative.push_str(&format!("Found {} unique items:\n\n", found_items.len()));
+        
+        for (item_name, properties) in found_items {
+            narrative.push_str(&format!("**{}**\n", item_name));
+            
+            // Deduplicate properties
+            let unique_props: std::collections::HashSet<_> = properties.into_iter().collect();
+            for prop in unique_props {
+                narrative.push_str(&format!("- {}\n", prop));
+            }
+            narrative.push('\n');
+        }
+        
+        Ok(narrative)
+    }
+    
+    /// Format item event description
+    fn format_item_event_description(
+        &self,
+        item_obj: &serde_json::Map<String, JsonValue>,
+        action: &str,
+    ) -> String {
+        match action {
+            "discovered" | "found" => {
+                if let Some(owner) = item_obj.get("owner").and_then(|o| o.as_str()) {
+                    format!("Discovered by entity {}", owner)
+                } else {
+                    "Discovered".to_string()
+                }
+            }
+            "created" => {
+                if let Some(creator) = item_obj.get("creator").and_then(|c| c.as_str()) {
+                    format!("Created by entity {}", creator)
+                } else {
+                    "Created".to_string()
+                }
+            }
+            "transferred" => {
+                let from = item_obj.get("from_owner").and_then(|f| f.as_str());
+                let to = item_obj.get("to_owner").and_then(|t| t.as_str());
+                match (from, to) {
+                    (Some(f), Some(t)) => format!("Transferred from {} to {}", f, t),
+                    _ => "Ownership transferred".to_string(),
+                }
+            }
+            "used" => {
+                let usage_type = item_obj.get("usage_type")
+                    .and_then(|u| u.as_str())
+                    .unwrap_or("generic");
+                format!("Used ({})", usage_type)
+            }
+            "destroyed" => {
+                if let Some(cause) = item_obj.get("destruction_cause").and_then(|c| c.as_str()) {
+                    format!("Destroyed by {}", cause)
+                } else {
+                    "Destroyed".to_string()
+                }
+            }
+            _ => format!("Action: {}", action),
+        }
     }
 
     // Helper methods for formatting

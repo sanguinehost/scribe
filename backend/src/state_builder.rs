@@ -278,6 +278,7 @@ impl AppStateServicesBuilder {
             Arc::new(self.db_pool.clone()),
             Default::default(),
             feature_flags.clone(),
+            ai_client.clone(),
             ecs_entity_manager.clone(),
             ecs_enhanced_rag_service.clone(),
             ecs_graceful_degradation.clone(),
