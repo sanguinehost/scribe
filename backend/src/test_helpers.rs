@@ -7,7 +7,11 @@ use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingCl
 use crate::services::embeddings::{
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
-use crate::text_processing::chunking::ChunkConfig;
+use crate::services::{
+    EcsEntityManager, EcsEnhancedRagService, EcsGracefulDegradation,
+    hybrid_query_service::{HybridQueryService, HybridQueryConfig},
+}; // Added for create_test_hybrid_query_service
+use crate::text_processing::chunking::{ChunkConfig, ChunkingMetric};
 use genai::chat::Usage; // Added ChunkConfig
 // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
@@ -3334,39 +3338,36 @@ pub async fn set_history_settings(
 
 /// Creates a test HybridQueryService with mock dependencies
 pub fn create_test_hybrid_query_service(
-    ai_client: Arc<MockAiClient>,
+    ai_client: Arc<dyn AiClient>,
     db_pool: Arc<PgPool>,
+    redis_client: Arc<redis::Client>,
 ) -> crate::services::hybrid_query_service::HybridQueryService {
-    use crate::services::{
-        hybrid_query_service::{HybridQueryService, HybridQueryConfig},
-        ecs_entity_manager::{EcsEntityManager, EntityManagerConfig},
-        ecs_enhanced_rag_service::{EcsEnhancedRagService, EcsEnhancedRagConfig},
-        ecs_graceful_degradation::{EcsGracefulDegradation, GracefulDegradationConfig},
-    };
-    use crate::config::feature_flags::NarrativeFeatureFlags;
+    use crate::config::NarrativeFeatureFlags;
     use std::sync::Arc;
 
     // Create mock services
     let feature_flags = Arc::new(NarrativeFeatureFlags::default());
-    // Create mock redis client for tests
-    let redis_client = Arc::new(redis::Client::open("redis://localhost").unwrap());
     let entity_manager = Arc::new(EcsEntityManager::new(
         db_pool.clone(),
         redis_client,
-        Some(EntityManagerConfig::default()),
+        None,
     ));
     let degradation_service = Arc::new(EcsGracefulDegradation::new(
-        GracefulDegradationConfig::default(),
+        Default::default(),
         feature_flags.clone(),
         Some(entity_manager.clone()),
-        None, // No consistency monitor for tests
+        None,
     ));
     let embedding_service = Arc::new(EmbeddingPipelineService::new(
-        ChunkConfig::for_regular_text(1000, 200)
+        ChunkConfig {
+            metric: ChunkingMetric::Word,
+            max_size: 500,
+            overlap: 50,
+        }
     ));
     let rag_service = Arc::new(EcsEnhancedRagService::new(
         db_pool.clone(),
-        EcsEnhancedRagConfig::default(),
+        Default::default(),
         feature_flags.clone(),
         entity_manager.clone(),
         degradation_service.clone(),

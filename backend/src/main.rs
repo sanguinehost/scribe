@@ -65,6 +65,7 @@ use scribe_backend::services::narrative_intelligence_service::NarrativeIntellige
 use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::services::agentic::entity_resolution_tool::EntityResolutionTool;
+use scribe_backend::llm::AiClient;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService;
 // ECS Services imports
@@ -263,7 +264,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         .context("Failed to initialize file storage directories")?;
 
     // Initialize ECS services
-    let ecs_services = initialize_ecs_services(config, &pool).await?;
+    let ecs_services = initialize_ecs_services(config, &pool, ai_client_arc.clone()).await?;
     
     // Create agentic state update service
     let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
@@ -341,6 +342,7 @@ struct EcsServices {
 async fn initialize_ecs_services(
     config: &Arc<Config>,
     pool: &PgPool,
+    ai_client: Arc<dyn AiClient>,
 ) -> Result<EcsServices> {
     tracing::info!("Initializing ECS services...");
     
@@ -391,7 +393,7 @@ async fn initialize_ecs_services(
         Arc::new(pool.clone()),
         Default::default(), // Use default config
         feature_flags.clone(),
-        ai_client_arc.clone(),
+        ai_client.clone(),
         ecs_entity_manager.clone(),
         ecs_enhanced_rag_service.clone(),
         ecs_graceful_degradation.clone(),

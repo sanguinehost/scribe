@@ -3550,7 +3550,7 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         Ok(narrative)
     }
 
-    /// Calculate entity relevance score based on query and entity context
+    /// Calculate entity relevance score based on query and entity context using AI analysis
     async fn calculate_entity_relevance_score(
         &self,
         entity_id: Uuid,
@@ -3558,87 +3558,204 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         current_state: &Option<EntityStateSnapshot>,
         query: &HybridQuery,
     ) -> Result<f32, AppError> {
-        let mut relevance_score = 0.0f32;
-        let mut scoring_factors = 0;
-
-        // Get query text for comparison
-        let query_text = match &query.query_type {
-            HybridQueryType::NarrativeQuery { query_text, .. } => query_text.as_str(),
+        use crate::services::agentic::query_relevance_structured_output::{
+            get_query_relevance_schema, QueryRelevanceOutput
+        };
+        use genai::chat::{ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, MessageContent};
+        
+        debug!("Calculating entity relevance score for {} using AI", entity_id);
+        
+        // Build comprehensive context for AI analysis
+        let entity_name = self.extract_entity_name(entity_id).await?.unwrap_or_else(|| "Unknown Entity".to_string());
+        
+        // Build query context
+        let query_context = match &query.query_type {
+            HybridQueryType::NarrativeQuery { query_text, .. } => {
+                format!("Narrative Query: {}", query_text)
+            }
             HybridQueryType::RelationshipHistory { entity_a, entity_b, .. } => {
-                // For relationship queries, consider both entity names
-                return Ok(if entity_a.to_lowercase().contains(&entity_id.to_string()) || 
-                            entity_b.to_lowercase().contains(&entity_id.to_string()) {
-                    0.9 // High relevance for entities directly involved in relationship query
-                } else {
-                    0.3 // Lower relevance for other entities
-                });
+                format!("Relationship History Query: Between {} and {}", entity_a, entity_b)
             }
             HybridQueryType::LocationQuery { location_name, .. } => {
-                // For location queries, check if entity is at that location
-                if let Some(state) = current_state {
-                    if let Some(position_data) = state.components.get("position") {
-                        if position_data.to_string().to_lowercase().contains(&location_name.to_lowercase()) {
-                            return Ok(0.85); // High relevance for entities at the queried location
-                        }
-                    }
-                }
-                return Ok(0.2); // Lower relevance for entities not at the location
+                format!("Location Query: Entities at {}", location_name)
             }
-            HybridQueryType::EntityTimeline { .. } => {
-                // Entity timeline queries are always relevant to the entity
-                return Ok(0.9);
+            HybridQueryType::EntityTimeline { entity_name, .. } => {
+                format!("Entity Timeline Query: History of {}", entity_name)
             }
-            HybridQueryType::EventParticipants { .. } => {
-                // Event participant queries have moderate relevance
-                return Ok(0.6);
+            HybridQueryType::EventParticipants { event_description, .. } => {
+                format!("Event Participants Query: Who was involved in {}", event_description)
             }
-            HybridQueryType::EntityStateAtTime { .. } => {
-                // Entity state queries are highly relevant to the entity
-                return Ok(0.9);
+            HybridQueryType::EntityStateAtTime { entity_id, timestamp, .. } => {
+                format!("Entity State Query: State of {} at {}", entity_id, timestamp)
             }
-            _ => {
-                // For other query types, use default relevance
-                return Ok(0.5);
+            HybridQueryType::ItemTimeline => {
+                format!("Item Timeline Query: Track ownership history of an item")
+            }
+            HybridQueryType::ItemUsage => {
+                format!("Item Usage Query: Show item usage patterns")
+            }
+            HybridQueryType::ItemLocation => {
+                format!("Item Location Query: Where has this item been?")
+            }
+            HybridQueryType::ItemLifecycle => {
+                format!("Item Lifecycle Query: Track item lifecycle from creation to destruction")
+            }
+            HybridQueryType::ItemInteractions => {
+                format!("Item Interactions Query: Who has interacted with this item?")
+            }
+            HybridQueryType::ItemSearch => {
+                format!("Item Search Query: Find items matching criteria")
+            }
+            HybridQueryType::CausalChain { from_event, to_entity, .. } => {
+                format!("Causal Chain Query: Trace causal chain from {:?} to {:?}", from_event, to_entity)
+            }
+            HybridQueryType::TemporalPath { entity_id, from_time, to_time, .. } => {
+                format!("Temporal Path Query: Entity {} changes from {} to {}", entity_id, from_time, to_time)
+            }
+            HybridQueryType::RelationshipNetwork { center_entity_id, depth, .. } => {
+                format!("Relationship Network Query: Network around {} with depth {}", center_entity_id, depth)
+            }
+            HybridQueryType::CausalInfluences { entity_id, time_window, .. } => {
+                format!("Causal Influences Query: Influences on {} within {:?}", entity_id, time_window)
+            }
+            HybridQueryType::WorldModelSnapshot { timestamp, focus_entities, .. } => {
+                format!("World Model Snapshot Query: Snapshot at {:?} focusing on {:?}", timestamp, focus_entities)
             }
         };
-
-        // Factor 1: Entity name similarity to query (30% weight)
-        if let Ok(Some(entity_name)) = self.extract_entity_name(entity_id).await {
-            let name_similarity = self.calculate_text_similarity(&entity_name, query_text);
-            relevance_score += name_similarity * 0.3;
-            scoring_factors += 1;
-        }
-
-        // Factor 2: Current state relevance (25% weight)
-        if let Some(state) = current_state {
-            let state_similarity = self.calculate_state_relevance(state, query_text);
-            relevance_score += state_similarity * 0.25;
-            scoring_factors += 1;
-        }
-
-        // Factor 3: Timeline event relevance (30% weight)
-        if !timeline_events.is_empty() {
-            let event_similarity = self.calculate_timeline_relevance(timeline_events, query_text);
-            relevance_score += event_similarity * 0.3;
-            scoring_factors += 1;
-        }
-
-        // Factor 4: Recency boost (15% weight)
-        if !timeline_events.is_empty() {
-            let recency_score = self.calculate_recency_score(timeline_events);
-            relevance_score += recency_score * 0.15;
-            scoring_factors += 1;
-        }
-
-        // Normalize by number of factors and clamp to [0.0, 1.0]
-        let final_score = if scoring_factors > 0 {
-            (relevance_score / scoring_factors as f32).min(1.0).max(0.0)
+        
+        // Build entity state context
+        let state_context = if let Some(state) = current_state {
+            let mut context = String::from("Current State Components:\n");
+            for (component_type, data) in &state.components {
+                context.push_str(&format!("- {}: {}\n", component_type, 
+                    serde_json::to_string(data).unwrap_or_else(|_| data.to_string())));
+            }
+            context.push_str(&format!("\nStatus Indicators: {:?}\n", state.status_indicators));
+            context.push_str(&format!("Snapshot Time: {}", state.snapshot_time));
+            context
         } else {
-            0.1 // Default minimal relevance if no factors available
+            "No current state available".to_string()
         };
+        
+        // Build timeline context
+        let timeline_context = if !timeline_events.is_empty() {
+            let mut context = format!("Recent Timeline Events ({} total):\n", timeline_events.len());
+            for (i, event) in timeline_events.iter().take(5).enumerate() {
+                context.push_str(&format!("{}. {} - {} (significance: {:.2})\n", 
+                    i + 1, 
+                    event.event.timestamp_iso8601,
+                    event.event.summary,
+                    event.significance_score
+                ));
+                if !event.co_participants.is_empty() {
+                    context.push_str(&format!("   Co-participants: {} entities\n", event.co_participants.len()));
+                }
+            }
+            if timeline_events.len() > 5 {
+                context.push_str(&format!("... and {} more events\n", timeline_events.len() - 5));
+            }
+            context
+        } else {
+            "No timeline events available".to_string()
+        };
+        
+        let prompt = format!(
+            r#"Analyze the relevance of this entity to the given query using multi-factor analysis.
 
-        debug!("Entity {} relevance score: {:.3} (factors: {})", entity_id, final_score, scoring_factors);
-        Ok(final_score)
+Query Context:
+{}
+
+Entity Information:
+- Entity ID: {}
+- Entity Name: {}
+
+{}
+
+{}
+
+Instructions:
+1. Analyze entity name relevance - how well does the entity name match what the query is looking for?
+2. Analyze current state relevance - does the entity's current state (components, status) match query needs?
+3. Analyze timeline relevance - do the entity's past events relate to the query?
+4. Analyze semantic relevance - what deeper contextual connections exist?
+5. Analyze query type relevance - how relevant is this entity to this specific type of query?
+6. Analyze temporal relevance - consider recency and time period alignment
+
+For each factor:
+- Provide a score (0.0-1.0)
+- Assign an appropriate weight based on the query type
+- Explain your reasoning
+- List specific evidence
+
+Weights should sum to approximately 1.0 and reflect the relative importance of each factor for this specific query.
+
+Return a comprehensive relevance analysis with an overall weighted score and natural language explanation."#,
+            query_context,
+            entity_id,
+            entity_name,
+            state_context,
+            timeline_context
+        );
+        
+        // Get the JSON schema for structured output
+        let schema = get_query_relevance_schema();
+        
+        // Create chat request with structured output
+        let chat_options = ChatOptions::default()
+            .with_temperature(0.2) // Low temperature for consistent scoring
+            .with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+                schema: schema.clone(),
+            }));
+        
+        let messages = vec![
+            ChatMessage::system("You are an expert relevance scoring analyst. Evaluate how relevant entities are to queries based on multiple factors."),
+            ChatMessage::user(MessageContent::Text(prompt)),
+        ];
+        
+        let chat_request = ChatRequest::new(messages);
+        
+        let response = self.ai_client.exec_chat("gemini-2.5-flash-lite", chat_request, Some(chat_options)).await
+            .map_err(|e| AppError::AiServiceError(format!("Failed to analyze query relevance: {}", e)))?;
+        
+        // Parse the structured response
+        let content = response.contents
+            .first()
+            .and_then(|c| match c {
+                MessageContent::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| AppError::AiServiceError("No content in relevance analysis response".to_string()))?;
+        
+        let relevance_output: QueryRelevanceOutput = serde_json::from_str(&content)
+            .map_err(|e| AppError::AiServiceError(format!("Failed to parse relevance analysis: {}", e)))?;
+        
+        // Validate the output
+        relevance_output.validate()?;
+        
+        // Log detailed analysis
+        debug!("Entity {} relevance analysis (confidence: {:.2}):", entity_id, relevance_output.confidence_score);
+        debug!("  - Entity Name: {:.2} (weight: {:.2})", 
+               relevance_output.entity_name_relevance.score,
+               relevance_output.entity_name_relevance.weight);
+        debug!("  - Current State: {:.2} (weight: {:.2})", 
+               relevance_output.current_state_relevance.score,
+               relevance_output.current_state_relevance.weight);
+        debug!("  - Timeline: {:.2} (weight: {:.2})", 
+               relevance_output.timeline_relevance.score,
+               relevance_output.timeline_relevance.weight);
+        debug!("  - Semantic: {:.2} (weight: {:.2})", 
+               relevance_output.semantic_relevance.score,
+               relevance_output.semantic_relevance.weight);
+        debug!("  - Query Type: {:.2} (weight: {:.2})", 
+               relevance_output.query_type_relevance.score,
+               relevance_output.query_type_relevance.weight);
+        debug!("  - Temporal: {:.2} (weight: {:.2})", 
+               relevance_output.temporal_relevance.score,
+               relevance_output.temporal_relevance.weight);
+        debug!("  Overall Score: {:.3}", relevance_output.overall_relevance_score);
+        debug!("  Explanation: {}", relevance_output.relevance_explanation);
+        
+        Ok(relevance_output.overall_relevance_score)
     }
 
     /// Calculate text similarity using simple keyword matching
@@ -3925,50 +4042,133 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         }
     }
 
-    /// Reconstruct entity state at the time of a specific event
+    /// Reconstruct entity state at the time of a specific event using AI analysis
     async fn reconstruct_entity_state_at_event(
         &self,
         entity_id: Uuid,
         event: &ChronicleEvent,
         user_id: Uuid,
     ) -> Result<Option<EntityStateSnapshot>, AppError> {
-        // If we have current state, try to reconstruct historical state
-        if let Ok(current_state) = self.get_entity_current_state(entity_id, user_id).await {
-            // For reconstruction, we need to work backwards from current state
-            // using chronicle events to determine what changed
-            
-            // Get all events after this event timestamp to work backwards
-            let events_after = self.get_events_after_timestamp(entity_id, event.created_at).await?;
-            
-            // Start with current state and work backwards
-            let mut reconstructed_state = current_state.clone();
-            
-            // Process events in reverse chronological order
-            for later_event in events_after.iter().rev() {
-                // Apply reverse changes from this event
-                if let Ok(state_changes) = self.extract_state_changes_from_event(later_event).await {
-                    self.apply_reverse_state_changes(&mut reconstructed_state, &state_changes)?;
-                }
-            }
-            
-            // Apply any state changes from the target event itself
-            if let Ok(state_changes) = self.extract_state_changes_from_event(event).await {
-                self.apply_state_changes(&mut reconstructed_state, &state_changes)?;
-            }
-            
-            // Update the snapshot time to the event time
-            reconstructed_state.snapshot_time = event.created_at;
-            
-            Ok(Some(reconstructed_state))
+        use genai::chat::{ChatOptions, ChatResponseFormat, JsonSchemaSpec};
+        use crate::services::agentic::historical_state_reconstruction_structured_output::{
+            HistoricalStateReconstructionOutput, get_historical_state_reconstruction_schema
+        };
+        
+        // Get current state and historical events for context
+        let current_state = self.get_entity_current_state(entity_id, user_id).await.ok();
+        let events_after = self.get_events_after_timestamp(entity_id, event.created_at).await?;
+        let events_before = self.get_events_before_timestamp(entity_id, event.created_at).await?;
+        
+        // Prepare context for AI analysis
+        let current_state_context = if let Some(ref state) = current_state {
+            serde_json::to_string_pretty(state).unwrap_or_else(|_| "Unable to serialize current state".to_string())
         } else {
-            // No current state available, try to reconstruct from event data
-            if let Ok(state_from_event) = self.build_state_from_event(entity_id, event).await {
-                Ok(Some(state_from_event))
-            } else {
-                // Unable to reconstruct state
-                Ok(None)
-            }
-        }
+            "No current state available".to_string()
+        };
+        
+        let events_context = format!(
+            "Target Event: {}\nEvents Before (last 10): {}\nEvents After (first 10): {}",
+            serde_json::to_string_pretty(event).unwrap_or_else(|_| "Unable to serialize event".to_string()),
+            events_before.iter().rev().take(10).map(|e| 
+                serde_json::to_string_pretty(e).unwrap_or_else(|_| "Unable to serialize event".to_string())
+            ).collect::<Vec<_>>().join("\n---\n"),
+            events_after.iter().take(10).map(|e| 
+                serde_json::to_string_pretty(e).unwrap_or_else(|_| "Unable to serialize event".to_string())
+            ).collect::<Vec<_>>().join("\n---\n")
+        );
+        
+        // Create AI prompt for historical state reconstruction
+        let system_prompt = format!(
+            "You are an expert at reconstructing historical entity states from chronicle events. \
+            Your task is to analyze events and determine what the entity's state was at a specific point in time.
+
+            ENTITY CONTEXT:
+            - Entity ID: {}
+            - Target Timestamp: {}
+            - Current State: {}
+            
+            EVENTS CONTEXT:
+            {}
+            
+            INSTRUCTIONS:
+            1. Analyze the target event and surrounding events to identify state changes
+            2. Determine what the entity's state was at the time of the target event
+            3. Use backward reconstruction from current state or forward reconstruction from available data
+            4. Consider component changes like health, location, inventory, status, relationships
+            5. Provide confidence scores and evidence for your analysis
+            6. Identify any limitations or uncertainty factors in the reconstruction
+            
+            OUTPUT FORMAT:
+            Return a structured JSON analysis following the exact schema provided.",
+            entity_id,
+            event.created_at,
+            current_state_context,
+            events_context
+        );
+        
+        let user_prompt = format!(
+            "Reconstruct the entity state at the time of the target event. \
+            Focus on identifying what state changes occurred and what the entity's \
+            complete state was at that moment. Use all available context to make \
+            the most accurate reconstruction possible."
+        );
+        
+        // Get schema for structured output
+        let schema = get_historical_state_reconstruction_schema();
+        
+        // Configure AI client for structured output
+        let chat_options = ChatOptions::default()
+            .with_temperature(0.2)
+            .with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+                schema: schema.clone(),
+            }));
+        
+        // Create chat request with structured output
+        let messages = vec![
+            ChatMessage::system(&system_prompt),
+            ChatMessage::user(MessageContent::Text(user_prompt)),
+        ];
+        
+        let chat_request = ChatRequest::new(messages);
+        
+        // Call AI service with Flash-Lite for efficiency
+        let ai_response = self.ai_client
+            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_request, Some(chat_options))
+            .await?;
+        
+        // Parse the structured response
+        let content = ai_response.contents
+            .first()
+            .and_then(|c| match c {
+                MessageContent::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| AppError::AiServiceError("No content in historical state reconstruction response".to_string()))?;
+        
+        let reconstruction_output: HistoricalStateReconstructionOutput = 
+            serde_json::from_str(&content)
+                .map_err(|e| AppError::AiServiceError(format!("Failed to parse historical state reconstruction: {}", e)))?;
+        
+        // Validate the output
+        reconstruction_output.validate()?;
+        
+        // Convert AI analysis to EntityStateSnapshot
+        let snapshot = self.convert_reconstruction_to_snapshot(
+            entity_id,
+            event.created_at,
+            &reconstruction_output,
+            current_state.as_ref()
+        ).await?;
+        
+        tracing::debug!(
+            "Historical state reconstruction completed for entity {} at {}: confidence={:.2}, quality={:.2}",
+            entity_id,
+            event.created_at,
+            reconstruction_output.reconstruction_confidence,
+            reconstruction_output.calculate_quality_score()
+        );
+        
+        Ok(Some(snapshot))
     }
 
     /// Get chronicle events after a specific timestamp for an entity
@@ -4003,6 +4203,94 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         }
         
         Ok(relevant_events)
+    }
+    
+    /// Get chronicle events before a specific timestamp for an entity
+    async fn get_events_before_timestamp(
+        &self,
+        entity_id: Uuid,
+        timestamp: DateTime<Utc>,
+    ) -> Result<Vec<ChronicleEvent>, AppError> {
+        use diesel::prelude::*;
+        use crate::schema::chronicle_events;
+        
+        let conn = self.db_pool.get().await?;
+        
+        // Query for events before the timestamp where entity is involved
+        let events = conn
+            .interact(move |conn| {
+                chronicle_events::table
+                    .filter(chronicle_events::created_at.lt(timestamp))
+                    .order(chronicle_events::created_at.desc())
+                    .load::<ChronicleEvent>(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(format!("Failed to query events: {e}")))?
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to load events: {e}")))?;
+        
+        // Filter for events involving this entity
+        let mut relevant_events = Vec::new();
+        for event in events {
+            if self.entity_involved_in_event(entity_id, &event).await? {
+                relevant_events.push(event);
+            }
+        }
+        
+        Ok(relevant_events)
+    }
+    
+    /// Convert AI reconstruction output to EntityStateSnapshot
+    async fn convert_reconstruction_to_snapshot(
+        &self,
+        entity_id: Uuid,
+        timestamp: DateTime<Utc>,
+        reconstruction: &crate::services::agentic::historical_state_reconstruction_structured_output::HistoricalStateReconstructionOutput,
+        current_state: Option<&EntityStateSnapshot>,
+    ) -> Result<EntityStateSnapshot, AppError> {
+        use std::collections::HashMap;
+        
+        // Start with current state if available, otherwise create empty snapshot
+        let mut snapshot = if let Some(current) = current_state {
+            current.clone()
+        } else {
+            EntityStateSnapshot {
+                entity_id,
+                archetype_signature: "unknown".to_string(),
+                components: HashMap::new(),
+                snapshot_time: timestamp,
+                status_indicators: Vec::new(),
+            }
+        };
+        
+        // Update with reconstructed state from AI
+        snapshot.entity_id = entity_id;
+        snapshot.snapshot_time = timestamp;
+        snapshot.components = reconstruction.reconstructed_state.components.clone();
+        snapshot.status_indicators = reconstruction.reconstructed_state.status_indicators.clone();
+        
+        // Use archetype signature from AI if available
+        if let Some(ref archetype) = reconstruction.reconstructed_state.archetype_signature {
+            snapshot.archetype_signature = archetype.clone();
+        }
+        
+        // Add reconstruction metadata as a special component
+        let mut reconstruction_metadata = HashMap::new();
+        reconstruction_metadata.insert("confidence".to_string(), 
+            serde_json::Value::Number(serde_json::Number::from_f64(reconstruction.reconstruction_confidence as f64).unwrap()));
+        reconstruction_metadata.insert("quality_score".to_string(), 
+            serde_json::Value::Number(serde_json::Number::from_f64(reconstruction.calculate_quality_score() as f64).unwrap()));
+        reconstruction_metadata.insert("reconstruction_method".to_string(), 
+            serde_json::Value::String(reconstruction.reconstruction_analysis.reconstruction_method.clone()));
+        reconstruction_metadata.insert("events_analyzed".to_string(), 
+            serde_json::Value::Number(serde_json::Number::from(reconstruction.reconstruction_analysis.events_analyzed)));
+        reconstruction_metadata.insert("uncertainty_factors".to_string(), 
+            serde_json::Value::Array(reconstruction.reconstructed_state.uncertainty_factors.iter()
+                .map(|f| serde_json::Value::String(f.clone())).collect()));
+        
+        snapshot.components.insert("_reconstruction_metadata".to_string(), 
+            serde_json::Value::Object(reconstruction_metadata.into_iter().collect()));
+        
+        Ok(snapshot)
     }
 
     /// Extract state changes from an event

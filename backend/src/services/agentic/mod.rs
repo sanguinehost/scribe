@@ -30,6 +30,7 @@ pub mod tactical_structured_output;
 pub mod entity_dependency_structured_output;
 pub mod event_participants_structured_output;
 pub mod query_relevance_structured_output;
+pub mod historical_state_reconstruction_structured_output;
 pub mod types;
 
 

@@ -114,30 +114,24 @@ async fn test_entity_resolution_tool_compiles() {
                 }
             )),
         )),
-        hybrid_query_service: Arc::new(HybridQueryService::new(
-            Arc::new(test_app.db_pool.clone()),
-            Default::default(),
-            Arc::new(NarrativeFeatureFlags::default()),
-            Arc::new(EcsEntityManager::new(
+        hybrid_query_service: {
+            let entity_manager = Arc::new(EcsEntityManager::new(
                 Arc::new(test_app.db_pool.clone()),
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
-            )),
-            Arc::new(EcsEnhancedRagService::new(
+            ));
+            let degradation = Arc::new(EcsGracefulDegradation::new(
+                Default::default(),
+                Arc::new(NarrativeFeatureFlags::default()),
+                Some(entity_manager.clone()),
+                None,
+            ));
+            let rag_service = Arc::new(EcsEnhancedRagService::new(
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 Arc::new(NarrativeFeatureFlags::default()),
-                Arc::new(EcsEntityManager::new(
-                    Arc::new(test_app.db_pool.clone()),
-                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
-                    None,
-                )),
-                Arc::new(EcsGracefulDegradation::new(
-                    Default::default(),
-                    Arc::new(NarrativeFeatureFlags::default()),
-                    None,
-                    None,
-                )),
+                entity_manager.clone(),
+                degradation.clone(),
                 Arc::new(EmbeddingPipelineService::new(
                     ChunkConfig {
                         metric: ChunkingMetric::Word,
@@ -145,14 +139,17 @@ async fn test_entity_resolution_tool_compiles() {
                         overlap: 50,
                     }
                 )),
-            )),
-            Arc::new(EcsGracefulDegradation::new(
+            ));
+            Arc::new(HybridQueryService::new(
+                Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 Arc::new(NarrativeFeatureFlags::default()),
-                None,
-                None,
-            )),
-        )),
+                test_app.ai_client.clone(),
+                entity_manager,
+                rag_service,
+                degradation,
+            ))
+        },
         chronicle_service: Arc::new(ChronicleService::new(test_app.db_pool.clone())),
         chronicle_ecs_translator: Arc::new(ChronicleEcsTranslator::new(
             Arc::new(test_app.db_pool.clone())
@@ -200,6 +197,7 @@ async fn test_entity_resolution_tool_compiles() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 Arc::new(NarrativeFeatureFlags::default()),
+                test_app.ai_client.clone(),
                 entity_manager.clone(),
                 rag_service,
                 degradation,
@@ -253,6 +251,7 @@ async fn test_entity_resolution_tool_compiles() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 Arc::new(NarrativeFeatureFlags::default()),
+                test_app.ai_client.clone(),
                 entity_manager.clone(),
                 rag_service,
                 degradation,
