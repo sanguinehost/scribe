@@ -833,11 +833,17 @@ pub struct ContextCache {
 
 ---
 
-## ✅ Epic 6: Full System Validation & Hardening
+## 🔴 Epic 6: Full System Validation & Integration
 
-**Goal:** Verify the entire hierarchical pipeline works cohesively and is secure, completing all remaining system functionality.
+**Goal:** Verify the entire hierarchical pipeline works cohesively and is secure, completing all remaining system functionality and integrating ALL tools into the main code paths.
 
-**Current State:** 🔴 **Critical Dependencies Identified** - Analysis reveals missing repair system functionality and feature completeness gaps that must be addressed for full system validation.
+**Current State:** 🔴 **Critical Integration Gaps** - Integration testing revealed only 39% tool utilization (9/23 tools). Strategic Agent, Perception Agent, and Narrative Intelligence Service are not wired into the main chat generation flow. All Epic 0 & 1 tools remain unused in typical gameplay.
+
+**🚨 NEW CRITICAL TASKS ADDED:**
+- **Task 6.3:** Full Tool & Agent Integration - Wire ALL agents and tools into main chat flow
+- **Task 6.4:** Enhanced Integration Testing - Ensure 100% tool coverage
+- **Task 6.5:** Missing Integration Points - Activate chronicle, lorebook, and ECS synchronization
+- **Task 6.6:** Security and Manual QA - Comprehensive validation of integrated system
 
 *   **[ ] Task 6.1: 🚨 Critical System Completeness (BLOCKING)**
     *   **[x] Subtask 6.1.1: Repair System Implementation** ✅ **COMPLETED**
@@ -988,17 +994,76 @@ pub struct ContextCache {
         *   [x] **Entity Context Building** (Line 1080) - 🔍 **COMPREHENSIVE PARSING** - Rich context building from event content - ✅ **COMPLETED** - AI-driven entity context extraction with Flash-Lite integration
         *   [x] **Item Systems** (Line 1718-1719) - 📦 **COMPREHENSIVE TRACKING** - Item ownership timelines and usage patterns - ✅ **COMPLETED** - Comprehensive item tracking with AI-driven analysis
 
-*   **[ ] Task 6.3: End-to-End Scenario Testing**
-    *   **[ ] Subtask 6.3.1: Write Full Loop Test:** Write an integration test simulating a multi-turn conversation, asserting the world state in the database is correctly and consistently updated by the full `Strategic -> Tactical -> Perception` loop.
-    *   **[ ] Subtask 6.3.2: Repair System Integration Testing:** Validate repair system works end-to-end within agent workflows
-    *   **[ ] Subtask 6.3.3: Performance Validation:** Ensure repair analysis and enhanced features don't impact response times
+*   **[ ] Task 6.3: 🚨 CRITICAL - Full Tool & Agent Integration in Main Code Paths**
+    *   **Objective:** Based on integration test analysis showing only 39% tool utilization (9/23 tools), integrate ALL tools and agent layers into the main chat generation flow
+    *   **Current State:** Only Tactical Agent partially integrated; Strategic Agent, Perception Agent, and Narrative Intelligence Service disconnected from main flow
+    *   **[ ] Subtask 6.3.1: Complete Strategic Agent Integration**
+        *   [ ] Wire Strategic Agent into chat route BEFORE Tactical Agent
+        *   [ ] Implement strategic directive generation from user messages
+        *   [ ] Add narrative arc detection and plot significance analysis
+        *   [ ] Create tests for multi-turn strategic planning
+    *   **[ ] Subtask 6.3.2: Implement Perception Agent Pre-Response Pipeline**
+        *   [ ] Create PerceptionAgent that runs BEFORE prompt building
+        *   [ ] Integrate Epic 0 hierarchy tools (PromoteEntityHierarchy, GetEntityHierarchy, etc.)
+        *   [ ] Integrate salience management tools (UpdateSalience)
+        *   [ ] Add perception enrichment to EnrichedContext
+    *   **[ ] Subtask 6.3.3: Enable Post-Response Narrative Processing**
+        *   [ ] Integrate NarrativeAgentRunner AFTER AI response generation
+        *   [ ] Enable automatic chronicle event creation (CreateChronicleEventTool)
+        *   [ ] Enable automatic lorebook entry creation/updates
+        *   [ ] Wire EntityResolutionTool for entity extraction from responses
+    *   **[ ] Subtask 6.3.4: Activate Unused Epic 0 & 1 Tools**
+        *   [ ] Design scenarios requiring hierarchy manipulation in chat flow
+        *   [ ] Trigger AnalyzeHierarchyRequestTool for natural language queries
+        *   [ ] Enable SuggestHierarchyPromotionTool based on narrative events
+        *   [ ] Activate all 8 narrative tools (significance analysis, extraction, etc.)
+    *   **[ ] Subtask 6.3.5: Complete Agent Communication Pipeline**
+        *   [ ] Implement Strategic → Tactical → Operational message passing
+        *   [ ] Add agent result aggregation and conflict resolution
+        *   [ ] Create comprehensive logging for all agent interactions
+        *   [ ] Ensure all 23 registered tools are accessible to appropriate agents
 
-*   **[ ] Task 6.4: Security and Logging Validation**
-    *   **[ ] Subtask 6.4.1: Security Review:**
+*   **[ ] Task 6.4: Enhanced Integration Testing & Validation**
+    *   **[ ] Subtask 6.4.1: Write Full Agent Pipeline Test:** 
+        *   [ ] Test complete flow: User Input → Strategic → Perception → Tactical → Generation → Post-Response
+        *   [ ] Verify all 23 tools get exercised in realistic scenarios
+        *   [ ] Assert world state updates, chronicle creation, lorebook updates
+    *   **[ ] Subtask 6.4.2: Tool Coverage Testing:**
+        *   [ ] Create scenarios that REQUIRE hierarchy promotion (cosmic events)
+        *   [ ] Design tests that trigger salience changes (background → important)
+        *   [ ] Implement inventory management test scenarios
+        *   [ ] Add relationship evolution testing
+    *   **[ ] Subtask 6.4.3: Performance & Integration Validation:**
+        *   [ ] Measure latency impact of full agent pipeline
+        *   [ ] Verify no circular dependencies in agent communication
+        *   [ ] Test graceful degradation when agents fail
+        *   [ ] Validate repair system integration in agent workflows
+
+*   **[ ] Task 6.5: Missing Integration Points & Feature Activation**
+    *   **[ ] Subtask 6.5.1: Chronicle Integration Completion**
+        *   [ ] Ensure player_chronicle_id properly flows through all agents
+        *   [ ] Enable automatic chronicle event creation from chat messages
+        *   [ ] Implement chronicle-aware narrative significance analysis
+    *   **[ ] Subtask 6.5.2: Lorebook System Activation**
+        *   [ ] Wire automatic lorebook entry creation from significant events
+        *   [ ] Enable SearchKnowledgeBaseTool in agent planning
+        *   [ ] Implement lorebook entry merging/updating from chat
+    *   **[ ] Subtask 6.5.3: ECS State Synchronization**
+        *   [ ] Ensure entity changes from tools properly update ECS
+        *   [ ] Implement entity state change notifications to agents
+        *   [ ] Add ECS transaction logging for debugging
+
+*   **[ ] Task 6.6: Security and Logging Validation**
+    *   **[ ] Subtask 6.6.1: Security Review:**
         *   [ ] **A09: Logging Failures:** Review the full system to ensure all agent decisions, tool calls, and state changes are logged with sufficient detail for security auditing. But remember that we implicitly never log any user data or encrypted data beyond what is absolutely necessary for diagnostics as per our end-to-end encryption and privacy guarantees.
         *   [ ] **A05: Security Misconfiguration:** Ensure all new services and agents have appropriate, hardened configurations and do not expose unnecessary information in error messages.
         *   [ ] **Repair System Security**: Validate repair functionality within full agent security framework
-    *   **[ ] Subtask 6.4.2: Manual QA:** Perform manual testing of the full flow to catch any issues not covered by automated tests.
+        *   [ ] **Agent Authorization**: Verify all agents operate with proper user context and SessionDek
+    *   **[ ] Subtask 6.6.2: Manual QA & Tool Verification:**
+        *   [ ] Manually test each of the 23 tools through chat interface
+        *   [ ] Verify tool execution logs and state changes
+        *   [ ] Document any tools that cannot be triggered naturally
+        *   [ ] Create tool usage documentation for future reference
 
 ---
 
