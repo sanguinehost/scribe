@@ -902,16 +902,25 @@ pub struct ContextCache {
         *   **Test Status**: 11 passed, 0 failed - ✅ **ALL INTEGRATION TESTS PASSING** - Complete Planning Service Integration validated
 
 *   **[ ] Task 6.2: System Feature Completeness**
-    *   **Current State:** 🔶 **DISCOVERY COMPLETE** - Analysis reveals solid foundation with specific implementation gaps identified
-    *   **[x] Subtask 6.2.1: Hierarchical Context Assembler Enhancements** ✅ **IMPLEMENTATION COMPLETE (2025-07-16)**
-        *   **Current State:** ✅ **Core implementation complete**, but tests failing due to mock response ordering issues
+    *   **Current State:** ⚠️ **PARTIAL AI COMPLIANCE** - Task 6.2.1: 8/9 features AI-compliant (89%), Task 6.2.2: 2/9 features AI-compliant (22%)
+    *   **[ ] Subtask 6.2.1: Hierarchical Context Assembler Enhancements** ⚠️ **MOSTLY AI-COMPLIANT (8/9 features)**
+        *   **Current State:** ✅ **8/9 features use AI**, 1 feature uses hardcoded logic
         *   **File:** `backend/src/services/hierarchical_context_assembler.rs`
         *   **Infrastructure:** ✅ Complete with Flash AI integration, encryption support
-        *   **Implementation Status:** ✅ **Core logic implemented** - All 9 features implemented, tests need E2E validation
+        *   **Implementation Status:** ~89% AI-compliant - Most features use Flash AI, but not structured outputs
+        *   **⚠️ NOTE:** All AI features use prompt-based JSON extraction instead of structured output schemas
+        *   **Recommendation:** Consider migrating to structured output pattern from `tactical_structured_output.rs` for better reliability
         *   **Priority Order (High → Medium → Low):**
         *   [x] **Entity Resolution Tool Integration** (Line 643-644) - ✅ **IMPLEMENTED** - Tool exists, integrated in `gather_entity_context`
+            *   **⚠️ Testing Note:** Entity extraction tests exist (`entity_extraction_integration_test.rs`, `entity_extraction_simple_test.rs`) but need OWASP Top 10 security tests
         *   [x] **Spatial Location Integration** (Line 633, 695) - ✅ **IMPLEMENTED** - AI-powered spatial location extraction with fallback handling
-        *   [x] **Entity Dependencies Extraction** (Line 508) - ✅ **IMPLEMENTED** - Aggregate `required_entities` from plan steps
+        *   [ ] **Entity Dependencies Extraction** (Line 508) - ❌ **HARDCODED** - Currently just aggregates `required_entities` from plan steps
+            *   **Refactoring Required:**
+                *   [ ] Create structured output schema for entity dependency analysis
+                *   [ ] Replace direct aggregation with Flash-Lite AI analysis of plan steps
+                *   [ ] Use prompt: "Analyze these plan steps and identify all entity dependencies, including implicit ones not directly stated"
+                *   [ ] Include confidence scores and dependency types (required, optional, contextual)
+                *   [ ] Add entity relationship graph analysis
         *   [x] **Relationship Extraction** (Line 634) - ✅ **IMPLEMENTED** - Use Flash AI to extract relationships from chat history
         *   [x] **Recent Actions Extraction** (Line 635) - ✅ **IMPLEMENTED** - Extract recent actions from chat history with AI analysis
         *   [x] **Event Systems** (Line 728-729) - ✅ **IMPLEMENTED (2025-07-16)** - Temporal event extraction with recent and future event analysis
