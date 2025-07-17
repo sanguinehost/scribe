@@ -2,6 +2,54 @@
 
 **Vision:** To execute a methodical, test-driven migration to a **Hierarchical World Model**. This roadmap details the establishment of a rich world ontology (The Atlas), the integration of an AI-driven planning system (The Blueprint), the development of tactical and operational agents (The Puppet), and the creation of a strategic, autonomous narrative system (The Autonomic System), with security and testability as foundational pillars.
 
+## 🎮 **Flexibility & Adaptability Notice**
+
+**IMPORTANT:** The Living World system is designed to be **modular and optional**. While our comprehensive integration tests exercise ALL components, real-world usage should be flexible:
+
+### **Use Case Examples:**
+1. **Full Living World Mode** (Default for text-based roleplay)
+   - All agents active: Strategic → Tactical → Operational
+   - Full ECS management, chronicle creation, lorebook updates
+   - Complete narrative analysis and world state tracking
+   - Best for: Pure text-based roleplay, world simulation
+
+2. **Game Engine Integration Mode**
+   - Disable ECS updates (game engine manages world state)
+   - Keep narrative analysis for dialogue enrichment
+   - Disable spatial tracking (game handles positioning)
+   - Best for: Unity/Unreal/Godot integrations
+
+3. **Lightweight Character Mode**
+   - Disable Strategic & Tactical agents
+   - No world state tracking or chronicle creation
+   - Pure character dialogue generation
+   - Best for: Simple character interactions, intimate scenarios
+
+4. **Hybrid Modes**
+   - Pick and choose components based on needs
+   - Enable/disable via configuration flags
+   - Mix game engine state with AI narrative enrichment
+
+### **Configuration Approach:**
+```yaml
+living_world:
+  agents:
+    strategic: false    # Disable for simple scenarios
+    tactical: true      # Keep for context enrichment
+    perception: false   # Disable if game provides state
+  
+  tools:
+    ecs_updates: false  # Game engine handles entities
+    chronicle: true     # Keep narrative history
+    lorebook: false     # Not needed for all use cases
+    
+  narrative:
+    significance_analysis: true  # Lightweight but valuable
+    entity_resolution: false     # Game provides entities
+```
+
+**Design Principle:** Every component should be independently toggleable without breaking the system. The end user decides which parts of the Living World to activate based on their specific needs.
+
 ## 📋 **Definition of Done**
 
 **Task Completion Criteria:** A task is considered complete ONLY when ALL of the following conditions are met:
@@ -994,9 +1042,10 @@ pub struct ContextCache {
         *   [x] **Entity Context Building** (Line 1080) - 🔍 **COMPREHENSIVE PARSING** - Rich context building from event content - ✅ **COMPLETED** - AI-driven entity context extraction with Flash-Lite integration
         *   [x] **Item Systems** (Line 1718-1719) - 📦 **COMPREHENSIVE TRACKING** - Item ownership timelines and usage patterns - ✅ **COMPLETED** - Comprehensive item tracking with AI-driven analysis
 
-*   **[ ] Task 6.3: 🚨 CRITICAL - Full Tool & Agent Integration in Main Code Paths**
-    *   **Objective:** Based on integration test analysis showing only 39% tool utilization (9/23 tools), integrate ALL tools and agent layers into the main chat generation flow
+*   **[ ] Task 6.3: 🚨 CRITICAL - Full Tool & Agent Integration in Main Code Paths (With Flexibility)**
+    *   **Objective:** Based on integration test analysis showing only 39% tool utilization (9/23 tools), integrate ALL tools and agent layers into the main chat generation flow with **configurable enable/disable options**
     *   **Current State:** Only Tactical Agent partially integrated; Strategic Agent, Perception Agent, and Narrative Intelligence Service disconnected from main flow
+    *   **Design Requirement:** Every integration MUST be toggle-able via configuration without breaking the system
     *   **[ ] Subtask 6.3.1: Complete Strategic Agent Integration**
         *   [ ] Wire Strategic Agent into chat route BEFORE Tactical Agent
         *   [ ] Implement strategic directive generation from user messages
@@ -1022,12 +1071,21 @@ pub struct ContextCache {
         *   [ ] Add agent result aggregation and conflict resolution
         *   [ ] Create comprehensive logging for all agent interactions
         *   [ ] Ensure all 23 registered tools are accessible to appropriate agents
+    *   **[ ] Subtask 6.3.6: Implement Flexible Configuration System**
+        *   [ ] Create `LivingWorldConfig` with granular enable/disable flags
+        *   [ ] Add per-agent toggle: `enable_strategic_agent`, `enable_tactical_agent`, etc.
+        *   [ ] Add per-tool-category toggle: `enable_ecs_updates`, `enable_chronicle_creation`, etc.
+        *   [ ] Implement runtime configuration via API endpoints
+        *   [ ] Ensure graceful degradation when components are disabled
+        *   [ ] Add configuration presets: "full", "game_engine", "lightweight", "custom"
 
 *   **[ ] Task 6.4: Enhanced Integration Testing & Validation**
     *   **[ ] Subtask 6.4.1: Write Full Agent Pipeline Test:** 
         *   [ ] Test complete flow: User Input → Strategic → Perception → Tactical → Generation → Post-Response
-        *   [ ] Verify all 23 tools get exercised in realistic scenarios
+        *   [ ] Verify all 23 tools get exercised in realistic scenarios (when ALL components enabled)
         *   [ ] Assert world state updates, chronicle creation, lorebook updates
+        *   [ ] Test partial configurations (game engine mode, lightweight mode, etc.)
+        *   [ ] Verify system works correctly with various components disabled
     *   **[ ] Subtask 6.4.2: Tool Coverage Testing:**
         *   [ ] Create scenarios that REQUIRE hierarchy promotion (cosmic events)
         *   [ ] Design tests that trigger salience changes (background → important)
