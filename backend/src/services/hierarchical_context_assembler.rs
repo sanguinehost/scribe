@@ -521,7 +521,7 @@ Focus on practical, executable steps that advance the narrative."#,
             .unwrap_or_default();
 
         // Extract entity dependencies before moving steps
-        let entity_dependencies = self.extract_entity_dependencies(&steps);
+        let entity_dependencies = self.extract_entity_dependencies(&steps).await?;
         
         // Identify risks based on the strategic directive and plan steps
         let identified_risks = self.identify_risks(
@@ -876,22 +876,110 @@ Focus on practical, executable steps that advance the narrative."#,
         Ok(checks)
     }
 
-    /// Extracts entity dependencies from plan steps
-    fn extract_entity_dependencies(&self, steps: &[PlanStep]) -> Vec<String> {
-        let mut dependencies = Vec::new();
-        let mut seen_entities = std::collections::HashSet::new();
+    /// Extracts entity dependencies from plan steps using AI analysis
+    async fn extract_entity_dependencies(&self, steps: &[PlanStep]) -> Result<Vec<String>, AppError> {
+        use crate::services::agentic::entity_dependency_structured_output::{
+            EntityDependencyOutput, get_entity_dependency_schema
+        };
         
-        for step in steps {
-            for entity_name in &step.required_entities {
-                // Only add unique entity names
-                if seen_entities.insert(entity_name.clone()) {
-                    dependencies.push(entity_name.clone());
-                }
-            }
+        debug!("Extracting entity dependencies from {} plan steps using AI", steps.len());
+        
+        // If no steps, return empty dependencies
+        if steps.is_empty() {
+            return Ok(vec![]);
         }
         
-        debug!("Extracted {} entity dependencies from {} steps", dependencies.len(), steps.len());
-        dependencies
+        // Prepare steps summary for AI analysis
+        let steps_detail = steps.iter()
+            .enumerate()
+            .map(|(i, step)| {
+                format!("Step {}: {}\n  Required entities: {:?}\n  Expected outcomes: {:?}",
+                    i + 1,
+                    step.description,
+                    step.required_entities,
+                    step.expected_outcomes
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        
+        let dependency_prompt = format!(
+            r#"You are the Entity Dependency Analyzer in a hierarchical narrative AI system. Analyze the following plan steps to identify all entity dependencies.
+
+## Plan Steps to Analyze:
+{}
+
+## Your Task
+Analyze these plan steps and identify:
+
+1. **Explicit Dependencies**: Entities directly mentioned in the required_entities field
+2. **Implicit Dependencies**: Entities that are implied but not explicitly stated (e.g., if a step mentions "the king's advisor", the king is an implicit dependency)
+3. **Contextual Dependencies**: Environmental entities or context needed for the plan to make sense (e.g., locations, items, or background characters)
+4. **Dependency Relationships**: How entities depend on or relate to each other
+
+For each dependency, provide:
+- The entity name
+- Type of dependency (required/optional/contextual/environmental)
+- Why it's a dependency
+- Confidence score
+- Which steps reference it (0-indexed)
+
+Also analyze relationships between entities to build a dependency graph.
+
+Respond with a JSON object following the provided schema."#,
+            steps_detail
+        );
+        
+        // Get the schema for structured output
+        let schema = get_entity_dependency_schema();
+        
+        let chat_request = genai::chat::ChatRequest::from_user(dependency_prompt);
+            
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(1000)
+            .with_temperature(0.3) // Low temperature for consistent analysis
+            .with_response_format(genai::chat::ChatResponseFormat::JsonSchemaSpec(
+                genai::chat::JsonSchemaSpec {
+                    schema: schema.clone(),
+                }
+            ));
+        
+        let chat_response = self.ai_client.exec_chat(
+            "gemini-2.5-flash-lite",
+            chat_request,
+            Some(chat_options),
+        ).await?;
+        
+        let response = chat_response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| AppError::AiServiceError("No text response from AI".to_string()))?;
+        
+        // Parse the structured output
+        let dependency_output: EntityDependencyOutput = serde_json::from_str(&response)
+            .map_err(|e| AppError::AiServiceError(format!("Failed to parse dependency analysis: {}", e)))?;
+        
+        // Validate the output
+        dependency_output.validate()?;
+        
+        // Convert to entity list for backward compatibility
+        let entities = dependency_output.to_entity_list();
+        
+        debug!("AI extracted {} entity dependencies with confidence {:.2}: explicit={}, implicit={}, contextual={}", 
+            entities.len(),
+            dependency_output.confidence_score,
+            dependency_output.explicit_dependencies.len(),
+            dependency_output.implicit_dependencies.len(),
+            dependency_output.contextual_dependencies.len()
+        );
+        
+        Ok(entities)
     }
     
     /// Identifies risks based on the strategic directive and plan steps using Flash AI

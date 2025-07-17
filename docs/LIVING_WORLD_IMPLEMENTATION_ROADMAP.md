@@ -915,15 +915,15 @@ pub struct ContextCache {
             *   [ ] Ensure schema validation and error handling
         *   **Priority Order (High → Medium → Low):**
         *   [x] **Entity Resolution Tool Integration** (Line 643-644) - ✅ **IMPLEMENTED** - Tool exists, integrated in `gather_entity_context`
-            *   **⚠️ Testing Note:** Entity extraction tests exist (`entity_extraction_integration_test.rs`, `entity_extraction_simple_test.rs`) but need OWASP Top 10 security tests
+            *   [x] **OWASP Top 10 Security Tests** - ✅ **IMPLEMENTED** - Created comprehensive security tests in `entity_extraction_security_tests.rs`
         *   [x] **Spatial Location Integration** (Line 633, 695) - ✅ **IMPLEMENTED** - AI-powered spatial location extraction with fallback handling
-        *   [ ] **Entity Dependencies Extraction** (Line 508) - ❌ **HARDCODED** - Currently just aggregates `required_entities` from plan steps
-            *   **Refactoring Required:**
-                *   [ ] Create structured output schema for entity dependency analysis
-                *   [ ] Replace direct aggregation with Flash-Lite AI analysis of plan steps
-                *   [ ] Use prompt: "Analyze these plan steps and identify all entity dependencies, including implicit ones not directly stated"
-                *   [ ] Include confidence scores and dependency types (required, optional, contextual)
-                *   [ ] Add entity relationship graph analysis
+        *   [x] **Entity Dependencies Extraction** (Line 508) - ✅ **REFACTORED** - Now uses Flash-Lite AI with structured output schema
+            *   **Refactoring Completed:**
+                *   [x] Created structured output schema in `entity_dependency_structured_output.rs`
+                *   [x] Replaced direct aggregation with Flash-Lite AI analysis of plan steps
+                *   [x] Uses comprehensive prompt analyzing explicit, implicit, and contextual dependencies
+                *   [x] Includes confidence scores and dependency types (required, optional, contextual, environmental)
+                *   [x] Added entity relationship graph analysis with dependency relations
         *   [x] **Relationship Extraction** (Line 634) - ✅ **IMPLEMENTED** - Use Flash AI to extract relationships from chat history
         *   [x] **Recent Actions Extraction** (Line 635) - ✅ **IMPLEMENTED** - Extract recent actions from chat history with AI analysis
         *   [x] **Event Systems** (Line 728-729) - ✅ **IMPLEMENTED (2025-07-16)** - Temporal event extraction with recent and future event analysis
