@@ -909,7 +909,10 @@ pub struct ContextCache {
         *   **Infrastructure:** ✅ Complete with Flash AI integration, encryption support
         *   **Implementation Status:** ~89% AI-compliant - Most features use Flash AI, but not structured outputs
         *   **⚠️ NOTE:** All AI features use prompt-based JSON extraction instead of structured output schemas
-        *   **Recommendation:** Consider migrating to structured output pattern from `tactical_structured_output.rs` for better reliability
+        *   **📋 MIGRATION REQUIRED:** ALL features MUST be updated to use `JsonSchemaSpec` structured outputs:
+            *   [ ] Replace prompt-based JSON parsing with `ChatResponseFormat::JsonSchemaSpec`
+            *   [ ] Follow the pattern in `backend/src/services/planning/structured_output.rs`
+            *   [ ] Ensure schema validation and error handling
         *   **Priority Order (High → Medium → Low):**
         *   [x] **Entity Resolution Tool Integration** (Line 643-644) - ✅ **IMPLEMENTED** - Tool exists, integrated in `gather_entity_context`
             *   **⚠️ Testing Note:** Entity extraction tests exist (`entity_extraction_integration_test.rs`, `entity_extraction_simple_test.rs`) but need OWASP Top 10 security tests
@@ -934,6 +937,11 @@ pub struct ContextCache {
         *   **Implementation Status:** ~22% AI-compliant - Only Entity Context Building and Item Systems use Flash-Lite
         *   **🚨 CRITICAL REQUIREMENT:** ALL features MUST use Flash/Flash-Lite AI models - NO hardcoded logic beyond JSON parsing
         *   **Reference Architecture:** See `docs/SANGUINE_SCRIBE_LIVING_WORLD_ARCHITECTURE.md` for AI-driven design principles
+        *   **📋 STRUCTURED OUTPUT REQUIREMENT:** ALL AI features MUST use Gemini's structured output via `JsonSchemaSpec`:
+            *   [ ] Define schema using `serde_json::json!({...})` 
+            *   [ ] Use `ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec { schema })` in ChatOptions
+            *   [ ] Follow the pattern in `backend/src/services/planning/structured_output.rs`
+            *   [ ] DO NOT use prompt-based JSON extraction - use ACTUAL structured outputs
         *   **🧪 TESTING REQUIREMENT:** Each refactored feature MUST have:
             *   [ ] Functional tests covering all use cases (see existing pattern in `backend/tests/`)
             *   [ ] OWASP Top 10 security tests (follow pattern from `hybrid_query_entity_context_security_tests.rs`)
