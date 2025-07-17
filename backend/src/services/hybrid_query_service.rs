@@ -3876,171 +3876,167 @@ Return a comprehensive relevance analysis with an overall weighted score and nat
         }
     }
 
-    /// Calculate event significance score using multi-factor analysis
-    async fn calculate_event_significance(&self, entity_id: Uuid, event: &ChronicleEvent) -> Result<f32, AppError> {
-        let mut significance_score = 0.0f32;
-        let mut scoring_factors = 0;
-
-        // Factor 1: Event type significance (25% weight)
-        let event_type_score = self.calculate_event_type_significance(&event.event_type);
-        significance_score += event_type_score * 0.25;
-        scoring_factors += 1;
-
-        // Factor 2: Entity role in event (30% weight)
-        let entity_role_score = self.calculate_entity_role_significance(entity_id, event).await?;
-        significance_score += entity_role_score * 0.30;
-        scoring_factors += 1;
-
-        // Factor 3: Event complexity/richness (20% weight)
-        let complexity_score = self.calculate_event_complexity_significance(event);
-        significance_score += complexity_score * 0.20;
-        scoring_factors += 1;
-
-        // Factor 4: Event recency (15% weight)
-        let recency_score = self.calculate_event_recency_significance(event);
-        significance_score += recency_score * 0.15;
-        scoring_factors += 1;
-
-        // Factor 5: Co-participant count (10% weight)
+    /// Calculate event significance score using AI-driven multi-factor analysis
+    pub async fn calculate_event_significance(&self, entity_id: Uuid, event: &ChronicleEvent) -> Result<f32, AppError> {
+        use crate::services::agentic::event_significance_structured_output::{
+            get_event_significance_schema, EventSignificanceOutput
+        };
+        use genai::chat::{ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, MessageContent};
+        
+        debug!("Calculating event significance for {} using AI", entity_id);
+        
+        // Get entity name for better context
+        let entity_name = self.extract_entity_name(entity_id).await?.unwrap_or_else(|| "Unknown Entity".to_string());
+        
+        // Get co-participants for social context
         let co_participants = self.extract_co_participants(entity_id, event).await?;
-        let participant_score = self.calculate_participant_significance(&co_participants);
-        significance_score += participant_score * 0.10;
-        scoring_factors += 1;
-
-        // Normalize and clamp to [0.0, 1.0]
-        let final_score = if scoring_factors > 0 {
-            (significance_score / scoring_factors as f32).min(1.0).max(0.0)
-        } else {
-            0.5 // Default significance if no factors available
-        };
-
-        debug!("Event {} significance for entity {}: {:.3}", event.id, entity_id, final_score);
-        Ok(final_score)
-    }
-
-    /// Calculate significance based on event type
-    fn calculate_event_type_significance(&self, event_type: &str) -> f32 {
-        // Assign significance scores based on event type
-        match event_type.to_lowercase().as_str() {
-            // High significance events
-            "death" | "birth" | "marriage" | "battle" | "betrayal" | "discovery" => 0.9,
-            "transformation" | "revelation" | "conquest" | "defeat" | "creation" => 0.9,
-            
-            // Medium-high significance events
-            "combat" | "conflict" | "alliance" | "romance" | "quest_completion" => 0.8,
-            "trade" | "negotiation" | "ceremony" | "ritual" | "magic_use" => 0.8,
-            
-            // Medium significance events
-            "movement" | "exploration" | "conversation" | "meeting" | "departure" => 0.6,
-            "acquisition" | "crafting" | "learning" | "teaching" | "healing" => 0.6,
-            
-            // Lower significance events
-            "observation" | "rest" | "maintenance" | "routine" | "preparation" => 0.4,
-            "eating" | "sleeping" | "waiting" | "thinking" | "planning" => 0.4,
-            
-            // Default for unknown event types
-            _ => 0.5
-        }
-    }
-
-    /// Calculate significance based on entity's role in the event
-    async fn calculate_entity_role_significance(&self, entity_id: Uuid, event: &ChronicleEvent) -> Result<f32, AppError> {
-        let mut role_score = 0.5f32; // Default score
+        let participant_count = co_participants.len() + 1; // +1 for the entity itself
         
-        // Check if entity is primary actor
-        if let Ok(actors) = event.get_actors() {
-            let actor_count = actors.len();
-            let is_primary_actor = actors.iter().any(|actor| actor.entity_id == entity_id);
-            
-            if is_primary_actor {
-                // Primary actor gets higher significance
-                role_score = match actor_count {
-                    1 => 0.9,        // Sole actor - highest significance
-                    2..=3 => 0.8,    // Small group - high significance
-                    4..=6 => 0.7,    // Medium group - medium-high significance
-                    _ => 0.6,        // Large group - medium significance
-                };
-            }
-        }
-        
-        // Check event data for additional role indicators
-        if let Some(event_data) = &event.event_data {
-            // Check if entity is mentioned as initiator, target, or subject
-            let data_str = event_data.to_string().to_lowercase();
-            let entity_str = entity_id.to_string().to_lowercase();
-            
-            if data_str.contains(&format!("\"initiator\":\"{}", entity_str)) ||
-               data_str.contains(&format!("\"subject\":\"{}", entity_str)) {
-                role_score += 0.2; // Boost for being initiator/subject
-            }
-            
-            if data_str.contains(&format!("\"target\":\"{}", entity_str)) {
-                role_score += 0.15; // Boost for being target
-            }
-        }
-        
-        Ok(role_score.min(1.0))
-    }
-
-    /// Calculate significance based on event complexity and data richness
-    fn calculate_event_complexity_significance(&self, event: &ChronicleEvent) -> f32 {
-        let mut complexity_score = 0.3f32; // Base score
-        
-        // Factor in summary length and detail
-        let summary_length = event.summary.len();
-        complexity_score += match summary_length {
-            0..=50 => 0.0,      // Very short - low complexity
-            51..=150 => 0.2,    // Short - medium complexity
-            151..=300 => 0.4,   // Medium - good complexity
-            301..=500 => 0.6,   // Long - high complexity
-            _ => 0.8,           // Very long - very high complexity
-        };
-        
-        // Factor in event data richness
-        if let Some(event_data) = &event.event_data {
-            let data_fields = if let Some(obj) = event_data.as_object() {
-                obj.len()
-            } else {
-                0
-            };
-            
-            complexity_score += match data_fields {
-                0..=2 => 0.0,     // Minimal data
-                3..=5 => 0.2,     // Basic data
-                6..=10 => 0.4,    // Rich data
-                11..=15 => 0.6,   // Very rich data
-                _ => 0.8,         // Extremely rich data
-            };
-        }
-        
-        complexity_score.min(1.0)
-    }
-
-    /// Calculate significance based on event recency
-    fn calculate_event_recency_significance(&self, event: &ChronicleEvent) -> f32 {
+        // Calculate event age for temporal context
         let now = chrono::Utc::now();
         let event_age = now.signed_duration_since(event.created_at);
-        let hours_ago = event_age.num_hours() as f32;
+        let hours_ago = event_age.num_hours();
         
-        // Exponential decay for recency - recent events are more significant
-        if hours_ago < 0.0 {
-            1.0 // Future events (edge case) get max significance
-        } else {
-            // 24-hour half-life for recency significance
-            (-hours_ago / 24.0).exp().min(1.0)
+        // Build comprehensive event context
+        let event_context = format!(
+            "Event Details:
+- Event ID: {}
+- Event Type: {}
+- Summary: {}
+- Created: {} ({} hours ago)
+- Participant Count: {}
+- Event Data: {}
+
+Entity Information:
+- Entity ID: {}
+- Entity Name: {}
+- Co-participants: {} entities
+
+Analysis Focus:
+Analyze the significance of this event for the specified entity considering:
+1. Event type and inherent importance
+2. Entity's role and involvement level
+3. Event complexity and information richness
+4. Temporal relevance and recency
+5. Social context and participant network
+6. Narrative impact and world-building value",
+            event.id,
+            event.event_type,
+            event.summary,
+            event.created_at,
+            hours_ago,
+            participant_count,
+            event.event_data.as_ref().map(|d| d.to_string()).unwrap_or_else(|| "None".to_string()),
+            entity_id,
+            entity_name,
+            co_participants.len()
+        );
+        
+        let system_prompt = format!(
+            r#"You are an expert narrative analyst specializing in event significance assessment. 
+            Your task is to analyze chronicle events and determine their significance for specific entities 
+            using comprehensive multi-factor analysis.
+
+Your analysis should consider:
+
+1. **Event Type Impact**: Inherent significance of the event type (combat, discovery, death, etc.)
+2. **Entity Role**: The entity's level of involvement, agency, and impact in the event
+3. **Complexity Assessment**: Information density, narrative complexity, and descriptive quality
+4. **Temporal Relevance**: Recency effects and time-sensitive factors
+5. **Social Significance**: Network effects, participant count, and relationship impacts
+6. **Narrative Impact**: Plot progression, character development, and world-building value
+
+For each factor:
+- Provide a score (0.0-1.0) representing the factor's contribution
+- Assign an appropriate weight based on the event type and context
+- Include specific evidence from the event data
+- Explain your reasoning with confidence levels
+
+The overall significance should reflect the event's importance to the entity's story,
+considering both immediate impact and long-term consequences.
+
+Significance Categories:
+- Critical (0.8-1.0): Life-changing, world-altering events
+- High (0.6-0.8): Important events with major consequences
+- Medium (0.4-0.6): Notable events with moderate impact
+- Low (0.2-0.4): Minor events with limited significance
+- Minimal (0.0-0.2): Routine or inconsequential events
+
+OUTPUT FORMAT:
+Return a structured JSON analysis following the exact schema provided."#
+        );
+        
+        let user_prompt = format!(
+            "Analyze the significance of this event for the specified entity. \
+            Consider all factors comprehensively and provide detailed reasoning \
+            for your assessment. Focus on the entity's perspective and involvement.\n\n{}",
+            event_context
+        );
+        
+        // Get schema for structured output
+        let schema = get_event_significance_schema();
+        
+        // Configure AI client for structured output
+        let chat_options = ChatOptions::default()
+            .with_temperature(0.3)
+            .with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+                schema: schema.clone(),
+            }));
+        
+        // Create chat request with structured output
+        let messages = vec![
+            ChatMessage::system(&system_prompt),
+            ChatMessage::user(MessageContent::Text(user_prompt)),
+        ];
+        
+        let chat_request = ChatRequest::new(messages);
+        
+        // Call AI service with Flash-Lite for efficiency
+        let ai_response = self.ai_client
+            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_request, Some(chat_options))
+            .await?;
+        
+        // Parse the structured response
+        let content = ai_response.contents
+            .first()
+            .and_then(|c| match c {
+                MessageContent::Text(text) => Some(text.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| AppError::AiServiceError("No content in event significance response".to_string()))?;
+        
+        let significance_output: EventSignificanceOutput = 
+            serde_json::from_str(&content)
+                .map_err(|e| AppError::AiServiceError(format!("Failed to parse event significance: {}", e)))?;
+        
+        // Validate the output
+        significance_output.validate()?;
+        
+        tracing::debug!(
+            "Event {} significance for entity {} ({}): {:.3} (confidence: {:.2}) - {}",
+            event.id,
+            entity_id,
+            entity_name,
+            significance_output.overall_significance,
+            significance_output.confidence_score,
+            significance_output.get_significance_category()
+        );
+        
+        // Log top contributing factors
+        let top_factors = significance_output.get_top_factors(3);
+        for (i, factor) in top_factors.iter().enumerate() {
+            debug!("  Factor {}: {} = {:.3} (weight: {:.2}, contribution: {:.3})",
+                   i + 1,
+                   factor.factor_name,
+                   factor.factor_score,
+                   factor.factor_weight,
+                   factor.weighted_contribution
+            );
         }
+        
+        Ok(significance_output.overall_significance)
     }
 
-    /// Calculate significance based on number of co-participants
-    fn calculate_participant_significance(&self, co_participants: &[Uuid]) -> f32 {
-        match co_participants.len() {
-            0 => 0.3,        // Solo event - lower significance
-            1 => 0.5,        // Two-person event - medium significance
-            2..=3 => 0.7,    // Small group - higher significance
-            4..=6 => 0.9,    // Medium group - high significance
-            _ => 1.0,        // Large group - maximum significance
-        }
-    }
 
     /// Reconstruct entity state at the time of a specific event using AI analysis
     async fn reconstruct_entity_state_at_event(

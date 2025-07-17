@@ -902,7 +902,7 @@ pub struct ContextCache {
         *   **Test Status**: 11 passed, 0 failed - ✅ **ALL INTEGRATION TESTS PASSING** - Complete Planning Service Integration validated
 
 *   **[ ] Task 6.2: System Feature Completeness**
-    *   **Current State:** ⚠️ **PARTIAL AI COMPLIANCE** - Task 6.2.1: 8/9 features AI-compliant (89%), Task 6.2.2: 2/9 features AI-compliant (22%)
+    *   **Current State:** ⚠️ **PARTIAL AI COMPLIANCE** - Task 6.2.1: 8/9 features AI-compliant (89%), Task 6.2.2: 4/9 features AI-compliant (44%)
     *   **[ ] Subtask 6.2.1: Hierarchical Context Assembler Enhancements** ⚠️ **MOSTLY AI-COMPLIANT (8/9 features)**
         *   **Current State:** ✅ **8/9 features use AI**, 1 feature uses hardcoded logic
         *   **File:** `backend/src/services/hierarchical_context_assembler.rs`
@@ -931,10 +931,10 @@ pub struct ContextCache {
         *   [x] **Emotional State Analysis** (Line 636) - ✅ **IMPLEMENTED** - Flash AI emotional state analysis
         *   [x] **Risk Identification System** (Line 512) - ✅ **IMPLEMENTED** - Multi-factor risk assessment framework
     *   **[ ] Subtask 6.2.2: Hybrid Query Service Completeness**
-        *   **Current State:** ⚠️ **HybridQueryService exists but only 2/9 features use AI** - Major refactoring needed
+        *   **Current State:** ⚠️ **HybridQueryService exists but only 4/9 features use AI** - Major refactoring needed
         *   **File:** `backend/src/services/hybrid_query_service.rs`
         *   **Infrastructure:** ✅ Complete with routing, circuit breakers, comprehensive test coverage
-        *   **Implementation Status:** ~22% AI-compliant - Only Entity Context Building and Item Systems use Flash-Lite
+        *   **Implementation Status:** ~44% AI-compliant - Entity Context Building, Item Systems, Event Participants Finding, Query Relevance Scoring, and Historical State Reconstruction use Flash-Lite
         *   **🚨 CRITICAL REQUIREMENT:** ALL features MUST use Flash/Flash-Lite AI models - NO hardcoded logic beyond JSON parsing
         *   **Reference Architecture:** See `docs/SANGUINE_SCRIBE_LIVING_WORLD_ARCHITECTURE.md` for AI-driven design principles
         *   **📋 STRUCTURED OUTPUT REQUIREMENT:** ALL AI features MUST use Gemini's structured output via `JsonSchemaSpec`:
@@ -955,18 +955,18 @@ pub struct ContextCache {
                 *   [x] Analyzes primary, secondary, and mentioned participants with roles
                 *   [x] Includes confidence scores and participant relationships
                 *   [x] Converts participant names to UUIDs for backward compatibility
-        *   [ ] **Query Relevance Scoring** (Line 911) - 🧠 **SEMANTIC ANALYSIS** - ❌ **HARDCODED** - Using hardcoded scores by query type
-            *   **Refactoring Required:**
-                *   [ ] Create structured output schema for relevance scoring with multi-factor analysis
-                *   [ ] Use Flash-Lite to analyze: query text, entity context, event summaries, and temporal relevance
-                *   [ ] Replace hardcoded match statements with AI-driven relevance calculation
-                *   [ ] Include factors: semantic similarity, temporal proximity, entity involvement, event significance
-        *   [ ] **Historical State Reconstruction** (Line 948) - 🕰️ **COMPLEX LOGIC** - ❌ **HARDCODED** - Uses procedural logic for state reconstruction
-            *   **Refactoring Required:**
-                *   [ ] Create structured output schema for historical state analysis
-                *   [ ] Use Flash-Lite to analyze event sequence and infer state changes
-                *   [ ] Replace procedural reconstruction with AI-driven state inference
-                *   [ ] Include confidence levels for reconstructed states
+        *   [x] **Query Relevance Scoring** (Line 911) - 🧠 **SEMANTIC ANALYSIS** - ✅ **REFACTORED** - Now uses Flash-Lite AI with structured output
+            *   **Refactoring Completed:**
+                *   [x] Created structured output schema in `query_relevance_structured_output.rs`
+                *   [x] Replaced hardcoded match statements with Flash-Lite AI analysis
+                *   [x] Analyzes query text, entity context, event summaries, and temporal relevance
+                *   [x] Includes multi-factor scoring: semantic similarity, temporal proximity, entity involvement, event significance
+        *   [x] **Historical State Reconstruction** (Line 948) - 🕰️ **COMPLEX LOGIC** - ✅ **REFACTORED** - Now uses Flash-Lite AI with structured output
+            *   **Refactoring Completed:**
+                *   [x] Created structured output schema in `historical_state_reconstruction_structured_output.rs`
+                *   [x] Replaced procedural reconstruction with Flash-Lite AI analysis
+                *   [x] Analyzes event sequence and infers state changes with confidence levels
+                *   [x] Includes comprehensive reconstruction analysis with reliability assessment
         *   [ ] **Event Significance Scoring** (Line 950) - 📊 **ALGORITHM DESIGN** - ❌ **HARDCODED** - Using hardcoded significance values by event type
             *   **Refactoring Required:**
                 *   [ ] Create structured output schema for significance scoring
