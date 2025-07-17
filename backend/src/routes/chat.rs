@@ -526,15 +526,91 @@ pub async fn generate_chat_response(
     };
 
     // --- Hierarchical Agent Framework Integration ---
-    // Use TacticalAgent to create EnrichedContext if available
-    let enriched_context = if let Some(ref tactical_agent) = state_arc.tactical_agent {
-        info!(%session_id, "Using TacticalAgent for enriched context generation");
+    // Create a SessionDek from the Arc<SecretBox<Vec<u8>>> for use by agents
+    let dek_bytes = session_dek_arc.expose_secret().clone();
+    let session_dek = crate::auth::session_dek::SessionDek::new(dek_bytes);
+    
+    // Step 1: Strategic Agent Analysis (if available)
+    let strategic_directive = if let Some(ref strategic_agent) = state_arc.strategic_agent {
+        info!(%session_id, "Using StrategicAgent for narrative arc analysis");
         
-        // Create a simplified strategic directive from user input
-        // In Epic 5, this will come from the Strategic Layer
-        let strategic_directive = crate::services::context_assembly_engine::StrategicDirective {
+        // Convert GenAI history to ChatMessageForClient format for Strategic Agent
+        let mut chat_history_for_strategic: Vec<crate::models::chats::ChatMessageForClient> = 
+            gen_ai_recent_history.iter()
+                .map(|msg| {
+                    // Extract text content from MessageContent
+                    let content = match &msg.content {
+                        MessageContent::Text(text) => text.clone(),
+                        _ => String::new(), // Handle other content types if needed
+                    };
+                    
+                    crate::models::chats::ChatMessageForClient {
+                        id: Uuid::new_v4(), // Generate temp ID for strategic analysis
+                        session_id,
+                        user_id: user_id_value,
+                        message_type: match msg.role {
+                            ChatRole::User => MessageRole::User,
+                            ChatRole::Assistant => MessageRole::Assistant,
+                            ChatRole::System => MessageRole::System,
+                            ChatRole::Tool => MessageRole::Assistant, // Map Tool to Assistant
+                        },
+                        content,
+                        created_at: chrono::Utc::now(), // Use current time as approximation
+                        prompt_tokens: None,
+                        completion_tokens: None,
+                        raw_prompt: None,
+                        model_name: model_to_use.clone(),
+                    }
+                })
+                .collect();
+        
+        // Add the current user message to the history for complete context
+        chat_history_for_strategic.push(crate::models::chats::ChatMessageForClient {
+            id: Uuid::new_v4(), // Temporary ID as message not saved yet
+            session_id,
+            user_id: user_id_value,
+            message_type: MessageRole::User,
+            content: current_user_content.clone(),
+            created_at: chrono::Utc::now(),
+            prompt_tokens: None,
+            completion_tokens: None,
+            raw_prompt: None,
+            model_name: model_to_use.clone(),
+        });
+        
+        
+        match strategic_agent.analyze_conversation(
+            &chat_history_for_strategic,
+            user_id_value,
+            &session_dek,
+        ).await {
+            Ok(directive) => {
+                info!(
+                    %session_id,
+                    directive_id = %directive.directive_id,
+                    directive_type = %directive.directive_type,
+                    plot_significance = ?directive.plot_significance,
+                    world_impact = ?directive.world_impact_level,
+                    "Successfully generated strategic directive"
+                );
+                Some(directive)
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to generate strategic directive, falling back to simplified directive");
+                None
+            }
+        }
+    } else {
+        debug!(%session_id, "StrategicAgent not available, will use simplified directive");
+        None
+    };
+    
+    // Use strategic directive if available, otherwise create simplified version
+    let strategic_directive = strategic_directive.unwrap_or_else(|| {
+        debug!(%session_id, "Creating simplified strategic directive from user input");
+        crate::services::context_assembly_engine::StrategicDirective {
             directive_id: Uuid::new_v4(),
-            directive_type: "general_interaction".to_string(), // Will be determined by Strategic Layer
+            directive_type: "general_interaction".to_string(),
             narrative_arc: current_user_content.clone(),
             plot_significance: crate::services::context_assembly_engine::PlotSignificance::Moderate,
             emotional_tone: "neutral".to_string(),
@@ -542,11 +618,12 @@ pub async fn generate_chat_response(
                 character_metadata_for_prompt_builder.name.clone()
             ],
             world_impact_level: crate::services::context_assembly_engine::WorldImpactLevel::Local,
-        };
-        
-        // Create a SessionDek from the Arc<SecretBox<Vec<u8>>>
-        let dek_bytes = session_dek_arc.expose_secret().clone();
-        let session_dek = crate::auth::session_dek::SessionDek::new(dek_bytes);
+        }
+    });
+    
+    // Step 2: Use TacticalAgent to create EnrichedContext if available
+    let enriched_context = if let Some(ref tactical_agent) = state_arc.tactical_agent {
+        info!(%session_id, "Using TacticalAgent for enriched context generation with strategic directive");
         
         match tactical_agent.process_directive(
             &strategic_directive,

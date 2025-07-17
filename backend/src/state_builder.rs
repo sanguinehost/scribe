@@ -488,6 +488,9 @@ impl AppStateBuilder {
         // Set the narrative intelligence service
         app_state.set_narrative_intelligence_service(narrative_intelligence_service);
         
+        // Set the strategic agent for the hierarchical agent framework
+        app_state.set_strategic_agent();
+        
         Ok(app_state)
     }
 }

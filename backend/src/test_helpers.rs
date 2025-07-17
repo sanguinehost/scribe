@@ -1645,6 +1645,9 @@ impl TestAppStateBuilder {
         // Initialize TacticalAgent for tests
         app_state.set_tactical_agent();
         
+        // Initialize StrategicAgent for tests
+        app_state.set_strategic_agent();
+        
         Ok(app_state)
     }
 }
