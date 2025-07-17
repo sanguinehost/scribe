@@ -125,9 +125,12 @@ async fn test_flash_integration_epic_fantasy_narrative_direction() {
     let session_dek = SessionDek::new(vec![0u8; 32]);
     let epic_fantasy_history = create_complex_chat_scenario(user_id, "epic_fantasy");
 
+    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &epic_fantasy_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
@@ -277,9 +280,11 @@ async fn test_flash_integration_full_directive_creation_epic() {
     let session_dek = SessionDek::new(vec![0u8; 32]);
     let epic_history = create_complex_chat_scenario(user_id, "epic_fantasy");
 
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &epic_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
@@ -320,15 +325,18 @@ async fn test_flash_integration_directive_consistency_across_calls() {
     let consistent_history = create_complex_chat_scenario(user_id, "political_intrigue");
 
     // Make multiple calls with same input
+    let session_id = Uuid::new_v4();
     let result1 = strategic_agent.analyze_conversation(
         &consistent_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
     let result2 = strategic_agent.analyze_conversation(
         &consistent_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
@@ -365,9 +373,11 @@ async fn test_flash_integration_narrative_direction_generation_quality() {
     let session_dek = SessionDek::new(vec![0u8; 32]);
     let complex_history = create_complex_chat_scenario(user_id, "sci_fi_thriller");
 
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &complex_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
@@ -412,9 +422,11 @@ async fn test_flash_integration_comprehensive_directive_with_caching() {
 
     // First call - should generate directive
     let start_time = std::time::Instant::now();
+    let session_id = Uuid::new_v4();
     let result1 = strategic_agent.analyze_conversation(
         &test_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
     let first_call_duration = start_time.elapsed();
@@ -496,9 +508,11 @@ async fn test_flash_integration_error_handling_and_fallbacks() {
         },
     ];
 
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &challenging_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
@@ -570,9 +584,11 @@ async fn test_flash_integration_multilingual_and_special_characters() {
         },
     ];
 
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &international_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 

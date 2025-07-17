@@ -207,8 +207,16 @@ impl HierarchicalAgentPipeline {
             return Err(AppError::InternalServerErrorGeneric("Pipeline timeout during strategic analysis".to_string()));
         }
         
+        // Generate a session_id from the chat history if not available
+        // In production, this should be passed as a parameter
+        let session_id = if let Some(first_message) = chat_history.first() {
+            first_message.session_id
+        } else {
+            Uuid::new_v4() // Fallback to a new UUID
+        };
+        
         let strategic_directive = self.strategic_agent
-            .analyze_conversation(chat_history, user_id, session_dek)
+            .analyze_conversation(chat_history, user_id, session_id, session_dek)
             .await
             .map_err(|e| {
                 error!("Strategic layer failed: {}", e);

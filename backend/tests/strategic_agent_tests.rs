@@ -68,12 +68,17 @@ async fn test_analyze_conversation_basic_combat() {
     let session_dek = SessionDek::new(vec![0u8; 32]);
     let chat_history = create_test_chat_history();
 
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &chat_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
+    if let Err(e) = &result {
+        eprintln!("Strategic agent test failed with error: {:?}", e);
+    }
     assert!(result.is_ok());
     let directive = result.unwrap();
     
@@ -113,12 +118,17 @@ async fn test_generate_narrative_direction_mystery() {
         },
     ];
 
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &mystery_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
+    if let Err(e) = &result {
+        eprintln!("Strategic agent test failed with error: {:?}", e);
+    }
     assert!(result.is_ok());
     let directive = result.unwrap();
     
@@ -160,12 +170,17 @@ async fn test_create_strategic_directive_social_interaction() {
         },
     ];
 
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &social_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
+    if let Err(e) = &result {
+        eprintln!("Strategic agent test failed with error: {:?}", e);
+    }
     assert!(result.is_ok());
     let directive = result.unwrap();
     
@@ -364,9 +379,11 @@ async fn test_cache_directive_and_retrieval() {
     let chat_history = create_test_chat_history();
     
     // Generate and cache directive
+    let session_id = Uuid::new_v4();
     let directive = strategic_agent.analyze_conversation(
         &chat_history,
         user_id,
+        session_id,
         &session_dek,
     ).await.unwrap();
 
@@ -394,12 +411,17 @@ async fn test_directive_content_validation() {
     let session_dek = SessionDek::new(vec![0u8; 32]);
     let chat_history = create_test_chat_history();
 
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &chat_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 
+    if let Err(e) = &result {
+        eprintln!("Strategic agent test failed with error: {:?}", e);
+    }
     assert!(result.is_ok());
     let directive = result.unwrap();
     
@@ -429,9 +451,11 @@ async fn test_error_handling_empty_chat_history() {
     let session_dek = SessionDek::new(vec![0u8; 32]);
     let empty_history: Vec<ChatMessageForClient> = vec![];
 
+    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &empty_history,
         user_id,
+        session_id,
         &session_dek,
     ).await;
 

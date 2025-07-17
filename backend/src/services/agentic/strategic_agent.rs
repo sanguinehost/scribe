@@ -74,6 +74,7 @@ impl StrategicAgent {
         skip(self, chat_history, session_dek),
         fields(
             user_id = %user_id,
+            session_id = %session_id,
             history_length = chat_history.len()
         )
     )]
@@ -81,13 +82,14 @@ impl StrategicAgent {
         &self,
         chat_history: &[ChatMessageForClient],
         user_id: Uuid,
+        session_id: Uuid,
         session_dek: &SessionDek,
     ) -> Result<StrategicDirective, AppError> {
         let start_time = std::time::Instant::now();
         
         info!(
-            "Strategic analysis initiated for user: {} with {} messages",
-            user_id, chat_history.len()
+            "Strategic analysis initiated for user: {} session: {} with {} messages",
+            user_id, session_id, chat_history.len()
         );
 
         // Step 0: Security validation and input sanitization (OWASP A03, A10)
@@ -98,53 +100,135 @@ impl StrategicAgent {
             return Err(AppError::ValidationError(validator::ValidationErrors::new()));
         }
 
-        // Step 1: Check cache for existing directive (performance optimization)
-        if let Ok(Some(cached_directive)) = self.get_cached_directive(user_id, &sanitized_history).await {
-            debug!("Returning cached strategic directive for user: {}", user_id);
-            return Ok(cached_directive);
+        // Step 1: Get recent strategic directives for continuity
+        let recent_directives = self.get_recent_directives(user_id, session_id).await?;
+        
+        debug!(
+            %user_id,
+            %session_id,
+            recent_directives_count = %recent_directives.len(),
+            "Retrieved recent strategic directives for continuity analysis"
+        );
+        
+        // Step 2: Check if we need a new directive (based on conversation changes)
+        if let Some(latest_directive) = recent_directives.first() {
+            let should_generate = self.should_generate_new_directive(&sanitized_history, latest_directive).await?;
+            
+            info!(
+                %user_id,
+                %session_id,
+                latest_directive_id = %latest_directive.directive_id,
+                latest_directive_type = %latest_directive.directive_type,
+                should_generate_new = %should_generate,
+                "Evaluated whether to generate new strategic directive"
+            );
+            
+            if !should_generate {
+                info!(
+                    %user_id,
+                    %session_id,
+                    reusing_directive_id = %latest_directive.directive_id,
+                    "Reusing existing strategic directive for session continuity"
+                );
+                return Ok(latest_directive.clone());
+            }
         }
 
-        // Step 2: Generate comprehensive strategic directive using structured output
-        debug!("Creating strategic directive with structured output");
-        let directive = self.create_strategic_directive_with_structured_output(
+        // Step 3: Generate comprehensive strategic directive using structured output
+        debug!("Creating strategic directive with structured output and historical context");
+        let directive = self.create_strategic_directive_with_context(
             &sanitized_history,
+            &recent_directives,
             user_id,
+            session_id,
             session_dek,
         ).await?;
 
-        // Step 4: Cache the directive for future use
-        if let Err(cache_error) = self.cache_directive(user_id, &sanitized_history, &directive).await {
-            warn!("Failed to cache strategic directive: {}", cache_error);
-            // Continue processing even if caching fails
+        // Step 4: Store the directive for session continuity
+        match self.store_directive(user_id, session_id, &directive).await {
+            Ok(()) => {
+                debug!(
+                    %user_id,
+                    %session_id,
+                    directive_id = %directive.directive_id,
+                    "Successfully stored strategic directive for session continuity"
+                );
+            }
+            Err(cache_error) => {
+                warn!(
+                    %user_id,
+                    %session_id,
+                    directive_id = %directive.directive_id,
+                    error = %cache_error,
+                    "Failed to store strategic directive, continuing without caching"
+                );
+                // Continue processing even if storage fails
+            }
         }
 
         let total_time = start_time.elapsed();
+        
+        // Log detailed summary of the generated directive
+        let directive_summary = self.format_directive_summary(&directive);
         info!(
-            "Strategic analysis completed for user: {} in {:?}ms",
-            user_id, total_time.as_millis()
+            %user_id,
+            %session_id,
+            directive_id = %directive.directive_id,
+            directive_type = %directive.directive_type,
+            narrative_arc = %directive.narrative_arc,
+            emotional_tone = %directive.emotional_tone,
+            plot_significance = ?directive.plot_significance,
+            world_impact_level = ?directive.world_impact_level,
+            character_focus = ?directive.character_focus,
+            analysis_time_ms = %total_time.as_millis(),
+            previous_directives_count = %recent_directives.len(),
+            conversation_messages = %chat_history.len(),
+            directive_summary = %directive_summary,
+            "Strategic analysis completed with comprehensive directive"
         );
 
         Ok(directive)
     }
 
-    /// Create a comprehensive strategic directive using structured output
+    /// Create a comprehensive strategic directive using structured output with historical context
     /// 
     /// This method uses Flash (gemini-2.5-flash) with structured output to generate
-    /// a complete strategic directive in a single AI call.
-    pub async fn create_strategic_directive_with_structured_output(
+    /// a complete strategic directive in a single AI call, building upon previous directives.
+    pub async fn create_strategic_directive_with_context(
         &self,
         chat_history: &[ChatMessageForClient],
+        recent_directives: &[StrategicDirective],
         user_id: Uuid,
+        session_id: Uuid,
         session_dek: &SessionDek,
     ) -> Result<StrategicDirective, AppError> {
         let conversation_context = self.format_conversation_for_analysis(chat_history);
 
+        // Format recent directives for context
+        let historical_context = if recent_directives.is_empty() {
+            "No previous strategic directives found.".to_string()
+        } else {
+            format!(
+                "RECENT STRATEGIC DIRECTIVES (for continuity):\n{}\n",
+                recent_directives.iter()
+                    .take(3) // Use last 3 directives for context
+                    .map(|d| format!(
+                        "- Narrative Arc: {}\n- Emotional Tone: {}\n- Plot Significance: {:?}\n- World Impact: {:?}\n- Character Focus: {:?}",
+                        d.narrative_arc, d.emotional_tone, d.plot_significance, d.world_impact_level, d.character_focus
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            )
+        };
+
         let prompt = format!(r#"CONVERSATION HISTORY:
+{}
+
 {}
 
 CREATE A STRATEGIC DIRECTIVE:
 
-Based on the conversation, generate a complete strategic directive that will guide the narrative forward.
+Based on the conversation and the context of recent directives, generate a complete strategic directive that will guide the narrative forward. Build upon previous directives where appropriate, but evolve the narrative naturally.
 
 Consider:
 1. The type of narrative moment this represents
@@ -156,8 +240,9 @@ Consider:
 7. The pacing of the narrative
 8. The plot significance (Major/Moderate/Minor/Trivial)
 9. The world impact level (Global/Regional/Local/Personal)
+10. How this builds upon or evolves from previous directives
 
-Generate a JSON response with all required fields for the strategic directive."#, conversation_context);
+Generate a JSON response with all required fields for the strategic directive."#, conversation_context, historical_context);
 
         // Get the JSON schema for structured output
         let schema = get_strategic_directive_schema();
@@ -803,5 +888,154 @@ NARRATIVE ARC:"#, narrative_direction, conversation_context);
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    /// Get recent strategic directives for a user session
+    /// 
+    /// Retrieves the last few strategic directives from Redis cache to provide
+    /// continuity and context for new directive generation.
+    async fn get_recent_directives(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+    ) -> Result<Vec<StrategicDirective>, AppError> {
+        let cache_key = format!("strategic_directives:{}:{}", user_id, session_id);
+
+        let mut conn = self.redis_client.get_multiplexed_async_connection().await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Redis connection failed: {}", e)))?;
+
+        // Get list of directive IDs from Redis sorted set (most recent first)
+        let directive_ids: Vec<String> = redis::cmd("ZREVRANGE")
+            .arg(&cache_key)
+            .arg(0)
+            .arg(4) // Get last 5 directives
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get directive IDs: {}", e)))?;
+
+        let mut directives = Vec::new();
+        for directive_id in directive_ids {
+            let directive_key = format!("strategic_directive:{}", directive_id);
+            let cached_data: Option<String> = redis::cmd("GET")
+                .arg(&directive_key)
+                .query_async(&mut conn)
+                .await
+                .unwrap_or_default();
+                
+            if let Some(directive_json) = cached_data {
+                if let Ok(directive) = serde_json::from_str::<StrategicDirective>(&directive_json) {
+                    directives.push(directive);
+                }
+            }
+        }
+
+        debug!("Retrieved {} recent strategic directives for user {} session {}", 
+               directives.len(), user_id, session_id);
+        Ok(directives)
+    }
+
+    /// Check if a new strategic directive should be generated
+    /// 
+    /// Evaluates whether enough conversation has changed since the last directive
+    /// to warrant generating a new one. This helps avoid redundant directive generation.
+    async fn should_generate_new_directive(
+        &self,
+        chat_history: &[ChatMessageForClient],
+        latest_directive: &StrategicDirective,
+    ) -> Result<bool, AppError> {
+        // Simple heuristic: generate new directive if we have new messages
+        // (In a production system, this could be more sophisticated)
+        
+        // For now, always generate a new directive if we have at least 2 new messages
+        // This ensures the strategic agent stays responsive to conversation changes
+        let new_messages_count = chat_history.len();
+        
+        debug!("Checking if new directive needed: {} messages in history", new_messages_count);
+        
+        // Generate new directive if we have at least 2 messages
+        // This allows the strategic agent to adapt to conversation flow
+        Ok(new_messages_count >= 2)
+    }
+
+    /// Store a strategic directive in Redis for session continuity
+    /// 
+    /// Stores the directive with both individual key and adds to session timeline
+    /// for efficient retrieval of recent directives.
+    async fn store_directive(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        directive: &StrategicDirective,
+    ) -> Result<(), AppError> {
+        let directive_id = Uuid::new_v4();
+        let directive_key = format!("strategic_directive:{}", directive_id);
+        let session_key = format!("strategic_directives:{}:{}", user_id, session_id);
+        
+        let directive_json = serde_json::to_string(directive)
+            .map_err(|e| AppError::SerializationError(format!("Failed to serialize directive: {}", e)))?;
+
+        let mut conn = self.redis_client.get_multiplexed_async_connection().await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Redis connection failed: {}", e)))?;
+
+        // Store the directive with 1 hour TTL
+        let _: () = redis::cmd("SETEX")
+            .arg(&directive_key)
+            .arg(3600) // 1 hour TTL
+            .arg(&directive_json)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to store directive: {}", e)))?;
+
+        // Add to session timeline (sorted set with timestamp as score)
+        let timestamp = chrono::Utc::now().timestamp();
+        let _: () = redis::cmd("ZADD")
+            .arg(&session_key)
+            .arg(timestamp)
+            .arg(directive_id.to_string())
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to add to session timeline: {}", e)))?;
+
+        // Set TTL on session key (1 hour)
+        let _: () = redis::cmd("EXPIRE")
+            .arg(&session_key)
+            .arg(3600)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to set session TTL: {}", e)))?;
+
+        debug!("Stored strategic directive {} for user {} session {}", 
+               directive_id, user_id, session_id);
+        Ok(())
+    }
+
+    /// Create a human-readable summary of a strategic directive for logging and debugging
+    /// 
+    /// This method formats the strategic directive into a readable summary that provides
+    /// context about the narrative direction and strategic decisions made by the agent.
+    pub fn format_directive_summary(&self, directive: &StrategicDirective) -> String {
+        let character_focus_text = if directive.character_focus.is_empty() {
+            "General focus".to_string()
+        } else {
+            format!("Focus on: {}", directive.character_focus.join(", "))
+        };
+
+        format!(
+            "Strategic Directive Summary:\n\
+            - Type: {}\n\
+            - Narrative Arc: {}\n\
+            - Emotional Tone: {}\n\
+            - Plot Significance: {:?}\n\
+            - World Impact: {:?}\n\
+            - Character Focus: {}\n\
+            - ID: {}",
+            directive.directive_type,
+            directive.narrative_arc,
+            directive.emotional_tone,
+            directive.plot_significance,
+            directive.world_impact_level,
+            character_focus_text,
+            directive.directive_id
+        )
     }
 }

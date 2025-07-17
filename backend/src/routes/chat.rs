@@ -582,6 +582,7 @@ pub async fn generate_chat_response(
         match strategic_agent.analyze_conversation(
             &chat_history_for_strategic,
             user_id_value,
+            session_id,
             &session_dek,
         ).await {
             Ok(directive) => {
