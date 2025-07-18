@@ -479,16 +479,83 @@ Examples:
             _ => None,
         };
 
-        // For now, return the analysis. In a full implementation, we'd:
-        // 1. Resolve entity name to ID
-        // 2. Update the entity's salience using entity_manager methods
-        // 3. Return the actual update result
-
+        // Step 1: Use FindEntityTool to resolve entity name to ID
+        let find_entity_tool = super::world_interaction_tools::FindEntityTool::new(
+            self.app_state.ecs_entity_manager.clone()
+        );
+        
+        let find_params = json!({
+            "user_id": user_id.to_string(),
+            "criteria": {
+                "type": "ByName",
+                "name": entity_name
+            },
+            "limit": 1
+        });
+        
+        let find_result = find_entity_tool.execute(&find_params).await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to find entity: {}", e)))?;
+            
+        let entities = find_result.get("entities").and_then(|e| e.as_array())
+            .ok_or_else(|| ToolError::ExecutionFailed("Invalid find_entity response".to_string()))?;
+            
+        if entities.is_empty() {
+            return Ok(json!({
+                "entity_name": entity_name,
+                "analysis": analysis,
+                "status": "entity_not_found",
+                "reason": format!("Entity '{}' not found in ECS. Entity must exist before salience can be updated.", entity_name),
+                "recommendation": "Create the entity first using create_entity tool"
+            }));
+        }
+        
+        let entity = &entities[0];
+        let entity_id_str = entity.get("entity_id").and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing entity_id in response".to_string()))?;
+        let entity_id = Uuid::parse_str(entity_id_str)
+            .map_err(|_| ToolError::ExecutionFailed(format!("Invalid entity_id: {}", entity_id_str)))?;
+        
+        // Get current salience tier for comparison
+        let mut current_tier_str = "Unknown";
+        if let Some(components) = entity.get("components").and_then(|v| v.as_array()) {
+            for component in components {
+                if component.get("type").and_then(|v| v.as_str()) == Some("Salience") {
+                    if let Some(data) = component.get("data") {
+                        if let Some(tier) = data.get("tier").and_then(|t| t.as_str()) {
+                            current_tier_str = tier;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Step 2: Update the entity's salience using entity_manager
+        let update_reason = format!(
+            "AI Analysis: {} (confidence: {:.2}). {}",
+            analysis.reasoning,
+            analysis.confidence,
+            analysis.persistence_reasoning
+        );
+        
+        let entity_manager = &self.app_state.ecs_entity_manager;
+        entity_manager.update_entity_salience(
+            user_id,
+            entity_id,
+            salience_tier,
+            update_reason.clone(),
+        ).await.map_err(|e| ToolError::AppError(e))?;
+        
+        // Step 3: Return the actual update result
         Ok(json!({
             "entity_name": entity_name,
+            "entity_id": entity_id.to_string(),
+            "previous_tier": current_tier_str,
+            "new_tier": analysis.recommended_tier,
             "analysis": analysis,
-            "status": "analyzed_but_not_applied",
-            "reason": "Entity name to ID resolution and salience update implementation needed"
+            "status": "applied",
+            "update_reason": update_reason,
+            "scale_context": scale_context.map(|s| format!("{:?}", s)),
+            "timestamp": chrono::Utc::now().to_rfc3339()
         }))
     }
 }
