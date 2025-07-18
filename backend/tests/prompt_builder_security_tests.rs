@@ -325,6 +325,7 @@ fn create_test_enriched_context() -> EnrichedContext {
             // Validation checks will be added when the enums are available
         ],
         assembled_context: None,
+        perception_analysis: None,
         total_tokens_used: 1200,
         execution_time_ms: 200,
         validation_time_ms: 50,

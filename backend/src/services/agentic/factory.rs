@@ -411,6 +411,7 @@ impl AgenticNarrativeFactory {
             planning_service,
             plan_validator,
             app_state.redis_client.clone(),
+            app_state.clone(),
         ));
         
         info!("PerceptionAgent created successfully");

@@ -530,8 +530,126 @@ pub async fn generate_chat_response(
     let dek_bytes = session_dek_arc.expose_secret().clone();
     let session_dek = crate::auth::session_dek::SessionDek::new(dek_bytes);
     
-    // Step 1: Strategic Agent Analysis (if available)
-    let strategic_directive = if let Some(ref strategic_agent) = state_arc.strategic_agent {
+    // Check if we have the integrated hierarchical pipeline (which includes Perception Agent)
+    // If successful, return early with the pipeline response
+    if let Some(ref hierarchical_pipeline) = state_arc.hierarchical_pipeline {
+        info!(%session_id, "Using integrated HierarchicalAgentPipeline with Perception, Strategic, and Tactical layers");
+        
+        // Convert GenAI history to ChatMessageForClient format for the pipeline
+        let mut chat_history_for_pipeline: Vec<crate::models::chats::ChatMessageForClient> = 
+            gen_ai_recent_history.iter()
+                .map(|msg| {
+                    // Extract text content from MessageContent
+                    let content = match &msg.content {
+                        MessageContent::Text(text) => text.clone(),
+                        _ => String::new(), // Handle other content types if needed
+                    };
+                    
+                    crate::models::chats::ChatMessageForClient {
+                        id: Uuid::new_v4(), // Generate temp ID for pipeline analysis
+                        session_id,
+                        user_id: user_id_value,
+                        message_type: match msg.role {
+                            ChatRole::User => MessageRole::User,
+                            ChatRole::Assistant => MessageRole::Assistant,
+                            ChatRole::System => MessageRole::System,
+                            ChatRole::Tool => MessageRole::Assistant, // Map Tool to Assistant
+                        },
+                        content,
+                        created_at: chrono::Utc::now(), // Use current time as approximation
+                        prompt_tokens: None,
+                        completion_tokens: None,
+                        raw_prompt: None,
+                        model_name: model_to_use.clone(),
+                    }
+                })
+                .collect();
+        
+        // Execute the full hierarchical pipeline
+        match hierarchical_pipeline.execute(
+            &chat_history_for_pipeline,
+            user_id_value,
+            &session_dek,
+            &current_user_content,
+        ).await {
+            Ok(pipeline_result) => {
+                info!(
+                    %session_id,
+                    total_time_ms = pipeline_result.metrics.total_execution_time_ms,
+                    perception_time_ms = pipeline_result.metrics.perception_time_ms,
+                    strategic_time_ms = pipeline_result.metrics.strategic_time_ms,
+                    tactical_time_ms = pipeline_result.metrics.tactical_time_ms,
+                    operational_time_ms = pipeline_result.metrics.operational_time_ms,
+                    total_tokens = pipeline_result.metrics.total_tokens_used,
+                    confidence = pipeline_result.metrics.confidence_score,
+                    "Successfully executed hierarchical pipeline with all layers including Perception Agent"
+                );
+                
+                // Store the perception analysis results in Redis for the end-to-end test to retrieve
+                if let Some(ref perception_analysis) = pipeline_result.enriched_context.perception_analysis {
+                    let perception_key = format!("perception_analysis:{}:{}", user_id_value, session_id);
+                    
+                    // Get Redis connection and store perception analysis
+                    match state_arc.redis_client.get_multiplexed_async_connection().await {
+                        Ok(mut redis_conn) => {
+                            use redis::AsyncCommands;
+                            match redis_conn.set_ex(
+                                perception_key.clone(),
+                                serde_json::to_string(perception_analysis).unwrap_or_default(),
+                                300, // 5 minute TTL
+                            ).await {
+                                Ok(()) => {
+                                    debug!(%session_id, "Cached perception analysis in Redis at key: {}", perception_key);
+                                }
+                                Err(e) => {
+                                    warn!(%session_id, error = %e, "Failed to cache perception analysis in Redis");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!(%session_id, error = %e, "Failed to get Redis connection for perception caching");
+                        }
+                    }
+                }
+                
+                // The pipeline already generated the response, so we'll create an SSE stream
+                // to return it in the expected format
+                let response_content = pipeline_result.response;
+                let tokens_used = pipeline_result.metrics.total_tokens_used;
+                let model_name_for_response = model_to_use.clone();
+                
+                // Create a simple SSE stream that sends the complete response
+                let stream = async_stream::stream! {
+                    // Send the content
+                    yield Ok::<_, std::convert::Infallible>(Event::default().event("content").data(response_content));
+                    
+                    // Send token usage
+                    let token_data = serde_json::json!({
+                        "prompt_tokens": 0, // We don't have separate prompt tokens from pipeline
+                        "completion_tokens": tokens_used,
+                        "model_name": model_name_for_response
+                    });
+                    yield Ok(Event::default().event("token_usage").data(token_data.to_string()));
+                    
+                    // Send done event
+                    yield Ok(Event::default().event("done").data(""));
+                };
+                
+                return Ok(Sse::new(stream)
+                    .keep_alive(KeepAlive::default())
+                    .into_response());
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Hierarchical pipeline failed, falling back to individual agents");
+                // Fall through to use individual agents
+            }
+        }
+    }
+    
+    // If we reach here, either pipeline wasn't available or failed - use individual agents
+    let strategic_directive = {
+        // Step 1: Strategic Agent Analysis (if available)
+        if let Some(ref strategic_agent) = state_arc.strategic_agent {
         info!(%session_id, "Using StrategicAgent for narrative arc analysis");
         
         // Convert GenAI history to ChatMessageForClient format for Strategic Agent
@@ -604,6 +722,7 @@ pub async fn generate_chat_response(
     } else {
         debug!(%session_id, "StrategicAgent not available, will use simplified directive");
         None
+    }
     };
     
     // Use strategic directive if available, otherwise create simplified version
@@ -623,7 +742,10 @@ pub async fn generate_chat_response(
     });
     
     // Step 2: Use TacticalAgent to create EnrichedContext if available
-    let enriched_context = if let Some(ref tactical_agent) = state_arc.tactical_agent {
+    let enriched_context = None; // Initialize as None since pipeline wasn't used
+    let enriched_context = if enriched_context.is_some() {
+        enriched_context
+    } else if let Some(ref tactical_agent) = state_arc.tactical_agent {
         info!(%session_id, "Using TacticalAgent for enriched context generation with strategic directive");
         
         match tactical_agent.process_directive(

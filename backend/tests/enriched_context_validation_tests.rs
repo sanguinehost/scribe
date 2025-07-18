@@ -373,6 +373,7 @@ fn create_comprehensive_valid_context() -> EnrichedContext {
             },
         ],
         assembled_context: None,
+        perception_analysis: None,
         total_tokens_used: 1500,
         execution_time_ms: 2500,
         validation_time_ms: 150,

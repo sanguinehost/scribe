@@ -164,6 +164,7 @@ impl HierarchicalContextAssembler {
             plan_validation_status: PlanValidationStatus::Validated, // Simplified validation
             symbolic_firewall_checks,
             assembled_context: None, // We're creating pure hierarchical context
+            perception_analysis: None,
             total_tokens_used,
             execution_time_ms,
             validation_time_ms: 10, // Minimal validation time for now

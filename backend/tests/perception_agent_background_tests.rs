@@ -58,6 +58,7 @@ async fn test_perception_agent_background_spawn() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.clone(),
     ));
     
     // Create channel for completion notification
@@ -111,6 +112,7 @@ async fn test_perception_agent_concurrent_background_tasks() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.clone(),
     ));
     
     // Spawn multiple background tasks
@@ -184,6 +186,7 @@ async fn test_perception_agent_background_cancellation() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.clone(),
     ));
     
     // Create a long-running response
@@ -231,6 +234,7 @@ async fn test_perception_agent_background_error_isolation() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.clone(),
     ));
     
     let mut handles = vec![];
@@ -320,6 +324,7 @@ async fn test_perception_agent_background_with_timeout() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.clone(),
     ));
     
     let response = "Quick response";
@@ -364,6 +369,7 @@ async fn test_perception_agent_background_queue_simulation() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.clone(),
     ));
     
     // Create a queue for perception tasks
@@ -437,6 +443,7 @@ async fn test_perception_agent_background_with_callbacks() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.clone(),
     ));
     
     // Create oneshot channel for callback
@@ -495,6 +502,7 @@ async fn test_perception_agent_background_resource_cleanup() {
             planning_service,
             plan_validator,
             app.app_state.redis_client.clone(),
+        app.app_state.clone(),
         ));
         
         // Spawn and complete multiple tasks
@@ -585,6 +593,7 @@ fn create_test_context() -> EnrichedContext {
         plan_validation_status: PlanValidationStatus::Validated,
         symbolic_firewall_checks: vec![],
         assembled_context: None,
+        perception_analysis: None,
         total_tokens_used: 0,
         execution_time_ms: 0,
         validation_time_ms: 0,

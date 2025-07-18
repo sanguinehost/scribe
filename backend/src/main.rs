@@ -321,6 +321,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         hierarchical_context_assembler: None, // Will be set after AppState is built
         tactical_agent: None, // Will be set after AppState is built
         strategic_agent: None, // Will be set after AppState is built
+        hierarchical_pipeline: None, // Will be set after AppState is built
     })
 }
 
@@ -602,6 +603,12 @@ fn setup_app_state_and_auth(
     
     // Initialize TacticalAgent for the hierarchical agent framework
     app_state.set_tactical_agent();
+    
+    // Initialize StrategicAgent for the hierarchical agent framework
+    app_state.set_strategic_agent();
+    
+    // Initialize HierarchicalPipeline that includes Perception Agent
+    app_state.set_hierarchical_pipeline();
 
     Ok((app_state, auth_layer))
 }

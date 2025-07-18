@@ -32,6 +32,7 @@ use scribe_backend::{
         user_personas::{CreateUserPersonaDto, UserPersonaDataForClient},
     },
     errors::AppError,
+    services::context_assembly_engine::PerceptionEnrichment,
 };
 
 /// Helper function to create a temporary character for testing
@@ -173,6 +174,17 @@ struct ConversationExchange {
     pub living_world_operations: Vec<LivingWorldOperation>,
     pub entities_mentioned: Vec<String>,
     pub world_state_changes: Vec<String>,
+    pub perception_analysis: Option<PerceptionAnalysisResult>,
+}
+
+/// Perception Agent analysis result for tracking
+#[derive(Debug, Clone)]
+struct PerceptionAnalysisResult {
+    pub contextual_entities: Vec<String>,
+    pub hierarchy_insights: Vec<String>,
+    pub salience_updates: Vec<String>,
+    pub analysis_time_ms: u64,
+    pub confidence_score: f32,
 }
 
 /// Living World operation performed during conversation
@@ -593,9 +605,24 @@ impl LivingWorldChatTest {
             living_world_operations: Vec::new(), // Will be populated by analyzing response
             entities_mentioned: vec!["Ren".to_string(), "Stonefang Hold".to_string(), "Dragon's Crown Peaks".to_string()],
             world_state_changes: vec!["Player entered Dragon's Crown Peaks".to_string(), "Approached Stonefang Hold".to_string()],
+            perception_analysis: None, // Will be populated after capturing perception data
         };
         
-        self.world.conversation_log.push(exchange);
+        // Capture perception analysis if available
+        let perception_analysis = self.capture_perception_analysis(self.world.chat_session_id).await?;
+        if let Some(ref analysis) = perception_analysis {
+            info!("🧠 PERCEPTION ANALYSIS captured:");
+            info!("  - Contextual entities: {:?}", analysis.contextual_entities);
+            info!("  - Hierarchy insights: {:?}", analysis.hierarchy_insights);
+            info!("  - Salience updates: {:?}", analysis.salience_updates);
+            info!("  - Confidence: {:.2}, Time: {}ms", analysis.confidence_score, analysis.analysis_time_ms);
+        }
+        
+        // Update exchange with perception data
+        let mut exchange_with_perception = exchange;
+        exchange_with_perception.perception_analysis = perception_analysis;
+        
+        self.world.conversation_log.push(exchange_with_perception);
         self.take_world_state_snapshot("After Exchange 1").await?;
         
         info!("✅ Exchange 1 complete in {:?}", duration);
@@ -694,6 +721,64 @@ impl LivingWorldChatTest {
         Ok(final_message)
     }
     
+    /// Capture perception analysis data from the hierarchical pipeline
+    async fn capture_perception_analysis(&self, chat_session_id: Uuid) -> Result<Option<PerceptionAnalysisResult>, AppError> {
+        debug!("🧠 Attempting to capture perception analysis for session: {}", chat_session_id);
+        
+        // Query Redis for the perception analysis data stored by the hierarchical pipeline
+        let user_id = self.world.player_persona.user_id;
+        let perception_key = format!("perception_analysis:{}:{}", user_id, chat_session_id);
+        
+        // Get the app state from test app
+        let app_state = &self.test_app.app_state;
+        
+        // Create a Redis connection
+        let mut redis_conn = app_state.redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| AppError::AiServiceError(format!("Failed to connect to Redis: {}", e)))?;
+        
+        // Try to get the perception analysis from Redis
+        use redis::AsyncCommands;
+        let perception_data: Option<String> = redis_conn
+            .get(&perception_key)
+            .await
+            .map_err(|e| AppError::AiServiceError(format!("Failed to get perception data from Redis: {}", e)))?;
+        
+        if let Some(data) = perception_data {
+            debug!("🧠 Found perception analysis in Redis for key: {}", perception_key);
+            
+            // Parse the JSON data
+            let perception_enrichment: PerceptionEnrichment = serde_json::from_str(&data)
+                .map_err(|e| AppError::AiServiceError(format!("Failed to parse perception data: {}", e)))?;
+            
+            // Convert PerceptionEnrichment to PerceptionAnalysisResult
+            Ok(Some(PerceptionAnalysisResult {
+                contextual_entities: perception_enrichment.contextual_entities.into_iter()
+                    .map(|e| e.name)
+                    .collect(),
+                hierarchy_insights: perception_enrichment.hierarchy_insights.into_iter()
+                    .map(|h| format!("{}: depth={}, parent={:?}", 
+                        h.entity_name, 
+                        h.hierarchy_depth, 
+                        h.parent_entity))
+                    .collect(),
+                salience_updates: perception_enrichment.salience_updates.into_iter()
+                    .map(|s| format!("{}: {} -> {} ({})", 
+                        s.entity_name, 
+                        s.previous_tier.as_deref().unwrap_or("None"), 
+                        s.new_tier, 
+                        s.reasoning))
+                    .collect(),
+                analysis_time_ms: perception_enrichment.analysis_time_ms,
+                confidence_score: perception_enrichment.confidence_score,
+            }))
+        } else {
+            debug!("🧠 No perception analysis found in Redis for key: {}", perception_key);
+            Ok(None)
+        }
+    }
+    
     /// Take a snapshot of the current world state
     async fn take_world_state_snapshot(&mut self, label: &str) -> Result<(), AppError> {
         debug!("📸 Taking world state snapshot: {}", label);
@@ -731,6 +816,7 @@ impl LivingWorldChatTest {
             living_world_operations: Vec::new(),
             entities_mentioned: vec!["Shanyuan".to_string(), "warrior".to_string()],
             world_state_changes: vec!["Met Shanyuan guard".to_string()],
+            perception_analysis: None,
         });
         
         Ok(())
@@ -755,6 +841,7 @@ impl LivingWorldChatTest {
             living_world_operations: Vec::new(),
             entities_mentioned: vec!["strategy".to_string(), "cultivation".to_string()],
             world_state_changes: vec!["Strategic planning session".to_string()],
+            perception_analysis: None,
         });
         
         Ok(())
@@ -779,6 +866,7 @@ impl LivingWorldChatTest {
             living_world_operations: Vec::new(),
             entities_mentioned: vec!["trial".to_string(), "stone circle".to_string(), "mountain spirits".to_string()],
             world_state_changes: vec!["Attempted ancient trial".to_string()],
+            perception_analysis: None,
         });
         
         Ok(())
@@ -803,6 +891,7 @@ impl LivingWorldChatTest {
             living_world_operations: Vec::new(),
             entities_mentioned: vec!["reflection".to_string(), "relationships".to_string(), "power".to_string()],
             world_state_changes: vec!["Journey reflection completed".to_string()],
+            perception_analysis: None,
         });
         
         self.take_world_state_snapshot("Final State").await?;

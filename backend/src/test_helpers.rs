@@ -1620,6 +1620,7 @@ impl TestAppStateBuilder {
             hierarchical_context_assembler: None, // Will be set after AppState is built
             tactical_agent: None, // Will be set after AppState is built
             strategic_agent: None, // Will be set after AppState is built
+            hierarchical_pipeline: None, // Will be set after AppState is built
             // narrative_intelligence_service will be added after AppState is built
         };
 
@@ -1647,6 +1648,9 @@ impl TestAppStateBuilder {
         
         // Initialize StrategicAgent for tests
         app_state.set_strategic_agent();
+        
+        // Initialize HierarchicalPipeline for tests that includes Perception Agent
+        app_state.set_hierarchical_pipeline();
         
         Ok(app_state)
     }

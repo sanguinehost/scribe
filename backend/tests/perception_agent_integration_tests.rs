@@ -43,6 +43,7 @@ async fn create_app_with_agents(app: &TestApp) -> Arc<PerceptionAgent> {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.clone(),
     ))
 }
 
@@ -135,6 +136,7 @@ async fn test_perception_agent_chat_service_integration() {
         plan_validation_status: PlanValidationStatus::Validated,
         symbolic_firewall_checks: vec![],
         assembled_context: None,
+        perception_analysis: None,
         total_tokens_used: 0,
         execution_time_ms: 0,
         validation_time_ms: 0,
@@ -290,6 +292,7 @@ async fn test_perception_agent_parallel_processing() {
                 plan_validation_status: PlanValidationStatus::Validated,
                 symbolic_firewall_checks: vec![],
                 assembled_context: None,
+                perception_analysis: None,
                 total_tokens_used: 0,
                 execution_time_ms: 0,
                 validation_time_ms: 0,
@@ -497,6 +500,7 @@ fn create_basic_context() -> EnrichedContext {
         plan_validation_status: PlanValidationStatus::Validated,
         symbolic_firewall_checks: vec![],
         assembled_context: None,
+        perception_analysis: None,
         total_tokens_used: 0,
         execution_time_ms: 0,
         validation_time_ms: 0,

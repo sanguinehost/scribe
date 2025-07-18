@@ -34,6 +34,7 @@ use crate::services::{
     agentic::entity_resolution_tool::EntityResolutionTool,
     agentic::tactical_agent::TacticalAgent,
     agentic::strategic_agent::StrategicAgent,
+    agentic::hierarchical_pipeline::HierarchicalAgentPipeline,
 };
 use crate::config::NarrativeFeatureFlags;
 use std::fmt;
@@ -73,6 +74,7 @@ pub struct AppStateServices {
     pub hierarchical_context_assembler: Option<Arc<HierarchicalContextAssembler>>,
     pub tactical_agent: Option<Arc<TacticalAgent>>,
     pub strategic_agent: Option<Arc<StrategicAgent>>,
+    pub hierarchical_pipeline: Option<Arc<HierarchicalAgentPipeline>>,
 }
 
 // --- Shared application state ---
@@ -119,6 +121,7 @@ pub struct AppState {
     pub hierarchical_context_assembler: Option<Arc<HierarchicalContextAssembler>>,
     pub tactical_agent: Option<Arc<TacticalAgent>>,
     pub strategic_agent: Option<Arc<StrategicAgent>>,
+    pub hierarchical_pipeline: Option<Arc<HierarchicalAgentPipeline>>,
 }
 
 // Manual Debug implementation for AppState
@@ -157,6 +160,7 @@ impl fmt::Debug for AppState {
             .field("hierarchical_context_assembler", &"<Option<Arc<HierarchicalContextAssembler>>>") // Hierarchical context assembly
             .field("tactical_agent", &"<Option<Arc<TacticalAgent>>>") // Tactical layer agent
             .field("strategic_agent", &"<Option<Arc<StrategicAgent>>>") // Strategic layer agent
+            .field("hierarchical_pipeline", &"<Option<Arc<HierarchicalAgentPipeline>>>") // Hierarchical agent pipeline
             .finish()
     }
 }
@@ -199,6 +203,7 @@ impl AppState {
             hierarchical_context_assembler: services.hierarchical_context_assembler,
             tactical_agent: services.tactical_agent,
             strategic_agent: services.strategic_agent,
+            hierarchical_pipeline: None, // Will be set after agents are configured
         }
     }
 
@@ -237,5 +242,23 @@ impl AppState {
         use crate::services::agentic::factory::AgenticNarrativeFactory;
         let strategic_agent = AgenticNarrativeFactory::create_strategic_agent(&Arc::new(self.clone()));
         self.strategic_agent = Some(strategic_agent);
+    }
+    
+    /// Set the hierarchical pipeline after all agents are configured
+    /// This creates a pipeline that includes Strategic, Tactical, and Perception agents
+    pub fn set_hierarchical_pipeline(&mut self) {
+        use crate::services::agentic::hierarchical_pipeline::{HierarchicalAgentPipeline, HierarchicalPipelineConfig};
+        
+        // Only create pipeline if we have the required agents
+        if self.strategic_agent.is_some() && self.tactical_agent.is_some() {
+            // Create custom config with increased timeout (60 seconds)
+            let config = HierarchicalPipelineConfig {
+                max_pipeline_time_ms: 60000, // 60 seconds instead of default 30
+                ..Default::default()
+            };
+            
+            let pipeline = HierarchicalAgentPipeline::from_app_state(&Arc::new(self.clone()), Some(config));
+            self.hierarchical_pipeline = Some(Arc::new(pipeline));
+        }
     }
 }

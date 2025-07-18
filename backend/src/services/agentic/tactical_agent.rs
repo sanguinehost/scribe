@@ -353,6 +353,7 @@ impl TacticalAgent {
             plan_validation_status: PlanValidationStatus::Pending,
             symbolic_firewall_checks: vec![],
             assembled_context: None,
+            perception_analysis: None,
             total_tokens_used: 0,
             execution_time_ms: 0,
             validation_time_ms: 0,
@@ -833,6 +834,7 @@ impl TacticalAgent {
             causal_context: None, // Would be populated in full implementation
             plan_validation_status,
             symbolic_firewall_checks,
+            perception_analysis: None, // Will be set by hierarchical pipeline
             assembled_context: None, // Legacy field
             total_tokens_used,
             execution_time_ms,

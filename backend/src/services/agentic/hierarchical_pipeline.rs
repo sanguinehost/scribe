@@ -26,9 +26,10 @@ use crate::{
         agentic::{
             strategic_agent::StrategicAgent,
             tactical_agent::TacticalAgent,
+            perception_agent::PerceptionAgent,
         },
         agent_prompt_templates::{AgentPromptTemplates, PromptTemplateVersion},
-        context_assembly_engine::EnrichedContext,
+        context_assembly_engine::{EnrichedContext, PerceptionEnrichment, ContextualEntityInfo, HierarchyInsightInfo, SalienceUpdateInfo},
     },
     llm::AiClient,
     auth::session_dek::SessionDek,
@@ -78,6 +79,8 @@ pub struct HierarchicalPipelineResult {
 pub struct PipelineMetrics {
     /// Total pipeline execution time (ms)
     pub total_execution_time_ms: u64,
+    /// Time spent in Perception Layer (ms)
+    pub perception_time_ms: u64,
     /// Time spent in Strategic Layer (ms)
     pub strategic_time_ms: u64,
     /// Time spent in Tactical Layer (ms)
@@ -113,6 +116,7 @@ pub struct PipelineMetrics {
 pub struct HierarchicalAgentPipeline {
     strategic_agent: Arc<StrategicAgent>,
     tactical_agent: Arc<TacticalAgent>,
+    perception_agent: Arc<PerceptionAgent>,
     ai_client: Arc<dyn AiClient>,
     config: HierarchicalPipelineConfig,
 }
@@ -122,12 +126,14 @@ impl HierarchicalAgentPipeline {
     pub fn new(
         strategic_agent: Arc<StrategicAgent>,
         tactical_agent: Arc<TacticalAgent>,
+        perception_agent: Arc<PerceptionAgent>,
         ai_client: Arc<dyn AiClient>,
         config: HierarchicalPipelineConfig,
     ) -> Self {
         Self {
             strategic_agent,
             tactical_agent,
+            perception_agent,
             ai_client,
             config,
         }
@@ -142,11 +148,13 @@ impl HierarchicalAgentPipeline {
         
         let strategic_agent = AgenticNarrativeFactory::create_strategic_agent(app_state);
         let tactical_agent = AgenticNarrativeFactory::create_tactical_agent(app_state);
+        let perception_agent = AgenticNarrativeFactory::create_perception_agent(app_state);
         let config = config.unwrap_or_default();
         
         Self::new(
             strategic_agent,
             tactical_agent,
+            perception_agent,
             app_state.ai_client.clone(),
             config,
         )
@@ -154,7 +162,8 @@ impl HierarchicalAgentPipeline {
 
     /// Execute the full hierarchical agent pipeline
     /// 
-    /// This method orchestrates the complete three-layer workflow:
+    /// This method orchestrates the complete four-layer workflow:
+    /// 0. Perception Layer performs pre-response analysis (hierarchy, salience)
     /// 1. Strategic Layer analyzes conversation and produces high-level directive
     /// 2. Tactical Layer converts directive into validated plans and enriched context
     /// 3. Operational Layer generates final response using agent-specific prompt templates
@@ -198,6 +207,26 @@ impl HierarchicalAgentPipeline {
             return Err(AppError::BadRequest("Chat history cannot be empty".to_string()));
         }
 
+        // Step 0: Perception Layer - Pre-response analysis of conversation state
+        debug!("Pipeline Step 0: Perception pre-response analysis");
+        let perception_start = std::time::Instant::now();
+        
+        // Check pipeline timeout
+        if pipeline_start.elapsed() > pipeline_timeout {
+            return Err(AppError::InternalServerErrorGeneric("Pipeline timeout during perception analysis".to_string()));
+        }
+        
+        let perception_analysis = self.perception_agent
+            .analyze_pre_response(chat_history, current_message, user_id, session_dek)
+            .await
+            .map_err(|e| {
+                error!("Perception layer failed: {}", e);
+                AppError::InternalServerErrorGeneric(format!("Perception analysis failed: {}", e))
+            })?;
+        
+        let perception_time_ms = perception_start.elapsed().as_millis() as u64;
+        debug!("Perception analysis completed in {}ms", perception_time_ms);
+
         // Step 1: Strategic Layer - Generate high-level narrative directive
         debug!("Pipeline Step 1: Strategic analysis");
         let strategic_start = std::time::Instant::now();
@@ -235,13 +264,40 @@ impl HierarchicalAgentPipeline {
             return Err(AppError::InternalServerErrorGeneric("Pipeline timeout during tactical planning".to_string()));
         }
         
-        let enriched_context = self.tactical_agent
+        let mut enriched_context = self.tactical_agent
             .process_directive(&strategic_directive, user_id, session_dek)
             .await
             .map_err(|e| {
                 error!("Tactical layer failed: {}", e);
                 AppError::InternalServerErrorGeneric(format!("Tactical planning failed: {}", e))
             })?;
+        
+        // Enrich context with perception analysis
+        let perception_enrichment = PerceptionEnrichment {
+            contextual_entities: perception_analysis.contextual_entities.iter().map(|e| ContextualEntityInfo {
+                name: e.name.clone(),
+                entity_type: e.entity_type.clone(),
+                relevance_score: e.relevance_score,
+            }).collect(),
+            hierarchy_insights: perception_analysis.hierarchy_analysis.hierarchy_insights.iter().map(|h| HierarchyInsightInfo {
+                entity_name: h.entity_name.clone(),
+                hierarchy_depth: h.hierarchy_depth,
+                parent_entity: h.parent_entity.clone(),
+                child_entities: h.child_entities.clone(),
+            }).collect(),
+            salience_updates: perception_analysis.salience_updates.iter().map(|s| SalienceUpdateInfo {
+                entity_name: s.entity_name.clone(),
+                previous_tier: s.previous_tier.clone(),
+                new_tier: s.new_tier.clone(),
+                reasoning: s.reasoning.clone(),
+                confidence: s.confidence,
+            }).collect(),
+            analysis_time_ms: perception_analysis.execution_time_ms,
+            confidence_score: perception_analysis.confidence_score,
+            analysis_timestamp: perception_analysis.analysis_timestamp,
+        };
+        
+        enriched_context.perception_analysis = Some(perception_enrichment);
         
         let tactical_time_ms = tactical_start.elapsed().as_millis() as u64;
         debug!("Tactical planning completed in {}ms", tactical_time_ms);
@@ -272,6 +328,7 @@ impl HierarchicalAgentPipeline {
         // Compile metrics
         let metrics = PipelineMetrics {
             total_execution_time_ms,
+            perception_time_ms,
             strategic_time_ms,
             tactical_time_ms,
             operational_time_ms,
@@ -615,6 +672,7 @@ mod tests {
     fn test_pipeline_metrics_structure() {
         let metrics = PipelineMetrics {
             total_execution_time_ms: 1000,
+            perception_time_ms: 100,
             strategic_time_ms: 300,
             tactical_time_ms: 500,
             operational_time_ms: 200,
@@ -624,6 +682,7 @@ mod tests {
         };
 
         assert_eq!(metrics.total_execution_time_ms, 1000);
+        assert_eq!(metrics.perception_time_ms, 100);
         assert_eq!(metrics.strategic_time_ms, 300);
         assert_eq!(metrics.tactical_time_ms, 500);
         assert_eq!(metrics.operational_time_ms, 200);
@@ -648,6 +707,7 @@ mod tests {
         let pipeline_invalid = HierarchicalAgentPipeline::new(
             pipeline.strategic_agent.clone(),
             pipeline.tactical_agent.clone(),
+            pipeline.perception_agent.clone(),
             pipeline.ai_client.clone(),
             invalid_config,
         );

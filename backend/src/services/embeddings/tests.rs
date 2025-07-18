@@ -389,6 +389,7 @@ mod tests {
             hierarchical_context_assembler: None, // Will be set after AppState is built
             tactical_agent: None, // No tactical agent needed for embedding tests
             strategic_agent: None, // No strategic agent needed for embedding tests
+            hierarchical_pipeline: None, // No hierarchical pipeline needed for embedding tests
         };
 
         let config = crate::config::Config::load()

@@ -323,6 +323,7 @@ mod tests {
             plan_validation_status: super::PlanValidationStatus::Validated,
             symbolic_firewall_checks: vec![],
             assembled_context: None,
+            perception_analysis: None,
             total_tokens_used: 100,
             execution_time_ms: 50,
             validation_time_ms: 10,

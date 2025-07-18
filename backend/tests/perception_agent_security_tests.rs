@@ -59,6 +59,7 @@ fn create_test_context() -> EnrichedContext {
         plan_validation_status: PlanValidationStatus::Validated,
         symbolic_firewall_checks: vec![],
         assembled_context: None,
+        perception_analysis: None,
         total_tokens_used: 0,
         execution_time_ms: 0,
         validation_time_ms: 0,
@@ -87,6 +88,7 @@ async fn create_test_perception_agent(app: &TestApp) -> PerceptionAgent {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.clone(),
     )
 }
 

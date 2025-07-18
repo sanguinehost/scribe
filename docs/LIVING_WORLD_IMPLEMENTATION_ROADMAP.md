@@ -1044,13 +1044,16 @@ pub struct ContextCache {
 
 *   **[ ] Task 6.3: 🚨 CRITICAL - Full Tool & Agent Integration in Main Code Paths (With Flexibility)**
     *   **Objective:** Based on integration test analysis showing only 39% tool utilization (9/23 tools), integrate ALL tools and agent layers into the main chat generation flow with **configurable enable/disable options**
-    *   **Current State:** Only Tactical Agent partially integrated; Strategic Agent, Perception Agent, and Narrative Intelligence Service disconnected from main flow
+    *   **Current State:** Strategic Agent fully integrated; Tactical Agent partially integrated; Perception Agent, and Narrative Intelligence Service disconnected from main flow
     *   **Design Requirement:** Every integration MUST be toggle-able via configuration without breaking the system
-    *   **[ ] Subtask 6.3.1: Complete Strategic Agent Integration**
-        *   [ ] Wire Strategic Agent into chat route BEFORE Tactical Agent
-        *   [ ] Implement strategic directive generation from user messages
-        *   [ ] Add narrative arc detection and plot significance analysis
-        *   [ ] Create tests for multi-turn strategic planning
+    *   **[x] Subtask 6.3.1: Complete Strategic Agent Integration** - ✅ **COMPLETED**
+        *   [x] Wire Strategic Agent into chat route BEFORE Tactical Agent
+        *   [x] Implement strategic directive generation from user messages
+        *   [x] Add narrative arc detection and plot significance analysis
+        *   [x] Create tests for multi-turn strategic planning
+        *   [x] Implement session-based directive continuity and caching
+        *   [x] Add comprehensive logging with full context and meaningful summaries
+        *   [x] Replace content-based caching with session-based directive storage
     *   **[ ] Subtask 6.3.2: Implement Perception Agent Pre-Response Pipeline**
         *   [ ] Create PerceptionAgent that runs BEFORE prompt building
         *   [ ] Integrate Epic 0 hierarchy tools (PromoteEntityHierarchy, GetEntityHierarchy, etc.)

@@ -230,6 +230,7 @@ fn create_test_enriched_context(
         plan_validation_status: PlanValidationStatus::Validated,
         symbolic_firewall_checks: vec![],
         assembled_context: None,
+        perception_analysis: None,
         total_tokens_used: 0,
         execution_time_ms: 0,
         validation_time_ms: 0,

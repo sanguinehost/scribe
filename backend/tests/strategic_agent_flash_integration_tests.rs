@@ -126,7 +126,6 @@ async fn test_flash_integration_epic_fantasy_narrative_direction() {
     let epic_fantasy_history = create_complex_chat_scenario(user_id, "epic_fantasy");
 
     let session_id = Uuid::new_v4();
-    let session_id = Uuid::new_v4();
     let result = strategic_agent.analyze_conversation(
         &epic_fantasy_history,
         user_id,

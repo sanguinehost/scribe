@@ -114,6 +114,7 @@ fn create_malicious_enriched_context(malicious_content: &str) -> EnrichedContext
         plan_validation_status: PlanValidationStatus::Failed(vec!["Malicious content detected".to_string()]),
         symbolic_firewall_checks: vec![],
         assembled_context: None,
+        perception_analysis: None,
         total_tokens_used: 100,
         execution_time_ms: 50,
         validation_time_ms: 25,

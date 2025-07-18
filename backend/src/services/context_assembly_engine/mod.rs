@@ -54,6 +54,9 @@ pub struct EnrichedContext {
     pub plan_validation_status: PlanValidationStatus,
     pub symbolic_firewall_checks: Vec<ValidationCheck>,
     
+    /// Perception Layer Output - pre-response analysis results
+    pub perception_analysis: Option<PerceptionEnrichment>,
+    
     /// Legacy Integration for gradual migration
     pub assembled_context: Option<AssembledContext>,
     
@@ -243,6 +246,50 @@ pub struct EmotionalState {
     pub primary_emotion: String,
     pub intensity: f32,
     pub contributing_factors: Vec<String>,
+}
+
+/// Perception enrichment data from pre-response analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerceptionEnrichment {
+    /// Entities identified as contextually relevant
+    pub contextual_entities: Vec<ContextualEntityInfo>,
+    /// Hierarchy analysis results
+    pub hierarchy_insights: Vec<HierarchyInsightInfo>,
+    /// Salience updates made during analysis
+    pub salience_updates: Vec<SalienceUpdateInfo>,
+    /// Analysis execution metrics
+    pub analysis_time_ms: u64,
+    /// Confidence in the perception analysis
+    pub confidence_score: f32,
+    /// Timestamp of the analysis
+    pub analysis_timestamp: DateTime<Utc>,
+}
+
+/// Contextual entity information for enriched context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextualEntityInfo {
+    pub name: String,
+    pub entity_type: String,
+    pub relevance_score: f32,
+}
+
+/// Hierarchy insight information for enriched context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HierarchyInsightInfo {
+    pub entity_name: String,
+    pub hierarchy_depth: u32,
+    pub parent_entity: Option<String>,
+    pub child_entities: Vec<String>,
+}
+
+/// Salience update information for enriched context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SalienceUpdateInfo {
+    pub entity_name: String,
+    pub previous_tier: Option<String>,
+    pub new_tier: String,
+    pub reasoning: String,
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -508,6 +555,7 @@ impl ContextAssemblyEngine {
             plan_validation_status,
             symbolic_firewall_checks,
             assembled_context: None, // Legacy context not generated in new flow
+            perception_analysis: None,
             total_tokens_used,
             execution_time_ms,
             validation_time_ms,
