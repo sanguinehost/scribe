@@ -1,6 +1,14 @@
 // backend/src/test_helpers.rs
 // Contains helper functions and structs for integration testing within the src directory.
 
+// Test constants for model names
+pub mod test_constants {
+    pub const DEFAULT_CHAT_MODEL: &str = "gemini-2.5-flash";
+    pub const FAST_MODEL: &str = "gemini-2.5-flash-lite-preview-06-17";
+    pub const ADVANCED_MODEL: &str = "gemini-2.5-flash";
+    pub const EMBEDDING_MODEL: &str = "models/text-embedding-004";
+}
+
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
@@ -1475,6 +1483,7 @@ impl TestAppStateBuilder {
                     Default::default(),
                     feature_flags,
                     self.ai_client.clone(),
+                    self.config.fast_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -1540,6 +1549,7 @@ impl TestAppStateBuilder {
                     Default::default(),
                     feature_flags,
                     self.ai_client.clone(),
+                    self.config.fast_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -1588,6 +1598,7 @@ impl TestAppStateBuilder {
                     Default::default(),
                     feature_flags,
                     self.ai_client.clone(),
+                    self.config.fast_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -1596,12 +1607,17 @@ impl TestAppStateBuilder {
                 let state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
                     self.ai_client.clone(),
                     entity_manager.clone(),
+                    self.config.fast_model.clone(),
                 ));
                 Arc::new(crate::services::AgenticOrchestrator::new(
                     self.ai_client.clone(),
                     hybrid_query_service,
                     Arc::new(self.db_pool.clone()),
                     state_update_service,
+                    self.config.intent_detection_model.clone(),
+                    self.config.query_planning_model.clone(),
+                    self.config.optimization_model.clone(),
+                    self.config.fast_model.clone(), // Context engine model
                 ))
             },
             agentic_state_update_service: {
@@ -1615,6 +1631,7 @@ impl TestAppStateBuilder {
                 Arc::new(crate::services::AgenticStateUpdateService::new(
                     self.ai_client.clone(),
                     entity_manager,
+                    self.config.fast_model.clone(),
                 ))
             },
             hierarchical_context_assembler: None, // Will be set after AppState is built
@@ -3060,6 +3077,7 @@ pub async fn login_user_via_api(
     // Create a new reqwest client for each call, or pass one in TestApp
     let client = reqwest::Client::builder()
         .cookie_store(true) // Enable cookie store for this client
+        .timeout(std::time::Duration::from_secs(300)) // 5 minute timeout for Living World tests
         .build()
         .expect("Failed to build reqwest client for login");
 
@@ -3386,6 +3404,7 @@ pub fn create_test_hybrid_query_service(
         HybridQueryConfig::default(),
         feature_flags,
         ai_client,
+        test_constants::FAST_MODEL.to_string(), // Default model for tests
         entity_manager,
         rag_service,
         degradation_service,

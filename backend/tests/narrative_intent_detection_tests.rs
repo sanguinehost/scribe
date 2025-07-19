@@ -55,7 +55,7 @@ async fn test_narrative_intent_roleplay_scene_transition() {
     }"#;
 
     let mock_client = MockAiClient::new_with_response(mock_response.to_string());
-    let service = IntentDetectionService::new(Arc::new(mock_client));
+    let service = IntentDetectionService::new(Arc::new(mock_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let user_query = "Lumiya sighs softly and goes to check on her children, needing the comfort of family after the difficult political meeting.";
     let conversation_context = Some("Previous messages showed tense political confrontation with Republic senators about trade agreements. Lumiya was frustrated and defensive about her people's needs.");
@@ -140,7 +140,7 @@ async fn test_narrative_intent_action_scene() {
     }"#;
 
     let mock_client = MockAiClient::new_with_response(mock_response.to_string());
-    let service = IntentDetectionService::new(Arc::new(mock_client));
+    let service = IntentDetectionService::new(Arc::new(mock_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let user_query = "Kael draws his blaster as the mercenary squad surrounds him in the landing bay, looking for cover behind the cargo containers.";
     
@@ -221,7 +221,7 @@ async fn test_narrative_intent_exploration_discovery() {
     }"#;
 
     let mock_client = MockAiClient::new_with_response(mock_response.to_string());
-    let service = IntentDetectionService::new(Arc::new(mock_client));
+    let service = IntentDetectionService::new(Arc::new(mock_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let user_query = "Zara carefully approaches the weathered stone archway, her archaeologist training telling her these symbols are far older than anything she's seen before.";
     

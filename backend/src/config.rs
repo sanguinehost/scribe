@@ -81,6 +81,25 @@ pub struct Config {
     #[serde(default = "default_rechronicle_confidence_threshold")]
     pub rechronicle_confidence_threshold: f32,
     
+    // Model Configuration - Centralized model management
+    // Core models
+    #[serde(default = "default_chat_model")]
+    pub chat_model: String, // Default model for chat completions
+    #[serde(default = "default_fast_model")]
+    pub fast_model: String, // Fast/lite model for quick operations
+    #[serde(default = "default_advanced_model")]
+    pub advanced_model: String, // Advanced model for complex reasoning
+    #[serde(default = "default_embedding_model")]
+    pub embedding_model: String, // Model for vector embeddings
+    
+    // Feature-specific models
+    #[serde(default = "default_token_counter_model")]
+    pub token_counter_model: String, // Model for token counting
+    #[serde(default = "default_suggestion_model")]
+    pub suggestion_model: String, // Model for generating suggestions
+    #[serde(default = "default_optimization_model")]
+    pub optimization_model: String, // Model for context optimization
+    
     // Agentic model configuration
     #[serde(default = "default_agentic_triage_model")]
     pub agentic_triage_model: String,
@@ -92,6 +111,22 @@ pub struct Config {
     pub agentic_entity_resolution_model: String,
     #[serde(default = "default_agentic_max_tool_executions")]
     pub agentic_max_tool_executions: usize,
+    
+    // Living World agent models
+    #[serde(default = "default_perception_agent_model")]
+    pub perception_agent_model: String,
+    #[serde(default = "default_strategic_agent_model")]
+    pub strategic_agent_model: String,
+    #[serde(default = "default_tactical_agent_model")]
+    pub tactical_agent_model: String,
+    
+    // Tool-specific models
+    #[serde(default = "default_intent_detection_model")]
+    pub intent_detection_model: String,
+    #[serde(default = "default_query_planning_model")]
+    pub query_planning_model: String,
+    #[serde(default = "default_hybrid_query_model")]
+    pub hybrid_query_model: String,
 }
 
 impl std::fmt::Debug for Config {
@@ -144,6 +179,25 @@ impl std::fmt::Debug for Config {
                 &self.from_email.as_ref().map(|_| "[REDACTED]"),
             )
             .field("rechronicle_confidence_threshold", &self.rechronicle_confidence_threshold)
+            // Model configuration fields
+            .field("chat_model", &self.chat_model)
+            .field("fast_model", &self.fast_model)
+            .field("advanced_model", &self.advanced_model)
+            .field("embedding_model", &self.embedding_model)
+            .field("token_counter_model", &self.token_counter_model)
+            .field("suggestion_model", &self.suggestion_model)
+            .field("optimization_model", &self.optimization_model)
+            .field("agentic_triage_model", &self.agentic_triage_model)
+            .field("agentic_planning_model", &self.agentic_planning_model)
+            .field("agentic_extraction_model", &self.agentic_extraction_model)
+            .field("agentic_entity_resolution_model", &self.agentic_entity_resolution_model)
+            .field("agentic_max_tool_executions", &self.agentic_max_tool_executions)
+            .field("perception_agent_model", &self.perception_agent_model)
+            .field("strategic_agent_model", &self.strategic_agent_model)
+            .field("tactical_agent_model", &self.tactical_agent_model)
+            .field("intent_detection_model", &self.intent_detection_model)
+            .field("query_planning_model", &self.query_planning_model)
+            .field("hybrid_query_model", &self.hybrid_query_model)
             .finish()
     }
 }
@@ -192,6 +246,36 @@ fn default_token_counter_default_model() -> String {
     "gemini-2.5-flash".to_string()
 } // Added
 
+// Core model defaults
+fn default_chat_model() -> String {
+    "gemini-2.5-flash".to_string()
+}
+
+fn default_fast_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
+fn default_advanced_model() -> String {
+    "gemini-2.5-flash".to_string()
+}
+
+fn default_embedding_model() -> String {
+    "models/text-embedding-004".to_string()
+}
+
+// Feature-specific model defaults
+fn default_token_counter_model() -> String {
+    "gemini-2.5-flash".to_string()
+}
+
+fn default_suggestion_model() -> String {
+    "gemini-2.5-flash".to_string()
+}
+
+fn default_optimization_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
 // Defaults for context token limits
 const fn default_context_total_token_limit() -> usize {
     200_000
@@ -239,6 +323,32 @@ fn default_agentic_entity_resolution_model() -> String {
 
 const fn default_agentic_max_tool_executions() -> usize {
     15
+}
+
+// Living World agent model defaults
+fn default_perception_agent_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
+fn default_strategic_agent_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
+fn default_tactical_agent_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
+// Tool-specific model defaults
+fn default_intent_detection_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
+fn default_query_planning_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
+}
+
+fn default_hybrid_query_model() -> String {
+    "gemini-2.5-flash-lite-preview-06-17".to_string()
 }
 
 impl Config {
@@ -301,11 +411,29 @@ impl Default for Config {
             from_email: None,
             narrative_flags: NarrativeFeatureFlags::default(),
             rechronicle_confidence_threshold: default_rechronicle_confidence_threshold(),
+            // Core models
+            chat_model: default_chat_model(),
+            fast_model: default_fast_model(),
+            advanced_model: default_advanced_model(),
+            embedding_model: default_embedding_model(),
+            // Feature-specific models
+            token_counter_model: default_token_counter_model(),
+            suggestion_model: default_suggestion_model(),
+            optimization_model: default_optimization_model(),
+            // Agentic models
             agentic_triage_model: default_agentic_triage_model(),
             agentic_planning_model: default_agentic_planning_model(),
             agentic_extraction_model: default_agentic_extraction_model(),
             agentic_entity_resolution_model: default_agentic_entity_resolution_model(),
             agentic_max_tool_executions: default_agentic_max_tool_executions(),
+            // Living World models
+            perception_agent_model: default_perception_agent_model(),
+            strategic_agent_model: default_strategic_agent_model(),
+            tactical_agent_model: default_tactical_agent_model(),
+            // Tool-specific models
+            intent_detection_model: default_intent_detection_model(),
+            query_planning_model: default_query_planning_model(),
+            hybrid_query_model: default_hybrid_query_model(),
         }
     }
 }

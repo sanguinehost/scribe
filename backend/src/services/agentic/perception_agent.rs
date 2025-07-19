@@ -13,6 +13,7 @@ use crate::{
         planning::{PlanningService, PlanValidatorService},
         context_assembly_engine::EnrichedContext,
         agentic::{
+            perception_structured_output,
             tools::{
                 world_interaction_tools::{
                     FindEntityTool, GetEntityDetailsTool, CreateEntityTool, 
@@ -59,6 +60,7 @@ pub struct PerceptionAgent {
     planning_service: Arc<PlanningService>,
     plan_validator: Arc<PlanValidatorService>,
     redis_client: Arc<redis::Client>,
+    model: String,
     // World interaction tools for state updates
     find_entity_tool: Arc<FindEntityTool>,
     get_entity_details_tool: Arc<GetEntityDetailsTool>,
@@ -83,6 +85,7 @@ impl PerceptionAgent {
         plan_validator: Arc<PlanValidatorService>,
         redis_client: Arc<redis::Client>,
         app_state: Arc<AppState>,
+        model: String,
     ) -> Self {
         // Initialize world interaction tools
         let find_entity_tool = Arc::new(FindEntityTool::new(ecs_entity_manager.clone()));
@@ -105,6 +108,7 @@ impl PerceptionAgent {
             planning_service,
             plan_validator,
             redis_client,
+            model,
             find_entity_tool,
             get_entity_details_tool,
             create_entity_tool,
@@ -257,6 +261,12 @@ DO NOT EXTRACT:
 
 Only extract concrete ECS entities that exist as physical/trackable objects in the spatial hierarchy.
 Extract entities with their types and relevance scores (0.0-1.0).
+
+IMPORTANT: For locations, consider spatial hierarchy:
+- Major locations (e.g., "Dragon's Crown Peaks") should be marked as potential containers
+- Sub-locations (e.g., "Stonefang Hold" within the peaks) should note their parent
+- Consider scale: Cosmic (galaxies, systems), Planetary (continents, regions), Intimate (buildings, rooms)
+
 Respond with structured JSON matching the required schema."#, narrative_context);
 
         let chat_request = ChatRequest::new(vec![
@@ -295,7 +305,7 @@ Respond with structured JSON matching the required schema."#, narrative_context)
         };
 
         let response = self.ai_client
-            .exec_chat("gemini-2.5-flash", chat_request, Some(chat_options))
+            .exec_chat(&self.model, chat_request, Some(chat_options))
             .await?;
 
         // Extract JSON from response (matching planning service pattern)
@@ -317,7 +327,331 @@ Respond with structured JSON matching the required schema."#, narrative_context)
 
         let entities = extraction.to_contextual_entities();
         debug!("Extracted {} contextual entities with confidence {}", entities.len(), extraction.confidence);
+        
+        // Create entities in ECS if they don't already exist
+        info!("Creating/ensuring {} entities exist in ECS", entities.len());
+        self.ensure_entities_exist(&entities, user_id, session_dek).await?;
+        
         Ok(entities)
+    }
+    
+    /// Ensure extracted entities exist in the ECS, creating them if necessary
+    async fn ensure_entities_exist(
+        &self,
+        entities: &[ContextualEntity],
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        // First pass: Create all entities
+        for entity in entities {
+            // Check if entity already exists
+            let find_params = serde_json::json!({
+                "user_id": user_id.to_string(),
+                "criteria": {
+                    "type": "ByName",
+                    "name": entity.name.clone()
+                },
+                "limit": 1
+            });
+            
+            match self.find_entity_tool.execute(&find_params).await {
+                Ok(find_result) => {
+                    if let Some(entities_array) = find_result.get("entities").and_then(|e| e.as_array()) {
+                        if entities_array.is_empty() {
+                            // Entity doesn't exist, create it
+                            debug!("Creating new entity: {} (type: {})", entity.name, entity.entity_type);
+                            self.create_entity_with_spatial_data(entity, user_id).await?;
+                        } else {
+                            debug!("Entity '{}' already exists", entity.name);
+                        }
+                    }
+                },
+                Err(e) => {
+                    debug!("Error checking entity existence for '{}': {}", entity.name, e);
+                    // If error checking, assume it doesn't exist and try to create
+                    self.create_entity_with_spatial_data(entity, user_id).await?;
+                }
+            }
+        }
+        
+        // Second pass: Establish spatial relationships
+        info!("Establishing spatial relationships for {} entities", entities.len());
+        self.establish_spatial_relationships(entities, user_id).await?;
+        
+        Ok(())
+    }
+    
+    /// Create an entity with appropriate spatial components based on its type
+    async fn create_entity_with_spatial_data(
+        &self,
+        entity: &ContextualEntity,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        use crate::services::agentic::tools::world_interaction_tools::CreateEntityTool;
+        
+        // Determine spatial scale based on entity type and name patterns
+        let (spatial_scale, position_type) = match entity.entity_type.as_str() {
+            "location" => {
+                if entity.name.contains("Galaxy") || entity.name.contains("System") {
+                    ("Cosmic", "absolute")
+                } else if entity.name.contains("Peak") || entity.name.contains("Mountain") || 
+                          entity.name.contains("Region") || entity.name.contains("Continent") {
+                    ("Planetary", "geographic")
+                } else {
+                    ("Intimate", "local")
+                }
+            },
+            "character" | "object" => ("Intimate", "local"),
+            "organization" => ("Planetary", "abstract"),
+            _ => ("Planetary", "relative"),
+        };
+        
+        // Prepare components
+        let mut components = serde_json::json!({
+            "Name": {
+                "name": entity.name.clone()
+            },
+            "Spatial": {
+                "scale": spatial_scale,
+                "position": {
+                    "position_type": position_type,
+                    "coordinates": {"x": 0, "y": 0, "z": 0}
+                },
+                "parent_link": null // Will be set later based on hierarchy
+            }
+        });
+        
+        // Add salience based on relevance
+        let salience_tier = if entity.relevance_score > 0.8 {
+            "Core"
+        } else if entity.relevance_score > 0.5 {
+            "Secondary"
+        } else {
+            "Flavor"
+        };
+        
+        components["Salience"] = serde_json::json!({
+            "tier": salience_tier,
+            "reasoning": format!("Auto-created from conversation with relevance {:.2}", entity.relevance_score)
+        });
+        
+        // Create the entity
+        // Only pass the components data, not the component types that are in the archetype
+        // The entity manager will create components based on the archetype signature
+        let create_params = serde_json::json!({
+            "user_id": user_id.to_string(),
+            "entity_name": entity.name.clone(),
+            "archetype_signature": "Name|Spatial",  // Don't include Salience in archetype since we're using salience_tier
+            "components": {
+                "Name": components["Name"],
+                "Spatial": components["Spatial"]
+            },
+            "salience_tier": salience_tier  // This will create the Salience component
+        });
+        
+        match self.create_entity_tool.execute(&create_params).await {
+            Ok(_) => {
+                info!("Created entity '{}' with {} scale and {} salience", 
+                    entity.name, spatial_scale, salience_tier);
+            },
+            Err(e) => {
+                warn!("Failed to create entity '{}': {}", entity.name, e);
+                // Don't fail the whole process if one entity creation fails
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Establish spatial relationships between entities using AI-driven detection
+    async fn establish_spatial_relationships(
+        &self,
+        entities: &[ContextualEntity],
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        if entities.len() < 2 {
+            info!("Not enough entities ({}) to establish relationships", entities.len());
+            return Ok(());
+        }
+        
+        info!("Attempting to establish spatial relationships for {} entities", entities.len());
+        
+        // Use AI to detect spatial relationships based on context
+        let entity_list = entities.iter()
+            .map(|e| format!("- {} ({})", e.name, e.entity_type))
+            .collect::<Vec<_>>()
+            .join("\n");
+            
+        let prompt = format!(
+            "Analyze these entities from the conversation and determine their spatial relationships:\n\n{}\n\n\
+            Based on the conversation context and common sense reasoning, identify which entities should be contained within others. \
+            Consider:\n\
+            - Geographic containment (e.g., a hold within mountain peaks)\n\
+            - Characters and objects being in locations\n\
+            - Logical parent-child relationships based on scale\n\n\
+            Only identify clear, logical spatial relationships that make sense in the context.",
+            entity_list
+        );
+        
+        info!("Calling AI to detect spatial relationships for entities: {}", entity_list);
+        
+        let system_prompt = "You are analyzing entities to determine spatial containment relationships in a fantasy world. Focus on logical spatial hierarchies based on the conversation context.";
+        
+        // Add structured output schema to the prompt
+        let full_prompt = format!(
+            "{}\n\nProvide your response as valid JSON matching this schema:\n{}\n\nExample response:\n{{\"relationships\": [{{\"parent_entity\": \"Dragon's Crown Peaks\", \"child_entity\": \"Stonefang Hold\", \"relationship_type\": \"contains\", \"reasoning\": \"The hold is located within the mountain peaks\", \"confidence\": 0.9}}], \"confidence\": 0.85}}",
+            prompt,
+            serde_json::to_string_pretty(&perception_structured_output::get_spatial_relationship_detection_schema())?
+        );
+        
+        let messages = vec![
+            ChatMessage::system(system_prompt),
+            ChatMessage::user(full_prompt),
+        ];
+        
+        let request = ChatRequest::new(messages);
+        let chat_options = ChatOptions {
+            temperature: Some(0.3),
+            max_tokens: Some(1000),
+            ..Default::default()
+        };
+        
+        let model = &self.model;
+        let chat_response = self.ai_client
+            .exec_chat(model, request, Some(chat_options))
+            .await?;
+        
+        let response_text = chat_response
+            .first_content_text_as_str()
+            .ok_or_else(|| AppError::BadRequest("No text content in AI response".to_string()))?
+            .to_string();
+        
+        debug!("Raw spatial relationship detection response: {}", response_text);
+        
+        // Try to extract JSON from the response (AI might include explanatory text)
+        let json_start = response_text.find('{');
+        let json_end = response_text.rfind('}');
+        
+        let json_text = if let (Some(start), Some(end)) = (json_start, json_end) {
+            &response_text[start..=end]
+        } else {
+            &response_text
+        };
+        
+        let spatial_output: perception_structured_output::SpatialRelationshipDetectionOutput = 
+            serde_json::from_str(json_text)
+                .map_err(|e| {
+                    warn!("Failed to parse spatial relationship JSON: {}. Response was: {}", e, json_text);
+                    AppError::InternalServerErrorGeneric(
+                        format!("Failed to parse spatial relationship detection: {}", e)
+                    )
+                })?;
+        
+        // Apply the detected relationships
+        info!("AI detected {} spatial relationships", spatial_output.relationships.len());
+        for relationship in &spatial_output.relationships {
+            if relationship.confidence >= 0.7 {
+                debug!("Applying spatial relationship: {} contains {} (confidence: {})", 
+                    relationship.parent_entity, relationship.child_entity, relationship.confidence);
+                    
+                if let Err(e) = self.update_entity_parent_link(
+                    &relationship.child_entity,
+                    &relationship.parent_entity,
+                    user_id
+                ).await {
+                    warn!("Failed to establish relationship between {} and {}: {}", 
+                        relationship.child_entity, relationship.parent_entity, e);
+                } else {
+                    info!("Established AI-detected spatial relationship: {} is contained in {} (reason: {})", 
+                        relationship.child_entity, relationship.parent_entity, relationship.reasoning);
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Update an entity's parent_link in its Spatial component
+    async fn update_entity_parent_link(
+        &self,
+        entity_name: &str,
+        parent_name: &str,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        // First find both entities to get their IDs
+        let find_entity_params = serde_json::json!({
+            "user_id": user_id.to_string(),
+            "criteria": {
+                "type": "ByName",
+                "name": entity_name
+            },
+            "limit": 1
+        });
+        
+        let find_parent_params = serde_json::json!({
+            "user_id": user_id.to_string(),
+            "criteria": {
+                "type": "ByName", 
+                "name": parent_name
+            },
+            "limit": 1
+        });
+        
+        // Get entity ID
+        let entity_id = match self.find_entity_tool.execute(&find_entity_params).await {
+            Ok(result) => {
+                if let Some(entities) = result.get("entities").and_then(|e| e.as_array()) {
+                    if let Some(entity) = entities.first() {
+                        entity.get("entity_id").and_then(|id| id.as_str()).map(|s| s.to_string())
+                    } else {
+                        return Err(AppError::NotFound(format!("Entity '{}' not found", entity_name)));
+                    }
+                } else {
+                    return Err(AppError::BadRequest("Invalid find result format".to_string()));
+                }
+            },
+            Err(e) => return Err(AppError::BadRequest(format!("Failed to find entity: {}", e))),
+        };
+        
+        // Get parent ID
+        let parent_id = match self.find_entity_tool.execute(&find_parent_params).await {
+            Ok(result) => {
+                if let Some(entities) = result.get("entities").and_then(|e| e.as_array()) {
+                    if let Some(parent) = entities.first() {
+                        parent.get("entity_id").and_then(|id| id.as_str()).map(|s| s.to_string())
+                    } else {
+                        return Err(AppError::NotFound(format!("Parent entity '{}' not found", parent_name)));
+                    }
+                } else {
+                    return Err(AppError::BadRequest("Invalid find result format".to_string()));
+                }
+            },
+            Err(e) => return Err(AppError::BadRequest(format!("Failed to find parent entity: {}", e))),
+        };
+        
+        if let (Some(entity_id), Some(parent_id)) = (entity_id, parent_id) {
+            // Update the Spatial component with parent_link
+            let update_params = serde_json::json!({
+                "user_id": user_id.to_string(),
+                "entity_id": entity_id,
+                "updates": [{
+                    "component_type": "Spatial",
+                    "operation": "Update",
+                    "data": {
+                        "parent_link": parent_id,
+                        "position_type": "Relative",
+                        "scale": "Intimate"
+                    }
+                }]
+            });
+            
+            match self.update_entity_tool.execute(&update_params).await {
+                Ok(_) => Ok(()),
+                Err(e) => Err(AppError::BadRequest(format!("Failed to update parent link: {}", e))),
+            }
+        } else {
+            Err(AppError::BadRequest("Failed to get entity or parent IDs".to_string()))
+        }
     }
 
     /// Analyze entity hierarchies and spatial relationships
@@ -627,7 +961,7 @@ Respond with structured JSON matching the required schema."#, narrative_context)
         user_id: Uuid,
         context: Option<&EnrichedContext>,
     ) -> Result<WorldStateAnalysis, AppError> {
-        let model = "gemini-2.5-flash-lite-preview-06-17"; // Use Flash-Lite for analysis
+        let model = &self.model; // Use Flash-Lite for analysis
         
         let system_prompt = r#"You are a world state analyzer for a narrative AI system.
 Analyze the given AI response and identify:
@@ -683,7 +1017,7 @@ Output JSON with your analysis."#;
         analysis: &WorldStateAnalysis,
         user_id: Uuid,
     ) -> Result<ExtractionResult, AppError> {
-        let model = "gemini-2.5-flash-lite-preview-06-17"; // Use Flash-Lite for extraction
+        let model = &self.model; // Use Flash-Lite for extraction
         
         let system_prompt = r#"You are a precise world state extractor.
 Based on the analysis provided, extract specific, actionable world state changes.

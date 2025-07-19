@@ -860,6 +860,8 @@ pub struct HybridQueryService {
     feature_flags: Arc<NarrativeFeatureFlags>,
     /// AI client for analysis
     ai_client: Arc<dyn AiClient>,
+    /// Model to use for AI queries
+    model: String,
     /// ECS entity manager for current state
     entity_manager: Arc<EcsEntityManager>,
     /// Enhanced RAG service for semantic search
@@ -879,6 +881,7 @@ impl HybridQueryService {
         config: HybridQueryConfig,
         feature_flags: Arc<NarrativeFeatureFlags>,
         ai_client: Arc<dyn AiClient>,
+        model: String,
         entity_manager: Arc<EcsEntityManager>,
         rag_service: Arc<EcsEnhancedRagService>,
         degradation_service: Arc<EcsGracefulDegradation>,
@@ -902,6 +905,7 @@ impl HybridQueryService {
             config,
             feature_flags,
             ai_client,
+            model,
             entity_manager,
             rag_service,
             degradation_service,
@@ -1643,7 +1647,7 @@ Return a comprehensive participant analysis with confidence scores."#,
         
         let chat_request = ChatRequest::new(messages);
         
-        let response = self.ai_client.exec_chat("gemini-2.5-flash-lite", chat_request, Some(chat_options)).await
+        let response = self.ai_client.exec_chat(&self.model, chat_request, Some(chat_options)).await
             .map_err(|e| AppError::AiServiceError(format!("Failed to analyze event participants: {}", e)))?;
         
         // Parse the structured response
@@ -1847,7 +1851,8 @@ Focus on extracting information that is explicitly mentioned or strongly implied
         );
         
         // Configure structured output for entity context extraction
-        let schema = get_entity_context_schema();
+        // Use Gemini-compatible schema (without additionalProperties)
+        let schema = crate::services::hybrid_query_gemini_schemas::get_entity_context_schema_gemini();
         let mut chat_options = ChatOptions::default();
         chat_options = chat_options.with_temperature(0.1);
         chat_options = chat_options.with_max_tokens(1000);
@@ -1860,7 +1865,7 @@ Focus on extracting information that is explicitly mentioned or strongly implied
         // Use Flash-Lite for fast, cost-effective analysis
         let response = self.ai_client
             .exec_chat(
-                "gemini-2.0-flash-exp",
+                &self.model,
                 chat_request,
                 Some(chat_options),
             )
@@ -2290,7 +2295,8 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         );
         
         // Configure structured output for item analysis
-        let schema = get_item_analysis_schema();
+        // Use Gemini-compatible schema (without additionalProperties)
+        let schema = crate::services::hybrid_query_gemini_schemas::get_item_analysis_schema_gemini();
         let mut chat_options = ChatOptions::default();
         chat_options = chat_options.with_temperature(0.2);
         chat_options = chat_options.with_max_tokens(2000);
@@ -2302,7 +2308,7 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         
         let response = self.ai_client
             .exec_chat(
-                "gemini-2.0-flash-exp", // Use Flash for fast, cost-effective analysis
+                &self.model, // Use Flash for fast, cost-effective analysis
                 chat_request,
                 Some(chat_options),
             )
@@ -2741,7 +2747,7 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         
         // Use Flash-Lite for relationship analysis
         let ai_response = self.ai_client
-            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.model, chat_request, Some(chat_options))
             .await?;
         
         // Parse the AI response
@@ -3843,7 +3849,7 @@ Return a comprehensive relevance analysis with an overall weighted score and nat
         
         let chat_request = ChatRequest::new(messages);
         
-        let response = self.ai_client.exec_chat("gemini-2.5-flash-lite", chat_request, Some(chat_options)).await
+        let response = self.ai_client.exec_chat(&self.model, chat_request, Some(chat_options)).await
             .map_err(|e| AppError::AiServiceError(format!("Failed to analyze query relevance: {}", e)))?;
         
         // Parse the structured response
@@ -4122,7 +4128,7 @@ Return a structured JSON analysis following the exact schema provided."#
         
         // Call AI service with Flash-Lite for efficiency
         let ai_response = self.ai_client
-            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.model, chat_request, Some(chat_options))
             .await?;
         
         // Parse the structured response
@@ -4258,7 +4264,7 @@ Return a structured JSON analysis following the exact schema provided."#
         
         // Call AI service with Flash-Lite for efficiency
         let ai_response = self.ai_client
-            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.model, chat_request, Some(chat_options))
             .await?;
         
         // Parse the structured response
@@ -4832,7 +4838,7 @@ Return a structured JSON analysis following the exact schema provided."#
 
         // Make AI request - use Flash-Lite model for narrative generation
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-lite-preview-06-17",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await

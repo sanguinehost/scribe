@@ -27,6 +27,8 @@ use crate::{
     },
 };
 
+use genai::chat::{ChatOptions, ChatResponseFormat, JsonSchemaSpec};
+
 /// Configuration for state update behavior
 #[derive(Debug, Clone)]
 pub struct StateUpdateConfig {
@@ -134,17 +136,20 @@ pub struct AgenticStateUpdateService {
     ai_client: Arc<dyn AiClient>,
     entity_manager: Arc<EcsEntityManager>,
     config: StateUpdateConfig,
+    model: String,
 }
 
 impl AgenticStateUpdateService {
     pub fn new(
         ai_client: Arc<dyn AiClient>,
         entity_manager: Arc<EcsEntityManager>,
+        model: String,
     ) -> Self {
         Self {
             ai_client,
             entity_manager,
             config: StateUpdateConfig::default(),
+            model,
         }
     }
 
@@ -152,11 +157,13 @@ impl AgenticStateUpdateService {
         ai_client: Arc<dyn AiClient>,
         entity_manager: Arc<EcsEntityManager>,
         config: StateUpdateConfig,
+        model: String,
     ) -> Self {
         Self {
             ai_client,
             entity_manager,
             config,
+            model,
         }
     }
 
@@ -359,16 +366,6 @@ User Query: "{}"
 Context Summary:
 {}
 
-Respond with a JSON object:
-{{
-    "primary_location": "location name or null",
-    "entities_present": [
-        {{"entity_id": "uuid", "entity_name": "name"}}
-    ],
-    "confidence": 0.0-1.0,
-    "reasoning": "explanation of analysis"
-}}
-
 Focus on:
 1. Explicit location mentions in the query or context
 2. Entities that would logically be together
@@ -378,13 +375,21 @@ Focus on:
 If the location is unclear or entities are not co-located, use confidence < 0.7."#, 
             user_query, context_summary);
 
+        // Get the JSON schema for structured output
+        let schema = crate::services::agentic_state_update_structured_output::get_spatial_inference_schema();
+
         let chat_request = genai::chat::ChatRequest::from_user(prompt);
-        let chat_options = genai::chat::ChatOptions::default()
+        let mut chat_options = ChatOptions::default()
             .with_max_tokens(500)
             .with_temperature(0.1); // Low temperature for consistent analysis
+        
+        // Enable structured output
+        chat_options = chat_options.with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+            schema,
+        }));
 
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-lite-preview-06-17",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -408,32 +413,23 @@ If the location is unclear or entities are not co-located, use confidence < 0.7.
         &self,
         response: &str,
     ) -> Result<(Option<String>, Vec<(Uuid, String)>, f32), AppError> {
-        let json_value: serde_json::Value = serde_json::from_str(response.trim())
-            .map_err(|e| AppError::SerializationError(format!("Failed to parse spatial inference JSON: {}", e)))?;
-
-        let primary_location = json_value["primary_location"]
-            .as_str()
-            .map(|s| s.to_string());
-
+        // Parse the structured output
+        let output: crate::services::agentic_state_update_structured_output::SpatialInferenceOutput = 
+            serde_json::from_str(response.trim())
+                .map_err(|e| AppError::SerializationError(format!("Failed to parse spatial inference JSON: {}", e)))?;
+        
+        // Validate the output
+        output.validate()?;
+        
+        // Convert to internal format
         let mut entities_present = Vec::new();
-        if let Some(entities_array) = json_value["entities_present"].as_array() {
-            for entity_obj in entities_array {
-                if let (Some(id_str), Some(name)) = (
-                    entity_obj["entity_id"].as_str(),
-                    entity_obj["entity_name"].as_str(),
-                ) {
-                    if let Ok(entity_id) = Uuid::parse_str(id_str) {
-                        entities_present.push((entity_id, name.to_string()));
-                    }
-                }
+        for entity in output.entities_present {
+            if let Ok(entity_id) = Uuid::parse_str(&entity.entity_id) {
+                entities_present.push((entity_id, entity.entity_name));
             }
         }
 
-        let confidence = json_value["confidence"]
-            .as_f64()
-            .unwrap_or(0.5) as f32;
-
-        Ok((primary_location, entities_present, confidence))
+        Ok((output.primary_location, entities_present, output.confidence))
     }
 
     /// Analyze assembled context for relationship information using AI inference
@@ -491,23 +487,6 @@ User Query: "{}"
 Context Summary:
 {}
 
-Respond with a JSON object:
-{{
-    "relationships": [
-        {{
-            "from_entity": "entity name",
-            "to_entity": "entity name", 
-            "relationship_type": "family|friend|romantic|enemy|professional|neutral",
-            "strength": 0.0-1.0,
-            "evidence": "why you think this relationship exists",
-            "changed": true/false,
-            "change_reason": "why the relationship changed (if changed=true)"
-        }}
-    ],
-    "confidence": 0.0-1.0,
-    "reasoning": "explanation of analysis"
-}}
-
 Focus on:
 1. Explicit mentions of relationships in the context
 2. Interactions that suggest relationship dynamics
@@ -518,13 +497,21 @@ Focus on:
 Only include relationships you're confident about (>0.5 strength). Use confidence < 0.7 if the relationship context is unclear."#, 
             user_query, context_summary);
 
+        // Get the JSON schema for structured output
+        let schema = crate::services::agentic_state_update_structured_output::get_relationship_inference_schema();
+
         let chat_request = genai::chat::ChatRequest::from_user(prompt);
-        let chat_options = genai::chat::ChatOptions::default()
+        let mut chat_options = ChatOptions::default()
             .with_max_tokens(800)
             .with_temperature(0.1); // Low temperature for consistent analysis
+        
+        // Enable structured output
+        chat_options = chat_options.with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+            schema,
+        }));
 
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-lite-preview-06-17",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -548,38 +535,29 @@ Only include relationships you're confident about (>0.5 strength). Use confidenc
         &self,
         response: &str,
     ) -> Result<RelationshipAnalysis, AppError> {
-        let json_value: serde_json::Value = serde_json::from_str(response.trim())
-            .map_err(|e| AppError::SerializationError(format!("Failed to parse relationship inference JSON: {}", e)))?;
-
+        // Parse the structured output
+        let output: crate::services::agentic_state_update_structured_output::RelationshipInferenceOutput = 
+            serde_json::from_str(response.trim())
+                .map_err(|e| AppError::SerializationError(format!("Failed to parse relationship inference JSON: {}", e)))?;
+        
+        // Validate the output
+        output.validate()?;
+        
+        // Convert to internal format
         let mut relationships = Vec::new();
-        if let Some(relationships_array) = json_value["relationships"].as_array() {
-            for rel_obj in relationships_array {
-                if let (Some(from_entity), Some(to_entity), Some(rel_type)) = (
-                    rel_obj["from_entity"].as_str(),
-                    rel_obj["to_entity"].as_str(),
-                    rel_obj["relationship_type"].as_str(),
-                ) {
-                    let strength = rel_obj["strength"].as_f64().unwrap_or(0.5) as f32;
-                    let evidence = rel_obj["evidence"].as_str().unwrap_or("AI inference").to_string();
-
-                    relationships.push(DetectedRelationship {
-                        from_entity: from_entity.to_string(),
-                        to_entity: to_entity.to_string(),
-                        relationship_type: rel_type.to_string(),
-                        strength,
-                        evidence,
-                    });
-                }
-            }
+        for rel in output.relationships {
+            relationships.push(DetectedRelationship {
+                from_entity: rel.from_entity,
+                to_entity: rel.to_entity,
+                relationship_type: rel.relationship_type,
+                strength: rel.strength,
+                evidence: rel.evidence,
+            });
         }
-
-        let confidence = json_value["confidence"]
-            .as_f64()
-            .unwrap_or(0.5) as f32;
 
         Ok(RelationshipAnalysis {
             relationships,
-            confidence,
+            confidence: output.confidence,
         })
     }
 

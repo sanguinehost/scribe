@@ -91,17 +91,31 @@ impl AgenticOrchestrator {
         hybrid_query_service: Arc<HybridQueryService>,
         db_pool: Arc<PgPool>,
         state_update_service: Arc<AgenticStateUpdateService>,
+        intent_detection_model: String,
+        query_planning_model: String,
+        optimization_model: String,
+        context_engine_model: String,
     ) -> Self {
-        let intent_service = Arc::new(IntentDetectionService::new(ai_client.clone()));
-        let strategy_planner = Arc::new(QueryStrategyPlanner::new(ai_client.clone()));
+        let intent_service = Arc::new(IntentDetectionService::new(
+            ai_client.clone(),
+            intent_detection_model,
+        ));
+        let strategy_planner = Arc::new(QueryStrategyPlanner::new(
+            ai_client.clone(),
+            query_planning_model,
+        ));
         let encryption_service = Arc::new(crate::services::EncryptionService::new());
         let context_engine = Arc::new(ContextAssemblyEngine::new(
             ai_client.clone(),
             hybrid_query_service,
             db_pool.clone(),
             encryption_service,
+            context_engine_model,
         ));
-        let optimization_service = Arc::new(ContextOptimizationService::new(ai_client.clone()));
+        let optimization_service = Arc::new(ContextOptimizationService::new(
+            ai_client.clone(),
+            optimization_model,
+        ));
         
         // Initialize metrics collector with default config
         let metrics_collector = Arc::new(AgenticMetricsCollector::new(MetricsConfig::default()));

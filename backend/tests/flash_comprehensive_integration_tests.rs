@@ -45,7 +45,7 @@ async fn test_core_agentic_tools_flash_integration() -> AnyhowResult<()> {
     // Create Flash-optimized workflow configuration
     let config = NarrativeWorkflowConfig {
         triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-        planning_model: "gemini-2.5-flash-preview-06-17".to_string(),
+        planning_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
         max_tool_executions: 3,
         enable_cost_optimizations: true,
     };
@@ -264,7 +264,7 @@ async fn test_flash_performance_optimization() -> AnyhowResult<()> {
     // 3. Test workflow configuration enables cost optimizations
     let _config = NarrativeWorkflowConfig {
         triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-        planning_model: "gemini-2.5-flash-preview-06-17".to_string(),
+        planning_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
         max_tool_executions: 3,
         enable_cost_optimizations: true,
     };

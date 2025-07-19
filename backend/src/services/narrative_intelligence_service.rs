@@ -138,13 +138,8 @@ impl NarrativeIntelligenceService {
     ) -> Result<Self, AppError> {
         let config = config.unwrap_or_default();
         
-        // Create Flash-optimized workflow configuration
-        let workflow_config = NarrativeWorkflowConfig {
-            triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-            planning_model: "gemini-2.5-flash".to_string(),
-            max_tool_executions: 5,
-            enable_cost_optimizations: config.enable_cost_optimizations,
-        };
+        // Create workflow configuration from app config
+        let workflow_config = AgenticNarrativeFactory::create_config_from_app_config(&app_state.config);
 
         // Create agent runner with complete agentic system
         let agent_runner = Arc::new(
@@ -176,13 +171,10 @@ impl NarrativeIntelligenceService {
     ) -> Result<Self, AppError> {
         let config = config.unwrap_or_default();
         
-        // Create Flash-optimized workflow configuration for development
-        let workflow_config = NarrativeWorkflowConfig {
-            triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-            planning_model: "gemini-2.5-flash".to_string(), 
-            max_tool_executions: 15, // Higher limit for development
-            enable_cost_optimizations: config.enable_cost_optimizations,
-        };
+        // Create workflow configuration from app config for development
+        let mut workflow_config = AgenticNarrativeFactory::create_config_from_app_config(&app_state.config);
+        workflow_config.max_tool_executions = 15; // Higher limit for development
+        workflow_config.enable_cost_optimizations = config.enable_cost_optimizations;
 
         // Create agent runner with individual dependencies to avoid circular dependency
         let agent_runner = Arc::new(

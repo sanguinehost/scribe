@@ -449,6 +449,7 @@ pub struct ContextAssemblyEngine {
     hybrid_query_service: Arc<HybridQueryService>,
     db_pool: Arc<PgPool>,
     encryption_service: Arc<EncryptionService>,
+    model: String,
 }
 
 impl ContextAssemblyEngine {
@@ -457,12 +458,14 @@ impl ContextAssemblyEngine {
         hybrid_query_service: Arc<HybridQueryService>,
         db_pool: Arc<PgPool>,
         encryption_service: Arc<EncryptionService>,
+        model: String,
     ) -> Self {
         Self {
             ai_client,
             hybrid_query_service,
             db_pool,
             encryption_service,
+            model,
         }
     }
 
@@ -600,7 +603,7 @@ impl ContextAssemblyEngine {
             .with_temperature(0.2); // Low temperature for consistent planning
 
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-preview-06-17", // Full Flash for complex planning
+            &self.model, // Use configured model for planning
             chat_request,
             Some(chat_options),
         ).await?;
@@ -633,7 +636,7 @@ impl ContextAssemblyEngine {
             .with_temperature(0.1); // Very low temperature for precise sub-goal extraction
 
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-lite-preview-06-17", // Flash-Lite sufficient for extraction
+            &self.model, // Use configured model for extraction
             chat_request,
             Some(chat_options),
         ).await?;
@@ -685,7 +688,7 @@ impl ContextAssemblyEngine {
             .with_temperature(0.3); // Moderate temperature for rich context
 
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-preview-06-17", // Full Flash for comprehensive analysis
+            &self.model, // Use configured model for analysis
             chat_request,
             Some(chat_options),
         ).await?;

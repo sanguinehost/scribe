@@ -265,14 +265,14 @@ living_world:
         *   [x] **`SuggestHierarchyPromotionTool`**: Create a new tool that uses Flash to analyze narrative events and suggest when a hierarchy promotion is logical (e.g., "The characters have discussed the 'Crimson Fleet' extensively. Suggest promoting it to a `Core` salience entity with its own hierarchy.").
         *   [x] **Implementation Details:**
             *   [x] Created `AnalyzeHierarchyRequestTool` with sophisticated natural language interpretation using Flash-Lite (gemini-2.5-flash-lite-preview-06-17)
-            *   [x] Implemented `SuggestHierarchyPromotionTool` with narrative analysis using Flash (gemini-2.5-flash-preview-06-17)
+            *   [x] Implemented `SuggestHierarchyPromotionTool` with narrative analysis using Flash (gemini-2.5-flash-lite-preview-06-17)
             *   [x] Both tools integrated with existing `GetEntityHierarchyTool` for seamless hierarchy operations
             *   [x] Registered in agentic factory for AI agent access
     *   **[x] Subtask 0.3.2: Create AI-Powered Salience Management Tool**
         *   [x] **`UpdateSalienceTool`**: Create a tool that uses Flash to analyze narrative context from a chat message or event and automatically assign or update an entity's `Salience` tier (`Core`, `Secondary`, `Flavor`).
         *   [x] **Use Case**: When a background character ("a bartender") is mentioned repeatedly and becomes important to the plot, this tool would automatically promote them from `Flavor` to `Secondary` or `Core`.
         *   [x] **Implementation Details:**
-            *   [x] Created sophisticated AI-driven salience analysis using Flash (gemini-2.5-flash-preview-06-17)
+            *   [x] Created sophisticated AI-driven salience analysis using Flash (gemini-2.5-flash-lite-preview-06-17)
             *   [x] Integrated with existing `SalienceTier` and `SpatialScale` enums for seamless ECS integration
             *   [x] Supports all salience tier transitions with confidence scoring and reasoning
             *   [x] Context-aware analysis for different scales (Cosmic/Planetary/Intimate)
@@ -834,7 +834,7 @@ pub struct ContextCache {
             *   [x] **A08 (Data Integrity):** World state consistency and validation
             *   [x] **A09 (Logging/Monitoring):** Security event logging and audit trails
     *   **[x] Subtask 5.1.2: Implement the `PerceptionAgent` and its asynchronous trigger:** ✅ **COMPLETED**
-        *   [x] **Core Implementation:** `PerceptionAgent` with Flash-powered narrative analysis using gemini-2.5-flash-preview-06-17
+        *   [x] **Core Implementation:** `PerceptionAgent` with Flash-powered narrative analysis using gemini-2.5-flash-lite-preview-06-17
         *   [x] **World State Processing:** Entity extraction, relationship analysis, state change detection with confidence scoring
         *   [x] **Background Processing:** Asynchronous processing with proper error handling and user context preservation
         *   [x] **Security Integration:** Full SessionDek encryption, user isolation, and OWASP compliance

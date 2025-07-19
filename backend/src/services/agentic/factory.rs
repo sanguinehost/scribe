@@ -318,9 +318,10 @@ impl AgenticNarrativeFactory {
 
     /// Create a development/testing configuration
     pub fn create_dev_config() -> NarrativeWorkflowConfig {
+        let config = crate::config::Config::default();
         NarrativeWorkflowConfig {
-            triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-            planning_model: "gemini-2.5-flash".to_string(), // Use smarter model for planning
+            triage_model: config.agentic_triage_model,
+            planning_model: config.agentic_planning_model,
             max_tool_executions: 15, // Increased to allow multiple tool calls per batch
             enable_cost_optimizations: true,
         }
@@ -338,9 +339,10 @@ impl AgenticNarrativeFactory {
 
     /// Create a production configuration
     pub fn create_production_config() -> NarrativeWorkflowConfig {
+        let config = crate::config::Config::default();
         NarrativeWorkflowConfig {
-            triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-            planning_model: "gemini-2.5-flash".to_string(),
+            triage_model: config.agentic_triage_model,
+            planning_model: config.agentic_planning_model,
             max_tool_executions: 5,
             enable_cost_optimizations: true,
         }
@@ -362,6 +364,7 @@ impl AgenticNarrativeFactory {
             app_state.ecs_entity_manager.clone(),
             app_state.redis_client.clone(),
             Arc::new(app_state.pool.clone()),
+            app_state.config.tactical_agent_model.clone(),
         ));
         
         let plan_validator = Arc::new(PlanValidatorService::new(
@@ -397,6 +400,7 @@ impl AgenticNarrativeFactory {
             app_state.ecs_entity_manager.clone(),
             app_state.redis_client.clone(),
             Arc::new(app_state.pool.clone()),
+            app_state.config.tactical_agent_model.clone(),
         ));
         
         let plan_validator = Arc::new(PlanValidatorService::new(
@@ -412,6 +416,7 @@ impl AgenticNarrativeFactory {
             plan_validator,
             app_state.redis_client.clone(),
             app_state.clone(),
+            app_state.config.perception_agent_model.clone(),
         ));
         
         info!("PerceptionAgent created successfully");
@@ -430,6 +435,7 @@ impl AgenticNarrativeFactory {
             app_state.ai_client.clone(),
             app_state.ecs_entity_manager.clone(),
             app_state.redis_client.clone(),
+            app_state.config.strategic_agent_model.clone(),
         ));
         
         info!("StrategicAgent created successfully");

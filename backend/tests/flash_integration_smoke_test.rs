@@ -24,7 +24,7 @@ async fn test_flash_integration_smoke_test() -> AnyhowResult<()> {
     // Create Flash-optimized workflow configuration
     let config = NarrativeWorkflowConfig {
         triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-        planning_model: "gemini-2.5-flash-preview-06-17".to_string(),
+        planning_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
         max_tool_executions: 3,
         enable_cost_optimizations: true,
     };

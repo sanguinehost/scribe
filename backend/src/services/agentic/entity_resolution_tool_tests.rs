@@ -258,6 +258,9 @@ fn create_test_app_state(test_app: &TestApp) -> Arc<AppState> {
                     None,
                 )),
             )),
+            "gemini-2.5-flash-lite-preview-06-17".to_string(),
+            "gemini-2.5-flash-lite-preview-06-17".to_string(),
+            "gemini-2.5-flash-lite-preview-06-17".to_string(),
         )),
         agentic_state_update_service: Arc::new(AgenticStateUpdateService::new(
             test_app.ai_client.clone(),

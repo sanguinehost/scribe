@@ -42,6 +42,7 @@ pub struct StrategicAgent {
     ai_client: Arc<dyn AiClient>,
     ecs_entity_manager: Arc<EcsEntityManager>,
     redis_client: Arc<redis::Client>,
+    model: String,
 }
 
 impl StrategicAgent {
@@ -50,11 +51,13 @@ impl StrategicAgent {
         ai_client: Arc<dyn AiClient>,
         ecs_entity_manager: Arc<EcsEntityManager>,
         redis_client: Arc<redis::Client>,
+        model: String,
     ) -> Self {
         Self {
             ai_client,
             ecs_entity_manager,
             redis_client,
+            model,
         }
     }
 
@@ -285,7 +288,7 @@ Generate a JSON response with all required fields for the strategic directive."#
         
         // Call with structured output
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash", 
+            &self.model, 
             chat_request, 
             Some(chat_options)
         ).await?;
@@ -374,7 +377,7 @@ Respond with only the significance level: MAJOR, MODERATE, MINOR, or TRIVIAL"#, 
             .with_safety_settings(safety_settings)
             .with_temperature(0.7);
         
-        let response = self.ai_client.exec_chat("gemini-2.5-flash", chat_request, Some(chat_options)).await?;
+        let response = self.ai_client.exec_chat(&self.model, chat_request, Some(chat_options)).await?;
         let response_text = response.first_content_text_as_str().unwrap_or_default();
         
         let significance = match response_text.trim().to_uppercase().as_str() {
@@ -460,7 +463,7 @@ EMOTIONAL TONE:"#, conversation_context);
             .with_safety_settings(safety_settings)
             .with_temperature(0.7);
         
-        let response = self.ai_client.exec_chat("gemini-2.5-flash", chat_request, Some(chat_options)).await?;
+        let response = self.ai_client.exec_chat(&self.model, chat_request, Some(chat_options)).await?;
         let response_text = response.first_content_text_as_str().unwrap_or_default();
         
         debug!("Raw emotional tone response: '{}'", response_text);
@@ -515,6 +518,10 @@ RESPONSE FORMAT:
 Provide a comma-separated list of character names or descriptions.
 Focus on the most narratively relevant characters (maximum 5).
 Use consistent naming (e.g., "Detective Morrison", "the ancient dragon", "Ambassador Cortez").
+IMPORTANT: Use only the character's name or title, NO parenthetical descriptions or explanations.
+Be specific - include names or descriptive identifiers, not just generic titles.
+Examples of GOOD names: "Sol", "Shanyuan warrior", "Elder Chen", "Geyserfoot Village elder"
+Examples of BAD names: "Sol (the protagonist)", "Shanyuan (from Stonefang Clan)", "Elder Chen (village leader)", "Elder", "the warrior"
 
 CHARACTER FOCUS:"#, conversation_context);
 
@@ -549,20 +556,52 @@ CHARACTER FOCUS:"#, conversation_context);
             .with_safety_settings(safety_settings)
             .with_temperature(0.7);
         
-        let response = self.ai_client.exec_chat("gemini-2.5-flash", chat_request, Some(chat_options)).await?;
+        let response = self.ai_client.exec_chat(&self.model, chat_request, Some(chat_options)).await?;
         let response_text = response.first_content_text_as_str().unwrap_or_default();
         
-        // Remove "CHARACTER FOCUS:" prefix if present (AI sometimes includes it)
+        // Clean up the response text - remove headers, markdown, etc.
         let cleaned_response = response_text
             .trim()
+            // Remove common header patterns
+            .strip_prefix("CHARACTER FOCUS EXTRACTION")
+            .unwrap_or(&response_text)
+            .trim()
+            .strip_prefix("**CHARACTER FOCUS EXTRACTION**")
+            .unwrap_or(&response_text)
+            .trim()
             .strip_prefix("CHARACTER FOCUS:")
-            .unwrap_or(response_text.trim())
+            .unwrap_or(&response_text)
+            .trim()
+            .strip_prefix("**RESPONSE:**")
+            .unwrap_or(&response_text)
+            .trim()
+            .strip_prefix("RESPONSE:")
+            .unwrap_or(&response_text)
             .trim();
             
+        // Split by common delimiters and clean each entry
         let characters: Vec<String> = cleaned_response
-            .split(',')
-            .map(|s| s.trim().trim_matches('*').trim().to_string())  // Remove markdown formatting
-            .filter(|s| !s.is_empty() && s.len() <= 100)
+            .split(|c: char| c == ',' || c == '\n')
+            .map(|s| {
+                // Clean each character name
+                s.trim()
+                    .trim_matches('*')      // Remove markdown bold
+                    .trim_matches('\"')     // Remove quotes
+                    .trim_matches('\'')     // Remove single quotes
+                    .trim_matches('-')      // Remove list markers
+                    .trim_matches('•')      // Remove bullet points
+                    .trim()
+                    .to_string()
+            })
+            .filter(|s| {
+                // Filter out empty strings and invalid entries
+                !s.is_empty() && 
+                s.len() <= 100 &&
+                !s.to_lowercase().contains("character focus") &&
+                !s.to_lowercase().contains("response") &&
+                !s.to_lowercase().contains("extraction") &&
+                s.chars().any(|c| c.is_alphabetic()) // Must contain at least one letter
+            })
             .take(5) // Limit to 5 characters maximum
             .collect();
 
@@ -632,7 +671,7 @@ Respond with only the impact level: GLOBAL, REGIONAL, LOCAL, or PERSONAL"#, conv
             .with_safety_settings(safety_settings)
             .with_temperature(0.7);
         
-        let response = self.ai_client.exec_chat("gemini-2.5-flash", chat_request, Some(chat_options)).await?;
+        let response = self.ai_client.exec_chat(&self.model, chat_request, Some(chat_options)).await?;
         let response_text = response.first_content_text_as_str().unwrap_or_default();
         
         let impact = match response_text.trim().to_uppercase().as_str() {
@@ -715,7 +754,7 @@ NARRATIVE ARC:"#, narrative_direction, conversation_context);
             .with_safety_settings(safety_settings)
             .with_temperature(0.7);
         
-        let response = self.ai_client.exec_chat("gemini-2.5-flash", chat_request, Some(chat_options)).await?;
+        let response = self.ai_client.exec_chat(&self.model, chat_request, Some(chat_options)).await?;
         let response_text = response.first_content_text_as_str().unwrap_or_default();
         
         // Remove "NARRATIVE ARC:" prefix if present (AI sometimes includes it)

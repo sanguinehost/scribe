@@ -61,7 +61,7 @@ impl AiTriageAnalyzer {
             .with_temperature(0.2); // Low temperature for consistent analysis
 
         let response = self.app_state.ai_client
-            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
             .await
             .map_err(|e| AppError::LlmClientError(format!("AI triage analysis failed: {}", e)))?;
 
@@ -129,7 +129,7 @@ Return ONLY the triage prompt text, optimized for the given context."#,
             .with_temperature(0.3);
 
         let response = self.app_state.ai_client
-            .exec_chat("gemini-2.5-flash-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
             .await
             .map_err(|e| AppError::LlmClientError(format!("Prompt generation failed: {}", e)))?;
 
@@ -296,7 +296,7 @@ impl AiPlanGenerator {
             .with_temperature(0.4); // Slightly higher creativity for planning
 
         let response = self.app_state.ai_client
-            .exec_chat("gemini-2.5-flash-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
             .await
             .map_err(|e| AppError::LlmClientError(format!("AI plan generation failed: {}", e)))?;
 
@@ -359,7 +359,7 @@ Provide a brief strategic analysis of what should be done."#,
             .with_temperature(0.3);
 
         let response = self.app_state.ai_client
-            .exec_chat("gemini-2.5-flash-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
             .await
             .map_err(|e| AppError::LlmClientError(format!("Strategic analysis failed: {}", e)))?;
 

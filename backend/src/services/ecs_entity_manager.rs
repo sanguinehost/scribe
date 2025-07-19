@@ -245,7 +245,7 @@ impl EcsEntityManager {
             }
         }
         
-        info!("Retrieved {} entities: {} from cache, {} from database", 
+        debug!("Retrieved {} entities: {} from cache, {} from database", 
               results.len(), results.len() - cache_misses.len(), cache_misses.len());
         
         Ok(results)
@@ -764,7 +764,7 @@ impl EcsEntityManager {
             }
         }
 
-        info!("Advanced query completed in {}ms, returned {} entities", execution_time, result.entities.len());
+        debug!("Advanced query completed in {}ms, returned {} entities", execution_time, result.entities.len());
         Ok(result)
     }
 

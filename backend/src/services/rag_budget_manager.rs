@@ -274,7 +274,7 @@ mod tests {
     
     #[test]
     fn test_budget_planner_flash_lite() {
-        let planner = ContextBudgetPlanner::new_for_model("gemini-2.5-flash-lite", None);
+        let planner = ContextBudgetPlanner::new_for_model("gemini-2.5-flash-lite-preview-06-17", None);
         assert_eq!(planner.total_budget, 950_000); // Can use more context due to low cost
     }
     

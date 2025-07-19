@@ -113,7 +113,7 @@ RESPOND WITH JSON:
         
         let response = self.app_state.ai_client
             .exec_chat(
-                "gemini-2.5-flash-lite-preview-06-17", // Flash-Lite for fast triage
+                &self.app_state.config.fast_model, // Flash-Lite for fast triage
                 chat_request,
                 Some(chat_options),
             )
@@ -449,7 +449,7 @@ RESPOND WITH JSON:
         
         let response = self.app_state.ai_client
             .exec_chat(
-                "gemini-2.5-flash", // Full Flash for complex extraction
+                &self.app_state.config.fast_model, // Flash-Lite for extraction
                 chat_request,
                 Some(chat_options),
             )
@@ -580,7 +580,7 @@ RESPOND WITH JSON:
         
         let response = self.app_state.ai_client
             .exec_chat(
-                "gemini-2.5-flash", // Full Flash for complex analysis
+                &self.app_state.config.advanced_model, // Advanced model for complex analysis
                 chat_request,
                 Some(chat_options),
             )
@@ -686,7 +686,7 @@ RESPOND WITH JSON:
         
         let response = self.app_state.ai_client
             .exec_chat(
-                "gemini-2.5-flash-lite-preview-06-17", // Flash-Lite for query processing
+                &self.app_state.config.fast_model, // Flash-Lite for query processing
                 chat_request,
                 Some(chat_options),
             )
@@ -757,7 +757,7 @@ RESPOND WITH JSON:
         
         let response_analysis = self.app_state.ai_client
             .exec_chat(
-                "gemini-2.5-flash", // Full Flash for result analysis
+                &self.app_state.config.advanced_model, // Advanced model for result analysis
                 chat_request_analysis,
                 Some(chat_options_analysis),
             )
@@ -898,7 +898,7 @@ RESPOND WITH JSON:
         
         let response = self.app_state.ai_client
             .exec_chat(
-                "gemini-2.5-flash", // Full Flash for complex text processing
+                &self.app_state.config.advanced_model, // Advanced model for complex text processing
                 chat_request,
                 Some(chat_options),
             )

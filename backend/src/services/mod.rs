@@ -27,6 +27,7 @@ pub mod gemini_token_client;
 pub mod history_manager;
 pub mod historical_chronicle_processor;
 pub mod hybrid_query_service;
+pub mod hybrid_query_gemini_schemas;
 pub mod intent_detection_service;
 pub mod hybrid_query_router;
 pub mod hybrid_token_counter;
@@ -42,13 +43,17 @@ pub mod nlp_query_handler;
 pub mod planning;
 pub mod prompt_templates;
 pub mod query_strategy_planner;
+pub mod query_strategy_planner_structured_output;
+pub mod query_registry;
 pub mod context_assembly_engine;
 pub mod context_optimization_service;
+pub mod context_optimization_structured_output;
 pub mod hierarchical_context_assembler;
 pub mod agentic_orchestrator;
 pub mod agentic_query_cache;
 pub mod agentic_metrics;
 pub mod agentic_state_update_service;
+pub mod agentic_state_update_structured_output;
 pub mod agent_prompt_templates;
 
 // Re-export agentic components

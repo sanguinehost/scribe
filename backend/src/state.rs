@@ -219,11 +219,18 @@ impl AppState {
         // Create new HierarchicalContextAssembler with the proper EntityResolutionTool
         let assembler = Arc::new(HierarchicalContextAssembler::new(
             self.ai_client.clone(),
-            Arc::new(IntentDetectionService::new(self.ai_client.clone())),
-            Arc::new(QueryStrategyPlanner::new(self.ai_client.clone())),
+            Arc::new(IntentDetectionService::new(
+                self.ai_client.clone(),
+                self.config.intent_detection_model.clone()
+            )),
+            Arc::new(QueryStrategyPlanner::new(
+                self.ai_client.clone(),
+                self.config.query_planning_model.clone()
+            )),
             entity_resolution_tool,
             self.encryption_service.clone(),
             Arc::new(self.pool.clone()),
+            self.config.fast_model.clone(),
         ));
         self.hierarchical_context_assembler = Some(assembler);
     }

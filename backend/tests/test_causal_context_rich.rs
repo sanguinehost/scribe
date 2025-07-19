@@ -10,7 +10,7 @@ use scribe_backend::{
         },
     },
     models::characters::CharacterMetadata,
-    test_helpers::{MockAiClient, spawn_app_with_options, db::create_test_user},
+    test_helpers::{MockAiClient, spawn_app_with_options, db::create_test_user, test_constants},
     crypto::{generate_dek, encrypt_gcm},
 };
 use std::sync::Arc;
@@ -479,8 +479,8 @@ async fn create_rich_causal_assembler(test_app: &scribe_backend::test_helpers::T
     ];
     
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(rich_mock_responses));
-    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), test_constants::FAST_MODEL.to_string()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), test_constants::FAST_MODEL.to_string()));
     let entity_tool = Arc::new(EntityResolutionTool::new(test_app.app_state.clone()));
     let encryption_service = Arc::new(EncryptionService);
     let db_pool = Arc::new(test_app.db_pool.clone());
@@ -492,6 +492,7 @@ async fn create_rich_causal_assembler(test_app: &scribe_backend::test_helpers::T
         entity_tool,
         encryption_service,
         db_pool,
+        test_constants::FAST_MODEL.to_string(),
     )
 }
 

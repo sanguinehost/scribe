@@ -35,7 +35,7 @@ async fn test_a01_broken_access_control_no_user_context_leakage() {
             "confidence": 0.9
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     // Even if AI returns entities from other users, the service should handle it
     let result = service.detect_intent(
@@ -63,7 +63,7 @@ async fn test_a02_cryptographic_failures_no_sensitive_data_in_prompts() {
             "confidence": 0.8
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     // Query should not contain sensitive data like passwords, tokens, etc.
     let sensitive_query = "What is the password for the vault?";
@@ -88,7 +88,7 @@ async fn test_a03_injection_malicious_query_handling() {
             "confidence": 0.7
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     // SQL injection attempt
     let malicious_query = "'; DROP TABLE users; --";
@@ -140,7 +140,7 @@ async fn test_a03_injection_ai_response_manipulation() {
     
     for malicious_response in injection_responses {
         let mock_ai_client = MockAiClient::new_with_response(malicious_response);
-        let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+        let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
         
         let result = service.detect_intent("Test query", None).await;
         // Should either handle gracefully or fail safely
@@ -172,7 +172,7 @@ async fn test_a04_insecure_design_intent_type_validation() {
             "confidence": 0.8
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     let result = service.detect_intent("Test query", None).await;
     
     // Should reject invalid intent types
@@ -186,7 +186,7 @@ async fn test_a05_security_misconfiguration_no_debug_info_leakage() {
     // Ensure error messages don't leak sensitive information
     let mock_ai_client = MockAiClient::new_with_response("COMPLETELY INVALID JSON {{{".to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     let result = service.detect_intent("Test query", None).await;
     
     assert!(result.is_err());
@@ -220,7 +220,7 @@ async fn test_a08_data_integrity_time_scope_validation() {
             "confidence": 0.8
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     let result = service.detect_intent("What happened last year?", None).await;
     
     // Should reject invalid time formats
@@ -251,7 +251,7 @@ async fn test_a08_data_integrity_confidence_bounds() {
         }}"#, confidence_str);
         
         let mock_ai_client = MockAiClient::new_with_response(response);
-        let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+        let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
         
         let result = service.detect_intent("Test", None).await;
         if let Ok(intent) = result {
@@ -278,7 +278,7 @@ async fn test_a09_logging_no_sensitive_data_in_logs() {
             "confidence": 0.8
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     // Query with potentially sensitive information
     let sensitive_queries = vec![
@@ -318,7 +318,7 @@ async fn test_narrative_intent_security_scene_context_validation() {
             "confidence": 0.8
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     let result = service.detect_narrative_intent("Test", None).await;
     
     // Should handle arbitrary fields safely
@@ -353,7 +353,7 @@ async fn test_focus_entities_array_overflow() {
     }}"#, entities.join(","));
     
     let mock_ai_client = MockAiClient::new_with_response(response);
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_intent("Test", None).await;
     assert!(result.is_ok());
@@ -381,7 +381,7 @@ async fn test_spatial_scope_numeric_overflow() {
             "confidence": 0.8
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     let result = service.detect_intent("Test", None).await;
     
     // Should handle large numbers gracefully

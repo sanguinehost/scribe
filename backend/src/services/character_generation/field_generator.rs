@@ -66,10 +66,11 @@ impl FieldGenerator {
         ];
 
         // Generate using the LLM with structured output
+        // Use Gemini-compatible schema (without additionalProperties)
         let generated_output = self.generate_with_structured_output(
             &system_prompt,
             &messages,
-            &get_field_generation_schema(),
+            &get_field_generation_schema_gemini(),
             &request,
         ).await?;
 

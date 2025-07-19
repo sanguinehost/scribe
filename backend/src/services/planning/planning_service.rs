@@ -23,6 +23,7 @@ pub struct PlanningService {
     ecs_manager: Arc<EcsEntityManager>,
     redis_client: Arc<redis::Client>,
     db_pool: Arc<PgPool>,
+    model: String,
 }
 
 impl PlanningService {
@@ -31,12 +32,14 @@ impl PlanningService {
         ecs_manager: Arc<EcsEntityManager>,
         redis_client: Arc<redis::Client>,
         db_pool: Arc<PgPool>,
+        model: String,
     ) -> Self {
         Self {
             ai_client,
             ecs_manager,
             redis_client,
             db_pool,
+            model,
         }
     }
 
@@ -290,7 +293,7 @@ Generate a JSON response with all required fields for the action plan."#,
         debug!("System prompt: {}", system_prompt);
         debug!("User prompt: {}", user_prompt);
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await.map_err(|e| {

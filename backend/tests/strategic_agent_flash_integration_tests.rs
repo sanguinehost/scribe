@@ -120,6 +120,7 @@ async fn test_flash_integration_epic_fantasy_narrative_direction() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -158,6 +159,7 @@ async fn test_flash_integration_sci_fi_thriller_plot_significance() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -185,6 +187,7 @@ async fn test_flash_integration_political_intrigue_world_impact() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -212,6 +215,7 @@ async fn test_flash_integration_slice_of_life_emotional_tone() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -244,6 +248,7 @@ async fn test_flash_integration_mystery_noir_character_focus() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -274,6 +279,7 @@ async fn test_flash_integration_full_directive_creation_epic() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -318,6 +324,7 @@ async fn test_flash_integration_directive_consistency_across_calls() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -367,6 +374,7 @@ async fn test_flash_integration_narrative_direction_generation_quality() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -414,6 +422,7 @@ async fn test_flash_integration_comprehensive_directive_with_caching() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -475,6 +484,7 @@ async fn test_flash_integration_error_handling_and_fallbacks() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -539,6 +549,7 @@ async fn test_flash_integration_multilingual_and_special_characters() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.app_state.config.strategic_agent_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);

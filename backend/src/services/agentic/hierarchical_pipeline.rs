@@ -52,9 +52,10 @@ pub struct HierarchicalPipelineConfig {
 
 impl Default for HierarchicalPipelineConfig {
     fn default() -> Self {
+        let config = crate::config::Config::default();
         Self {
             prompt_template_version: PromptTemplateVersion::V1,
-            response_generation_model: "gemini-2.5-flash".to_string(),
+            response_generation_model: config.chat_model,
             enable_optimizations: true,
             max_pipeline_time_ms: 30000, // 30 seconds max
         }
@@ -454,16 +455,20 @@ Write the next response only as your assigned character, advancing the world and
         ];
         
         let chat_options = genai::chat::ChatOptions::default()
-            .with_max_tokens(1000)
-            .with_temperature(0.7) // Balanced creativity for roleplay
+            .with_max_tokens(2000) // Increased from 1000 to give more room for responses
+            .with_temperature(0.8) // Slightly increased from 0.7 for more creative responses
             .with_safety_settings(safety_settings);
         
         // Try to generate response with retry logic for empty responses
         let mut retry_count = 0;
-        let max_retries = 2;
+        let max_retries = 3; // Increased from 2 to give more retry attempts
         let mut last_error = None;
         
         while retry_count <= max_retries {
+            debug!("Attempting to generate response (attempt {} of {})", retry_count + 1, max_retries + 1);
+            debug!("Using model: {}", self.config.response_generation_model);
+            debug!("Message count: {}", messages.len());
+            
             let response = match self.ai_client
                 .exec_chat(&self.config.response_generation_model, chat_request.clone(), Some(chat_options.clone()))
                 .await {
@@ -514,9 +519,21 @@ Write the next response only as your assigned character, advancing the world and
                 }
             };
             
-            // Try to extract response text
-            let response_text = response.first_content_text_as_str()
-                .unwrap_or("")
+            // Try to extract response text using the same pattern as other services
+            debug!("Response contents count: {}", response.contents.len());
+            
+            let response_text = response.contents
+                .iter()
+                .find_map(|content| {
+                    if let genai::chat::MessageContent::Text(text) = content {
+                        debug!("Found text content in response");
+                        Some(text.clone())
+                    } else {
+                        debug!("Non-text content in response");
+                        None
+                    }
+                })
+                .unwrap_or_default()
                 .trim()
                 .to_string();
             
@@ -577,11 +594,64 @@ Write the next response only as your assigned character, advancing the world and
             return Ok(response_text);
         }
         
-        // All retries exhausted
+        // All retries exhausted - try one more time with a simpler fallback approach
+        warn!("All normal retry attempts failed. Attempting fallback generation with simplified prompt.");
+        
+        // Create a very simple fallback prompt
+        let fallback_prompt = format!(
+            "Continue this roleplay scene. Previous context:\n\n{}\n\nUser: {}\n\nProvide a brief continuation of the scene:",
+            // Extract a brief summary from enriched context
+            enriched_context.strategic_directive
+                .as_ref()
+                .map(|d| format!("{} - {}", d.narrative_arc, d.emotional_tone))
+                .unwrap_or_else(|| "An ongoing roleplay scene.".to_string()),
+            current_message
+        );
+        
+        let fallback_messages = vec![
+            genai::chat::ChatMessage {
+                role: genai::chat::ChatRole::User,
+                content: fallback_prompt.into(),
+                options: None,
+            },
+        ];
+        
+        let fallback_request = genai::chat::ChatRequest::new(fallback_messages)
+            .with_system("You are a creative AI assistant helping with fictional roleplay. Continue the scene naturally.");
+        
+        match self.ai_client
+            .exec_chat(&self.config.response_generation_model, fallback_request, Some(chat_options))
+            .await {
+            Ok(response) => {
+                let response_text = response.contents
+                    .iter()
+                    .find_map(|content| {
+                        if let genai::chat::MessageContent::Text(text) = content {
+                            Some(text.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                
+                if !response_text.is_empty() {
+                    warn!("Fallback generation succeeded with {} characters", response_text.len());
+                    return Ok(response_text);
+                }
+            }
+            Err(e) => {
+                error!("Fallback generation also failed: {}", e);
+                last_error = Some(e);
+            }
+        }
+        
+        // Final failure
         if let Some(error) = last_error {
-            return Err(AppError::LlmClientError(format!("Response generation failed after {} attempts: {}", max_retries + 1, error)));
+            return Err(AppError::LlmClientError(format!("Response generation failed after {} attempts including fallback: {}", max_retries + 2, error)));
         } else {
-            return Err(AppError::GenerationError("Empty response generated after all retries".to_string()));
+            return Err(AppError::GenerationError("Empty response generated after all retries including fallback".to_string()));
         }
     }
 

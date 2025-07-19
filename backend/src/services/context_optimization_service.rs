@@ -1,7 +1,8 @@
 use std::sync::Arc;
+use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use serde_json::Value as JsonValue;
-use tracing::{info, instrument, debug};
+use tracing::{info, instrument, debug, warn};
 
 use crate::{
     llm::AiClient,
@@ -11,6 +12,8 @@ use crate::{
         query_strategy_planner::QueryStrategy,
     },
 };
+
+use crate::services::context_optimization_structured_output::{ContextOptimizationOutput, get_context_optimization_schema};
 
 /// AI-optimized context structure representing intelligent pruning decisions
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,11 +68,12 @@ pub enum OptimizationStrategy {
 
 pub struct ContextOptimizationService {
     ai_client: Arc<dyn AiClient>,
+    model: String,
 }
 
 impl ContextOptimizationService {
-    pub fn new(ai_client: Arc<dyn AiClient>) -> Self {
-        Self { ai_client }
+    pub fn new(ai_client: Arc<dyn AiClient>, model: String) -> Self {
+        Self { ai_client, model }
     }
 
     #[instrument(skip(self, context, strategy), fields(context_results = context.results.len()))]
@@ -87,12 +91,14 @@ impl ContextOptimizationService {
         let prompt = self.build_flash_optimization_prompt(context, strategy, token_budget);
 
         let chat_request = genai::chat::ChatRequest::from_user(prompt);
+        let json_schema_spec = genai::chat::JsonSchemaSpec::new(get_context_optimization_schema());
         let chat_options = genai::chat::ChatOptions::default()
-            .with_max_tokens(1500)
-            .with_temperature(0.2); // Low temperature for consistent optimization
+            .with_max_tokens(4000) // Significantly increased for complex structured output
+            .with_temperature(0.2) // Low temperature for consistent optimization
+            .with_response_format(genai::chat::ChatResponseFormat::JsonSchemaSpec(json_schema_spec));
 
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-lite-preview-06-17", // Flash-Lite for intelligent optimization
+            &self.model, // Use configured model for intelligent optimization
             chat_request,
             Some(chat_options),
         ).await?;
@@ -108,7 +114,21 @@ impl ContextOptimizationService {
             })
             .unwrap_or_default();
 
-        self.parse_flash_optimization_response(&response_text, context)
+        if response_text.is_empty() {
+            warn!("Empty response from AI for context optimization");
+            // Return a default optimization instead of failing
+            return Ok(ContextOptimization {
+                total_estimated_tokens: context.total_tokens_used,
+                optimized_entities: vec![],
+                pruned_content: vec![],
+                optimization_strategy: OptimizationStrategy::EntityPrioritization,
+                confidence: 0.5,
+                optimization_reasoning: "AI returned empty response - using unoptimized context".to_string(),
+                suggested_refinements: vec![],
+            });
+        }
+
+        self.parse_structured_optimization_response(&response_text)
     }
 
     /// AI-powered optimization with narrative-aware approach
@@ -127,12 +147,14 @@ impl ContextOptimizationService {
         let prompt = self.build_narrative_optimization_prompt(context, narrative_focus, token_budget);
 
         let chat_request = genai::chat::ChatRequest::from_user(prompt);
+        let json_schema_spec = genai::chat::JsonSchemaSpec::new(get_context_optimization_schema());
         let chat_options = genai::chat::ChatOptions::default()
-            .with_max_tokens(1800)
-            .with_temperature(0.3); // Slightly higher for narrative creativity
+            .with_max_tokens(4500) // Significantly increased for complex narrative structured output
+            .with_temperature(0.3) // Slightly higher for narrative creativity
+            .with_response_format(genai::chat::ChatResponseFormat::JsonSchemaSpec(json_schema_spec));
 
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-preview-06-17", // Full Flash for narrative optimization
+            &self.model, // Use configured model for narrative optimization
             chat_request,
             Some(chat_options),
         ).await?;
@@ -148,7 +170,21 @@ impl ContextOptimizationService {
             })
             .unwrap_or_default();
 
-        self.parse_narrative_optimization_response(&response_text, context)
+        if response_text.is_empty() {
+            warn!("Empty response from AI for narrative context optimization");
+            // Return a default optimization instead of failing
+            return Ok(ContextOptimization {
+                total_estimated_tokens: context.total_tokens_used,
+                optimized_entities: vec![],
+                pruned_content: vec![],
+                optimization_strategy: OptimizationStrategy::NarrativeCoherence,
+                confidence: 0.5,
+                optimization_reasoning: "AI returned empty response - using unoptimized context".to_string(),
+                suggested_refinements: vec![],
+            });
+        }
+
+        self.parse_structured_optimization_response(&response_text)
     }
 
     /// Build AI prompt for intelligent context optimization
@@ -195,51 +231,22 @@ Analyze this assembled context from multiple query results and determine the opt
 4. Information density vs redundancy across different result types
 5. Narrative flow requirements
 
-RESPOND WITH JSON:
-{{
-    "optimization_reasoning": "<comprehensive explanation of optimization approach>",
-    "optimization_strategy": "<one of: EntityPrioritization, TemporalFiltering, RelevanceClustering, CausalPathFocus, SpatialContextPrioritization, TokenBudgetConstraint, ConservativePruning, AdaptiveOptimization, NarrativeCoherence, EmotionalResonance, ActionPotential>",
-    "total_estimated_tokens": <number>,
-    "optimized_entities": [
-        {{
-            "entity_id": "<id>",
-            "name": "<entity_name>",
-            "priority_score": <0.0-1.0>,
-            "inclusion_reason": "<why this entity is essential>",
-            "token_contribution": <estimated_tokens>,
-            "narrative_relevance": <0.0-1.0>
-        }}
-    ],
-    "pruned_content": [
-        {{
-            "content_type": "<entity|relationship|event|result_type>",
-            "entity_name": "<name_of_pruned_content>",
-            "reason": "<why this was pruned>",
-            "tokens_saved": <number>,
-            "pruning_confidence": <0.0-1.0>
-        }}
-    ],
-    "suggested_refinements": [
-        "<potential optimization improvement 1>",
-        "<potential optimization improvement 2>"
-    ],
-    "confidence": <0.0-1.0>
-}}
+PROVIDE YOUR OPTIMIZATION ANALYSIS IN VALID JSON FORMAT:
+You must return a JSON object with these fields:
+- optimization_reasoning: Clear, concise explanation of your approach (2-3 sentences max)
+- optimization_strategy: One of the exact strategy names listed below
+- total_estimated_tokens: Number after optimization
+- optimized_entities: Array of entities to keep (limit to 3-5 most important)
+- pruned_content: Array of content to remove (limit to 3-5 items)
+- suggested_refinements: Array of 1-2 improvement suggestions
+- confidence: Number between 0.0 and 1.0
 
-OPTIMIZATION STRATEGIES:
-- EntityPrioritization: Focus on most important entities
-- TemporalFiltering: Prioritize recent/relevant time periods
-- RelevanceClustering: Group related information
-- CausalPathFocus: Emphasize cause-effect chains
-- SpatialContextPrioritization: Focus on location-relevant content
-- TokenBudgetConstraint: Strict adherence to token limits
-- ConservativePruning: Minimal removal approach
-- AdaptiveOptimization: Balance multiple factors
-- NarrativeCoherence: Maintain story flow
-- EmotionalResonance: Preserve emotional context
-- ActionPotential: Focus on actionable information
+KEEP DESCRIPTIONS CONCISE - aim for 1-2 sentences per explanation to avoid truncation.
 
-Be intelligent about what to keep and what to prune. Preserve narrative-critical information even if it uses more tokens."#,
+OPTIMIZATION STRATEGIES (use exact names):
+EntityPrioritization, TemporalFiltering, RelevanceClustering, CausalPathFocus, SpatialContextPrioritization, TokenBudgetConstraint, ConservativePruning, AdaptiveOptimization, NarrativeCoherence, EmotionalResonance, ActionPotential
+
+Focus on the most critical elements. Be selective and concise."#,
             context.results.len(),
             context.execution_time_ms,
             context.success_rate,
@@ -293,36 +300,14 @@ CONSIDER:
 - Reader/player cognitive load
 - Foreshadowing and callbacks
 
-RESPOND WITH JSON:
-{{
-    "optimization_reasoning": "<detailed narrative analysis and optimization rationale>",
-    "optimization_strategy": "<strategy that best serves the narrative>",
-    "total_estimated_tokens": <number>,
-    "optimized_entities": [
-        {{
-            "entity_id": "<id>",
-            "name": "<entity_name>",
-            "priority_score": <0.0-1.0>,
-            "inclusion_reason": "<narrative reason for inclusion>",
-            "token_contribution": <estimated_tokens>,
-            "narrative_relevance": <0.0-1.0>
-        }}
-    ],
-    "pruned_content": [
-        {{
-            "content_type": "<entity|relationship|event>",
-            "entity_name": "<name>",
-            "reason": "<narrative reason for pruning>",
-            "tokens_saved": <number>,
-            "pruning_confidence": <0.0-1.0>
-        }}
-    ],
-    "suggested_refinements": [
-        "<how to better serve the narrative>",
-        "<additional optimization opportunities>"
-    ],
-    "confidence": <0.0-1.0>
-}}
+PROVIDE YOUR NARRATIVE OPTIMIZATION ANALYSIS:
+- Optimization reasoning: detailed narrative analysis and optimization rationale
+- Optimization strategy: strategy that best serves the narrative
+- Total estimated tokens after optimization
+- Optimized entities: entities to keep with priority scores (0.0-1.0), narrative inclusion reasons, token contributions, and narrative relevance
+- Pruned content: content to remove with narrative reasoning and confidence scores
+- Suggested refinements: how to better serve the narrative and additional optimization opportunities
+- Confidence: your overall confidence level (0.0-1.0)
 
 Think like a master storyteller editing a manuscript - keep what serves the story, cut what doesn't."#,
             narrative_focus,
@@ -389,112 +374,45 @@ Think like a master storyteller editing a manuscript - keep what serves the stor
         }
     }
 
-    /// Parse AI optimization response
-    fn parse_flash_optimization_response(
+    /// Parse structured AI optimization response
+    fn parse_structured_optimization_response(
         &self,
         response: &str,
-        context: &AssembledContext,
     ) -> Result<ContextOptimization, AppError> {
         let cleaned = response.trim();
         
-        let json_value: JsonValue = serde_json::from_str(cleaned)
-            .map_err(|e| AppError::SerializationError(format!("Failed to parse Flash optimization response: {}", e)))?;
-
-        // Parse optimization strategy
-        let optimization_strategy = match json_value["optimization_strategy"].as_str() {
-            Some("EntityPrioritization") => OptimizationStrategy::EntityPrioritization,
-            Some("TemporalFiltering") => OptimizationStrategy::TemporalFiltering,
-            Some("RelevanceClustering") => OptimizationStrategy::RelevanceClustering,
-            Some("CausalPathFocus") => OptimizationStrategy::CausalPathFocus,
-            Some("SpatialContextPrioritization") => OptimizationStrategy::SpatialContextPrioritization,
-            Some("TokenBudgetConstraint") => OptimizationStrategy::TokenBudgetConstraint,
-            Some("ConservativePruning") => OptimizationStrategy::ConservativePruning,
-            Some("AdaptiveOptimization") => OptimizationStrategy::AdaptiveOptimization,
-            Some("NarrativeCoherence") => OptimizationStrategy::NarrativeCoherence,
-            Some("EmotionalResonance") => OptimizationStrategy::EmotionalResonance,
-            Some("ActionPotential") => OptimizationStrategy::ActionPotential,
-            _ => OptimizationStrategy::AdaptiveOptimization, // Default fallback
-        };
-
-        // Parse optimized entities
-        let optimized_entities = json_value["optimized_entities"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|entity| {
-                Some(OptimizedEntity {
-                    entity_id: entity["entity_id"].as_str()?.to_string(),
-                    name: entity["name"].as_str()?.to_string(),
-                    priority_score: (entity["priority_score"].as_f64()? as f32).clamp(0.0, 1.0),
-                    inclusion_reason: entity["inclusion_reason"].as_str()?.to_string(),
-                    token_contribution: entity["token_contribution"].as_u64()? as u32,
-                    narrative_relevance: entity["narrative_relevance"]
-                        .as_f64()
-                        .unwrap_or(0.5)
-                        .clamp(0.0, 1.0) as f32,
+        // Try to parse as structured output
+        match serde_json::from_str::<ContextOptimizationOutput>(cleaned) {
+            Ok(output) => {
+                // Validate the structured output
+                output.validate()?;
+                // Convert to internal type
+                output.to_context_optimization()
+            }
+            Err(e) => {
+                warn!("Failed to parse structured optimization response: {}", e);
+                warn!("Response content length: {} chars", cleaned.len());
+                warn!("Response content (first 1000 chars): {}", &cleaned[..cleaned.len().min(1000)]);
+                
+                // Check if this looks like a truncation issue
+                if cleaned.contains("EOF while parsing") || e.to_string().contains("EOF") {
+                    warn!("Response appears to be truncated (EOF error) - may need higher token limits");
+                }
+                
+                // Return a fallback optimization instead of failing
+                Ok(ContextOptimization {
+                    total_estimated_tokens: 1000, // Conservative estimate
+                    optimized_entities: vec![],
+                    pruned_content: vec![],
+                    optimization_strategy: OptimizationStrategy::ConservativePruning,
+                    confidence: 0.2, // Lower confidence due to parsing failure
+                    optimization_reasoning: format!("Failed to parse AI optimization response ({}), using conservative fallback. Response may be truncated - consider increasing token limits.", e),
+                    suggested_refinements: vec!["Retry optimization with simpler context".to_string(), "Consider increasing max_tokens for structured output".to_string()],
                 })
-            })
-            .collect();
-
-        // Parse pruned content
-        let pruned_content = json_value["pruned_content"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|pruned| {
-                Some(PrunedContent {
-                    content_type: pruned["content_type"].as_str()?.to_string(),
-                    entity_name: pruned["entity_name"].as_str()?.to_string(),
-                    reason: pruned["reason"].as_str()?.to_string(),
-                    tokens_saved: pruned["tokens_saved"].as_u64()? as u32,
-                    pruning_confidence: pruned["pruning_confidence"]
-                        .as_f64()
-                        .unwrap_or(0.8)
-                        .clamp(0.0, 1.0) as f32,
-                })
-            })
-            .collect();
-
-        // Parse suggested refinements
-        let suggested_refinements = json_value["suggested_refinements"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
-
-        // Extract reasoning
-        let optimization_reasoning = json_value["optimization_reasoning"]
-            .as_str()
-            .unwrap_or("AI optimization applied")
-            .to_string();
-
-        Ok(ContextOptimization {
-            total_estimated_tokens: json_value["total_estimated_tokens"]
-                .as_u64()
-                .unwrap_or(1000) as u32,
-            optimized_entities,
-            pruned_content,
-            optimization_strategy,
-            confidence: json_value["confidence"]
-                .as_f64()
-                .unwrap_or(0.85)
-                .clamp(0.0, 1.0) as f32,
-            optimization_reasoning,
-            suggested_refinements,
-        })
+            }
+        }
     }
 
-    /// Parse narrative-focused optimization response
-    fn parse_narrative_optimization_response(
-        &self,
-        response: &str,
-        context: &AssembledContext,
-    ) -> Result<ContextOptimization, AppError> {
-        // Use the same parsing logic as regular optimization
-        // The AI will provide narrative-focused reasoning and selections
-        self.parse_flash_optimization_response(response, context)
-    }
 
     /// Estimate token count for a piece of content
     pub fn estimate_tokens(&self, content: &str) -> u32 {

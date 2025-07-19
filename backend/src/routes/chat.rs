@@ -517,6 +517,14 @@ pub async fn generate_chat_response(
             }
             Err(e) => {
                 warn!(%session_id, error = %e, "Agentic orchestration failed, proceeding with standard flow");
+                
+                // For testing: optionally fail hard on orchestration errors
+                if std::env::var("FAIL_ON_ORCHESTRATION_ERROR").unwrap_or_default() == "true" {
+                    return Err(AppError::InternalServerErrorGeneric(
+                        format!("Agentic orchestration failed: {}", e)
+                    ));
+                }
+                
                 None
             }
         }
@@ -1815,7 +1823,7 @@ pub async fn generate_suggested_actions(
     }
 
     // Use Flash for suggestions - it's fast and cheap for simple action generation
-    let model_for_suggestions = "gemini-2.5-flash".to_string();
+    let model_for_suggestions = state_arc.config.suggestion_model.clone();
 
     let (final_system_prompt_for_suggestions, final_messages_for_suggestions_llm) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {

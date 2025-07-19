@@ -279,6 +279,7 @@ impl AppStateServicesBuilder {
             Default::default(),
             feature_flags.clone(),
             ai_client.clone(),
+            self.config.fast_model.clone(), // Use fast model for hybrid queries
             ecs_entity_manager.clone(),
             ecs_enhanced_rag_service.clone(),
             ecs_graceful_degradation.clone(),
@@ -309,6 +310,7 @@ impl AppStateServicesBuilder {
         let agentic_state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
             ai_client.clone(),
             ecs_entity_manager.clone(),
+            self.config.fast_model.clone(), // Use fast model for state updates
         ));
 
         // Create agentic orchestrator with all required services
@@ -317,6 +319,10 @@ impl AppStateServicesBuilder {
             hybrid_query_service.clone(),
             Arc::new(self.db_pool.clone()),
             agentic_state_update_service.clone(),
+            self.config.intent_detection_model.clone(),
+            self.config.query_planning_model.clone(),
+            self.config.optimization_model.clone(),
+            self.config.fast_model.clone(), // Context engine model
         ));
 
         // HierarchicalContextAssembler will be set after AppState creation

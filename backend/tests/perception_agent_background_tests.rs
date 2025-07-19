@@ -45,6 +45,7 @@ async fn test_perception_agent_background_spawn() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        app.app_state.config.tactical_agent_model.clone(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -59,6 +60,7 @@ async fn test_perception_agent_background_spawn() {
         plan_validator,
         app.app_state.redis_client.clone(),
         app.app_state.clone(),
+        app.app_state.config.perception_agent_model.clone(),
     ));
     
     // Create channel for completion notification
@@ -99,6 +101,7 @@ async fn test_perception_agent_concurrent_background_tasks() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        app.app_state.config.tactical_agent_model.clone(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -113,6 +116,7 @@ async fn test_perception_agent_concurrent_background_tasks() {
         plan_validator,
         app.app_state.redis_client.clone(),
         app.app_state.clone(),
+        app.app_state.config.perception_agent_model.clone(),
     ));
     
     // Spawn multiple background tasks
@@ -173,6 +177,7 @@ async fn test_perception_agent_background_cancellation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        app.app_state.config.tactical_agent_model.clone(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -187,6 +192,7 @@ async fn test_perception_agent_background_cancellation() {
         plan_validator,
         app.app_state.redis_client.clone(),
         app.app_state.clone(),
+        app.app_state.config.perception_agent_model.clone(),
     ));
     
     // Create a long-running response
@@ -221,6 +227,7 @@ async fn test_perception_agent_background_error_isolation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        app.app_state.config.tactical_agent_model.clone(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -235,6 +242,7 @@ async fn test_perception_agent_background_error_isolation() {
         plan_validator,
         app.app_state.redis_client.clone(),
         app.app_state.clone(),
+        app.app_state.config.perception_agent_model.clone(),
     ));
     
     let mut handles = vec![];
@@ -311,6 +319,7 @@ async fn test_perception_agent_background_with_timeout() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        app.app_state.config.tactical_agent_model.clone(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -325,6 +334,7 @@ async fn test_perception_agent_background_with_timeout() {
         plan_validator,
         app.app_state.redis_client.clone(),
         app.app_state.clone(),
+        app.app_state.config.perception_agent_model.clone(),
     ));
     
     let response = "Quick response";
@@ -356,6 +366,7 @@ async fn test_perception_agent_background_queue_simulation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        app.app_state.config.tactical_agent_model.clone(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -370,6 +381,7 @@ async fn test_perception_agent_background_queue_simulation() {
         plan_validator,
         app.app_state.redis_client.clone(),
         app.app_state.clone(),
+        app.app_state.config.perception_agent_model.clone(),
     ));
     
     // Create a queue for perception tasks
@@ -430,6 +442,7 @@ async fn test_perception_agent_background_with_callbacks() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        app.app_state.config.tactical_agent_model.clone(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -444,6 +457,7 @@ async fn test_perception_agent_background_with_callbacks() {
         plan_validator,
         app.app_state.redis_client.clone(),
         app.app_state.clone(),
+        app.app_state.config.perception_agent_model.clone(),
     ));
     
     // Create oneshot channel for callback

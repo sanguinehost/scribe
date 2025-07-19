@@ -169,6 +169,70 @@ pub fn get_hierarchy_analysis_schema() -> serde_json::Value {
     })
 }
 
+/// Structured output for AI-driven spatial relationship detection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpatialRelationshipDetectionOutput {
+    pub relationships: Vec<DetectedSpatialRelationship>,
+    pub confidence: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectedSpatialRelationship {
+    pub parent_entity: String,
+    pub child_entity: String,
+    pub relationship_type: String, // "contains", "part_of", "connected_to", etc.
+    pub reasoning: String,
+    pub confidence: f32,
+}
+
+/// Helper function to create the JSON schema for spatial relationship detection
+pub fn get_spatial_relationship_detection_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "relationships": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "parent_entity": {
+                            "type": "string",
+                            "description": "The containing/parent entity name"
+                        },
+                        "child_entity": {
+                            "type": "string",
+                            "description": "The contained/child entity name"
+                        },
+                        "relationship_type": {
+                            "type": "string",
+                            "enum": ["contains", "part_of", "connected_to", "near", "within"],
+                            "description": "Type of spatial relationship"
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": "Explanation for why this relationship exists based on context"
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "description": "Confidence in this relationship (0.0-1.0)"
+                        }
+                    },
+                    "required": ["parent_entity", "child_entity", "relationship_type", "reasoning", "confidence"]
+                }
+            },
+            "confidence": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "Overall confidence in the relationship detection (0.0-1.0)"
+            }
+        },
+        "required": ["relationships", "confidence"]
+    })
+}
+
 /// Helper function to create the JSON schema for salience updates
 pub fn get_salience_update_schema() -> serde_json::Value {
     serde_json::json!({

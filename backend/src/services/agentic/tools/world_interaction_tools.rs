@@ -207,7 +207,7 @@ impl ScribeTool for FindEntityTool {
             entities,
         };
 
-        info!("Found {} entities", output.total_found);
+        debug!("Found {} entities", output.total_found);
         Ok(serde_json::to_value(output)?)
     }
 }

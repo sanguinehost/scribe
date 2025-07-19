@@ -115,7 +115,7 @@ it's whatever the narrative suggests they need."#,
             .with_temperature(0.3); // Low-medium temperature for creative but consistent suggestions
 
         let response = self.app_state.ai_client
-            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
             .await
             .map_err(|e| format!("AI component suggestion failed: {}", e))?;
 
@@ -254,7 +254,7 @@ Analyze carefully and match semantically, not just syntactically."#,
             .with_temperature(0.1); // Very low temperature for consistent matching
 
         let response = self.app_state.ai_client
-            .exec_chat("gemini-2.5-flash-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
             .await
             .map_err(|e| format!("AI semantic matching failed: {}", e))?;
 

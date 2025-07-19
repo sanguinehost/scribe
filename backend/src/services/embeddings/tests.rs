@@ -153,6 +153,8 @@ mod tests {
         Arc<MockQdrantClientService>,
         Arc<MockEmbeddingClient>,
     ) {
+        let config = crate::config::Config::load()
+            .expect("Failed to load config from environment");
         let pool = Arc::new(crate::test_helpers::db::setup_test_database(None).await);
         let ai_client = Arc::new(MockAiClient::new());
         let mock_embed_client = Arc::new(MockEmbeddingClient::new());
@@ -184,7 +186,7 @@ mod tests {
         let token_counter_service = Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new(
             tokenizer_service,
             None,
-            "gemini-1.5-flash",
+            "gemini-2.5-flash",
         ));
         let lorebook_service = Arc::new(crate::services::LorebookService::new(
             (*pool).clone(),
@@ -207,6 +209,7 @@ mod tests {
         let state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
             ai_client.clone(),
             entity_manager.clone(),
+            config.fast_model.clone(),
         ));
 
         // First create services without narrative intelligence service
@@ -259,6 +262,7 @@ mod tests {
                 Default::default(),
                 Arc::new(crate::config::NarrativeFeatureFlags::default()),
                 ai_client.clone(),
+                config.fast_model.clone(),
                 entity_manager.clone(),
                 Arc::new(crate::services::EcsEnhancedRagService::new(
                     pool.clone(),
@@ -319,6 +323,7 @@ mod tests {
                     Default::default(),
                     Arc::new(crate::config::NarrativeFeatureFlags::default()),
                     ai_client.clone(),
+                    config.fast_model.clone(),
                     entity_manager.clone(),
                     Arc::new(crate::services::EcsEnhancedRagService::new(
                         pool.clone(),
@@ -355,6 +360,7 @@ mod tests {
                     Default::default(),
                     Arc::new(crate::config::NarrativeFeatureFlags::default()),
                     ai_client.clone(),
+                    config.fast_model.clone(),
                     entity_manager.clone(),
                     Arc::new(crate::services::EcsEnhancedRagService::new(
                         pool.clone(),
@@ -384,6 +390,10 @@ mod tests {
                 )),
                 pool.clone(),
                 state_update_service.clone(), // Clone the state_update_service here
+                config.intent_detection_model.clone(),
+                config.query_planning_model.clone(),
+                config.optimization_model.clone(),
+                config.fast_model.clone(), // Context engine model
             )),
             agentic_state_update_service: state_update_service.clone(), // Add this line
             hierarchical_context_assembler: None, // Will be set after AppState is built
@@ -391,9 +401,6 @@ mod tests {
             strategic_agent: None, // No strategic agent needed for embedding tests
             hierarchical_pipeline: None, // No hierarchical pipeline needed for embedding tests
         };
-
-        let config = crate::config::Config::load()
-            .expect("Failed to load config from environment");
 
         let app_state = Arc::new(AppState::new((*pool).clone(), Arc::new(config), services));
         (app_state, mock_qdrant, mock_embed_client)

@@ -270,6 +270,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
         ai_client_arc.clone(),
         ecs_services.ecs_entity_manager.clone(),
+        config.fast_model.clone(), // Use fast model for state updates
     ));
 
     // Create agentic orchestrator with all required services
@@ -278,6 +279,10 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         ecs_services.hybrid_query_service.clone(),
         Arc::new(pool.clone()),
         agentic_state_update_service.clone(),
+        config.intent_detection_model.clone(),
+        config.query_planning_model.clone(),
+        config.optimization_model.clone(),
+        config.fast_model.clone(), // Context engine model
     ));
     
     // --- Initialize Narrative Intelligence Service ---
@@ -395,6 +400,7 @@ async fn initialize_ecs_services(
         Default::default(), // Use default config
         feature_flags.clone(),
         ai_client.clone(),
+        config.fast_model.clone(), // Use fast model for hybrid queries
         ecs_entity_manager.clone(),
         ecs_enhanced_rag_service.clone(),
         ecs_graceful_degradation.clone(),

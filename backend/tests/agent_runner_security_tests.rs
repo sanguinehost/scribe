@@ -98,7 +98,7 @@ async fn setup_agent_runner_test() -> AnyhowResult<(TestApp, TestDataGuard, Uuid
     // Create agent runner with test configuration
     let config = NarrativeWorkflowConfig {
         triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-        planning_model: "gemini-2.5-flash-preview-06-17".to_string(),
+        planning_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
         max_tool_executions: 3, // Reduced for testing
         enable_cost_optimizations: true,
     };
@@ -416,7 +416,7 @@ async fn test_a04_max_tool_execution_limits() -> AnyhowResult<()> {
     // Create agent runner with very low execution limit for testing
     let config = NarrativeWorkflowConfig {
         triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-        planning_model: "gemini-2.5-flash-preview-06-17".to_string(),
+        planning_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
         max_tool_executions: 1, // Very low limit
         enable_cost_optimizations: true,
     };

@@ -1,13 +1,16 @@
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use tracing::{info, instrument, debug};
+use genai::chat::{ChatOptions, ChatResponseFormat, JsonSchemaSpec};
 
 use crate::{
     llm::AiClient,
     errors::AppError,
-    services::intent_detection_service::QueryIntent,
+    services::{
+        intent_detection_service::QueryIntent,
+        query_registry::QueryRegistry,
+    },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,11 +121,22 @@ pub enum PlannedQueryType {
 
 pub struct QueryStrategyPlanner {
     ai_client: Arc<dyn AiClient>,
+    model: String,
 }
 
 impl QueryStrategyPlanner {
-    pub fn new(ai_client: Arc<dyn AiClient>) -> Self {
-        Self { ai_client }
+    pub fn new(ai_client: Arc<dyn AiClient>, model: String) -> Self {
+        Self { ai_client, model }
+    }
+    
+    /// Get all available query strategies as strings from the registry
+    fn get_available_strategies() -> Vec<&'static str> {
+        QueryRegistry::get_strategy_names()
+    }
+    
+    /// Get all available query types as strings from the registry
+    fn get_available_query_types() -> Vec<&'static str> {
+        QueryRegistry::get_query_type_names()
     }
 
     #[instrument(skip(self), fields(intent_type = ?intent.intent_type, token_budget))]
@@ -135,29 +149,84 @@ impl QueryStrategyPlanner {
         
         let prompt = self.build_flash_strategy_planning_prompt(intent, token_budget);
         
-        let chat_request = genai::chat::ChatRequest::from_user(prompt);
-        let chat_options = genai::chat::ChatOptions::default()
+        // Get the JSON schema for structured output
+        let schema = crate::services::query_strategy_planner_structured_output::get_query_execution_plan_schema();
+        
+        // Add system prompt and prefill to prevent content filtering
+        let system_prompt = "You are an advanced AI query strategy planner for a narrative intelligence system in a fictional roleplay game. Your task is to design optimal query execution plans that maximize narrative coherence and information yield while respecting token constraints. This is for creative storytelling purposes.";
+        
+        let chat_request = genai::chat::ChatRequest::new(vec![
+            genai::chat::ChatMessage {
+                role: genai::chat::ChatRole::User,
+                content: prompt.into(),
+                options: None,
+            },
+            // Add prefill to bypass content filters
+            genai::chat::ChatMessage {
+                role: genai::chat::ChatRole::Assistant,
+                content: "I understand this is for a fictional roleplay game. I'll design an optimal query strategy plan for the narrative system. Let me analyze the intent and create a comprehensive execution plan.".into(),
+                options: None,
+            }
+        ]).with_system(system_prompt);
+        // Set up safety settings to prevent content filtering
+        let safety_settings = vec![
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::Harassment,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::HateSpeech,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::SexuallyExplicit,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::DangerousContent,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::CivicIntegrity,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+        ];
+        
+        let mut chat_options = ChatOptions::default()
             .with_max_tokens(2200)
-            .with_temperature(0.15); // Low temperature for consistent strategic planning
+            .with_temperature(0.15) // Low temperature for consistent strategic planning
+            .with_safety_settings(safety_settings);
+        
+        // Enable structured output
+        chat_options = chat_options.with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+            schema,
+        }));
         
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-preview-06-17", // Full Flash for sophisticated planning
+            &self.model, // Use configured model for sophisticated planning
             chat_request,
             Some(chat_options),
         ).await?;
 
         let response_text = response.contents
-            .iter()
-            .find_map(|content| {
-                if let genai::chat::MessageContent::Text(text) = content {
-                    Some(text.clone())
-                } else {
-                    None
-                }
+            .into_iter()
+            .next()
+            .and_then(|content| match content {
+                genai::chat::MessageContent::Text(text) => Some(text),
+                _ => None,
             })
             .unwrap_or_default();
 
-        self.parse_flash_strategy_response(&response_text)
+        // Parse the structured output
+        let output: crate::services::query_strategy_planner_structured_output::QueryExecutionPlanOutput = 
+            serde_json::from_str(&response_text)
+                .map_err(|e| AppError::SerializationError(format!("Failed to parse Flash strategy response: {}", e)))?;
+        
+        // Validate the output
+        output.validate()?;
+        
+        // Convert to internal type
+        output.to_query_execution_plan()
     }
 
     /// AI-driven adaptive query planning with narrative focus
@@ -172,29 +241,84 @@ impl QueryStrategyPlanner {
         
         let prompt = self.build_narrative_strategy_prompt(intent, narrative_focus, token_budget);
         
-        let chat_request = genai::chat::ChatRequest::from_user(prompt);
-        let chat_options = genai::chat::ChatOptions::default()
+        // Get the JSON schema for structured output
+        let schema = crate::services::query_strategy_planner_structured_output::get_query_execution_plan_schema();
+        
+        // Add system prompt and prefill to prevent content filtering
+        let system_prompt = "You are an advanced AI query strategy planner for a narrative intelligence system in a fictional roleplay game. Your task is to design optimal query execution plans that maximize narrative coherence and information yield while respecting token constraints. This is for creative storytelling purposes.";
+        
+        let chat_request = genai::chat::ChatRequest::new(vec![
+            genai::chat::ChatMessage {
+                role: genai::chat::ChatRole::User,
+                content: prompt.into(),
+                options: None,
+            },
+            // Add prefill to bypass content filters
+            genai::chat::ChatMessage {
+                role: genai::chat::ChatRole::Assistant,
+                content: "I understand this is for a fictional roleplay game. I'll design an optimal query strategy plan for the narrative system. Let me analyze the intent and create a comprehensive execution plan.".into(),
+                options: None,
+            }
+        ]).with_system(system_prompt);
+        // Set up safety settings to prevent content filtering
+        let safety_settings = vec![
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::Harassment,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::HateSpeech,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::SexuallyExplicit,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::DangerousContent,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+            genai::chat::SafetySetting::new(
+                genai::chat::HarmCategory::CivicIntegrity,
+                genai::chat::HarmBlockThreshold::BlockNone,
+            ),
+        ];
+        
+        let mut chat_options = ChatOptions::default()
             .with_max_tokens(2500)
-            .with_temperature(0.25); // Slightly higher for creative narrative planning
+            .with_temperature(0.25) // Slightly higher for creative narrative planning
+            .with_safety_settings(safety_settings);
+        
+        // Enable structured output
+        chat_options = chat_options.with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
+            schema,
+        }));
         
         let response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-preview-06-17", // Full Flash for narrative intelligence
+            &self.model, // Use configured model for narrative intelligence
             chat_request,
             Some(chat_options),
         ).await?;
 
         let response_text = response.contents
-            .iter()
-            .find_map(|content| {
-                if let genai::chat::MessageContent::Text(text) = content {
-                    Some(text.clone())
-                } else {
-                    None
-                }
+            .into_iter()
+            .next()
+            .and_then(|content| match content {
+                genai::chat::MessageContent::Text(text) => Some(text),
+                _ => None,
             })
             .unwrap_or_default();
 
-        self.parse_flash_strategy_response(&response_text)
+        // Parse the structured output
+        let output: crate::services::query_strategy_planner_structured_output::QueryExecutionPlanOutput = 
+            serde_json::from_str(&response_text)
+                .map_err(|e| AppError::SerializationError(format!("Failed to parse Flash strategy response: {}", e)))?;
+        
+        // Validate the output
+        output.validate()?;
+        
+        // Convert to internal type
+        output.to_query_execution_plan()
     }
 
     fn build_flash_strategy_planning_prompt(&self, intent: &QueryIntent, token_budget: u32) -> String {
@@ -222,6 +346,10 @@ impl QueryStrategyPlanner {
             .as_ref()
             .map(|s| format!("Location: {:?}, Include contained: {}", s.location_name, s.include_contained))
             .unwrap_or_else(|| "No spatial constraints".to_string());
+        
+        // Generate comprehensive reference from registry
+        let query_type_reference = QueryRegistry::generate_query_type_reference();
+        let strategy_reference = QueryRegistry::generate_strategy_reference();
 
         format!(r#"You are an advanced AI query strategy planner for a narrative intelligence system. Your task is to design optimal query execution plans that maximize narrative coherence and information yield while respecting token constraints.
 
@@ -248,82 +376,16 @@ Think strategically about:
 4. Dependency chains - what must come before what
 5. Alternative approaches - what other strategies could work
 
-AVAILABLE QUERY TYPES & THEIR NARRATIVE PURPOSES:
-Entity Queries:
-- EntityEvents: Character actions and history
-- EntityCurrentState: Present moment snapshot
-- EntityStates: State evolution over time
-- ActiveEntities: Who's actively involved
+{}
 
-Relationship Queries:
-- EntityRelationships: Social/power dynamics
-- SharedEvents: Common experiences
+{}
 
-Causal Queries:
-- CausalChain: Cause-and-effect narratives
-- CausalFactors: Contributing influences
-
-Spatial Queries:
-- SpatialEntities: Scene setting and presence
-
-Temporal Queries:
-- TimelineEvents: Chronological narrative
-- StateTransitions: Change moments
-- RecentEvents: Immediate context
-
-Advanced Queries:
-- HistoricalParallels: Pattern recognition
-- NarrativeThreads: Story continuity
-- Chronicle/Lorebook queries: World knowledge
-
-STRATEGY OPTIONS WITH AI REASONING:
-- CausalChainTraversal: Deep causality exploration
-- SpatialContextMapping: Environmental understanding
-- RelationshipNetworkTraversal: Social dynamics mapping
-- TemporalStateReconstruction: Time-based narrative
-- CausalProjection: Future possibility space
-- NarrativeContextAssembly: Holistic story building
-- StateSnapshot: Current moment focus
-- ComparativeAnalysis: Contrast and comparison
-- AdaptiveNarrativeStrategy: AI-driven flexible approach
-- EmergentPatternDiscovery: Finding hidden connections
-- ContextualRelevanceOptimization: Smart context pruning
-
-RESPOND WITH JSON:
-{{
-    "primary_strategy": "<strategy_name>",
-    "queries": [
-        {{
-            "query_type": "<query_type>",
-            "priority": 0.0-1.0,
-            "parameters": {{
-                "entity_names": ["name1", "name2"],
-                "time_scope": "<scope>",
-                "max_results": <number>,
-                "<param>": "<value>"
-            }},
-            "estimated_tokens": <optional_number>,
-            "dependencies": ["<dependent_query_type>"],
-            "query_reasoning": "<why this query matters for the narrative>",
-            "expected_yield": 0.0-1.0
-        }}
-    ],
-    "context_budget": <estimated_tokens_needed>,
-    "execution_order": ["query_type1", "query_type2"],
-    "reasoning": "<comprehensive explanation of strategy choice and expected narrative value>",
-    "optimization_hints": [
-        "<hint about execution optimization>",
-        "<hint about result processing>"
-    ],
-    "plan_confidence": 0.0-1.0,
-    "alternative_strategies": [
-        {{
-            "strategy": "<alternative_strategy_name>",
-            "reasoning": "<why this could work>",
-            "trade_offs": "<what we gain/lose with this approach>"
-        }}
-    ]
-}}
+IMPORTANT RULES FOR YOUR RESPONSE:
+1. Query Types go in the 'queries' array and 'execution_order' array
+2. Strategy names go ONLY in 'primary_strategy' and 'alternative_strategies' fields
+3. NEVER mix these up - strategies are high-level approaches, query types are specific data retrievals
+4. Each query must include all required parameters as specified in the reference above
+5. The execution_order array must contain ONLY query_type values from your queries array
 
 Think deeply about the narrative implications of each query choice. Consider:
 - Will this query sequence tell a coherent story?
@@ -333,7 +395,16 @@ Think deeply about the narrative implications of each query choice. Consider:
 
 For a token budget of {}, you should plan {} queries.
 
-Respond with only the JSON object:"#, 
+Provide your plan with:
+- A primary strategy from the AVAILABLE STRATEGIES list above
+- Specific queries with their types from the AVAILABLE QUERY TYPES list above
+- The execution order (array of query_type names from YOUR queries array, NOT strategy names)
+- Your reasoning for this approach
+- Optimization hints for execution
+- Your confidence level (0.0-1.0)
+- Alternative strategies you considered
+
+REMEMBER: execution_order contains query types like "EntityCurrentState", NOT strategies like "LorebookCulturalContext"!"#, 
             intent.intent_type,
             focus_entities,
             time_scope_desc,
@@ -342,6 +413,8 @@ Respond with only the JSON object:"#,
             intent.context_priorities,
             intent.confidence,
             token_budget,
+            query_type_reference,
+            strategy_reference,
             token_budget,
             if token_budget < 5000 { "2-4" } 
             else if token_budget < 10000 { "3-6" } 
@@ -350,6 +423,10 @@ Respond with only the JSON object:"#,
     }
 
     fn build_narrative_strategy_prompt(&self, intent: &QueryIntent, narrative_focus: &str, token_budget: u32) -> String {
+        // Generate comprehensive reference from registry
+        let query_type_reference = QueryRegistry::generate_query_type_reference();
+        let strategy_reference = QueryRegistry::generate_strategy_reference();
+        
         format!(r#"You are an expert narrative strategist for an AI storytelling system. Design a query execution plan specifically optimized for the following narrative moment:
 
 NARRATIVE FOCUS:
@@ -368,188 +445,25 @@ Create a query plan that serves this specific narrative moment. Consider:
 4. **Pacing**: What information flow best serves the narrative rhythm?
 5. **Emotional Resonance**: What data enhances emotional impact?
 
-NARRATIVE-FIRST STRATEGIES:
-- NarrativeContextAssembly: Holistic story-focused gathering
-- EmergentPatternDiscovery: Finding narrative threads
-- AdaptiveNarrativeStrategy: AI-guided narrative optimization
-- ChronicleNarrativeMapping: Story-to-world connections
-- ContextualRelevanceOptimization: Narrative-driven pruning
+{}
+
+{}
 
 Design queries that don't just gather data, but craft experience.
 
-RESPOND WITH JSON (same structure as before, but optimize everything for narrative impact):"#,
+Provide your narrative-focused plan with:
+- A primary strategy from the AVAILABLE STRATEGIES above
+- Specific queries with proper parameters as documented above
+- The execution order (array of query_type names, NOT strategy names)
+- Your narrative reasoning
+- How this serves the story moment
+- Your confidence level (0.0-1.0)
+- Alternative narrative approaches considered"#,
             narrative_focus,
             intent,
-            token_budget
+            token_budget,
+            query_type_reference,
+            strategy_reference
         )
-    }
-
-    fn parse_flash_strategy_response(&self, response: &str) -> Result<QueryExecutionPlan, AppError> {
-        let cleaned = response.trim();
-        
-        let json_value: JsonValue = serde_json::from_str(cleaned)
-            .map_err(|e| AppError::SerializationError(format!("Failed to parse Flash strategy response: {}", e)))?;
-        
-        // Parse primary strategy with new AI-driven options
-        let primary_strategy = match json_value["primary_strategy"].as_str() {
-            Some("CausalChainTraversal") => QueryStrategy::CausalChainTraversal,
-            Some("SpatialContextMapping") => QueryStrategy::SpatialContextMapping,
-            Some("RelationshipNetworkTraversal") => QueryStrategy::RelationshipNetworkTraversal,
-            Some("TemporalStateReconstruction") => QueryStrategy::TemporalStateReconstruction,
-            Some("CausalProjection") => QueryStrategy::CausalProjection,
-            Some("NarrativeContextAssembly") => QueryStrategy::NarrativeContextAssembly,
-            Some("StateSnapshot") => QueryStrategy::StateSnapshot,
-            Some("ComparativeAnalysis") => QueryStrategy::ComparativeAnalysis,
-            Some("ChronicleNarrativeMapping") => QueryStrategy::ChronicleNarrativeMapping,
-            Some("ChronicleThematicAnalysis") => QueryStrategy::ChronicleThematicAnalysis,
-            Some("ChronicleTimelineReconstruction") => QueryStrategy::ChronicleTimelineReconstruction,
-            Some("LorebookContextualRetrieval") => QueryStrategy::LorebookContextualRetrieval,
-            Some("LorebookConceptualMapping") => QueryStrategy::LorebookConceptualMapping,
-            Some("LorebookCulturalContext") => QueryStrategy::LorebookCulturalContext,
-            Some("AdaptiveNarrativeStrategy") => QueryStrategy::AdaptiveNarrativeStrategy,
-            Some("EmergentPatternDiscovery") => QueryStrategy::EmergentPatternDiscovery,
-            Some("ContextualRelevanceOptimization") => QueryStrategy::ContextualRelevanceOptimization,
-            _ => QueryStrategy::NarrativeContextAssembly, // Default fallback
-        };
-
-        // Parse queries with enhanced fields
-        let queries = json_value["queries"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|query_value| {
-                let query_type = match query_value["query_type"].as_str()? {
-                    "EntityEvents" => PlannedQueryType::EntityEvents,
-                    "EntityCurrentState" => PlannedQueryType::EntityCurrentState,
-                    "EntityStates" => PlannedQueryType::EntityStates,
-                    "ActiveEntities" => PlannedQueryType::ActiveEntities,
-                    "EntityRelationships" => PlannedQueryType::EntityRelationships,
-                    "SharedEvents" => PlannedQueryType::SharedEvents,
-                    "CausalChain" => PlannedQueryType::CausalChain,
-                    "CausalFactors" => PlannedQueryType::CausalFactors,
-                    "SpatialEntities" => PlannedQueryType::SpatialEntities,
-                    "TimelineEvents" => PlannedQueryType::TimelineEvents,
-                    "StateTransitions" => PlannedQueryType::StateTransitions,
-                    "RecentEvents" => PlannedQueryType::RecentEvents,
-                    "HistoricalParallels" => PlannedQueryType::HistoricalParallels,
-                    "NarrativeThreads" => PlannedQueryType::NarrativeThreads,
-                    "ChronicleEvents" => PlannedQueryType::ChronicleEvents,
-                    "ChronicleTimeline" => PlannedQueryType::ChronicleTimeline,
-                    "ChronicleThemes" => PlannedQueryType::ChronicleThemes,
-                    "RelatedChronicles" => PlannedQueryType::RelatedChronicles,
-                    "LorebookEntries" => PlannedQueryType::LorebookEntries,
-                    "LorebookConcepts" => PlannedQueryType::LorebookConcepts,
-                    "LorebookCharacters" => PlannedQueryType::LorebookCharacters,
-                    "LorebookLocations" => PlannedQueryType::LorebookLocations,
-                    "LorebookContext" => PlannedQueryType::LorebookContext,
-                    "MissingEntities" => PlannedQueryType::MissingEntities,
-                    _ => return None,
-                };
-
-                let priority = query_value["priority"]
-                    .as_f64()
-                    .unwrap_or(0.5)
-                    .clamp(0.0, 1.0) as f32;
-
-                let parameters = query_value["parameters"]
-                    .as_object()
-                    .map(|obj| {
-                        obj.iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                Some(PlannedQuery {
-                    query_type,
-                    priority,
-                    parameters,
-                    estimated_tokens: query_value["estimated_tokens"]
-                        .as_u64()
-                        .map(|v| v as u32),
-                    dependencies: query_value["dependencies"]
-                        .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|v| v.as_str())
-                                .map(|s| s.to_string())
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                    query_reasoning: query_value["query_reasoning"]
-                        .as_str()
-                        .map(|s| s.to_string()),
-                    expected_yield: query_value["expected_yield"]
-                        .as_f64()
-                        .map(|v| v.clamp(0.0, 1.0) as f32),
-                })
-            })
-            .collect();
-
-        // Parse execution order
-        let execution_order = json_value["execution_order"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|v| v.as_str())
-            .map(|s| s.to_string())
-            .collect();
-
-        // Parse optimization hints
-        let optimization_hints = json_value["optimization_hints"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|v| v.as_str())
-            .map(|s| s.to_string())
-            .collect();
-
-        // Parse alternative strategies
-        let alternative_strategies = json_value["alternative_strategies"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|alt| {
-                let strategy = match alt["strategy"].as_str()? {
-                    "CausalChainTraversal" => QueryStrategy::CausalChainTraversal,
-                    "SpatialContextMapping" => QueryStrategy::SpatialContextMapping,
-                    "RelationshipNetworkTraversal" => QueryStrategy::RelationshipNetworkTraversal,
-                    "TemporalStateReconstruction" => QueryStrategy::TemporalStateReconstruction,
-                    "CausalProjection" => QueryStrategy::CausalProjection,
-                    "NarrativeContextAssembly" => QueryStrategy::NarrativeContextAssembly,
-                    "StateSnapshot" => QueryStrategy::StateSnapshot,
-                    "ComparativeAnalysis" => QueryStrategy::ComparativeAnalysis,
-                    "AdaptiveNarrativeStrategy" => QueryStrategy::AdaptiveNarrativeStrategy,
-                    "EmergentPatternDiscovery" => QueryStrategy::EmergentPatternDiscovery,
-                    "ContextualRelevanceOptimization" => QueryStrategy::ContextualRelevanceOptimization,
-                    _ => return None,
-                };
-
-                Some(AlternativeStrategy {
-                    strategy,
-                    reasoning: alt["reasoning"].as_str()?.to_string(),
-                    trade_offs: alt["trade_offs"].as_str()?.to_string(),
-                })
-            })
-            .collect();
-
-        Ok(QueryExecutionPlan {
-            primary_strategy,
-            queries,
-            context_budget: json_value["context_budget"]
-                .as_u64()
-                .unwrap_or(5000) as u32,
-            execution_order,
-            reasoning: json_value["reasoning"]
-                .as_str()
-                .unwrap_or("AI strategy planning applied")
-                .to_string(),
-            optimization_hints,
-            plan_confidence: json_value["plan_confidence"]
-                .as_f64()
-                .unwrap_or(0.85)
-                .clamp(0.0, 1.0) as f32,
-            alternative_strategies,
-        })
     }
 }

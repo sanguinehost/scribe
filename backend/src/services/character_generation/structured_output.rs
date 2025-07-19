@@ -116,6 +116,28 @@ impl FullCharacterOutput {
     }
 }
 
+/// Remove additionalProperties from a schema (for Gemini compatibility)
+fn remove_additional_properties(mut schema: serde_json::Value) -> serde_json::Value {
+    if let Some(obj) = schema.as_object_mut() {
+        obj.remove("additionalProperties");
+        
+        // Recursively process nested objects
+        if let Some(properties) = obj.get_mut("properties") {
+            if let Some(props_obj) = properties.as_object_mut() {
+                for (_, prop_value) in props_obj.iter_mut() {
+                    *prop_value = remove_additional_properties(prop_value.clone());
+                }
+            }
+        }
+        
+        // Process array items
+        if let Some(items) = obj.get_mut("items") {
+            *items = remove_additional_properties(items.clone());
+        }
+    }
+    schema
+}
+
 /// Helper functions for creating JSON schemas for structured output
 pub fn get_field_generation_schema() -> serde_json::Value {
     serde_json::json!({
@@ -143,6 +165,12 @@ pub fn get_field_generation_schema() -> serde_json::Value {
         "required": ["content", "style_applied"],
         "additionalProperties": false
     })
+}
+
+/// Get Gemini-compatible field generation schema (without additionalProperties)
+pub fn get_field_generation_schema_gemini() -> serde_json::Value {
+    let schema = get_field_generation_schema();
+    remove_additional_properties(schema)
 }
 
 pub fn get_full_character_schema() -> serde_json::Value {
@@ -202,6 +230,12 @@ pub fn get_full_character_schema() -> serde_json::Value {
     })
 }
 
+/// Get Gemini-compatible full character schema (without additionalProperties)
+pub fn get_full_character_schema_gemini() -> serde_json::Value {
+    let schema = get_full_character_schema();
+    remove_additional_properties(schema)
+}
+
 pub fn get_enhancement_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -231,6 +265,12 @@ pub fn get_enhancement_schema() -> serde_json::Value {
         "required": ["enhanced_content", "changes_made", "improvement_reasoning"],
         "additionalProperties": false
     })
+}
+
+/// Get Gemini-compatible enhancement schema (without additionalProperties)
+pub fn get_enhancement_schema_gemini() -> serde_json::Value {
+    let schema = get_enhancement_schema();
+    remove_additional_properties(schema)
 }
 
 pub fn get_style_analysis_schema() -> serde_json::Value {
@@ -266,4 +306,10 @@ pub fn get_style_analysis_schema() -> serde_json::Value {
         "required": ["detected_style", "confidence"],
         "additionalProperties": false
     })
+}
+
+/// Get Gemini-compatible style analysis schema (without additionalProperties)
+pub fn get_style_analysis_schema_gemini() -> serde_json::Value {
+    let schema = get_style_analysis_schema();
+    remove_additional_properties(schema)
 }

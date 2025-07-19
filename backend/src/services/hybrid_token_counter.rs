@@ -52,10 +52,11 @@ impl HybridTokenCounter {
     /// Create a new `HybridTokenCounter` with only local estimation
     #[must_use]
     pub fn new_local_only(tokenizer: TokenizerService) -> Self {
+        let config = crate::config::Config::default();
         Self {
             tokenizer,
             api_client: None,
-            default_model: "gemini-2.5-flash".to_string(), // Default model
+            default_model: config.token_counter_model,
         }
     }
 

@@ -37,6 +37,7 @@ pub struct HierarchicalContextAssembler {
     entity_resolution_tool: Arc<EntityResolutionTool>,
     encryption_service: Arc<EncryptionService>,
     db_pool: Arc<PgPool>,
+    model: String,
 }
 
 impl HierarchicalContextAssembler {
@@ -47,6 +48,7 @@ impl HierarchicalContextAssembler {
         entity_resolution_tool: Arc<EntityResolutionTool>,
         encryption_service: Arc<EncryptionService>,
         db_pool: Arc<PgPool>,
+        model: String,
     ) -> Self {
         Self {
             ai_client,
@@ -55,6 +57,7 @@ impl HierarchicalContextAssembler {
             entity_resolution_tool,
             encryption_service,
             db_pool,
+            model,
         }
     }
 
@@ -290,7 +293,7 @@ Focus on creating engaging, coherent narrative direction that enhances the story
             .with_temperature(0.3);
 
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -453,7 +456,7 @@ Focus on practical, executable steps that advance the narrative."#,
             .with_temperature(0.3);
 
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -946,7 +949,7 @@ Respond with a JSON object following the provided schema."#,
             ));
         
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash-lite",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -1049,7 +1052,7 @@ Be specific and avoid generic risks. Focus on what could realistically go wrong 
             .with_temperature(0.4); // Slightly higher temperature for creative risk identification
         
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -1177,7 +1180,7 @@ Be specific and extract only what's clearly stated or strongly implied."#,
             .with_temperature(0.2); // Low temperature for consistent extraction
         
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -1334,7 +1337,7 @@ Focus on relationships that are clearly supported by the text."#,
             .with_temperature(0.3); // Moderate temperature for balanced extraction
         
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -1511,7 +1514,7 @@ Focus on actions that are clearly supported by the conversation context."#,
             .with_temperature(0.3); // Moderate temperature for balanced extraction
         
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -1678,7 +1681,7 @@ Only analyze the emotional state of the specified character. If no clear emotion
             .with_temperature(0.3); // Moderate temperature for balanced extraction
         
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -1825,7 +1828,7 @@ Example response:
             .with_temperature(0.3);
 
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -1992,7 +1995,7 @@ Example:
             .with_temperature(0.3);
 
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;
@@ -2172,7 +2175,7 @@ Guidelines:
             .with_temperature(0.4); // Moderate temperature for balanced analysis
         
         let chat_response = self.ai_client.exec_chat(
-            "gemini-2.5-flash",
+            &self.model,
             chat_request,
             Some(chat_options),
         ).await?;

@@ -279,7 +279,7 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
             .with_temperature(0.1);
         
         let response = self.app_state.ai_client
-            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("Entity extraction AI call failed: {}", e)))?;
         
@@ -307,7 +307,7 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
             .with_temperature(0.2);
         
         let response = self.app_state.ai_client
-            .exec_chat("gemini-2.5-flash-preview-06-17", chat_request, Some(chat_options))
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("Context extraction AI call failed: {}", e)))?;
         

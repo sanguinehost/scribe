@@ -55,7 +55,7 @@ impl Default for NarrativeWorkflowConfig {
     fn default() -> Self {
         Self {
             triage_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
-            planning_model: "gemini-2.5-flash-preview-06-17".to_string(),
+            planning_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
             max_tool_executions: 5,
             enable_cost_optimizations: true,
         }
@@ -603,7 +603,7 @@ mod tests {
     fn test_narrative_workflow_config_default() {
         let config = NarrativeWorkflowConfig::default();
         assert_eq!(config.triage_model, "gemini-2.5-flash-lite-preview-06-17");
-        assert_eq!(config.planning_model, "gemini-2.5-flash-preview-06-17");
+        assert_eq!(config.planning_model, "gemini-2.5-flash-lite-preview-06-17");
         assert_eq!(config.max_tool_executions, 5);
         assert!(config.enable_cost_optimizations);
     }
