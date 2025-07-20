@@ -29,6 +29,7 @@ pub mod tactical_agent;
 pub mod perception_agent;
 pub mod strategic_agent;
 pub mod hierarchical_pipeline;
+pub mod performance_analyzer;
 pub mod strategic_structured_output;
 pub mod tactical_structured_output;
 pub mod perception_structured_output;
