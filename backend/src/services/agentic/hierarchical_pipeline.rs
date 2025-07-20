@@ -26,7 +26,7 @@ use crate::{
         agentic::{
             strategic_agent::StrategicAgent,
             tactical_agent::TacticalAgent,
-            perception_agent::PerceptionAgent,
+            perception_agent::{PerceptionAgent, PreResponseAnalysisResult},
         },
         agent_prompt_templates::{AgentPromptTemplates, PromptTemplateVersion},
         context_assembly_engine::{EnrichedContext, PerceptionEnrichment, ContextualEntityInfo, HierarchyInsightInfo, SalienceUpdateInfo},
@@ -48,6 +48,8 @@ pub struct HierarchicalPipelineConfig {
     pub enable_optimizations: bool,
     /// Maximum time to spend on the entire pipeline (ms)
     pub max_pipeline_time_ms: u64,
+    /// Whether to enable parallel execution of perception and strategic agents
+    pub enable_parallel_agents: bool,
 }
 
 impl Default for HierarchicalPipelineConfig {
@@ -58,6 +60,7 @@ impl Default for HierarchicalPipelineConfig {
             response_generation_model: config.chat_model,
             enable_optimizations: true,
             max_pipeline_time_ms: 30000, // 30 seconds max
+            enable_parallel_agents: true, // Enable parallel execution by default
         }
     }
 }
@@ -282,96 +285,40 @@ impl HierarchicalAgentPipeline {
             return Err(AppError::BadRequest("Chat history cannot be empty".to_string()));
         }
 
-        // Step 0: Perception Layer - Pre-response analysis of conversation state
-        debug!("Pipeline Step 0: Perception pre-response analysis");
-        let perception_start = std::time::Instant::now();
-        let mut perception_breakdown = PerceptionTimingBreakdown {
-            ai_call_ms: 0,
-            response_processing_ms: 0,
-            entity_creation_ms: 0,
-            hierarchy_analysis_ms: 0,
-            salience_evaluation_ms: 0,
-            entities_processed: 0,
-        };
-        
-        // Check pipeline timeout
-        if pipeline_start.elapsed() > pipeline_timeout {
-            return Err(AppError::InternalServerErrorGeneric("Pipeline timeout during perception analysis".to_string()));
-        }
-        
-        // Track detailed perception timing
-        let perception_inner_start = std::time::Instant::now();
-        let perception_analysis = self.perception_agent
-            .analyze_pre_response(chat_history, current_message, user_id, session_dek)
-            .await
-            .map_err(|e| {
-                error!("Perception layer failed: {}", e);
-                AppError::InternalServerErrorGeneric(format!("Perception analysis failed: {}", e))
-            })?;
-        
-        // Estimate timing breakdown based on perception analysis structure
-        // In production, these would be captured inside the perception agent itself
-        perception_breakdown.ai_call_ms = (perception_inner_start.elapsed().as_millis() as u64) * 70 / 100; // Estimate 70% in AI call
-        perception_breakdown.response_processing_ms = (perception_inner_start.elapsed().as_millis() as u64) * 20 / 100; // 20% processing
-        perception_breakdown.entity_creation_ms = (perception_inner_start.elapsed().as_millis() as u64) * 10 / 100; // 10% entity ops
-        perception_breakdown.entities_processed = perception_analysis.contextual_entities.len() as u32;
-        
-        let perception_time_ms = perception_start.elapsed().as_millis() as u64;
-        debug!("Perception analysis completed in {}ms (AI: {}ms, Processing: {}ms, Entities: {})", 
-            perception_time_ms, 
-            perception_breakdown.ai_call_ms,
-            perception_breakdown.response_processing_ms,
-            perception_breakdown.entities_processed
-        );
-
-        // Step 1: Strategic Layer - Generate high-level narrative directive
-        debug!("Pipeline Step 1: Strategic analysis");
-        let strategic_start = std::time::Instant::now();
-        let mut strategic_breakdown = StrategicTimingBreakdown {
-            context_preparation_ms: 0,
-            ai_call_ms: 0,
-            response_parsing_ms: 0,
-            validation_ms: 0,
-            messages_analyzed: chat_history.len() as u32,
-        };
-        
-        // Check pipeline timeout
-        if pipeline_start.elapsed() > pipeline_timeout {
-            return Err(AppError::InternalServerErrorGeneric("Pipeline timeout during strategic analysis".to_string()));
-        }
-        
-        // Generate a session_id from the chat history if not available
-        // In production, this should be passed as a parameter
+        // Generate session_id early for strategic agent
         let session_id = if let Some(first_message) = chat_history.first() {
             first_message.session_id
         } else {
             Uuid::new_v4() // Fallback to a new UUID
         };
         
-        let context_prep_start = std::time::Instant::now();
-        strategic_breakdown.context_preparation_ms = context_prep_start.elapsed().as_millis() as u64;
-        
-        let strategic_inner_start = std::time::Instant::now();
-        let strategic_directive = self.strategic_agent
-            .analyze_conversation(chat_history, user_id, session_id, session_dek)
-            .await
-            .map_err(|e| {
-                error!("Strategic layer failed: {}", e);
-                AppError::InternalServerErrorGeneric(format!("Strategic analysis failed: {}", e))
-            })?;
-        
-        // Estimate timing breakdown
-        strategic_breakdown.ai_call_ms = (strategic_inner_start.elapsed().as_millis() as u64) * 80 / 100; // 80% in AI
-        strategic_breakdown.response_parsing_ms = (strategic_inner_start.elapsed().as_millis() as u64) * 15 / 100; // 15% parsing
-        strategic_breakdown.validation_ms = (strategic_inner_start.elapsed().as_millis() as u64) * 5 / 100; // 5% validation
-        
-        let strategic_time_ms = strategic_start.elapsed().as_millis() as u64;
-        debug!("Strategic analysis completed in {}ms (AI: {}ms, Messages: {}, Parsing: {}ms)", 
-            strategic_time_ms,
-            strategic_breakdown.ai_call_ms,
-            strategic_breakdown.messages_analyzed,
-            strategic_breakdown.response_parsing_ms
-        );
+        // Execute Perception and Strategic agents
+        let (perception_analysis, perception_breakdown, perception_time_ms, strategic_directive, strategic_breakdown, strategic_time_ms) = 
+            if self.config.enable_parallel_agents {
+                // PARALLEL EXECUTION: Run Perception and Strategic agents concurrently
+                debug!("Pipeline Step 0/1: Parallel execution of Perception and Strategic analysis");
+                self.execute_agents_parallel(
+                    chat_history,
+                    current_message,
+                    user_id,
+                    session_id,
+                    session_dek,
+                    pipeline_start,
+                    pipeline_timeout,
+                ).await?
+            } else {
+                // SEQUENTIAL EXECUTION: Run agents one after another (legacy mode)
+                debug!("Pipeline Step 0/1: Sequential execution of Perception and Strategic analysis");
+                self.execute_agents_sequential(
+                    chat_history,
+                    current_message,
+                    user_id,
+                    session_id,
+                    session_dek,
+                    pipeline_start,
+                    pipeline_timeout,
+                ).await?
+            };
 
         // Step 2: Tactical Layer - Convert directive to enriched context
         debug!("Pipeline Step 2: Tactical planning");
@@ -942,6 +889,230 @@ Write the next response only as your assigned character, advancing the world and
         debug!("Hierarchical pipeline health check passed");
         Ok(())
     }
+
+    /// Execute Perception and Strategic agents in parallel
+    async fn execute_agents_parallel(
+        &self,
+        chat_history: &[ChatMessageForClient],
+        current_message: &str,
+        user_id: Uuid,
+        session_id: Uuid,
+        session_dek: &SessionDek,
+        pipeline_start: std::time::Instant,
+        pipeline_timeout: std::time::Duration,
+    ) -> Result<(
+        PreResponseAnalysisResult,
+        PerceptionTimingBreakdown,
+        u64, // perception_time_ms
+        crate::services::context_assembly_engine::StrategicDirective,
+        StrategicTimingBreakdown,
+        u64, // strategic_time_ms
+    ), AppError> {
+        let perception_start = std::time::Instant::now();
+        let strategic_start = std::time::Instant::now();
+        
+        // Clone necessary data for parallel execution
+        let perception_agent = self.perception_agent.clone();
+        let strategic_agent = self.strategic_agent.clone();
+        let chat_history_perception = chat_history.to_vec();
+        let chat_history_strategic = chat_history.to_vec();
+        let current_message_perception = current_message.to_string();
+        let session_dek_perception = session_dek.clone();
+        let session_dek_strategic = session_dek.clone();
+        
+        // Execute both agents in parallel
+        let (perception_result, strategic_result) = tokio::join!(
+            // Perception agent task
+            async move {
+                let inner_start = std::time::Instant::now();
+                let result = perception_agent
+                    .analyze_pre_response(&chat_history_perception, &current_message_perception, user_id, &session_dek_perception)
+                    .await
+                    .map_err(|e| {
+                        error!("Perception layer failed: {}", e);
+                        AppError::InternalServerErrorGeneric(format!("Perception analysis failed: {}", e))
+                    });
+                (result, inner_start.elapsed().as_millis() as u64)
+            },
+            // Strategic agent task
+            async move {
+                let inner_start = std::time::Instant::now();
+                let result = strategic_agent
+                    .analyze_conversation(&chat_history_strategic, user_id, session_id, &session_dek_strategic)
+                    .await
+                    .map_err(|e| {
+                        error!("Strategic layer failed: {}", e);
+                        AppError::InternalServerErrorGeneric(format!("Strategic analysis failed: {}", e))
+                    });
+                (result, inner_start.elapsed().as_millis() as u64)
+            }
+        );
+        
+        // Check pipeline timeout after parallel execution
+        if pipeline_start.elapsed() > pipeline_timeout {
+            return Err(AppError::InternalServerErrorGeneric("Pipeline timeout during parallel analysis".to_string()));
+        }
+        
+        // Unpack results and handle errors
+        let (perception_analysis, perception_duration) = perception_result;
+        let perception_analysis = perception_analysis?;
+        
+        let (strategic_directive, strategic_duration) = strategic_result;
+        let strategic_directive = strategic_directive?;
+        
+        // Calculate timing breakdowns
+        let perception_breakdown = PerceptionTimingBreakdown {
+            ai_call_ms: perception_duration * 70 / 100, // Estimate 70% in AI call
+            response_processing_ms: perception_duration * 20 / 100, // 20% processing
+            entity_creation_ms: perception_duration * 10 / 100, // 10% entity ops
+            hierarchy_analysis_ms: 0,
+            salience_evaluation_ms: 0,
+            entities_processed: perception_analysis.contextual_entities.len() as u32,
+        };
+        
+        let strategic_breakdown = StrategicTimingBreakdown {
+            context_preparation_ms: strategic_duration * 5 / 100, // 5% prep
+            ai_call_ms: strategic_duration * 80 / 100, // 80% in AI
+            response_parsing_ms: strategic_duration * 10 / 100, // 10% parsing
+            validation_ms: strategic_duration * 5 / 100, // 5% validation
+            messages_analyzed: chat_history.len() as u32,
+        };
+        
+        let perception_time_ms = perception_start.elapsed().as_millis() as u64;
+        let strategic_time_ms = strategic_start.elapsed().as_millis() as u64;
+        
+        debug!("Parallel execution completed - Perception: {}ms (AI: {}ms, Entities: {}), Strategic: {}ms (AI: {}ms, Messages: {})", 
+            perception_time_ms, 
+            perception_breakdown.ai_call_ms,
+            perception_breakdown.entities_processed,
+            strategic_time_ms,
+            strategic_breakdown.ai_call_ms,
+            strategic_breakdown.messages_analyzed
+        );
+        
+        info!("Parallel execution saved approximately {}ms", 
+            perception_time_ms.min(strategic_time_ms) // Time saved is the shorter of the two tasks
+        );
+        
+        Ok((
+            perception_analysis,
+            perception_breakdown,
+            perception_time_ms,
+            strategic_directive,
+            strategic_breakdown,
+            strategic_time_ms,
+        ))
+    }
+
+    /// Execute Perception and Strategic agents sequentially (legacy mode)
+    async fn execute_agents_sequential(
+        &self,
+        chat_history: &[ChatMessageForClient],
+        current_message: &str,
+        user_id: Uuid,
+        session_id: Uuid,
+        session_dek: &SessionDek,
+        pipeline_start: std::time::Instant,
+        pipeline_timeout: std::time::Duration,
+    ) -> Result<(
+        PreResponseAnalysisResult,
+        PerceptionTimingBreakdown,
+        u64, // perception_time_ms
+        crate::services::context_assembly_engine::StrategicDirective,
+        StrategicTimingBreakdown,
+        u64, // strategic_time_ms
+    ), AppError> {
+        // Step 0: Perception Layer - Pre-response analysis of conversation state
+        debug!("Sequential Step 0: Perception pre-response analysis");
+        let perception_start = std::time::Instant::now();
+        let mut perception_breakdown = PerceptionTimingBreakdown {
+            ai_call_ms: 0,
+            response_processing_ms: 0,
+            entity_creation_ms: 0,
+            hierarchy_analysis_ms: 0,
+            salience_evaluation_ms: 0,
+            entities_processed: 0,
+        };
+        
+        // Check pipeline timeout
+        if pipeline_start.elapsed() > pipeline_timeout {
+            return Err(AppError::InternalServerErrorGeneric("Pipeline timeout during perception analysis".to_string()));
+        }
+        
+        // Track detailed perception timing
+        let perception_inner_start = std::time::Instant::now();
+        let perception_analysis = self.perception_agent
+            .analyze_pre_response(chat_history, current_message, user_id, session_dek)
+            .await
+            .map_err(|e| {
+                error!("Perception layer failed: {}", e);
+                AppError::InternalServerErrorGeneric(format!("Perception analysis failed: {}", e))
+            })?;
+        
+        // Estimate timing breakdown based on perception analysis structure
+        perception_breakdown.ai_call_ms = (perception_inner_start.elapsed().as_millis() as u64) * 70 / 100; // Estimate 70% in AI call
+        perception_breakdown.response_processing_ms = (perception_inner_start.elapsed().as_millis() as u64) * 20 / 100; // 20% processing
+        perception_breakdown.entity_creation_ms = (perception_inner_start.elapsed().as_millis() as u64) * 10 / 100; // 10% entity ops
+        perception_breakdown.entities_processed = perception_analysis.contextual_entities.len() as u32;
+        
+        let perception_time_ms = perception_start.elapsed().as_millis() as u64;
+        debug!("Perception analysis completed in {}ms (AI: {}ms, Processing: {}ms, Entities: {})", 
+            perception_time_ms, 
+            perception_breakdown.ai_call_ms,
+            perception_breakdown.response_processing_ms,
+            perception_breakdown.entities_processed
+        );
+
+        // Step 1: Strategic Layer - Generate high-level narrative directive
+        debug!("Sequential Step 1: Strategic analysis");
+        let strategic_start = std::time::Instant::now();
+        let mut strategic_breakdown = StrategicTimingBreakdown {
+            context_preparation_ms: 0,
+            ai_call_ms: 0,
+            response_parsing_ms: 0,
+            validation_ms: 0,
+            messages_analyzed: chat_history.len() as u32,
+        };
+        
+        // Check pipeline timeout
+        if pipeline_start.elapsed() > pipeline_timeout {
+            return Err(AppError::InternalServerErrorGeneric("Pipeline timeout during strategic analysis".to_string()));
+        }
+        
+        let context_prep_start = std::time::Instant::now();
+        strategic_breakdown.context_preparation_ms = context_prep_start.elapsed().as_millis() as u64;
+        
+        let strategic_inner_start = std::time::Instant::now();
+        let strategic_directive = self.strategic_agent
+            .analyze_conversation(chat_history, user_id, session_id, session_dek)
+            .await
+            .map_err(|e| {
+                error!("Strategic layer failed: {}", e);
+                AppError::InternalServerErrorGeneric(format!("Strategic analysis failed: {}", e))
+            })?;
+        
+        // Estimate timing breakdown
+        strategic_breakdown.ai_call_ms = (strategic_inner_start.elapsed().as_millis() as u64) * 80 / 100; // 80% in AI
+        strategic_breakdown.response_parsing_ms = (strategic_inner_start.elapsed().as_millis() as u64) * 15 / 100; // 15% parsing
+        strategic_breakdown.validation_ms = (strategic_inner_start.elapsed().as_millis() as u64) * 5 / 100; // 5% validation
+        
+        let strategic_time_ms = strategic_start.elapsed().as_millis() as u64;
+        debug!("Strategic analysis completed in {}ms (AI: {}ms, Messages: {}, Parsing: {}ms)", 
+            strategic_time_ms,
+            strategic_breakdown.ai_call_ms,
+            strategic_breakdown.messages_analyzed,
+            strategic_breakdown.response_parsing_ms
+        );
+        
+        Ok((
+            perception_analysis,
+            perception_breakdown,
+            perception_time_ms,
+            strategic_directive,
+            strategic_breakdown,
+            strategic_time_ms,
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -956,6 +1127,21 @@ mod tests {
         assert_eq!(config.response_generation_model, "gemini-2.5-flash");
         assert!(config.enable_optimizations);
         assert_eq!(config.max_pipeline_time_ms, 30000);
+        assert!(config.enable_parallel_agents); // Verify parallel execution is enabled by default
+    }
+    
+    #[test]
+    fn test_pipeline_config_parallel_execution() {
+        // Test with parallel execution enabled (default)
+        let config_parallel = HierarchicalPipelineConfig::default();
+        assert!(config_parallel.enable_parallel_agents);
+        
+        // Test with parallel execution disabled
+        let config_sequential = HierarchicalPipelineConfig {
+            enable_parallel_agents: false,
+            ..Default::default()
+        };
+        assert!(!config_sequential.enable_parallel_agents);
     }
 
     #[test]
