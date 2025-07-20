@@ -111,6 +111,9 @@ tokio-stream = "0.1"
 # Tokenization
 sentencepiece = "0.11.3"
 
+# Global state management
+once_cell = "1.21.3"
+
 # AWS SDK for SES email service
 aws-config = "1.6.3"
 aws-sdk-ses = "1.75.0"

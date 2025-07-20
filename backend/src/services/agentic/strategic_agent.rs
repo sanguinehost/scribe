@@ -60,6 +60,13 @@ impl StrategicAgent {
             model,
         }
     }
+    
+    /// Get the formatted tool reference for this agent
+    fn get_tool_reference(&self) -> String {
+        crate::services::agentic::tool_registry::ToolRegistry::generate_agent_tool_reference(
+            crate::services::agentic::tool_registry::AgentType::Strategic
+        )
+    }
 
     /// Analyze conversation history and generate a strategic directive
     /// 
@@ -224,7 +231,12 @@ impl StrategicAgent {
             )
         };
 
+        // Get tool reference for Strategic agent
+        let tool_reference = self.get_tool_reference();
+        
         let prompt = format!(r#"CONVERSATION HISTORY:
+{}
+
 {}
 
 {}
@@ -245,7 +257,7 @@ Consider:
 9. The world impact level (Global/Regional/Local/Personal)
 10. How this builds upon or evolves from previous directives
 
-Generate a JSON response with all required fields for the strategic directive."#, conversation_context, historical_context);
+Generate a JSON response with all required fields for the strategic directive."#, conversation_context, historical_context, tool_reference);
 
         // Get the JSON schema for structured output
         let schema = get_strategic_directive_schema();

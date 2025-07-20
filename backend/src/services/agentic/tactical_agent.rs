@@ -15,12 +15,9 @@ use crate::{
             ValidationSeverity, PlanStep, RiskAssessment, RiskLevel,
             EnrichedContextValidator, PlotSignificance, WorldImpactLevel,
         },
-        agentic::tools::{
-            world_interaction_tools::{
-                FindEntityTool, GetEntityDetailsTool, GetContainedEntitiesTool, 
-                GetSpatialContextTool
-            },
-            ScribeTool,
+        agentic::{
+            tools::ScribeTool,
+            tool_registry::ToolRegistry,
         },
     },
     llm::AiClient,
@@ -53,11 +50,6 @@ pub struct TacticalAgent {
     planning_service: Arc<PlanningService>,
     plan_validator: Arc<PlanValidatorService>,
     redis_client: Arc<redis::Client>,
-    // Tactical toolkit for world state queries
-    find_entity_tool: Arc<FindEntityTool>,
-    get_entity_details_tool: Arc<GetEntityDetailsTool>,
-    get_contained_entities_tool: Arc<GetContainedEntitiesTool>,
-    get_spatial_context_tool: Arc<GetSpatialContextTool>,
     // Context validation
     context_validator: Arc<EnrichedContextValidator>,
 }
@@ -71,14 +63,12 @@ impl TacticalAgent {
         plan_validator: Arc<PlanValidatorService>,
         redis_client: Arc<redis::Client>,
     ) -> Self {
-        // Initialize tactical toolkit
-        let find_entity_tool = Arc::new(FindEntityTool::new(ecs_entity_manager.clone()));
-        let get_entity_details_tool = Arc::new(GetEntityDetailsTool::new(ecs_entity_manager.clone()));
-        let get_contained_entities_tool = Arc::new(GetContainedEntitiesTool::new(ecs_entity_manager.clone()));
-        let get_spatial_context_tool = Arc::new(GetSpatialContextTool::new(ecs_entity_manager.clone()));
-        
         // Initialize context validator
         let context_validator = Arc::new(EnrichedContextValidator::new());
+        
+        // Tools are now available through the global ToolRegistry
+        info!("TacticalAgent created with access to {} registered tools", 
+              ToolRegistry::list_tool_names().len());
         
         Self {
             ai_client,
@@ -86,12 +76,19 @@ impl TacticalAgent {
             planning_service,
             plan_validator,
             redis_client,
-            find_entity_tool,
-            get_entity_details_tool,
-            get_contained_entities_tool,
-            get_spatial_context_tool,
             context_validator,
         }
+    }
+    
+    /// Get the formatted tool reference for this agent
+    fn get_tool_reference(&self) -> String {
+        ToolRegistry::generate_agent_tool_reference(crate::services::agentic::tool_registry::AgentType::Tactical)
+    }
+    
+    /// Helper method to get a tool from the registry
+    fn get_tool(&self, tool_name: &str) -> Result<Arc<dyn ScribeTool>, AppError> {
+        ToolRegistry::get_tool(tool_name)
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get tool '{}': {}", tool_name, e)))
     }
 
     /// Process a strategic directive into an enriched context for the Operational Layer
@@ -682,7 +679,10 @@ impl TacticalAgent {
             "limit": 5
         });
         
-        let result = self.find_entity_tool.execute(&params).await
+        let find_entity_tool = ToolRegistry::get_tool("find_entity")
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get find_entity tool: {}", e)))?;
+        
+        let result = find_entity_tool.execute(&params).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("FindEntityTool failed: {}", e)))?;
         
         // Parse the result manually since FindEntityOutput doesn't implement Deserialize
@@ -724,7 +724,10 @@ impl TacticalAgent {
             "include_relationships": true
         });
         
-        let result = self.get_entity_details_tool.execute(&params).await
+        let get_entity_details_tool = ToolRegistry::get_tool("get_entity_details")
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get get_entity_details tool: {}", e)))?;
+        
+        let result = get_entity_details_tool.execute(&params).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("GetEntityDetailsTool failed: {}", e)))?;
         
         // Convert the tool result to EntityContext
@@ -766,7 +769,10 @@ impl TacticalAgent {
             "max_depth": 3
         });
         
-        let result = self.get_spatial_context_tool.execute(&params).await
+        let get_spatial_context_tool = ToolRegistry::get_tool("get_spatial_context")
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get get_spatial_context tool: {}", e)))?;
+        
+        let result = get_spatial_context_tool.execute(&params).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("GetSpatialContextTool failed: {}", e)))?;
         
         // Convert tool result to SpatialContext

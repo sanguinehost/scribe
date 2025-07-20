@@ -11,20 +11,12 @@ use crate::{
 
 use super::{
     agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig},
-    narrative_tools::{
-        CreateChronicleEventTool, CreateLorebookEntryTool,
-        AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
-        SearchKnowledgeBaseTool, UpdateLorebookEntryTool
-    },
-    entity_resolution_tool::EntityResolutionTool,
+    tool_registration::register_all_tools,
+    tool_registry::ToolRegistry as DynamicToolRegistry,
+    registry::ToolRegistry,
     tactical_agent::TacticalAgent,
     perception_agent::PerceptionAgent,
     strategic_agent::StrategicAgent,
-    tools::{
-        hierarchy_tools::{PromoteEntityHierarchyTool, GetEntityHierarchyTool},
-        ai_powered_tools::{AnalyzeHierarchyRequestTool, SuggestHierarchyPromotionTool, UpdateSalienceTool},
-    },
-    registry::ToolRegistry,
 };
 
 /// Factory for creating a fully configured agentic narrative system
@@ -39,29 +31,45 @@ impl AgenticNarrativeFactory {
         app_state: Arc<AppState>,
         config: Option<NarrativeWorkflowConfig>,
     ) -> NarrativeAgentRunner {
-        info!("Creating agentic narrative system");
+        info!("Creating agentic narrative system with dynamic tool registration");
 
-        // Create tool registry
-        let mut registry = ToolRegistry::new();
-
-        // Register core tools
-        Self::register_core_tools(
-            &mut registry,
-            ai_client.clone(),
-            chronicle_service.clone(),
-            lorebook_service,
+        // Register all tools using the new dynamic system
+        register_all_tools(
             app_state.clone(),
-        );
+            chronicle_service.clone(),
+            lorebook_service.clone(),
+        ).expect("Failed to register tools");
 
-        let registry = Arc::new(registry);
+        // Create a legacy registry adapter for compatibility
+        let registry = Self::create_legacy_registry_adapter();
         let config = config.unwrap_or_default();
 
+        let tool_count = DynamicToolRegistry::list_tool_names().len();
         info!(
-            "Agentic system created with {} tools, using triage model: {}, planning model: {}",
-            registry.list_tools().len(),
+            "Agentic system created with {} dynamically registered tools, using triage model: {}, planning model: {}",
+            tool_count,
             config.triage_model,
             config.planning_model
         );
+
+        // Log available tool categories
+        let categories = [
+            super::tool_registry::ToolCategory::Extraction,
+            super::tool_registry::ToolCategory::Creation,
+            super::tool_registry::ToolCategory::Search,
+            super::tool_registry::ToolCategory::EntityManagement,
+            super::tool_registry::ToolCategory::Hierarchy,
+            super::tool_registry::ToolCategory::AIAnalysis,
+            super::tool_registry::ToolCategory::WorldState,
+            super::tool_registry::ToolCategory::Narrative,
+        ];
+        
+        for category in &categories {
+            let tools = DynamicToolRegistry::get_tools_by_category(category.clone());
+            if !tools.is_empty() {
+                info!("  {:?} tools: {}", category, tools.join(", "));
+            }
+        }
 
         NarrativeAgentRunner::new(app_state.clone(), registry, config, chronicle_service, app_state.token_counter.clone())
     }
@@ -76,245 +84,45 @@ impl AgenticNarrativeFactory {
         app_state: Arc<AppState>,
         config: Option<NarrativeWorkflowConfig>,
     ) -> NarrativeAgentRunner {
-        info!("Creating agentic narrative system with individual dependencies");
+        info!("Creating agentic narrative system with individual dependencies and dynamic tool registration");
         
         let config = config.unwrap_or_else(Self::create_production_config);
         
-        // Create tool registry
-        let mut registry = ToolRegistry::new();
-        
-        // Register tools with individual dependencies
-        Self::register_core_tools_with_deps(
-            &mut registry,
-            ai_client.clone(),
-            chronicle_service.clone(),
-            lorebook_service,
-            qdrant_service,
-            embedding_client,
+        // Register all tools using the new dynamic system
+        register_all_tools(
             app_state.clone(),
-        );
+            chronicle_service.clone(),
+            lorebook_service.clone(),
+        ).expect("Failed to register tools");
         
-        let registry = Arc::new(registry);
+        // Create a legacy registry adapter for compatibility
+        let registry = Self::create_legacy_registry_adapter();
         
+        let tool_count = DynamicToolRegistry::list_tool_names().len();
         info!(
-            "Agentic system created with {} tools, using triage model: {}, planning model: {}",
-            registry.list_tools().len(),
+            "Agentic system created with {} dynamically registered tools, using triage model: {}, planning model: {}",
+            tool_count,
             config.triage_model,
             config.planning_model
         );
         
         NarrativeAgentRunner::new(app_state.clone(), registry, config, chronicle_service, app_state.token_counter.clone())
     }
-
-    /// Register all core tools in the registry
-    fn register_core_tools(
-        registry: &mut ToolRegistry,
-        ai_client: Arc<dyn AiClient>,
-        chronicle_service: Arc<ChronicleService>,
-        lorebook_service: Arc<LorebookService>,
-        app_state: Arc<AppState>,
-    ) {
-        // Triage tool - for Step 1 of the workflow
-        let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(app_state.clone()));
-        registry.add_tool(significance_tool);
-
-        // Extraction tools - for Step 3 (no DB operations)
-        let extract_events_tool = Arc::new(ExtractTemporalEventsTool::new(app_state.clone()));
-        registry.add_tool(extract_events_tool);
-
-        let extract_concepts_tool = Arc::new(ExtractWorldConceptsTool::new(app_state.clone()));
-        registry.add_tool(extract_concepts_tool);
-
-        // Creation tools - atomic DB operations for Step 4
-        let create_event_tool = Arc::new(CreateChronicleEventTool::new(
-            chronicle_service.clone(),
-            app_state.clone(),
-        ));
-        registry.add_tool(create_event_tool);
-
-        let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(
-            lorebook_service.clone(),
-            app_state.clone(),
-        ));
-        registry.add_tool(create_lorebook_tool);
-
-        // Knowledge search tools - using existing embeddings infrastructure
-        let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-            app_state.clone(),
-        ));
-        registry.add_tool(search_tool);
-
-        // Lorebook management tools
-        let update_lorebook_tool = Arc::new(UpdateLorebookEntryTool::new(
-            lorebook_service.clone(),
-            app_state.clone(),
-        ));
-        registry.add_tool(update_lorebook_tool);
-
-        // Entity resolution tool
-        let entity_resolution_tool = Arc::new(EntityResolutionTool::new(app_state.clone()));
-        registry.add_tool(entity_resolution_tool);
-
-        // Hierarchy management tools for ECS
-        let promote_hierarchy_tool = Arc::new(PromoteEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(promote_hierarchy_tool);
-
-        let get_hierarchy_tool = Arc::new(GetEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(get_hierarchy_tool);
-
-        // AI-powered foundational tools
-        let analyze_hierarchy_tool = Arc::new(AnalyzeHierarchyRequestTool::new(app_state.clone()));
-        registry.add_tool(analyze_hierarchy_tool);
-
-        let suggest_promotion_tool = Arc::new(SuggestHierarchyPromotionTool::new(app_state.clone()));
-        registry.add_tool(suggest_promotion_tool);
-
-        let update_salience_tool = Arc::new(UpdateSalienceTool::new(app_state.clone()));
-        registry.add_tool(update_salience_tool);
-
-        // World interaction tools for entity management
-        let find_entity_tool = Arc::new(super::tools::world_interaction_tools::FindEntityTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(find_entity_tool);
-
-        let get_entity_details_tool = Arc::new(super::tools::world_interaction_tools::GetEntityDetailsTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(get_entity_details_tool);
-
-        let create_entity_tool = Arc::new(super::tools::world_interaction_tools::CreateEntityTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(create_entity_tool);
-
-        let update_entity_tool = Arc::new(super::tools::world_interaction_tools::UpdateEntityTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(update_entity_tool);
-
-        // Spatial query tools for hierarchy traversal
-        let get_contained_entities_tool = Arc::new(super::tools::world_interaction_tools::GetContainedEntitiesTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(get_contained_entities_tool);
-
-        let get_spatial_context_tool = Arc::new(super::tools::world_interaction_tools::GetSpatialContextTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(get_spatial_context_tool);
+    
+    /// Create a legacy registry adapter that bridges the new dynamic registry with the old system
+    fn create_legacy_registry_adapter() -> Arc<ToolRegistry> {
+        let mut legacy_registry = ToolRegistry::new();
         
-        // Entity movement tool
-        let move_entity_tool = Arc::new(super::tools::world_interaction_tools::MoveEntityTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(move_entity_tool);
-
-        // Inventory management tools
-        let add_item_to_inventory_tool = Arc::new(super::tools::world_interaction_tools::AddItemToInventoryTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(add_item_to_inventory_tool);
-
-        let remove_item_from_inventory_tool = Arc::new(super::tools::world_interaction_tools::RemoveItemFromInventoryTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(remove_item_from_inventory_tool);
-
-        // Relationship management tools
-        let update_relationship_tool = Arc::new(super::tools::world_interaction_tools::UpdateRelationshipTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(update_relationship_tool);
-
-        info!("Registered {} core tools", registry.list_tools().len());
+        // Get all registered tools from the dynamic registry
+        for tool_name in DynamicToolRegistry::list_tool_names() {
+            if let Ok(tool) = DynamicToolRegistry::get_tool(&tool_name) {
+                legacy_registry.add_tool(tool);
+            }
+        }
+        
+        Arc::new(legacy_registry)
     }
 
-    /// Register core tools with individual dependencies (no AppState required)
-    fn register_core_tools_with_deps(
-        registry: &mut ToolRegistry,
-        ai_client: Arc<dyn AiClient>,
-        chronicle_service: Arc<ChronicleService>,
-        lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync>,
-        embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
-        app_state: Arc<AppState>,
-    ) {
-        // Triage tool - for Step 1 of the workflow
-        let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(app_state.clone()));
-        registry.add_tool(significance_tool);
-
-        // Extraction tools - atomic operations for Step 2
-        let temporal_tool = Arc::new(ExtractTemporalEventsTool::new(app_state.clone()));
-        registry.add_tool(temporal_tool);
-
-        let world_tool = Arc::new(ExtractWorldConceptsTool::new(app_state.clone()));
-        registry.add_tool(world_tool);
-
-        // Creation tools - atomic DB operations for Step 4
-        let create_event_tool = Arc::new(CreateChronicleEventTool::new(
-            chronicle_service.clone(),
-            app_state.clone(),
-        ));
-        registry.add_tool(create_event_tool);
-
-        let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(
-            lorebook_service.clone(),
-            app_state.clone(),
-        ));
-        registry.add_tool(create_lorebook_tool);
-
-        // Knowledge search tools - using existing embeddings infrastructure
-        let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-            app_state.clone(),
-        ));
-        registry.add_tool(search_tool);
-        
-        // Lorebook management tools
-        let update_lorebook_tool = Arc::new(UpdateLorebookEntryTool::new(
-            lorebook_service.clone(),
-            app_state.clone(),
-        ));
-        registry.add_tool(update_lorebook_tool);
-
-        // Entity resolution tool
-        let entity_resolution_tool = Arc::new(EntityResolutionTool::new(app_state.clone()));
-        registry.add_tool(entity_resolution_tool);
-
-        // Hierarchy management tools for ECS
-        let promote_hierarchy_tool = Arc::new(PromoteEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(promote_hierarchy_tool);
-
-        let get_hierarchy_tool = Arc::new(GetEntityHierarchyTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(get_hierarchy_tool);
-
-        // AI-powered foundational tools
-        let analyze_hierarchy_tool = Arc::new(AnalyzeHierarchyRequestTool::new(app_state.clone()));
-        registry.add_tool(analyze_hierarchy_tool);
-
-        let suggest_promotion_tool = Arc::new(SuggestHierarchyPromotionTool::new(app_state.clone()));
-        registry.add_tool(suggest_promotion_tool);
-
-        let update_salience_tool = Arc::new(UpdateSalienceTool::new(app_state.clone()));
-        registry.add_tool(update_salience_tool);
-
-        // World interaction tools for entity management
-        let find_entity_tool = Arc::new(super::tools::world_interaction_tools::FindEntityTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(find_entity_tool);
-
-        let get_entity_details_tool = Arc::new(super::tools::world_interaction_tools::GetEntityDetailsTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(get_entity_details_tool);
-
-        let create_entity_tool = Arc::new(super::tools::world_interaction_tools::CreateEntityTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(create_entity_tool);
-
-        let update_entity_tool = Arc::new(super::tools::world_interaction_tools::UpdateEntityTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(update_entity_tool);
-
-        // Spatial query tools for hierarchy traversal
-        let get_contained_entities_tool = Arc::new(super::tools::world_interaction_tools::GetContainedEntitiesTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(get_contained_entities_tool);
-
-        let get_spatial_context_tool = Arc::new(super::tools::world_interaction_tools::GetSpatialContextTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(get_spatial_context_tool);
-        
-        // Entity movement tool
-        let move_entity_tool = Arc::new(super::tools::world_interaction_tools::MoveEntityTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(move_entity_tool);
-
-        // Inventory management tools
-        let add_item_to_inventory_tool = Arc::new(super::tools::world_interaction_tools::AddItemToInventoryTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(add_item_to_inventory_tool);
-
-        let remove_item_from_inventory_tool = Arc::new(super::tools::world_interaction_tools::RemoveItemFromInventoryTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(remove_item_from_inventory_tool);
-
-        // Relationship management tools
-        let update_relationship_tool = Arc::new(super::tools::world_interaction_tools::UpdateRelationshipTool::new(app_state.ecs_entity_manager.clone()));
-        registry.add_tool(update_relationship_tool);
-
-        info!("Registered {} core tools", registry.list_tools().len());
-    }
 
     /// Create a development/testing configuration
     pub fn create_dev_config() -> NarrativeWorkflowConfig {
