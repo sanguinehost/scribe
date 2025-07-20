@@ -1208,3 +1208,120 @@ pub struct ContextCache {
         *   [ ] Add model-specific repair strategy preferences
         *   [ ] Create consensus thresholds for different repair types
 
+---
+
+## 🚀 **Epic 7: Performance Optimization & Architectural Evolution**
+
+**Status:** 🟡 **Planning Phase** - Based on end-to-end testing results showing 40-45s latency per exchange
+
+**Objective:** Transform the Living World from a sequential, synchronous system into a high-performance, streaming, context-aware architecture suitable for real-time gaming applications.
+
+**Target Metrics:**
+- Response latency: 40-45s → <10s (80% reduction)
+- First token time: New metric → <2s
+- Context accuracy: 90%+ reduction in incorrect entity creation
+- Concurrent users: 10x improvement in scalability
+
+### **Task 7.1: Performance Analysis & Benchmarking**
+*   **[ ] Subtask 7.1.1: Detailed Performance Profiling**
+    *   [ ] Add detailed timing instrumentation to each agent layer
+    *   [ ] Identify specific AI calls and tool executions causing bottlenecks
+    *   [ ] Create performance regression test suite
+    *   [ ] Document baseline metrics for each component
+*   **[ ] Subtask 7.1.2: Complexity Classification System**
+    *   [ ] Design message complexity analyzer using fast model
+    *   [ ] Define complexity tiers (Simple/Moderate/Complex)
+    *   [ ] Map complexity to required agent activation patterns
+    *   [ ] Implement complexity-based routing logic
+
+### **Task 7.2: Parallel Execution Architecture**
+*   **[ ] Subtask 7.2.1: Agent Parallelization**
+    *   [ ] Refactor perception and strategic agents to run concurrently
+    *   [ ] Implement `tokio::join!` for independent agent operations
+    *   [ ] Add proper error aggregation for parallel failures
+    *   [ ] Measure performance improvement from parallelization
+*   **[ ] Subtask 7.2.2: Tool Execution Optimization**
+    *   [ ] Identify independent tool calls within agents
+    *   [ ] Implement parallel tool execution where possible
+    *   [ ] Add semaphore-based rate limiting for AI calls
+    *   [ ] Create tool dependency graph for optimization
+
+### **Task 7.3: Response Streaming Implementation**
+*   **[ ] Subtask 7.3.1: Progressive Response Architecture**
+    *   [ ] Design ResponseChunk enum for different response phases
+    *   [ ] Implement streaming pipeline with mpsc channels
+    *   [ ] Create quick response generator (<2s target)
+    *   [ ] Add SSE support for progressive updates
+*   **[ ] Subtask 7.3.2: Background Processing Framework**
+    *   [ ] Implement priority-based task queue (Critical/Background/Predictive)
+    *   [ ] Design background world state update system
+    *   [ ] Add task cancellation for outdated background work
+    *   [ ] Create metrics for background task performance
+
+### **Task 7.4: Context Enrichment System**
+*   **[ ] Subtask 7.4.1: Unified World Context**
+    *   [ ] Design UnifiedWorldContext structure
+    *   [ ] Integrate lorebook data into all agent contexts
+    *   [ ] Add entity registry with race/type definitions
+    *   [ ] Implement world rules and constraints system
+*   **[ ] Subtask 7.4.2: Tool Context Injection**
+    *   [ ] Update all tool interfaces to accept UnifiedWorldContext
+    *   [ ] Modify perception agent to check lorebook before entity creation
+    *   [ ] Add context validation in entity resolution tools
+    *   [ ] Create tests for context-aware entity handling
+
+### **Task 7.5: Multi-Turn Reasoning Architecture**
+*   **[ ] Subtask 7.5.1: Stateful Agent Sessions**
+    *   [ ] Design AgentSession structure with memory components
+    *   [ ] Implement strategic memory for directive persistence
+    *   [ ] Add tactical state management across turns
+    *   [ ] Create reasoning chain tracking system
+*   **[ ] Subtask 7.5.2: Iterative Tool Refinement**
+    *   [ ] Implement tool result analysis framework
+    *   [ ] Design parameter refinement system
+    *   [ ] Add success criteria validation
+    *   [ ] Create retry logic with exponential backoff
+
+### **Task 7.6: Conditional Agent Activation**
+*   **[ ] Subtask 7.6.1: Lightweight Response Paths**
+    *   [ ] Implement simple response generator for basic queries
+    *   [ ] Create bypass logic for non-narrative messages
+    *   [ ] Add configuration for agent activation rules
+    *   [ ] Measure latency improvement from conditional activation
+*   **[ ] Subtask 7.6.2: Dynamic Model Selection**
+    *   [ ] Implement model selection based on complexity
+    *   [ ] Use faster models for simple operations
+    *   [ ] Add model performance tracking
+    *   [ ] Create fallback logic for model failures
+
+### **Task 7.7: Caching & Prediction System**
+*   **[ ] Subtask 7.7.1: Semantic Response Caching**
+    *   [ ] Design cache key generation from message semantics
+    *   [ ] Implement LRU cache for recent responses
+    *   [ ] Add cache invalidation on world state changes
+    *   [ ] Create cache hit rate metrics
+*   **[ ] Subtask 7.7.2: Predictive Processing**
+    *   [ ] Implement likely next action prediction
+    *   [ ] Pre-generate responses for predicted actions
+    *   [ ] Add speculative execution framework
+    *   [ ] Monitor prediction accuracy
+
+### **Task 7.8: Integration & Migration**
+*   **[ ] Subtask 7.8.1: Backward Compatibility**
+    *   [ ] Ensure all optimizations are opt-in via configuration
+    *   [ ] Maintain existing API contracts
+    *   [ ] Add feature flags for gradual rollout
+    *   [ ] Create migration guide for existing users
+*   **[ ] Subtask 7.8.2: Performance Validation**
+    *   [ ] Run comprehensive performance tests
+    *   [ ] Validate <10s latency target achievement
+    *   [ ] Test concurrent user scalability
+    *   [ ] Document performance improvements
+
+### **Success Criteria:**
+- [ ] 80% reduction in average response latency
+- [ ] First meaningful response in <2s
+- [ ] Zero regression in response quality
+- [ ] 10x improvement in concurrent user capacity
+- [ ] All optimizations configurable and optional
+

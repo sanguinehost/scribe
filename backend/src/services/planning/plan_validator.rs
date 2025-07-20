@@ -528,11 +528,12 @@ impl PlanValidatorService {
                 }
             }
             ActionName::AddItemToInventory | ActionName::RemoveItemFromInventory => {
-                if !obj.contains_key("owner_entity_id") || !obj.contains_key("item_entity_id") || !obj.contains_key("quantity") {
+                // Use the actual tool parameter names
+                if !obj.contains_key("character_entity_id") || !obj.contains_key("item_entity_id") || !obj.contains_key("quantity") {
                     return Err(ValidationFailure {
                         action_id: "unknown".to_string(),
                         failure_type: ValidationFailureType::InvalidParameters,
-                        message: format!("{} requires 'owner_entity_id', 'item_entity_id', and 'quantity'", action_name),
+                        message: format!("{} requires 'character_entity_id', 'item_entity_id', and 'quantity'", action_name),
                     });
                 }
             }

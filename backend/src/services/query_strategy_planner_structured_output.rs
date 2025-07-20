@@ -39,6 +39,14 @@ pub struct ParametersOutput {
     pub event_id: Option<String>,
     pub concept_type: Option<String>,
     pub search_query: Option<String>,
+    pub context_keywords: Option<Vec<String>>,
+    pub chronicle_id: Option<String>,
+    pub character_name: Option<String>,
+    pub entry_type: Option<String>,
+    pub search_pattern: Option<String>,
+    pub transition_type: Option<String>,
+    pub search_context: Option<String>,
+    pub max_depth: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,7 +98,18 @@ pub fn get_query_execution_plan_schema() -> serde_json::Value {
                                 "include_contained": {"type": "boolean"},
                                 "event_id": {"type": "string"},
                                 "concept_type": {"type": "string"},
-                                "search_query": {"type": "string"}
+                                "search_query": {"type": "string"},
+                                "context_keywords": {
+                                    "type": "array",
+                                    "items": {"type": "string"}
+                                },
+                                "chronicle_id": {"type": "string"},
+                                "character_name": {"type": "string"},
+                                "entry_type": {"type": "string"},
+                                "search_pattern": {"type": "string"},
+                                "transition_type": {"type": "string"},
+                                "search_context": {"type": "string"},
+                                "max_depth": {"type": "integer"}
                             },
                             "description": "Query-specific parameters"
                         },
@@ -264,6 +283,30 @@ impl QueryExecutionPlanOutput {
             }
             if let Some(search_query) = &query_output.parameters.search_query {
                 parameters.insert("search_query".to_string(), serde_json::to_value(search_query)?);
+            }
+            if let Some(context_keywords) = &query_output.parameters.context_keywords {
+                parameters.insert("context_keywords".to_string(), serde_json::to_value(context_keywords)?);
+            }
+            if let Some(chronicle_id) = &query_output.parameters.chronicle_id {
+                parameters.insert("chronicle_id".to_string(), serde_json::to_value(chronicle_id)?);
+            }
+            if let Some(character_name) = &query_output.parameters.character_name {
+                parameters.insert("character_name".to_string(), serde_json::to_value(character_name)?);
+            }
+            if let Some(entry_type) = &query_output.parameters.entry_type {
+                parameters.insert("entry_type".to_string(), serde_json::to_value(entry_type)?);
+            }
+            if let Some(search_pattern) = &query_output.parameters.search_pattern {
+                parameters.insert("search_pattern".to_string(), serde_json::to_value(search_pattern)?);
+            }
+            if let Some(transition_type) = &query_output.parameters.transition_type {
+                parameters.insert("transition_type".to_string(), serde_json::to_value(transition_type)?);
+            }
+            if let Some(search_context) = &query_output.parameters.search_context {
+                parameters.insert("search_context".to_string(), serde_json::to_value(search_context)?);
+            }
+            if let Some(max_depth) = query_output.parameters.max_depth {
+                parameters.insert("max_depth".to_string(), serde_json::to_value(max_depth)?);
             }
             
             queries.push(PlannedQuery {

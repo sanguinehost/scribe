@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tracing::{info, instrument, debug, warn};
+use tracing::{info, instrument, debug, warn, error};
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
@@ -224,17 +224,28 @@ CONVERSATION CONTEXT:
 {}
 
 ECS ENTITY TYPES TO EXTRACT:
-- Characters: Named people, NPCs, beings (e.g., "Shanyuan", "Ren", "Elder")
+- Characters: Named individuals with specific identities (e.g., "Sol" - a specific character, "Commander Sarah", "Borga the merchant")
+  NOT: Race names (Ren, Shanyuan), generic titles (Elder, warrior), or group references
 - Locations: Specific places, regions, buildings (e.g., "Dragon's Crown Peaks", "Stonefang Hold", "Geyserfoot")  
 - Objects: Physical items, artifacts, tools (e.g., "Crude Flint Knife", "Waterskin", "Torn Map Fragment")
-- Organizations: Named groups, factions, guilds (e.g., specific clan names, merchant guilds)
+- Organizations: Named groups, factions, guilds (e.g., "Stonefang Clan", "Iron Merchant Guild")
 
 DO NOT EXTRACT:
-- Abstract concepts (emotions, philosophies, ideas like "Prejudice", "Power", "Old Magic")
+- Abstract concepts (emotions, philosophies, ideas like "Prejudice", "Power", "Old Magic", "strategy", "cultivation", "trial")
 - General systems or mechanics ("Cultivation Techniques", "Qi potential", "Magic Systems")
 - Broad categories ("Harsh Winter")
-- Generic descriptors ("Primal Strength")
+- Generic descriptors ("Primal Strength", "ancient knowledge")
 - Events (events are not entities in ECS - they are temporal occurrences)
+- Race/species names when used generically (e.g., "a Ren", "the Shanyuan", "an Elder")
+- Generic roles/titles without specific names (e.g., "warrior", "elder", "guard")
+
+CRITICAL RACE NAME RULES:
+- "a Shanyuan" or "the Shanyuan" = NOT AN ENTITY (it's a race reference)
+- "Shanyuan warrior" or "Shanyuan guard" = NOT AN ENTITY (it's a generic race member)
+- "Borga the Shanyuan" = IS AN ENTITY (named individual who happens to be Shanyuan)
+- "Elder Thorgrim" = IS AN ENTITY (named individual with title)
+- "an Elder" or "the Elder" = NOT AN ENTITY (generic reference)
+- Race names (Ren, Shanyuan, Human, Elf, etc.) are NEVER entities by themselves
 
 Only extract concrete ECS entities that exist as physical/trackable objects in the spatial hierarchy.
 Extract entities with their types and relevance scores (0.0-1.0).
@@ -366,21 +377,32 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
     ) -> Result<(), AppError> {
         use crate::services::agentic::tools::world_interaction_tools::CreateEntityTool;
         
-        // Determine spatial scale based on entity type and name patterns
-        let (spatial_scale, position_type) = match entity.entity_type.as_str() {
+        // Debug: Verify user exists before creating entity
+        debug!("Attempting to create entity '{}' for user_id: {}", entity.name, user_id);
+        
+        // Determine spatial scale and hierarchical level based on entity type and name patterns
+        let (scale, hierarchical_level, archetype_name) = match entity.entity_type.as_str() {
             "location" => {
-                if entity.name.contains("Galaxy") || entity.name.contains("System") {
-                    ("Cosmic", "absolute")
-                } else if entity.name.contains("Peak") || entity.name.contains("Mountain") || 
-                          entity.name.contains("Region") || entity.name.contains("Continent") {
-                    ("Planetary", "geographic")
+                if entity.name.contains("Galaxy") {
+                    (crate::models::ecs::SpatialScale::Cosmic, 1, "Galaxy".to_string())
+                } else if entity.name.contains("System") {
+                    (crate::models::ecs::SpatialScale::Cosmic, 2, "System".to_string())
+                } else if entity.name.contains("World") || entity.name.contains("Planet") {
+                    (crate::models::ecs::SpatialScale::Planetary, 0, "World".to_string())
+                } else if entity.name.contains("Continent") {
+                    (crate::models::ecs::SpatialScale::Planetary, 1, "Continent".to_string())
+                } else if entity.name.contains("Peak") || entity.name.contains("Mountain") {
+                    (crate::models::ecs::SpatialScale::Planetary, 2, "Region".to_string())
+                } else if entity.name.contains("Hold") || entity.name.contains("Fortress") {
+                    (crate::models::ecs::SpatialScale::Intimate, 0, "Building".to_string())
                 } else {
-                    ("Intimate", "local")
+                    (crate::models::ecs::SpatialScale::Intimate, 2, "Room".to_string())
                 }
             },
-            "character" | "object" => ("Intimate", "local"),
-            "organization" => ("Planetary", "abstract"),
-            _ => ("Planetary", "relative"),
+            "character" => (crate::models::ecs::SpatialScale::Intimate, 5, "Container".to_string()),
+            "object" => (crate::models::ecs::SpatialScale::Intimate, 5, "Container".to_string()),
+            "organization" => (crate::models::ecs::SpatialScale::Planetary, 3, "City".to_string()),
+            _ => (crate::models::ecs::SpatialScale::Planetary, 2, "Region".to_string()),
         };
         
         // Prepare components
@@ -388,13 +410,10 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
             "Name": {
                 "name": entity.name.clone()
             },
-            "Spatial": {
-                "scale": spatial_scale,
-                "position": {
-                    "position_type": position_type,
-                    "coordinates": {"x": 0, "y": 0, "z": 0}
-                },
-                "parent_link": null // Will be set later based on hierarchy
+            "SpatialArchetype": {
+                "scale": format!("{:?}", scale),
+                "hierarchical_level": hierarchical_level,
+                "level_name": archetype_name
             }
         });
         
@@ -418,21 +437,25 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         let create_params = serde_json::json!({
             "user_id": user_id.to_string(),
             "entity_name": entity.name.clone(),
-            "archetype_signature": "Name|Spatial",  // Don't include Salience in archetype since we're using salience_tier
+            "archetype_signature": "Name|SpatialArchetype",  // Don't include Salience in archetype since we're using salience_tier
             "components": {
                 "Name": components["Name"],
-                "Spatial": components["Spatial"]
+                "SpatialArchetype": components["SpatialArchetype"]
             },
             "salience_tier": salience_tier  // This will create the Salience component
         });
         
         match self.get_tool("create_entity")?.execute(&create_params).await {
-            Ok(_) => {
-                info!("Created entity '{}' with {} scale and {} salience", 
-                    entity.name, spatial_scale, salience_tier);
+            Ok(result) => {
+                info!("Created entity '{}' with {:?} scale and {} salience, result: {:?}", 
+                    entity.name, scale, salience_tier, result);
             },
             Err(e) => {
-                warn!("Failed to create entity '{}': {}", entity.name, e);
+                error!("Failed to create entity '{}' for user_id {}: {:?}", entity.name, user_id, e);
+                // Log more details about the error
+                if let crate::services::agentic::tools::ToolError::AppError(ref app_err) = e {
+                    error!("AppError details: {:?}", app_err);
+                }
                 // Don't fail the whole process if one entity creation fails
             }
         }
@@ -489,7 +512,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         let request = ChatRequest::new(messages);
         let chat_options = ChatOptions {
             temperature: Some(0.3),
-            max_tokens: Some(1000),
+            max_tokens: Some(4000), // Increased to prevent truncation of complex spatial relationships
             ..Default::default()
         };
         
@@ -518,7 +541,18 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         let spatial_output: perception_structured_output::SpatialRelationshipDetectionOutput = 
             serde_json::from_str(json_text)
                 .map_err(|e| {
-                    warn!("Failed to parse spatial relationship JSON: {}. Response was: {}", e, json_text);
+                    warn!("Failed to parse spatial relationship JSON: {}. Response length: {} chars, truncated: {}", 
+                        e, json_text.len(), 
+                        if json_text.len() > 200 { 
+                            format!("{}...", &json_text[..200]) 
+                        } else { 
+                            json_text.to_string() 
+                        }
+                    );
+                    // Check if response might be truncated
+                    if json_text.ends_with(',') || json_text.ends_with('[') || !json_text.contains('}') {
+                        warn!("Response appears to be truncated - consider increasing max_tokens");
+                    }
                     AppError::InternalServerErrorGeneric(
                         format!("Failed to parse spatial relationship detection: {}", e)
                     )

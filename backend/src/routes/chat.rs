@@ -655,6 +655,112 @@ pub async fn generate_chat_response(
     }
     
     // If we reach here, either pipeline wasn't available or failed - use individual agents
+    // First, run perception analysis if available (even when using individual agents)
+    // Create perception agent from app state
+    let perception_agent = crate::services::agentic::factory::AgenticNarrativeFactory::create_perception_agent(&state_arc);
+    let perception_analysis_result = {
+        info!(%session_id, "Running perception analysis in individual agent flow");
+        
+        // Convert GenAI history to ChatMessageForClient format for Perception Agent
+        let chat_history_for_perception: Vec<crate::models::chats::ChatMessageForClient> = 
+            gen_ai_recent_history.iter()
+                .map(|msg| {
+                    let content = match &msg.content {
+                        MessageContent::Text(text) => text.clone(),
+                        _ => String::new(),
+                    };
+                    
+                    crate::models::chats::ChatMessageForClient {
+                        id: Uuid::new_v4(),
+                        session_id,
+                        user_id: user_id_value,
+                        message_type: match msg.role {
+                            ChatRole::User => MessageRole::User,
+                            ChatRole::Assistant => MessageRole::Assistant,
+                            ChatRole::System => MessageRole::System,
+                            ChatRole::Tool => MessageRole::Assistant,
+                        },
+                        content,
+                        created_at: chrono::Utc::now(),
+                        prompt_tokens: None,
+                        completion_tokens: None,
+                        raw_prompt: None,
+                        model_name: model_to_use.clone(),
+                    }
+                })
+                .collect();
+        
+        match perception_agent.analyze_pre_response(
+            &chat_history_for_perception,
+            &current_user_content,
+            user_id_value,
+            &session_dek,
+        ).await {
+            Ok(analysis) => {
+                info!(%session_id, 
+                    contextual_entities = analysis.contextual_entities.len(),
+                    salience_updates = analysis.salience_updates.len(),
+                    "Successfully completed perception analysis in individual agent flow"
+                );
+                
+                // Store the perception analysis results in Redis for the end-to-end test to retrieve
+                let perception_enrichment = crate::services::context_assembly_engine::PerceptionEnrichment {
+                    contextual_entities: analysis.contextual_entities.iter().map(|e| crate::services::context_assembly_engine::ContextualEntityInfo {
+                        name: e.name.clone(),
+                        entity_type: e.entity_type.clone(),
+                        relevance_score: e.relevance_score,
+                    }).collect(),
+                    hierarchy_insights: analysis.hierarchy_analysis.hierarchy_insights.iter().map(|h| crate::services::context_assembly_engine::HierarchyInsightInfo {
+                        entity_name: h.entity_name.clone(),
+                        hierarchy_depth: h.hierarchy_depth,
+                        parent_entity: h.parent_entity.clone(),
+                        child_entities: h.child_entities.clone(),
+                    }).collect(),
+                    salience_updates: analysis.salience_updates.iter().map(|s| crate::services::context_assembly_engine::SalienceUpdateInfo {
+                        entity_name: s.entity_name.clone(),
+                        previous_tier: s.previous_tier.clone(),
+                        new_tier: s.new_tier.clone(),
+                        reasoning: s.reasoning.clone(),
+                        confidence: s.confidence,
+                    }).collect(),
+                    analysis_time_ms: analysis.execution_time_ms,
+                    confidence_score: analysis.confidence_score,
+                    analysis_timestamp: analysis.analysis_timestamp,
+                };
+                
+                let perception_key = format!("perception_analysis:{}:{}", user_id_value, session_id);
+                
+                // Store in Redis
+                match state_arc.redis_client.get_multiplexed_async_connection().await {
+                    Ok(mut redis_conn) => {
+                        use redis::AsyncCommands;
+                        match redis_conn.set_ex(
+                            perception_key.clone(),
+                            serde_json::to_string(&perception_enrichment).unwrap_or_default(),
+                            300, // 5 minute TTL
+                        ).await {
+                            Ok(()) => {
+                                debug!(%session_id, "Cached perception analysis in Redis at key: {}", perception_key);
+                            }
+                            Err(e) => {
+                                warn!(%session_id, error = %e, "Failed to cache perception analysis in Redis");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(%session_id, error = %e, "Failed to get Redis connection for perception caching");
+                    }
+                }
+                
+                Some(analysis)
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Perception analysis failed in individual agent flow");
+                None
+            }
+        }
+    };
+    
     let strategic_directive = {
         // Step 1: Strategic Agent Analysis (if available)
         if let Some(ref strategic_agent) = state_arc.strategic_agent {

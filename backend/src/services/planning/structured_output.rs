@@ -39,8 +39,8 @@ pub struct ActionParametersOutput {
     pub parent_id: Option<String>,
     
     // Inventory parameters
-    pub item_id: Option<String>,
-    pub inventory_id: Option<String>,
+    pub character_entity_id: Option<String>,
+    pub item_entity_id: Option<String>,
     pub quantity: Option<i32>,
     
     // Relationship parameters
@@ -191,8 +191,8 @@ pub fn get_plan_generation_schema() -> serde_json::Value {
                                 "location_id": {"type": "string"},
                                 "destination_id": {"type": "string"},
                                 "parent_id": {"type": "string"},
-                                "item_id": {"type": "string"},
-                                "inventory_id": {"type": "string"},
+                                "character_entity_id": {"type": "string"},
+                                "item_entity_id": {"type": "string"},
                                 "quantity": {"type": "integer"},
                                 "source_entity_id": {"type": "string"},
                                 "target_entity_id": {"type": "string"},

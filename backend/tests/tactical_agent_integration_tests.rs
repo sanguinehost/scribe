@@ -17,9 +17,45 @@ use genai::chat::{ChatMessage as GenAiChatMessage, MessageContent, ChatRole};
 /// Test that TacticalAgent integrates correctly with the chat service pipeline
 #[tokio::test]
 async fn test_tactical_agent_chat_service_integration() {
-    let app = spawn_app(false, false, false).await;
+    let app = spawn_app(false, true, false).await; // Use mock AI client
     let user_id = Uuid::new_v4();
     let session_id = Uuid::new_v4();
+    
+    // Set up mock AI response for planning
+    let mock_plan_response = r#"{
+        "goal": "I need to investigate the abandoned warehouse in the industrial district",
+        "actions": [
+            {
+                "id": "action_1",
+                "name": "find_entity",
+                "parameters": {
+                    "entity_name": "abandoned warehouse",
+                    "search_criteria": "location in industrial district"
+                },
+                "dependencies": []
+            },
+            {
+                "id": "action_2",
+                "name": "get_entity_details",
+                "parameters": {
+                    "entity_id": "placeholder_warehouse_id"
+                },
+                "dependencies": ["action_1"]
+            }
+        ],
+        "metadata": {
+            "confidence": 0.85,
+            "estimated_duration": 120
+        }
+    }"#;
+    
+    // Access the mock AI client from TestApp
+    if let Some(mock_client) = &app.mock_ai_client {
+        // Set up the same response for multiple retries
+        for _ in 0..3 {
+            mock_client.add_response(mock_plan_response.to_string());
+        }
+    }
     
     // Create necessary services
     let planning_service = Arc::new(PlanningService::new(
@@ -27,6 +63,7 @@ async fn test_tactical_agent_chat_service_integration() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash-lite-preview-06-17".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -171,8 +208,45 @@ async fn test_tactical_agent_chat_service_integration() {
 /// Test that TacticalAgent enriched context appears in the final prompt under correct tags
 #[tokio::test]
 async fn test_enriched_context_prompt_formatting() {
-    let app = spawn_app(false, false, false).await;
+    let app = spawn_app(false, true, false).await; // Use mock AI client
     let user_id = Uuid::new_v4();
+    
+    // Set up mock AI response for planning
+    let mock_plan_response = r#"{
+        "goal": "Engage the enemy forces at dawn",
+        "actions": [
+            {
+                "id": "action_1",
+                "name": "find_entity",
+                "parameters": {
+                    "entity_name": "enemy forces",
+                    "search_criteria": "hostile units"
+                },
+                "dependencies": []
+            },
+            {
+                "id": "action_2",
+                "name": "get_spatial_context",
+                "parameters": {
+                    "location_id": "battlefield_id"
+                },
+                "dependencies": []
+            }
+        ],
+        "metadata": {
+            "confidence": 0.9,
+            "estimated_duration": 300,
+            "alternative_considered": "Diplomatic approach"
+        }
+    }"#;
+    
+    // Access the mock AI client from TestApp
+    if let Some(mock_client) = &app.mock_ai_client {
+        // Set up the same response for multiple retries
+        for _ in 0..3 {
+            mock_client.add_response(mock_plan_response.to_string());
+        }
+    }
     
     // Create services
     let planning_service = Arc::new(PlanningService::new(
@@ -180,6 +254,7 @@ async fn test_enriched_context_prompt_formatting() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash-lite-preview-06-17".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -308,7 +383,7 @@ async fn test_enriched_context_prompt_formatting() {
 /// Test error handling when TacticalAgent fails
 #[tokio::test]
 async fn test_tactical_agent_failure_fallback() {
-    let app = spawn_app(false, false, false).await;
+    let app = spawn_app(false, true, false).await; // Use mock AI client
     let user_id = Uuid::new_v4();
     
     // Create services
@@ -317,6 +392,7 @@ async fn test_tactical_agent_failure_fallback() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash-lite-preview-06-17".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -361,7 +437,7 @@ async fn test_tactical_agent_failure_fallback() {
 /// Test that TacticalAgent integrates with actual chat generation
 #[tokio::test]
 async fn test_tactical_agent_end_to_end_chat_generation() {
-    let app = spawn_app(false, false, false).await;
+    let app = spawn_app(false, true, false).await; // Use mock AI client
     let _user_id = Uuid::new_v4();
     let _session_id = Uuid::new_v4();
     
@@ -373,6 +449,7 @@ async fn test_tactical_agent_end_to_end_chat_generation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash-lite-preview-06-17".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
