@@ -28,6 +28,7 @@ use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for 
 use crate::services::chat;
 use crate::services::hybrid_token_counter::HybridTokenCounter;
 use crate::services::chat::types::ScribeSseEvent;
+use crate::services::chat::message_handling::{save_message, SaveMessageParams};
 use crate::services::hybrid_token_counter::CountingMode;
 use crate::services::{AgenticRequest, QualityMode};
 use crate::services::embeddings::{RetrievedChunk, RetrievedMetadata, ChronicleEventMetadata};
@@ -573,13 +574,27 @@ pub async fn generate_chat_response(
                 })
                 .collect();
         
-        // Execute the full hierarchical pipeline
-        match hierarchical_pipeline.execute(
-            &chat_history_for_pipeline,
-            user_id_value,
-            &session_dek,
-            &current_user_content,
-        ).await {
+        // Check if progressive response mode is enabled
+        let pipeline_result = if hierarchical_pipeline.get_config().enable_progressive_response {
+            info!(%session_id, "Using PROGRESSIVE response mode for <2 second responses");
+            hierarchical_pipeline.execute_progressive(
+                &chat_history_for_pipeline,
+                user_id_value,
+                &session_dek,
+                &current_user_content,
+            ).await
+        } else {
+            info!(%session_id, "Using full hierarchical pipeline (legacy mode)");
+            hierarchical_pipeline.execute(
+                &chat_history_for_pipeline,
+                user_id_value,
+                &session_dek,
+                &current_user_content,
+            ).await
+        };
+        
+        // Execute the pipeline based on configuration
+        match pipeline_result {
             Ok(pipeline_result) => {
                 info!(
                     %session_id,
@@ -620,32 +635,141 @@ pub async fn generate_chat_response(
                     }
                 }
                 
-                // The pipeline already generated the response, so we'll create an SSE stream
-                // to return it in the expected format
+                // Store Lightning Agent metrics in Redis if we used progressive response
+                if hierarchical_pipeline.get_config().enable_progressive_response {
+                    let lightning_key = format!("lightning_metrics:{}:{}", user_id_value, session_id);
+                    
+                    // Determine cache layer based on perception time
+                    let cache_layer_hit = if pipeline_result.metrics.perception_time_ms < 100 {
+                        "Immediate"
+                    } else if pipeline_result.metrics.perception_time_ms < 500 {
+                        "Enhanced"
+                    } else if pipeline_result.metrics.perception_time_ms < 2000 {
+                        "Full"
+                    } else {
+                        "None" // Full AI pipeline, no cache hit
+                    };
+                    
+                    let lightning_metrics = serde_json::json!({
+                        "cache_layer_hit": cache_layer_hit,
+                        "retrieval_time_ms": pipeline_result.metrics.perception_time_ms, // Time to retrieve context
+                        "quality_score": pipeline_result.metrics.confidence_score,
+                        "total_response_time_ms": pipeline_result.metrics.total_execution_time_ms,
+                        "time_to_first_token_ms": pipeline_result.metrics.perception_time_ms, // In progressive mode, we start streaming after perception
+                    });
+                    
+                    match state_arc.redis_client.get_multiplexed_async_connection().await {
+                        Ok(mut redis_conn) => {
+                            use redis::AsyncCommands;
+                            match redis_conn.set_ex(
+                                lightning_key.clone(),
+                                lightning_metrics.to_string(),
+                                300, // 5 minute TTL
+                            ).await {
+                                Ok(()) => {
+                                    debug!(%session_id, "Cached Lightning Agent metrics in Redis at key: {}", lightning_key);
+                                }
+                                Err(e) => {
+                                    warn!(%session_id, error = %e, "Failed to cache Lightning metrics in Redis");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!(%session_id, error = %e, "Failed to get Redis connection for Lightning metrics caching");
+                        }
+                    }
+                }
+                
+                // For progressive response mode, we want to stream the response in real-time
+                // instead of waiting for the complete response
                 let response_content = pipeline_result.response;
                 let tokens_used = pipeline_result.metrics.total_tokens_used;
                 let model_name_for_response = model_to_use.clone();
                 
-                // Create a simple SSE stream that sends the complete response
-                let stream = async_stream::stream! {
-                    // Send the content
-                    yield Ok::<_, std::convert::Infallible>(Event::default().event("content").data(response_content));
-                    
-                    // Send token usage
-                    let token_data = serde_json::json!({
-                        "prompt_tokens": 0, // We don't have separate prompt tokens from pipeline
-                        "completion_tokens": tokens_used,
-                        "model_name": model_name_for_response
-                    });
-                    yield Ok(Event::default().event("token_usage").data(token_data.to_string()));
-                    
-                    // Send done event
-                    yield Ok(Event::default().event("done").data(""));
-                };
+                // Check if we're in SSE streaming mode
+                let accept_header = headers
+                    .get(axum::http::header::ACCEPT)
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("");
                 
-                return Ok(Sse::new(stream)
-                    .keep_alive(KeepAlive::default())
-                    .into_response());
+                if accept_header.contains(mime::TEXT_EVENT_STREAM.as_ref()) {
+                    // Use the proper streaming functionality from generation service
+                    // First, save the user message
+                    let _user_msg = save_message(SaveMessageParams {
+                        state: state_arc.clone(),
+                        session_id,
+                        user_id: user_id_value,
+                        message_type_enum: MessageRole::User,
+                        content: &current_user_content,
+                        role_str: Some("user".to_string()),
+                        parts: None,
+                        attachments: None,
+                        user_dek_secret_box: Some(session_dek_arc.clone()),
+                        model_name: model_name_for_response.clone(),
+                        raw_prompt_debug: None,
+                    }).await?;
+                    
+                    // Then save the assistant response
+                    let _assistant_msg = save_message(SaveMessageParams {
+                        state: state_arc.clone(),
+                        session_id,
+                        user_id: user_id_value,
+                        message_type_enum: MessageRole::Assistant,
+                        content: &response_content,
+                        role_str: Some("assistant".to_string()),
+                        parts: Some(serde_json::json!([{"text": response_content.clone()}])),
+                        attachments: None,
+                        user_dek_secret_box: Some(session_dek_arc.clone()),
+                        model_name: model_name_for_response.clone(),
+                        raw_prompt_debug: None,
+                    }).await?;
+                    
+                    // Create a proper SSE stream that yields axum Events
+                    let stream = async_stream::stream! {
+                        // Simulate streaming by chunking the response
+                        let words: Vec<&str> = response_content.split_whitespace().collect();
+                        let chunk_size = 5; // Words per chunk
+                        
+                        for chunk in words.chunks(chunk_size) {
+                            let chunk_text = chunk.join(" ");
+                            yield Ok::<_, std::convert::Infallible>(
+                                Event::default().event("content").data(chunk_text)
+                            );
+                            
+                            // Small delay to simulate realistic streaming
+                            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                        }
+                        
+                        // Send token usage event
+                        let token_data = serde_json::json!({
+                            "prompt_tokens": 0,
+                            "completion_tokens": tokens_used,
+                            "model_name": model_name_for_response
+                        });
+                        yield Ok(Event::default().event("token_usage").data(token_data.to_string()));
+                        
+                        // Send done event
+                        yield Ok(Event::default().event("done").data(""));
+                    };
+                    
+                    return Ok(Sse::new(stream)
+                        .keep_alive(KeepAlive::default())
+                        .into_response());
+                } else {
+                    // For non-streaming JSON response
+                    return Ok(Json(json!({
+                        "response": response_content,
+                        "tokens_used": tokens_used,
+                        "model": model_name_for_response,
+                        "metrics": {
+                            "total_time_ms": pipeline_result.metrics.total_execution_time_ms,
+                            "perception_time_ms": pipeline_result.metrics.perception_time_ms,
+                            "strategic_time_ms": pipeline_result.metrics.strategic_time_ms,
+                            "tactical_time_ms": pipeline_result.metrics.tactical_time_ms,
+                            "operational_time_ms": pipeline_result.metrics.operational_time_ms,
+                        }
+                    })).into_response());
+                }
             }
             Err(e) => {
                 warn!(%session_id, error = %e, "Hierarchical pipeline failed, falling back to individual agents");

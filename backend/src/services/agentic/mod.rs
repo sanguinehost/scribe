@@ -29,6 +29,7 @@ pub mod tactical_agent;
 pub mod perception_agent;
 pub mod strategic_agent;
 pub mod hierarchical_pipeline;
+pub mod lightning_agent;
 pub mod performance_analyzer;
 pub mod strategic_structured_output;
 pub mod tactical_structured_output;
@@ -40,6 +41,7 @@ pub mod historical_state_reconstruction_structured_output;
 pub mod event_significance_structured_output;
 pub mod relationship_analysis_structured_output;
 pub mod narrative_answer_generation_structured_output;
+pub mod intelligent_world_state_planner;
 pub mod types;
 
 

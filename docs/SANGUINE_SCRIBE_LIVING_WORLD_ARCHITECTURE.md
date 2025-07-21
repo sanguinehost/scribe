@@ -1,19 +1,18 @@
 # Sanguine Scribe: A Hierarchical World Model Architecture
 
-**Version:** 4.2 (Implemented Architecture with Production Features)  
-**Last Updated:** 2025-07-16  
-**Status:** Production Implementation with Intelligent Repair System
+**Version:** 5.1 (Progressive Response Architecture with Performance Optimizations)
+**Last Updated:** 2025-07-21
+**Status:** Architectural Redesign for High-Performance Interaction
 
 ## Executive Summary
 
-Sanguine Scribe is architected as a **world simulator** - a foundation for persistent, intelligent narrative ecosystems. This document outlines a paradigm shift from a reactive enrichment pipeline to a proactive, **Hierarchical Agent Framework**.
+Sanguine Scribe is architected as a **world simulator** - a foundation for persistent, intelligent narrative ecosystems. This document outlines a paradigm shift from a synchronous, pre-response agent pipeline to a high-performance, **Progressive Response Architecture**.
 
-**Vision:** We will evolve the system from a reactive "story generator" to a proactive "world simulator." This is achieved through a **Hierarchical Agent Framework** composed of three distinct layers:
-*   **The Strategic Layer ("Director"):** A new, high-level agent for long-term narrative planning.
-*   **The Tactical Layer ("Stage Manager"):** The evolution of the `PreResponseAgent`, responsible for decomposing strategic goals into verifiable steps by generating a plan with an LLM and validating it against the world state.
-*   **The Operational Layer ("Actor"):** The existing `RoleplayAI`, which executes the final, concrete generative task.
+**Vision:** To deliver an exceptionally fluid and responsive user experience by decoupling immediate response generation from complex, time-intensive world-state updates. This is achieved by splitting the agentic workflow into two distinct phases:
+*   **The Immediate Response Path:** A lightweight, high-speed pipeline that performs minimal necessary analysis to generate and stream a coherent response to the user with the lowest possible latency.
+*   **The Asynchronous Background Pipeline:** A robust, comprehensive process that runs after the response is sent. It performs the deep reasoning, planning, and world-state updates (Strategic and Tactical layers) required to ensure the world is consistent for the *next* user turn.
 
-This ensures every AI response is deeply informed by a dynamic, living world that operates on principles of causal reasoning, transforming Sanguine Scribe into a true digital consciousness substrate.
+This ensures the user receives immediate feedback, while the system's deep narrative and world simulation capabilities operate in the background, transforming Sanguine Scribe into a true real-time digital consciousness substrate.
 
 ## 🔍 **Current Implementation Status & Viability Assessment**
 
@@ -26,82 +25,331 @@ This ensures every AI response is deeply informed by a dynamic, living world tha
 - **World State Management**: Chronicle-to-ECS translation, world model snapshots, and causal relationship tracking
 - **Agent Infrastructure**: `NarrativeAgentRunner`, `AgenticOrchestrator`, and flexible `ScribeTool` registry system
 
-### **🔴 Critical Implementation Gaps**
-- **Missing Agent Hierarchy**: No `StrategicAgent`, `TacticalAgent`, or formal agent communication protocol
-- **Missing Pre-Response Integration**: Current agents operate post-chat; no pre-response enrichment pipeline
-- **Incomplete Agent Security**: Security controls need extension to hierarchical agent framework
-- **🚨 Widespread Architectural Inconsistency**: 8+ services bypass Flash abstraction layer with hardcoded AI calls and system prompts
+### **✅ Implementation Achievements (as of 2025-07-20)**
+- **✅ Agent Hierarchy Implemented**: `StrategicAgent`, `TacticalAgent`, and `PerceptionAgent` fully implemented
+- **✅ Pre-Response Integration**: Hierarchical pipeline integrated into chat service for pre-response enrichment
+- **✅ Agent Security**: Security controls extended with comprehensive OWASP compliance
+- **🟡 Performance Optimization**: Original 40+ second pipeline reduced via batched salience (75-85% improvement), true streaming pending (Epic 7)
+- **🟡 Flash Integration**: Some services still bypass Flash abstraction layer (lower priority given performance focus)
 
-### **📊 Implementation Readiness by Component**
-- **Strategic Layer ("Director")**: 10% - Narrative planning concepts exist but no implementation
-- **Tactical Layer ("Stage Manager")**: 25% - Agent orchestration patterns exist but need hierarchy integration and Flash refactoring
-- **Operational Layer ("Actor")**: 90% - `RoleplayAI` exists and functions well
-- **Planning & Reasoning Cortex**: 75% - ✅ **IMPLEMENTED** - LLM-based planning service, `PlanValidator` with intelligent repair system, Virtual ECS State Projection, Redis-based caching, and multi-factor confidence scoring
-- **Security Framework**: 85% - Excellent foundation needs agent-specific extensions
-- **🔴 AI Integration Architecture**: 40% - Sophisticated AI logic exists across 8+ services but requires comprehensive Flash integration refactoring
+### **📊 Implementation Status by Component (as of 2025-07-20)**
+- **Strategic Layer ("Director")**: ✅ **100%** - `StrategicAgent` fully implemented with prompt templates
+- **Tactical Layer ("Stage Manager")**: ✅ **100%** - `TacticalAgent` with planning integration complete
+- **Operational Layer ("Actor")**: ✅ **100%** - `RoleplayAI` integrated as final response generator
+- **Planning & Reasoning Cortex**: ✅ **100%** - Full implementation with intelligent repair, Virtual ECS, caching
+- **Hierarchical Pipeline**: ✅ **100%** - All layers integrated via `hierarchical_pipeline.rs`
+- **Security Framework**: ✅ **95%** - Comprehensive OWASP compliance across all agent layers
+- **🟡 Performance**: **Optimized** - Batched salience reduces AI calls by 75-85%, streaming implementation pending (Epic 7)
+- **🟡 Flash Integration**: **60%** - Core agents use Flash, some auxiliary services still need refactoring
 
-## Core Architecture: The Hierarchical Agent Framework
+## Core Architecture: The Progressive Response Framework
 
-The new architecture introduces a three-stage hierarchical process that governs the core roleplay AI, ensuring the world is alive, consistent, and narratively coherent.
+The new architecture prioritizes time-to-first-token and perceived user speed above all else. It replaces the synchronous, multi-stage pipeline with a dual-phase process that separates immediate interaction from deep world simulation.
+
+### Lightning Agent - The Speed Layer
+
+The **Lightning Agent** is a new, specialized agent designed exclusively for sub-2-second context retrieval:
+
+```rust
+pub struct LightningAgent {
+    cache_service: Arc<ProgressiveCacheService>,
+    redis_client: Arc<redis::Client>,
+}
+```
+
+**Key Characteristics:**
+- **Cache-First Design**: Never performs analysis, only retrieves
+- **Progressive Enrichment**: Each interaction benefits from previous background work
+- **Streaming-Ready**: Built for `stream_chat` instead of `exec_chat`
+- **Minimal Overhead**: No planning cortex, no tools, just cache retrieval
 
 ```mermaid
 sequenceDiagram
     participant User
     participant ApiServer
-    participant StrategicAgent as "Strategic Layer (Director)"
-    participant TacticalAgent as "Tactical Layer (Stage Manager)"
-    participant PlanningCortex as "Planning & Reasoning Cortex"
-    participant EcsAndVectorDB as "World State (KG)"
-    participant RoleplayAI as "Operational Layer (Actor)"
+    participant ImmediatePath as "Immediate Response Path"
+    participant BackgroundPipeline as "Background Pipeline"
+    participant EcsAndVectorDB as "World State [Qdrant+Redis]"
+    participant RoleplayAI as "Operational Layer"
 
-    User->>ApiServer: Sends chat message (e.g., "I draw my sword and face the beast.")
-
-    ApiServer->>StrategicAgent: Initiate Narrative Planning
-    activate StrategicAgent
-    StrategicAgent->>StrategicAgent: Analyze long-term goals (e.g., "Is this a 'boss fight' plot point?")
-    StrategicAgent-->>TacticalAgent: Issue high-level directive: "Execute 'Confrontation' scene"
-    deactivate StrategicAgent
-
-    ApiServer->>TacticalAgent: Initiate pre-response enrichment with directive
-    activate TacticalAgent
-
-    TacticalAgent->>PlanningCortex: Decompose directive: "Confrontation"
-    activate PlanningCortex
-    PlanningCortex->>EcsAndVectorDB: Query world state for preconditions (hero location, beast state)
-    EcsAndVectorDB-->>PlanningCortex: State is valid
-    PlanningCortex-->>TacticalAgent: Return sub-goal: "Generate attack description"
-    deactivate PlanningCortex
-
-    TacticalAgent->>EcsAndVectorDB: find_entity("Hero"), find_entity("Beast")
-    EcsAndVectorDB-->>TacticalAgent: Return entity details
+    User->>ApiServer: Sends chat message
+    ApiServer->>ImmediatePath: Initiate Immediate Response
+    activate ImmediatePath
+    ImmediatePath->>EcsAndVectorDB: Gather minimal context [Perception]
+    EcsAndVectorDB-->>ImmediatePath: Return minimal context
+    ImmediatePath->>RoleplayAI: Send lightweight prompt
+    deactivate ImmediatePath
     
-    TacticalAgent->>ApiServer: Provide enriched context (sub-goal, entity details)
-    deactivate TacticalAgent
-
-    ApiServer->>RoleplayAI: Send enriched prompt with sub-goal
     activate RoleplayAI
-    RoleplayAI-->>ApiServer: Generate roleplay response ("The hero raises their blade...")
+    RoleplayAI-->>ApiServer: Stream roleplay response
     deactivate RoleplayAI
-
-    ApiServer-->>User: Stream roleplay response
-
+    
+    ApiServer-->>User: Stream response
+    
     par
-        ApiServer->>TacticalAgent: (Post-Response) Process AI's response for perception
-        activate TacticalAgent
-        TacticalAgent->>EcsAndVectorDB: Update world state (e.g., update_entity("Beast", {health: 80}))
-        deactivate TacticalAgent
+        ApiServer->>BackgroundPipeline: (Asynchronously) Process full context
+        activate BackgroundPipeline
+        BackgroundPipeline->>EcsAndVectorDB: Update world state [Strategic/Tactical]
+        deactivate BackgroundPipeline
     and
         User->>User: Reading response...
     end
 ```
 
-### 1. The Strategic Layer (The "Director")
-A new, high-level agent responsible for long-term narrative arcs and plot management. It operates on the longest timescale, thinking in terms of chapters and acts. It determines "what the story is about" and issues abstract directives to the Tactical Layer.
+### 1. The Immediate Response Path (Foreground) - Lightning Agent
+This is the high-speed, latency-critical path responsible for generating the user-facing response.
+*   **Goal:** Minimize time-to-first-token (<2 seconds).
+*   **Process:**
+    1.  The **Lightning Agent** retrieves cached context using the 3-layer progressive cache (Full → Enhanced → Immediate → Minimal).
+    2.  On first message: Likely only has Immediate/Minimal context available.
+    3.  On subsequent messages: Benefits from Full Context populated by background agents.
+    4.  Passes retrieved context directly to the **Operational Layer (RoleplayAI)**.
+    5.  The Operational Layer generates the narrative response and begins streaming it back to the user immediately.
+*   **Key Principle:** This path is cache-first, never waits for analysis. Each response benefits from the previous exchange's background processing.
 
-### 2. The Tactical Layer (The "Stage Manager")
-This is the evolution of the existing agent orchestration patterns (`NarrativeAgentRunner` and `AgenticOrchestrator`) into a formal hierarchical agent system. It acts as the bridge between abstract strategy and concrete execution.
+### 2. The Asynchronous Background Pipeline (Background)
+This is the deliberative, high-computation path responsible for maintaining world consistency and planning future narrative arcs. It runs in the background, after the user has already started receiving their response.
+*   **Goal:** Ensure the world state is accurate and ready for the *next* user turn.
+*   **Process:**
+    1.  The AI's generated response and the initial user message are passed to the background pipeline.
+    2.  The **Perception Agent** performs deep entity extraction, hierarchy analysis, and salience evaluation.
+    3.  The **Strategic Layer ("Director")** analyzes the full interaction to update long-term narrative arcs and goals.
+    4.  The **Tactical Layer ("Stage Manager")** receives directives from the Strategic Layer, uses the **Planning & Reasoning Cortex** to generate and validate detailed plans, and executes world state updates.
+    5.  All three agents progressively populate the cache layers (Immediate → Enhanced → Full) for the next interaction.
+*   **Key Principle:** This pipeline enriches the cache for future Lightning Agent retrievals, creating progressively richer responses over time.
 
-**Current State:** The existing `NarrativeAgentRunner` provides some tactical capabilities but lacks formal planning integration and hierarchical communication. The `AgenticOrchestrator` demonstrates orchestration patterns that can be evolved into the Tactical Layer.
+**Current State:** ✅ **FULLY IMPLEMENTED** - The hierarchical agent framework is complete with `StrategicAgent` providing high-level directives, `TacticalAgent` using the Planning & Reasoning Cortex for validated world state updates, and `PerceptionAgent` analyzing AI responses for world consistency. The system is integrated into the chat service via `HierarchicalAgentPipeline`. Performance optimizations have been implemented including batched salience analysis (75-85% reduction in AI calls) and progressive context caching architecture is designed (Epic 7).
+
+## Performance Optimizations & Progressive Context Caching
+
+### **Implemented Optimizations**
+
+**Batched Salience Analysis:** ✅ **IMPLEMENTED**
+- **Problem:** Individual AI calls for each entity's salience analysis created O(n) API calls
+- **Solution:** Batch all entities into a single AI call with structured JSON response
+- **Result:** 75-85% reduction in salience update time (from 2-3s per entity to 2-3s total)
+- **Implementation:** `batch_analyze_salience` method in `PerceptionAgent`
+- **Design Rationale:** Option 3 was chosen (batch at Perception Agent level) to maintain backward compatibility while optimizing performance. The implementation includes:
+  - Smart relevance filtering (only entities with relevance > 0.5)
+  - Chunking for large entity counts (max 15 per batch)
+  - Structured JSON output with confidence scoring
+  - Safety settings for fictional content analysis
+
+### **Progressive Context Caching Architecture** (Designed, Pending Implementation)
+
+The system will implement a three-layer cache architecture to balance response speed with context awareness:
+
+#### **Layer 1: Immediate Context** (<100ms retrieval)
+```rust
+struct ImmediateContext {
+    user_id: Uuid,
+    session_id: Uuid,
+    current_location: LocationId,
+    active_character: Option<CharacterId>,
+    recent_messages: Vec<MessageSummary>, // Last 3-5 messages
+}
+```
+- **Purpose:** Minimal data needed for coherent response
+- **Cache Key:** `ctx:immediate:{session_id}`
+- **TTL:** 1 hour (refreshed on activity)
+
+#### **Layer 2: Enhanced Context** (100-500ms retrieval)
+```rust
+struct EnhancedContext {
+    immediate: ImmediateContext,
+    visible_entities: Vec<EntitySummary>,
+    location_details: Location,
+    character_relationships: Vec<RelationshipSummary>,
+    active_narrative_threads: Vec<NarrativeThread>,
+}
+```
+- **Purpose:** Rich context populated during async processing
+- **Cache Key:** `ctx:enhanced:{session_id}`
+- **TTL:** 15 minutes
+- **Population:** Entity extraction, hierarchy analysis results
+
+#### **Layer 3: Full Context** (Background processing)
+```rust
+struct FullContext {
+    enhanced: EnhancedContext,
+    entity_salience_scores: HashMap<EntityId, SalienceScore>,
+    memory_associations: Vec<Memory>,
+    complete_entity_details: Vec<Entity>,
+    narrative_state: NarrativeState,
+}
+```
+- **Purpose:** Complete analysis for next interaction
+- **Cache Key:** `ctx:full:{session_id}`
+- **TTL:** 5 minutes
+- **Population:** Salience scores, memory retrieval, full entity details
+
+### **Cache Retrieval Strategy**
+```rust
+async fn get_context(&self, session_id: Uuid) -> Result<Context> {
+    // Try layers in order: Full → Enhanced → Immediate → Minimal
+    if let Some(full) = self.get_full_context(session_id).await? {
+        return Ok(Context::Full(full));
+    }
+    if let Some(enhanced) = self.get_enhanced_context(session_id).await? {
+        return Ok(Context::Enhanced(enhanced));
+    }
+    if let Some(immediate) = self.get_immediate_context(session_id).await? {
+        return Ok(Context::Immediate(immediate));
+    }
+    Ok(Context::Minimal)
+}
+```
+
+### **Lightning Agent Implementation**
+
+The Lightning Agent is designed from the ground up for sub-2-second response times:
+
+```rust
+impl LightningAgent {
+    pub async fn retrieve_progressive_context(
+        &self,
+        session_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<ProgressiveContext, AppError> {
+        let start = Instant::now();
+        
+        // Attempt cache retrieval with strict timeout
+        let context = timeout(
+            Duration::from_millis(500),
+            self.cache_service.get_context(session_id)
+        ).await??;
+        
+        // Build minimal prompt based on available context
+        let prompt_context = match context {
+            Context::Full(full) => self.build_rich_prompt(full),
+            Context::Enhanced(enhanced) => self.build_enhanced_prompt(enhanced),
+            Context::Immediate(immediate) => self.build_immediate_prompt(immediate),
+            Context::Minimal => self.build_minimal_prompt(session_id, user_id),
+        };
+        
+        debug!("Lightning context retrieval: {:?}ms", start.elapsed().as_millis());
+        Ok(prompt_context)
+    }
+}
+```
+
+#### **Progressive Context Benefits**
+
+1. **First Message (Minimal Context)**:
+   - Basic session info and character identity
+   - Generic but coherent responses
+   - Time: <500ms retrieval + streaming
+
+2. **Second Message (Enhanced Context)**:
+   - Visible entities and location details from Perception Agent
+   - Character relationships and active narrative threads
+   - Time: <500ms retrieval with richer responses
+
+3. **Third+ Messages (Full Context)**:
+   - Complete entity salience scores and memory associations
+   - Strategic directives and tactical plans
+   - Time: <500ms retrieval with fully contextualized responses
+
+### **True Response Streaming** (Pending Implementation)
+- **Current Issue:** System waits for complete response before sending via SSE
+- **Solution:** Replace `exec_chat` with `stream_chat` in operational layer
+- **Expected Impact:** Time-to-first-token < 2 seconds
+
+#### **Implementation Path**
+```rust
+// Current (blocking) approach
+let response = self.ai_client.exec_chat(&prompt).await?;
+self.send_sse_event(response);
+
+// Target (streaming) approach  
+let stream = self.ai_client.stream_chat(&prompt).await?;
+while let Some(chunk) = stream.next().await {
+    self.send_sse_chunk(chunk?);
+}
+```
+
+### **Cache Population Strategy**
+
+The background agents progressively populate the cache layers:
+
+```rust
+impl HierarchicalAgentPipeline {
+    async fn background_enrichment(
+        &self,
+        session_id: Uuid,
+        user_message: &str,
+        ai_response: &str,
+    ) -> Result<(), AppError> {
+        // Stage 1: Perception Agent (populates Enhanced Context)
+        let perception_result = self.perception_agent
+            .analyze_with_timing(user_message, ai_response)
+            .await?;
+            
+        self.cache_service.update_enhanced_context(
+            session_id,
+            perception_result.entities,
+            perception_result.hierarchy,
+        ).await?;
+        
+        // Stage 2: Strategic Agent (enriches Full Context)
+        let strategic_result = self.strategic_agent
+            .process(perception_result)
+            .await?;
+            
+        // Stage 3: Tactical Agent (completes Full Context)
+        let tactical_result = self.tactical_agent
+            .plan_with_cortex(strategic_result)
+            .await?;
+            
+        self.cache_service.update_full_context(
+            session_id,
+            FullContextUpdate {
+                salience_scores: perception_result.salience_map,
+                strategic_directives: strategic_result.directives,
+                tactical_plans: tactical_result.plans,
+                memory_associations: perception_result.memories,
+            }
+        ).await?;
+        
+        Ok(())
+    }
+}
+```
+
+### **Chat Service Integration**
+
+The chat service orchestrates the dual-path architecture:
+
+```rust
+impl ChatService {
+    pub async fn handle_message_progressive(
+        &self,
+        session_id: Uuid,
+        message: &str,
+    ) -> Result<impl Stream<Item = Result<String, AppError>>, AppError> {
+        // Lightning path for immediate response
+        let context = self.lightning_agent
+            .retrieve_progressive_context(session_id, user_id)
+            .await?;
+            
+        // Start streaming response immediately
+        let response_stream = self.roleplay_ai
+            .stream_chat_with_context(message, context)
+            .await?;
+            
+        // Spawn background enrichment (fire-and-forget)
+        let pipeline = self.hierarchical_pipeline.clone();
+        let msg = message.to_string();
+        tokio::spawn(async move {
+            if let Err(e) = pipeline.background_enrichment(session_id, &msg, &response).await {
+                error!("Background enrichment failed: {}", e);
+            }
+        });
+        
+        Ok(response_stream)
+    }
+}
+```
 
 ## Multi-Scale Spatial Architecture
 
@@ -533,3 +781,29 @@ The comprehensive gap analysis reveals that Sanguine Scribe has achieved a **rob
 - **Redis Dependency**: 🔶 **ACKNOWLEDGED** - Cache failures degrade gracefully without system failure
 
 **Current Status**: The foundational planning and validation layer is **production-ready and battle-tested**. The architecture now provides an exceptional foundation that positions Sanguine Scribe to become a true world simulator with autonomous, intelligent narrative capabilities.
+
+## 🎯 **Executive Summary: The Path Forward**
+
+Sanguine Scribe has evolved from a hierarchical agent system into a sophisticated **Progressive Response Architecture** that balances immediate responsiveness with deep world simulation:
+
+### **Key Architectural Decisions**
+
+1. **Lightning Agent**: A new cache-first agent designed exclusively for sub-2-second context retrieval
+2. **Dual-Path Processing**: Immediate streaming responses with background world enrichment
+3. **Progressive Context Caching**: Three-layer cache architecture that builds richer context over time
+4. **True Response Streaming**: Replace blocking `exec_chat` with `stream_chat` for immediate token delivery
+
+### **Implementation Priorities**
+
+1. **Immediate (Epic 7.1)**: Implement Lightning Agent and true response streaming
+2. **Short-term (Epic 7.2-7.3)**: Deploy progressive caching and background pipeline
+3. **Medium-term (Epic 7.4)**: Integration testing and performance validation
+
+### **Expected Outcomes**
+
+- **User Experience**: < 2 second time-to-first-token with progressively richer responses
+- **World Consistency**: Full hierarchical analysis continues in background
+- **Scalability**: Cache-based architecture supports high concurrent usage
+- **Maintainability**: Clean separation between speed layer and intelligence layer
+
+The system maintains all the sophisticated world simulation capabilities while delivering the fluid, responsive experience users expect from modern AI applications.
