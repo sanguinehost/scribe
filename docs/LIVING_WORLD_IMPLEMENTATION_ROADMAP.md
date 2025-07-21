@@ -1407,127 +1407,220 @@ pub struct ContextCache {
      - Exchange 5: 4 entities persisted
    - Total: 23 entity persistence operations across 5 exchanges
 
-# Append this to LIVING_WORLD_IMPLEMENTATION_ROADMAP.md after the last line
+## 🧠 **Epic 8: Orchestrator-Driven Intelligent Agent System**
 
----
+**Status:** 🆕 **Planning Phase** - Evolve from a rigid linear pipeline to a durable, stateful reasoning engine with true intelligence.
 
-## 🧠 **Epic 8: Unified Intelligent Agent System**
+**Context:** Epic 7 delivered a high-performance, dual-path architecture. However, the background pipeline remains a rigid, linear process (`Perception` → `Strategic` → `Tactical`). This limits the system's intelligence, as it cannot dynamically react to findings, use tools in a flexible sequence, or manage complex, multi-step reasoning tasks. This epic replaces the linear pipeline with a stateful, durable, and intelligent **Orchestrator Agent** that operates as the "director" of the background world simulation.
 
-**Status:** 🆕 **Planning Phase** - Transform our reactive agent system into a truly intelligent, proactive narrative companion.
+**Vision:** To create a robust reasoning engine that combines durability (never lose user interactions), scalability (handle high volumes), and intelligence (true reasoning, prediction, and collaboration). The Orchestrator manages a persistent task queue and coordinates all agents dynamically based on context and needs.
 
-**Context:** Epics 6 & 7 built a performant foundation with the Progressive Response Architecture and hierarchical agents. However, the system remains largely reactive—agents extract and transform data but don't truly reason, predict, or collaborate. This epic adds the intelligence layer to create agents that understand narrative implications, anticipate needs, and work together to craft emergent stories.
+**Architecture Overview:**
+```
+User Message → Lightning Agent (fast response) → Create Task in Queue
+                                                          ↓
+                                          Orchestrator Worker(s) poll queue
+                                                          ↓
+                                          Orchestrator Reasoning Loop:
+                                          1. Analyze task & world state
+                                          2. Formulate goals
+                                          3. Create & execute plans
+                                          4. Use agents/tools dynamically
+                                          5. Update caches & persist state
+```
 
-**Vision:** Move from "smart responders" to "intelligent collaborators" that think ahead, learn from interactions, and demonstrate sophisticated reasoning chains.
+### **Task 8.1: Foundational Infrastructure - The Durable Task Queue**
+*   **Objective:** Create a robust, persistent task queue system in PostgreSQL to manage background world enrichment tasks with end-to-end encryption.
+*   **[ ] Subtask 8.1.1: Design and Implement Task Queue Schema:**
+    *   [ ] Create `world_enrichment_tasks` table in PostgreSQL
+    *   [ ] **Schema:** `task_id` (UUID), `session_id` (UUID), `user_id` (UUID), `status` (pending, in_progress, completed, failed), `encrypted_payload` (BYTEA), `payload_nonce` (BYTEA), `priority` (integer), `created_at`, `updated_at`, `encrypted_error` (BYTEA), `error_nonce` (BYTEA), `retry_count` (integer)
+    *   [ ] Implement database migrations following encryption patterns
+    *   [ ] Create indexes for efficient polling (status, priority, created_at)
+*   **[ ] Subtask 8.1.2: Create Task Queue Service with Encryption:**
+    *   [ ] Create `task_queue_service.rs` with comprehensive API
+    *   [ ] Implement `enqueue_task` that encrypts payload with user's DEK
+    *   [ ] Implement `dequeue_task` with atomic locking and DEK retrieval
+    *   [ ] Add `update_task_status` with encrypted error logging
+    *   [ ] Ensure DEK is passed securely to background workers
+    *   [ ] Implement task lifecycle tracking with encrypted audit logs
+*   **[ ] Subtask 8.1.3: Test-Driven Development for Task Queue:**
+    *   [ ] Create `task_queue_tests.rs` - Basic functionality tests
+    *   [ ] Create `task_queue_security_tests.rs` - OWASP-based security tests
+    *   [ ] Create `task_queue_encryption_tests.rs` - E2E encryption verification
+    *   [ ] Create `task_queue_integration_tests.rs` - Database integration tests
+    *   [ ] Test concurrent dequeue operations and race conditions
+    *   [ ] Verify user data isolation (A01: Broken Access Control)
+    *   [ ] Verify encrypted payloads cannot be read without DEK
+*   **[ ] Subtask 8.1.4: Integrate with Chat Service:**
+    *   [ ] Replace current `tokio::spawn` with `enqueue_task` 
+    *   [ ] Pass user's DEK securely to background pipeline
+    *   [ ] Ensure fire-and-forget pattern with proper error handling
+    *   [ ] Add task creation metrics and monitoring
 
-**Target Capabilities:**
-- **Intelligent Operation Planning:** Check existing state before deciding create vs. update
-- **Chain of Thought Reasoning:** Multi-step iterative problem solving with self-reflection
-- **Predictive Context Engine:** Anticipate user needs and pre-warm caches intelligently
-- **Agent Collaboration:** Shared working memory and consensus building
-- **Learning & Adaptation:** Improve performance and narrative quality over time
+### **Task 8.2: The Intelligent Orchestrator Agent**
+*   **Objective:** Implement the stateful Orchestrator Agent that processes tasks with dynamic reasoning.
+*   **[ ] Subtask 8.2.1: Create the Orchestrator Agent Core:**
+    *   [ ] Create `orchestrator_agent.rs` with stateful architecture
+    *   [ ] Implement worker loop that polls TaskQueueService
+    *   [ ] Add graceful shutdown and task handoff
+    *   [ ] Implement health checks and worker lifecycle management
+*   **[ ] Subtask 8.2.2: Implement the Core Reasoning Loop:**
+    *   [ ] **Phase 1 - Perceive:** Dynamic perception based on decrypted task context
+    *   [ ] **Phase 2 - Strategize:** Goal formulation with alternative paths
+    *   [ ] **Phase 3 - Plan:** Create multi-step plans with dependency tracking
+    *   [ ] **Phase 4 - Execute:** Dynamic tool/agent selection with DEK propagation
+    *   [ ] **Phase 5 - Reflect:** Verify goal completion and re-plan if needed
+    *   [ ] Implement encrypted state persistence between phases
+*   **[ ] Subtask 8.2.3: Intelligent Decision Making:**
+    *   [ ] Integrate `intelligent_world_state_planner.rs` for smart operations
+    *   [ ] Implement "check before create" logic for all entities
+    *   [ ] Add narrative implication analysis (upgrade vs replace)
+    *   [ ] Create dependency resolution (create location before move)
+*   **[ ] Subtask 8.2.4: Test-Driven Development for Orchestrator:**
+    *   [ ] Create `orchestrator_agent_tests.rs` - Core logic tests
+    *   [ ] Create `orchestrator_agent_reasoning_tests.rs` - Decision making tests
+    *   [ ] Create `orchestrator_agent_security_tests.rs` - OWASP security tests
+    *   [ ] Create `orchestrator_agent_integration_tests.rs` - End-to-end tests
+    *   [ ] Mock all agent and tool dependencies for unit tests
 
-### **Task 8.1: Intelligent World State Planning**
-*   **Objective:** Replace simple create/update logic with context-aware decision making.
-*   **[ ] Subtask 8.1.1: Complete Intelligent World State Planner:** 🟡 **IN PROGRESS**
-    *   [x] Created `intelligent_world_state_planner.rs` with sophisticated planning architecture
-    *   [ ] Implement AI-powered narrative implication analysis
-    *   [ ] Add dependency-aware operation sequencing (e.g., create location before moving entity)
-    *   [ ] Build queryable decision tracking for transparency
-*   **[ ] Subtask 8.1.2: Enhanced Entity Lifecycle Management:**
-    *   [ ] Implement "existence checking" before all operations
-    *   [ ] Add property comparison for intelligent updates vs. overwrites
-    *   [ ] Create entity upgrade paths (e.g., "rusty sword" → "polished sword")
-    *   [ ] Handle complex spatial movements with dependency checking
-*   **[ ] Subtask 8.1.3: Narrative-Aware Operations:**
-    *   [ ] Detect narrative patterns ("moving from A to B" implies leaving A)
-    *   [ ] Understand item state changes ("upgrade" vs. "replace" vs. "acquire")
-    *   [ ] Track operation history for context-aware decisions
+### **Task 8.3: Enhanced Tooling & Verification Capabilities**
+*   **Objective:** Extend toolset for intelligent state verification and comparison.
+*   **[ ] Subtask 8.3.1: Tool Gap Analysis:**
+    *   [ ] Review existing 23 tools in ToolRegistry
+    *   [ ] Identify missing verification and observation tools
+    *   [ ] Document tool capability matrix
+*   **[ ] Subtask 8.3.2: Implement New Verification Tools:**
+    *   [ ] `VerifyEntityStateTool`: Check entity properties match expectations (with DEK)
+    *   [ ] `CompareEntityStatesTool`: Diff two entities for changes (decrypt first)
+    *   [ ] `GetTaskHistoryTool`: Retrieve and decrypt recent task execution history
+    *   [ ] `CheckEntityExistenceTool`: Efficient existence verification with encryption
+*   **[ ] Subtask 8.3.3: Comprehensive Security Testing:**
+    *   [ ] Create security test for each new tool
+    *   [ ] Audit and create missing tests for existing tools
+    *   [ ] Follow OWASP Top 10 patterns from `tactical_agent_security_tests.rs`
+    *   [ ] Ensure 100% security test coverage for all tools
 
-### **Task 8.2: Chain of Thought Reasoning Framework**
-*   **Objective:** Enable agents to think through problems iteratively with self-reflection.
-*   **[ ] Subtask 8.2.1: Implement Chain of Thought Engine:**
-    *   [ ] Create iterative reasoning loop with confidence scoring
+### **Task 8.4: Chain of Thought & Collaborative Intelligence**
+*   **Objective:** Enable sophisticated reasoning and multi-agent collaboration.
+*   **[ ] Subtask 8.4.1: Chain of Thought Framework:**
+    *   [ ] Create `chain_of_thought_engine.rs`
+    *   [ ] Implement iterative reasoning with confidence scoring
     *   [ ] Add self-reflection and hypothesis revision
-    *   [ ] Implement reasoning chain persistence for debugging
-*   **[ ] Subtask 8.2.2: Agent-Specific Reasoning Patterns:**
-    *   [ ] Strategic: Multi-step narrative planning with alternative paths
-    *   [ ] Tactical: Iterative plan refinement with feasibility checking
-    *   [ ] Perception: Deep narrative understanding with implication chains
-*   **[ ] Subtask 8.2.3: Reasoning Performance Optimization:**
-    *   [ ] Implement early termination for high-confidence solutions
-    *   [ ] Add reasoning depth limits to prevent infinite loops
-    *   [ ] Cache successful reasoning patterns for reuse
+    *   [ ] Persist encrypted reasoning chains for debugging and learning
+*   **[ ] Subtask 8.4.2: Shared Working Memory:**
+    *   [ ] Implement collaborative context in Redis with encryption
+    *   [ ] Encrypt all shared memory with user's DEK before Redis storage
+    *   [ ] Add read/write permissions per agent type
+    *   [ ] Create conflict resolution for concurrent updates
+    *   [ ] Track contribution attribution with encrypted audit trail
+*   **[ ] Subtask 8.4.3: Collaboration Patterns:**
+    *   [ ] Implement hypothesis testing between agents
+    *   [ ] Create consensus building for critical decisions
+    *   [ ] Enable dynamic task delegation based on expertise
+*   **[ ] Subtask 8.4.4: Test-Driven Development:**
+    *   [ ] Create `chain_of_thought_tests.rs`
+    *   [ ] Create `collaborative_intelligence_tests.rs`
+    *   [ ] Create `shared_memory_concurrency_tests.rs`
 
-### **Task 8.3: Predictive Context Engine**
-*   **Objective:** Anticipate user needs and proactively prepare context.
-*   **[ ] Subtask 8.3.1: Pattern Recognition System:**
-    *   [ ] Identify common narrative sequences (exploration → discovery → conflict)
-    *   [ ] Learn user-specific interaction patterns
-    *   [ ] Detect conversation type early (combat, dialogue, exploration)
-*   **[ ] Subtask 8.3.2: Predictive Cache Warming:**
-    *   [ ] Pre-load likely next locations based on movement patterns
-    *   [ ] Anticipate entity interactions from proximity and relationships
-    *   [ ] Prepare context for detected narrative arcs
-*   **[ ] Subtask 8.3.3: Adaptive Optimization:**
-    *   [ ] Track prediction accuracy and adjust strategies
-    *   [ ] Learn optimal cache TTLs per pattern type
-    *   [ ] Balance prediction overhead vs. hit rate improvement
+### **Task 8.5: Predictive Context & Learning Systems**
+*   **Objective:** Anticipate user needs and continuously improve performance.
+*   **[ ] Subtask 8.5.1: Predictive Context Engine:**
+    *   [ ] Create `predictive_context_engine.rs`
+    *   [ ] Implement pattern recognition on decrypted narrative sequences
+    *   [ ] Add user-specific behavior learning with encrypted storage
+    *   [ ] Create predictive cache warming with encrypted data
+*   **[ ] Subtask 8.5.2: Learning & Adaptation Framework:**
+    *   [ ] Track successful patterns and reinforce
+    *   [ ] Implement A/B testing for strategies
+    *   [ ] Create feedback loops for continuous improvement
+    *   [ ] Maintain safety fallbacks
+*   **[ ] Subtask 8.5.3: Test-Driven Development:**
+    *   [ ] Create `predictive_engine_tests.rs`
+    *   [ ] Create `learning_system_tests.rs`
+    *   [ ] Create `prediction_accuracy_tests.rs`
 
-### **Task 8.4: Agent Collaboration Framework**
-*   **Objective:** Enable true multi-agent collaboration beyond sequential handoffs.
-*   **[ ] Subtask 8.4.1: Shared Working Memory:**
-    *   [ ] Implement collaborative context that all agents can read/write
-    *   [ ] Add conflict resolution for concurrent updates
-    *   [ ] Track contribution attribution for debugging
-*   **[ ] Subtask 8.4.2: Collaboration Patterns:**
-    *   [ ] Hypothesis Testing: Strategic proposes, Tactical validates
-    *   [ ] Consensus Building: Multiple agents vote on decisions
-    *   [ ] Task Delegation: Agents request specialist assistance
-*   **[ ] Subtask 8.4.3: Emergent Behavior Monitoring:**
-    *   [ ] Track unexpected collaboration patterns
-    *   [ ] Identify and reinforce beneficial emergent behaviors
-    *   [ ] Prevent negative feedback loops
+### **Task 8.6: System Integration & Observability**
+*   **Objective:** Integrate all components and ensure production readiness.
+*   **[ ] Subtask 8.6.1: Orchestrator Worker Service:**
+    *   [ ] Create background service for running workers
+    *   [ ] Implement worker pool management
+    *   [ ] Add auto-scaling based on queue depth
+    *   [ ] Create deployment configurations
+*   **[ ] Subtask 8.6.2: State Persistence & Cache Updates:**
+    *   [ ] Ensure final state encrypts before PostgreSQL persistence
+    *   [ ] Update all cache layers with encrypted data progressively
+    *   [ ] Implement cache consistency verification with DEK validation
+    *   [ ] Add transaction support for atomic encrypted updates
+*   **[ ] Subtask 8.6.3: Monitoring & Observability:**
+    *   [ ] Create comprehensive metrics dashboard
+    *   [ ] Track task queue depth and processing times
+    *   [ ] Monitor reasoning chain performance
+    *   [ ] Add alerts for failures and SLA breaches
+*   **[ ] Subtask 8.6.4: End-to-End Integration Testing:**
+    *   [ ] Enhance `end_to_end_living_world_integration_test.rs`
+    *   [ ] Test complete flow: User → Lightning → Task → Orchestrator → State
+    *   [ ] Verify durability with worker restarts
+    *   [ ] Test concurrent session handling
+    *   [ ] Measure end-to-end latency and throughput
 
-### **Task 8.5: Learning & Adaptation System**
-*   **Objective:** Continuously improve agent performance and narrative quality.
-*   **[ ] Subtask 8.5.1: Performance Learning:**
-    *   [ ] Track successful narrative patterns and reinforce
-    *   [ ] Learn optimal agent orchestration per scenario
-    *   [ ] Adapt caching strategies based on usage patterns
-*   **[ ] Subtask 8.5.2: Narrative Quality Learning:**
-    *   [ ] Identify engaging story patterns from user interactions
-    *   [ ] Learn character voice and behavioral consistency
-    *   [ ] Adapt pacing and tension based on user preferences
-*   **[ ] Subtask 8.5.3: Continuous Improvement Loop:**
-    *   [ ] A/B test different strategies with metrics tracking
-    *   [ ] Implement gradual rollout for learned optimizations
-    *   [ ] Maintain fallback strategies for safety
-
-### **Task 8.6: Frontend Integration & Visibility**
-*   **Objective:** Expose intelligent features through intuitive UI components.
-*   **[ ] Subtask 8.6.1: Living World Dashboard:**
-    *   [ ] Real-time entity and relationship visualization
-    *   [ ] Narrative thread tracking and display
-    *   [ ] Performance metrics and optimization status
-*   **[ ] Subtask 8.6.2: Intelligence Transparency:**
-    *   [ ] Show active reasoning chains (developer mode)
-    *   [ ] Display prediction confidence and accuracy
-    *   [ ] Visualize agent collaboration patterns
-*   **[ ] Subtask 8.6.3: User Control Features:**
-    *   [ ] Narrative preference settings
-    *   [ ] Manual cache warming for planned scenarios
-    *   [ ] Agent behavior tuning interface
+### **Task 8.7: Frontend Integration & Developer Experience**
+*   **Objective:** Expose intelligent features through intuitive interfaces.
+*   **[ ] Subtask 8.7.1: Task Queue Visualization:**
+    *   [ ] Display pending/processing/completed tasks
+    *   [ ] Show task execution timeline
+    *   [ ] Provide retry and error details
+*   **[ ] Subtask 8.7.2: Intelligence Transparency:**
+    *   [ ] Visualize orchestrator reasoning chains
+    *   [ ] Display agent collaboration patterns
+    *   [ ] Show prediction accuracy metrics
+*   **[ ] Subtask 8.7.3: Developer Tools:**
+    *   [ ] Create task inspection API
+    *   [ ] Add manual task creation for testing
+    *   [ ] Implement reasoning chain replay
 
 ### **Success Metrics:**
-- [ ] **Intelligence:** Reasoning chains produce superior narrative decisions
-- [ ] **Performance:** Maintain <2s response times with added intelligence
-- [ ] **Prediction:** >70% accuracy on context predictions
-- [ ] **Collaboration:** Measurable improvement from multi-agent cooperation
-- [ ] **Learning:** 10% quality improvement per 100 interactions
-- [ ] **User Satisfaction:** >4.5/5 rating on "intelligence" of responses
+- [ ] **Durability:** Zero task loss even with system failures
+- [ ] **Scalability:** Handle 100+ concurrent sessions without degradation
+- [ ] **Intelligence:** Orchestrator successfully executes complex multi-step plans
+- [ ] **Performance:** Background processing completes in <30s for standard tasks
+- [ ] **Security:** 100% OWASP-based security test coverage + E2E encryption
+- [ ] **Privacy:** All user data encrypted at rest with per-user DEKs
+- [ ] **Observability:** Full visibility into task execution and reasoning
 
-### **Risks & Mitigations:**
-1. **Complexity Explosion:** Use feature flags and gradual rollout
-2. **Performance Impact:** Strict budgets and circuit breakers
-3. **Unpredictability:** Confidence thresholds and fallback modes
-4. **Context Growth:** Intelligent pruning and compression
+### **Test File Structure (Following Project Patterns):**
+```
+backend/tests/
+├── task_queue_tests.rs
+├── task_queue_security_tests.rs
+├── task_queue_encryption_tests.rs
+├── task_queue_integration_tests.rs
+├── orchestrator_agent_tests.rs
+├── orchestrator_agent_reasoning_tests.rs
+├── orchestrator_agent_security_tests.rs
+├── orchestrator_agent_encryption_tests.rs
+├── orchestrator_agent_integration_tests.rs
+├── chain_of_thought_tests.rs
+├── chain_of_thought_encryption_tests.rs
+├── collaborative_intelligence_tests.rs
+├── shared_memory_concurrency_tests.rs
+├── shared_memory_encryption_tests.rs
+├── predictive_engine_tests.rs
+├── learning_system_tests.rs
+├── prediction_accuracy_tests.rs
+└── end_to_end_orchestrator_tests.rs
+```
+
+### **Implementation Principles:**
+1. **Test-First:** Write tests before implementation
+2. **Security-First:** OWASP compliance + E2E encryption for all components
+3. **Privacy-First:** All user data encrypted with per-user DEKs
+4. **Observable:** Comprehensive metrics and logging (without exposing plaintext)
+5. **Resilient:** Handle failures gracefully
+6. **Performant:** Maintain <2s Lightning response times
+
+### **Encryption Considerations:**
+1. **DEK Management:** Background workers must securely access user DEKs
+2. **Task Queue:** All payloads encrypted before storage
+3. **Shared Memory:** Redis data encrypted with user DEK
+4. **Audit Logs:** All sensitive data encrypted before logging
+5. **Error Handling:** Error messages encrypted to prevent data leaks
