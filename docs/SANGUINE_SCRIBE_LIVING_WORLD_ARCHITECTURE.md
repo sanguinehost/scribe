@@ -1,18 +1,51 @@
 # Sanguine Scribe: A Hierarchical World Model Architecture
 
-**Version:** 5.1 (Progressive Response Architecture with Performance Optimizations)
+**Version:** 6.0 (Orchestrator-Driven Progressive Response Architecture)
 **Last Updated:** 2025-07-21
-**Status:** Architectural Redesign for High-Performance Interaction
+**Status:** Orchestrator Layer Integration for Intelligent Coordination
 
 ## Executive Summary
 
-Sanguine Scribe is architected as a **world simulator** - a foundation for persistent, intelligent narrative ecosystems. This document outlines a paradigm shift from a synchronous, pre-response agent pipeline to a high-performance, **Progressive Response Architecture**.
+Sanguine Scribe is architected as a **world simulator** - a foundation for persistent, intelligent narrative ecosystems. This document outlines the evolution from a synchronous, pre-response agent pipeline to a high-performance, **Orchestrator-Driven Progressive Response Architecture**.
 
-**Vision:** To deliver an exceptionally fluid and responsive user experience by decoupling immediate response generation from complex, time-intensive world-state updates. This is achieved by splitting the agentic workflow into two distinct phases:
-*   **The Immediate Response Path:** A lightweight, high-speed pipeline that performs minimal necessary analysis to generate and stream a coherent response to the user with the lowest possible latency.
-*   **The Asynchronous Background Pipeline:** A robust, comprehensive process that runs after the response is sent. It performs the deep reasoning, planning, and world-state updates (Strategic and Tactical layers) required to ensure the world is consistent for the *next* user turn.
+**Vision:** To deliver an exceptionally fluid and responsive user experience while maintaining sophisticated world simulation through intelligent agent coordination. This is achieved by introducing an **Orchestrator Agent** that acts as the "brain" behind our three-tier agent hierarchy:
 
-This ensures the user receives immediate feedback, while the system's deep narrative and world simulation capabilities operate in the background, transforming Sanguine Scribe into a true real-time digital consciousness substrate.
+*   **The Immediate Response Path:** Lightning Agent provides sub-2-second responses using progressively enriched caches
+*   **The Orchestrator (New):** A stateful reasoning engine that dynamically coordinates agents based on context and needs
+*   **The Hierarchical Agents:** Strategic, Tactical, and Perception agents work under Orchestrator direction
+
+This architecture ensures users receive immediate feedback while the Orchestrator manages deep narrative reasoning and world state consistency through a durable task queue, transforming Sanguine Scribe into a true real-time digital consciousness substrate.
+
+## 🧠 The Orchestrator Layer: Intelligent Coordination
+
+**New in Version 6.0:** The Orchestrator transforms our rigid linear pipeline into a dynamic, intelligent system that can:
+
+### **Core Capabilities**
+- **Dynamic Agent Selection:** Choose which agents to invoke based on task requirements
+- **Stateful Reasoning:** Maintain context across multi-step operations
+- **Intelligent Replanning:** Adapt when initial approaches fail
+- **Task Durability:** Never lose user interactions through persistent task queue
+
+### **Architecture Overview**
+```
+User Message → Lightning Agent → Create Task in PostgreSQL Queue
+                   ↓                           ↓
+            Fast Response            Orchestrator Worker polls
+                                              ↓
+                                    Orchestrator Reasoning Loop:
+                                    1. Analyze task & decrypt payload
+                                    2. Determine required agents
+                                    3. Execute with dynamic sequencing
+                                    4. Handle failures with replanning
+                                    5. Update all cache layers
+```
+
+### **First Message vs Subsequent Messages**
+- **First Message:** Orchestrator runs full pipeline (Perception → Strategic → Tactical)
+- **Subsequent:** Orchestrator performs selective updates based on what changed
+- **Cache Benefit:** Each Lightning response benefits from previous Orchestrator work
+
+The Orchestrator ensures our agents work as a cohesive intelligence rather than isolated processors.
 
 ## 🔍 **Current Implementation Status & Viability Assessment**
 
@@ -67,33 +100,41 @@ pub struct LightningAgent {
 sequenceDiagram
     participant User
     participant ApiServer
-    participant ImmediatePath as "Immediate Response Path"
-    participant BackgroundPipeline as "Background Pipeline"
+    participant Lightning as "Lightning Agent"
+    participant TaskQueue as "Task Queue (PostgreSQL)"
+    participant Orchestrator as "Orchestrator Agent"
+    participant Agents as "Strategic/Tactical/Perception"
     participant EcsAndVectorDB as "World State [Qdrant+Redis]"
     participant RoleplayAI as "Operational Layer"
 
     User->>ApiServer: Sends chat message
-    ApiServer->>ImmediatePath: Initiate Immediate Response
-    activate ImmediatePath
-    ImmediatePath->>EcsAndVectorDB: Gather minimal context [Perception]
-    EcsAndVectorDB-->>ImmediatePath: Return minimal context
-    ImmediatePath->>RoleplayAI: Send lightweight prompt
-    deactivate ImmediatePath
+    ApiServer->>Lightning: Request immediate response
+    activate Lightning
+    Lightning->>EcsAndVectorDB: Retrieve cached context
+    EcsAndVectorDB-->>Lightning: Return context (rich if available)
+    Lightning->>RoleplayAI: Stream with context
+    deactivate Lightning
     
     activate RoleplayAI
     RoleplayAI-->>ApiServer: Stream roleplay response
     deactivate RoleplayAI
     
     ApiServer-->>User: Stream response
+    ApiServer->>TaskQueue: Create enrichment task
     
-    par
-        ApiServer->>BackgroundPipeline: (Asynchronously) Process full context
-        activate BackgroundPipeline
-        BackgroundPipeline->>EcsAndVectorDB: Update world state [Strategic/Tactical]
-        deactivate BackgroundPipeline
-    and
-        User->>User: Reading response...
-    end
+    Note over Orchestrator: Background Processing
+    Orchestrator->>TaskQueue: Poll for tasks
+    TaskQueue-->>Orchestrator: Return task with encrypted payload
+    activate Orchestrator
+    Orchestrator->>Orchestrator: Decrypt & analyze task
+    Orchestrator->>Agents: Dynamic agent invocation
+    activate Agents
+    Agents->>EcsAndVectorDB: Update world state
+    Agents-->>Orchestrator: Return results
+    deactivate Agents
+    Orchestrator->>EcsAndVectorDB: Update all cache layers
+    Orchestrator->>TaskQueue: Mark task complete
+    deactivate Orchestrator
 ```
 
 ### 1. The Immediate Response Path (Foreground) - Lightning Agent
@@ -107,18 +148,28 @@ This is the high-speed, latency-critical path responsible for generating the use
     5.  The Operational Layer generates the narrative response and begins streaming it back to the user immediately.
 *   **Key Principle:** This path is cache-first, never waits for analysis. Each response benefits from the previous exchange's background processing.
 
-### 2. The Asynchronous Background Pipeline (Background)
-This is the deliberative, high-computation path responsible for maintaining world consistency and planning future narrative arcs. It runs in the background, after the user has already started receiving their response.
-*   **Goal:** Ensure the world state is accurate and ready for the *next* user turn.
-*   **Process:**
-    1.  The AI's generated response and the initial user message are passed to the background pipeline.
-    2.  The **Perception Agent** performs deep entity extraction, hierarchy analysis, and salience evaluation.
-    3.  The **Strategic Layer ("Director")** analyzes the full interaction to update long-term narrative arcs and goals.
-    4.  The **Tactical Layer ("Stage Manager")** receives directives from the Strategic Layer, uses the **Planning & Reasoning Cortex** to generate and validate detailed plans, and executes world state updates.
-    5.  All three agents progressively populate the cache layers (Immediate → Enhanced → Full) for the next interaction.
-*   **Key Principle:** This pipeline enriches the cache for future Lightning Agent retrievals, creating progressively richer responses over time.
+### 2. The Orchestrator-Driven Background Pipeline (Background)
+This is the intelligent, stateful reasoning engine responsible for maintaining world consistency and planning future narrative arcs. It runs asynchronously through a durable task queue, ensuring no user interaction is ever lost.
 
-**Current State:** ✅ **FULLY IMPLEMENTED** - The hierarchical agent framework is complete with `StrategicAgent` providing high-level directives, `TacticalAgent` using the Planning & Reasoning Cortex for validated world state updates, and `PerceptionAgent` analyzing AI responses for world consistency. The system is integrated into the chat service via `HierarchicalAgentPipeline`. Performance optimizations have been implemented including batched salience analysis (75-85% reduction in AI calls) and progressive context caching architecture is designed (Epic 7).
+*   **Goal:** Intelligently coordinate agents to maintain world state consistency for the *next* user turn.
+*   **Process:**
+    1.  The Orchestrator polls the task queue for enrichment tasks (containing encrypted user message and AI response).
+    2.  **Dynamic Analysis:** The Orchestrator analyzes the task to determine which agents are needed.
+    3.  **First Message Flow:** For new sessions, runs full pipeline:
+        - **Perception Agent** performs deep entity extraction and hierarchy analysis
+        - **Strategic Agent** establishes narrative context and long-term goals
+        - **Tactical Agent** creates initial world state with Planning Cortex
+    4.  **Subsequent Message Flow:** For ongoing sessions, performs delta updates:
+        - Only processes what changed since last interaction
+        - May skip Strategic if narrative arc unchanged
+        - Focuses on efficient state updates
+    5.  **Progressive Cache Updates:** Orchestrator ensures all cache layers are populated for Lightning Agent.
+*   **Key Principles:** 
+    - **Durability:** Tasks persist in PostgreSQL, surviving system failures
+    - **Intelligence:** Dynamic agent selection based on context
+    - **Efficiency:** Delta processing for subsequent messages
+
+**Current State:** ✅ **AGENTS IMPLEMENTED** - The hierarchical agents are complete. 🆕 **ORCHESTRATOR PLANNED** - Epic 8 will add the Orchestrator layer for dynamic coordination, task durability, and intelligent reasoning.
 
 ## Performance Optimizations & Progressive Context Caching
 
@@ -316,16 +367,18 @@ impl HierarchicalAgentPipeline {
 }
 ```
 
-### **Chat Service Integration**
+### **Chat Service Integration with Orchestrator**
 
-The chat service orchestrates the dual-path architecture:
+The chat service coordinates with the Orchestrator through the durable task queue:
 
 ```rust
 impl ChatService {
     pub async fn handle_message_progressive(
         &self,
         session_id: Uuid,
+        user_id: Uuid,
         message: &str,
+        dek: &SessionDek,
     ) -> Result<impl Stream<Item = Result<String, AppError>>, AppError> {
         // Lightning path for immediate response
         let context = self.lightning_agent
@@ -337,14 +390,28 @@ impl ChatService {
             .stream_chat_with_context(message, context)
             .await?;
             
-        // Spawn background enrichment (fire-and-forget)
-        let pipeline = self.hierarchical_pipeline.clone();
-        let msg = message.to_string();
-        tokio::spawn(async move {
-            if let Err(e) = pipeline.background_enrichment(session_id, &msg, &response).await {
-                error!("Background enrichment failed: {}", e);
-            }
-        });
+        // Create durable task for Orchestrator (replaces tokio::spawn)
+        let task_payload = EnrichmentTaskPayload {
+            session_id,
+            user_id,
+            user_message: message.to_string(),
+            ai_response: response_text.clone(), // Captured from stream
+            timestamp: Utc::now(),
+        };
+        
+        // Encrypt payload with user's DEK
+        let encrypted_payload = self.encryption_service
+            .encrypt_json(&task_payload, dek)?;
+            
+        // Enqueue for Orchestrator processing
+        self.task_queue_service
+            .enqueue_task(
+                user_id,
+                session_id,
+                encrypted_payload,
+                TaskPriority::Normal,
+            )
+            .await?;
         
         Ok(response_stream)
     }
@@ -784,26 +851,37 @@ The comprehensive gap analysis reveals that Sanguine Scribe has achieved a **rob
 
 ## 🎯 **Executive Summary: The Path Forward**
 
-Sanguine Scribe has evolved from a hierarchical agent system into a sophisticated **Progressive Response Architecture** that balances immediate responsiveness with deep world simulation:
+Sanguine Scribe has evolved from a hierarchical agent system into a sophisticated **Orchestrator-Driven Progressive Response Architecture** that combines immediate responsiveness, intelligent coordination, and deep world simulation:
 
 ### **Key Architectural Decisions**
 
-1. **Lightning Agent**: A new cache-first agent designed exclusively for sub-2-second context retrieval
-2. **Dual-Path Processing**: Immediate streaming responses with background world enrichment
-3. **Progressive Context Caching**: Three-layer cache architecture that builds richer context over time
-4. **True Response Streaming**: Replace blocking `exec_chat` with `stream_chat` for immediate token delivery
+1. **Lightning Agent**: Cache-first agent for sub-2-second context retrieval (Epic 7 - 90% Complete)
+2. **Orchestrator Agent**: Stateful reasoning engine that dynamically coordinates agents (Epic 8 - Planning)
+3. **Durable Task Queue**: PostgreSQL-based queue ensures no user interaction is lost
+4. **Progressive Context Caching**: Three-layer architecture building richer context over time
+5. **End-to-End Encryption**: All orchestrator operations maintain per-user DEK encryption
 
-### **Implementation Priorities**
+### **Implementation Roadmap**
 
-1. **Immediate (Epic 7.1)**: Implement Lightning Agent and true response streaming
-2. **Short-term (Epic 7.2-7.3)**: Deploy progressive caching and background pipeline
-3. **Medium-term (Epic 7.4)**: Integration testing and performance validation
+1. **Completed (Epic 6)**: Hierarchical agents (Strategic, Tactical, Perception) ✅
+2. **Near Complete (Epic 7)**: Progressive Response Architecture with Lightning Agent (90%)
+3. **Next Priority (Epic 8)**: Orchestrator Agent with durable task queue
+4. **Future**: Predictive context, learning systems, and collaborative intelligence
+
+### **Orchestrator Benefits**
+
+- **Intelligence**: Dynamic agent selection based on context and needs
+- **Durability**: Task queue survives system failures and restarts
+- **Efficiency**: Delta processing for subsequent messages
+- **Flexibility**: Replanning capabilities when approaches fail
+- **Observability**: Complete visibility into reasoning and decisions
 
 ### **Expected Outcomes**
 
-- **User Experience**: < 2 second time-to-first-token with progressively richer responses
-- **World Consistency**: Full hierarchical analysis continues in background
-- **Scalability**: Cache-based architecture supports high concurrent usage
-- **Maintainability**: Clean separation between speed layer and intelligence layer
+- **User Experience**: < 2 second first token with progressively richer responses
+- **Reliability**: Zero lost interactions through durable task processing
+- **Intelligence**: Context-aware agent coordination replacing rigid pipelines
+- **Scalability**: Worker pools and queue-based architecture
+- **Security**: Maintained E2E encryption throughout orchestration
 
-The system maintains all the sophisticated world simulation capabilities while delivering the fluid, responsive experience users expect from modern AI applications.
+The Orchestrator transforms our three agents from isolated processors into a cohesive intelligence, creating a true world simulator with both immediate responsiveness and deep narrative understanding.

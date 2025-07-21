@@ -1413,21 +1413,35 @@ pub struct ContextCache {
 
 **Context:** Epic 7 delivered a high-performance, dual-path architecture. However, the background pipeline remains a rigid, linear process (`Perception` → `Strategic` → `Tactical`). This limits the system's intelligence, as it cannot dynamically react to findings, use tools in a flexible sequence, or manage complex, multi-step reasoning tasks. This epic replaces the linear pipeline with a stateful, durable, and intelligent **Orchestrator Agent** that operates as the "director" of the background world simulation.
 
-**Vision:** To create a robust reasoning engine that combines durability (never lose user interactions), scalability (handle high volumes), and intelligence (true reasoning, prediction, and collaboration). The Orchestrator manages a persistent task queue and coordinates all agents dynamically based on context and needs.
+**Vision:** To create a robust reasoning engine that combines durability (never lose user interactions), scalability (handle high volumes), and intelligence (true reasoning, prediction, and collaboration). The Orchestrator manages a persistent task queue and coordinates all agents dynamically based on context and needs, while maintaining the Progressive Response Architecture for optimal performance.
 
 **Architecture Overview:**
+
+The system maintains the Progressive Response Architecture from Epic 7, with the Orchestrator enhancing rather than replacing it:
+
 ```
-User Message → Lightning Agent (fast response) → Create Task in Queue
-                                                          ↓
-                                          Orchestrator Worker(s) poll queue
-                                                          ↓
-                                          Orchestrator Reasoning Loop:
-                                          1. Analyze task & world state
-                                          2. Formulate goals
-                                          3. Create & execute plans
-                                          4. Use agents/tools dynamically
-                                          5. Update caches & persist state
+First Message in New Chat:
+User Message → Lightning Agent (minimal cache) → Create Task in Queue
+                     ↓                                    ↓
+            Stream basic response              Orchestrator runs FULL pipeline
+                                              (Perception → Strategic → Tactical)
+                                                         ↓
+                                              Populate all cache layers & DB
+
+Subsequent Messages (Progressive Response):
+User Message → Lightning Agent (rich cache) → Create Task in Queue
+                     ↓                                    ↓
+            Stream context-aware response      Orchestrator selective updates
+            (benefits from previous               (only what changed)
+             Orchestrator enrichment)                     ↓
+                                              Update cache layers progressively
 ```
+
+**Key Integration Points:**
+- **First Message:** Orchestrator performs complete world initialization
+- **Subsequent Messages:** Lightning Agent leverages Orchestrator-populated caches
+- **Cache Layers:** Immediate → Enhanced → Full (populated by Orchestrator)
+- **Intelligent Updates:** Orchestrator only processes changes, not full re-analysis
 
 ### **Task 8.1: Foundational Infrastructure - The Durable Task Queue**
 *   **Objective:** Create a robust, persistent task queue system in PostgreSQL to manage background world enrichment tasks with end-to-end encryption.
@@ -1458,7 +1472,7 @@ User Message → Lightning Agent (fast response) → Create Task in Queue
     *   [ ] Add task creation metrics and monitoring
 
 ### **Task 8.2: The Intelligent Orchestrator Agent**
-*   **Objective:** Implement the stateful Orchestrator Agent that processes tasks with dynamic reasoning.
+*   **Objective:** Implement the stateful Orchestrator Agent that processes tasks with dynamic reasoning, optimized for Progressive Response Architecture.
 *   **[ ] Subtask 8.2.1: Create the Orchestrator Agent Core:**
     *   [ ] Create `orchestrator_agent.rs` with stateful architecture
     *   [ ] Implement worker loop that polls TaskQueueService
@@ -1466,10 +1480,17 @@ User Message → Lightning Agent (fast response) → Create Task in Queue
     *   [ ] Implement health checks and worker lifecycle management
 *   **[ ] Subtask 8.2.2: Implement the Core Reasoning Loop:**
     *   [ ] **Phase 1 - Perceive:** Dynamic perception based on decrypted task context
+        - First message: Full entity extraction and world analysis
+        - Subsequent: Delta analysis (what changed since last interaction)
     *   [ ] **Phase 2 - Strategize:** Goal formulation with alternative paths
+        - First message: Establish narrative context and world state
+        - Subsequent: Update narrative threads and relationships
     *   [ ] **Phase 3 - Plan:** Create multi-step plans with dependency tracking
+        - Leverage cached world state from previous Orchestrator runs
     *   [ ] **Phase 4 - Execute:** Dynamic tool/agent selection with DEK propagation
+        - Intelligent decisions on create vs update based on cache
     *   [ ] **Phase 5 - Reflect:** Verify goal completion and re-plan if needed
+        - Update all cache layers for Lightning Agent's next use
     *   [ ] Implement encrypted state persistence between phases
 *   **[ ] Subtask 8.2.3: Intelligent Decision Making:**
     *   [ ] Integrate `intelligent_world_state_planner.rs` for smart operations
@@ -1583,6 +1604,8 @@ User Message → Lightning Agent (fast response) → Create Task in Queue
 - [ ] **Scalability:** Handle 100+ concurrent sessions without degradation
 - [ ] **Intelligence:** Orchestrator successfully executes complex multi-step plans
 - [ ] **Performance:** Background processing completes in <30s for standard tasks
+- [ ] **Progressive Response:** Lightning Agent maintains <2s first token with rich context
+- [ ] **Cache Efficiency:** >90% cache hit rate for subsequent messages in a session
 - [ ] **Security:** 100% OWASP-based security test coverage + E2E encryption
 - [ ] **Privacy:** All user data encrypted at rest with per-user DEKs
 - [ ] **Observability:** Full visibility into task execution and reasoning
