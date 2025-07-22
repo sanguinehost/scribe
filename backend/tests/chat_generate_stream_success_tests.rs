@@ -573,6 +573,8 @@ async fn test_first_mes_included_in_history() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -637,6 +639,8 @@ async fn test_first_mes_included_in_history() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager.clone(),
                 rag_service,
                 degradation,
@@ -683,6 +687,8 @@ async fn test_first_mes_included_in_history() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -694,12 +700,17 @@ async fn test_first_mes_included_in_history() {
                     Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                     None,
                 )),
+                test_app.config.agentic_entity_resolution_model.clone(),
             ));
             Arc::new(scribe_backend::services::AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service.clone(),
+                test_app.config.agentic_triage_model.clone(),
+                test_app.config.agentic_planning_model.clone(),
+                test_app.config.optimization_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -711,11 +722,13 @@ async fn test_first_mes_included_in_history() {
                     redis_client,
                     None,
                 )),
+                test_app.config.agentic_entity_resolution_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
 
     let state_for_service =

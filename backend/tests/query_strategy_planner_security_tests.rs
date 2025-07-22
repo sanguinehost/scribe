@@ -47,7 +47,7 @@ async fn test_a01_broken_access_control_no_cross_user_planning() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::NarrativeGeneration,
@@ -119,7 +119,7 @@ async fn test_a02_cryptographic_failures_no_sensitive_data_in_plans() {
         }}"#, sensitive_name);
         
         let mock_client = MockAiClient::new_with_response(response_json);
-        let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+        let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
         
         let result = planner.plan_query_strategy(&intent, 5000).await.unwrap();
         
@@ -160,7 +160,7 @@ async fn test_a03_injection_malicious_query_parameters() {
         }}"#, malicious_param);
         
         let mock_client = MockAiClient::new_with_response(response_json);
-        let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+        let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
         
         let intent = QueryIntent {
             intent_type: IntentType::SpatialAnalysis,
@@ -222,7 +222,7 @@ async fn test_a03_injection_ai_response_manipulation() {
     
     for malicious_response in injection_responses {
         let mock_client = MockAiClient::new_with_response(malicious_response.to_string());
-        let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+        let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
         
         let intent = QueryIntent {
             intent_type: IntentType::StateInquiry,
@@ -280,7 +280,7 @@ async fn test_a04_insecure_design_strategy_validation() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::NarrativeGeneration,
@@ -305,7 +305,7 @@ async fn test_a05_security_misconfiguration_error_messages() {
     // A05: Security Misconfiguration
     // Ensure error messages don't leak sensitive information
     let mock_client = MockAiClient::new_with_response("COMPLETELY INVALID JSON {{{".to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::CausalAnalysis,
@@ -371,7 +371,7 @@ async fn test_a08_data_integrity_plan_validation() {
     
     for (response, test_name) in test_cases {
         let mock_client = MockAiClient::new_with_response(response.to_string());
-        let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+        let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
         
         let intent = QueryIntent {
             intent_type: IntentType::CausalAnalysis,
@@ -451,7 +451,7 @@ async fn test_a09_logging_no_sensitive_intent_in_logs() {
         }"#;
         
         let mock_client = MockAiClient::new_with_response(response_json.to_string());
-        let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+        let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
         
         let result = planner.plan_query_strategy(&intent, 5000).await;
         
@@ -489,7 +489,7 @@ async fn test_a10_ssrf_no_external_requests_in_planning() {
         }}"#, malicious_param);
         
         let mock_client = MockAiClient::new_with_response(response_json);
-        let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+        let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
         
         let intent = QueryIntent {
             intent_type: IntentType::StateInquiry,
@@ -540,7 +540,7 @@ async fn test_narrative_planning_metadata_injection() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let result = planner.plan_narrative_query_strategy(
         &QueryIntent {
@@ -593,7 +593,7 @@ async fn test_large_plan_dos_protection() {
     }}"#, queries.join(","));
     
     let mock_client = MockAiClient::new_with_response(response_json);
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::NarrativeGeneration,
@@ -653,7 +653,7 @@ async fn test_circular_dependency_handling() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::CausalAnalysis,
@@ -701,7 +701,7 @@ async fn test_token_budget_integer_overflow() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::NarrativeGeneration,

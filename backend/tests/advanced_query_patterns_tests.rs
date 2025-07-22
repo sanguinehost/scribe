@@ -13,12 +13,11 @@ use chrono::Utc;
 use scribe_backend::{
     config::NarrativeFeatureFlags,
     services::{
-        HybridQueryService, HybridQueryConfig, HybridQuery, HybridQueryType, HybridQueryOptions,
+        HybridQueryService, HybridQueryConfig, HybridQueryType, HybridQueryOptions,
         EcsEntityManager, EntityManagerConfig, EcsEnhancedRagService, EcsEnhancedRagConfig,
         EcsGracefulDegradation, GracefulDegradationConfig,
     },
     test_helpers::{spawn_app, TestDataGuard, TestApp},
-    errors::AppError,
 };
 
 #[tokio::test]
@@ -65,6 +64,8 @@ async fn test_trusted_characters_at_location_query() {
         Arc::new(app.db_pool.clone()),
         HybridQueryConfig::default(),
         feature_flags,
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
         entity_manager,
         rag_service,
         degradation_service,
@@ -146,6 +147,8 @@ async fn test_relationship_affecting_events_query() {
         Arc::new(app.db_pool.clone()),
         HybridQueryConfig::default(),
         feature_flags,
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
         entity_manager,
         rag_service,
         degradation_service,
@@ -233,6 +236,8 @@ async fn test_item_interaction_history_query() {
         Arc::new(app.db_pool.clone()),
         HybridQueryConfig::default(),
         feature_flags,
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
         entity_manager,
         rag_service,
         degradation_service,
@@ -377,6 +382,8 @@ async fn test_query_pattern_edge_cases() {
         Arc::new(app.db_pool.clone()),
         HybridQueryConfig::default(),
         feature_flags,
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
         entity_manager,
         rag_service,
         degradation_service,

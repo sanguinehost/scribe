@@ -24,6 +24,8 @@ async fn test_lightning_agent_progressive_enrichment() {
     let lightning_agent = LightningAgent::new(
         cache_service.clone(),
         app.app_state.redis_client.clone(),
+        app.db_pool.clone(),
+        app.app_state.ecs_entity_manager.clone(),
     );
     
     let session_id = Uuid::new_v4();
@@ -125,6 +127,8 @@ async fn test_lightning_agent_prompt_generation() {
     let lightning_agent = LightningAgent::new(
         cache_service.clone(),
         app.app_state.redis_client.clone(),
+        app.db_pool.clone(),
+        app.app_state.ecs_entity_manager.clone(),
     );
     
     let session_id = Uuid::new_v4();
@@ -226,6 +230,8 @@ async fn test_cache_invalidation_and_refresh() {
     let lightning_agent = LightningAgent::new(
         cache_service.clone(),
         app.app_state.redis_client.clone(),
+        app.db_pool.clone(),
+        app.app_state.ecs_entity_manager.clone(),
     );
     
     let session_id = Uuid::new_v4();
@@ -237,7 +243,9 @@ async fn test_cache_invalidation_and_refresh() {
         user_id,
         session_id,
         current_location: Uuid::new_v4(),
+        current_location_name: "Test Location".to_string(),
         active_character: Some(Uuid::new_v4()),
+        active_character_name: Some("Test Character".to_string()),
         recent_messages: vec![],
     };
     cache_service.set_immediate_context(session_id, immediate.clone()).await.unwrap();
@@ -277,6 +285,8 @@ async fn test_concurrent_lightning_retrievals() {
     let lightning_agent = Arc::new(LightningAgent::new(
         cache_service.clone(),
         app.app_state.redis_client.clone(),
+        app.db_pool.clone(),
+        app.app_state.ecs_entity_manager.clone(),
     ));
     
     // Pre-populate cache for some sessions
@@ -292,7 +302,9 @@ async fn test_concurrent_lightning_retrievals() {
                 user_id,
                 session_id,
                 current_location: Uuid::new_v4(),
+                current_location_name: "Test Location".to_string(),
                 active_character: Some(Uuid::new_v4()),
+                active_character_name: Some("Test Character".to_string()),
                 recent_messages: vec![],
             };
             
@@ -389,6 +401,8 @@ async fn test_session_warming_integration() {
     let lightning_agent = LightningAgent::new(
         cache_service.clone(),
         app.app_state.redis_client.clone(),
+        app.db_pool.clone(),
+        app.app_state.ecs_entity_manager.clone(),
     );
     
     let session_id = Uuid::new_v4();
@@ -434,6 +448,8 @@ async fn test_health_monitoring_integration() {
     let lightning_agent = LightningAgent::new(
         cache_service,
         app.app_state.redis_client.clone(),
+        app.db_pool.clone(),
+        app.app_state.ecs_entity_manager.clone(),
     );
     
     // Check health multiple times
@@ -461,6 +477,8 @@ async fn test_background_pipeline_integration() {
     let lightning_agent = Arc::new(LightningAgent::new(
         cache_service.clone(),
         app.app_state.redis_client.clone(),
+        app.db_pool.clone(),
+        app.app_state.ecs_entity_manager.clone(),
     ));
     
     let session_id = Uuid::new_v4();

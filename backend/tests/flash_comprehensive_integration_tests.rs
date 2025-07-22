@@ -101,19 +101,19 @@ async fn test_ai_analysis_services_flash_integration() -> AnyhowResult<()> {
     let _guard = TestDataGuard::new(app.app_state.pool.clone());
     
     // Test 1.0.2.1: Intent Detection Service with Flash
-    let _intent_service = IntentDetectionService::new(app.app_state.ai_client.clone());
+    let _intent_service = IntentDetectionService::new(app.app_state.ai_client.clone(), app.config.advanced_model.clone());
     
     // Test that Flash models are properly configured
     // (We test configuration, not actual AI calls to avoid API costs)
     println!("✅ IntentDetectionService created with Flash integration");
     
     // Test 1.0.2.2: Context Optimization Service with Flash-Lite
-    let _context_optimizer = ContextOptimizationService::new(app.app_state.ai_client.clone());
+    let _context_optimizer = ContextOptimizationService::new(app.app_state.ai_client.clone(), app.config.optimization_model.clone());
     
     println!("✅ ContextOptimizationService created with Flash-Lite integration");
     
     // Test 1.0.2.3: Query Strategy Planner with Flash
-    let _query_planner = QueryStrategyPlanner::new(app.app_state.ai_client.clone());
+    let _query_planner = QueryStrategyPlanner::new(app.app_state.ai_client.clone(), app.config.advanced_model.clone());
     
     println!("✅ QueryStrategyPlanner created with Flash integration");
     
@@ -152,8 +152,8 @@ async fn test_enriched_context_flash_integration() -> AnyhowResult<()> {
     let _guard = TestDataGuard::new(app.app_state.pool.clone());
     
     // Test 1.0.4: HierarchicalContextAssembler with Flash-powered analysis
-    let intent_service = Arc::new(IntentDetectionService::new(app.app_state.ai_client.clone()));
-    let query_planner = Arc::new(QueryStrategyPlanner::new(app.app_state.ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(app.app_state.ai_client.clone(), app.config.advanced_model.clone()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(app.app_state.ai_client.clone(), app.config.advanced_model.clone()));
     let entity_tool = Arc::new(EntityResolutionTool::new(app.app_state.clone()));
     let encryption_service = Arc::new(EncryptionService);
     
@@ -164,6 +164,7 @@ async fn test_enriched_context_flash_integration() -> AnyhowResult<()> {
         entity_tool,
         encryption_service,
         Arc::new(app.app_state.pool.clone()),
+        app.config.advanced_model.clone(),
     );
     
     println!("✅ HierarchicalContextAssembler created with Flash integration");
@@ -211,9 +212,9 @@ async fn test_full_pipeline_flash_integration() -> AnyhowResult<()> {
     )?;
     
     // 2. Analysis services (1.0.2)
-    let intent_service = Arc::new(IntentDetectionService::new(app.app_state.ai_client.clone()));
-    let context_optimizer = ContextOptimizationService::new(app.app_state.ai_client.clone());
-    let query_planner = Arc::new(QueryStrategyPlanner::new(app.app_state.ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(app.app_state.ai_client.clone(), app.config.advanced_model.clone()));
+    let context_optimizer = ContextOptimizationService::new(app.app_state.ai_client.clone(), app.config.optimization_model.clone());
+    let query_planner = Arc::new(QueryStrategyPlanner::new(app.app_state.ai_client.clone(), app.config.advanced_model.clone()));
     
     // 3. Character generation (1.0.3)
     let _field_generator = FieldGenerator::new(app.app_state.clone());
@@ -229,6 +230,7 @@ async fn test_full_pipeline_flash_integration() -> AnyhowResult<()> {
         entity_tool,
         encryption_service,
         Arc::new(app.app_state.pool.clone()),
+        app.config.advanced_model.clone(),
     );
     
     println!("✅ Full Flash integration pipeline verified");
@@ -258,7 +260,7 @@ async fn test_flash_performance_optimization() -> AnyhowResult<()> {
     println!("✅ Extraction tasks use Flash-Lite for cost optimization");
     
     // 2. Test that Flash is used for complex reasoning tasks (quality optimization)
-    let _intent_service = IntentDetectionService::new(app.app_state.ai_client.clone());
+    let _intent_service = IntentDetectionService::new(app.app_state.ai_client.clone(), app.config.advanced_model.clone());
     println!("✅ Complex reasoning uses Flash for quality optimization");
     
     // 3. Test workflow configuration enables cost optimizations
@@ -287,11 +289,11 @@ async fn test_flash_backward_compatibility() -> AnyhowResult<()> {
     // with existing functionality
     
     // 1. Test context optimization compatibility method
-    let _context_optimizer = ContextOptimizationService::new(app.app_state.ai_client.clone());
+    let _context_optimizer = ContextOptimizationService::new(app.app_state.ai_client.clone(), app.config.optimization_model.clone());
     println!("✅ Context optimization maintains legacy API compatibility");
     
     // 2. Test query planner backward compatibility  
-    let _query_planner = QueryStrategyPlanner::new(app.app_state.ai_client.clone());
+    let _query_planner = QueryStrategyPlanner::new(app.app_state.ai_client.clone(), app.config.advanced_model.clone());
     println!("✅ Query planner maintains legacy plan_queries method");
     
     // 3. Test that existing prompt builder works alongside new EnrichedContext

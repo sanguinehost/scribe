@@ -642,6 +642,7 @@ async fn test_valid_plan_workflow() {
         entity_manager.clone(),
         Arc::clone(&test_app.redis_client),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
     let plan_validator = PlanValidatorService::new(entity_manager.clone(), Arc::clone(&test_app.redis_client));
 
@@ -697,6 +698,7 @@ async fn test_invalid_plan_precondition_failure() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         Arc::new(test_app.db_pool.clone()),
+        "gemini-2.5-pro".to_string(),
     );
     let plan_validator = PlanValidatorService::new(entity_manager.clone(), test_app.redis_client.clone());
     let context = create_test_enriched_context(
@@ -754,6 +756,7 @@ async fn test_cross_user_security_validation() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
     let plan_validator = PlanValidatorService::new(entity_manager.clone(), test_app.redis_client.clone());
 
@@ -824,6 +827,7 @@ async fn test_planning_service_validator_integration() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
     let plan_validator = PlanValidatorService::new(entity_manager.clone(), test_app.redis_client.clone());
 
@@ -880,6 +884,7 @@ async fn test_service_error_handling_and_graceful_degradation() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
 
     // Execute planning workflow - should handle AI failure gracefully
@@ -937,6 +942,7 @@ async fn test_invalid_plan_with_repair_workflow() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
     
     // Create repair service with proper AI client for repair generation
@@ -1192,6 +1198,7 @@ async fn test_tactical_agent_security_integration() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
     let plan_validator = PlanValidatorService::new(entity_manager.clone(), test_app.redis_client.clone());
 
@@ -1297,6 +1304,7 @@ async fn test_end_to_end_repair_pipeline() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
     
     // Create separate mock AI clients for different services
@@ -1477,6 +1485,7 @@ async fn test_multi_turn_repair_persistence() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
     
     // Create separate mock AI clients for different services
@@ -1627,6 +1636,7 @@ async fn test_multi_turn_repair_persistence() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
 
     // Same type of plan - needs Reputation component
@@ -1695,6 +1705,7 @@ async fn test_repair_system_performance_impact() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
     let plan_validator = PlanValidatorService::new(entity_manager.clone(), test_app.redis_client.clone());
 
@@ -1782,6 +1793,7 @@ async fn test_repair_failure_modes() {
         entity_manager.clone(),
         test_app.redis_client.clone(),
         db_pool.clone(),
+        "gemini-2.5-pro".to_string(),
     );
     
     // Repair service that will also fail (can't create entity with specific ID)

@@ -1,7 +1,6 @@
 use scribe_backend::services::query_strategy_planner::*;
 use scribe_backend::services::intent_detection_service::*;
 use scribe_backend::test_helpers::MockAiClient;
-use scribe_backend::errors::AppError;
 use std::sync::Arc;
 use chrono::Duration;
 
@@ -55,7 +54,7 @@ async fn test_causal_analysis_strategy() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::CausalAnalysis,
@@ -128,7 +127,7 @@ async fn test_spatial_analysis_strategy() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::SpatialAnalysis,
@@ -224,7 +223,7 @@ async fn test_narrative_generation_strategy() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::NarrativeGeneration,
@@ -289,7 +288,7 @@ async fn test_relationship_query_strategy() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::RelationshipQuery,
@@ -378,7 +377,7 @@ async fn test_predictive_query_strategy() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::PredictiveQuery,
@@ -451,7 +450,7 @@ async fn test_adaptive_narrative_strategy() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let result = planner.plan_narrative_query_strategy(
         &QueryIntent {
@@ -511,7 +510,7 @@ async fn test_small_token_budget_optimization() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::StateInquiry,
@@ -584,7 +583,7 @@ async fn test_chronicle_focused_strategy() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::TemporalAnalysis,
@@ -625,7 +624,7 @@ async fn test_validation_of_confidence_bounds() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::StateInquiry,
@@ -650,7 +649,7 @@ async fn test_validation_of_confidence_bounds() {
 #[tokio::test]
 async fn test_error_handling_invalid_json() {
     let mock_client = MockAiClient::new_with_response("This is not valid JSON!".to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::StateInquiry,
@@ -683,7 +682,7 @@ async fn test_fallback_strategy_on_unknown() {
     }"#;
     
     let mock_client = MockAiClient::new_with_response(response_json.to_string());
-    let planner = QueryStrategyPlanner::new(Arc::new(mock_client));
+    let planner = QueryStrategyPlanner::new(Arc::new(mock_client), "test-model".to_string());
     
     let intent = QueryIntent {
         intent_type: IntentType::NarrativeGeneration,

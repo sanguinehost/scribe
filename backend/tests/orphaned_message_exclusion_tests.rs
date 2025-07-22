@@ -249,6 +249,8 @@ async fn test_frontend_history_vs_database_history() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -291,6 +293,8 @@ async fn test_frontend_history_vs_database_history() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 Arc::new(scribe_backend::services::EcsEntityManager::new(
                     Arc::new(test_app.db_pool.clone()),
                     Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
@@ -334,6 +338,8 @@ async fn test_frontend_history_vs_database_history() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 Arc::new(scribe_backend::services::EcsEntityManager::new(
                     Arc::new(test_app.db_pool.clone()),
                     Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
@@ -377,7 +383,12 @@ async fn test_frontend_history_vs_database_history() {
                     Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                     None,
                 )),
+                test_app.config.agentic_entity_resolution_model.clone(),
             )),
+            test_app.config.agentic_triage_model.clone(),
+            test_app.config.agentic_planning_model.clone(),
+            test_app.config.optimization_model.clone(),
+            test_app.config.advanced_model.clone(),
         )),
         agentic_state_update_service: Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
             test_app.ai_client.clone(),
@@ -386,10 +397,12 @@ async fn test_frontend_history_vs_database_history() {
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
             )),
+            test_app.config.agentic_entity_resolution_model.clone(),
         )),
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
 
     let state = AppState::new(test_app.db_pool.clone(), test_app.config.clone(), services);
@@ -638,6 +651,8 @@ async fn test_orphaned_message_exclusion_scenario() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -680,6 +695,8 @@ async fn test_orphaned_message_exclusion_scenario() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 Arc::new(scribe_backend::services::EcsEntityManager::new(
                     Arc::new(test_app.db_pool.clone()),
                     Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
@@ -723,6 +740,8 @@ async fn test_orphaned_message_exclusion_scenario() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 Arc::new(scribe_backend::services::EcsEntityManager::new(
                     Arc::new(test_app.db_pool.clone()),
                     Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
@@ -766,7 +785,12 @@ async fn test_orphaned_message_exclusion_scenario() {
                     Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                     None,
                 )),
+                test_app.config.agentic_entity_resolution_model.clone(),
             )),
+            test_app.config.agentic_triage_model.clone(),
+            test_app.config.agentic_planning_model.clone(),
+            test_app.config.optimization_model.clone(),
+            test_app.config.advanced_model.clone(),
         )),
         agentic_state_update_service: Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
             test_app.ai_client.clone(),
@@ -775,10 +799,12 @@ async fn test_orphaned_message_exclusion_scenario() {
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
             )),
+            test_app.config.agentic_entity_resolution_model.clone(),
         )),
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
 
     let state = AppState::new(test_app.db_pool.clone(), test_app.config.clone(), services);

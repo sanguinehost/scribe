@@ -55,6 +55,8 @@ impl HybridQueryTestContext {
             Arc::new(app.app_state.pool.clone()),
             HybridQueryConfig::default(),
             app.app_state.feature_flags.clone(),
+            app.app_state.ai_client.clone(),
+            "gemini-2.5-pro".to_string(),
             app.app_state.ecs_entity_manager.clone(),
             app.app_state.ecs_enhanced_rag_service.clone(),
             app.app_state.ecs_graceful_degradation.clone(),

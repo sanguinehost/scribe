@@ -76,7 +76,7 @@ async fn test_a01_broken_access_control_no_cross_user_optimization() {
             "confidence": 0.9
         }"#.to_string());
     
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
     let context = create_test_context_with_content("Test Entity");
     
     let result = service.optimize_context(&context, None, None).await.unwrap();
@@ -112,7 +112,7 @@ async fn test_a02_cryptographic_failures_no_sensitive_data_in_optimization() {
             "confidence": 0.8
         }"#.to_string());
     
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
     
     let result = service.optimize_context(&sensitive_context, None, None).await;
     
@@ -155,7 +155,7 @@ async fn test_a03_injection_malicious_entity_names() {
                 "confidence": 0.85
             }}"#, malicious_name.replace('"', r#"\""#)));
         
-        let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+        let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
         let result = service.optimize_context(&context, None, None).await;
         
         // Should handle gracefully without executing injected code
@@ -203,7 +203,7 @@ async fn test_a03_injection_ai_response_manipulation() {
     
     for malicious_response in injection_responses {
         let mock_ai_client = MockAiClient::new_with_response(malicious_response);
-        let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+        let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
         let context = create_test_context_with_content("Test");
         
         let result = service.optimize_context(&context, None, None).await;
@@ -241,7 +241,7 @@ async fn test_a04_insecure_design_strategy_validation() {
             "confidence": 0.8
         }"#.to_string());
     
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
     let context = create_test_context_with_content("Test");
     
     let result = service.optimize_context(&context, None, None).await.unwrap();
@@ -256,7 +256,7 @@ async fn test_a05_security_misconfiguration_error_message_leakage() {
     // Ensure error messages don't leak sensitive information
     let mock_ai_client = MockAiClient::new_with_response("COMPLETELY INVALID JSON {{{".to_string());
     
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
     let context = create_test_context_with_content("Test");
     
     let result = service.optimize_context(&context, None, None).await;
@@ -328,7 +328,7 @@ async fn test_a08_data_integrity_optimization_bounds() {
     
     for (response, test_name) in test_cases {
         let mock_ai_client = MockAiClient::new_with_response(response.to_string());
-        let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+        let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
         let context = create_test_context_with_content("Test");
         
         let result = service.optimize_context(&context, None, None).await;
@@ -382,7 +382,7 @@ async fn test_a09_logging_no_sensitive_context_in_logs() {
                 "confidence": 0.8
             }"#.to_string());
         
-        let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+        let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
         let result = service.optimize_context(&context, None, None).await;
         
         assert!(result.is_ok());
@@ -418,7 +418,7 @@ async fn test_narrative_optimization_security_metadata_injection() {
             "confidence": 0.85
         }"#.to_string());
     
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
     let context = create_test_context_with_content("Test narrative");
     
     let result = service.optimize_for_narrative(
@@ -480,7 +480,7 @@ async fn test_large_context_dos_protection() {
             "confidence": 0.7
         }"#.to_string());
     
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
     
     // Should handle without crashing or consuming excessive resources
     let result = service.optimize_context(&huge_context, None, Some(1000)).await;
@@ -514,7 +514,7 @@ async fn test_token_budget_integer_overflow() {
             "confidence": 0.8
         }"#.to_string());
     
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
     let context = create_test_context_with_content("Test");
     
     let result = service.optimize_context(&context, None, Some(u32::MAX)).await;
@@ -569,7 +569,7 @@ async fn test_circular_reference_handling() {
             "confidence": 0.75
         }"#.to_string());
     
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "test-model".to_string());
     
     // Should handle circular references without infinite loops
     let result = service.optimize_context(&context, None, None).await;

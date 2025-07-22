@@ -334,6 +334,8 @@ async fn test_persona_context_missing_in_events() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -376,6 +378,8 @@ async fn test_persona_context_missing_in_events() {
                         Arc::new(test_app.db_pool.clone()),
                         Default::default(),
                         feature_flags,
+                        test_app.ai_client.clone(),
+                        test_app.config.advanced_model.clone(),
                         entity_manager.clone(),
                         rag_service,
                         degradation,
@@ -420,6 +424,8 @@ async fn test_persona_context_missing_in_events() {
                         Arc::new(test_app.db_pool.clone()),
                         Default::default(),
                         feature_flags,
+                        test_app.ai_client.clone(),
+                        test_app.config.advanced_model.clone(),
                         entity_manager.clone(),
                         rag_service,
                         degradation,
@@ -429,12 +435,17 @@ async fn test_persona_context_missing_in_events() {
                     test_app.ai_client.clone(),
                     hybrid_query_service,
                     Arc::new(test_app.db_pool.clone()),
-                    Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(test_app.ai_client.clone(), entity_manager.clone())),
+                    Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(test_app.ai_client.clone(), entity_manager.clone(), "gemini-2.5-pro".to_string())),
+                    test_app.config.advanced_model.clone(),
+                    test_app.config.advanced_model.clone(),
+                    test_app.config.advanced_model.clone(),
+                    test_app.config.advanced_model.clone(),
                 ))
             };
             let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
                 Arc::new(test_app.db_pool.clone())
@@ -484,6 +495,8 @@ async fn test_persona_context_missing_in_events() {
                             Arc::new(test_app.db_pool.clone()),
                             Default::default(),
                             feature_flags,
+                            test_app.ai_client.clone(),
+                            test_app.config.advanced_model.clone(),
                             entity_manager.clone(),
                             rag_service,
                             degradation,
@@ -528,6 +541,8 @@ async fn test_persona_context_missing_in_events() {
                             Arc::new(test_app.db_pool.clone()),
                             Default::default(),
                             feature_flags,
+                            test_app.ai_client.clone(),
+                            test_app.config.advanced_model.clone(),
                             entity_manager.clone(),
                             rag_service,
                             degradation,
@@ -537,12 +552,17 @@ async fn test_persona_context_missing_in_events() {
                         test_app.ai_client.clone(),
                         hybrid_query_service,
                         Arc::new(test_app.db_pool.clone()),
-                        Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(test_app.ai_client.clone(), entity_manager.clone())),
+                        Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(test_app.ai_client.clone(), entity_manager.clone(), "gemini-2.5-pro".to_string())),
+                        test_app.config.advanced_model.clone(),
+                        test_app.config.advanced_model.clone(),
+                        test_app.config.advanced_model.clone(),
+                        test_app.config.advanced_model.clone(),
                     ))
                 };
                 let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                     test_app.ai_client.clone(),
                     entity_manager.clone(),
+                    test_app.config.advanced_model.clone(),
                 ));
                 Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
                     Arc::new(test_app.db_pool.clone())
@@ -590,6 +610,8 @@ async fn test_persona_context_missing_in_events() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -639,6 +661,8 @@ async fn test_persona_context_missing_in_events() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -656,6 +680,7 @@ async fn test_persona_context_missing_in_events() {
             Arc::new(AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_orchestrator: {
@@ -692,6 +717,8 @@ async fn test_persona_context_missing_in_events() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -709,12 +736,17 @@ async fn test_persona_context_missing_in_events() {
             let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             Arc::new(AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
                 hybrid_query_service.clone(),
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
@@ -931,6 +963,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -973,6 +1007,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                         Arc::new(test_app.db_pool.clone()),
                         Default::default(),
                         feature_flags,
+                        test_app.ai_client.clone(),
+                        test_app.config.advanced_model.clone(),
                         entity_manager.clone(),
                         rag_service,
                         degradation,
@@ -1017,6 +1053,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                         Arc::new(test_app.db_pool.clone()),
                         Default::default(),
                         feature_flags,
+                        test_app.ai_client.clone(),
+                        test_app.config.advanced_model.clone(),
                         entity_manager.clone(),
                         rag_service,
                         degradation,
@@ -1025,17 +1063,23 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                     test_app.ai_client.clone(),
                     entity_manager.clone(),
+                    test_app.config.advanced_model.clone(),
                 ));
                 Arc::new(scribe_backend::services::AgenticOrchestrator::new(
                     test_app.ai_client.clone(),
                     hybrid_query_service,
                     Arc::new(test_app.db_pool.clone()),
                     agentic_state_update_service,
+                    test_app.config.advanced_model.clone(),
+                    test_app.config.advanced_model.clone(),
+                    test_app.config.advanced_model.clone(),
+                    test_app.config.advanced_model.clone(),
                 ))
             };
             let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
                 Arc::new(test_app.db_pool.clone())
@@ -1085,6 +1129,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                             Arc::new(test_app.db_pool.clone()),
                             Default::default(),
                             feature_flags,
+                            test_app.ai_client.clone(),
+                            test_app.config.advanced_model.clone(),
                             entity_manager.clone(),
                             rag_service,
                             degradation,
@@ -1129,6 +1175,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                             Arc::new(test_app.db_pool.clone()),
                             Default::default(),
                             feature_flags,
+                            test_app.ai_client.clone(),
+                            test_app.config.advanced_model.clone(),
                             entity_manager.clone(),
                             rag_service,
                             degradation,
@@ -1137,17 +1185,23 @@ async fn test_create_chronicle_event_tool_without_persona() {
                     let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                         test_app.ai_client.clone(),
                         entity_manager.clone(),
+                        test_app.config.advanced_model.clone(),
                     ));
                     Arc::new(scribe_backend::services::AgenticOrchestrator::new(
                         test_app.ai_client.clone(),
                         hybrid_query_service,
                         Arc::new(test_app.db_pool.clone()),
                         agentic_state_update_service,
+                        test_app.config.advanced_model.clone(),
+                        test_app.config.advanced_model.clone(),
+                        test_app.config.advanced_model.clone(),
+                        test_app.config.advanced_model.clone(),
                     ))
                 };
                 let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                     test_app.ai_client.clone(),
                     entity_manager.clone(),
+                    test_app.config.advanced_model.clone(),
                 ));
                 Arc::new(scribe_backend::services::ChronicleEcsTranslator::new(
                     Arc::new(test_app.db_pool.clone())
@@ -1195,6 +1249,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -1244,6 +1300,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -1261,6 +1319,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
             Arc::new(AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_orchestrator: {
@@ -1297,6 +1356,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -1314,12 +1375,17 @@ async fn test_create_chronicle_event_tool_without_persona() {
             let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             Arc::new(AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
                 hybrid_query_service.clone(),
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,

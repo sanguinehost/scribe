@@ -17,6 +17,7 @@ async fn test_planning_service_creation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Service should be created successfully
@@ -36,6 +37,7 @@ async fn test_generate_simple_movement_plan() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -78,6 +80,7 @@ async fn test_plan_caching_same_goal() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -122,6 +125,7 @@ async fn test_plan_caching_different_users() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return valid planning responses for both calls
@@ -169,6 +173,7 @@ async fn test_complex_plan_generation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -211,6 +216,7 @@ async fn test_flash_model_integration() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -272,6 +278,7 @@ async fn test_planning_with_world_state_context() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -468,6 +475,7 @@ fn create_test_enriched_context(goal: &str) -> EnrichedContext {
         causal_context: None,
         plan_validation_status: PlanValidationStatus::Validated,
         symbolic_firewall_checks: vec![],
+        perception_analysis: None,
         assembled_context: None,
         total_tokens_used: 0,
         execution_time_ms: 0,
@@ -493,6 +501,7 @@ async fn test_planning_service_user_isolation_a01() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -547,6 +556,7 @@ async fn test_planning_service_encryption_a02() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -584,6 +594,7 @@ async fn test_planning_service_input_validation_a03() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -624,6 +635,7 @@ async fn test_planning_service_cache_key_security_a04() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Test cache key generation for security
@@ -650,6 +662,7 @@ async fn test_planning_service_error_handling_a09() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -698,6 +711,7 @@ async fn test_planning_service_security_misconfiguration_a05() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -737,6 +751,7 @@ async fn test_planning_service_vulnerable_components_a06() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -775,6 +790,7 @@ async fn test_planning_service_authentication_failures_a07() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     // Configure mock AI to return a valid planning response
@@ -834,6 +850,7 @@ async fn test_planning_service_data_integrity_a08() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -893,6 +910,7 @@ async fn test_planning_service_ssrf_prevention_a10() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        app.config.agentic_planning_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);

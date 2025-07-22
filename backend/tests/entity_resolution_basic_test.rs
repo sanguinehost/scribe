@@ -145,6 +145,7 @@ async fn test_entity_resolution_tool_compiles() {
                 Default::default(),
                 Arc::new(NarrativeFeatureFlags::default()),
                 test_app.ai_client.clone(),
+                "gemini-2.5-pro".to_string(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -198,6 +199,7 @@ async fn test_entity_resolution_tool_compiles() {
                 Default::default(),
                 Arc::new(NarrativeFeatureFlags::default()),
                 test_app.ai_client.clone(),
+                "gemini-2.5-pro".to_string(),
                 entity_manager.clone(),
                 rag_service,
                 degradation,
@@ -219,6 +221,7 @@ async fn test_entity_resolution_tool_compiles() {
             Arc::new(AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager,
+                "gemini-2.5-pro".to_string(),
             ))
         },
         agentic_orchestrator: {
@@ -252,6 +255,7 @@ async fn test_entity_resolution_tool_compiles() {
                 Default::default(),
                 Arc::new(NarrativeFeatureFlags::default()),
                 test_app.ai_client.clone(),
+                "gemini-2.5-pro".to_string(),
                 entity_manager.clone(),
                 rag_service,
                 degradation,
@@ -259,17 +263,23 @@ async fn test_entity_resolution_tool_compiles() {
             let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager,
+                "gemini-2.5-pro".to_string(),
             ));
             Arc::new(AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
                 query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                "gemini-2.5-pro".to_string(),
+                "gemini-2.5-pro".to_string(),
+                "gemini-2.5-pro".to_string(),
+                "gemini-2.5-pro".to_string(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     
     let app_state = Arc::new(AppState::new(

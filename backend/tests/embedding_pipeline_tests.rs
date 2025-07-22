@@ -734,6 +734,8 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -805,6 +807,8 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -828,6 +832,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -862,6 +867,8 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -872,6 +879,10 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -885,11 +896,13 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
 
     let app_state = Arc::new(AppState::new(
@@ -1069,6 +1082,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -1141,6 +1156,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -1164,6 +1181,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -1198,6 +1216,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -1208,6 +1228,10 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -1221,11 +1245,13 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
 
     let app_state_arc = Arc::new(AppState::new(
@@ -1405,6 +1431,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -1470,6 +1498,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -1496,6 +1526,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_orchestrator: {
@@ -1509,6 +1540,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -1543,6 +1575,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -1553,11 +1587,16 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -1763,6 +1802,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -1835,6 +1876,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -1858,6 +1901,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -1892,6 +1936,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -1902,6 +1948,10 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -1915,11 +1965,13 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     let app_state_arc = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2060,6 +2112,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -2125,6 +2179,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -2151,6 +2207,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_orchestrator: {
@@ -2164,6 +2221,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -2198,6 +2256,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -2208,11 +2268,16 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2434,6 +2499,8 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -2499,6 +2566,8 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -2525,6 +2594,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_orchestrator: {
@@ -2538,6 +2608,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -2572,6 +2643,8 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -2582,11 +2655,16 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2820,6 +2898,8 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -2885,6 +2965,8 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -2911,6 +2993,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_orchestrator: {
@@ -2924,6 +3007,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -2958,6 +3042,8 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -2968,11 +3054,16 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     let app_state_for_metadata_test = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -3210,6 +3301,8 @@ async fn test_rag_context_injection_with_qdrant() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -3282,6 +3375,8 @@ async fn test_rag_context_injection_with_qdrant() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -3305,6 +3400,7 @@ async fn test_rag_context_injection_with_qdrant() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -3339,6 +3435,8 @@ async fn test_rag_context_injection_with_qdrant() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -3349,6 +3447,10 @@ async fn test_rag_context_injection_with_qdrant() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -3362,11 +3464,13 @@ async fn test_rag_context_injection_with_qdrant() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     let app_state_for_rag = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -3806,6 +3910,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -3878,6 +3984,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -3901,6 +4009,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -3935,6 +4044,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -3945,6 +4056,10 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -3958,11 +4073,13 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -4370,6 +4487,8 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -4442,6 +4561,8 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -4465,6 +4586,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                test_app.config.advanced_model.clone(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -4499,6 +4621,8 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
                     Arc::new(test_app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    test_app.ai_client.clone(),
+                    test_app.config.advanced_model.clone(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -4509,6 +4633,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service,
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
+                test_app.config.advanced_model.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -4522,11 +4650,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client,
                 entity_manager,
+                test_app.config.advanced_model.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),

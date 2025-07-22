@@ -31,6 +31,7 @@ async fn create_test_tactical_agent(app: &TestApp) -> TacticalAgent {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(scribe_backend::services::planning::PlanValidatorService::new(

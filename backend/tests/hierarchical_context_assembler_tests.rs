@@ -218,8 +218,8 @@ async fn create_functional_assembler_with_options(
     
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
     
-    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), "test-model".to_string()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), "test-model".to_string()));
     
     let db_pool = Arc::new(test_app.db_pool.clone());
     
@@ -236,6 +236,7 @@ async fn create_functional_assembler_with_options(
         entity_tool,
         encryption_service,
         db_pool,
+        "test-model".to_string(),
     )
 }
 
@@ -491,8 +492,8 @@ async fn test_error_propagation_from_intent_detection() {
         "INVALID_JSON_FOR_INTENT".to_string()
     ));
     
-    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), "test-model".to_string()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), "test-model".to_string()));
     
     let db_pool = Arc::new(test_app.db_pool.clone());
     
@@ -509,6 +510,7 @@ async fn test_error_propagation_from_intent_detection() {
         entity_tool,
         encryption_service,
         db_pool,
+        "test-model".to_string(),
     );
     
     let user_id = Uuid::new_v4();
@@ -785,8 +787,8 @@ async fn test_entity_resolution_integration() {
     let responses = vec![intent_response, strategic_response, tactical_response, entity_response];
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
     
-    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), "test-model".to_string()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), "test-model".to_string()));
     let db_pool = Arc::new(test_app.db_pool.clone());
     let app_state = test_app.app_state.clone();
     let entity_tool = Arc::new(EntityResolutionTool::new(app_state));
@@ -799,6 +801,7 @@ async fn test_entity_resolution_integration() {
         entity_tool,
         encryption_service,
         db_pool,
+        "test-model".to_string(),
     );
     
     let chat_history = vec![];
@@ -893,8 +896,8 @@ async fn test_entity_resolution_error_handling() {
     let responses = vec![intent_response, strategic_response, tactical_response, invalid_entity_response];
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
     
-    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), "test-model".to_string()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), "test-model".to_string()));
     let db_pool = Arc::new(test_app.db_pool.clone());
     let app_state = test_app.app_state.clone();
     let entity_tool = Arc::new(EntityResolutionTool::new(app_state));
@@ -907,6 +910,7 @@ async fn test_entity_resolution_error_handling() {
         entity_tool,
         encryption_service,
         db_pool,
+        "test-model".to_string(),
     );
     
     let chat_history = vec![];
@@ -1007,8 +1011,8 @@ async fn test_entity_dependencies_extraction() {
     let responses = vec![intent_response, strategic_response, tactical_response, entity_response];
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
     
-    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), "test-model".to_string()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), "test-model".to_string()));
     let db_pool = Arc::new(test_app.db_pool.clone());
     let app_state = test_app.app_state.clone();
     let entity_tool = Arc::new(EntityResolutionTool::new(app_state));
@@ -1021,6 +1025,7 @@ async fn test_entity_dependencies_extraction() {
         entity_tool,
         encryption_service,
         db_pool,
+        "test-model".to_string(),
     );
     
     let chat_history = vec![];
@@ -1340,8 +1345,8 @@ async fn test_temporal_event_extraction() {
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(mock_responses));
     
     // Create services
-    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), "test-model".to_string()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), "test-model".to_string()));
     let entity_tool = Arc::new(EntityResolutionTool::new(test_app.app_state.clone()));
     let encryption_service = Arc::new(EncryptionService);
     let db_pool = Arc::new(test_app.db_pool.clone());
@@ -1353,6 +1358,7 @@ async fn test_temporal_event_extraction() {
         entity_tool,
         encryption_service,
         db_pool,
+        "test-model".to_string(),
     );
     
     // Create chat history with temporal indicators

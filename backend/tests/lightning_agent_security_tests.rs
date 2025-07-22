@@ -44,7 +44,9 @@ async fn test_a01_user_isolation_in_cache_retrieval() {
         user_id: user1_id,
         session_id: session1_id,
         current_location: Uuid::new_v4(),
+        current_location_name: "Test Location".to_string(),
         active_character: Some(Uuid::new_v4()),
+        active_character_name: Some("Test Character".to_string()),
         recent_messages: vec![
             MessageSummary {
                 role: "user".to_string(),
@@ -60,7 +62,9 @@ async fn test_a01_user_isolation_in_cache_retrieval() {
         user_id: user2_id,
         session_id: session2_id,
         current_location: Uuid::new_v4(),
+        current_location_name: "Test Location 2".to_string(),
         active_character: Some(Uuid::new_v4()),
+        active_character_name: Some("Test Character 2".to_string()),
         recent_messages: vec![
             MessageSummary {
                 role: "user".to_string(),
@@ -117,7 +121,9 @@ async fn test_a01_cross_session_access_prevention() {
         user_id,
         session_id: valid_session_id,
         current_location: Uuid::new_v4(),
+        current_location_name: "Test Location".to_string(),
         active_character: Some(Uuid::new_v4()),
+        active_character_name: Some("Test Character".to_string()),
         recent_messages: vec![
             MessageSummary {
                 role: "user".to_string(),
@@ -187,7 +193,9 @@ async fn test_a02_no_sensitive_data_exposure() {
         user_id,
         session_id,
         current_location: Uuid::new_v4(),
+        current_location_name: "Test Location".to_string(),
         active_character: Some(Uuid::new_v4()),
+        active_character_name: Some("Test Character".to_string()),
         recent_messages: vec![
             MessageSummary {
                 role: "user".to_string(),
@@ -253,7 +261,9 @@ async fn test_a03_prompt_content_sanitization() {
         user_id,
         session_id,
         current_location: Uuid::new_v4(),
+        current_location_name: "Test Location".to_string(),
         active_character: Some(Uuid::new_v4()),
+        active_character_name: Some("Test Character".to_string()),
         recent_messages: vec![
             MessageSummary {
                 role: "user".to_string(),

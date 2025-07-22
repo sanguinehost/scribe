@@ -77,8 +77,8 @@ async fn create_mock_assembler(ai_response: String) -> HierarchicalContextAssemb
     let responses = vec![intent_response, ai_response, tactical_response, entity_response];
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
     
-    let mock_intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let mock_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let mock_intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), "test-model".to_string()));
+    let mock_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), "test-model".to_string()));
     
     // Create a mock entity resolution tool
     let test_app = spawn_app_with_options(false, false, false, false).await;
@@ -97,6 +97,7 @@ async fn create_mock_assembler(ai_response: String) -> HierarchicalContextAssemb
         mock_entity_tool,
         encryption_service,
         db_pool,
+        "test-model".to_string(),
     )
 }
 
@@ -525,8 +526,8 @@ async fn test_a08_data_integrity_numeric_overflow_protection() {
     let responses = vec![intent_response, overflow_response, plan_response, entity_response];
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(responses));
     
-    let mock_intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let mock_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let mock_intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), "test-model".to_string()));
+    let mock_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), "test-model".to_string()));
     
     let test_app = spawn_app_with_options(false, false, false, false).await;
     let db_pool = Arc::new(test_app.db_pool.clone());

@@ -41,7 +41,8 @@ async fn test_enrich_context_basic_functionality() {
     // Create services using established patterns
     let hybrid_service = Arc::new(create_test_hybrid_query_service(
         test_app.mock_ai_client.as_ref().unwrap().clone(),
-        Arc::new(test_app.db_pool.clone())
+        Arc::new(test_app.db_pool.clone()),
+        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     let db_pool = Arc::new(test_app.db_pool.clone());
@@ -51,6 +52,7 @@ async fn test_enrich_context_basic_functionality() {
         hybrid_service,
         db_pool,
         encryption_service,
+        "test-model".to_string(),
     );
 
     let intent = QueryIntent {
@@ -564,7 +566,8 @@ async fn test_error_handling_invalid_intent() {
 fn create_test_context_assembly_engine(test_app: &scribe_backend::test_helpers::TestApp) -> ContextAssemblyEngine {
     let hybrid_service = Arc::new(create_test_hybrid_query_service(
         test_app.mock_ai_client.as_ref().unwrap().clone(),
-        Arc::new(test_app.db_pool.clone())
+        Arc::new(test_app.db_pool.clone()),
+        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     let db_pool = Arc::new(test_app.db_pool.clone());
@@ -574,5 +577,6 @@ fn create_test_context_assembly_engine(test_app: &scribe_backend::test_helpers::
         hybrid_service,
         db_pool,
         encryption_service,
+        "test-model".to_string(),
     )
 }

@@ -164,6 +164,8 @@ async fn test_complete_narrative_to_ecs_flow() {
         Arc::new(test_app.db_pool.clone()),
         Default::default(),
         feature_flags.clone(),
+        test_app.ai_client.clone(),
+        test_app.config.advanced_model.clone(),
         entity_manager.clone(),
         rag_service.clone(),
         degradation.clone(),
@@ -171,12 +173,17 @@ async fn test_complete_narrative_to_ecs_flow() {
     let state_update_service = Arc::new(AgenticStateUpdateService::new(
         mock_ai_client.clone() as Arc<dyn scribe_backend::llm::AiClient + Send + Sync>,
         entity_manager.clone(),
+        test_app.config.agentic_entity_resolution_model.clone(),
     ));
     let agentic_orchestrator = Arc::new(AgenticOrchestrator::new(
         mock_ai_client.clone() as Arc<dyn scribe_backend::llm::AiClient + Send + Sync>,
         hybrid_query_service.clone(),
         Arc::new(test_app.db_pool.clone()),
         state_update_service.clone(),
+        test_app.config.agentic_triage_model.clone(),
+        test_app.config.agentic_planning_model.clone(),
+        test_app.config.optimization_model.clone(),
+        test_app.config.advanced_model.clone(),
     ));
     
     // Create minimal app state services
@@ -284,6 +291,8 @@ async fn test_complete_narrative_to_ecs_flow() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -337,6 +346,8 @@ async fn test_complete_narrative_to_ecs_flow() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager.clone(),
                 rag_service,
                 degradation,
@@ -356,6 +367,7 @@ async fn test_complete_narrative_to_ecs_flow() {
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     
     let app_state = Arc::new(scribe_backend::state::AppState::new(
@@ -533,6 +545,8 @@ async fn test_entity_extraction_with_existing_entities() {
         Arc::new(test_app.db_pool.clone()),
         Default::default(),
         feature_flags.clone(),
+        test_app.ai_client.clone(),
+        test_app.config.advanced_model.clone(),
         entity_manager.clone(),
         rag_service.clone(),
         degradation.clone(),
@@ -540,12 +554,17 @@ async fn test_entity_extraction_with_existing_entities() {
     let state_update_service = Arc::new(AgenticStateUpdateService::new(
         test_app.ai_client.clone(),
         entity_manager.clone(),
+        test_app.config.agentic_entity_resolution_model.clone(),
     ));
     let agentic_orchestrator = Arc::new(AgenticOrchestrator::new(
         test_app.ai_client.clone(),
         hybrid_query_service.clone(),
         Arc::new(test_app.db_pool.clone()),
         state_update_service.clone(),
+        test_app.config.agentic_triage_model.clone(),
+        test_app.config.agentic_planning_model.clone(),
+        test_app.config.optimization_model.clone(),
+        test_app.config.advanced_model.clone(),
     ));
     
     // Create minimal app state
@@ -653,6 +672,8 @@ async fn test_entity_extraction_with_existing_entities() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -706,6 +727,8 @@ async fn test_entity_extraction_with_existing_entities() {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager.clone(),
                 rag_service,
                 degradation,
@@ -725,6 +748,7 @@ async fn test_entity_extraction_with_existing_entities() {
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     
     let app_state = Arc::new(scribe_backend::state::AppState::new(

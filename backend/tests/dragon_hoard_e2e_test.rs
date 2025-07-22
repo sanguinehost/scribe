@@ -129,6 +129,8 @@ impl DragonHoardScenario {
             Arc::new(app.db_pool.clone()),
             HybridQueryConfig::default(),
             feature_flags,
+            app.app_state.ai_client.clone(),
+            app.config.advanced_model.clone(),
             entity_manager.clone(),
             rag_service,
             degradation_service,

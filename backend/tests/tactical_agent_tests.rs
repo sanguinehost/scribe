@@ -35,6 +35,7 @@ async fn test_tactical_agent_creation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -64,6 +65,7 @@ async fn test_process_directive_basic_movement() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -117,6 +119,7 @@ async fn test_directive_to_plan_integration() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -184,6 +187,7 @@ async fn test_world_state_context_gathering() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -238,6 +242,7 @@ async fn test_sub_goal_extraction() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -300,6 +305,7 @@ async fn test_plan_validation_integration() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -366,6 +372,7 @@ async fn test_enriched_context_assembly() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -433,6 +440,7 @@ async fn test_error_handling_planning_failure() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -488,6 +496,7 @@ async fn test_directive_with_temporal_constraints() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -545,6 +554,7 @@ async fn test_multiple_entity_coordination() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-pro".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(

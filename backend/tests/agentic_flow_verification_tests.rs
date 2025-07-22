@@ -111,9 +111,9 @@ async fn test_agentic_flow_components_creation() {
     let mock_ai_client = Arc::new(MockAiClient::new());
     
     // Test individual service creation
-    let _intent_service = IntentDetectionService::new(mock_ai_client.clone());
-    let _strategy_planner = QueryStrategyPlanner::new(mock_ai_client.clone());
-    let _optimization_service = ContextOptimizationService::new(mock_ai_client.clone());
+    let _intent_service = IntentDetectionService::new(mock_ai_client.clone(), "test-model".to_string());
+    let _strategy_planner = QueryStrategyPlanner::new(mock_ai_client.clone(), "test-model".to_string());
+    let _optimization_service = ContextOptimizationService::new(mock_ai_client.clone(), "test-model".to_string());
     
     // Verify services can be created without panicking (they don't return Result)
     println!("Intent detection service created successfully");

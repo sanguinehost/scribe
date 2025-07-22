@@ -45,6 +45,7 @@ async fn test_a01_broken_access_control_cross_user_isolation() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek1 = SessionDek::new(vec![1u8; 32]);
@@ -62,6 +63,7 @@ async fn test_a01_broken_access_control_cross_user_isolation() {
     let directive1 = strategic_agent.analyze_conversation(
         &user1_history,
         user1_id,
+        Uuid::new_v4(), // session_id
         &session_dek1,
     ).await.unwrap();
 
@@ -87,6 +89,7 @@ async fn test_a01_broken_access_control_invalid_user_id() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -99,6 +102,7 @@ async fn test_a01_broken_access_control_invalid_user_id() {
     let result = strategic_agent.analyze_conversation(
         &chat_history,
         invalid_user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -121,6 +125,7 @@ async fn test_a02_cryptographic_failures_session_dek_required() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -132,6 +137,7 @@ async fn test_a02_cryptographic_failures_session_dek_required() {
     let result = strategic_agent.analyze_conversation(
         &chat_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -153,6 +159,7 @@ async fn test_a03_injection_sql_injection_protection() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -165,6 +172,7 @@ async fn test_a03_injection_sql_injection_protection() {
     let result = strategic_agent.analyze_conversation(
         &sql_injection_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -187,6 +195,7 @@ async fn test_a03_injection_xss_protection() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -199,6 +208,7 @@ async fn test_a03_injection_xss_protection() {
     let result = strategic_agent.analyze_conversation(
         &xss_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -221,6 +231,7 @@ async fn test_a03_injection_template_injection_protection() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -233,6 +244,7 @@ async fn test_a03_injection_template_injection_protection() {
     let result = strategic_agent.analyze_conversation(
         &template_injection_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -255,6 +267,7 @@ async fn test_a04_insecure_design_rate_limiting() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -268,6 +281,7 @@ async fn test_a04_insecure_design_rate_limiting() {
         let result = strategic_agent.analyze_conversation(
             &chat_history,
             user_id,
+            Uuid::new_v4(), // session_id
             &session_dek,
         ).await;
         results.push(result);
@@ -295,6 +309,7 @@ async fn test_a04_insecure_design_resource_exhaustion_protection() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -312,6 +327,7 @@ async fn test_a04_insecure_design_resource_exhaustion_protection() {
     let result = strategic_agent.analyze_conversation(
         &large_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -335,6 +351,7 @@ async fn test_a05_security_misconfiguration_error_information_disclosure() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -358,6 +375,7 @@ async fn test_a05_security_misconfiguration_error_information_disclosure() {
     let result = strategic_agent.analyze_conversation(
         &invalid_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -386,6 +404,7 @@ async fn test_a07_authentication_failures_user_context_validation() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -402,6 +421,7 @@ async fn test_a07_authentication_failures_user_context_validation() {
     let result = strategic_agent.analyze_conversation(
         &chat_history,
         user2_id, // Different user than in chat history
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -424,6 +444,7 @@ async fn test_a08_data_integrity_input_validation() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -459,6 +480,7 @@ async fn test_a08_data_integrity_input_validation() {
     let result = strategic_agent.analyze_conversation(
         &malformed_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -483,6 +505,7 @@ async fn test_a09_logging_monitoring_security_events() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -496,6 +519,7 @@ async fn test_a09_logging_monitoring_security_events() {
     let result = strategic_agent.analyze_conversation(
         &suspicious_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -519,6 +543,7 @@ async fn test_a10_ssrf_external_reference_prevention() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -533,6 +558,7 @@ async fn test_a10_ssrf_external_reference_prevention() {
     let result = strategic_agent.analyze_conversation(
         &ssrf_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 
@@ -558,6 +584,7 @@ async fn test_comprehensive_security_malicious_input_combinations() {
         app.app_state.ai_client.clone(),
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
+        app.config.advanced_model.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -574,6 +601,7 @@ async fn test_comprehensive_security_malicious_input_combinations() {
     let result = strategic_agent.analyze_conversation(
         &combined_attack_history,
         user_id,
+        Uuid::new_v4(), // session_id
         &session_dek,
     ).await;
 

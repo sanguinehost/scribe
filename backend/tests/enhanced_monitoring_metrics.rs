@@ -763,6 +763,8 @@ async fn test_enhanced_monitoring_system() -> AnyhowResult<()> {
         Arc::new(app.db_pool.clone()),
         scribe_backend::services::HybridQueryConfig::default(),
         feature_flags,
+        app.ai_client.clone(),
+        "gemini-2.5-pro".to_string(),
         entity_manager.clone(),
         rag_service,
         degradation_service,
