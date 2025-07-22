@@ -61,6 +61,8 @@ fn create_agentic_services(test_app: &TestApp) -> (Arc<scribe_backend::services:
         Arc::new(test_app.db_pool.clone()),
         Default::default(),
         feature_flags,
+        test_app.ai_client.clone(),
+        test_app.config.advanced_model.clone(),
         entity_manager.clone(),
         rag_service,
         degradation,
@@ -77,6 +79,7 @@ fn create_agentic_services(test_app: &TestApp) -> (Arc<scribe_backend::services:
     let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
         test_app.ai_client.clone(),
         entity_manager.clone(),
+        test_app.config.advanced_model.clone(),
     ));
     
     let agentic_orchestrator = Arc::new(scribe_backend::services::AgenticOrchestrator::new(
@@ -84,6 +87,10 @@ fn create_agentic_services(test_app: &TestApp) -> (Arc<scribe_backend::services:
         hybrid_query_service,
         Arc::new(test_app.db_pool.clone()),
         agentic_state_update_service.clone(),
+        test_app.config.intent_detection_model.clone(),
+        test_app.config.query_planning_model.clone(),
+        test_app.config.optimization_model.clone(),
+        test_app.config.advanced_model.clone(),
     ));
     
     (world_model_service, agentic_orchestrator, agentic_state_update_service)
@@ -170,7 +177,7 @@ mod realtime_extraction_tests {
 
     #[tokio::test]
     async fn test_realtime_event_extraction_during_progressive_chat() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
@@ -331,6 +338,8 @@ mod realtime_extraction_tests {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -377,6 +386,7 @@ mod realtime_extraction_tests {
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -438,7 +448,7 @@ mod realtime_extraction_tests {
 
     #[tokio::test]
     async fn test_realtime_extraction_ignores_mundane_chat_progression() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
@@ -582,6 +592,8 @@ mod realtime_extraction_tests {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -628,6 +640,7 @@ mod realtime_extraction_tests {
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -689,7 +702,7 @@ mod realtime_extraction_tests {
 
     #[tokio::test]
     async fn test_realtime_extraction_handles_rapid_message_sequence() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
@@ -852,6 +865,8 @@ mod realtime_extraction_tests {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -898,6 +913,7 @@ mod realtime_extraction_tests {
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -957,7 +973,7 @@ mod realtime_extraction_tests {
 
     #[tokio::test]
     async fn test_realtime_extraction_with_context_from_previous_messages() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
@@ -1120,6 +1136,8 @@ mod realtime_extraction_tests {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -1166,6 +1184,7 @@ mod realtime_extraction_tests {
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -1230,7 +1249,7 @@ mod realtime_extraction_tests {
 
     #[tokio::test]
     async fn test_realtime_extraction_performance_with_long_messages() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
@@ -1393,6 +1412,8 @@ mod realtime_extraction_tests {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                test_app.config.advanced_model.clone(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -1439,6 +1460,7 @@ mod realtime_extraction_tests {
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),

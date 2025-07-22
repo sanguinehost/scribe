@@ -17,14 +17,14 @@ use crate::{
     errors::AppError,
     models::{
         ecs_diesel::{EcsEntity, EcsComponent, NewEcsComponent, NewEcsEntity},
-        ecs::{ParentLinkComponent, InventoryItem, Relationship},
+        ecs::{InventoryItem, Relationship},
     },
     schema::{ecs_entities, ecs_components},
 };
 
 use diesel::prelude::*;
 use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods};
-use diesel::sql_types::{Text, Float, Bool};
+use diesel::sql_types::{Text, Bool};
 use diesel::dsl::sql;
 
 /// Configuration for entity manager caching behavior
@@ -2842,7 +2842,7 @@ impl EcsEntityManager {
     ) -> Result<Relationship, AppError> {
         use crate::models::ecs::{RelationshipsComponent, Relationship, Component};
         use diesel::prelude::*;
-        use std::collections::HashMap;
+        
         
         // Validate trust and affection bounds
         if trust < -1.0 || trust > 1.0 {

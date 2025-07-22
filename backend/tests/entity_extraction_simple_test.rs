@@ -158,6 +158,7 @@ async fn create_minimal_app_services(test_app: &TestApp) -> AppStateServices {
                 Default::default(),
                 feature_flags,
                 test_app.ai_client.clone(),
+                "gemini-2.5-flash".to_string(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -228,6 +229,7 @@ async fn create_minimal_app_services(test_app: &TestApp) -> AppStateServices {
                     Default::default(),
                     feature_flags,
                     test_app.ai_client.clone(),
+                    "gemini-2.5-flash".to_string(),
                     entity_manager.clone(),
                     rag_service,
                     degradation,
@@ -252,6 +254,7 @@ async fn create_minimal_app_services(test_app: &TestApp) -> AppStateServices {
             Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager,
+                "gemini-2.5-flash".to_string(),
             ))
         },
         agentic_orchestrator: {
@@ -263,6 +266,7 @@ async fn create_minimal_app_services(test_app: &TestApp) -> AppStateServices {
             let state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager.clone(),
+                "gemini-2.5-flash".to_string(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -293,6 +297,7 @@ async fn create_minimal_app_services(test_app: &TestApp) -> AppStateServices {
                     Default::default(),
                     feature_flags,
                     test_app.ai_client.clone(),
+                    "gemini-2.5-flash".to_string(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -303,11 +308,16 @@ async fn create_minimal_app_services(test_app: &TestApp) -> AppStateServices {
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 state_update_service,
+                "gemini-2.5-flash-lite-preview-06-17".to_string(),
+                "gemini-2.5-flash".to_string(),
+                "gemini-2.5-flash-lite-preview-06-17".to_string(),
+                "gemini-2.5-flash".to_string(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     }
 }
 

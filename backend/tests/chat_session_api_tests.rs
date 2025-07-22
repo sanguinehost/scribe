@@ -1525,6 +1525,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                "gemini-2.5-flash".to_string(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -1589,6 +1591,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                "gemini-2.5-flash".to_string(),
                 entity_manager.clone(),
                 rag_service,
                 degradation,
@@ -1635,6 +1639,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                "gemini-2.5-flash".to_string(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -1646,12 +1652,17 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
                     Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                     None,
                 )),
+                "gemini-2.5-flash".to_string(),
             ));
             Arc::new(scribe_backend::services::AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service.clone(),
+                "gemini-2.5-flash-lite-preview-06-17".to_string(),
+                "gemini-2.5-flash".to_string(),
+                "gemini-2.5-flash-lite-preview-06-17".to_string(),
+                "gemini-2.5-flash".to_string(),
             ))
         },
         agentic_state_update_service: {
@@ -1663,11 +1674,13 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
                     redis_client,
                     None,
                 )),
+                "gemini-2.5-flash".to_string(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
 
     let app_state_arc = Arc::new(AppState::new(

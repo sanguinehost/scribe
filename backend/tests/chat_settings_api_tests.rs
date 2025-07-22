@@ -571,6 +571,8 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                "gemini-2.5-flash".to_string(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -635,6 +637,8 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                "gemini-2.5-flash".to_string(),
                 entity_manager.clone(),
                 rag_service,
                 degradation,
@@ -681,6 +685,8 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
                 Arc::new(test_app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                test_app.ai_client.clone(),
+                "gemini-2.5-flash".to_string(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -692,12 +698,17 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
                     Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                     None,
                 )),
+                "gemini-2.5-flash".to_string(),
             ));
             Arc::new(scribe_backend::services::AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
                 hybrid_query_service,
                 Arc::new(test_app.db_pool.clone()),
                 agentic_state_update_service.clone(),
+                "gemini-2.5-flash-lite-preview-06-17".to_string(),
+                "gemini-2.5-flash".to_string(),
+                "gemini-2.5-flash-lite-preview-06-17".to_string(),
+                "gemini-2.5-flash".to_string(),
             ))
         },
         agentic_state_update_service: {
@@ -709,11 +720,13 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
                     redis_client,
                     None,
                 )),
+                "gemini-2.5-flash".to_string(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
 
     Arc::new(AppState::new(

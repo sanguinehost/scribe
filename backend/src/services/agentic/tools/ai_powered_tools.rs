@@ -19,11 +19,8 @@ use crate::{
 
 use super::hierarchy_tools::GetEntityHierarchyTool;
 use super::structured_output::{
-    get_salience_analysis_schema,
     get_salience_analysis_schema_gemini,
-    get_hierarchy_interpretation_schema,
     get_hierarchy_interpretation_schema_gemini,
-    get_promotion_analysis_schema,
     get_promotion_analysis_schema_gemini,
 };
 

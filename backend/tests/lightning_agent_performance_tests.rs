@@ -22,6 +22,8 @@ async fn create_test_lightning_agent(app: &TestApp) -> LightningAgent {
     LightningAgent::new(
         cache_service,
         app.app_state.redis_client.clone(),
+        app.app_state.pool.clone(),
+        app.app_state.ecs_entity_manager.clone(),
     )
 }
 
@@ -36,7 +38,9 @@ async fn populate_full_context(
         user_id,
         session_id,
         current_location: Uuid::new_v4(),
+        current_location_name: "Test Location".to_string(),
         active_character: Some(Uuid::new_v4()),
+        active_character_name: Some("Test Character".to_string()),
         recent_messages: (0..5).map(|i| MessageSummary {
             role: if i % 2 == 0 { "user" } else { "assistant" }.to_string(),
             summary: format!("Message {}", i),
@@ -161,7 +165,9 @@ async fn test_immediate_context_retrieval_performance() {
             user_id,
             session_id,
             current_location: Uuid::new_v4(),
+            current_location_name: "Test Location".to_string(),
             active_character: Some(Uuid::new_v4()),
+            active_character_name: Some("Test Character".to_string()),
             recent_messages: vec![],
         };
         
@@ -254,7 +260,9 @@ async fn test_concurrent_retrieval_performance() {
                     user_id,
                     session_id,
                     current_location: Uuid::new_v4(),
+                    current_location_name: "Test Location".to_string(),
                     active_character: Some(Uuid::new_v4()),
+                    active_character_name: Some("Test Character".to_string()),
                     recent_messages: vec![],
                 };
                 cache_service.set_immediate_context(session_id, immediate).await.unwrap();
@@ -265,7 +273,9 @@ async fn test_concurrent_retrieval_performance() {
                     user_id,
                     session_id,
                     current_location: Uuid::new_v4(),
+                    current_location_name: "Test Location".to_string(),
                     active_character: Some(Uuid::new_v4()),
+                    active_character_name: Some("Test Character".to_string()),
                     recent_messages: vec![],
                 };
                 let enhanced = EnhancedContext {

@@ -75,6 +75,7 @@ async fn create_test_perception_agent(app: &TestApp) -> PerceptionAgent {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -89,6 +90,7 @@ async fn create_test_perception_agent(app: &TestApp) -> PerceptionAgent {
         plan_validator,
         app.app_state.redis_client.clone(),
         app.app_state.clone(),
+        "gemini-2.5-flash".to_string(),
     )
 }
 

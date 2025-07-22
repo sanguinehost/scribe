@@ -113,7 +113,7 @@ async fn test_optimize_context_entity_prioritization() {
     }}"#, luke_id);
 
     let mock_ai_client = MockAiClient::new_with_response(mock_response);
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
 
     let context = create_test_context();
     let result = service.optimize_context(&context, None, Some(1000)).await.unwrap();
@@ -170,7 +170,7 @@ async fn test_optimize_context_token_budget_constraint() {
     }"#.to_string();
 
     let mock_ai_client = MockAiClient::new_with_response(mock_response);
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
 
     let context = create_test_context();
     let result = service.optimize_context(&context, None, Some(500)).await.unwrap();
@@ -232,7 +232,7 @@ async fn test_optimize_for_narrative_combat_scene() {
     }"#.to_string();
 
     let mock_ai_client = MockAiClient::new_with_response(mock_response);
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
 
     let context = create_test_context();
     let result = service.optimize_for_narrative(
@@ -298,7 +298,7 @@ async fn test_optimize_for_narrative_emotional_scene() {
     }"#.to_string();
 
     let mock_ai_client = MockAiClient::new_with_response(mock_response);
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
 
     let context = create_test_context();
     let result = service.optimize_for_narrative(
@@ -363,7 +363,7 @@ async fn test_optimize_context_narrative_coherence() {
     }"#.to_string();
 
     let mock_ai_client = MockAiClient::new_with_response(mock_response);
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
 
     let context = create_test_context();
     let query_strategy = QueryStrategy::NarrativeContextAssembly;
@@ -425,7 +425,7 @@ async fn test_optimize_context_conservative_pruning() {
     }"#.to_string();
 
     let mock_ai_client = MockAiClient::new_with_response(mock_response);
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
 
     let context = create_test_context();
     let result = service.optimize_context(&context, None, None).await.unwrap();
@@ -478,7 +478,7 @@ async fn test_optimize_context_adaptive_optimization() {
     }"#.to_string();
 
     let mock_ai_client = MockAiClient::new_with_response(mock_response);
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
 
     let context = create_test_context();
     let result = service.optimize_context(&context, None, Some(1200)).await.unwrap();
@@ -493,7 +493,7 @@ async fn test_optimize_context_adaptive_optimization() {
 async fn test_ai_response_parsing_error() {
     let mock_ai_client = MockAiClient::new_with_response("This is not valid JSON".to_string());
     
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
     let context = create_test_context();
     
     let result = service.optimize_context(&context, None, None).await;
@@ -518,7 +518,7 @@ async fn test_empty_context_optimization() {
     }"#.to_string();
 
     let mock_ai_client = MockAiClient::new_with_response(mock_response);
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
 
     let empty_context = AssembledContext {
         strategy_used: QueryStrategy::NarrativeContextAssembly,
@@ -538,7 +538,7 @@ async fn test_empty_context_optimization() {
 
 #[tokio::test]
 async fn test_estimate_tokens() {
-    let service = ContextOptimizationService::new(Arc::new(MockAiClient::new_with_response("".to_string())));
+    let service = ContextOptimizationService::new(Arc::new(MockAiClient::new_with_response("".to_string())), "gemini-2.5-flash".to_string());
     
     // Test various content lengths
     assert_eq!(service.estimate_tokens("test"), 1); // 4 chars = 1 token
@@ -588,7 +588,7 @@ async fn test_optimize_with_relationships_and_events() {
     }}"#, entity_id);
 
     let mock_ai_client = MockAiClient::new_with_response(mock_response);
-    let service = ContextOptimizationService::new(Arc::new(mock_ai_client));
+    let service = ContextOptimizationService::new(Arc::new(mock_ai_client), "gemini-2.5-flash".to_string());
 
     // Create a context with relationships and events
     use scribe_backend::services::context_assembly_engine::{

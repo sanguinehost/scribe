@@ -1,16 +1,51 @@
 use anyhow::Result;
+use std::sync::Arc;
 use uuid::Uuid;
 use serde_json::json;
-use scribe_backend::test_helpers::{spawn_app, TestDataGuard, create_test_chronicle_event};
+use chrono::Utc;
+use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
 use scribe_backend::models::chronicle_event::ChronicleEvent;
 use scribe_backend::models::narrative_ontology::EventActor;
 use scribe_backend::services::hybrid_query_service::{HybridQuery, HybridQueryType, HybridQueryService};
 use scribe_backend::errors::AppError;
 
+// Helper function to create test ChronicleEvent objects
+fn create_test_chronicle_event(
+    chronicle_id: Uuid,
+    user_id: Uuid,
+    event_type: &str,
+    event_data: serde_json::Value,
+) -> ChronicleEvent {
+    let now = Utc::now();
+    ChronicleEvent {
+        id: Uuid::new_v4(),
+        chronicle_id,
+        user_id,
+        event_type: event_type.to_string(),
+        summary: "Test event".to_string(),
+        source: "USER_ADDED".to_string(),
+        event_data: Some(event_data),
+        created_at: now,
+        updated_at: now,
+        summary_encrypted: None,
+        summary_nonce: None,
+        timestamp_iso8601: now,
+        actors: None,
+        action: None,
+        context_data: None,
+        causality: None,
+        valence: None,
+        modality: None,
+        caused_by_event_id: None,
+        causes_event_ids: None,
+        sequence_number: 1,
+    }
+}
+
 #[tokio::test]
 async fn test_entity_context_extraction_from_event_content() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -34,29 +69,31 @@ async fn test_entity_context_extraction_from_event_content() -> Result<()> {
                 "expertise": ["Mayan hieroglyphs"]
             }
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
-        query_type: HybridQueryType::EntityTimeline,
-        query_text: "Elena Martinez".to_string(),
-        entity_names: vec!["Elena Martinez".to_string()],
-        time_range: None,
-        include_relationships: true,
-        include_current_state: true,
-        min_relevance_score: 0.5,
+        query_type: HybridQueryType::EntityTimeline {
+            entity_name: "Elena Martinez".to_string(),
+            entity_id: Some(entity_id),
+            include_current_state: true,
+        },
         max_results: 10,
+        include_current_state: true,
+        include_relationships: true,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -75,8 +112,8 @@ async fn test_entity_context_extraction_from_event_content() -> Result<()> {
 
 #[tokio::test]
 async fn test_entity_context_extraction_from_dialogue() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -103,29 +140,31 @@ async fn test_entity_context_extraction_from_dialogue() -> Result<()> {
                 }
             }
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
-        query_type: HybridQueryType::EntityTimeline,
-        query_text: "Elena Martinez".to_string(),
-        entity_names: vec!["Elena Martinez".to_string()],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
+        query_type: HybridQueryType::EntityTimeline {
+            entity_name: "Elena Martinez".to_string(),
+            entity_id: None,
+            include_current_state: true,
+        },
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -141,8 +180,8 @@ async fn test_entity_context_extraction_from_dialogue() -> Result<()> {
 
 #[tokio::test]
 async fn test_entity_context_aggregation_across_events() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -164,7 +203,7 @@ async fn test_entity_context_aggregation_across_events() -> Result<()> {
                 "command": "starship Endeavor"
             }
         })
-    ).await;
+    );
     
     let event2 = create_test_chronicle_event(
         chronicle_id,
@@ -181,29 +220,31 @@ async fn test_entity_context_aggregation_across_events() -> Result<()> {
                 "background": ["Academy training", "Outer Rim combat"]
             }
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
-        query_type: HybridQueryType::EntityTimeline,
-        query_text: "Sarah Chen".to_string(),
-        entity_names: vec!["Sarah Chen".to_string()],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
+        query_type: HybridQueryType::EntityTimeline {
+            entity_name: "Sarah Chen".to_string(),
+            entity_id: Some(entity_id),
+            include_current_state: true,
+        },
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -222,8 +263,8 @@ async fn test_entity_context_aggregation_across_events() -> Result<()> {
 
 #[tokio::test]
 async fn test_entity_context_extraction_with_nested_json() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -260,29 +301,31 @@ async fn test_entity_context_extraction_with_nested_json() -> Result<()> {
                 }
             }
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
-        query_type: HybridQueryType::EntityTimeline,
-        query_text: "General Marcus".to_string(),
-        entity_names: vec!["General Marcus".to_string()],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
+        query_type: HybridQueryType::EntityTimeline {
+            entity_name: "General Marcus".to_string(),
+            entity_id: Some(entity_id),
+            include_current_state: true,
+        },
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -299,8 +342,8 @@ async fn test_entity_context_extraction_with_nested_json() -> Result<()> {
 
 #[tokio::test]
 async fn test_entity_context_extraction_handles_invalid_json() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -322,29 +365,31 @@ async fn test_entity_context_extraction_handles_invalid_json() -> Result<()> {
                 "some_field": null
             }
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
-        query_type: HybridQueryType::EntityTimeline,
-        query_text: "Dr. Smith".to_string(),
-        entity_names: vec!["Dr. Smith".to_string()],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
+        query_type: HybridQueryType::EntityTimeline {
+            entity_name: "Dr. Smith".to_string(),
+            entity_id: None,
+            include_current_state: true,
+        },
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;

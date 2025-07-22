@@ -2,21 +2,21 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
-use tracing::{info, instrument, debug};
+use tracing::{info, instrument};
 use chrono::{DateTime, Utc};
 
 use crate::{
     errors::AppError,
     PgPool,
     services::{
-        query_strategy_planner::{QueryExecutionPlan, PlannedQuery, PlannedQueryType, QueryStrategy},
-        intent_detection_service::{QueryIntent, EntityFocus},
+        query_strategy_planner::{QueryExecutionPlan, QueryStrategy},
+        intent_detection_service::QueryIntent,
         hybrid_query_service::HybridQueryService,
         EncryptionService,
     },
     llm::AiClient,
 };
-use secrecy::{ExposeSecret, SecretBox};
+use secrecy::SecretBox;
 use std::fmt::Write;
 
 // Sub-modules for enhanced context assembly

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
-use tracing::{info, instrument, debug};
+use tracing::{info, instrument};
 use genai::chat::{ChatOptions, ChatResponseFormat, JsonSchemaSpec};
 
 use crate::{

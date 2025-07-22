@@ -461,6 +461,8 @@ fn create_hybrid_query_service(app: &scribe_backend::test_helpers::TestApp) -> A
         Arc::new(app.db_pool.clone()),
         Default::default(), // HybridQueryConfig
         feature_flags,
+        app.ai_client.clone(),
+        "gemini-2.5-flash".to_string(),
         entity_manager,
         rag_service,
         degradation_service,

@@ -20,15 +20,11 @@
 
 use crate::{
     errors::AppError,
-    services::context_assembly_engine::{
-        EnrichedContext, StrategicDirective, ValidatedPlan, SubGoal,
-        EntityContext, SpatialContext, CausalContext, TemporalContext
-    },
+    services::context_assembly_engine::EnrichedContext,
     models::chats::{ChatMessageForClient, MessageRole},
 };
 use uuid::Uuid;
 use tracing::{info, debug, warn, instrument};
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 /// Template version for A/B testing and iterative improvement

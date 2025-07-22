@@ -9,11 +9,11 @@ use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use async_trait::async_trait;
-use tracing::{info, debug, instrument, error};
+use tracing::{info, debug, instrument};
 
 use crate::{
     services::{EcsEntityManager, ComponentQuery, EntityQueryResult, ComponentUpdate, ComponentOperation},
-    models::ecs::{SpatialScale, PositionType, SalienceTier, ParentLinkComponent, SalienceComponent, Component},
+    models::ecs::{SpatialScale, SalienceTier, ParentLinkComponent, Component},
     services::agentic::tools::{ScribeTool, ToolError, ToolParams, ToolResult},
     errors::AppError,
 };

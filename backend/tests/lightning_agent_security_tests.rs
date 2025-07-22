@@ -17,6 +17,8 @@ async fn create_test_lightning_agent(app: &TestApp) -> LightningAgent {
     LightningAgent::new(
         cache_service,
         app.app_state.redis_client.clone(),
+        app.db_pool.clone(),
+        app.app_state.ecs_entity_manager.clone(),
     )
 }
 

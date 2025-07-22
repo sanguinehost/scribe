@@ -621,7 +621,8 @@ fn create_test_context_assembly_engine(test_app: &scribe_backend::test_helpers::
     
     let hybrid_service = Arc::new(create_test_hybrid_query_service(
         mock_ai_client,
-        Arc::new(test_app.db_pool.clone())
+        Arc::new(test_app.db_pool.clone()),
+        test_app.app_state.redis_client.clone()
     ));
     let encryption_service = Arc::new(EncryptionService::new());
     let db_pool = Arc::new(test_app.db_pool.clone());
@@ -631,5 +632,6 @@ fn create_test_context_assembly_engine(test_app: &scribe_backend::test_helpers::
         hybrid_service,
         db_pool,
         encryption_service,
+        "gemini-2.5-flash".to_string(),
     )
 }

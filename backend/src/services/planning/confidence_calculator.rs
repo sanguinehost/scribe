@@ -11,10 +11,9 @@
 // - Repair plan quality metrics
 
 use std::sync::Arc;
-use std::collections::HashMap;
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
-use tracing::{info, debug, warn, instrument};
+use tracing::{info, debug, instrument};
 
 use crate::{
     errors::AppError,

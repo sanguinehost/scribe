@@ -12,13 +12,10 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::{
-    services::ecs_entity_manager::{ComponentUpdate, ComponentOperation, EntityQueryResult},
-    state::AppState,
-};
+use crate::state::AppState;
 
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 

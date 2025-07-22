@@ -29,7 +29,7 @@ async fn test_detect_intent_causal_analysis() {
         "confidence": 0.95
     }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_intent(
         "What caused Luke to leave Tatooine?",
@@ -64,7 +64,7 @@ async fn test_detect_intent_spatial_analysis() {
         "confidence": 0.88
     }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_intent(
         "Who is in the cantina right now?",
@@ -108,7 +108,7 @@ async fn test_detect_intent_relationship_query() {
         "confidence": 0.92
     }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_intent(
         "How do Vader and Obi-Wan feel about each other?",
@@ -170,7 +170,7 @@ async fn test_detect_narrative_intent_combat_scene() {
         "confidence": 0.94
     }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_narrative_intent(
         "I draw my sword and face the beast",
@@ -237,7 +237,7 @@ async fn test_detect_narrative_intent_emotional_scene() {
             "confidence": 0.91
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_narrative_intent(
         "Lumiya sighs and goes to check on her children",
@@ -274,7 +274,7 @@ async fn test_detect_intent_temporal_analysis() {
             "confidence": 0.87
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_intent(
         "What major events happened in the first half of 2024?",
@@ -317,7 +317,7 @@ async fn test_detect_intent_predictive_query() {
             "confidence": 0.82
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_intent(
         "What might happen if the rebellion discovers the Death Star plans?",
@@ -351,7 +351,7 @@ async fn test_detect_intent_with_conversation_context() {
             "confidence": 0.96
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_intent(
         "Where is he now?",
@@ -378,7 +378,7 @@ async fn test_detect_intent_recent_time_scope() {
             "confidence": 0.85
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_intent(
         "What happened in the last two days?",
@@ -396,7 +396,7 @@ async fn test_detect_intent_recent_time_scope() {
 async fn test_ai_response_parsing_error() {
     let mock_ai_client = MockAiClient::new_with_response("This is not valid JSON".to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_intent(
         "What caused the error?",
@@ -415,7 +415,7 @@ async fn test_narrative_intent_missing_required_fields() {
             "confidence": 0.5
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_narrative_intent(
         "Test narrative",
@@ -475,7 +475,7 @@ async fn test_narrative_intent_exploration_scene() {
             "confidence": 0.89
         }"#.to_string());
     
-    let service = IntentDetectionService::new(Arc::new(mock_ai_client));
+    let service = IntentDetectionService::new(Arc::new(mock_ai_client), "gemini-2.5-flash-lite-preview-06-17".to_string());
     
     let result = service.detect_narrative_intent(
         "She examines the ancient symbols carved into the stone",

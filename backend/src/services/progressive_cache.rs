@@ -3,7 +3,7 @@ use redis::AsyncCommands;
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, info, warn, error, instrument};
+use tracing::{debug, info, instrument};
 use uuid::Uuid;
 
 /// Progressive cache service for the Lightning Agent

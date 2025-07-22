@@ -545,6 +545,7 @@ async fn test_a08_data_integrity_numeric_overflow_protection() {
         mock_entity_tool,
         encryption_service,
         db_pool,
+        "gemini-2.5-flash".to_string(),
     );
     
     let user_id = Uuid::new_v4();

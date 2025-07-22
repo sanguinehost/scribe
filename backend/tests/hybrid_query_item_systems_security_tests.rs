@@ -1,14 +1,50 @@
 use anyhow::Result;
+use std::sync::Arc;
 use uuid::Uuid;
 use serde_json::json;
-use scribe_backend::test_helpers::{spawn_app, TestDataGuard, create_test_chronicle_event};
+use chrono::Utc;
+use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
 use scribe_backend::services::hybrid_query_service::{HybridQuery, HybridQueryType, HybridQueryService};
+use scribe_backend::models::chronicle_event::ChronicleEvent;
+
+// Helper function to create test ChronicleEvent objects
+fn create_test_chronicle_event(
+    chronicle_id: Uuid,
+    user_id: Uuid,
+    event_type: &str,
+    event_data: serde_json::Value,
+) -> ChronicleEvent {
+    let now = Utc::now();
+    ChronicleEvent {
+        id: Uuid::new_v4(),
+        chronicle_id,
+        user_id,
+        event_type: event_type.to_string(),
+        summary: "Test event".to_string(),
+        source: "USER_ADDED".to_string(),
+        event_data: Some(event_data),
+        created_at: now,
+        updated_at: now,
+        summary_encrypted: None,
+        summary_nonce: None,
+        timestamp_iso8601: now,
+        actors: None,
+        action: None,
+        context_data: None,
+        causality: None,
+        valence: None,
+        modality: None,
+        caused_by_event_id: None,
+        causes_event_ids: None,
+        sequence_number: 1,
+    }
+}
 
 /// OWASP A01:2021 – Broken Access Control
 #[tokio::test]
 async fn test_item_ownership_access_control() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user1_id = Uuid::new_v4();
     let user2_id = Uuid::new_v4();
@@ -36,16 +72,17 @@ async fn test_item_ownership_access_control() -> Result<()> {
                 "value": 10000
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     // User2 tries to query user1's items
@@ -53,13 +90,10 @@ async fn test_item_ownership_access_control() -> Result<()> {
         user_id: user2_id,
         chronicle_id: Some(chronicle1_id), // Wrong chronicle
         query_type: HybridQueryType::ItemTimeline,
-        query_text: "Artifact of Power".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -73,8 +107,8 @@ async fn test_item_ownership_access_control() -> Result<()> {
 /// OWASP A03:2021 – Injection
 #[tokio::test]
 async fn test_item_query_injection_prevention() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -98,16 +132,17 @@ async fn test_item_query_injection_prevention() -> Result<()> {
                 }
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     // Query with injection attempt
@@ -115,13 +150,10 @@ async fn test_item_query_injection_prevention() -> Result<()> {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemSearch,
-        query_text: "'; SELECT * FROM users; --".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     // Should handle injection attempts safely
@@ -136,8 +168,8 @@ async fn test_item_query_injection_prevention() -> Result<()> {
 /// OWASP A04:2021 – Insecure Design
 #[tokio::test]
 async fn test_item_duplication_prevention() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -159,7 +191,7 @@ async fn test_item_duplication_prevention() -> Result<()> {
                 "owner": owner1_id.to_string()
             }]
         })
-    ).await;
+    );
     
     // Simultaneous conflicting transfer
     let event2 = create_test_chronicle_event(
@@ -175,29 +207,27 @@ async fn test_item_duplication_prevention() -> Result<()> {
                 "owner": owner2_id.to_string()
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemTimeline,
-        query_text: "Unique Artifact".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -210,8 +240,8 @@ async fn test_item_duplication_prevention() -> Result<()> {
 /// OWASP A05:2021 – Security Misconfiguration
 #[tokio::test]
 async fn test_item_data_exposure_limits() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -235,30 +265,28 @@ async fn test_item_data_exposure_limits() -> Result<()> {
                     }
                 }]
             })
-        ).await;
+        );
     }
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemSearch,
-        query_text: "all items".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10, // Should respect this limit
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -272,33 +300,31 @@ async fn test_item_data_exposure_limits() -> Result<()> {
 /// OWASP A07:2021 – Identification and Authentication Failures
 #[tokio::test]
 async fn test_item_query_authentication_required() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let chronicle_id = Uuid::new_v4();
     let anonymous_user = Uuid::nil(); // Invalid/anonymous user
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id: anonymous_user,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemSearch,
-        query_text: "valuable items".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -313,8 +339,8 @@ async fn test_item_query_authentication_required() -> Result<()> {
 /// OWASP A02:2021 – Cryptographic Failures
 #[tokio::test]
 async fn test_item_value_data_protection() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -338,29 +364,27 @@ async fn test_item_value_data_protection() -> Result<()> {
                 }
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemTimeline,
-        query_text: "Royal Treasury Key".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -373,8 +397,8 @@ async fn test_item_value_data_protection() -> Result<()> {
 /// OWASP A08:2021 – Software and Data Integrity Failures
 #[tokio::test]
 async fn test_item_state_consistency() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -395,7 +419,7 @@ async fn test_item_state_consistency() -> Result<()> {
                 "durability": 100
             }]
         })
-    ).await;
+    );
     
     // Conflicting state
     let event2 = create_test_chronicle_event(
@@ -412,29 +436,27 @@ async fn test_item_state_consistency() -> Result<()> {
                 "durability": 0
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemTimeline,
-        query_text: "Magic Sword".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -448,8 +470,8 @@ async fn test_item_state_consistency() -> Result<()> {
 /// OWASP A09:2021 – Security Logging and Monitoring Failures
 #[tokio::test]
 async fn test_item_transaction_logging() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -476,29 +498,27 @@ async fn test_item_transaction_logging() -> Result<()> {
                 "alert_required": true
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemTimeline,
-        query_text: "Crown Jewels".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     // Execute suspicious query
@@ -514,8 +534,8 @@ async fn test_item_transaction_logging() -> Result<()> {
 /// OWASP A06:2021 – Vulnerable and Outdated Components
 #[tokio::test]
 async fn test_item_format_compatibility() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -541,29 +561,27 @@ async fn test_item_format_compatibility() -> Result<()> {
                 "action": "migrated"
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemTimeline,
-        query_text: "Legacy Artifact".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     // Should handle both formats gracefully
@@ -578,8 +596,8 @@ async fn test_item_format_compatibility() -> Result<()> {
 /// OWASP A10:2021 – Server-Side Request Forgery
 #[tokio::test]
 async fn test_item_external_reference_safety() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -604,29 +622,27 @@ async fn test_item_external_reference_safety() -> Result<()> {
                 }
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemTimeline,
-        query_text: "Remote Artifact".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;

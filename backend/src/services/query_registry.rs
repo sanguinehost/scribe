@@ -4,7 +4,6 @@
 //! their parameters, usage patterns, and mappings to execution results.
 //! This ensures AI agents have complete, accurate information about available tools.
 
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use serde_json::Value as JsonValue;
 

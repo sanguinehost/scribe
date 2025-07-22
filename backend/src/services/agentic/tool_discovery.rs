@@ -4,7 +4,6 @@
 //! available tools based on their current needs and context.
 
 use tracing::info;
-use serde_json::json;
 
 use super::tool_registry::{ToolRegistry, ToolContext, ToolCategory};
 

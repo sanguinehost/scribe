@@ -158,6 +158,8 @@ impl PerformanceBenchmarks {
                 max_relationship_depth: 5,
             },
             feature_flags,
+            app.app_state.ai_client.clone(),
+            "gemini-2.5-flash".to_string(),
             entity_manager,
             rag_service,
             degradation_service,

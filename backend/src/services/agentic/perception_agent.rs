@@ -515,7 +515,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         entity: &ContextualEntity,
         user_id: Uuid,
     ) -> Result<(), AppError> {
-        use crate::services::agentic::tools::world_interaction_tools::CreateEntityTool;
+        
         
         // Debug: Verify user exists before creating entity
         debug!("Attempting to create entity '{}' for user_id: {}", entity.name, user_id);
@@ -813,7 +813,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         session_dek: &SessionDek,
     ) -> Result<HierarchyAnalysisResult, AppError> {
         let mut hierarchy_insights = Vec::new();
-        let mut spatial_relationships = Vec::new();
+        let spatial_relationships = Vec::new();
 
         for entity in entities {
             // First, we need to find the entity by name to get its ID

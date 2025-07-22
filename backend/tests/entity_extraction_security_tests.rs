@@ -48,10 +48,7 @@ async fn test_entity_extraction_respects_user_boundaries() {
     
     // Create entity resolution tool
     let entity_tool = EntityResolutionTool::new(
-        test_app.ecs_entity_manager.clone(),
-        test_app.ai_client.clone(),
-        test_app.db_pool.clone(),
-        test_app.redis_client.clone(),
+        test_app.app_state.clone()
     );
     
     // User1 creates entities in their chronicle
@@ -124,10 +121,7 @@ async fn test_entity_extraction_handles_encrypted_data() {
     
     // When entity extraction occurs, it should not expose SSN or credit card
     let entity_tool = EntityResolutionTool::new(
-        test_app.ecs_entity_manager.clone(),
-        test_app.ai_client.clone(),
-        test_app.db_pool.clone(),
-        test_app.redis_client.clone(),
+        test_app.app_state.clone()
     );
     
     let entities = entity_tool.resolve_entities_multistage(
@@ -178,10 +172,7 @@ async fn test_entity_extraction_prevents_injection_attacks() {
     ];
     
     let entity_tool = EntityResolutionTool::new(
-        test_app.ecs_entity_manager.clone(),
-        test_app.ai_client.clone(),
-        test_app.db_pool.clone(),
-        test_app.redis_client.clone(),
+        test_app.app_state.clone()
     );
     
     for (i, injection) in injection_attempts.iter().enumerate() {
@@ -232,10 +223,7 @@ async fn test_entity_extraction_design_security() {
     }).await.unwrap();
     
     let entity_tool = EntityResolutionTool::new(
-        test_app.ecs_entity_manager.clone(),
-        test_app.ai_client.clone(),
-        test_app.db_pool.clone(),
-        test_app.redis_client.clone(),
+        test_app.app_state.clone()
     );
     
     // Test 1: Ensure rate limiting or resource constraints
@@ -284,10 +272,7 @@ async fn test_entity_extraction_configuration_security() {
     
     // Test with different processing modes
     let entity_tool = EntityResolutionTool::new(
-        test_app.ecs_entity_manager.clone(),
-        test_app.ai_client.clone(),
-        test_app.db_pool.clone(),
-        test_app.redis_client.clone(),
+        test_app.app_state.clone()
     );
     
     // Verify default mode is secure
@@ -314,10 +299,7 @@ async fn test_entity_extraction_requires_authentication() {
     let _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let entity_tool = EntityResolutionTool::new(
-        test_app.ecs_entity_manager.clone(),
-        test_app.ai_client.clone(),
-        test_app.db_pool.clone(),
-        test_app.redis_client.clone(),
+        test_app.app_state.clone()
     );
     
     // Attempt with invalid user ID
@@ -360,10 +342,7 @@ async fn test_entity_extraction_data_integrity() {
     }).await.unwrap();
     
     let entity_tool = EntityResolutionTool::new(
-        test_app.ecs_entity_manager.clone(),
-        test_app.ai_client.clone(),
-        test_app.db_pool.clone(),
-        test_app.redis_client.clone(),
+        test_app.app_state.clone()
     );
     
     // Create entities with specific properties
@@ -406,10 +385,7 @@ async fn test_entity_extraction_logging() {
     _guard.add_user(user.id);
     
     let entity_tool = EntityResolutionTool::new(
-        test_app.ecs_entity_manager.clone(),
-        test_app.ai_client.clone(),
-        test_app.db_pool.clone(),
-        test_app.redis_client.clone(),
+        test_app.app_state.clone()
     );
     
     // Attempt suspicious activity that should be logged
@@ -446,10 +422,7 @@ async fn test_entity_extraction_prevents_ssrf() {
     _guard.add_user(user.id);
     
     let entity_tool = EntityResolutionTool::new(
-        test_app.ecs_entity_manager.clone(),
-        test_app.ai_client.clone(),
-        test_app.db_pool.clone(),
-        test_app.redis_client.clone(),
+        test_app.app_state.clone()
     );
     
     // Attempt SSRF through entity names that look like URLs

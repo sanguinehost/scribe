@@ -545,7 +545,7 @@ pub async fn generate_chat_response(
         info!(%session_id, "Using integrated HierarchicalAgentPipeline with Perception, Strategic, and Tactical layers");
         
         // Convert GenAI history to ChatMessageForClient format for the pipeline
-        let mut chat_history_for_pipeline: Vec<crate::models::chats::ChatMessageForClient> = 
+        let chat_history_for_pipeline: Vec<crate::models::chats::ChatMessageForClient> = 
             gen_ai_recent_history.iter()
                 .map(|msg| {
                     // Extract text content from MessageContent

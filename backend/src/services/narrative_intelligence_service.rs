@@ -10,11 +10,10 @@
 //! - Maintains security-first design with SessionDek integration
 //! - Replaces hardcoded narrative triage prompts with Flash-Lite
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 use secrecy::ExposeSecret;
 
@@ -23,7 +22,7 @@ use crate::{
     errors::AppError,
     models::chats::{ChatMessage, MessageRole},
     services::{
-        agentic::{NarrativeAgentRunner, AgenticNarrativeFactory, NarrativeWorkflowConfig},
+        agentic::{NarrativeAgentRunner, AgenticNarrativeFactory},
         embeddings::RetrievedChunk,
     },
     state::AppState,

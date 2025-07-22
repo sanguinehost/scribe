@@ -246,6 +246,20 @@ fn create_test_config() -> Config {
         agentic_extraction_model: "gemini-2.5-flash".to_string(),
         agentic_entity_resolution_model: "gemini-2.5-flash".to_string(),
         agentic_max_tool_executions: 10,
+        // Additional model fields
+        advanced_model: "gemini-2.5-pro-latest".to_string(),
+        chat_model: "gemini-2.5-flash".to_string(),
+        fast_model: "gemini-2.5-flash".to_string(),
+        embedding_model: "models/text-embedding-004".to_string(),
+        token_counter_model: "gemini-2.5-flash".to_string(),
+        suggestion_model: "gemini-2.5-flash".to_string(),
+        optimization_model: "gemini-2.5-flash".to_string(),
+        perception_agent_model: "gemini-2.5-flash".to_string(),
+        strategic_agent_model: "gemini-2.5-flash".to_string(),
+        tactical_agent_model: "gemini-2.5-flash".to_string(),
+        intent_detection_model: "gemini-2.5-flash-lite-preview-06-17".to_string(),
+        query_planning_model: "gemini-2.5-flash".to_string(),
+        hybrid_query_model: "gemini-2.5-flash".to_string(),
     }
 }
 

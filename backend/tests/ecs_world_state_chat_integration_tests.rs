@@ -389,6 +389,8 @@ async fn test_ecs_world_state_included_when_enabled_and_chronicle_linked() {
         Arc::new(context.app.db_pool.clone()),
         Default::default(),
         feature_flags.clone(),
+        context.app.ai_client.clone(),
+        "gemini-2.5-flash".to_string(),
         entity_manager.clone(),
         rag_service,
         degradation.clone(),

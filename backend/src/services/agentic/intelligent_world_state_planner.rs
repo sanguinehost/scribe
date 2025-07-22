@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tracing::{info, debug, warn};
+use tracing::info;
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
@@ -7,8 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     errors::AppError,
-    services::agentic::tools::{ScribeTool, ToolError},
-    auth::session_dek::SessionDek,
+    services::agentic::tools::ScribeTool,
 };
 
 /// Intelligent World State Planner

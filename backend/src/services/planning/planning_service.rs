@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use uuid::Uuid;
-use serde_json::json;
 use tracing::{info, debug, instrument, warn};
 use genai::chat::{ChatMessage, ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, MessageContent};
 use redis::AsyncCommands;

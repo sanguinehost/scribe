@@ -7,7 +7,6 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use uuid::Uuid;
 use crate::errors::AppError;
 
 /// Structured output for event significance analysis

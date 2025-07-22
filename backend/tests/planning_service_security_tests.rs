@@ -23,6 +23,7 @@ async fn test_a01_planning_service_user_isolation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     // Create test user DEKs
@@ -60,6 +61,7 @@ async fn test_a01_cache_key_includes_user_context() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -86,6 +88,7 @@ async fn test_a02_no_sensitive_data_in_cache_keys() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     let context = create_test_enriched_context("Sensitive: password123");
@@ -114,6 +117,7 @@ async fn test_a03_plan_goal_injection_prevention() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -147,6 +151,7 @@ async fn test_a04_plan_complexity_limits() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -177,6 +182,7 @@ async fn test_a05_cache_ttl_configuration() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     // When implemented, verify cache TTL is reasonable
@@ -196,6 +202,7 @@ async fn test_a07_user_id_required_for_planning() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -226,6 +233,7 @@ async fn test_a08_plan_validation_fields() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -259,6 +267,7 @@ async fn test_a09_planning_includes_metadata() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -293,6 +302,7 @@ async fn test_a10_no_external_references_allowed() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.db_pool.clone()),
+        "gemini-2.5-flash".to_string(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);

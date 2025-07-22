@@ -1062,9 +1062,8 @@ async fn create_test_orchestrator(ai_client: Arc<MockAiClient>) -> AgenticOrches
     
     let test_app = spawn_app(false, false, false).await;
     let db_pool = Arc::new(test_app.db_pool);
-    let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone());
-    
     let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+    let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone(), redis_client.clone());
     let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
@@ -1072,11 +1071,16 @@ async fn create_test_orchestrator(ai_client: Arc<MockAiClient>) -> AgenticOrches
             redis_client,
             None,
         )),
+        "gemini-2.5-flash".to_string(),
     ));
     AgenticOrchestrator::new(
         ai_client,
         Arc::new(hybrid_query_service),
         db_pool,
         agentic_state_update_service,
+        "gemini-2.5-flash-lite-preview-06-17".to_string(),
+        "gemini-2.5-flash".to_string(),
+        "gemini-2.5-flash-lite-preview-06-17".to_string(),
+        "gemini-2.5-flash".to_string(),
     )
 }

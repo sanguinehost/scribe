@@ -9,7 +9,7 @@ use diesel::prelude::*;
 use deadpool_diesel::postgres::Pool as PgPool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{debug, info, warn, error, instrument};
+use tracing::{debug, info, warn, instrument};
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 use tokio::time::timeout;

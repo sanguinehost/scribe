@@ -413,6 +413,8 @@ async fn test_hierarchical_pipeline_configuration_options() {
         response_generation_model: "custom-model".to_string(),
         enable_optimizations: false,
         max_pipeline_time_ms: 60000,
+        enable_parallel_agents: true,
+        enable_progressive_response: true,
     };
 
     let custom_pipeline = HierarchicalAgentPipeline::from_app_state(

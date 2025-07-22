@@ -291,6 +291,8 @@ async fn test_chat_session_uses_user_default_model() {
                 Arc::new(app.db_pool.clone()),
                 Default::default(),
                 feature_flags,
+                app.ai_client.clone(),
+                "gemini-2.5-flash".to_string(),
                 entity_manager,
                 rag_service,
                 degradation,
@@ -363,6 +365,8 @@ async fn test_chat_session_uses_user_default_model() {
                     Arc::new(app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    app.ai_client.clone(),
+                    "gemini-2.5-flash".to_string(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -385,6 +389,7 @@ async fn test_chat_session_uses_user_default_model() {
             let agentic_state_update_service = Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager.clone(),
+                "gemini-2.5-flash".to_string(),
             ));
             let hybrid_query_service = {
                 let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
@@ -419,6 +424,8 @@ async fn test_chat_session_uses_user_default_model() {
                     Arc::new(app.db_pool.clone()),
                     Default::default(),
                     feature_flags,
+                    app.ai_client.clone(),
+                    "gemini-2.5-flash".to_string(),
                     entity_manager,
                     rag_service,
                     degradation,
@@ -429,6 +436,10 @@ async fn test_chat_session_uses_user_default_model() {
                 hybrid_query_service,
                 Arc::new(app.db_pool.clone()),
                 agentic_state_update_service,
+                "gemini-2.5-flash-lite-preview-06-17".to_string(),
+                "gemini-2.5-flash".to_string(),
+                "gemini-2.5-flash-lite-preview-06-17".to_string(),
+                "gemini-2.5-flash".to_string(),
             ))
         },
         agentic_state_update_service: {
@@ -441,11 +452,13 @@ async fn test_chat_session_uses_user_default_model() {
             Arc::new(scribe_backend::services::AgenticStateUpdateService::new(
                 ai_client.clone(),
                 entity_manager,
+                "gemini-2.5-flash".to_string(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
 
     let app_state_for_session = Arc::new(AppState::new(db_pool, config, app_services));

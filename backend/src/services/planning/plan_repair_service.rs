@@ -13,10 +13,7 @@ use crate::{
         },
         ecs_entity_manager::EntityQueryResult,
     },
-    models::{
-        chats::ChatMessage,
-        ecs::*,
-    },
+    models::ecs::*,
     llm::AiClient,
     config::Config,
 };

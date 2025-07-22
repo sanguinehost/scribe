@@ -465,8 +465,8 @@ async fn create_functional_assembler_for_causal_test(test_app: &scribe_backend::
     
     let mock_ai_client = Arc::new(MockAiClient::new_with_multiple_responses(mock_responses));
     
-    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone()));
-    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone()));
+    let intent_service = Arc::new(IntentDetectionService::new(mock_ai_client.clone(), "gemini-2.5-flash-lite-preview-06-17".to_string()));
+    let query_planner = Arc::new(QueryStrategyPlanner::new(mock_ai_client.clone(), "gemini-2.5-flash".to_string()));
     let entity_tool = Arc::new(EntityResolutionTool::new(test_app.app_state.clone()));
     let encryption_service = Arc::new(EncryptionService);
     let db_pool = Arc::new(test_app.db_pool.clone());
@@ -478,6 +478,7 @@ async fn create_functional_assembler_for_causal_test(test_app: &scribe_backend::
         entity_tool,
         encryption_service,
         db_pool,
+        "gemini-2.5-flash".to_string(),
     )
 }
 

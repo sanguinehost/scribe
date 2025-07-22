@@ -1,8 +1,6 @@
 use std::sync::Arc;
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-use serde_json::Value as JsonValue;
-use tracing::{info, instrument, debug, warn};
+use tracing::{info, instrument, warn};
 
 use crate::{
     llm::AiClient,

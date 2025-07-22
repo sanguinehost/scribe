@@ -1,14 +1,49 @@
 use anyhow::Result;
+use std::sync::Arc;
 use uuid::Uuid;
 use serde_json::json;
-use scribe_backend::test_helpers::{spawn_app, TestDataGuard, create_test_chronicle_event};
-use scribe_backend::services::hybrid_query_service::{HybridQuery, HybridQueryType, HybridQueryService};
 use chrono::{DateTime, Utc, Duration};
+use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
+use scribe_backend::services::hybrid_query_service::{HybridQuery, HybridQueryType, HybridQueryService};
+use scribe_backend::models::chronicle_event::ChronicleEvent;
+
+// Helper function to create test ChronicleEvent objects
+fn create_test_chronicle_event(
+    chronicle_id: Uuid,
+    user_id: Uuid,
+    event_type: &str,
+    event_data: serde_json::Value,
+) -> ChronicleEvent {
+    let now = Utc::now();
+    ChronicleEvent {
+        id: Uuid::new_v4(),
+        chronicle_id,
+        user_id,
+        event_type: event_type.to_string(),
+        summary: "Test event".to_string(),
+        source: "USER_ADDED".to_string(),
+        event_data: Some(event_data),
+        created_at: now,
+        updated_at: now,
+        summary_encrypted: None,
+        summary_nonce: None,
+        timestamp_iso8601: now,
+        actors: None,
+        action: None,
+        context_data: None,
+        causality: None,
+        valence: None,
+        modality: None,
+        caused_by_event_id: None,
+        causes_event_ids: None,
+        sequence_number: 1,
+    }
+}
 
 #[tokio::test]
 async fn test_item_ownership_timeline_tracking() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -34,7 +69,7 @@ async fn test_item_ownership_timeline_tracking() -> Result<()> {
                 "owner": alice_id.to_string()
             }]
         })
-    ).await;
+    );
     
     // Event 2: Alice gives sword to Bob
     let event2 = create_test_chronicle_event(
@@ -61,16 +96,17 @@ async fn test_item_ownership_timeline_tracking() -> Result<()> {
                 "to_owner": bob_id.to_string()
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     // Query for item ownership timeline
@@ -78,13 +114,10 @@ async fn test_item_ownership_timeline_tracking() -> Result<()> {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemTimeline,
-        query_text: "Ancient Sword ownership history".to_string(),
-        entity_names: vec![], // Item query
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -101,8 +134,8 @@ async fn test_item_ownership_timeline_tracking() -> Result<()> {
 
 #[tokio::test]
 async fn test_item_usage_pattern_tracking() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -128,7 +161,7 @@ async fn test_item_usage_pattern_tracking() -> Result<()> {
                 "remaining": "75%"
             }]
         })
-    ).await;
+    );
     
     let event2 = create_test_chronicle_event(
         chronicle_id,
@@ -149,7 +182,7 @@ async fn test_item_usage_pattern_tracking() -> Result<()> {
                 "context": "during_combat"
             }]
         })
-    ).await;
+    );
     
     let event3 = create_test_chronicle_event(
         chronicle_id,
@@ -169,29 +202,27 @@ async fn test_item_usage_pattern_tracking() -> Result<()> {
                 "remaining": "0%"
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemUsage,
-        query_text: "Healing Potion usage pattern".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -207,8 +238,8 @@ async fn test_item_usage_pattern_tracking() -> Result<()> {
 
 #[tokio::test]
 async fn test_item_location_tracking() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -234,7 +265,7 @@ async fn test_item_location_tracking() -> Result<()> {
                 }
             }]
         })
-    ).await;
+    );
     
     let event2 = create_test_chronicle_event(
         chronicle_id,
@@ -257,29 +288,27 @@ async fn test_item_location_tracking() -> Result<()> {
                 }
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemLocation,
-        query_text: "Where has the Crystal of Power been?".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -294,8 +323,8 @@ async fn test_item_location_tracking() -> Result<()> {
 
 #[tokio::test]
 async fn test_item_creation_and_destruction() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -325,7 +354,7 @@ async fn test_item_creation_and_destruction() -> Result<()> {
                 }
             }]
         })
-    ).await;
+    );
     
     // Item destruction event
     let event2 = create_test_chronicle_event(
@@ -343,29 +372,27 @@ async fn test_item_creation_and_destruction() -> Result<()> {
                 "fragments": ["star metal shards", "broken hilt"]
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemLifecycle,
-        query_text: "Star Metal Blade lifecycle".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -380,8 +407,8 @@ async fn test_item_creation_and_destruction() -> Result<()> {
 
 #[tokio::test]
 async fn test_item_interaction_with_entities() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -408,7 +435,7 @@ async fn test_item_interaction_with_entities() -> Result<()> {
                 "effect": "gained_knowledge"
             }]
         })
-    ).await;
+    );
     
     let event2 = create_test_chronicle_event(
         chronicle_id,
@@ -434,29 +461,27 @@ async fn test_item_interaction_with_entities() -> Result<()> {
                 "to": reader2_id.to_string()
             }]
         })
-    ).await;
+    );
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     let query = HybridQuery {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemInteractions,
-        query_text: "Who has interacted with the Ancient Tome?".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: true,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: true,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;
@@ -471,8 +496,8 @@ async fn test_item_interaction_with_entities() -> Result<()> {
 
 #[tokio::test]
 async fn test_complex_item_query_with_filters() -> Result<()> {
-    let app = spawn_app().await;
-    let _guard = TestDataGuard::new(&app.db_pool);
+    let app = spawn_app(false, false, false).await;
+    let _guard = TestDataGuard::new(app.db_pool.clone());
     
     let user_id = Uuid::new_v4();
     let chronicle_id = Uuid::new_v4();
@@ -510,17 +535,18 @@ async fn test_complex_item_query_with_filters() -> Result<()> {
                     }
                 }]
             })
-        ).await;
+        );
     }
     
     let service = HybridQueryService::new(
-        app.chronicle_service.clone(),
-        app.ecs_manager.clone(),
-        app.nlp_service.clone(),
-        app.token_counter.clone(),
-        app.enhanced_rag_service.clone(),
-        app.llm_clients.clone(),
-        app.lorebook_service.clone(),
+        Arc::new(app.db_pool.clone()),
+        Default::default(),
+        app.app_state.feature_flags.clone(),
+        app.ai_client.clone(),
+        app.config.advanced_model.clone(),
+        app.app_state.ecs_entity_manager.clone(),
+        app.app_state.ecs_enhanced_rag_service.clone(),
+        app.app_state.ecs_graceful_degradation.clone(),
     );
     
     // Query for specific item properties
@@ -528,13 +554,10 @@ async fn test_complex_item_query_with_filters() -> Result<()> {
         user_id,
         chronicle_id: Some(chronicle_id),
         query_type: HybridQueryType::ItemSearch,
-        query_text: "Find all legendary weapons".to_string(),
-        entity_names: vec![],
-        time_range: None,
-        include_relationships: false,
-        include_current_state: true,
-        min_relevance_score: 0.5,
         max_results: 10,
+        include_current_state: true,
+        include_relationships: false,
+        options: Default::default(),
     };
     
     let result = service.execute_hybrid_query(query).await?;

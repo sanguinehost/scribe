@@ -4,7 +4,7 @@
 //! visualizing timing data from the hierarchical agent pipeline execution.
 
 use std::collections::HashMap;
-use tracing::{info, debug};
+use tracing::debug;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 

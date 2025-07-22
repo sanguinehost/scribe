@@ -85,6 +85,8 @@ async fn test_entity_extraction_fallback_compilation() {
         Arc::new(_test_app.db_pool.clone()),
         Default::default(),
         feature_flags.clone(),
+        _test_app.ai_client.clone(),
+        "gemini-2.5-flash".to_string(),
         ecs_entity_manager.clone(),
         ecs_enhanced_rag_service.clone(),
         ecs_graceful_degradation.clone(),
@@ -100,6 +102,7 @@ async fn test_entity_extraction_fallback_compilation() {
     let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         _test_app.ai_client.clone(),
         ecs_entity_manager.clone(),
+        "gemini-2.5-flash".to_string(),
     ));
 
     let agentic_orchestrator = Arc::new(AgenticOrchestrator::new(
@@ -107,6 +110,10 @@ async fn test_entity_extraction_fallback_compilation() {
         hybrid_query_service.clone(),
         Arc::new(_test_app.db_pool.clone()),
         agentic_state_update_service.clone(),
+        "gemini-2.5-flash-lite-preview-06-17".to_string(),
+        "gemini-2.5-flash".to_string(),
+        "gemini-2.5-flash-lite-preview-06-17".to_string(),
+        "gemini-2.5-flash".to_string(),
     ));
 
     let chronicle_ecs_translator = Arc::new(ChronicleEcsTranslator::new(
@@ -163,6 +170,7 @@ async fn test_entity_extraction_fallback_compilation() {
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
+        hierarchical_pipeline: None,
     };
     
     let app_state = Arc::new(scribe_backend::state::AppState::new(

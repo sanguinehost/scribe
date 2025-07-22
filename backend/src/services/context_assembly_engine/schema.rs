@@ -5,14 +5,8 @@
 //! and neural generation systems.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
-use super::{
-    EnrichedContext, StrategicDirective, ValidatedPlan, SubGoal, 
-    PlotSignificance, WorldImpactLevel, RiskAssessment, RiskLevel,
-    PlanValidationStatus
-};
 
 /// Schema version for EnrichedContext
 /// This allows for schema evolution without breaking changes
@@ -245,6 +239,10 @@ impl From<&super::EnrichedContext> for CompactEnrichedContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::context_assembly_engine::{
+        EnrichedContext, StrategicDirective, PlotSignificance, WorldImpactLevel,
+        ValidatedPlan, RiskAssessment, RiskLevel, SubGoal, PlanValidationStatus
+    };
     
     #[test]
     fn test_schema_versioning() {
@@ -283,31 +281,31 @@ mod tests {
         assert!(compact_json.len() < full_json.len());
     }
     
-    fn create_test_enriched_context() -> super::EnrichedContext {
-        super::EnrichedContext {
-            strategic_directive: Some(super::StrategicDirective {
+    fn create_test_enriched_context() -> EnrichedContext {
+        EnrichedContext {
+            strategic_directive: Some(StrategicDirective {
                 directive_id: Uuid::new_v4(),
                 directive_type: "test".to_string(),
                 narrative_arc: "test arc".to_string(),
-                plot_significance: super::PlotSignificance::Moderate,
+                plot_significance: PlotSignificance::Moderate,
                 emotional_tone: "neutral".to_string(),
                 character_focus: vec!["Test Character".to_string()],
-                world_impact_level: super::WorldImpactLevel::Local,
+                world_impact_level: WorldImpactLevel::Local,
             }),
-            validated_plan: super::ValidatedPlan {
+            validated_plan: ValidatedPlan {
                 plan_id: Uuid::new_v4(),
                 steps: vec![],
                 preconditions_met: true,
                 causal_consistency_verified: true,
                 entity_dependencies: vec![],
                 estimated_execution_time: Some(1000),
-                risk_assessment: super::RiskAssessment {
-                    overall_risk: super::RiskLevel::Low,
+                risk_assessment: RiskAssessment {
+                    overall_risk: RiskLevel::Low,
                     identified_risks: vec![],
                     mitigation_strategies: vec![],
                 },
             },
-            current_sub_goal: super::SubGoal {
+            current_sub_goal: SubGoal {
                 goal_id: Uuid::new_v4(),
                 description: "Test goal".to_string(),
                 actionable_directive: "Do test action".to_string(),
@@ -320,7 +318,7 @@ mod tests {
             spatial_context: None,
             causal_context: None,
             temporal_context: None,
-            plan_validation_status: super::PlanValidationStatus::Validated,
+            plan_validation_status: PlanValidationStatus::Validated,
             symbolic_firewall_checks: vec![],
             assembled_context: None,
             perception_analysis: None,

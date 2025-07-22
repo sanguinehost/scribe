@@ -41,6 +41,7 @@ async fn test_reasoning_directive_priority_assessment() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -120,6 +121,7 @@ async fn test_reasoning_plan_complexity_assessment() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -195,6 +197,7 @@ async fn test_reasoning_entity_dependency_analysis() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -277,6 +280,7 @@ async fn test_reasoning_temporal_constraint_analysis() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -354,6 +358,7 @@ async fn test_reasoning_failure_recovery_analysis() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -429,6 +434,7 @@ async fn test_reasoning_resource_requirement_analysis() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -507,6 +513,7 @@ async fn test_reasoning_sub_goal_decomposition_logic() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(
@@ -584,6 +591,7 @@ async fn test_reasoning_plan_validation_status_logic() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         Arc::new(app.app_state.pool.clone()),
+        "gemini-2.5-flash".to_string(),
     ));
     
     let plan_validator = Arc::new(PlanValidatorService::new(

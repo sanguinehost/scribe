@@ -25,7 +25,7 @@ use super::{
     },
     tool_registry::{
         ToolRegistry, ToolMetadataBuilder, ToolCategory, 
-        ExecutionTime, AgentType
+        ExecutionTime
     },
     tool_access_config::get_default_tool_policies,
 };
@@ -856,7 +856,7 @@ mod tests {
 
 /// Apply access policies to registered tools
 fn apply_tool_access_policies() -> Result<(), AppError> {
-    use super::tool_registry::ToolMetadata;
+    
     
     info!("Applying tool access policies");
     
