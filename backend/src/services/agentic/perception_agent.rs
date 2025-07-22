@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::collections::HashMap;
 use tracing::{info, instrument, debug, warn, error};
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
@@ -1407,7 +1408,7 @@ Output JSON with:
                 name: entity.name.clone(),
                 entity_type: entity.entity_type.clone(),
                 context: String::new(),
-                properties_mentioned: entity.properties.clone().into_iter().collect(),
+                properties_mentioned: entity.properties.clone().into_iter().collect::<HashMap<String, Value>>(),
             });
         }
         
@@ -1963,9 +1964,9 @@ struct WorldStateAnalysis {
     pub confidence: f32,
 }
 
-/// Entity mentioned in the response
+/// Entity mentioned in the response (local to perception agent)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct EntityMention {
+struct LocalEntityMention {
     pub name: String,
     pub entity_type: String,
     pub context: String,
@@ -1976,7 +1977,7 @@ struct EntityMention {
 struct ExtractionResult {
     pub entities_found: Vec<ExtractedEntity>,
     pub state_changes: Vec<StateChange>,
-    pub relationships: Vec<RelationshipChange>,
+    pub relationships: Vec<LocalRelationshipChange>,
     pub inventory_changes: Vec<InventoryChange>,
 }
 
@@ -1996,9 +1997,9 @@ struct StateChange {
     pub details: serde_json::Map<String, Value>,
 }
 
-/// Relationship change between entities
+/// Relationship change between entities (local to perception agent)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct RelationshipChange {
+struct LocalRelationshipChange {
     pub source: String,
     pub target: String,
     pub relationship_type: String,

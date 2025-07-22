@@ -2234,6 +2234,8 @@ mod tests {
             response_generation_model: "custom-model".to_string(),
             enable_optimizations: false,
             max_pipeline_time_ms: 60000,
+            enable_parallel_agents: false,
+            enable_progressive_response: false,
         };
         
         let pipeline_custom = HierarchicalAgentPipeline::from_app_state(
