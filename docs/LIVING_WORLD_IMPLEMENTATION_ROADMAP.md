@@ -1230,12 +1230,12 @@ pub struct ContextCache {
 **Status:** ✅ **COMPLETED** - This Epic successfully addressed the critical performance issues discovered during Epic 6 integration testing. The Progressive Response Architecture is now operational with Lightning Agent providing <2s responses and background enrichment working correctly.
 
 **Completion Status:** Core functionality complete including:
-- ✅ Lightning Agent with progressive context retrieval
+- ✅ Lightning Agent with progressive context retrieval (<2s response times)
 - ✅ Three-layer cache architecture (Full/Enhanced/Immediate/Minimal)
 - ✅ Parallel agent execution with tokio::join!
 - ✅ Comprehensive test coverage for lightning agent
+- ✅ Intent detection with PredictiveQuery support
 - ❌ Cache invalidation, monitoring, background pipeline fixes → Deferred to Epic 9
-- ❌ Proactive agent capabilities (marked complete but no code found) → Deferred to Epic 9
 
 **Context:** Epic 6 successfully integrated all components (Strategic → Tactical → Operational) but revealed that the synchronous execution of all agent layers creates prohibitive latency. This epic implements a dual-path architecture with progressive context caching to maintain the rich Living World functionality while delivering sub-2-second time-to-first-token.
 
@@ -1716,24 +1716,18 @@ backend/tests/
 
 ### **Task 9.3: Complete Deferred Epic 7 Items**
 
-*   **[ ] Subtask 9.3.1: Proactive Agent Capabilities (from 7.1)**
-    *   Implement ProactiveContext system
-    *   Create PredictiveContext engine
-    *   Build AmbientAgent framework
-    *   Note: Was marked complete but no code exists
-
-*   **[ ] Subtask 9.3.2: Cache Management (from 7.3.3-7.3.4)**
+*   **[ ] Subtask 9.3.1: Cache Management (from 7.3.3-7.3.4)**
     *   Implement cache invalidation strategy
     *   Add cache consistency checks
     *   Create monitoring and performance metrics
     *   Build cache analytics dashboard
 
-*   **[ ] Subtask 9.3.3: Resource Management (from 7.3)**
+*   **[ ] Subtask 9.3.2: Resource Management (from 7.3)**
     *   Implement resource sharing & locking
     *   Create consensus mechanisms
     *   Add deadlock detection
 
-*   **[ ] Subtask 9.3.4: Advanced Batching (from 7.4.4)**
+*   **[ ] Subtask 9.3.3: Advanced Batching (from 7.4.4)**
     *   Implement smart batching optimizations
     *   Add batch size tuning
     *   Create batch performance metrics
