@@ -93,13 +93,14 @@ impl ExtractionDispatcher {
     }
 
     /// Extract events using the manual system
+    #[allow(unused_variables)]
     async fn extract_events_manual(
         &self,
         user_id: Uuid,
         chat_session_id: Uuid,
         chronicle_id: Option<Uuid>,
         messages: &[ChatMessage],
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Passed for API consistency, manual extraction not fully implemented
     ) -> Result<ExtractionResult, AppError> {
         let start_time = Instant::now();
         

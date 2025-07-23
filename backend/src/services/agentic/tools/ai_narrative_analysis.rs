@@ -49,6 +49,8 @@ impl AiTriageAnalyzer {
         let triage_prompt = self.generate_intelligent_triage_prompt(
             messages,
             session_dek,
+            user_id,
+            chronicle_id,
             persona_context,
             is_re_chronicle,
             context,
@@ -74,6 +76,8 @@ impl AiTriageAnalyzer {
         &self,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
+        user_id: Uuid,
+        chronicle_id: Option<Uuid>,
         persona_context: Option<&UserPersonaContext>,
         is_re_chronicle: bool,
         existing_context: &str,
@@ -90,16 +94,45 @@ impl AiTriageAnalyzer {
             String::new()
         };
 
+        // Get username from database
+        let username = match self.app_state.pool.get().await {
+            Ok(conn) => {
+                match conn.interact(move |conn| crate::auth::get_user(conn, user_id)).await {
+                    Ok(Ok(user)) => user.username,
+                    Ok(Err(e)) => {
+                        warn!("Failed to fetch user details: {}", e);
+                        format!("User {}", user_id)
+                    }
+                    Err(e) => {
+                        warn!("Database interaction error: {}", e);
+                        format!("User {}", user_id)
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to get database connection: {}", e);
+                format!("User {}", user_id)
+            }
+        };
+        
+        // Get persona name for context
+        let persona_name = persona_context
+            .map(|p| p.persona_name.clone())
+            .unwrap_or_else(|| username.clone());
+        
         // Use AI to generate an intelligent prompt based on context
         let prompt_generation_request = format!(
             r#"Generate an intelligent narrative triage prompt for analyzing a roleplay conversation.
 
 CONTEXT:
+- User: {} (account username)
+- Persona: {} (character being played)
+- Chronicle ID: {}
 - Re-chronicle mode: {}
 - Has persona context: {}
 - Has existing chronicles: {}
 - Conversation length: {} messages
-
+{}
 CONVERSATION PREVIEW:
 {}
 
@@ -108,13 +141,18 @@ Generate a concise but comprehensive triage prompt that:
 2. Considers the specific context (re-chronicle vs normal)
 3. Includes persona awareness if available
 4. Accounts for existing chronicles to avoid duplication
-5. Requests structured JSON response with significance, summary, event_type, and confidence
+5. Considers character-specific patterns and preferences
+6. Requests structured JSON response with significance, summary, event_type, and confidence
 
 Return ONLY the triage prompt text, optimized for the given context."#,
+            username,
+            persona_name,
+            chronicle_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string()),
             is_re_chronicle,
             persona_context.is_some(),
             !existing_context.is_empty(),
             messages.len(),
+            persona_section,
             if conversation_text.len() > 500 {
                 format!("{}...", &conversation_text[..500])
             } else {

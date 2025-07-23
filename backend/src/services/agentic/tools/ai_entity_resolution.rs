@@ -314,7 +314,7 @@ impl AiContextExtractor {
     /// Extract rich narrative context using AI instead of hardcoded patterns
     pub async fn extract_narrative_context(
         &self,
-        narrative_text: &str,
+        _narrative_text: &str,
     ) -> Result<NarrativeContext, String> {
         // This is already well-implemented in the original entity_resolution_tool.rs
         // We'll reuse that implementation but ensure it uses the proper AI abstraction
@@ -325,7 +325,5 @@ impl AiContextExtractor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Tests will be implemented as part of the comprehensive test suite
 }

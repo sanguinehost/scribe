@@ -944,7 +944,7 @@ impl CausalComponent {
         }
         
         // Second pass: build causal chains and calculate depth
-        for (event_id, caused_by_event, causes_events) in entity_events {
+        for (_event_id, caused_by_event, causes_events) in entity_events {
             // Add to caused_by chain if this event was caused by another
             if let Some(causing_event) = caused_by_event {
                 caused_by.push(causing_event);

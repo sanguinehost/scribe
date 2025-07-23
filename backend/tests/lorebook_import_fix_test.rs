@@ -4,9 +4,7 @@ use serde_json::json;
 use std::sync::Arc;
 use scribe_backend::{
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
-    services::{LorebookService, EncryptionService},
     models::lorebook_dtos::SillyTavernImportPayload,
-    auth::session_dek::SessionDek,
 };
 use secrecy::SecretBox;
 use axum_login::AuthSession;

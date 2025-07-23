@@ -467,11 +467,12 @@ impl NarrativeIntelligenceService {
     }
 
     /// Extract event data using Flash analysis without database insertion
+    #[allow(unused_variables)]
     async fn extract_events_data_with_flash(
         &self,
         user_id: Uuid,
         content: &str,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // TODO: Use for encrypting extracted event data
     ) -> Result<Vec<EventDataToInsert>, AppError> {
         debug!("Extracting event data using Flash analysis");
 

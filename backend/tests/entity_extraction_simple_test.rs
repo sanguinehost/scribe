@@ -35,7 +35,6 @@ use scribe_backend::{
         embeddings::EmbeddingPipelineServiceTrait,
     },
     test_helpers::{spawn_app, MockAiClient, TestDataGuard, db::create_test_user, TestApp},
-    auth::session_dek::SessionDek,
     state::AppStateServices,
     auth::user_store::Backend,
     llm::EmbeddingClient,

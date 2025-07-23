@@ -450,7 +450,6 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
         extraction: &ExtractionStageResult,
     ) -> Result<StructureStageResult, ToolError> {
         let mut structured_entities = Vec::new();
-        let mut relationships = Vec::new();
         
         // Combine resolved and new entities
         let all_entities: Vec<_> = resolution.resolved_entities.iter()
@@ -486,7 +485,7 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
         }
         
         // Extract relationships from context (this part remains similar)
-        relationships = self.extract_relationships_from_context(
+        let relationships = self.extract_relationships_from_context(
             &extraction.narrative_context,
             &all_entities
         );
@@ -871,8 +870,8 @@ Be thorough and extract all relevant context."#,
     pub async fn resolve_actors_to_entities(
         &self,
         actors: &[Value],
-        chronicle_id: Option<Uuid>,
-        user_id: Uuid,
+        _chronicle_id: Option<Uuid>,  // TODO: Use for chronicle-specific entity lookup
+        _user_id: Uuid,  // TODO: Use for user-specific entity access control
         _processing_mode: ProcessingMode,
     ) -> Result<ActorResolutionResult, ToolError> {
         debug!("Resolving {} actors to entities using AI-driven approach", actors.len());

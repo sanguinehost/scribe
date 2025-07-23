@@ -569,11 +569,12 @@ impl ContextAssemblyEngine {
 
     /// Legacy method: Execute traditional query plan for backward compatibility
     #[instrument(skip(self, user_dek))]
+    #[allow(unused_variables)]
     pub async fn execute_plan(
         &self,
         plan: &QueryExecutionPlan,
         user_id: Uuid,
-        user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,
+        user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,  // Legacy method - encryption handled elsewhere
     ) -> Result<AssembledContext, AppError> {
         info!("Executing legacy query plan with {} queries", plan.queries.len());
         
@@ -673,12 +674,13 @@ impl ContextAssemblyEngine {
     }
 
     /// Generate AI-enhanced context for a specific entity
+    #[allow(unused_variables)]
     async fn generate_entity_context(
         &self,
         entity_name: &str,
         sub_goal: &SubGoal,
         user_id: Uuid,
-        _user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,
+        user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,  // Entity data should be decrypted at retrieval
     ) -> Result<EntityContext, AppError> {
         let prompt = self.build_entity_context_prompt(entity_name, sub_goal);
         

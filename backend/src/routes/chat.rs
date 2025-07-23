@@ -782,7 +782,8 @@ pub async fn generate_chat_response(
     // First, run perception analysis if available (even when using individual agents)
     // Create perception agent from app state
     let perception_agent = crate::services::agentic::factory::AgenticNarrativeFactory::create_perception_agent(&state_arc);
-    let perception_analysis_result = {
+    // Run perception analysis and store in Redis
+    {
         info!(%session_id, "Running perception analysis in individual agent flow");
         
         // Convert GenAI history to ChatMessageForClient format for Perception Agent

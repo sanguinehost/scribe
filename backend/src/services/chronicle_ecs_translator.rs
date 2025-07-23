@@ -437,7 +437,8 @@ impl ChronicleEcsTranslator {
                 "chronicle_id": event.chronicle_id,
                 "source_event_id": event.id,
                 "created_at": Utc::now().to_rfc3339(),
-                "entity_id": actor.entity_id
+                "entity_id": actor.entity_id,
+                "user_id": user_id  // Associate with user for data isolation
             }),
             operation: ComponentOperation::Create,
         });

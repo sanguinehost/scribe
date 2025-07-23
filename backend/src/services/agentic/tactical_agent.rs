@@ -565,11 +565,12 @@ impl TacticalAgent {
     /// 4. Use GetSpatialContextTool for location and hierarchy context
     /// 5. Use GetContainedEntitiesTool for spatial relationships
     #[instrument(skip(self, session_dek))]
+    #[allow(unused_variables)]
     async fn gather_world_state_context(
         &self,
         sub_goal: &SubGoal,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Available for future encryption of entity data
     ) -> Result<(Vec<EntityContext>, Option<SpatialContext>, Option<TemporalContext>), AppError> {
         debug!("Gathering world state context for sub-goal: {}", sub_goal.description);
         
@@ -776,7 +777,38 @@ impl TacticalAgent {
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("GetSpatialContextTool failed: {}", e)))?;
         
         // Convert tool result to SpatialContext
-        // This is a simplified conversion - in a full implementation, you'd have proper mapping
+        let mut nearby_locations = vec![];
+        let mut spatial_relationships = vec![];
+        
+        // Extract descendants as nearby locations
+        if let Some(descendants) = result.get("descendants").and_then(|d| d.as_array()) {
+            for descendant in descendants {
+                if let (Some(id), Some(name)) = (
+                    descendant.get("id").and_then(|i| i.as_str()),
+                    descendant.get("name").and_then(|n| n.as_str())
+                ) {
+                    if let Ok(location_id) = Uuid::parse_str(id) {
+                        nearby_locations.push(crate::services::context_assembly_engine::SpatialLocation {
+                            location_id,
+                            name: name.to_string(),
+                            coordinates: None,
+                            parent_location: Some(entity.entity_id.parse().unwrap_or_else(|_| Uuid::new_v4())),
+                            location_type: descendant.get("type").and_then(|t| t.as_str()).unwrap_or("Unknown").to_string(),
+                        });
+                        
+                        // Add spatial relationship
+                        spatial_relationships.push(crate::services::context_assembly_engine::SpatialRelationship {
+                            source_location: entity.entity_id.parse().unwrap_or_else(|_| Uuid::new_v4()),
+                            target_location: location_id,
+                            relationship_type: "contains".to_string(),
+                            distance: None,
+                            direction: None,
+                        });
+                    }
+                }
+            }
+        }
+        
         Ok(SpatialContext {
             current_location: crate::services::context_assembly_engine::SpatialLocation {
                 location_id: Uuid::parse_str(&entity.entity_id).unwrap_or_else(|_| Uuid::new_v4()),
@@ -785,9 +817,9 @@ impl TacticalAgent {
                 parent_location: None,
                 location_type: entity.scale.clone().unwrap_or_else(|| "Unknown".to_string()),
             },
-            nearby_locations: vec![], // TODO: Extract from descendants
-            environmental_factors: vec![], // TODO: Extract from result
-            spatial_relationships: vec![], // TODO: Extract from result
+            nearby_locations,
+            environmental_factors: vec![], // Environmental factors would require additional context
+            spatial_relationships,
         })
     }
 
@@ -1619,10 +1651,11 @@ impl TacticalAgent {
     // ==================== HELPER METHODS FOR RE-PLANNING ====================
 
     /// Get current world state snapshot for deviation comparison
+    #[allow(unused_variables)]
     async fn get_current_world_state_snapshot(
         &self,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Available for future encryption of state snapshots
     ) -> Result<serde_json::Value, AppError> {
         // This would gather current entity positions, states, relationships
         // For now, return a placeholder that tests can work with
@@ -1686,11 +1719,12 @@ impl TacticalAgent {
     }
 
     /// Update context with current state without full re-planning
+    #[allow(unused_variables)]
     async fn update_context_with_current_state(
         &self,
         context: &EnrichedContext,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Available for future encryption of context updates
     ) -> Result<EnrichedContext, AppError> {
         // Update the context with fresh world state data
         // while keeping the same plan structure

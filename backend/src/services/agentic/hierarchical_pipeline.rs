@@ -428,13 +428,6 @@ impl HierarchicalAgentPipeline {
         // Step 3: Operational Layer - Generate final response using prompt templates
         debug!("Pipeline Step 3: Operational generation");
         let operational_start = std::time::Instant::now();
-        let mut operational_breakdown = OperationalTimingBreakdown {
-            template_building_ms: 0,
-            ai_call_ms: 0,
-            retry_time_ms: 0,
-            retry_attempts: 0,
-            time_to_first_token_ms: None, // Will be implemented with streaming
-        };
         
         // Check pipeline timeout
         if pipeline_start.elapsed() > pipeline_timeout {
@@ -449,7 +442,7 @@ impl HierarchicalAgentPipeline {
             error!("Operational layer failed: {}", e);
             AppError::InternalServerErrorGeneric(format!("Response generation failed: {}", e))
         })?;
-        operational_breakdown = op_breakdown;
+        let operational_breakdown = op_breakdown;
         
         let operational_time_ms = operational_start.elapsed().as_millis() as u64;
         let total_execution_time_ms = pipeline_start.elapsed().as_millis() as u64;

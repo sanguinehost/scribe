@@ -408,7 +408,6 @@ impl PlanStateProjector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::ecs_diesel::{EcsEntity, EcsComponent};
     use chrono::Utc;
 
     fn create_test_entity_result(entity_id: Uuid, user_id: Uuid, name: &str) -> EntityQueryResult {

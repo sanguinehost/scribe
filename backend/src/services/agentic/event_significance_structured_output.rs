@@ -370,7 +370,6 @@ pub fn get_event_significance_schema() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     
     #[test]
     fn test_event_significance_validation() {

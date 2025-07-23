@@ -386,7 +386,7 @@ impl NarrativeAgentRunner {
     async fn execute_single_action(
         &self,
         action: &PlannedAction,
-        session_dek: &SessionDek,
+        _session_dek: &SessionDek,
         user_id: Uuid,
     ) -> Result<ToolResult, AppError> {
         // Add user_id to parameters for security
@@ -445,7 +445,7 @@ impl NarrativeAgentRunner {
         &self,
         user_id: Uuid,
         chronicle_id: Option<Uuid>,
-        session_dek: &SessionDek,
+        _session_dek: &SessionDek,
     ) -> Result<Value, AppError> {
         debug!("Building knowledge context for user {} chronicle {:?}", user_id, chronicle_id);
 

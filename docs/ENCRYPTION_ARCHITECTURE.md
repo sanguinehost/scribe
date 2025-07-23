@@ -155,3 +155,92 @@ graph TD
         Plain_DEK_PRec --> Prompt_New_Pass[Prompt for New Password]
         %% Then proceed similar to Password Change to set new KEK, new encrypted_dek, and new dek_nonce %%
     end
+
+**V. Hierarchical Agent System Integration:**
+
+The encryption architecture extends to the new hierarchical agent system introduced in Epics 7-9. All agent layers must handle encrypted data appropriately:
+
+1. **Agent Layers and Encryption:**
+   - **Lightning Agent:** Handles encrypted cached data for sub-2s responses
+   - **Perception Agent:** Processes encrypted entity and context data  
+   - **Tactical Agent:** Works with encrypted plans and validation data
+   - **Strategic Agent:** Handles encrypted narrative directives and analysis
+   - **Orchestrator:** Coordinates encrypted data flow between layers
+
+2. **Data Flow Through Agents:**
+   - All agents receive `SessionDek` parameter for decryption/encryption operations
+   - Chat history and context data must be decrypted before AI processing
+   - Generated content must be encrypted before storage or caching
+   - Inter-agent communication uses encrypted payloads when persisting data
+
+3. **Specific Encryption Points:**
+   - **Agent Context Assembly:** Decrypt character metadata, lorebook entries
+   - **Plan Storage:** Encrypt tactical plans before Redis caching
+   - **Directive Caching:** Encrypt strategic directives in cache
+   - **Entity Data:** All ECS entity components with sensitive data encrypted
+   - **Chronicle Events:** Encrypt event descriptions and metadata
+
+4. **Security Considerations for Agents:**
+   - DEK must never be passed to external AI services
+   - Decrypt data only in memory for AI processing
+   - Re-encrypt results before any persistence
+   - Clear decrypted data from memory after use
+   - Audit logs should never contain decrypted content
+
+5. **Implementation Status:**
+   - ⚠️ **WARNING:** Several agent methods currently receive `session_dek` but don't use it
+   - Required updates:
+     - Strategic Agent: Implement encryption for directives and analysis
+     - Tactical Agent: Encrypt plans and validation results  
+     - Perception Agent: Encrypt entity analysis and context
+     - Planning Service: Encrypt cached plans
+     - Context Assembly: Decrypt character/lorebook data
+
+**VI. End-to-End Encryption Flow with Agents:**
+
+```mermaid
+graph TD
+    subgraph User Request Flow
+        Client[Client Request] -->|Encrypted| API[API Handler]
+        API -->|Extract SessionDek| DEK[Session DEK in Memory]
+    end
+    
+    subgraph Hierarchical Processing
+        DEK --> Lightning[Lightning Agent]
+        Lightning -->|Decrypt Cache| Cache[Progressive Cache]
+        
+        DEK --> Perception[Perception Agent]
+        Perception -->|Decrypt Entities| ECS[ECS Entity Data]
+        
+        DEK --> Tactical[Tactical Agent]
+        Tactical -->|Decrypt Plans| Plans[Cached Plans]
+        
+        DEK --> Strategic[Strategic Agent]
+        Strategic -->|Decrypt Context| Context[Character/Lorebook Data]
+    end
+    
+    subgraph AI Processing
+        Perception -->|Plaintext| AI1[AI Analysis]
+        Tactical -->|Plaintext| AI2[AI Planning]
+        Strategic -->|Plaintext| AI3[AI Direction]
+        AI1 & AI2 & AI3 -->|Plaintext Results| Orchestrator
+    end
+    
+    subgraph Response Flow
+        Orchestrator -->|Encrypt Response| EncResp[Encrypted Response]
+        EncResp -->|Store| DB[Database]
+        EncResp -->|Cache| Redis[Redis Cache]
+        EncResp -->|Return| Client2[Client]
+    end
+```
+
+**VII. Implementation Checklist:**
+
+- [ ] Update all agent methods that receive `session_dek` to use it
+- [ ] Implement encryption/decryption in context assembly
+- [ ] Encrypt all cached data (plans, directives, contexts)
+- [ ] Add encryption to ECS entity sensitive components
+- [ ] Ensure chronicle events are encrypted
+- [ ] Update tests to verify encryption is working
+- [ ] Add encryption metrics and monitoring
+- [ ] Security audit of agent data flows

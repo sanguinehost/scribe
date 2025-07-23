@@ -365,7 +365,7 @@ pub enum TrendDirection {
     Improving,
     Stable,
     Degrading,
-    Insufficient_Data,
+    InsufficientData,
 }
 
 /// Performance predictions based on trends
@@ -452,8 +452,8 @@ pub enum CacheOperationType {
 pub enum CacheResult {
     Hit,
     Miss,
-    Store_Success,
-    Store_Failed,
+    StoreSuccess,
+    StoreFailed,
     Invalidated,
     Evicted,
 }
@@ -1355,11 +1355,11 @@ impl AgenticMetricsCollector {
             trend_data: TrendData {
                 data_points: Vec::new(),
                 trend_analysis: TrendAnalysis {
-                    performance_trend: TrendDirection::Insufficient_Data,
-                    response_time_trend: TrendDirection::Insufficient_Data,
-                    error_rate_trend: TrendDirection::Insufficient_Data,
-                    cache_efficiency_trend: TrendDirection::Insufficient_Data,
-                    quality_trend: TrendDirection::Insufficient_Data,
+                    performance_trend: TrendDirection::InsufficientData,
+                    response_time_trend: TrendDirection::InsufficientData,
+                    error_rate_trend: TrendDirection::InsufficientData,
+                    cache_efficiency_trend: TrendDirection::InsufficientData,
+                    quality_trend: TrendDirection::InsufficientData,
                 },
                 predictions: None,
             },

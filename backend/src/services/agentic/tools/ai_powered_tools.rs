@@ -85,22 +85,137 @@ Be precise and actionable in your analysis."#,
         )
     }
 
+    /// AI-driven entity resolution that finds the best matching entity using semantic understanding
+    async fn resolve_entity_with_ai(&self, entity_name: &str, user_id: Uuid, interpretation: &HierarchyInterpretation) -> Result<String, ToolError> {
+        // First, try to find all entities for the user
+        // We'll query with an empty criteria list to get all entities
+        let all_entities = self.app_state.ecs_entity_manager
+            .query_entities(
+                user_id,
+                vec![], // Empty criteria to get all entities
+                Some(100), // Get up to 100 entities
+                None,
+            )
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to fetch entities: {}", e)))?;
+        
+        if all_entities.is_empty() {
+            return Err(ToolError::ExecutionFailed(format!("No entities found for user to match against '{}'", entity_name)));
+        }
+        
+        // Use AI to find the best match based on semantic similarity and context
+        let entity_summaries: Vec<String> = all_entities.iter()
+            .filter_map(|entity| {
+                entity.components.iter()
+                    .find(|c| c.component_type == "DisplayMetadata")
+                    .and_then(|c| c.data.get("display_name"))
+                    .and_then(|name| name.as_str())
+                    .map(|display_name| {
+                        let entity_type = entity.components.iter()
+                            .find(|c| c.component_type == "Type")
+                            .and_then(|c| c.data.get("value"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        format!("ID: {}, Name: {}, Type: {}", entity.entity_id, display_name, entity_type)
+                    })
+            })
+            .collect();
+        
+        if entity_summaries.is_empty() {
+            return Err(ToolError::ExecutionFailed(format!("No entities with display names found to match against '{}'", entity_name)));
+        }
+        
+        // Create AI prompt for entity resolution
+        let resolution_prompt = format!(
+            r#"Given the following request context and available entities, find the best matching entity.
+
+Request: "{}"
+Query Context: {}
+Reasoning: {}
+
+Available Entities:
+{}
+
+Analyze the request semantically and return the ID of the entity that best matches the request. Consider:
+1. Exact name matches have highest priority
+2. Partial name matches (e.g., "Paris" matches "City of Paris")
+3. Contextual relevance from the query interpretation
+4. Entity type appropriateness
+
+Return ONLY the entity ID (UUID) of the best match, or "NO_MATCH" if no suitable entity exists."#,
+            entity_name,
+            interpretation.interpretation,
+            interpretation.reasoning,
+            entity_summaries.join("\n")
+        );
+        
+        let client = self.app_state.ai_client.create_client().await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to create AI client: {}", e)))?;
+        
+        let safety_settings = vec![
+            SafetySetting {
+                category: HarmCategory::Harassment,
+                threshold: HarmBlockThreshold::BlockNone,
+            },
+            SafetySetting {
+                category: HarmCategory::HateSpeech,
+                threshold: HarmBlockThreshold::BlockNone,
+            },
+            SafetySetting {
+                category: HarmCategory::SexuallyExplicit,
+                threshold: HarmBlockThreshold::BlockNone,
+            },
+            SafetySetting {
+                category: HarmCategory::DangerousContent,
+                threshold: HarmBlockThreshold::BlockNone,
+            },
+        ];
+        
+        let request = client
+            .generate_content(resolution_prompt)
+            .with_safety_settings(safety_settings);
+        
+        let response = request
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("AI entity resolution failed: {}", e)))?
+            .candidates
+            .into_iter()
+            .next()
+            .and_then(|c| c.content.into_parts().into_iter().next())
+            .and_then(|p| p.text)
+            .ok_or_else(|| ToolError::ExecutionFailed("Empty AI response for entity resolution".to_string()))?;
+        
+        let resolved_id = response.trim();
+        
+        if resolved_id == "NO_MATCH" {
+            Err(ToolError::ExecutionFailed(format!("No suitable entity found matching '{}'", entity_name)))
+        } else {
+            // Validate that the returned ID is actually a valid UUID from our list
+            if all_entities.iter().any(|e| e.entity_id.to_string() == resolved_id) {
+                Ok(resolved_id.to_string())
+            } else {
+                warn!("AI returned invalid entity ID: {}", resolved_id);
+                Err(ToolError::ExecutionFailed(format!("AI returned invalid entity ID for '{}'", entity_name)))
+            }
+        }
+    }
+
     /// Execute the AI-interpreted hierarchy query
     async fn execute_interpreted_query(&self, interpretation: &HierarchyInterpretation, user_id: Uuid) -> Result<JsonValue, ToolError> {
         match interpretation.suggested_query.action.as_str() {
             "get_entity_hierarchy" => {
                 // Use the existing GetEntityHierarchyTool
                 if let Some(entity_name) = interpretation.target_entities.first() {
-                    // For now, we'll need the entity ID. In a real implementation,
-                    // we'd have an entity name-to-ID resolution service
-                    warn!("Entity name to ID resolution not implemented. Using placeholder for: {}", entity_name);
+                    // Use AI-driven entity resolution to find the best matching entity
+                    let entity_id = self.resolve_entity_with_ai(entity_name, user_id, interpretation).await?;
                     
-                    // Return interpretation results for now
-                    Ok(json!({
-                        "interpretation": interpretation,
-                        "status": "interpreted_but_not_executed",
-                        "reason": "Entity name to ID resolution needed"
-                    }))
+                    // Now execute the hierarchy query with the resolved entity ID
+                    let hierarchy_params = json!({
+                        "entity_id": entity_id,
+                        "user_id": user_id
+                    });
+                    
+                    self.get_hierarchy_tool.execute(&hierarchy_params).await
                 } else {
                     Err(ToolError::InvalidParams("No target entities identified".to_string()))
                 }

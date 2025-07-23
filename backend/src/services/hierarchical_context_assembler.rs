@@ -33,10 +33,10 @@ use secrecy::{SecretBox, ExposeSecret};
 pub struct HierarchicalContextAssembler {
     ai_client: Arc<dyn AiClient>,
     intent_detection_service: Arc<IntentDetectionService>,
-    query_strategy_planner: Arc<QueryStrategyPlanner>,
+    _query_strategy_planner: Arc<QueryStrategyPlanner>,
     entity_resolution_tool: Arc<EntityResolutionTool>,
-    encryption_service: Arc<EncryptionService>,
-    db_pool: Arc<PgPool>,
+    _encryption_service: Arc<EncryptionService>,
+    _db_pool: Arc<PgPool>,
     model: String,
 }
 
@@ -53,10 +53,10 @@ impl HierarchicalContextAssembler {
         Self {
             ai_client,
             intent_detection_service,
-            query_strategy_planner,
+            _query_strategy_planner: query_strategy_planner,
             entity_resolution_tool,
-            encryption_service,
-            db_pool,
+            _encryption_service: encryption_service,
+            _db_pool: db_pool,
             model,
         }
     }

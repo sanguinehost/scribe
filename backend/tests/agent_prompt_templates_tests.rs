@@ -7,7 +7,6 @@ use scribe_backend::services::context_assembly_engine::{
     PlanStep, RiskAssessment, RiskLevel, PlanValidationStatus
 };
 use scribe_backend::test_helpers::*;
-use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::errors::AppError;
 use scribe_backend::models::chats::{ChatMessageForClient, MessageRole};
 use uuid::Uuid;

@@ -408,11 +408,12 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
     }
 
     /// Ensure extracted entities exist in the ECS, creating them if necessary
+    #[allow(unused_variables)]
     pub async fn ensure_entities_exist(
         &self,
         entities: &[ContextualEntity],
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // TODO: Use for encrypting entity data before storage
     ) -> Result<(), AppError> {
         // Generate a session ID from the current timestamp (you could also pass this from the caller)
         let session_id = format!("session_{}", chrono::Utc::now().timestamp());
@@ -806,11 +807,12 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
     }
 
     /// Analyze entity hierarchies and spatial relationships
+    #[allow(unused_variables)]
     async fn analyze_entity_hierarchies(
         &self,
         entities: &[ContextualEntity],
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // TODO: Use for encrypting analysis results
     ) -> Result<HierarchyAnalysisResult, AppError> {
         let mut hierarchy_insights = Vec::new();
         let spatial_relationships = Vec::new();
@@ -1363,11 +1365,12 @@ Output JSON with:
     }
 
     /// Generate an intelligent plan for world state updates
+    #[allow(unused_variables)]
     async fn generate_update_plan(
         &self,
         extraction: &ExtractionResult,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // TODO: Use for encrypting plan data
     ) -> Result<WorldUpdatePlan, AppError> {
         // Use intelligent planner for complex scenarios
         let mut planner = IntelligentWorldStatePlanner::new();
@@ -1501,11 +1504,12 @@ Output JSON with:
     }
 
     /// Execute the world state update plan
+    #[allow(unused_variables)]
     async fn execute_update_plan(
         &self,
         plan: &WorldUpdatePlan,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // TODO: Use for encrypting update results
     ) -> Result<ExecutionResult, AppError> {
         let mut updates_applied = 0;
         let mut relationships_updated = 0;

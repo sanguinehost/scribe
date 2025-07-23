@@ -1371,6 +1371,23 @@ async fn build_hierarchical_meta_prompt(
     enriched_context: &EnrichedContext,
     model_name: &str,
 ) -> Result<String, AppError> {
+    // Customize optimization guidelines based on model
+    let model_optimization = match model_name {
+        "gemini-2.5-flash" | "gemini-2.5-flash-latest" => "Flash Optimization Guidelines",
+        "gemini-2.5-pro" | "gemini-2.5-pro-latest" => "Pro Model Deep Analysis Guidelines",
+        _ => "Model Optimization Guidelines"
+    };
+    
+    // Add context awareness hint
+    let context_hint = if enriched_context.strategic_directive
+        .as_ref()
+        .map(|d| d.plot_significance == crate::services::context_assembly_engine::PlotSignificance::Major)
+        .unwrap_or(false) {
+        "\n\n**IMPORTANT**: This is a MAJOR plot development. Exercise extra care in maintaining narrative consistency and character authenticity."
+    } else {
+        ""
+    };
+    
     let meta_prompt = format!(
         "You are Assistant, an advanced AI operating within a sophisticated Hierarchical Agent Framework. You are the **Operational Layer** (\"Actor\") receiving structured directives from higher-level strategic and tactical agents.
 
@@ -1401,7 +1418,7 @@ You will receive structured information optimized for Gemini 2.5 Flash processin
 6. **Causal Context**: Cause-and-effect relationships and constraints
 7. **Symbolic Firewall**: Validation results ensuring logical consistency
 
-## Flash Optimization Guidelines
+## {}
 
 - Focus on the **specific sub-goal** - this is your primary directive
 - Use **entity context** for character authenticity and world consistency
@@ -1409,10 +1426,12 @@ You will receive structured information optimized for Gemini 2.5 Flash processin
 - Leverage **spatial context** for environmental awareness and scene setting
 - Follow **success criteria** exactly as specified in your sub-goal
 
-Your role is critical: you transform validated strategic plans into compelling, consistent narrative experiences.
+Your role is critical: you transform validated strategic plans into compelling, consistent narrative experiences.{}
 
 ---
-"
+",
+        model_optimization,
+        context_hint
     );
     
     Ok(meta_prompt)

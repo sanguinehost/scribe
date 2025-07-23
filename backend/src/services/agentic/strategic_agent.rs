@@ -328,11 +328,12 @@ Generate a JSON response with all required fields for the strategic directive."#
 
 
     /// Assess the narrative significance of current events using Flash AI
+    #[allow(unused_variables)]
     pub async fn assess_narrative_significance(
         &self,
         chat_history: &[ChatMessageForClient],
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Available for future encryption needs (data already decrypted)
     ) -> Result<PlotSignificance, AppError> {
         let conversation_context = self.format_conversation_for_analysis(chat_history);
 
@@ -408,11 +409,12 @@ Respond with only the significance level: MAJOR, MODERATE, MINOR, or TRIVIAL"#, 
     }
 
     /// Determine the emotional tone of the scene using Flash AI
+    #[allow(unused_variables)]
     pub async fn determine_emotional_tone(
         &self,
         chat_history: &[ChatMessageForClient],
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Available for future encryption needs (data already decrypted)
     ) -> Result<String, AppError> {
         let conversation_context = self.format_conversation_for_analysis(chat_history);
 
@@ -504,11 +506,12 @@ EMOTIONAL TONE:"#, conversation_context);
     }
 
     /// Extract key character focus from the conversation using Flash AI
+    #[allow(unused_variables)]
     pub async fn extract_character_focus(
         &self,
         chat_history: &[ChatMessageForClient],
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Available for future encryption needs (data already decrypted)
     ) -> Result<Vec<String>, AppError> {
         let conversation_context = self.format_conversation_for_analysis(chat_history);
 
@@ -622,11 +625,12 @@ CHARACTER FOCUS:"#, conversation_context);
     }
 
     /// Evaluate the world impact level of current events using Flash AI
+    #[allow(unused_variables)]
     pub async fn evaluate_world_impact(
         &self,
         chat_history: &[ChatMessageForClient],
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Available for future encryption needs (data already decrypted)
     ) -> Result<WorldImpactLevel, AppError> {
         let conversation_context = self.format_conversation_for_analysis(chat_history);
 
@@ -702,12 +706,13 @@ Respond with only the impact level: GLOBAL, REGIONAL, LOCAL, or PERSONAL"#, conv
     }
 
     /// Generate a detailed narrative arc description using Flash AI
+    #[allow(unused_variables)]
     async fn generate_narrative_arc_description(
         &self,
         narrative_direction: &str,
         chat_history: &[ChatMessageForClient],
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Available for future encryption needs (data already decrypted)
     ) -> Result<String, AppError> {
         let conversation_context = self.format_conversation_for_analysis(chat_history);
 

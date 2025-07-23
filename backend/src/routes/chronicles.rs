@@ -615,11 +615,7 @@ async fn process_messages_with_streaming_pipeline(
     messages_to_process: Vec<ChatMessage>,
 ) -> Result<(usize, usize, usize), AppError> {
     // Configuration for batching and concurrency
-    let max_concurrent_batches = 5; // Limit concurrency to avoid overwhelming AI service
-    
-    // Get the narrative intelligence service
-    let narrative_service = state.narrative_intelligence_service.as_ref()
-        .ok_or_else(|| AppError::InternalServerErrorGeneric("Narrative intelligence service not available".to_string()))?;
+    // Note: Currently using sequential processing for chronological order
     
     // Create bounded channel for streaming pipeline (1024 capacity provides back-pressure)
     let (tx, rx) = mpsc::channel::<EventDataToInsert>(1024);

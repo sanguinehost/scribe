@@ -3,6 +3,7 @@ use uuid::Uuid;
 use tracing::{info, debug, instrument, warn};
 use genai::chat::{ChatMessage, ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, MessageContent};
 use redis::AsyncCommands;
+use secrecy::ExposeSecret;
 
 use crate::{
     errors::AppError,
@@ -56,13 +57,28 @@ impl PlanningService {
         // 1. Check plan cache
         let cache_key = self.build_plan_cache_key(goal, context, user_id);
         
-        // Check Redis cache for existing plan
+        // Check Redis cache for existing plan (encrypted)
         if let Ok(mut conn) = self.redis_client.get_multiplexed_async_connection().await {
-            let cached_data: Option<String> = conn.get(&cache_key).await.unwrap_or(None);
-            if let Some(cached_plan) = cached_data {
-                if let Ok(plan) = serde_json::from_str::<AiGeneratedPlan>(&cached_plan) {
-                    debug!("Using cached plan for goal: {}", goal);
-                    return Ok(plan);
+            let cached_data: Option<Vec<u8>> = conn.get(&cache_key).await.unwrap_or(None);
+            if let Some(encrypted_plan) = cached_data {
+                // Decrypt the cached plan using session DEK
+                let nonce_key = format!("{}_nonce", cache_key);
+                let nonce_data: Option<Vec<u8>> = conn.get(&nonce_key).await.unwrap_or(None);
+                
+                if let Some(nonce) = nonce_data {
+                    match crate::crypto::decrypt_gcm(&encrypted_plan, &nonce, &session_dek.0) {
+                        Ok(decrypted) => {
+                            if let Ok(plan_json) = String::from_utf8(decrypted.expose_secret().clone()) {
+                                if let Ok(plan) = serde_json::from_str::<AiGeneratedPlan>(&plan_json) {
+                                    debug!("Using cached plan for goal: {} (decrypted)", goal);
+                                    return Ok(plan);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to decrypt cached plan: {}", e);
+                        }
+                    }
                 }
             }
         }
@@ -79,13 +95,23 @@ impl PlanningService {
             3, // max retries
         ).await?;
         
-        // 5. Cache the plan in Redis
+        // 5. Cache the plan in Redis (encrypted)
         let ai_generated_plan = AiGeneratedPlan { plan };
         
-        // Cache plan with 5-minute expiration
+        // Encrypt and cache plan with 5-minute expiration
         if let Ok(mut conn) = self.redis_client.get_multiplexed_async_connection().await {
             if let Ok(plan_json) = serde_json::to_string(&ai_generated_plan) {
-                let _: redis::RedisResult<()> = conn.set_ex(&cache_key, plan_json, 300).await;
+                // Encrypt the plan before caching
+                let (encrypted_plan, nonce) = crate::crypto::encrypt_gcm(
+                    plan_json.as_bytes(),
+                    &session_dek.0
+                ).map_err(|e| AppError::EncryptionError(format!("Failed to encrypt plan: {}", e)))?;
+                
+                // Store both encrypted plan and nonce with same expiration
+                let nonce_key = format!("{}_nonce", cache_key);
+                let _: redis::RedisResult<()> = conn.set_ex(&cache_key, encrypted_plan, 300).await;
+                let _: redis::RedisResult<()> = conn.set_ex(&nonce_key, nonce, 300).await;
+                debug!("Plan encrypted and cached successfully");
             }
         }
         
@@ -125,12 +151,13 @@ DO NOT generate perception analysis, entity mentions, or state changes. ONLY gen
     }
     
     /// Build user prompt with goal and encrypted context
+    #[allow(unused_variables)]
     async fn build_planning_user_prompt(
         &self,
         goal: &str,
         context: &crate::services::context_assembly_engine::EnrichedContext,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        session_dek: &SessionDek,  // Context data should already be decrypted at this point
     ) -> Result<String, AppError> {
         // SECURITY (A02): Use SessionDek for accessing encrypted world state data
         // The SessionDek ensures all sensitive world state information is properly encrypted

@@ -496,7 +496,6 @@ impl RepairCacheService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::ecs_diesel::EcsEntity;
     use chrono::Utc;
 
     fn create_test_analysis() -> InconsistencyAnalysis {
