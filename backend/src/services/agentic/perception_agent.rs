@@ -73,7 +73,7 @@ impl PerceptionAgent {
         planning_service: Arc<PlanningService>,
         plan_validator: Arc<PlanValidatorService>,
         redis_client: Arc<redis::Client>,
-        app_state: Arc<AppState>,
+        _app_state: Arc<AppState>, // Tools accessed via global ToolRegistry
         model: String,
     ) -> Self {
         // Tools are now available through the global ToolRegistry
@@ -914,7 +914,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
             return Ok(vec![]);
         }
 
-        info!("🔄 Performing BATCHED salience analysis for {} entities (relevance > 0.5)", relevant_entities.len());
+        info!("🔄 Performing BATCHED salience analysis for {} entities (relevance > 0.5) for user {}", relevant_entities.len(), user_id);
         
         // Single batched AI call
         let batch_analyses = self.batch_analyze_salience(&relevant_entities, &narrative_context).await?;
@@ -1253,6 +1253,7 @@ Respond with a JSON array where each element corresponds to an entity in the ord
         user_id: Uuid,
         context: Option<&EnrichedContext>,
     ) -> Result<WorldStateAnalysis, AppError> {
+        debug!("Analyzing response for world state updates for user {}", user_id);
         let model = &self.model; // Use Flash-Lite for analysis
         
         let system_prompt = r#"You are a world state analyzer for a narrative AI system.
@@ -1313,6 +1314,7 @@ Output JSON with your analysis."#;
         analysis: &WorldStateAnalysis,
         user_id: Uuid,
     ) -> Result<ExtractionResult, AppError> {
+        debug!("Extracting world state changes for user {}", user_id);
         let model = &self.model; // Use Flash-Lite for extraction
         
         let system_prompt = r#"You are a precise world state extractor.
@@ -1802,7 +1804,7 @@ Output JSON with:
     ) -> Result<(), AppError> {
         // Implementation similar to add_to_inventory but removes the item
         // This is a simplified version - in production you'd want more sophisticated item tracking
-        warn!("Remove from inventory not fully implemented for: {}", action.target_entity);
+        warn!("Remove from inventory not fully implemented for: {} (user: {})", action.target_entity, user_id);
         Ok(())
     }
 

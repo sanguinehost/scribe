@@ -428,7 +428,7 @@ impl HybridQueryRouter {
         let mut complexity_score = 0.3; // Base complexity
         let mut requires_current_state = query.include_current_state;
         let mut requires_relationships = query.include_relationships;
-        let mut estimated_entity_count = 5; // Default estimate
+        let estimated_entity_count; // Will be set in match arms
         let mut data_volume = DataVolume::Small;
 
         // Analyze based on query type
@@ -608,7 +608,7 @@ impl HybridQueryRouter {
         &self,
         complexity: &QueryComplexity,
         service_health: &HashMap<String, f32>,
-        query: &HybridQuery,
+        _query: &HybridQuery,
     ) -> Result<RoutingDecision, AppError> {
         let ecs_health = service_health.get("ecs").unwrap_or(&0.0);
         let rag_health = service_health.get("rag").unwrap_or(&0.0);

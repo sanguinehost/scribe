@@ -307,7 +307,7 @@ impl ScribeTool for CreateLorebookEntryTool {
             .ok_or_else(|| ToolError::InvalidParams("category is required".to_string()))?;
 
         // Create a lorebook entry payload
-        let entry_payload = crate::models::lorebook_dtos::CreateLorebookEntryPayload {
+        let _entry_payload = crate::models::lorebook_dtos::CreateLorebookEntryPayload {
             entry_title: name.to_string(),
             keys_text: Some(format!("{}, {}", name, category)), // Auto-generate keywords
             content: description.to_string(),
@@ -840,8 +840,8 @@ impl ScribeTool for UpdateLorebookEntryTool {
         let entry_id = Uuid::parse_str(entry_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid entry_id format".to_string()))?;
 
-        info!("Starting Flash-powered lorebook update for entry {} with {} characters of new info", 
-              entry_id, new_information.len());
+        info!("Starting Flash-powered lorebook update for user {} entry {} with {} characters of new info", 
+              user_id, entry_id, new_information.len());
 
         // Step 1: Retrieve existing lorebook entry (simulated for now)
         // TODO: Integrate with actual lorebook service when available
@@ -936,7 +936,7 @@ RESPOND WITH JSON:
         // Step 3: Update the actual lorebook entry
         // TODO: Integrate with actual lorebook service to persist the update
         // let updated_content = result.get("updated_entry").and_then(|entry| entry.get("content"));
-        // self.lorebook_service.update_entry(entry_id, updated_content).await?;
+        // self.lorebook_service.update_entry(user_id, entry_id, updated_content).await?;
 
         Ok(result)
     }

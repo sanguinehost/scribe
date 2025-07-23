@@ -46,7 +46,6 @@ use crate::{
     },
     schema,
     services::chat_override_service::ChatOverrideService, // <<< ENSURED IMPORT
-    services::chronicle_service::ChronicleService,        // <<< ADDED THIS IMPORT
     services::encryption_service::EncryptionService,      // <<< ENSURED IMPORT
     services::file_storage_service::FileStorageService,   // <<< ADDED THIS IMPORT
     services::gemini_token_client::GeminiTokenClient,
@@ -1375,11 +1374,6 @@ impl TestAppStateBuilder {
                 self.qdrant_service.clone(),
             ))
         });
-
-        // Create chronicle service for narrative intelligence
-        let chronicle_service = Arc::new(ChronicleService::new(
-            self.db_pool.clone(),
-        ));
 
         // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
         // due to circular dependency (service needs AppState, but AppState is built from services)

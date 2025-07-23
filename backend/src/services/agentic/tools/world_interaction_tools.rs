@@ -13,7 +13,7 @@ use tracing::{info, debug, instrument};
 
 use crate::{
     services::{EcsEntityManager, ComponentQuery, EntityQueryResult, ComponentUpdate, ComponentOperation},
-    models::ecs::{SpatialScale, SalienceTier, ParentLinkComponent, Component},
+    models::ecs::{SpatialScale, SalienceTier, ParentLinkComponent},
     services::agentic::tools::{ScribeTool, ToolError, ToolParams, ToolResult},
     errors::AppError,
 };

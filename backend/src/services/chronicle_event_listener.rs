@@ -276,7 +276,6 @@ impl ChronicleEventListener {
         config: &ChronicleEventListenerConfig,
     ) -> Result<ChronicleEventProcessingResult, AppError> {
         let start_time = std::time::Instant::now();
-        let notification_id = format!("{}_{}", notification.event_id, notification.notification_type.as_str());
         
         // Handle different notification types
         match notification.notification_type {

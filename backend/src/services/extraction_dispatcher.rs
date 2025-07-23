@@ -150,6 +150,8 @@ impl ExtractionDispatcher {
         // For now, pass None - this will be implemented when persona retrieval is added
         let persona_context = None;
         
+        // TODO: Update to use process_narrative_content when Epic 1 Flash integration is complete
+        #[allow(deprecated)]
         let extraction_future = agentic_runner.process_narrative_event(
             user_id,
             chat_session_id,

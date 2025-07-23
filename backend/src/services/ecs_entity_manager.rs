@@ -343,7 +343,6 @@ impl EcsEntityManager {
         let updated_components = conn.interact({
             let updates = updates.clone();
             let user_id = user_id;
-            let entity_id = entity_id;
             
             move |conn| -> Result<Vec<EcsComponent>, AppError> {
                 conn.transaction(|conn| {
@@ -497,7 +496,7 @@ impl EcsEntityManager {
                     .into_boxed();
 
                 // Track entities scanned for statistics
-                let mut entities_scanned = 0;
+                let entities_scanned;
 
                 // Apply component criteria filters
                 for criteria in &options.criteria {
@@ -714,7 +713,7 @@ impl EcsEntityManager {
                 };
 
                 // Apply sorting if specified
-                let sorted_query = if let Some(sort_config) = &options.sort_by {
+                let sorted_query = if let Some(_sort_config) = &options.sort_by {
                     // For sorting by component data, we need to join with components
                     // This is a simplified implementation - could be optimized further
                     query
@@ -1463,7 +1462,7 @@ impl EcsEntityManager {
         use crate::models::ecs::{
             SpatialArchetypeComponent, EnhancedPositionComponent, NameComponent, 
             TemporalComponent, SpatialComponent, SpatialType, SpatialConstraints,
-            ParentLinkComponent, Component
+            ParentLinkComponent
         };
 
         info!("Promoting entity {} hierarchy with new parent: {}", entity_id, new_parent_name);
@@ -1524,11 +1523,11 @@ impl EcsEntityManager {
 
         // Prepare components for new parent
         let parent_components = vec![
-            ("SpatialArchetype".to_string(), spatial_archetype.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
-            ("EnhancedPosition".to_string(), enhanced_position.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
-            ("Name".to_string(), name_component.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
-            ("Temporal".to_string(), temporal_component.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
-            ("Spatial".to_string(), spatial_component.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?),
+            ("SpatialArchetype".to_string(), serde_json::to_value(&spatial_archetype).map_err(|e| AppError::SerializationError(e.to_string()))?),
+            ("EnhancedPosition".to_string(), serde_json::to_value(&enhanced_position).map_err(|e| AppError::SerializationError(e.to_string()))?),
+            ("Name".to_string(), serde_json::to_value(&name_component).map_err(|e| AppError::SerializationError(e.to_string()))?),
+            ("Temporal".to_string(), serde_json::to_value(&temporal_component).map_err(|e| AppError::SerializationError(e.to_string()))?),
+            ("Spatial".to_string(), serde_json::to_value(&spatial_component).map_err(|e| AppError::SerializationError(e.to_string()))?),
         ];
 
         // Create new parent entity
@@ -1545,7 +1544,7 @@ impl EcsEntityManager {
         let parent_link_update = ComponentUpdate {
             entity_id,
             component_type: "ParentLink".to_string(),
-            component_data: new_parent_link.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?,
+            component_data: serde_json::to_value(&new_parent_link).map_err(|e| AppError::SerializationError(e.to_string()))?,
             operation: if current_parent_link.is_some() {
                 ComponentOperation::Update
             } else {
@@ -1572,7 +1571,7 @@ impl EcsEntityManager {
         new_parent_depth: u32,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), AppError>> + Send + '_>> {
         Box::pin(async move {
-            use crate::models::ecs::{ParentLinkComponent, Component};
+            use crate::models::ecs::ParentLinkComponent;
 
             // Query for all children of this entity
             let children = self.query_entities(
@@ -1604,7 +1603,7 @@ impl EcsEntityManager {
                         let depth_update = ComponentUpdate {
                             entity_id: child.entity.id,
                             component_type: "ParentLink".to_string(),
-                            component_data: updated_parent_link.to_json().map_err(|e| AppError::SerializationError(e.to_string()))?,
+                            component_data: serde_json::to_value(&updated_parent_link).map_err(|e| AppError::SerializationError(e.to_string()))?,
                             operation: ComponentOperation::Update,
                         };
 
@@ -1623,7 +1622,7 @@ impl EcsEntityManager {
     /// Get the complete hierarchy path for an entity (from root to entity)
     #[instrument(skip(self), fields(user_hash = %Self::hash_user_id(user_id), entity_id = %entity_id))]
     pub async fn get_entity_hierarchy_path(&self, user_id: Uuid, entity_id: Uuid) -> Result<Vec<EntityHierarchyInfo>, AppError> {
-        use crate::models::ecs::{ParentLinkComponent, NameComponent, SpatialArchetypeComponent, Component};
+        use crate::models::ecs::{ParentLinkComponent, NameComponent, SpatialArchetypeComponent};
 
         let mut path = Vec::new();
         let mut current_entity_id = entity_id;
@@ -2263,7 +2262,7 @@ impl EcsEntityManager {
         scale_context: Option<crate::models::ecs::SpatialScale>,
         base_components: Vec<(String, JsonValue)>,
     ) -> Result<EntityQueryResult, AppError> {
-        use crate::models::ecs::{SalienceComponent, Component};
+        use crate::models::ecs::SalienceComponent;
         
         let entity_id = entity_id.unwrap_or_else(Uuid::new_v4);
         
@@ -2275,7 +2274,7 @@ impl EcsEntityManager {
         };
         
         // Convert salience component to JSON
-        let salience_json = salience_component.to_json()
+        let salience_json = serde_json::to_value(&salience_component)
             .map_err(|e| AppError::SerializationError(format!("Failed to serialize salience component: {}", e)))?;
         
         // Build component list based on salience tier requirements
@@ -2318,7 +2317,7 @@ impl EcsEntityManager {
         new_tier: crate::models::ecs::SalienceTier,
         reason: String,
     ) -> Result<(), AppError> {
-        use crate::models::ecs::{SalienceComponent, Component};
+        use crate::models::ecs::SalienceComponent;
         
         // Get current entity
         let entity_result = self.get_entity(user_id, entity_id).await?
@@ -2330,7 +2329,7 @@ impl EcsEntityManager {
         
         for comp in &entity_result.components {
             if comp.component_type == "Salience" {
-                let mut current_salience = SalienceComponent::from_json(&comp.component_data)
+                let mut current_salience = serde_json::from_value::<SalienceComponent>(comp.component_data.clone())
                     .map_err(|e| AppError::SerializationError(format!("Failed to deserialize salience: {}", e)))?;
                 
                 // Update the salience tier
@@ -2367,7 +2366,7 @@ impl EcsEntityManager {
         )?;
         
         // Convert updated salience to JSON
-        let salience_json = salience_component.to_json()
+        let salience_json = serde_json::to_value(&salience_component)
             .map_err(|e| AppError::SerializationError(format!("Failed to serialize updated salience: {}", e)))?;
         
         // Add the updated salience component
@@ -2401,7 +2400,7 @@ impl EcsEntityManager {
         entity_id: Uuid,
         reason: String,
     ) -> Result<Option<crate::models::ecs::SalienceTier>, AppError> {
-        use crate::models::ecs::{SalienceComponent, Component};
+        use crate::models::ecs::SalienceComponent;
         
         // Get current entity
         let entity_result = self.get_entity(user_id, entity_id).await?
@@ -2412,7 +2411,7 @@ impl EcsEntityManager {
             .find(|comp| comp.component_type == "Salience")
             .ok_or_else(|| AppError::BadRequest("Entity does not have a Salience component".to_string()))?;
         
-        let mut salience_component = SalienceComponent::from_json(&salience_comp.component_data)
+        let mut salience_component = serde_json::from_value::<SalienceComponent>(salience_comp.component_data.clone())
             .map_err(|e| AppError::SerializationError(format!("Failed to deserialize salience: {}", e)))?;
         
         // Check if promotion is appropriate
@@ -2439,7 +2438,7 @@ impl EcsEntityManager {
         entity_id: Uuid,
         reason: String,
     ) -> Result<Option<crate::models::ecs::SalienceTier>, AppError> {
-        use crate::models::ecs::{SalienceComponent, Component};
+        use crate::models::ecs::SalienceComponent;
         
         // Get current entity
         let entity_result = self.get_entity(user_id, entity_id).await?
@@ -2450,7 +2449,7 @@ impl EcsEntityManager {
             .find(|comp| comp.component_type == "Salience")
             .ok_or_else(|| AppError::BadRequest("Entity does not have a Salience component".to_string()))?;
         
-        let mut salience_component = SalienceComponent::from_json(&salience_comp.component_data)
+        let mut salience_component = serde_json::from_value::<SalienceComponent>(salience_comp.component_data.clone())
             .map_err(|e| AppError::SerializationError(format!("Failed to deserialize salience: {}", e)))?;
         
         // Check if demotion is appropriate
@@ -2477,7 +2476,7 @@ impl EcsEntityManager {
         scale_context: Option<crate::models::ecs::SpatialScale>,
         limit: Option<usize>,
     ) -> Result<Vec<Uuid>, AppError> {
-        use crate::models::ecs::{SalienceComponent, Component};
+        use crate::models::ecs::SalienceComponent;
         
         // Query entities with Salience components
         let query_criteria = vec![ComponentQuery::HasComponent("Salience".to_string())];
@@ -2500,7 +2499,7 @@ impl EcsEntityManager {
             if let Some(salience_comp) = entity_result.components.iter()
                 .find(|comp| comp.component_type == "Salience") {
                 
-                if let Ok(salience_component) = SalienceComponent::from_json(&salience_comp.component_data) {
+                if let Ok(salience_component) = serde_json::from_value::<SalienceComponent>(salience_comp.component_data.clone()) {
                     // Check if this entity can be garbage collected
                     if salience_component.can_be_garbage_collected() {
                         // If scale context is specified, check if it matches
@@ -2526,7 +2525,7 @@ impl EcsEntityManager {
         user_id: Uuid,
         entity_ids: Vec<Uuid>,
     ) -> Result<usize, AppError> {
-        use crate::models::ecs::{SalienceComponent, Component};
+        use crate::models::ecs::SalienceComponent;
         
         let mut collected_count = 0;
         
@@ -2536,7 +2535,7 @@ impl EcsEntityManager {
                 if let Some(salience_comp) = entity_result.components.iter()
                     .find(|comp| comp.component_type == "Salience") {
                     
-                    if let Ok(salience_component) = SalienceComponent::from_json(&salience_comp.component_data) {
+                    if let Ok(salience_component) = serde_json::from_value::<SalienceComponent>(salience_comp.component_data.clone()) {
                         if salience_component.can_be_garbage_collected() {
                             // Delete the entity by removing all its components first, then the entity itself
                             let delete_result = self.delete_entity_internal(user_id, entity_id).await;
@@ -2566,7 +2565,7 @@ impl EcsEntityManager {
         user_id: Uuid,
         entity_id: Uuid,
     ) -> Result<bool, AppError> {
-        use crate::models::ecs::{SalienceComponent, Component};
+        use crate::models::ecs::SalienceComponent;
         
         // Get current entity
         let entity_result = match self.get_entity(user_id, entity_id).await {
@@ -2578,14 +2577,14 @@ impl EcsEntityManager {
         if let Some(salience_comp) = entity_result.components.iter()
             .find(|comp| comp.component_type == "Salience") {
             
-            let mut salience_component = SalienceComponent::from_json(&salience_comp.component_data)
+            let mut salience_component = serde_json::from_value::<SalienceComponent>(salience_comp.component_data.clone())
                 .map_err(|e| AppError::SerializationError(format!("Failed to deserialize salience: {}", e)))?;
             
             // Record the interaction
             salience_component.record_interaction();
             
             // Update the component
-            let salience_json = salience_component.to_json()
+            let salience_json = serde_json::to_value(&salience_component)
                 .map_err(|e| AppError::SerializationError(format!("Failed to serialize salience: {}", e)))?;
             
             // Update only the salience component
@@ -2613,7 +2612,7 @@ impl EcsEntityManager {
         scale_context: Option<crate::models::ecs::SpatialScale>,
         limit: Option<usize>,
     ) -> Result<Vec<EntityQueryResult>, AppError> {
-        use crate::models::ecs::{SalienceComponent, Component};
+        use crate::models::ecs::SalienceComponent;
         
         // Query entities with Salience components
         let query_criteria = vec![ComponentQuery::HasComponent("Salience".to_string())];
@@ -2636,7 +2635,7 @@ impl EcsEntityManager {
             if let Some(salience_comp) = entity_result.components.iter()
                 .find(|comp| comp.component_type == "Salience") {
                 
-                if let Ok(salience_component) = SalienceComponent::from_json(&salience_comp.component_data) {
+                if let Ok(salience_component) = serde_json::from_value::<SalienceComponent>(salience_comp.component_data.clone()) {
                     // Check if salience tier matches
                     if salience_component.tier == salience_tier {
                         // If scale context is specified, check if it matches
@@ -2669,7 +2668,7 @@ impl EcsEntityManager {
         quantity: u32,
         slot: Option<usize>,
     ) -> Result<InventoryItem, AppError> {
-        use crate::models::ecs::{InventoryComponent, InventoryItem, Component};
+        use crate::models::ecs::{InventoryComponent, InventoryItem};
         use diesel::prelude::*;
         
         // Validate that both entities exist and belong to the user
@@ -2754,7 +2753,7 @@ impl EcsEntityManager {
         item_entity_id: Uuid,
         quantity: u32,
     ) -> Result<InventoryItem, AppError> {
-        use crate::models::ecs::{InventoryComponent, InventoryItem, Component};
+        use crate::models::ecs::{InventoryComponent, InventoryItem};
         use diesel::prelude::*;
         
         // Validate that character exists and belongs to the user
@@ -2840,7 +2839,7 @@ impl EcsEntityManager {
         affection: f32,
         metadata: HashMap<String, JsonValue>,
     ) -> Result<Relationship, AppError> {
-        use crate::models::ecs::{RelationshipsComponent, Relationship, Component};
+        use crate::models::ecs::{RelationshipsComponent, Relationship};
         use diesel::prelude::*;
         
         
@@ -2929,7 +2928,7 @@ impl EcsEntityManager {
         user_id: Uuid,
         entity_id: Uuid,
     ) -> Result<Vec<Relationship>, AppError> {
-        use crate::models::ecs::{RelationshipsComponent, Component};
+        use crate::models::ecs::{RelationshipsComponent};
         
         // Get entity and validate ownership
         let entity = self.get_entity(user_id, entity_id).await?
@@ -2953,7 +2952,7 @@ impl EcsEntityManager {
     
     /// Create a default component of the given type
     fn create_default_component(&self, component_type: &str) -> Result<JsonValue, AppError> {
-        use crate::models::ecs::{NameComponent, TemporalComponent, Component};
+        use crate::models::ecs::{NameComponent, TemporalComponent};
         use serde_json::json;
         
         match component_type {
@@ -2963,12 +2962,12 @@ impl EcsEntityManager {
                     display_name: "Generated Entity".to_string(),
                     aliases: Vec::new(),
                 };
-                name_component.to_json()
+                serde_json::to_value(&name_component)
                     .map_err(|e| AppError::SerializationError(format!("Failed to serialize name component: {}", e)))
             }
             "Temporal" => {
                 let temporal_component = TemporalComponent::default();
-                temporal_component.to_json()
+                serde_json::to_value(&temporal_component)
                     .map_err(|e| AppError::SerializationError(format!("Failed to serialize temporal component: {}", e)))
             }
             _ => {

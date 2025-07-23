@@ -317,8 +317,8 @@ Analyze the failures and provide your assessment:
     async fn parse_inconsistency_analysis(
         &self,
         analysis_text: String,
-        plan: &Plan,
-        failures: &[ValidationFailure],
+        _plan: &Plan,
+        _failures: &[ValidationFailure],
     ) -> Result<Option<InconsistencyAnalysis>, AppError> {
         debug!("Parsing Flash inconsistency analysis response");
 

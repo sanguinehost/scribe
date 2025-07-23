@@ -379,8 +379,6 @@ pub struct CacheHealth {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[tokio::test]
     async fn test_lightning_agent_creation() {
         // Test will be implemented when we create the cache service

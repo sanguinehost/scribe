@@ -494,6 +494,11 @@ impl ToolRegistry {
         
         doc.push_str(&format!("#### `{}`{}\n\n", name, req_marker));
         doc.push_str(&format!("**Description:** {}\n\n", meta.description));
+        doc.push_str(&format!("**Priority:** {} ({})\n\n", priority, match priority {
+            0..=3 => "Low",
+            4..=6 => "Medium",
+            _ => "High",
+        }));
         doc.push_str(&format!("**When to use:** {}\n\n", meta.when_to_use));
         
         if let Some(when_not) = &meta.when_not_to_use {

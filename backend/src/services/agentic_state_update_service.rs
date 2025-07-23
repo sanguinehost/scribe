@@ -307,6 +307,7 @@ impl AgenticStateUpdateService {
                     // Look for location information in entity states
                     for entity_name in &state_result.entity_names {
                         // In a real implementation, we'd check the current_states for location info
+                        debug!("Checking entity '{}' for location information", entity_name);
                         // For now, we'll use a simple heuristic
                         confidence = std::cmp::max(confidence as u32, 60) as f32 / 100.0;
                     }

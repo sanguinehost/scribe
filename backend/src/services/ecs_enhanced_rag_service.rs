@@ -412,7 +412,7 @@ impl EcsEnhancedRagService {
     /// Get a complete state snapshot for a single entity
     async fn get_entity_state_snapshot(&self, entity_id: Uuid, user_id: Uuid) -> Result<EntityStateSnapshot, AppError> {
         // Query ECS for entity and all its components
-        debug!("Getting state snapshot for entity: {}", entity_id);
+        debug!("Getting state snapshot for entity: {} for user: {}", entity_id, user_id);
         
         // Placeholder implementation
         Ok(EntityStateSnapshot {
@@ -426,6 +426,7 @@ impl EcsEnhancedRagService {
 
     /// Get relationship context for specified entities
     async fn get_relationship_context(&self, entity_ids: &[Uuid], user_id: Uuid) -> Result<Vec<RelationshipContext>, AppError> {
+        debug!("Getting relationship context for {} entities for user: {}", entity_ids.len(), user_id);
         let relationships = Vec::new();
         
         // Query ECS relationships table for connections between these entities

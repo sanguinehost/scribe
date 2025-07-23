@@ -1018,8 +1018,11 @@ impl CausalComponent {
             // Boost confidence based on chain depth
             let depth_factor = (event_chains.max_depth as f32).min(5.0) / 5.0;
             
+            // Boost confidence based on event count
+            let event_factor = (event_count as f32).min(10.0) / 10.0;
+            
             // Calculate final confidence
-            (base_confidence + (depth_factor * 0.3)).min(1.0)
+            (base_confidence + (depth_factor * 0.2) + (event_factor * 0.1)).min(1.0)
         } else {
             0.0
         }
@@ -2059,11 +2062,19 @@ mod tests {
             spatial_relationship: "galaxy_contains_system".to_string(),
         };
         
+        let planet_parent = ParentLinkComponent {
+            parent_entity_id: system_id,
+            depth_from_root: 3,
+            spatial_relationship: "system_contains_planet".to_string(),
+        };
+        
         // Verify hierarchy depths
         assert_eq!(galaxy_parent.depth_from_root, 1);
         assert_eq!(system_parent.depth_from_root, 2);
+        assert_eq!(planet_parent.depth_from_root, 3);
         assert_eq!(galaxy_parent.spatial_relationship, "universe_contains_galaxy");
         assert_eq!(system_parent.spatial_relationship, "galaxy_contains_system");
+        assert_eq!(planet_parent.spatial_relationship, "system_contains_planet");
     }
     
     #[test]

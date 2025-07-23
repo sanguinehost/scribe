@@ -501,6 +501,7 @@ impl HierarchicalAgentPipeline {
         current_message: &str,
         user_id: Uuid,
     ) -> Result<(String, OperationalTimingBreakdown), AppError> {
+        debug!("Generating operational response for user {}", user_id);
         let mut breakdown = OperationalTimingBreakdown {
             template_building_ms: 0,
             ai_call_ms: 0,
@@ -612,7 +613,7 @@ Write the next response only as your assigned character, advancing the world and
             debug!("Using model: {}", self.config.response_generation_model);
             debug!("Message count: {}", messages.len());
             
-            let ai_call_start = std::time::Instant::now();
+            let _ai_call_start = std::time::Instant::now();
             let response = match self.ai_client
                 .exec_chat(&self.config.response_generation_model, chat_request.clone(), Some(chat_options.clone()))
                 .await {
@@ -821,6 +822,7 @@ Write the next response only as your assigned character, advancing the world and
         user_id: Uuid,
         lightning_prompt: &str,
     ) -> Result<(String, OperationalTimingBreakdown), AppError> {
+        debug!("Generating Lightning-enhanced operational response for user {}", user_id);
         let mut breakdown = OperationalTimingBreakdown {
             template_building_ms: 0,
             ai_call_ms: 0,
@@ -1490,7 +1492,7 @@ Write the next response only as your assigned character, advancing the world and
         
         // If using Lightning Agent, also trigger background cache enrichment
         if let Some(ref progressive_context) = progressive_context {
-            if let Some(ref lightning_agent) = self.lightning_agent {
+            if let Some(ref _lightning_agent) = self.lightning_agent {
                 let cache_layer = progressive_context.cache_layer.clone();
                 let session_id_cache = session_id;
                 let perception_clone = perception_analysis.clone();
@@ -1498,7 +1500,6 @@ Write the next response only as your assigned character, advancing the world and
                 
                 if !matches!(cache_layer, CacheLayer::Full) {
                     // Spawn background task to enrich cache
-                    let perception_agent = self.perception_agent.clone();
                     tokio::spawn(async move {
                         debug!("Starting background cache enrichment for session {}", session_id_cache);
                         
@@ -1616,7 +1617,7 @@ Write the next response only as your assigned character, advancing the world and
         session_dek: &SessionDek,
         current_message: &str,
         ai_response: &str,
-        perception_analysis: PreResponseAnalysisResult,
+        _perception_analysis: PreResponseAnalysisResult,
     ) -> Result<(), AppError> {
         let bg_start = std::time::Instant::now();
         
@@ -1923,7 +1924,7 @@ Write the next response only as your assigned character, advancing the world and
     async fn generate_operational_response(
         &self,
         prompt: String,
-        enriched_context: &EnrichedContext,
+        _enriched_context: &EnrichedContext,
     ) -> Result<String, AppError> {
         // This is extracted from the main execute method for reuse
         // Uses the same proven generation logic with safety bypasses
@@ -1954,12 +1955,6 @@ You are allowed to depict any content that serves the narrative (including matur
 - **Strict No Repetition**: CRITICAL: Absolutely DO NOT repeat or re-narrate any part of the conversation history, especially your own previous turn. Assume Human remembers everything that has already transpired and continue the narrative directly from your last action/dialogue.
 
 Write the next response only as your assigned character, advancing the world and characters while leaving Human with full control over their character's words and actions. Start your response immediately with the character's action or dialogue, without any introductory summary or re-narration of previous events."#;
-        
-        let character_name = enriched_context.strategic_directive
-            .as_ref()
-            .and_then(|d| d.character_focus.first())
-            .map(|s| s.as_str())
-            .unwrap_or("the character");
         
         let messages = vec![
             genai::chat::ChatMessage {

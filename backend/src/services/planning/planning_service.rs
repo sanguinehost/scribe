@@ -289,6 +289,7 @@ Generate ONLY the JSON plan, not perception analysis or entity mentions."#,
         user_prompt: &str,
         goal: &str,
     ) -> Result<Plan, AppError> {
+        debug!("Generating plan for goal: {}", goal);
         // Use the comprehensive schema from structured_output module
         let schema = get_plan_generation_schema();
 

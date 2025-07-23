@@ -293,7 +293,7 @@ impl NarrativeFeatureFlags {
         if !self.enable_agentic_extraction {
             return ExtractionModeDecision {
                 mode: ExtractionMode::ManualOnly,
-                reason: "Agentic extraction disabled globally".to_string(),
+                reason: format!("Agentic extraction disabled globally (context: {})", context),
                 should_log_metrics: self.enable_extraction_metrics,
             };
         }

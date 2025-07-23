@@ -372,7 +372,7 @@ impl EcsGracefulDegradation {
                 
                 // If we have a consistency monitor, attempt reconstruction
                 if self.config.enable_auto_reconstruction {
-                    if let Some(monitor) = &self.consistency_monitor {
+                    if let Some(_monitor) = &self.consistency_monitor {
                         reconstruction_attempted = true;
                         
                         // Note: In a real implementation, we would iterate through
@@ -539,7 +539,7 @@ impl EcsGracefulDegradation {
 
     /// Test ECS connectivity with a simple operation
     async fn test_ecs_connectivity(&self) -> Result<(), AppError> {
-        if let Some(entity_manager) = &self.entity_manager {
+        if let Some(_entity_manager) = &self.entity_manager {
             // Try a simple health check operation
             // In a real implementation, this might query a health endpoint
             // For now, we'll just check if the entity manager is responsive

@@ -18,8 +18,6 @@ use crate::{
     services::{EcsEntityManager, ComponentUpdate, ComponentOperation},
 };
 
-use diesel::prelude::*;
-
 /// Component validation rule
 pub struct ComponentValidationRule {
     pub component_type: String,

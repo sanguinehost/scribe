@@ -212,6 +212,7 @@ impl StrategicAgent {
         session_id: Uuid,
         session_dek: &SessionDek,
     ) -> Result<StrategicDirective, AppError> {
+        debug!("Generating strategic directive for user {} in session {}", user_id, session_id);
         let conversation_context = self.format_conversation_for_analysis(chat_history);
 
         // Format recent directives for context
@@ -1006,7 +1007,8 @@ NARRATIVE ARC:"#, narrative_direction, conversation_context);
         // This ensures the strategic agent stays responsive to conversation changes
         let new_messages_count = chat_history.len();
         
-        debug!("Checking if new directive needed: {} messages in history", new_messages_count);
+        debug!("Checking if new directive needed: {} messages in history, latest directive type: {}", 
+               new_messages_count, latest_directive.directive_type);
         
         // Generate new directive if we have at least 2 messages
         // This allows the strategic agent to adapt to conversation flow

@@ -597,7 +597,7 @@ impl ChronicleEcsConsistencyMonitor {
         // Fetch actual entities, components, and relationships from ECS tables
         let (entities, components, relationships) = conn.interact({
             let user_id = user_id;
-            let chronicle_id = chronicle_id;
+            let _chronicle_id = chronicle_id;
             move |conn| -> Result<(Vec<EcsEntity>, Vec<EcsComponent>, Vec<ActualRelationship>), AppError> {
                 use crate::schema::ecs_entities::dsl as entities_dsl;
                 use crate::schema::ecs_components::dsl as components_dsl;
@@ -711,6 +711,7 @@ impl ChronicleEcsConsistencyMonitor {
         // This would remove ECS entities/components related to the chronicle
         // Implementation needed
         debug!(
+            user_id = %user_id,
             chronicle_id = %chronicle_id, 
             "ECS state clearing not yet implemented"
         );

@@ -25,7 +25,7 @@ pub struct AgenticNarrativeFactory;
 impl AgenticNarrativeFactory {
     /// Create a complete agentic narrative system with all tools registered
     pub fn create_system(
-        ai_client: Arc<dyn AiClient>,
+        _ai_client: Arc<dyn AiClient>, // Available through app_state
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
         app_state: Arc<AppState>,
@@ -76,11 +76,11 @@ impl AgenticNarrativeFactory {
 
     /// Create agentic narrative system with individual dependencies (no circular dependency)
     pub fn create_system_with_deps(
-        ai_client: Arc<dyn AiClient>,
+        _ai_client: Arc<dyn AiClient>, // Available through app_state
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync>,
-        embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
+        _qdrant_service: Arc<dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync>, // Available through app_state
+        _embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>, // Available through app_state
         app_state: Arc<AppState>,
         config: Option<NarrativeWorkflowConfig>,
     ) -> NarrativeAgentRunner {

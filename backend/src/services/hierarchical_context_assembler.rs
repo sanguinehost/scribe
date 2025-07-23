@@ -381,6 +381,7 @@ Directive: {}
 Narrative Arc: {}
 Emotional Tone: {}
 World Impact: {:?}
+Query Intent: {:?}
 
 ## User Input
 "{}"
@@ -411,6 +412,7 @@ Focus on practical, executable steps that advance the narrative."#,
             strategic_directive.narrative_arc,
             strategic_directive.emotional_tone,
             strategic_directive.world_impact_level,
+            intent,
             user_input,
             {
                 if let Some(char_data) = character {
@@ -796,9 +798,15 @@ Focus on practical, executable steps that advance the narrative."#,
 
         let current_location = primary_location.unwrap_or_else(|| {
             // Fallback to a default location if no spatial information was extracted
+            let location_name = if let Some(char_meta) = character {
+                format!("{}'s Location", char_meta.name)
+            } else {
+                "Current Scene".to_string()
+            };
+            
             SpatialLocation {
                 location_id: Uuid::new_v4(),
-                name: "Current Scene".to_string(),
+                name: location_name,
                 coordinates: None,
                 parent_location: None,
                 location_type: "Scene".to_string(),
@@ -1236,11 +1244,6 @@ Be specific and extract only what's clearly stated or strongly implied."#,
         let parent_location = location_data["parent_location"]
             .as_str()
             .map(|_| Uuid::new_v4()); // Generate a UUID for the parent location
-        
-        let description = location_data["description"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
         
         let spatial_location = SpatialLocation {
             location_id: Uuid::new_v4(),

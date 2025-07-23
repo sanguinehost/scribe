@@ -353,6 +353,8 @@ impl NarrativeIntelligenceService {
         };
 
         // Use the agent runner for triage with dry-run
+        // TODO: Update to use process_narrative_content when Epic 1 Flash integration is complete
+        #[allow(deprecated)]
         let result = self.agent_runner.process_narrative_event_dry_run_with_options(
             &[test_message],
             session_dek,
@@ -519,7 +521,7 @@ impl NarrativeIntelligenceService {
         session_id: Uuid,
         chronicle_id: Option<Uuid>,
         messages: &[ChatMessage],
-        rag_context: &serde_json::Value, // Using generic JSON for RAG context
+        _rag_context: &serde_json::Value, // Using generic JSON for RAG context
         session_dek: &SessionDek,
     ) -> Result<NarrativeProcessingResult, AppError> {
         let chronicle_id = chronicle_id.unwrap_or_else(Uuid::new_v4);

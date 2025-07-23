@@ -758,8 +758,9 @@ impl AgenticMetricsCollector {
     }
 
     /// Calculate efficiency trends over time
-    fn calculate_efficiency_trends(&self, measurements: &[PerformanceMeasurement]) -> EfficiencyTrends {
-        // For now, return stable trends - would implement time-series analysis
+    fn calculate_efficiency_trends(&self, _measurements: &[PerformanceMeasurement]) -> EfficiencyTrends {
+        // TODO: Implement time-series analysis using measurements data
+        // For now, return stable trends
         EfficiencyTrends {
             token_usage_trend: TrendDirection::Stable,
             optimization_effectiveness_trend: TrendDirection::Improving,

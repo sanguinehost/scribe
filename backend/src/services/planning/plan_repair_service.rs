@@ -468,7 +468,7 @@ impl PlanRepairService {
         repair_type: &str,
         user_id: Uuid,
     ) -> Result<Plan, AppError> {
-        debug!("Using Flash to generate {} repair", repair_type);
+        debug!("Using Flash to generate {} repair for user {}", repair_type, user_id);
 
         let repair_prompt = format!(r#"
 You are a Plan Repair Generator. Generate a minimal repair plan to fix the identified ECS inconsistency.

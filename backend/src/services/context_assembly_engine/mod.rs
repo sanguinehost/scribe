@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
-use tracing::{info, instrument};
+use tracing::{info, warn, instrument};
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -594,7 +594,7 @@ impl ContextAssemblyEngine {
         &self,
         intent: &QueryIntent,
         strategic_directive: Option<&StrategicDirective>,
-        user_id: Uuid,
+        _user_id: Uuid,
     ) -> Result<ValidatedPlan, AppError> {
         let prompt = self.build_plan_generation_prompt(intent, strategic_directive);
         
@@ -834,52 +834,374 @@ Provide realistic, coherent context that supports the narrative goal."#, entity_
     
     /// Parse validated plan response from Flash
     fn parse_validated_plan_response(&self, response: &str) -> Result<ValidatedPlan, AppError> {
-        // Implementation would parse JSON response into ValidatedPlan
-        // For now, return a placeholder
-        Ok(ValidatedPlan {
-            plan_id: Uuid::new_v4(),
-            steps: vec![],
-            preconditions_met: true,
-            causal_consistency_verified: true,
-            entity_dependencies: vec![],
-            estimated_execution_time: Some(1000),
-            risk_assessment: RiskAssessment {
-                overall_risk: RiskLevel::Low,
-                identified_risks: vec![],
-                mitigation_strategies: vec![],
-            },
-        })
+        // Try to parse the JSON response
+        match serde_json::from_str::<serde_json::Value>(response) {
+            Ok(json) => {
+                // Extract fields from JSON with proper error handling
+                let plan_id = json.get("plan_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(Uuid::new_v4);
+
+                let steps = json.get("steps")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|step| {
+                                let step_id = step.get("step_id")
+                                    .and_then(|v| v.as_str())
+                                    .and_then(|s| Uuid::parse_str(s).ok())
+                                    .unwrap_or_else(Uuid::new_v4);
+                                
+                                let description = step.get("description")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("").to_string();
+
+                                Some(PlanStep {
+                                    step_id,
+                                    description,
+                                    preconditions: vec![], // Simplified for now
+                                    expected_outcomes: vec![],
+                                    required_entities: vec![],
+                                    estimated_duration: step.get("estimated_duration")
+                                        .and_then(|v| v.as_u64())
+                                        .map(|d| d as u32),
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let preconditions_met = json.get("preconditions_met")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+
+                let causal_consistency_verified = json.get("causal_consistency_verified")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+
+                let entity_dependencies = json.get("entity_dependencies")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let estimated_execution_time = json.get("estimated_execution_time")
+                    .and_then(|v| v.as_u64())
+                    .map(|t| t as u32);
+
+                // Parse risk assessment
+                let risk_assessment = json.get("risk_assessment")
+                    .map(|ra| {
+                        let overall_risk = ra.get("overall_risk")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| match s {
+                                "Low" => Some(RiskLevel::Low),
+                                "Medium" => Some(RiskLevel::Medium),
+                                "High" => Some(RiskLevel::High),
+                                "Critical" => Some(RiskLevel::Critical),
+                                _ => None,
+                            })
+                            .unwrap_or(RiskLevel::Low);
+
+                        RiskAssessment {
+                            overall_risk,
+                            identified_risks: vec![],
+                            mitigation_strategies: vec![],
+                        }
+                    })
+                    .unwrap_or_else(|| RiskAssessment {
+                        overall_risk: RiskLevel::Low,
+                        identified_risks: vec![],
+                        mitigation_strategies: vec![],
+                    });
+
+                Ok(ValidatedPlan {
+                    plan_id,
+                    steps,
+                    preconditions_met,
+                    causal_consistency_verified,
+                    entity_dependencies,
+                    estimated_execution_time,
+                    risk_assessment,
+                })
+            }
+            Err(e) => {
+                warn!("Failed to parse validated plan response as JSON: {}. Response: {}", e, response);
+                // Return a default plan as fallback
+                Ok(ValidatedPlan {
+                    plan_id: Uuid::new_v4(),
+                    steps: vec![],
+                    preconditions_met: true,
+                    causal_consistency_verified: true,
+                    entity_dependencies: vec![],
+                    estimated_execution_time: Some(1000),
+                    risk_assessment: RiskAssessment {
+                        overall_risk: RiskLevel::Low,
+                        identified_risks: vec![],
+                        mitigation_strategies: vec![],
+                    },
+                })
+            }
+        }
     }
 
     /// Parse sub-goal response from Flash
     fn parse_sub_goal_response(&self, response: &str) -> Result<SubGoal, AppError> {
-        // Implementation would parse JSON response into SubGoal
-        Ok(SubGoal {
-            goal_id: Uuid::new_v4(),
-            description: "Generated sub-goal".to_string(),
-            actionable_directive: "Execute action".to_string(),
-            required_entities: vec![],
-            success_criteria: vec![],
-            context_requirements: vec![],
-            priority_level: 1.0,
-        })
+        // Try to parse the JSON response
+        match serde_json::from_str::<serde_json::Value>(response) {
+            Ok(json) => {
+                let goal_id = json.get("goal_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(Uuid::new_v4);
+
+                let description = json.get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Generated sub-goal")
+                    .to_string();
+
+                let actionable_directive = json.get("actionable_directive")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Execute action")
+                    .to_string();
+
+                let required_entities = json.get("required_entities")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let success_criteria = json.get("success_criteria")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let context_requirements = json.get("context_requirements")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let priority_level = json.get("priority_level")
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as f32)
+                    .unwrap_or(1.0);
+
+                Ok(SubGoal {
+                    goal_id,
+                    description,
+                    actionable_directive,
+                    required_entities,
+                    success_criteria,
+                    context_requirements,
+                    priority_level,
+                })
+            }
+            Err(e) => {
+                warn!("Failed to parse sub-goal response as JSON: {}. Response: {}", e, response);
+                // Return a default sub-goal as fallback
+                Ok(SubGoal {
+                    goal_id: Uuid::new_v4(),
+                    description: "Generated sub-goal".to_string(),
+                    actionable_directive: "Execute action".to_string(),
+                    required_entities: vec![],
+                    success_criteria: vec![],
+                    context_requirements: vec![],
+                    priority_level: 1.0,
+                })
+            }
+        }
     }
 
     /// Parse entity context response from Flash
     fn parse_entity_context_response(&self, response: &str, entity_name: &str) -> Result<EntityContext, AppError> {
-        // Implementation would parse JSON response into EntityContext
-        Ok(EntityContext {
-            entity_id: Uuid::new_v4(),
-            entity_name: entity_name.to_string(),
-            entity_type: "Character".to_string(),
-            current_state: HashMap::new(),
-            spatial_location: None,
-            relationships: vec![],
-            recent_actions: vec![],
-            emotional_state: None,
-            narrative_importance: 0.8,
-            ai_insights: vec![],
-        })
+        // Try to parse the JSON response
+        match serde_json::from_str::<serde_json::Value>(response) {
+            Ok(json) => {
+                let entity_id = json.get("entity_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(Uuid::new_v4);
+
+                let entity_name_parsed = json.get("entity_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(entity_name)
+                    .to_string();
+
+                let entity_type = json.get("entity_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Character")
+                    .to_string();
+
+                // Parse current state as a HashMap
+                let current_state = json.get("current_state")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Parse spatial location if present
+                let spatial_location = json.get("spatial_location")
+                    .map(|loc| {
+                        SpatialLocation {
+                            location_id: loc.get("location_id")
+                                .and_then(|v| v.as_str())
+                                .and_then(|s| Uuid::parse_str(s).ok())
+                                .unwrap_or_else(Uuid::new_v4),
+                            name: loc.get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Unknown")
+                                .to_string(),
+                            location_type: loc.get("type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Zone")
+                                .to_string(),
+                            attributes: loc.get("attributes")
+                                .and_then(|v| v.as_object())
+                                .map(|obj| {
+                                    obj.iter()
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                        }
+                    });
+
+                // Parse relationships
+                let relationships = json.get("relationships")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|rel| {
+                                Some(EntityRelationship {
+                                    target_entity_id: rel.get("target_entity_id")
+                                        .and_then(|v| v.as_str())
+                                        .and_then(|s| Uuid::parse_str(s).ok())
+                                        .unwrap_or_else(Uuid::new_v4),
+                                    target_entity_name: rel.get("target_entity_name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("Unknown")
+                                        .to_string(),
+                                    relationship_type: rel.get("relationship_type")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("knows")
+                                        .to_string(),
+                                    trust_level: rel.get("trust_level")
+                                        .and_then(|v| v.as_f64())
+                                        .map(|f| f as f32)
+                                        .unwrap_or(0.5),
+                                    affection_level: rel.get("affection_level")
+                                        .and_then(|v| v.as_f64())
+                                        .map(|f| f as f32)
+                                        .unwrap_or(0.0),
+                                    last_interaction: None,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Parse recent actions
+                let recent_actions = json.get("recent_actions")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Parse emotional state
+                let emotional_state = json.get("emotional_state")
+                    .map(|es| {
+                        EmotionalState {
+                            primary_emotion: es.get("primary_emotion")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("neutral")
+                                .to_string(),
+                            intensity: es.get("intensity")
+                                .and_then(|v| v.as_f64())
+                                .map(|f| f as f32)
+                                .unwrap_or(0.5),
+                            contributing_factors: es.get("contributing_factors")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                        }
+                    });
+
+                let narrative_importance = json.get("narrative_importance")
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as f32)
+                    .unwrap_or(0.8);
+
+                let ai_insights = json.get("ai_insights")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                Ok(EntityContext {
+                    entity_id,
+                    entity_name: entity_name_parsed,
+                    entity_type,
+                    current_state,
+                    spatial_location,
+                    relationships,
+                    recent_actions,
+                    emotional_state,
+                    narrative_importance,
+                    ai_insights,
+                })
+            }
+            Err(e) => {
+                warn!("Failed to parse entity context response as JSON: {}. Response: {}", e, response);
+                // Return a default entity context as fallback
+                Ok(EntityContext {
+                    entity_id: Uuid::new_v4(),
+                    entity_name: entity_name.to_string(),
+                    entity_type: "Character".to_string(),
+                    current_state: HashMap::new(),
+                    spatial_location: None,
+                    relationships: vec![],
+                    recent_actions: vec![],
+                    emotional_state: None,
+                    narrative_importance: 0.8,
+                    ai_insights: vec![],
+                })
+            }
+        }
     }
 
     // Placeholder implementations for other methods

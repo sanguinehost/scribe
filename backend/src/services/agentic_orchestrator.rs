@@ -190,6 +190,9 @@ impl AgenticOrchestrator {
             }
         }
 
+        let elapsed = start_time.elapsed();
+        info!("Agentic query processing completed in {:?}", elapsed);
+
         result
     }
 
@@ -295,8 +298,8 @@ impl AgenticOrchestrator {
         let state_update_duration = state_update_start.elapsed();
         phase_timer.finish(tracker);
 
-        info!("World state updated: {} entities modified, {:.2} confidence", 
-              state_update_result.entities_updated.len(), state_update_result.confidence);
+        info!("World state updated: {} entities modified, {:.2} confidence, {:?} elapsed", 
+              state_update_result.entities_updated.len(), state_update_result.confidence, state_update_duration);
 
         // Phase 5: Context Optimization
         debug!("Phase 5: Optimizing context for token budget");
@@ -341,6 +344,8 @@ impl AgenticOrchestrator {
         
         let formatting_duration = formatting_start.elapsed();
         phase_timer.finish(tracker);
+        
+        debug!("Context formatting completed in {:?}", formatting_duration);
 
         let execution_time = start_time.elapsed().as_millis() as u64;
 

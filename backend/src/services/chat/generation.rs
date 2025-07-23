@@ -669,7 +669,6 @@ pub async fn get_session_data_for_generation(
     );
     info!(%session_id, %actual_recent_history_tokens, %available_rag_tokens, "Calculated RAG token budget.");
     let mut rag_context_items: Vec<RetrievedChunk> = Vec::new();
-    let mut current_rag_tokens_used: usize = 0;
     let mut combined_rag_candidates: Vec<RetrievedChunk> = Vec::new();
     let rag_query_limit_per_source: u64 = 15; // Example limit, cast to u64 for service call
     debug!(target: "test_debug", %session_id, %available_rag_tokens, "RAG token budget check. available_rag_tokens > 0: {}", available_rag_tokens > 0);
@@ -930,7 +929,7 @@ pub async fn get_session_data_for_generation(
                             actual_tokens_used += estimate.total;
                         }
                     }
-                    current_rag_tokens_used = actual_tokens_used;
+                    let current_rag_tokens_used = actual_tokens_used;
                     
                     debug!(target: "test_debug", %session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, %available_rag_tokens, "Unified RAG selection finished.");
                     info!(%session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, budget_utilization = format!("{:.1}%", (current_rag_tokens_used as f32 / available_rag_tokens as f32) * 100.0), "Unified RAG context selection complete.");
@@ -938,7 +937,6 @@ pub async fn get_session_data_for_generation(
                 Err(e) => {
                     warn!(%session_id, error = %e, "Dynamic RAG selection failed. Proceeding without RAG context.");
                     rag_context_items = Vec::new();
-                    current_rag_tokens_used = 0;
                 }
             }
         }

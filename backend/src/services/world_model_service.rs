@@ -370,7 +370,7 @@ impl WorldModelService {
             );
             
             // Extract affected entities from actors if available
-            if let Some(actors) = &event.actors {
+            if let Some(_actors) = &event.actors {
                 if let Ok(actor_list) = event.get_actors() {
                     for actor in actor_list {
                         causal_event.add_affected_entity(actor.entity_id);
@@ -409,7 +409,7 @@ impl WorldModelService {
         for (entity_id, entity) in entities {
             if let Some(position_data) = entity.get_component("Position") {
                 // Try to extract location information
-                if let Some(zone) = position_data.get("zone").and_then(|v| v.as_str()) {
+                if let Some(_zone) = position_data.get("zone").and_then(|v| v.as_str()) {
                     // For now, treat zone as location
                     // In a more sophisticated implementation, we'd have proper location entities
                     let location_id = Uuid::new_v4(); // Placeholder

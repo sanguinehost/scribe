@@ -1517,6 +1517,7 @@ impl TacticalAgent {
         outcome: &serde_json::Value,
         user_id: Uuid,
     ) -> Result<bool, AppError> {
+        debug!("Checking if plan {} for user {} should be invalidated", plan.plan_id, user_id);
         let severity = self.assess_deviation_severity(outcome).await?;
         
         // High severity deviations (>0.7) should trigger re-planning
@@ -1702,7 +1703,10 @@ impl TacticalAgent {
         expected: &serde_json::Value,
         current: &serde_json::Value,
     ) -> Result<f32, AppError> {
-        // Compare expected vs current relationship states
+        // TODO: Compare expected vs current relationship states
+        debug!("Detecting relationship changes between expected and current states");
+        debug!("Expected relationships: {}", expected);
+        debug!("Current relationships: {}", current);
         // Return deviation score (0.0 - 1.0)
         Ok(0.0) // Placeholder implementation
     }
@@ -1713,7 +1717,10 @@ impl TacticalAgent {
         expected: &serde_json::Value,
         current: &serde_json::Value,
     ) -> Result<f32, AppError> {
-        // Compare expected vs current component states
+        // TODO: Compare expected vs current component states
+        debug!("Detecting component state changes between expected and current states");
+        debug!("Expected components: {}", expected);
+        debug!("Current components: {}", current);
         // Return deviation score (0.0 - 1.0)
         Ok(0.0) // Placeholder implementation
     }

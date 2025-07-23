@@ -461,7 +461,7 @@ mod tests {
     
     #[test]
     fn test_invalid_significance_scores() {
-        let mut invalid_output = EventSignificanceOutput {
+        let invalid_output = EventSignificanceOutput {
             significance_factors: vec![
                 SignificanceFactor {
                     factor_name: "test".to_string(),

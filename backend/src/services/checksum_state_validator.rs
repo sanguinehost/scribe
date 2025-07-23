@@ -460,7 +460,7 @@ impl ChecksumStateValidator {
     async fn compute_current_ecs_state_checksum(
         &self,
         user_id: Uuid,
-        chronicle_id: Uuid,
+        _chronicle_id: Uuid,
     ) -> Result<StateChecksum, AppError> {
         debug!("Computing current ECS state checksum");
         

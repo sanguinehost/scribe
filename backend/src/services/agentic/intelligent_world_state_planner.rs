@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, debug};
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
@@ -143,7 +143,8 @@ impl IntelligentWorldStatePlanner {
     ) -> Result<NarrativeImplications, AppError> {
         // This would use AI to extract structured implications from the narrative
         // For now, a placeholder that shows the structure
-        info!("Analyzing narrative for intelligent world state implications");
+        info!("Analyzing narrative for intelligent world state implications. Narrative length: {}, context keys: {}", 
+              narrative.len(), context.len());
         
         // TODO: Implement AI-based narrative analysis
         // This should extract:
@@ -469,7 +470,7 @@ impl IntelligentWorldStatePlanner {
         &mut self,
         item_changes: &[ItemChange],
         user_id: Uuid,
-        get_tool: &impl Fn(&str) -> Result<Arc<dyn ScribeTool>, AppError>,
+        _get_tool: &impl Fn(&str) -> Result<Arc<dyn ScribeTool>, AppError>,
     ) -> Result<PlanPhase, AppError> {
         let mut actions = Vec::new();
         
@@ -477,7 +478,7 @@ impl IntelligentWorldStatePlanner {
             match change.change_type.as_str() {
                 "upgrade" => {
                     // Check if entity has the item
-                    let inventory_params = json!({
+                    let _inventory_params = json!({
                         "user_id": user_id.to_string(),
                         "entity_name": change.entity
                     });
@@ -555,8 +556,9 @@ impl IntelligentWorldStatePlanner {
         &mut self,
         relationship_changes: &[RelationshipChange],
         user_id: Uuid,
-        get_tool: &impl Fn(&str) -> Result<Arc<dyn ScribeTool>, AppError>,
+        _get_tool: &impl Fn(&str) -> Result<Arc<dyn ScribeTool>, AppError>,
     ) -> Result<PlanPhase, AppError> {
+        debug!("Planning relationship changes phase for user {}", user_id);
         let mut actions = Vec::new();
         
         for change in relationship_changes {
@@ -615,7 +617,7 @@ impl IntelligentWorldStatePlanner {
     /// Check if an entity needs updating based on mentioned properties
     fn check_if_entity_needs_update(
         &self,
-        existing_entity: &Value,
+        _existing_entity: &Value,
         mentioned_properties: &HashMap<String, Value>,
     ) -> bool {
         // Compare mentioned properties with existing ones

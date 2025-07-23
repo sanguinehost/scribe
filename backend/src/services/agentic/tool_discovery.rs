@@ -286,7 +286,7 @@ pub async fn demonstrate_tool_discovery() {
     
     // 7. Get specific tool examples
     if let Some(examples) = ToolDiscoveryService::generate_usage_examples("find_entity") {
-        info!("Generated usage examples for find_entity tool");
+        info!("Generated {} usage examples for find_entity tool", examples.len());
     }
     
     // 8. Check dependencies

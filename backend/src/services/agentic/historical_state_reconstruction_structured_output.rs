@@ -303,7 +303,7 @@ mod tests {
     
     #[test]
     fn test_invalid_confidence_scores() {
-        let mut invalid_output = HistoricalStateReconstructionOutput {
+        let invalid_output = HistoricalStateReconstructionOutput {
             state_changes: vec![],
             reconstructed_state: ReconstructedEntityState {
                 entity_id: Uuid::new_v4(),

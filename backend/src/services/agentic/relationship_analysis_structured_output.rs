@@ -649,7 +649,7 @@ mod tests {
     
     #[test]
     fn test_invalid_relationship_metrics() {
-        let mut invalid_output = RelationshipAnalysisOutput {
+        let invalid_output = RelationshipAnalysisOutput {
             relationship_analysis: RelationshipAnalysisDetails {
                 relationship_type: "test".to_string(),
                 current_status: "test".to_string(),

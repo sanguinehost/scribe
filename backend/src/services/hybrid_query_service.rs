@@ -2019,7 +2019,9 @@ Focus on extracting information that is explicitly mentioned or strongly implied
                                     // Extract all fields from this object
                                     for (field_key, field_value) in nested_obj {
                                         if field_key != "entity_id" {
-                                            context.attributes.insert(field_key.clone(), field_value.clone());
+                                            // Include the parent key for context
+                                            let full_key = format!("{}.{}", key, field_key);
+                                            context.attributes.insert(full_key, field_value.clone());
                                         }
                                     }
                                 }
@@ -2142,7 +2144,7 @@ Focus on extracting information that is explicitly mentioned or strongly implied
     fn parse_item_interaction(
         &self,
         item_obj: &serde_json::Map<String, JsonValue>,
-        entity_id: Uuid,
+        _entity_id: Uuid, // TODO: Add to ItemInteraction struct to track who performed the interaction
         event_id: Uuid,
         timestamp: DateTime<Utc>,
     ) -> Option<ItemInteraction> {
@@ -2350,7 +2352,7 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
     async fn filter_item_timelines_by_query(
         &self,
         timelines: Vec<ItemTimeline>,
-        query: &HybridQuery,
+        _query: &HybridQuery,
     ) -> Result<Vec<ItemTimeline>, AppError> {
         // For now, return all timelines
         // In a more sophisticated implementation, this would filter based on query type and options
@@ -4446,7 +4448,7 @@ Return a structured JSON analysis following the exact schema provided."#
             }
             
             if let Some(location_change) = event_data.get("location_change") {
-                if let Some(new_location) = location_change.as_str() {
+                if let Some(_new_location) = location_change.as_str() {
                     state_changes.push(StateChange {
                         component_type: "position".to_string(),
                         change_type: "set".to_string(),
@@ -4457,7 +4459,7 @@ Return a structured JSON analysis following the exact schema provided."#
             }
             
             if let Some(inventory_change) = event_data.get("inventory_change") {
-                if let Some(item_added) = inventory_change.get("added") {
+                if let Some(_item_added) = inventory_change.get("added") {
                     state_changes.push(StateChange {
                         component_type: "inventory".to_string(),
                         change_type: "add_item".to_string(),
@@ -4465,7 +4467,7 @@ Return a structured JSON analysis following the exact schema provided."#
                         field_name: "items".to_string(),
                     });
                 }
-                if let Some(item_removed) = inventory_change.get("removed") {
+                if let Some(_item_removed) = inventory_change.get("removed") {
                     state_changes.push(StateChange {
                         component_type: "inventory".to_string(),
                         change_type: "remove_item".to_string(),
@@ -4519,11 +4521,9 @@ Return a structured JSON analysis following the exact schema provided."#
                         }
                     }
                     "add_item" => {
-                        // Reverse item addition by removing item
+                        // Reverse item addition by removing last item
                         if let Some(items) = component.get_mut(&change.field_name).and_then(|v| v.as_array_mut()) {
-                            if let Some(last_item) = items.last() {
-                                items.pop();
-                            }
+                            items.pop();
                         }
                     }
                     "remove_item" => {
@@ -5176,7 +5176,7 @@ Context Data:
         entity_a: &str,
         entity_b: &str,
         relationships: &[RelationshipAnalysis],
-        events: &[ChronicleEvent],
+        _events: &[ChronicleEvent],
     ) -> Result<String, AppError> {
         if relationships.is_empty() {
             return Ok(format!("No relationship history found between {} and {}.", entity_a, entity_b));
@@ -5320,7 +5320,7 @@ Context Data:
     #[allow(dead_code)]
     async fn generate_entity_state_narrative(
         &self,
-        entity_id: Uuid,
+        _entity_id: Uuid,
         timestamp: DateTime<Utc>,
         entities: &[EntityTimelineContext],
     ) -> Result<String, AppError> {
@@ -5384,7 +5384,7 @@ Context Data:
         &self,
         entity_id: Uuid,
         entities: &[EntityTimelineContext],
-        events: &[ChronicleEvent],
+        _events: &[ChronicleEvent],
     ) -> Result<String, AppError> {
         let mut narrative = format!("**Temporal Path for Entity {}:**\n\n", entity_id);
 
@@ -5555,7 +5555,7 @@ Context Data:
             events.sort_by_key(|(timestamp, _, _)| *timestamp);
             narrative.push_str(&format!("**{}:**\n", item_name));
             
-            for (timestamp, action, description) in events {
+            for (timestamp, _action, description) in events {
                 let time_str = timestamp.format("%Y-%m-%d %H:%M").to_string();
                 narrative.push_str(&format!("- {} - {}\n", time_str, description));
             }

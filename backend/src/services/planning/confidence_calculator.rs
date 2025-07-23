@@ -356,12 +356,18 @@ impl ConfidenceCalculator {
 
         // Action count factor (prefer fewer actions for repairs)
         let action_count = repair_plan.actions.len();
+        let original_action_count = original_plan.actions.len();
         if action_count == 0 {
             score = 0.0; // No actions = no repair
         } else if action_count <= 3 {
             score += 0.2; // Bonus for concise repairs
         } else if action_count > 8 {
             score -= 0.3; // Penalty for overly complex repairs
+        }
+        
+        // Compare to original plan size - repairs should generally be simpler
+        if action_count > original_action_count {
+            score -= 0.1; // Penalty if repair is more complex than original
         }
 
         // Plan confidence from metadata

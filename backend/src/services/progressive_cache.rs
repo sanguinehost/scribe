@@ -348,7 +348,5 @@ pub struct FullContextUpdate {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Tests will be implemented in the unit test file
 }

@@ -27,7 +27,6 @@ use crate::{
 };
 
 use diesel::prelude::*;
-use diesel::RunQueryDsl;
 
 /// Configuration for the Chronicle event handler
 #[derive(Debug, Clone)]

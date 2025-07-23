@@ -1272,6 +1272,14 @@ Preconditions Met: {}
     fn calculate_security_score(template: &str, result: &TemplateValidationResult) -> f32 {
         let mut score = 1.0;
 
+        // Check for potentially dangerous patterns
+        let dangerous_patterns = ["system(", "exec(", "eval(", "__import__", "subprocess"];
+        for pattern in &dangerous_patterns {
+            if template.contains(pattern) {
+                score -= 0.5; // Major deduction for dangerous patterns
+            }
+        }
+
         // Deduct for errors
         score -= result.errors.len() as f32 * 0.3;
         

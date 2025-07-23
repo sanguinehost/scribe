@@ -211,7 +211,6 @@ impl ChronicleEcsTranslator {
             
             // Parse actors from both events
             let current_actors = event.get_actors().unwrap_or_default();
-            let previous_actors = prev.get_actors().unwrap_or_default();
             
             // Update chronicle event causality in database
             self.update_event_causality(event.id, prev.id).await?;
