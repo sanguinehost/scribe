@@ -16,7 +16,7 @@ use scribe_backend::{
     errors::AppError,
     PgPool,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 

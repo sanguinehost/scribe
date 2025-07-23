@@ -1,10 +1,10 @@
 use scribe_backend::services::agentic::lightning_agent::{
-    LightningAgent, ProgressiveContext, CacheLayer, CacheHealth
+    LightningAgent, CacheLayer
 };
 use scribe_backend::services::progressive_cache::{
     ProgressiveCacheService, Context, ImmediateContext, EnhancedContext, FullContext,
     MessageSummary, EntitySummary, Location, RelationshipSummary, NarrativeThread,
-    SalienceScore, Memory, Entity, NarrativeState, FullContextUpdate
+    SalienceScore, Memory, NarrativeState
 };
 use scribe_backend::test_helpers::*;
 use scribe_backend::auth::session_dek::SessionDek;

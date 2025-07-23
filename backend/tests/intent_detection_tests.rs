@@ -6,7 +6,6 @@ use scribe_backend::{
     test_helpers::MockAiClient,
 };
 use std::sync::Arc;
-use chrono::Duration;
 
 #[tokio::test]
 async fn test_detect_intent_causal_analysis() {

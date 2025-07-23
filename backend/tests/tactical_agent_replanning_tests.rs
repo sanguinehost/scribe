@@ -1,15 +1,12 @@
 use scribe_backend::services::agentic::tactical_agent::TacticalAgent;
 use scribe_backend::services::context_assembly_engine::{
-    StrategicDirective, PlotSignificance, WorldImpactLevel, EnrichedContext,
-    ValidatedPlan, SubGoal, RiskAssessment, RiskLevel, PlanValidationStatus, PlanStep
+    StrategicDirective, PlotSignificance, WorldImpactLevel
 };
 use scribe_backend::test_helpers::*;
 use scribe_backend::auth::session_dek::SessionDek;
-use scribe_backend::errors::AppError;
 use uuid::Uuid;
 use std::sync::Arc;
 use serde_json::json;
-use tracing::info;
 
 // Helper function to create test strategic directive
 fn create_test_strategic_directive() -> StrategicDirective {

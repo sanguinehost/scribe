@@ -23,7 +23,7 @@ use scribe_backend::{
 use serde_json::json;
 use uuid::Uuid;
 use chrono::Utc;
-use secrecy::{SecretBox, SecretString, ExposeSecret};
+use secrecy::{SecretBox, ExposeSecret};
 use diesel::{RunQueryDsl, prelude::*};
 use bcrypt;
 

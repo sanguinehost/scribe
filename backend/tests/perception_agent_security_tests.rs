@@ -1,24 +1,18 @@
 use scribe_backend::services::agentic::perception_agent::PerceptionAgent;
-use scribe_backend::services::context_assembly_engine::{
-    EnrichedContext, EntityContext, SpatialContext, TemporalContext,
-    StrategicDirective, EmotionalState, SpatialLocation, RiskAssessment,
-    RiskLevel, PlotSignificance, WorldImpactLevel
-};
+use scribe_backend::services::context_assembly_engine::EnrichedContext;
 use scribe_backend::services::planning::{PlanningService, PlanValidatorService};
 use scribe_backend::test_helpers::*;
 use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::errors::AppError;
 use uuid::Uuid;
 use std::sync::Arc;
-use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 use tracing::info;
 
 // Helper function to create test enriched context
 fn create_test_context() -> EnrichedContext {
     use scribe_backend::services::context_assembly_engine::{
-        ValidatedPlan, SubGoal, EntityContext, RiskAssessment, RiskLevel, 
-        PlanValidationStatus, ValidationCheck, PlanStep, ContextRequirement
+        ValidatedPlan, SubGoal, RiskAssessment, RiskLevel, 
+        PlanValidationStatus, PlanStep
     };
     
     EnrichedContext {

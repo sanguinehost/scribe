@@ -5,9 +5,7 @@ use serde_json::json;
 use chrono::Utc;
 use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
 use scribe_backend::models::chronicle_event::ChronicleEvent;
-use scribe_backend::models::narrative_ontology::EventActor;
 use scribe_backend::services::hybrid_query_service::{HybridQuery, HybridQueryType, HybridQueryService};
-use scribe_backend::errors::AppError;
 
 // Helper function to create test ChronicleEvent objects
 fn create_test_chronicle_event(

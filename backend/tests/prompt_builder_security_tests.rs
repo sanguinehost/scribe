@@ -65,8 +65,8 @@ async fn test_a02_cryptographic_failures_sensitive_data_protection() {
 #[tokio::test]
 async fn test_a03_injection_xml_escaping() {
     let _test_app = spawn_app(false, false, false).await;
-    let _config = Arc::new(create_test_config());
-    let _token_counter = Arc::new(create_test_token_counter());
+    let config = Arc::new(create_test_config());
+    let token_counter = Arc::new(create_test_token_counter());
     
     // Create enriched context
     let enriched_context = create_test_enriched_context();
@@ -136,8 +136,8 @@ async fn test_a04_insecure_design_input_validation() {
 #[tokio::test]
 async fn test_a05_security_misconfiguration_defaults() {
     let _test_app = spawn_app(false, false, false).await;
-    let _config = Arc::new(create_test_config());
-    let _token_counter = Arc::new(create_test_token_counter());
+    let config = Arc::new(create_test_config());
+    let token_counter = Arc::new(create_test_token_counter());
     
     // Test with minimal configuration
     let enriched_context = create_test_enriched_context();
@@ -175,8 +175,8 @@ async fn test_a05_security_misconfiguration_defaults() {
 #[tokio::test]
 async fn test_a09_logging_monitoring_audit_trail() {
     let _test_app = spawn_app(false, false, false).await;
-    let _config = Arc::new(create_test_config());
-    let _token_counter = Arc::new(create_test_token_counter());
+    let config = Arc::new(create_test_config());
+    let token_counter = Arc::new(create_test_token_counter());
     
     let enriched_context = create_test_enriched_context();
     

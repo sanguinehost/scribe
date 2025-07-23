@@ -64,7 +64,7 @@ async fn test_a01_access_control_user_isolation() {
     );
     
     // Create narrative data that belongs to user1
-    let _events = vec![
+    let events = vec![
         create_test_chronicle_event(
             user1.id,
             "private_event",
@@ -108,7 +108,7 @@ async fn test_a02_cryptographic_failures_data_protection() {
     );
     
     // Test: Ensure sensitive narrative data is properly handled
-    let _events = vec![
+    let events = vec![
         create_test_chronicle_event(
             user.id,
             "sensitive_narrative",
@@ -337,7 +337,7 @@ async fn test_a07_authentication_failures_context_handling() {
     );
     
     // Test: System should validate user context
-    let _events = vec![
+    let events = vec![
         create_test_chronicle_event(
             user.id,
             "narrative",
@@ -428,7 +428,7 @@ async fn test_a09_security_logging_monitoring() {
     );
     
     // Test: Service should log security-relevant events
-    let _events = vec![
+    let events = vec![
         create_test_chronicle_event(
             user.id,
             "suspicious_narrative",

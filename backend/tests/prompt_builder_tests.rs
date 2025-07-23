@@ -1,17 +1,17 @@
 use scribe_backend::prompt_builder::*;
 use scribe_backend::services::{
     context_assembly_engine::*,
-    hybrid_token_counter::{HybridTokenCounter, CountingMode},
+    hybrid_token_counter::HybridTokenCounter,
     tokenizer_service::TokenizerService,
 };
 use scribe_backend::models::characters::CharacterMetadata;
 use scribe_backend::config::Config;
-use scribe_backend::test_helpers::{spawn_app, MockAiClient};
+use scribe_backend::test_helpers::spawn_app;
 use genai::chat::ChatMessage as GenAiChatMessage;
 use genai::chat::{ChatRole, MessageContent};
 use std::sync::Arc;
 use uuid::Uuid;
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

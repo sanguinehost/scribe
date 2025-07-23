@@ -7,22 +7,13 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 use serde_json::{json, Value as JsonValue};
-use anyhow::{Context, Result as AnyhowResult, bail};
+use anyhow::Result as AnyhowResult;
 
-use scribe_backend::{
-    models::{
-        chronicle_event::ChronicleEvent,
-        ecs::{Entity, EcsComponent, GameTime, TimeMode},
-    },
-    services::{
-        HybridQueryService, HybridQuery, HybridQueryType, HybridQueryOptions, HybridQueryResult,
+use scribe_backend::services::{
+        HybridQueryService, HybridQuery, HybridQueryType, HybridQueryOptions,
         EcsEntityManager,
-        ecs_enhanced_rag_service::{EntityStateSnapshot, RelationshipContext},
-    },
-    errors::AppError,
-};
+    };
 
 /// Validation results for pipeline integrity
 #[derive(Debug, Clone)]

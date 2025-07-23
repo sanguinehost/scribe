@@ -1,13 +1,10 @@
 // Test to reproduce and fix the SillyTavern lorebook import issue
 
 use serde_json::json;
-use std::sync::Arc;
 use scribe_backend::{
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
     models::lorebook_dtos::SillyTavernImportPayload,
 };
-use secrecy::SecretBox;
-use axum_login::AuthSession;
 
 #[tokio::test]
 async fn test_sillytavern_lorebook_import_deserialization() {

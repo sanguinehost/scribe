@@ -6,7 +6,6 @@ use scribe_backend::test_helpers::*;
 use scribe_backend::auth::session_dek::SessionDek;
 use uuid::Uuid;
 use std::sync::Arc;
-use secrecy::SecretBox;
 
 // A01: Broken Access Control Tests
 

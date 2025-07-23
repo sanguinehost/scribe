@@ -13,7 +13,6 @@ use chrono::Utc;
 
 use scribe_backend::{
     models::{chronicle_event::ChronicleEvent},
-    services::agentic::event_significance_structured_output::*,
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user, create_test_hybrid_query_service},
     errors::AppError,
 };

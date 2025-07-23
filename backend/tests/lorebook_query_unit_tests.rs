@@ -1,8 +1,4 @@
-use scribe_backend::services::character_generation::{
-    field_generator::FieldGenerator,
-    types::*,
-};
-use std::sync::Arc;
+use scribe_backend::services::character_generation::types::*;
 use uuid::Uuid;
 
 // Mock implementations would go here for isolated unit testing

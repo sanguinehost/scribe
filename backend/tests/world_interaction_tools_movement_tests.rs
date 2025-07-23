@@ -231,21 +231,21 @@ mod world_interaction_movement_tests {
             "user_id": user.id.to_string(),
             "entity_id": system_id.to_string()
         })).await.expect("Failed to get system");
-        assert_eq!(system_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
+        assert_eq!(system_result.get("parent_entity_id").unwrap().as_str().unwrap(), galaxy_id.to_string());
         
         // Verify planet is in system
         let planet_result = get_tool.execute(&json!({
             "user_id": user.id.to_string(),
             "entity_id": planet_id.to_string()
         })).await.expect("Failed to get planet");
-        assert_eq!(planet_result.get("parent_entity_id").unwrap(), system_id.to_string());
+        assert_eq!(planet_result.get("parent_entity_id").unwrap().as_str().unwrap(), system_id.to_string());
         
         // Verify city is on planet
         let city_result = get_tool.execute(&json!({
             "user_id": user.id.to_string(),
             "entity_id": city_id.to_string()
         })).await.expect("Failed to get city");
-        assert_eq!(city_result.get("parent_entity_id").unwrap(), planet_id.to_string());
+        assert_eq!(city_result.get("parent_entity_id").unwrap().as_str().unwrap(), planet_id.to_string());
 
         // Create a second room in the building
         let create_tool = CreateEntityTool::new(entity_manager.clone());
@@ -325,20 +325,20 @@ mod world_interaction_movement_tests {
             "user_id": user.id.to_string(),
             "entity_id": system_id.to_string()
         })).await.expect("Failed to get system");
-        assert_eq!(system_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
+        assert_eq!(system_result.get("parent_entity_id").unwrap().as_str().unwrap(), galaxy_id.to_string());
         
         let planet_result = get_tool.execute(&json!({
             "user_id": user.id.to_string(),
             "entity_id": planet_id.to_string()
         })).await.expect("Failed to get planet");
-        assert_eq!(planet_result.get("parent_entity_id").unwrap(), system_id.to_string());
+        assert_eq!(planet_result.get("parent_entity_id").unwrap().as_str().unwrap(), system_id.to_string());
         
         // Verify building is in city
         let building_result = get_tool.execute(&json!({
             "user_id": user.id.to_string(),
             "entity_id": building_id.to_string()
         })).await.expect("Failed to get building");
-        assert_eq!(building_result.get("parent_entity_id").unwrap(), city_id.to_string());
+        assert_eq!(building_result.get("parent_entity_id").unwrap().as_str().unwrap(), city_id.to_string());
 
         // Create character in the room
         let (character_id, _, _) = create_test_entities(entity_manager.clone(), user.id, room_id).await;
@@ -379,7 +379,7 @@ mod world_interaction_movement_tests {
             "user_id": user.id.to_string(),
             "entity_id": system1_id.to_string()
         })).await.expect("Failed to get system1");
-        assert_eq!(system1_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
+        assert_eq!(system1_result.get("parent_entity_id").unwrap().as_str().unwrap(), galaxy_id.to_string());
 
         // Create second system and planet
         let create_tool = CreateEntityTool::new(entity_manager.clone());
@@ -457,7 +457,7 @@ mod world_interaction_movement_tests {
             "user_id": user.id.to_string(),
             "entity_id": planet_id.to_string()
         })).await.expect("Failed to get planet");
-        assert_eq!(planet_result.get("parent_entity_id").unwrap(), system_id.to_string());
+        assert_eq!(planet_result.get("parent_entity_id").unwrap().as_str().unwrap(), system_id.to_string());
         assert_eq!(planet_result.get("scale").unwrap(), "Planetary");
         
         // Verify room is in building (Intimate scale)
@@ -465,7 +465,7 @@ mod world_interaction_movement_tests {
             "user_id": user.id.to_string(),
             "entity_id": room_id.to_string()
         })).await.expect("Failed to get room");
-        assert_eq!(room_result.get("parent_entity_id").unwrap(), building_id.to_string());
+        assert_eq!(room_result.get("parent_entity_id").unwrap().as_str().unwrap(), building_id.to_string());
         assert_eq!(room_result.get("scale").unwrap(), "Intimate");
         
         // Verify city is on planet
@@ -473,14 +473,14 @@ mod world_interaction_movement_tests {
             "user_id": user.id.to_string(),
             "entity_id": city_id.to_string()
         })).await.expect("Failed to get city");
-        assert_eq!(city_result.get("parent_entity_id").unwrap(), planet_id.to_string());
+        assert_eq!(city_result.get("parent_entity_id").unwrap().as_str().unwrap(), planet_id.to_string());
         
         // Verify galaxy contains system
         let system_result = get_tool.execute(&json!({
             "user_id": user.id.to_string(),
             "entity_id": system_id.to_string()
         })).await.expect("Failed to get system");
-        assert_eq!(system_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
+        assert_eq!(system_result.get("parent_entity_id").unwrap().as_str().unwrap(), galaxy_id.to_string());
 
         // Try to move planet into a room (should fail)
         let move_tool = MoveEntityTool::new(entity_manager.clone());
@@ -525,20 +525,20 @@ mod world_interaction_movement_tests {
             "user_id": user.id.to_string(),
             "entity_id": system_id.to_string()
         })).await.expect("Failed to get system");
-        assert_eq!(system_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
+        assert_eq!(system_result.get("parent_entity_id").unwrap().as_str().unwrap(), galaxy_id.to_string());
         
         let planet_result = get_tool.execute(&json!({
             "user_id": user.id.to_string(),
             "entity_id": planet_id.to_string()
         })).await.expect("Failed to get planet");
-        assert_eq!(planet_result.get("parent_entity_id").unwrap(), system_id.to_string());
+        assert_eq!(planet_result.get("parent_entity_id").unwrap().as_str().unwrap(), system_id.to_string());
         
         // Verify room is in building (to understand scale relationships)
         let room_result = get_tool.execute(&json!({
             "user_id": user.id.to_string(),
             "entity_id": room_id.to_string()
         })).await.expect("Failed to get room");
-        assert_eq!(room_result.get("parent_entity_id").unwrap(), building_id.to_string());
+        assert_eq!(room_result.get("parent_entity_id").unwrap().as_str().unwrap(), building_id.to_string());
 
         // Try to move building into another building (should fail)
         let create_tool = CreateEntityTool::new(entity_manager.clone());

@@ -4,7 +4,6 @@
 //
 // Tests the structured output schema and validation logic
 
-use std::collections::HashMap;
 use scribe_backend::services::agentic::event_significance_structured_output::*;
 use serde_json::json;
 

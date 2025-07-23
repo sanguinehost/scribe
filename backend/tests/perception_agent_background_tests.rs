@@ -1,21 +1,16 @@
 use scribe_backend::services::agentic::perception_agent::{PerceptionAgent, PerceptionResult};
 use scribe_backend::services::context_assembly_engine::{
     EnrichedContext, SpatialContext, TemporalContext, SpatialLocation,
-    RiskAssessment, RiskLevel, ValidatedPlan, SubGoal, PlanValidationStatus,
-    PlanStep, EnvironmentalFactor, SpatialRelationship, TemporalEvent,
-    ScheduledEvent, ValidationCheck
+    RiskAssessment, RiskLevel, ValidatedPlan, SubGoal, PlanValidationStatus
 };
 use scribe_backend::services::planning::{PlanningService, PlanValidatorService};
 use scribe_backend::test_helpers::*;
 use scribe_backend::auth::session_dek::SessionDek;
-use scribe_backend::errors::AppError;
 use uuid::Uuid;
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 use chrono::Utc;
 use tokio::time::{sleep, Duration, timeout};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{info, debug};
 
 // Shared state for testing background operations
 struct TestState {

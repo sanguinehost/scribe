@@ -4,9 +4,7 @@
 //! as outlined in Task 2.4 of the Living World Implementation Roadmap.
 
 use scribe_backend::{
-    models::ecs::{
-        RelationshipsComponent, Relationship, NameComponent, SalienceTier,
-    },
+    models::ecs::RelationshipsComponent,
     services::{
         EcsEntityManager, EntityManagerConfig,
         agentic::tools::{
@@ -15,11 +13,10 @@ use scribe_backend::{
         },
     },
     test_helpers::spawn_app,
-    errors::AppError,
     PgPool,
 };
-use serde_json::{json, Value as JsonValue};
-use std::{sync::Arc, collections::HashMap};
+use serde_json::json;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Create EcsEntityManager with Redis for testing

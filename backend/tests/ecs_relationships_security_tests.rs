@@ -13,13 +13,11 @@ use scribe_backend::{
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
     models::{
         ecs_diesel::{NewEcsEntityRelationship, EcsEntityRelationship, NewEcsEntity},
-        ecs::{CausalComponent, RelationshipCategory},
+        ecs::CausalComponent,
         chronicle_event::{ChronicleEvent, NewChronicleEvent, EventSource},
     },
     services::chronicle_ecs_translator::ChronicleEcsTranslator,
-    errors::AppError,
     schema::{ecs_entity_relationships, ecs_entities, chronicle_events},
-    PgPool,
 };
 use diesel::prelude::*;
 

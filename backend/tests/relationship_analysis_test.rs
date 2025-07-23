@@ -5,16 +5,12 @@
 // Tests the relationship analysis feature that uses AI models (Flash/Flash-Lite)
 // to analyze relationships between entities instead of hardcoded logic.
 
-use std::sync::Arc;
 use uuid::Uuid;
-use serde_json::json;
 use chrono::Utc;
 
 use scribe_backend::{
     models::chronicle_event::ChronicleEvent,
     services::agentic::relationship_analysis_structured_output::*,
-    test_helpers::{spawn_app, TestDataGuard, create_test_hybrid_query_service},
-    errors::AppError,
 };
 
 // Helper function to create test ChronicleEvent objects
@@ -167,7 +163,7 @@ async fn test_relationship_analysis_schema_generation() {
 #[tokio::test]
 async fn test_relationship_analysis_validation_failures() {
     // Test validation with invalid metrics
-    let mut invalid_output = RelationshipAnalysisOutput {
+    let invalid_output = RelationshipAnalysisOutput {
         relationship_analysis: RelationshipAnalysisDetails {
             relationship_type: "test".to_string(),
             current_status: "test".to_string(),

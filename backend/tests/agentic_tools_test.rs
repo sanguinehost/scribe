@@ -2,9 +2,8 @@ use scribe_backend::services::agentic::{
     AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
     ScribeTool,
 };
-use scribe_backend::test_helpers::{MockAiClient, TestDataGuard};
+use scribe_backend::test_helpers::TestDataGuard;
 use serde_json::json;
-use std::sync::Arc;
 
 #[tokio::test]
 async fn test_analyze_text_significance_basic() {

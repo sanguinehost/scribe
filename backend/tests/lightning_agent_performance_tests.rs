@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use chrono::Utc;
-use tokio::sync::Semaphore;
 
 /// Helper to create test Lightning Agent
 async fn create_test_lightning_agent(app: &TestApp) -> LightningAgent {

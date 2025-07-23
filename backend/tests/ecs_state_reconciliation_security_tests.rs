@@ -6,10 +6,7 @@ use scribe_backend::{
         },
         EcsEntityManager,
     },
-    models::{
-        ecs::*,
-        chats::{ChatMessage, MessageRole},
-    },
+    models::chats::{ChatMessage, MessageRole},
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
     PgPool,
 };

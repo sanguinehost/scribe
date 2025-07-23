@@ -1,12 +1,11 @@
 use scribe_backend::services::context_assembly_engine::*;
 use scribe_backend::services::intent_detection_service::*;
 use scribe_backend::services::query_strategy_planner::*;
-use scribe_backend::test_helpers::{spawn_app, create_test_hybrid_query_service, MockAiClient};
+use scribe_backend::test_helpers::{spawn_app, create_test_hybrid_query_service};
 use scribe_backend::services::EncryptionService;
-use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
-use chrono::{Duration, Utc};
+use chrono::Duration;
 
 /// Test the new EnrichedContext generation with Flash integration
 #[tokio::test]

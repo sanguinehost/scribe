@@ -6,7 +6,6 @@ use scribe_backend::{
         },
         EcsEntityManager,
     },
-    models::ecs::{},
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
     PgPool,
 };

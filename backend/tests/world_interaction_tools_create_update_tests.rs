@@ -4,18 +4,11 @@
 //! ensuring they correctly interact with the ECS system and enforce proper security.
 
 use scribe_backend::{
-    models::ecs::{
-        SpatialScale, SpatialArchetypeComponent,
-        ParentLinkComponent, NameComponent, TemporalComponent,
-        PositionComponent, RelationshipsComponent, Relationship,
-        SalienceTier, SalienceComponent,
-    },
     services::{
-        EcsEntityManager, EntityManagerConfig, ComponentUpdate, ComponentOperation,
+        EcsEntityManager, EntityManagerConfig,
         agentic::tools::{ScribeTool, ToolError},
     },
     test_helpers::{spawn_app, db::create_test_user},
-    errors::AppError,
     PgPool,
 };
 use serde_json::{json, Value as JsonValue};
@@ -44,7 +37,7 @@ async fn create_entity_manager(db_pool: PgPool) -> Arc<EcsEntityManager> {
 }
 
 use scribe_backend::services::agentic::tools::world_interaction_tools::{
-    CreateEntityTool, UpdateEntityTool, FindEntityTool,
+    CreateEntityTool, UpdateEntityTool,
 };
 
 #[cfg(test)]

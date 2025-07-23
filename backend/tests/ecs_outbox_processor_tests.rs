@@ -13,14 +13,12 @@ use scribe_backend::{
     },
     services::{
         EcsOutboxProcessor, OutboxProcessorConfig, OutboxEventHandler,
-        LoggingEventHandler, EventProcessingResult,
     },
     schema::{users, ecs_outbox},
     test_helpers::{TestDataGuard, TestApp, spawn_app_permissive_rate_limiting},
     errors::AppError,
 };
 use uuid::Uuid;
-use chrono::Utc;
 use serde_json::json;
 use secrecy::{SecretString, ExposeSecret};
 use diesel::{RunQueryDsl, prelude::*};

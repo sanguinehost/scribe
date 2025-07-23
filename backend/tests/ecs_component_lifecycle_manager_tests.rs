@@ -7,21 +7,16 @@
 use std::sync::Arc;
 use anyhow::Result as AnyhowResult;
 use scribe_backend::{
-    models::{
-        users::{NewUser, UserRole, AccountStatus, UserDbQuery},
-        ecs_diesel::{EcsEntity, NewEcsEntity, EcsComponent, NewEcsComponent},
-    },
+    models::users::{NewUser, UserRole, AccountStatus, UserDbQuery},
     services::{
         EcsEntityManager, EntityManagerConfig,
-        EcsComponentLifecycleManager, ComponentLifecycleConfig, ComponentValidationRule,
+        EcsComponentLifecycleManager, ComponentLifecycleConfig,
         ComponentUpdate, ComponentOperation,
     },
-    schema::{users, ecs_entities, ecs_components},
+    schema::users,
     test_helpers::{TestDataGuard, TestApp, spawn_app_permissive_rate_limiting},
-    errors::AppError,
 };
 use uuid::Uuid;
-use chrono::Utc;
 use serde_json::json;
 use secrecy::{SecretString, ExposeSecret};
 use diesel::{RunQueryDsl, prelude::*};

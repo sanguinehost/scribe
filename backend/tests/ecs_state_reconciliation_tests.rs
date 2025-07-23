@@ -19,9 +19,8 @@ use scribe_backend::{
     models::{
         ecs::*,
         chats::{ChatMessage, MessageRole},
-        users::User as DbUser,
     },
-    test_helpers::{spawn_app_permissive_rate_limiting, TestDataGuard, MockAiClient, db::create_test_user, ai_tool_testing::create_test_user_id},
+    test_helpers::{spawn_app_permissive_rate_limiting, TestDataGuard, MockAiClient, db::create_test_user},
     PgPool,
 };
 use std::sync::Arc;

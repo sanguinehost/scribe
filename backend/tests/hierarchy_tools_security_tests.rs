@@ -6,19 +6,19 @@
 
 use scribe_backend::{
     models::ecs::{
-        SpatialScale, PositionType, HierarchicalCoordinates, SpatialArchetypeComponent,
-        ParentLinkComponent, NameComponent, TemporalComponent, Component,
+        SpatialScale, SpatialArchetypeComponent,
+        ParentLinkComponent, NameComponent, TemporalComponent,
     },
     services::{
         EcsEntityManager, EntityManagerConfig,
-        agentic::tools::{ScribeTool, ToolError, ToolParams},
+        agentic::tools::{ScribeTool, ToolError},
         agentic::tools::hierarchy_tools::{PromoteEntityHierarchyTool, GetEntityHierarchyTool},
     },
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
     errors::AppError,
     PgPool,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 use futures;

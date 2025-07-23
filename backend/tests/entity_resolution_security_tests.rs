@@ -34,18 +34,16 @@ use scribe_backend::{
         embeddings::EmbeddingPipelineServiceTrait,
     },
     schema::users,
-    test_helpers::{TestDataGuard, TestApp, spawn_app_permissive_rate_limiting, db::create_test_user},
+    test_helpers::{TestDataGuard, TestApp, spawn_app_permissive_rate_limiting},
     state::{AppState, AppStateServices},
     auth::user_store::Backend,
     llm::EmbeddingClient,
     config::NarrativeFeatureFlags,
     text_processing::chunking::{ChunkConfig, ChunkingMetric},
-    errors::AppError,
 };
 use uuid::Uuid;
-use chrono::Utc;
 use serde_json::json;
-use secrecy::{SecretString, ExposeSecret};
+use secrecy::ExposeSecret;
 use diesel::{RunQueryDsl, prelude::*};
 use bcrypt;
 use tokio::time::{timeout, Duration};

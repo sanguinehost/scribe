@@ -13,7 +13,6 @@ use scribe_backend::{
     models::{
         chronicle::{PlayerChronicle, CreateChronicleRequest, UpdateChronicleRequest, PlayerChronicleWithCounts},
         chronicle_event::{ChronicleEvent, CreateEventRequest, EventSource},
-        chats::{Chat, ChatMode, MessageRole, DbInsertableChatMessage},
     },
     test_helpers::{self, TestDataGuard, TestApp},
     schema,

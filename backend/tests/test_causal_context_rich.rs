@@ -5,9 +5,6 @@ use scribe_backend::{
         query_strategy_planner::QueryStrategyPlanner,
         agentic::entity_resolution_tool::EntityResolutionTool,
         EncryptionService,
-        context_assembly_engine::{
-            CausalContext, CausalChain, CausalEvent, PotentialConsequence, HistoricalPrecedent,
-        },
     },
     models::characters::CharacterMetadata,
     test_helpers::{MockAiClient, spawn_app_with_options, db::create_test_user, test_constants},

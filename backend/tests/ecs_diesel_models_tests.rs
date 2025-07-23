@@ -4,7 +4,7 @@ use diesel::prelude::*;
 use scribe_backend::models::ecs_diesel::{
     EcsEntity, NewEcsEntity, UpdateEcsEntity,
     EcsComponent, NewEcsComponent, UpdateEcsComponent,
-    EcsEntityRelationship, NewEcsEntityRelationship, UpdateEcsEntityRelationship,
+    EcsEntityRelationship, NewEcsEntityRelationship,
 };
 use scribe_backend::schema::{ecs_entities, ecs_components, ecs_entity_relationships};
 use scribe_backend::test_helpers::spawn_app;

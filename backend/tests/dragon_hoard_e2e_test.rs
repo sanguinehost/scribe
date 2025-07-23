@@ -23,8 +23,7 @@ use scribe_backend::{
     models::{
         chronicle::{CreateChronicleRequest, PlayerChronicle},
         chronicle_event::{CreateEventRequest, EventSource, ChronicleEvent},
-        chats::{ChatMessage, MessageRole},
-        narrative_ontology::{EventActor, ActorRole, NarrativeAction},
+        narrative_ontology::{EventActor, ActorRole},
     },
     services::{
         ChronicleService,
@@ -33,14 +32,12 @@ use scribe_backend::{
         EcsEntityManager, EntityManagerConfig,
         EcsEnhancedRagService, EcsEnhancedRagConfig,
         EcsGracefulDegradation, GracefulDegradationConfig,
-        ecs_enhanced_rag_service::{EntityStateSnapshot, RelationshipContext},
-        chronicle_event_listener::{ChronicleEventNotification, ChronicleNotificationType, ChronicleEventListener},
+        chronicle_event_listener::{ChronicleEventNotification, ChronicleNotificationType},
         chronicle_ecs_translator::ChronicleEcsTranslator,
         embeddings::EmbeddingPipelineService,
     },
     text_processing::chunking::ChunkConfig,
     test_helpers::{spawn_app_permissive_rate_limiting, TestDataGuard, TestApp},
-    errors::AppError,
     auth::session_dek::SessionDek,
 };
 

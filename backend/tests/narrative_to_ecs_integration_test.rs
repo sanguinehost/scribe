@@ -9,18 +9,15 @@ use uuid::Uuid;
 use chrono::Utc;
 
 use scribe_backend::{
-    models::{
-        chronicle::{CreateChronicleRequest},
-        chats::{ChatMessage, MessageRole},
-    },
+    models::chronicle::{CreateChronicleRequest},
     services::{
         ChronicleService,
         agentic::{
             narrative_tools::CreateChronicleEventTool,
-            tools::{ScribeTool, ToolParams},
-            entity_resolution_tool::{EntityResolutionTool, ProcessingMode},
+            tools::ScribeTool,
+            entity_resolution_tool::EntityResolutionTool,
         },
-        chronicle_ecs_translator::{ChronicleEcsTranslator, TranslationResult},
+        chronicle_ecs_translator::ChronicleEcsTranslator,
         agentic_orchestrator::AgenticOrchestrator,
         agentic_state_update_service::AgenticStateUpdateService,
     },
@@ -442,7 +439,7 @@ async fn test_complete_narrative_to_ecs_flow() {
     ).await;
     
     assert!(translation_result.is_ok(), "Translation failed: {:?}", translation_result);
-    let mut translation = translation_result.unwrap();
+    let translation = translation_result.unwrap();
     
     println!("✓ Translation completed:");
     println!("  - Created {} entities", translation.entities_created.len());

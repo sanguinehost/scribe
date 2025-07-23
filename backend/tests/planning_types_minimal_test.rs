@@ -1,6 +1,5 @@
 // Minimal test to verify planning types work
 use scribe_backend::services::planning::types::*;
-use serde_json::json;
 
 #[test]
 fn test_planning_types_compile() {

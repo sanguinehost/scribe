@@ -5,22 +5,17 @@
 
 use std::sync::Arc;
 use std::collections::HashMap;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
-use serde_json::{json, Value as JsonValue};
-use anyhow::{Context, Result as AnyhowResult};
+use anyhow::Result as AnyhowResult;
 
-use scribe_backend::{
-    services::{
-        HybridQueryService, HybridQuery, HybridQueryResult,
+use scribe_backend::services::{
+        HybridQueryService,
         EcsEntityManager,
-        hybrid_query_router::{RoutingMetrics, QueryRoutingStrategy, FailureMode},
-    },
-    models::chronicle_event::ChronicleEvent,
-    errors::AppError,
-};
+        hybrid_query_router::RoutingMetrics,
+    };
 
 /// Comprehensive metrics for the ECS + RAG pipeline
 #[derive(Debug, Clone, Serialize, Deserialize)]

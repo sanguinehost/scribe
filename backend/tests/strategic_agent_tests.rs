@@ -1,13 +1,11 @@
 use scribe_backend::services::agentic::strategic_agent::StrategicAgent;
 use scribe_backend::services::context_assembly_engine::{
-    StrategicDirective, PlotSignificance, WorldImpactLevel
+    PlotSignificance, WorldImpactLevel
 };
 use scribe_backend::test_helpers::*;
 use scribe_backend::auth::session_dek::SessionDek;
-use scribe_backend::errors::AppError;
 use scribe_backend::models::chats::{ChatMessageForClient, MessageRole};
 use uuid::Uuid;
-use std::sync::Arc;
 use chrono::Utc;
 
 // Helper function to create test chat history

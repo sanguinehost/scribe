@@ -5,7 +5,7 @@
 // and supports both absolute coordinates (for gods/spaceships) and relative coordinates (for mortals)
 
 use scribe_backend::models::ecs::{
-    Component, PositionComponent, SpatialScale, SpatialArchetypeComponent,
+    Component, PositionComponent, SpatialScale,
     ParentLinkComponent, EnhancedPositionComponent, PositionType, HierarchicalCoordinates,
 };
 use serde_json::json;

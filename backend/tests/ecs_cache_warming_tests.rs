@@ -12,15 +12,14 @@ use anyhow::Result as AnyhowResult;
 use scribe_backend::{
     models::{
         users::{NewUser, UserRole, AccountStatus, UserDbQuery},
-        ecs_diesel::{NewEcsEntity, NewEcsComponent, EcsEntity, EcsComponent},
+        ecs_diesel::{NewEcsEntity, NewEcsComponent, EcsEntity},
     },
     services::{
         EcsEntityManager, EntityManagerConfig, ComponentQuery, EntityQueryOptions,
-        ComponentSort, SortDirection, CacheWarmingResult, CacheWarmingRecommendations,
+        ComponentSort, SortDirection,
     },
     schema::{users, ecs_entities, ecs_components},
     test_helpers::{TestDataGuard, TestApp, spawn_app_permissive_rate_limiting},
-    errors::AppError,
 };
 use uuid::Uuid;
 use serde_json::json;
@@ -28,7 +27,7 @@ use secrecy::ExposeSecret;
 use diesel::{RunQueryDsl, prelude::*};
 use bcrypt;
 use redis::AsyncCommands;
-use tracing::{info, debug};
+use tracing::info;
 
 /// Helper to create a test user
 async fn create_cache_test_user(test_app: &TestApp) -> AnyhowResult<Uuid> {

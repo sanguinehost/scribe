@@ -4,7 +4,6 @@
 // Tests the entity extraction fallback when AI doesn't provide actors
 
 use std::sync::Arc;
-use uuid::Uuid;
 
 use scribe_backend::{
     models::chronicle::CreateChronicleRequest,

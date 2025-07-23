@@ -13,7 +13,7 @@ use scribe_backend::{
     },
     services::{
         EcsEntityManager, 
-        ecs_entity_manager::{ComponentQuery, EntityQueryResult},
+        ecs_entity_manager::ComponentQuery,
     },
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
     errors::AppError,

@@ -1,6 +1,6 @@
 use scribe_backend::services::agentic_orchestrator::*;
 use scribe_backend::services::{AgenticStateUpdateService, EcsEntityManager};
-use scribe_backend::test_helpers::{MockAiClient, MockQdrantClientService};
+use scribe_backend::test_helpers::MockAiClient;
 use std::sync::Arc;
 use uuid::Uuid;
 

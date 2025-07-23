@@ -1,13 +1,9 @@
 use scribe_backend::services::context_assembly_engine::*;
 use scribe_backend::services::intent_detection_service::*;
-use scribe_backend::services::query_strategy_planner::*;
-use scribe_backend::test_helpers::{spawn_app, create_test_hybrid_query_service, MockAiClient};
+use scribe_backend::test_helpers::{spawn_app, create_test_hybrid_query_service};
 use scribe_backend::services::EncryptionService;
-use scribe_backend::errors::AppError;
-use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
-use chrono::{Duration, Utc};
 
 /// OWASP A01: Broken Access Control
 /// Test that context assembly engine properly validates user ownership of entities

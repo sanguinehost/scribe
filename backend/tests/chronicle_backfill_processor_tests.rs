@@ -11,8 +11,7 @@ use scribe_backend::{
         chronicle::{CreateChronicleRequest},
         chronicle_event::{CreateEventRequest, EventSource},
         users::{NewUser, UserRole, AccountStatus, UserDbQuery},
-        narrative_ontology::{EventActor, ActorRole, EventValence, ValenceType, NarrativeAction},
-        ecs_diesel::{EcsEntity, EcsComponent},
+        narrative_ontology::{EventActor, ActorRole, EventValence, ValenceType},
     },
     services::{
         chronicle_service::ChronicleService,
@@ -24,7 +23,7 @@ use scribe_backend::{
 use uuid::Uuid;
 use chrono::Utc;
 use serde_json::json;
-use secrecy::{SecretString, ExposeSecret};
+use secrecy::ExposeSecret;
 use diesel::{RunQueryDsl, prelude::*};
 use bcrypt;
 

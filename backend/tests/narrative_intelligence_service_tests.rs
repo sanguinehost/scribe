@@ -4,22 +4,16 @@
 //! with Flash/Flash-Lite integration following Epic 1, Task 1.0.1
 
 use chrono::Utc;
-use serde_json::{json, Value};
-use std::sync::Arc;
 use uuid::Uuid;
-use secrecy::{SecretBox, SecretString, ExposeSecret};
+use secrecy::{SecretBox, ExposeSecret};
 
 use scribe_backend::{
     auth::session_dek::SessionDek,
-    errors::AppError,
     models::chats::{ChatMessage, MessageRole},
-    services::{
-        narrative_intelligence_service::{
-            NarrativeIntelligenceService, NarrativeProcessingConfig, NarrativeProcessingResult,
-            BatchEventData, EventDataToInsert
+    services::narrative_intelligence_service::{
+            NarrativeIntelligenceService, NarrativeProcessingConfig
         },
-    },
-    test_helpers::{TestDataGuard, MockAiClient, TestApp},
+    test_helpers::TestDataGuard,
 };
 
 /// Test the basic Flash-integrated service creation

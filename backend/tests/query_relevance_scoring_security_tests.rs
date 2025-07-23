@@ -4,9 +4,8 @@ use chrono::Utc;
 use serde_json::json;
 use scribe_backend::{
     test_helpers::{spawn_app, TestDataGuard, create_test_hybrid_query_service},
-    services::hybrid_query_service::{HybridQueryService, HybridQuery, HybridQueryType, HybridQueryOptions, HybridQueryConfig},
+    services::hybrid_query_service::{HybridQuery, HybridQueryType, HybridQueryOptions},
     models::chronicle_event::{NewChronicleEvent, EventSource},
-    llm::AiClient,
     errors::AppError,
 };
 

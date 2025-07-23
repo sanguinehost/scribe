@@ -465,14 +465,6 @@ impl ChronicleBackfillProcessor {
 mod tests {
     use super::*;
 
-    fn create_mock_processor() -> ChronicleBackfillProcessor {
-        // Create a minimal mock processor for unit tests that don't need real DB access
-        let config = BackfillConfig::default();
-        let manager = deadpool_diesel::postgres::Manager::new("postgresql://test", deadpool_diesel::Runtime::Tokio1);
-        let pool = deadpool_diesel::postgres::Pool::builder(manager).build().unwrap();
-        ChronicleBackfillProcessor::with_config(Arc::new(pool), config)
-    }
-
     #[test]
     fn test_backfill_config_defaults() {
         let config = BackfillConfig::default();

@@ -1,27 +1,20 @@
 use scribe_backend::services::agentic::perception_agent::PerceptionAgent;
-use scribe_backend::services::agentic::tactical_agent::TacticalAgent;
 use scribe_backend::services::context_assembly_engine::{
     EnrichedContext, EntityContext, SpatialContext, TemporalContext,
     StrategicDirective, EmotionalState, SpatialLocation, RiskAssessment,
     RiskLevel, PlotSignificance, WorldImpactLevel, ValidatedPlan,
-    SubGoal, PlanValidationStatus, PlanStep, ContextRequirement,
-    EntityRelationship, RecentAction, EnvironmentalFactor,
-    SpatialRelationship, TemporalEvent, ScheduledEvent,
-    ValidationCheck, ValidationCheckType, ValidationStatus, ValidationSeverity
+    SubGoal, PlanValidationStatus, PlanStep
 };
 use scribe_backend::services::planning::{PlanningService, PlanValidatorService};
-use scribe_backend::services::planning::types::{Plan, ActionName};
 use scribe_backend::test_helpers::{*, db::create_test_user};
 use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::errors::AppError;
-use scribe_backend::models::chats::{NewChat, ChatMessage as DbChatMessage};
-use scribe_backend::models::users::{NewUser, User, UserRole, AccountStatus};
 use uuid::Uuid;
 use std::sync::Arc;
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use tokio::time::{sleep, Duration};
-use tracing::{info, debug};
+use tracing::info;
 
 // Helper to create a full app state with all agents
 async fn create_app_with_agents(app: &TestApp) -> Arc<PerceptionAgent> {

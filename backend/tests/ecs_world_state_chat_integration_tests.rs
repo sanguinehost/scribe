@@ -15,15 +15,14 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
-use chrono::{Utc, Duration};
+use chrono::Utc;
 use diesel::prelude::*;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
 
 use scribe_backend::{
-    config::NarrativeFeatureFlags,
     models::{
         characters::Character as DbCharacter,
         chats::{ApiChatMessage, Chat as DbChat, GenerateChatRequest, NewChat},
@@ -34,8 +33,7 @@ use scribe_backend::{
         users::User,
     },
     schema::{characters, chat_sessions, chronicle_events, ecs_entities, ecs_components, player_chronicles},
-    test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestDataGuard, db::create_test_user},
-    services::world_model_service::WorldModelOptions,
+    test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestDataGuard},
 };
 
 /// Test context for ECS world state integration tests

@@ -6,9 +6,6 @@ use scribe_backend::{
         },
         EcsEntityManager,
     },
-    models::ecs::{
-        SalienceTier,
-    },
     test_helpers::{spawn_app, TestDataGuard},
     PgPool,
 };

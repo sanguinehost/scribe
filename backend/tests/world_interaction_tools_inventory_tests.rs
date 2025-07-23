@@ -4,9 +4,7 @@
 //! as outlined in Task 2.4 of the Living World Implementation Roadmap.
 
 use scribe_backend::{
-    models::ecs::{
-        InventoryComponent, InventoryItem, NameComponent, SalienceTier,
-    },
+    models::ecs::InventoryComponent,
     services::{
         EcsEntityManager, EntityManagerConfig,
         agentic::tools::{
@@ -15,10 +13,9 @@ use scribe_backend::{
         },
     },
     test_helpers::spawn_app,
-    errors::AppError,
     PgPool,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 

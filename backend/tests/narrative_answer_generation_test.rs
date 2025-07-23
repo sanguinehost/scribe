@@ -5,16 +5,12 @@
 // Tests the narrative answer generation feature that uses AI models (Flash/Flash-Lite)
 // to generate natural language responses instead of hardcoded templates.
 
-use std::sync::Arc;
 use uuid::Uuid;
-use serde_json::json;
 use chrono::Utc;
 
 use scribe_backend::{
     models::chronicle_event::ChronicleEvent,
     services::agentic::narrative_answer_generation_structured_output::*,
-    test_helpers::{spawn_app, TestDataGuard, create_test_hybrid_query_service},
-    errors::AppError,
 };
 
 // Helper function to create test ChronicleEvent objects
