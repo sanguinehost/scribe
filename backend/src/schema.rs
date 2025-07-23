@@ -701,6 +701,27 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    world_enrichment_tasks (id) {
+        id -> Uuid,
+        session_id -> Uuid,
+        user_id -> Uuid,
+        status -> Int4,
+        priority -> Int4,
+        encrypted_payload -> Bytea,
+        payload_nonce -> Bytea,
+        encrypted_error -> Nullable<Bytea>,
+        error_nonce -> Nullable<Bytea>,
+        retry_count -> Int4,
+        worker_id -> Nullable<Uuid>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
 diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(character_lorebooks -> characters (character_id));
 diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
@@ -746,6 +767,7 @@ diesel::joinable!(player_chronicles -> users (user_id));
 diesel::joinable!(user_assets -> user_personas (persona_id));
 diesel::joinable!(user_assets -> users (user_id));
 diesel::joinable!(user_settings -> users (user_id));
+diesel::joinable!(world_enrichment_tasks -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     character_assets,
@@ -776,4 +798,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_personas,
     user_settings,
     users,
+    world_enrichment_tasks,
 );

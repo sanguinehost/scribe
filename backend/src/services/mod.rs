@@ -56,6 +56,7 @@ pub mod agentic_metrics;
 pub mod agentic_state_update_service;
 pub mod agentic_state_update_structured_output;
 pub mod agent_prompt_templates;
+pub mod task_queue;
 
 // Re-export agentic components
 pub use agentic::{
@@ -154,4 +155,8 @@ pub use agentic_state_update_service::{
 };
 pub use agent_prompt_templates::{
     AgentPromptTemplates, PromptTemplateVersion, TemplateValidationResult
+};
+pub use task_queue::{
+    TaskQueueService, EnrichmentTask, NewEnrichmentTask, EnrichmentTaskPayload,
+    CreateTaskRequest, DequeuedTask, TaskStatus, TaskPriority, TaskUpdate
 };
