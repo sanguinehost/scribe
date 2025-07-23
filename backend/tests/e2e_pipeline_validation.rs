@@ -84,6 +84,7 @@ impl Default for PipelinePerformanceMetrics {
 /// Comprehensive pipeline validator
 pub struct PipelineValidator {
     hybrid_service: Arc<HybridQueryService>,
+    #[allow(dead_code)]
     entity_manager: Option<Arc<EcsEntityManager>>,
     performance_thresholds: PerformanceThresholds,
 }
@@ -250,7 +251,7 @@ impl PipelineValidator {
         scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut details = String::new();
+        let mut _details = String::new();
         let mut metrics = HashMap::new();
 
         println!("  📖 Validating chronicle event processing...");
@@ -300,10 +301,10 @@ impl PipelineValidator {
     async fn validate_ecs_state_updates(
         &self,
         user_id: Uuid,
-        scenarios: &[PipelineTestScenario],
+        _scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut details = String::new();
+        let mut _details = String::new();
         let mut metrics = HashMap::new();
         let mut passed = true;
 
@@ -364,7 +365,7 @@ impl PipelineValidator {
         scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut details = String::new();
+        let mut _details = String::new();
         let mut metrics = HashMap::new();
 
         println!("  🔄 Validating hybrid query integration...");
@@ -428,7 +429,7 @@ impl PipelineValidator {
         _scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut details = String::new();
+        let mut _details = String::new();
         let mut metrics = HashMap::new();
 
         println!("  ⚡ Validating performance contracts...");
@@ -489,7 +490,7 @@ impl PipelineValidator {
         _scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut details = String::new();
+        let mut _details = String::new();
         let mut metrics = HashMap::new();
 
         println!("  🔒 Validating data consistency...");

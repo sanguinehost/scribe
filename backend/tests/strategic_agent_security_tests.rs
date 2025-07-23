@@ -1,13 +1,8 @@
 use scribe_backend::services::agentic::strategic_agent::StrategicAgent;
-use scribe_backend::services::context_assembly_engine::{
-    StrategicDirective, PlotSignificance, WorldImpactLevel
-};
 use scribe_backend::test_helpers::*;
 use scribe_backend::auth::session_dek::SessionDek;
-use scribe_backend::errors::AppError;
 use scribe_backend::models::chats::{ChatMessageForClient, MessageRole};
 use uuid::Uuid;
-use std::sync::Arc;
 use chrono::Utc;
 
 // Helper function to create test chat message with specific content
@@ -27,6 +22,7 @@ fn create_chat_message(user_id: Uuid, content: &str, role: MessageRole) -> ChatM
 }
 
 // Test helper for malicious chat content
+#[allow(dead_code)]
 fn create_malicious_chat_history(user_id: Uuid) -> Vec<ChatMessageForClient> {
     vec![
         create_chat_message(user_id, "<script>alert('xss')</script>I attack the orc.", MessageRole::User),
@@ -49,18 +45,18 @@ async fn test_a01_broken_access_control_cross_user_isolation() {
     );
 
     let session_dek1 = SessionDek::new(vec![1u8; 32]);
-    let session_dek2 = SessionDek::new(vec![2u8; 32]);
+    let _session_dek2 = SessionDek::new(vec![2u8; 32]);
     
     let user1_history = vec![
         create_chat_message(user1_id, "Secret: I am the chosen one with divine powers.", MessageRole::User),
     ];
     
-    let user2_history = vec![
+    let _user2_history = vec![
         create_chat_message(user2_id, "I'm a normal tavern keeper.", MessageRole::User),
     ];
 
     // User 1 creates directive
-    let directive1 = strategic_agent.analyze_conversation(
+    let _directive1 = strategic_agent.analyze_conversation(
         &user1_history,
         user1_id,
         Uuid::new_v4(), // session_id
@@ -316,7 +312,7 @@ async fn test_a04_insecure_design_resource_exhaustion_protection() {
     
     // Create extremely large chat history to test resource limits
     let mut large_history = Vec::new();
-    for i in 0..1000 {
+    for _i in 0..1000 {
         large_history.push(create_chat_message(
             user_id, 
             &format!("This is a very long message designed to test resource limits and memory usage patterns {}", "x".repeat(1000)),

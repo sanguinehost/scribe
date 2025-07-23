@@ -351,7 +351,7 @@ async fn test_persona_context_missing_in_events() {
             ));
             let _world_model_service = {
                 let hybrid_query_service = {
-                    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                    let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                     let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                     let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                         Default::default(),
@@ -397,7 +397,7 @@ async fn test_persona_context_missing_in_events() {
             };
             let _agentic_orchestrator = {
                 let hybrid_query_service = {
-                    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                    let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                     let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                     let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                         Default::default(),
@@ -442,7 +442,7 @@ async fn test_persona_context_missing_in_events() {
                     test_app.config.advanced_model.clone(),
                 ))
             };
-            let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
+            let _agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager.clone(),
                 test_app.config.advanced_model.clone(),
@@ -468,7 +468,7 @@ async fn test_persona_context_missing_in_events() {
                 ));
                 let _world_model_service = {
                     let hybrid_query_service = {
-                        let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                        let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                         let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                         let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                             Default::default(),
@@ -514,7 +514,7 @@ async fn test_persona_context_missing_in_events() {
                 };
                 let _agentic_orchestrator = {
                     let hybrid_query_service = {
-                        let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                        let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                         let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                         let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                             Default::default(),
@@ -559,7 +559,7 @@ async fn test_persona_context_missing_in_events() {
                         test_app.config.advanced_model.clone(),
                     ))
                 };
-                let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
+                let _agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                     test_app.ai_client.clone(),
                     entity_manager.clone(),
                     test_app.config.advanced_model.clone(),
@@ -583,7 +583,7 @@ async fn test_persona_context_missing_in_events() {
                 None,
             ));
             let hybrid_query_service = {
-                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                 let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                     Default::default(),
@@ -634,7 +634,7 @@ async fn test_persona_context_missing_in_events() {
                 None,
             ));
             let hybrid_query_service = {
-                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                 let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                     Default::default(),
@@ -671,7 +671,7 @@ async fn test_persona_context_missing_in_events() {
             let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
                 test_app.db_pool.clone(),
             ));
-            let world_model_service = Arc::new(WorldModelService::new(
+            let _world_model_service = Arc::new(WorldModelService::new(
                 Arc::new(test_app.db_pool.clone()),
                 entity_manager.clone(),
                 hybrid_query_service,
@@ -690,7 +690,7 @@ async fn test_persona_context_missing_in_events() {
                 None,
             ));
             let hybrid_query_service = {
-                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                 let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                     Default::default(),
@@ -727,7 +727,7 @@ async fn test_persona_context_missing_in_events() {
             let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
                 test_app.db_pool.clone(),
             ));
-            let world_model_service = Arc::new(WorldModelService::new(
+            let _world_model_service = Arc::new(WorldModelService::new(
                 Arc::new(test_app.db_pool.clone()),
                 entity_manager.clone(),
                 hybrid_query_service.clone(),
@@ -983,7 +983,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
             ));
             let _world_model_service = {
                 let hybrid_query_service = {
-                    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                    let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                     let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                     let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                         Default::default(),
@@ -1029,7 +1029,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
             };
             let _agentic_orchestrator = {
                 let hybrid_query_service = {
-                    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                    let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                     let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                     let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                         Default::default(),
@@ -1063,7 +1063,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                         degradation,
                     ))
                 };
-                let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
+                let _agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                     test_app.ai_client.clone(),
                     entity_manager.clone(),
                     test_app.config.advanced_model.clone(),
@@ -1079,7 +1079,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                     test_app.config.advanced_model.clone(),
                 ))
             };
-            let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
+            let _agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                 test_app.ai_client.clone(),
                 entity_manager.clone(),
                 test_app.config.advanced_model.clone(),
@@ -1105,7 +1105,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 ));
                 let _world_model_service = {
                     let hybrid_query_service = {
-                        let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                        let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                         let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                         let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                             Default::default(),
@@ -1151,7 +1151,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 };
                 let _agentic_orchestrator = {
                     let hybrid_query_service = {
-                        let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                        let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                         let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                         let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                             Default::default(),
@@ -1185,7 +1185,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                             degradation,
                         ))
                     };
-                    let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
+                    let _agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                         test_app.ai_client.clone(),
                         entity_manager.clone(),
                         test_app.config.advanced_model.clone(),
@@ -1201,7 +1201,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                         test_app.config.advanced_model.clone(),
                     ))
                 };
-                let agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
+                let _agentic_state_update_service = Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
                     test_app.ai_client.clone(),
                     entity_manager.clone(),
                     test_app.config.advanced_model.clone(),
@@ -1225,7 +1225,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 None,
             ));
             let hybrid_query_service = {
-                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                 let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                     Default::default(),
@@ -1276,7 +1276,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 None,
             ));
             let hybrid_query_service = {
-                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                 let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                     Default::default(),
@@ -1313,7 +1313,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
             let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
                 test_app.db_pool.clone(),
             ));
-            let world_model_service = Arc::new(WorldModelService::new(
+            let _world_model_service = Arc::new(WorldModelService::new(
                 Arc::new(test_app.db_pool.clone()),
                 entity_manager.clone(),
                 hybrid_query_service.clone(),
@@ -1332,7 +1332,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
                 None,
             ));
             let hybrid_query_service = {
-                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                 let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                     Default::default(),
@@ -1369,7 +1369,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
             let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
                 test_app.db_pool.clone(),
             ));
-            let world_model_service = Arc::new(WorldModelService::new(
+            let _world_model_service = Arc::new(WorldModelService::new(
                 Arc::new(test_app.db_pool.clone()),
                 entity_manager.clone(),
                 hybrid_query_service.clone(),
@@ -1455,7 +1455,7 @@ async fn test_triage_tool_persona_awareness() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
-    let (user_id, _session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
+    let (_user_id, _session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
     
     // Test messages with persona-specific content
     let messages = json!({

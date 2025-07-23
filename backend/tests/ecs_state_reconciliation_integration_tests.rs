@@ -266,7 +266,7 @@ async fn test_end_to_end_component_repair_workflow() {
     let character_id = character_result.entity.id;
     
     // Create chat context suggesting character has established reputation
-    let chat_context = vec![
+    let _chat_context = vec![
         ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
@@ -419,7 +419,7 @@ async fn test_end_to_end_relationship_repair_workflow() {
     let bob_id = bob_result.entity.id;
     
     // Create chat context suggesting they know each other
-    let chat_context = vec![
+    let _chat_context = vec![
         ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
@@ -553,7 +553,7 @@ async fn test_repair_confidence_threshold_enforcement() {
             ("Salience".to_string(), json!({"tier": "Core", "scale_context": "character", "expiry": null})),
         ],
     ).await.unwrap();
-    let character_id = character_result.entity.id;
+    let _character_id = character_result.entity.id;
     
     // Create ambiguous chat context
     let ambiguous_context = vec![
@@ -619,7 +619,7 @@ async fn test_repair_confidence_threshold_enforcement() {
     
     // Should not generate analysis for ambiguous/low-confidence scenarios
     // (In mock implementation, this might still return something, but real Flash would be more discerning)
-    if let Some(analysis) = analysis_result {
+    if let Some(_analysis) = analysis_result {
         // If analysis is generated, confidence should be checked before repair
         // Confidence threshold should be >= 0.7 for repairs
         println!("Analysis generated with confidence but should be filtered by confidence threshold");
@@ -661,7 +661,7 @@ async fn test_repair_system_handles_multiple_inconsistencies() {
     let location_id = location_result.entity.id;
     
     // Rich chat context suggesting multiple state changes
-    let complex_context = vec![
+    let _complex_context = vec![
         ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),

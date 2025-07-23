@@ -4,25 +4,18 @@
 // Security-focused tests for ECS implementation based on OWASP Top 10
 // These tests verify that the ECS system properly handles security concerns
 
-use std::sync::Arc;
 use anyhow::Result as AnyhowResult;
 use scribe_backend::{
     models::{
         users::{NewUser, UserRole, AccountStatus, UserDbQuery},
-        ecs_diesel::{EcsEntity, NewEcsEntity, EcsComponent, NewEcsComponent, EcsEntityRelationship, NewEcsEntityRelationship},
+        ecs_diesel::{EcsEntity, NewEcsEntity, EcsComponent, NewEcsComponent},
     },
-    services::{
-        chronicle_ecs_translator::ChronicleEcsTranslator,
-        event_valence_processor::EventValenceProcessor,
-    },
-    schema::{users, ecs_entities, ecs_components, ecs_entity_relationships},
+    schema::{users, ecs_entities, ecs_components},
     test_helpers::{TestDataGuard, TestApp, spawn_app_permissive_rate_limiting},
-    errors::AppError,
 };
 use uuid::Uuid;
-use chrono::Utc;
 use serde_json::json;
-use secrecy::{SecretString, ExposeSecret};
+use secrecy::ExposeSecret;
 use diesel::{RunQueryDsl, prelude::*};
 use bcrypt;
 
@@ -140,8 +133,8 @@ async fn test_user_isolation_entities_not_cross_accessible() {
     let user2_id = user_ids[1];
     
     // Create entities for each user
-    let user1_entities = create_test_entities_for_user(&test_app, user1_id, 3).await.unwrap();
-    let user2_entities = create_test_entities_for_user(&test_app, user2_id, 3).await.unwrap();
+    let _user1_entities = create_test_entities_for_user(&test_app, user1_id, 3).await.unwrap();
+    let _user2_entities = create_test_entities_for_user(&test_app, user2_id, 3).await.unwrap();
     
     // Attempt to query user2's entities as user1 - should fail or return empty
     let conn = test_app.db_pool.get().await.unwrap();

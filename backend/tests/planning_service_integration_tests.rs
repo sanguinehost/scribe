@@ -16,8 +16,7 @@ use scribe_backend::{
         },
         EcsEntityManager,
         context_assembly_engine::{
-            EnrichedContext, SubGoal, ValidatedPlan, StrategicDirective, EntityContext, 
-            SpatialContext, TemporalContext, RiskAssessment, RiskLevel, PlanValidationStatus,
+            EnrichedContext, SubGoal, ValidatedPlan, EntityContext, RiskAssessment, RiskLevel, PlanValidationStatus,
         },
     },
     test_helpers::{spawn_app_permissive_rate_limiting, TestDataGuard, MockAiClient},
@@ -317,6 +316,7 @@ fn setup_mock_ai_for_invalid_plan(goal: &str, location_id: Uuid, character_id: U
 
 
 /// Helper to setup mock AI for plan repair
+#[allow(dead_code)]
 fn setup_mock_ai_for_repair(castle_id: Uuid, hero_id: Uuid, dragon_id: Uuid, village_id: Uuid) -> MockAiClient {
     let repair_json = json!({
         "goal": "Hero defeats the dragon",
@@ -551,6 +551,7 @@ fn setup_mock_ai_for_repair_scenario(sol_id: &Uuid, cantina_id: &Uuid, action_ty
 }
 
 /// Helper to setup mock AI for relationship scenario
+#[allow(dead_code)]
 fn setup_mock_ai_for_relationship_scenario(sol_id: &Uuid, borga_id: &Uuid) -> MockAiClient {
     let plan_json = json!({
         "goal": "Sol increases trust in Borga",
@@ -852,12 +853,12 @@ async fn test_planning_service_validator_integration() {
             assert!(valid_plan.original_plan.actions.len() >= 2); // Move + UpdateRelationship
             
             // Verify move action
-            let move_action = valid_plan.original_plan.actions.iter()
+            let _move_action = valid_plan.original_plan.actions.iter()
                 .find(|a| a.name == ActionName::MoveEntity)
                 .expect("Should have move action");
             
             // Verify relationship action
-            let relationship_action = valid_plan.original_plan.actions.iter()
+            let _relationship_action = valid_plan.original_plan.actions.iter()
                 .find(|a| a.name == ActionName::UpdateRelationship)
                 .expect("Should have relationship action");
         }
@@ -946,7 +947,7 @@ async fn test_invalid_plan_with_repair_workflow() {
     );
     
     // Create repair service with proper AI client for repair generation
-    let repair_service = scribe_backend::services::planning::PlanRepairService::new(
+    let _repair_service = scribe_backend::services::planning::PlanRepairService::new(
         entity_manager.clone(),
         Arc::new(MockAiClient::new_with_response(json!({
             "repair_actions": [{
@@ -1245,7 +1246,7 @@ async fn test_end_to_end_repair_pipeline() {
     let session_dek = SessionDek::new(vec![0u8; 32]);
 
     // Create scenario: Sol wants to greet his old friend Borga, but no relationship exists in ECS
-    let chamber_id = create_test_entity(&entity_manager, user_id, "Chamber", "Location").await;
+    let _chamber_id = create_test_entity(&entity_manager, user_id, "Chamber", "Location").await;
     let cantina_id = create_test_entity(&entity_manager, user_id, "Cantina", "Location").await;
     let sol_id = create_test_entity(&entity_manager, user_id, "Sol", "Character").await;
     let borga_id = create_test_entity(&entity_manager, user_id, "Borga", "Character").await;
@@ -1436,7 +1437,7 @@ async fn test_multi_turn_repair_persistence() {
 
     // Create entities
     let sol_id = create_test_entity(&entity_manager, user_id, "Sol", "Character").await;
-    let ship_id = create_test_entity(&entity_manager, user_id, "Millennium Falcon", "Vehicle").await;
+    let _ship_id = create_test_entity(&entity_manager, user_id, "Millennium Falcon", "Vehicle").await;
 
     // Turn 1: Sol should have a reputation component (narrative establishes it)
     let context_turn1 = vec![

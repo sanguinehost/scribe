@@ -87,7 +87,7 @@ async fn test_orchestrator_simple_query_end_to_end() {
     let db_pool = Arc::new(pool.clone());
     let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone(), Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()));
     
-    let test_qdrant_service = MockQdrantClientService::new();
+    let _test_qdrant_service = MockQdrantClientService::new();
     let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
@@ -220,7 +220,7 @@ async fn test_orchestrator_complex_query_with_chronicle() {
     let db_pool = Arc::new(pool.clone());
     let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone(), Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()));
     
-    let test_qdrant_service = MockQdrantClientService::new();
+    let _test_qdrant_service = MockQdrantClientService::new();
     let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
@@ -294,7 +294,7 @@ async fn test_orchestrator_error_handling_and_recovery() {
     let db_pool = Arc::new(pool.clone());
     let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone(), Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()));
     
-    let test_qdrant_service = MockQdrantClientService::new();
+    let _test_qdrant_service = MockQdrantClientService::new();
     let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
@@ -389,7 +389,7 @@ async fn test_orchestrator_metrics_collection() {
     let db_pool = Arc::new(pool.clone());
     let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone(), Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()));
     
-    let test_qdrant_service = MockQdrantClientService::new();
+    let _test_qdrant_service = MockQdrantClientService::new();
     let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
@@ -428,9 +428,9 @@ async fn test_orchestrator_metrics_collection() {
     assert!(aggregation_result.is_ok(), "Metrics aggregation should succeed");
     
     // Test token optimization insights
-    let insights = orchestrator.get_token_optimization_insights().await;
+    let _insights = orchestrator.get_token_optimization_insights().await;
     // Just verify the call succeeds - insights might have recommendations depending on data
-    assert!(insights.recommendations.len() >= 0); // Should return some recommendations or none
+    // Just verify the call succeeds - insights will have some recommendations
 }
 
 #[tokio::test]
@@ -488,7 +488,7 @@ async fn test_orchestrator_quality_modes() {
     let db_pool = Arc::new(pool.clone());
     let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone(), Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()));
     
-    let test_qdrant_service = MockQdrantClientService::new();
+    let _test_qdrant_service = MockQdrantClientService::new();
     let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(
@@ -601,7 +601,7 @@ async fn test_orchestrator_token_budget_constraints() {
     let db_pool = Arc::new(pool.clone());
     let hybrid_query_service = create_test_hybrid_query_service(ai_client.clone(), db_pool.clone(), Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()));
     
-    let test_qdrant_service = MockQdrantClientService::new();
+    let _test_qdrant_service = MockQdrantClientService::new();
     let agentic_state_update_service = Arc::new(AgenticStateUpdateService::new(
         ai_client.clone(),
         Arc::new(EcsEntityManager::new(

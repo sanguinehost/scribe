@@ -43,6 +43,7 @@ use scribe_backend::{
 
 /// Test framework for the Dragon's Hoard Adventure scenario
 pub struct DragonHoardScenario {
+    #[allow(dead_code)]
     app: TestApp,
     _guard: TestDataGuard,
     user_id: Uuid,
@@ -50,6 +51,7 @@ pub struct DragonHoardScenario {
     session_dek: SessionDek,
     hybrid_service: HybridQueryService,
     chronicle_service: ChronicleService,
+    #[allow(dead_code)]
     entity_manager: Arc<EcsEntityManager>,
     chronicle_ecs_translator: Arc<ChronicleEcsTranslator>,
     characters: HashMap<String, Uuid>,
@@ -175,7 +177,7 @@ impl DragonHoardScenario {
         let character_id = Uuid::new_v4();
         self.characters.insert(name.to_string(), character_id);
 
-        let event = self.chronicle_event(&format!(
+        let _event = self.chronicle_event(&format!(
             "{} appears in the world. {}",
             name, description
         )).await?;
@@ -191,7 +193,7 @@ impl DragonHoardScenario {
         let location_id = Uuid::new_v4();
         self.locations.insert(name.to_string(), location_id);
 
-        let event = self.chronicle_event(&format!(
+        let _event = self.chronicle_event(&format!(
             "The {} is established. {}",
             name, description
         )).await?;
@@ -207,7 +209,7 @@ impl DragonHoardScenario {
         let item_id = Uuid::new_v4();
         self.items.insert(name.to_string(), item_id);
 
-        let event = self.chronicle_event(&format!(
+        let _event = self.chronicle_event(&format!(
             "The {} exists in the world. {}",
             name, description
         )).await?;
@@ -699,7 +701,7 @@ async fn test_dragon_hoard_scenario_framework() -> AnyhowResult<()> {
         options: HybridQueryOptions::default(),
     };
     
-    let result = scenario.execute_hybrid_query(query).await?;
+    let _result = scenario.execute_hybrid_query(query).await?;
     // Should not error, even if empty results
     
     println!("✅ Dragon's Hoard scenario framework validation passed");

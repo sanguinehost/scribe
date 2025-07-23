@@ -96,7 +96,7 @@ async fn test_a01_broken_access_control_other_user_lorebook() {
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI, mock vector DB
     
     // Create two users
-    let user1 = test_helpers::db::create_test_user(
+    let _user1 = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "user1@example.com".to_string(),
         "password123".to_string(),
@@ -104,7 +104,7 @@ async fn test_a01_broken_access_control_other_user_lorebook() {
     .await
     .expect("Failed to create user1");
     
-    let user2 = test_helpers::db::create_test_user(
+    let _user2 = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "user2@example.com".to_string(),
         "password123".to_string(),
@@ -146,7 +146,7 @@ async fn test_a02_cryptographic_failures_sensitive_data_exposure() {
     // A02: Cryptographic Failures - Ensure generated content is encrypted
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI, mock vector DB
     
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser@example.com".to_string(),
         "password123".to_string(),
@@ -193,7 +193,7 @@ async fn test_a03_injection_sql_injection_protection() {
     // A03: Injection - Test SQL injection protection in user prompts
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI, mock vector DB
     
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser@example.com".to_string(),
         "password123".to_string(),
@@ -235,7 +235,7 @@ async fn test_a03_injection_prompt_injection_protection() {
     // A03: Injection - Test prompt injection protection
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI, mock vector DB
     
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser@example.com".to_string(),
         "password123".to_string(),
@@ -283,7 +283,7 @@ async fn test_a04_insecure_design_input_validation() {
     // A04: Insecure Design - Test proper input validation
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI, mock vector DB
     
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser@example.com".to_string(),
         "password123".to_string(),
@@ -354,7 +354,7 @@ async fn test_a05_security_misconfiguration_error_handling() {
     // A05: Security Misconfiguration - Test error handling doesn't leak info
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI, mock vector DB
     
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser@example.com".to_string(),
         "password123".to_string(),
@@ -431,7 +431,7 @@ async fn test_a08_data_integrity_input_sanitization() {
     // A08: Data Integrity - Test input sanitization and validation
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI, mock vector DB
     
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser@example.com".to_string(),
         "password123".to_string(),
@@ -514,7 +514,7 @@ async fn test_a10_ssrf_protection_lorebook_access() {
     // A10: SSRF - Test protection against server-side request forgery
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI, mock vector DB
     
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser@example.com".to_string(),
         "password123".to_string(),
@@ -553,7 +553,7 @@ async fn test_flash_lite_model_configuration() {
     // Test that the service uses the correct Flash-Lite model for agentic extraction
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI, mock vector DB
     
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser@example.com".to_string(),
         "password123".to_string(),

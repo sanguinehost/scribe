@@ -6,7 +6,6 @@
 // - Event chain building
 // - OWASP security compliance
 
-use std::sync::Arc;
 use uuid::Uuid;
 use serde_json::json;
 use chrono::Utc;
@@ -18,9 +17,7 @@ use scribe_backend::{
         ecs_diesel::{NewEcsEntityRelationship, NewEcsEntity},
         chronicle_event::{NewChronicleEvent, EventSource, ChronicleEvent},
     },
-    errors::AppError,
     schema::{ecs_entity_relationships, ecs_entities, chronicle_events},
-    PgPool,
 };
 use diesel::prelude::*;
 
@@ -105,8 +102,8 @@ async fn test_causal_component_generation() {
     }).await.unwrap().unwrap();
 
     // Create chronicle events for causal chain
-    let causing_event_id = Uuid::new_v4();
-    let caused_event_id = Uuid::new_v4();
+    let _causing_event_id = Uuid::new_v4();
+    let _caused_event_id = Uuid::new_v4();
     
     let causing_event = NewChronicleEvent {
         chronicle_id,
@@ -388,7 +385,7 @@ async fn test_causal_component_complex_chain() {
     assert!(component.causal_confidence > 0.0, "Should have positive confidence");
     
     // Should include events where entity is involved in causality
-    let all_entity_events = vec![event_a_result.id, event_b_result.id];
+    let _all_entity_events = vec![event_a_result.id, event_b_result.id];
     let component_events: std::collections::HashSet<_> = component.caused_by_events.iter()
         .chain(component.causes_events.iter())
         .collect();
@@ -566,7 +563,7 @@ async fn test_causal_component_data_integrity() {
     }).await.unwrap().unwrap();
 
     // Create chronicle event with integrity constraints
-    let event_id = Uuid::new_v4();
+    let _event_id = Uuid::new_v4();
     let event = NewChronicleEvent {
         chronicle_id,
         user_id: user.id,
@@ -622,7 +619,7 @@ async fn test_causal_component_data_integrity() {
     
     // Verify data integrity constraints
     assert!(component1.causal_confidence >= 0.0 && component1.causal_confidence <= 1.0, "Confidence should be in valid range");
-    assert!(component1.causal_chain_depth >= 0, "Chain depth should be non-negative");
+    // causal_chain_depth is unsigned, so it's always >= 0
     
     // Verify no data corruption in metadata
     for (key, value) in &component1.causal_metadata {

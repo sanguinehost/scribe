@@ -459,7 +459,7 @@ async fn test_ai_prompt_data_sanitization() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let user_ids = create_test_users(&test_app, 1).await.unwrap();
-    let user_id = user_ids[0];
+    let _user_id = user_ids[0];
     
     let entity_tool = create_entity_resolution_tool(&test_app).await;
     
@@ -556,7 +556,7 @@ async fn test_prompt_injection_resistance() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let user_ids = create_test_users(&test_app, 1).await.unwrap();
-    let user_id = user_ids[0];
+    let _user_id = user_ids[0];
     
     let entity_tool = create_entity_resolution_tool(&test_app).await;
     
@@ -671,7 +671,7 @@ async fn test_rate_limiting_on_ai_calls() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let user_ids = create_test_users(&test_app, 1).await.unwrap();
-    let user_id = user_ids[0];
+    let _user_id = user_ids[0];
     
     let entity_tool = create_entity_resolution_tool(&test_app).await;
     
@@ -726,7 +726,7 @@ async fn test_input_size_limits() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let user_ids = create_test_users(&test_app, 1).await.unwrap();
-    let user_id = user_ids[0];
+    let _user_id = user_ids[0];
     
     let entity_tool = create_entity_resolution_tool(&test_app).await;
     
@@ -772,7 +772,7 @@ async fn test_security_event_logging_in_entity_resolution() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let user_ids = create_test_users(&test_app, 1).await.unwrap();
-    let user_id = user_ids[0];
+    let _user_id = user_ids[0];
     
     let entity_tool = create_entity_resolution_tool(&test_app).await;
     
@@ -884,7 +884,7 @@ async fn test_ai_model_response_integrity() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
     
     let user_ids = create_test_users(&test_app, 1).await.unwrap();
-    let user_id = user_ids[0];
+    let _user_id = user_ids[0];
     
     let entity_tool = create_entity_resolution_tool(&test_app).await;
     
