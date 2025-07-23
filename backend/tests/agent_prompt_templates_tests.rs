@@ -1,5 +1,5 @@
 use scribe_backend::services::agent_prompt_templates::{
-    AgentPromptTemplates, PromptTemplateVersion, TemplateValidationResult
+    AgentPromptTemplates, PromptTemplateVersion
 };
 use scribe_backend::services::context_assembly_engine::{
     StrategicDirective, PlotSignificance, WorldImpactLevel, EnrichedContext,
@@ -7,10 +7,8 @@ use scribe_backend::services::context_assembly_engine::{
     PlanStep, RiskAssessment, RiskLevel, PlanValidationStatus
 };
 use scribe_backend::test_helpers::*;
-use scribe_backend::errors::AppError;
 use scribe_backend::models::chats::{ChatMessageForClient, MessageRole};
 use uuid::Uuid;
-use std::sync::Arc;
 use chrono::Utc;
 use std::collections::HashMap;
 
@@ -60,13 +58,8 @@ fn create_test_chat_history(user_id: Uuid) -> Vec<ChatMessageForClient> {
 // Helper function to create test enriched context
 fn create_test_enriched_context() -> EnrichedContext {
     use scribe_backend::services::context_assembly_engine::{
-        PlanStep, RiskAssessment, RiskLevel, ContextRequirement, SpatialLocation,
-        EnvironmentalFactor, SpatialRelationship, CausalChain, PotentialConsequence,
-        HistoricalPrecedent, TemporalEvent, ScheduledEvent, PlanValidationStatus,
-        ValidationCheck, AssembledContext, EntityRelationship, RecentAction,
-        EmotionalState
+        SpatialLocation, PotentialConsequence, TemporalEvent, RecentAction
     };
-    use chrono::Utc;
     
     EnrichedContext {
         strategic_directive: Some(create_test_strategic_directive()),
@@ -224,7 +217,7 @@ fn create_test_enriched_context() -> EnrichedContext {
 
 #[tokio::test]
 async fn test_strategic_agent_prompt_template_creation() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let chat_history = create_test_chat_history(user_id);
 
@@ -256,7 +249,7 @@ async fn test_strategic_agent_prompt_template_creation() {
 
 #[tokio::test]
 async fn test_strategic_agent_prompt_template_different_versions() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let chat_history = create_test_chat_history(user_id);
 
@@ -286,7 +279,7 @@ async fn test_strategic_agent_prompt_template_different_versions() {
 
 #[tokio::test]
 async fn test_roleplay_ai_prompt_template_creation() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let enriched_context = create_test_enriched_context();
     let current_message = "I prepare to defend myself against the dragon's attack.";
 
@@ -325,7 +318,7 @@ async fn test_roleplay_ai_prompt_template_creation() {
 
 #[tokio::test]
 async fn test_roleplay_ai_prompt_with_all_context_types() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let enriched_context = create_test_enriched_context();
     let current_message = "What should I do next?";
 
@@ -358,7 +351,7 @@ async fn test_roleplay_ai_prompt_with_all_context_types() {
 
 #[tokio::test]
 async fn test_prompt_template_validation_successful() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let chat_history = create_test_chat_history(user_id);
 
@@ -379,7 +372,7 @@ async fn test_prompt_template_validation_successful() {
 
 #[tokio::test]
 async fn test_prompt_template_validation_with_issues() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     
     // Test with problematic prompt content
     let bad_prompt = "This is a very short prompt without proper structure.";
@@ -394,7 +387,7 @@ async fn test_prompt_template_validation_with_issues() {
 
 #[tokio::test]
 async fn test_prompt_template_validation_missing_sections() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     
     // Test with incomplete prompt
     let incomplete_prompt = r#"
@@ -411,7 +404,7 @@ async fn test_prompt_template_validation_missing_sections() {
 
 #[tokio::test]
 async fn test_template_version_comparison() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let chat_history = create_test_chat_history(user_id);
 
@@ -442,7 +435,7 @@ async fn test_template_version_comparison() {
 
 #[tokio::test]
 async fn test_strategic_agent_prompt_security_validation() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     
     // Test with potentially malicious chat content
@@ -481,7 +474,7 @@ async fn test_strategic_agent_prompt_security_validation() {
 
 #[tokio::test]
 async fn test_roleplay_ai_prompt_with_minimal_context() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     
     // Create minimal enriched context
     let minimal_context = EnrichedContext {
@@ -552,7 +545,7 @@ async fn test_roleplay_ai_prompt_with_minimal_context() {
 
 #[tokio::test]
 async fn test_prompt_template_performance_metrics() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let chat_history = create_test_chat_history(user_id);
 
@@ -576,7 +569,7 @@ async fn test_prompt_template_performance_metrics() {
 
 #[tokio::test]
 async fn test_template_consistency_across_multiple_calls() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let chat_history = create_test_chat_history(user_id);
 
@@ -607,7 +600,7 @@ async fn test_template_consistency_across_multiple_calls() {
 
 #[tokio::test]
 async fn test_prompt_template_error_handling() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     
     // Test with empty chat history

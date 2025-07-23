@@ -499,6 +499,7 @@ struct QueryMetrics {
 
 /// Represents a state change extracted from an event
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct StateChange {
     /// The component type being changed
     component_type: String,
@@ -802,7 +803,7 @@ impl QueryMetrics {
         self.db_queries.fetch_add(1, Ordering::Relaxed);
     }
     
-    fn record_cache_hit(&self) {
+    fn _record_cache_hit(&self) {
         self.cache_hits.fetch_add(1, Ordering::Relaxed);
     }
     
@@ -857,7 +858,7 @@ pub struct HybridQueryService {
     /// Configuration for hybrid queries
     config: HybridQueryConfig,
     /// Feature flags for control
-    feature_flags: Arc<NarrativeFeatureFlags>,
+    _feature_flags: Arc<NarrativeFeatureFlags>,
     /// AI client for analysis
     ai_client: Arc<dyn AiClient>,
     /// Model to use for AI queries
@@ -867,19 +868,20 @@ pub struct HybridQueryService {
     /// Enhanced RAG service for semantic search
     rag_service: Arc<EcsEnhancedRagService>,
     /// Graceful degradation service
-    degradation_service: Arc<EcsGracefulDegradation>,
+    _degradation_service: Arc<EcsGracefulDegradation>,
     /// Intelligent query router for health-aware routing
     query_router: Arc<HybridQueryRouter>,
     /// Query execution metrics
     metrics: Arc<QueryMetrics>,
 }
 
+#[allow(dead_code)]
 impl HybridQueryService {
     /// Create a new hybrid query service with routing and failure contracts
     pub fn new(
         db_pool: Arc<PgPool>,
         config: HybridQueryConfig,
-        feature_flags: Arc<NarrativeFeatureFlags>,
+        _feature_flags: Arc<NarrativeFeatureFlags>,
         ai_client: Arc<dyn AiClient>,
         model: String,
         entity_manager: Arc<EcsEntityManager>,
@@ -903,12 +905,12 @@ impl HybridQueryService {
         Self {
             db_pool,
             config,
-            feature_flags,
+            _feature_flags,
             ai_client,
             model,
             entity_manager,
             rag_service,
-            degradation_service,
+            _degradation_service: degradation_service,
             query_router,
             metrics: Arc::new(QueryMetrics::new()),
         }
@@ -1964,6 +1966,7 @@ Focus on extracting information that is explicitly mentioned or strongly implied
     }
     
     /// Extract JSON from AI response (handles markdown, etc.)
+    #[allow(dead_code)]
     fn extract_json_from_ai_response(&self, response: &str) -> Result<String, AppError> {
         let cleaned = if response.trim().starts_with("```json") {
             let start = response.find("```json").unwrap() + 7;
@@ -1986,6 +1989,7 @@ Focus on extracting information that is explicitly mentioned or strongly implied
     }
     
     /// Recursively extract context from nested JSON
+    #[allow(dead_code)]
     fn extract_context_from_nested_json(
         &self,
         context: &mut ExtractedEntityContext,

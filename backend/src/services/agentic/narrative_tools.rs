@@ -137,14 +137,14 @@ RESPOND WITH JSON:
 /// Tool for creating chronicle events
 pub struct CreateChronicleEventTool {
     chronicle_service: Arc<ChronicleService>,
-    app_state: Arc<AppState>,
+    _app_state: Arc<AppState>, // TODO: Will be used for AI-enhanced event creation in future
 }
 
 impl CreateChronicleEventTool {
     pub fn new(chronicle_service: Arc<ChronicleService>, app_state: Arc<AppState>) -> Self {
         Self {
             chronicle_service,
-            app_state,
+            _app_state: app_state,
         }
     }
 }
@@ -248,15 +248,15 @@ impl ScribeTool for CreateChronicleEventTool {
 
 /// Tool for creating lorebook entries
 pub struct CreateLorebookEntryTool {
-    lorebook_service: Arc<LorebookService>,
-    app_state: Arc<AppState>,
+    _lorebook_service: Arc<LorebookService>, // TODO: Integrate with actual lorebook service once encryption is available
+    _app_state: Arc<AppState>, // TODO: Will be used for AI-enhanced entry generation
 }
 
 impl CreateLorebookEntryTool {
     pub fn new(lorebook_service: Arc<LorebookService>, app_state: Arc<AppState>) -> Self {
         Self {
-            lorebook_service,
-            app_state,
+            _lorebook_service: lorebook_service,
+            _app_state: app_state,
         }
     }
 }
@@ -783,14 +783,14 @@ RESPOND WITH JSON:
 
 /// Tool for updating lorebook entries
 pub struct UpdateLorebookEntryTool {
-    lorebook_service: Arc<LorebookService>,
+    _lorebook_service: Arc<LorebookService>, // TODO: Use for actual entry retrieval and update once available
     app_state: Arc<AppState>,
 }
 
 impl UpdateLorebookEntryTool {
     pub fn new(lorebook_service: Arc<LorebookService>, app_state: Arc<AppState>) -> Self {
         Self {
-            lorebook_service,
+            _lorebook_service: lorebook_service,
             app_state,
         }
     }

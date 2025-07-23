@@ -33,9 +33,9 @@ use diesel::prelude::*;
 /// Service for generating world model snapshots and LLM contexts
 pub struct WorldModelService {
     db_pool: Arc<PgPool>,
-    entity_manager: Arc<EcsEntityManager>,
-    query_service: Arc<HybridQueryService>,
-    chronicle_service: Arc<ChronicleService>,
+    _entity_manager: Arc<EcsEntityManager>, // TODO: Use for enhanced entity state queries
+    _query_service: Arc<HybridQueryService>, // TODO: Use for hybrid queries in world model generation
+    _chronicle_service: Arc<ChronicleService>, // TODO: Use for chronicle event context
 }
 
 impl WorldModelService {
@@ -48,9 +48,9 @@ impl WorldModelService {
     ) -> Self {
         Self {
             db_pool,
-            entity_manager,
-            query_service,
-            chronicle_service,
+            _entity_manager: entity_manager,
+            _query_service: query_service,
+            _chronicle_service: chronicle_service,
         }
     }
 

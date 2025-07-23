@@ -130,11 +130,13 @@ impl QueryStrategyPlanner {
     }
     
     /// Get all available query strategies as strings from the registry
+    #[allow(dead_code)]
     fn get_available_strategies() -> Vec<&'static str> {
         QueryRegistry::get_strategy_names()
     }
     
     /// Get all available query types as strings from the registry
+    #[allow(dead_code)]
     fn get_available_query_types() -> Vec<&'static str> {
         QueryRegistry::get_query_type_names()
     }

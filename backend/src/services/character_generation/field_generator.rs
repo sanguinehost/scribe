@@ -240,6 +240,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
     }
 
     /// Build user message with context and generation request, including lorebook context
+    #[allow(dead_code)] // Used through build_field_generation_user_message_with_debug
     async fn build_field_generation_user_message(&self, request: &FieldGenerationRequest, user_id: uuid::Uuid) -> Result<String, AppError> {
         let mut message = String::new();
 
@@ -639,6 +640,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
     }
 
     /// Query lorebook for relevant context based on the character generation request
+    #[allow(dead_code)] // Used through query_lorebook_context_with_debug
     async fn query_lorebook_context(&self, user_id: uuid::Uuid, lorebook_id: uuid::Uuid, request: &FieldGenerationRequest) -> Result<Option<String>, AppError> {
         // Build query text from character name and field content
         let mut query_parts = Vec::new();

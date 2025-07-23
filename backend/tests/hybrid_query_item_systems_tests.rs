@@ -2,29 +2,30 @@ use anyhow::Result;
 use std::sync::Arc;
 use uuid::Uuid;
 use serde_json::json;
-use chrono::{DateTime, Utc, Duration};
-use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
+use chrono::Utc;
+use scribe_backend::test_helpers::{spawn_app, TestDataGuard, db::create_test_user};
 use scribe_backend::services::hybrid_query_service::{HybridQuery, HybridQueryType, HybridQueryService};
-use scribe_backend::models::chronicle_event::ChronicleEvent;
+use scribe_backend::models::chronicle_event::{NewChronicleEvent, EventSource};
+use scribe_backend::models::chronicle::CreateChronicleRequest;
+use scribe_backend::services::chronicle_service::ChronicleService;
+use diesel::prelude::*;
+use scribe_backend::schema::chronicle_events;
 
-// Helper function to create test ChronicleEvent objects
+// Helper function to create test NewChronicleEvent objects
 fn create_test_chronicle_event(
     chronicle_id: Uuid,
     user_id: Uuid,
     event_type: &str,
     event_data: serde_json::Value,
-) -> ChronicleEvent {
+) -> NewChronicleEvent {
     let now = Utc::now();
-    ChronicleEvent {
-        id: Uuid::new_v4(),
+    NewChronicleEvent {
         chronicle_id,
         user_id,
         event_type: event_type.to_string(),
         summary: "Test event".to_string(),
-        source: "USER_ADDED".to_string(),
+        source: EventSource::UserAdded.to_string(),
         event_data: Some(event_data),
-        created_at: now,
-        updated_at: now,
         summary_encrypted: None,
         summary_nonce: None,
         timestamp_iso8601: now,
@@ -33,7 +34,7 @@ fn create_test_chronicle_event(
         context_data: None,
         causality: None,
         valence: None,
-        modality: None,
+        modality: Some("ACTUAL".to_string()),
         caused_by_event_id: None,
         causes_event_ids: None,
         sequence_number: 1,
@@ -45,8 +46,21 @@ async fn test_item_ownership_timeline_tracking() -> Result<()> {
     let app = spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(app.db_pool.clone());
     
-    let user_id = Uuid::new_v4();
-    let chronicle_id = Uuid::new_v4();
+    // Create test user
+    let user = create_test_user(&app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await?;
+    let user_id = user.id;
+    
+    // Create chronicle
+    let chronicle_service = ChronicleService::new(app.db_pool.clone());
+    let chronicle = chronicle_service.create_chronicle(
+        user_id,
+        CreateChronicleRequest {
+            name: "Test Chronicle".to_string(),
+            description: Some("Test chronicle for item systems".to_string()),
+        },
+    ).await?;
+    let chronicle_id = chronicle.id;
+    
     let sword_id = Uuid::new_v4();
     let alice_id = Uuid::new_v4();
     let bob_id = Uuid::new_v4();
@@ -98,6 +112,15 @@ async fn test_item_ownership_timeline_tracking() -> Result<()> {
         })
     );
     
+    // Insert events into database
+    let conn = app.db_pool.get().await?;
+    conn.interact(move |conn| -> Result<(), diesel::result::Error> {
+        diesel::insert_into(chronicle_events::table)
+            .values(&vec![event1, event2])
+            .execute(conn)?;
+        Ok(())
+    }).await??;
+    
     let service = HybridQueryService::new(
         Arc::new(app.db_pool.clone()),
         Default::default(),
@@ -137,8 +160,21 @@ async fn test_item_usage_pattern_tracking() -> Result<()> {
     let app = spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(app.db_pool.clone());
     
-    let user_id = Uuid::new_v4();
-    let chronicle_id = Uuid::new_v4();
+    // Create test user
+    let user = create_test_user(&app.db_pool, "test2@example.com".to_string(), "testuser2".to_string()).await?;
+    let user_id = user.id;
+    
+    // Create chronicle
+    let chronicle_service = ChronicleService::new(app.db_pool.clone());
+    let chronicle = chronicle_service.create_chronicle(
+        user_id,
+        CreateChronicleRequest {
+            name: "Test Chronicle 2".to_string(),
+            description: Some("Test chronicle for item usage".to_string()),
+        },
+    ).await?;
+    let chronicle_id = chronicle.id;
+    
     let potion_id = Uuid::new_v4();
     let character_id = Uuid::new_v4();
     
@@ -204,6 +240,15 @@ async fn test_item_usage_pattern_tracking() -> Result<()> {
         })
     );
     
+    // Insert events into database
+    let conn = app.db_pool.get().await?;
+    conn.interact(move |conn| -> Result<(), diesel::result::Error> {
+        diesel::insert_into(chronicle_events::table)
+            .values(&vec![event1, event2, event3])
+            .execute(conn)?;
+        Ok(())
+    }).await??;
+    
     let service = HybridQueryService::new(
         Arc::new(app.db_pool.clone()),
         Default::default(),
@@ -241,8 +286,21 @@ async fn test_item_location_tracking() -> Result<()> {
     let app = spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(app.db_pool.clone());
     
-    let user_id = Uuid::new_v4();
-    let chronicle_id = Uuid::new_v4();
+    // Create test user
+    let user = create_test_user(&app.db_pool, "test3@example.com".to_string(), "testuser3".to_string()).await?;
+    let user_id = user.id;
+    
+    // Create chronicle
+    let chronicle_service = ChronicleService::new(app.db_pool.clone());
+    let chronicle = chronicle_service.create_chronicle(
+        user_id,
+        CreateChronicleRequest {
+            name: "Test Chronicle 3".to_string(),
+            description: Some("Test chronicle for item location".to_string()),
+        },
+    ).await?;
+    let chronicle_id = chronicle.id;
+    
     let artifact_id = Uuid::new_v4();
     let location1_id = Uuid::new_v4();
     let location2_id = Uuid::new_v4();
@@ -290,6 +348,15 @@ async fn test_item_location_tracking() -> Result<()> {
         })
     );
     
+    // Insert events into database
+    let conn = app.db_pool.get().await?;
+    conn.interact(move |conn| -> Result<(), diesel::result::Error> {
+        diesel::insert_into(chronicle_events::table)
+            .values(&vec![event1, event2])
+            .execute(conn)?;
+        Ok(())
+    }).await??;
+    
     let service = HybridQueryService::new(
         Arc::new(app.db_pool.clone()),
         Default::default(),
@@ -326,8 +393,21 @@ async fn test_item_creation_and_destruction() -> Result<()> {
     let app = spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(app.db_pool.clone());
     
-    let user_id = Uuid::new_v4();
-    let chronicle_id = Uuid::new_v4();
+    // Create test user
+    let user = create_test_user(&app.db_pool, "test4@example.com".to_string(), "testuser4".to_string()).await?;
+    let user_id = user.id;
+    
+    // Create chronicle
+    let chronicle_service = ChronicleService::new(app.db_pool.clone());
+    let chronicle = chronicle_service.create_chronicle(
+        user_id,
+        CreateChronicleRequest {
+            name: "Test Chronicle 4".to_string(),
+            description: Some("Test chronicle for item creation/destruction".to_string()),
+        },
+    ).await?;
+    let chronicle_id = chronicle.id;
+    
     let item_id = Uuid::new_v4();
     let creator_id = Uuid::new_v4();
     
@@ -374,6 +454,15 @@ async fn test_item_creation_and_destruction() -> Result<()> {
         })
     );
     
+    // Insert events into database
+    let conn = app.db_pool.get().await?;
+    conn.interact(move |conn| -> Result<(), diesel::result::Error> {
+        diesel::insert_into(chronicle_events::table)
+            .values(&vec![event1, event2])
+            .execute(conn)?;
+        Ok(())
+    }).await??;
+    
     let service = HybridQueryService::new(
         Arc::new(app.db_pool.clone()),
         Default::default(),
@@ -410,8 +499,21 @@ async fn test_item_interaction_with_entities() -> Result<()> {
     let app = spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(app.db_pool.clone());
     
-    let user_id = Uuid::new_v4();
-    let chronicle_id = Uuid::new_v4();
+    // Create test user
+    let user = create_test_user(&app.db_pool, "test5@example.com".to_string(), "testuser5".to_string()).await?;
+    let user_id = user.id;
+    
+    // Create chronicle
+    let chronicle_service = ChronicleService::new(app.db_pool.clone());
+    let chronicle = chronicle_service.create_chronicle(
+        user_id,
+        CreateChronicleRequest {
+            name: "Test Chronicle 5".to_string(),
+            description: Some("Test chronicle for item interactions".to_string()),
+        },
+    ).await?;
+    let chronicle_id = chronicle.id;
+    
     let book_id = Uuid::new_v4();
     let reader1_id = Uuid::new_v4();
     let reader2_id = Uuid::new_v4();
@@ -463,6 +565,15 @@ async fn test_item_interaction_with_entities() -> Result<()> {
         })
     );
     
+    // Insert events into database
+    let conn = app.db_pool.get().await?;
+    conn.interact(move |conn| -> Result<(), diesel::result::Error> {
+        diesel::insert_into(chronicle_events::table)
+            .values(&vec![event1, event2])
+            .execute(conn)?;
+        Ok(())
+    }).await??;
+    
     let service = HybridQueryService::new(
         Arc::new(app.db_pool.clone()),
         Default::default(),
@@ -499,10 +610,23 @@ async fn test_complex_item_query_with_filters() -> Result<()> {
     let app = spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(app.db_pool.clone());
     
-    let user_id = Uuid::new_v4();
-    let chronicle_id = Uuid::new_v4();
+    // Create test user
+    let user = create_test_user(&app.db_pool, "test6@example.com".to_string(), "testuser6".to_string()).await?;
+    let user_id = user.id;
+    
+    // Create chronicle
+    let chronicle_service = ChronicleService::new(app.db_pool.clone());
+    let chronicle = chronicle_service.create_chronicle(
+        user_id,
+        CreateChronicleRequest {
+            name: "Test Chronicle 6".to_string(),
+            description: Some("Test chronicle for complex queries".to_string()),
+        },
+    ).await?;
+    let chronicle_id = chronicle.id;
     
     // Create multiple items with different properties
+    let mut events = Vec::new();
     for i in 0..5 {
         let item_id = Uuid::new_v4();
         let owner_id = Uuid::new_v4();
@@ -536,7 +660,17 @@ async fn test_complex_item_query_with_filters() -> Result<()> {
                 }]
             })
         );
+        events.push(event);
     }
+    
+    // Insert events into database
+    let conn = app.db_pool.get().await?;
+    conn.interact(move |conn| -> Result<(), diesel::result::Error> {
+        diesel::insert_into(chronicle_events::table)
+            .values(&events)
+            .execute(conn)?;
+        Ok(())
+    }).await??;
     
     let service = HybridQueryService::new(
         Arc::new(app.db_pool.clone()),

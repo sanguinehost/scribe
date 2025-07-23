@@ -125,7 +125,7 @@ fn create_malicious_enriched_context(malicious_content: &str) -> EnrichedContext
 
 #[tokio::test]
 async fn test_a01_broken_access_control_cross_user_messages() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let other_user_id = Uuid::new_v4();
     
@@ -175,7 +175,7 @@ async fn test_a01_broken_access_control_cross_user_messages() {
 
 #[tokio::test]
 async fn test_a02_cryptographic_failures_data_sanitization() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     
     // Test with content that might contain sensitive cryptographic data
@@ -202,7 +202,7 @@ async fn test_a02_cryptographic_failures_data_sanitization() {
 
 #[tokio::test]
 async fn test_a03_injection_script_injection_prevention() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     
     // Test various injection attack vectors
@@ -246,7 +246,7 @@ async fn test_a03_injection_script_injection_prevention() {
 
 #[tokio::test]
 async fn test_a04_insecure_design_template_structure_validation() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let history = vec![create_malicious_chat_message(user_id, "normal content")];
 
@@ -277,7 +277,7 @@ async fn test_a04_insecure_design_template_structure_validation() {
 
 #[tokio::test]
 async fn test_a05_security_misconfiguration_template_defaults() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let history = vec![create_malicious_chat_message(user_id, "test content")];
 
@@ -309,7 +309,7 @@ async fn test_a05_security_misconfiguration_template_defaults() {
 
 #[tokio::test]
 async fn test_a06_vulnerable_components_input_size_limits() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     
     // Test with excessively large input
@@ -335,7 +335,7 @@ async fn test_a06_vulnerable_components_input_size_limits() {
 
 #[tokio::test]
 async fn test_a07_identification_authentication_failures_user_validation() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     
     // Test with invalid user ID (all zeros - should not be allowed)
@@ -358,7 +358,7 @@ async fn test_a07_identification_authentication_failures_user_validation() {
 
 #[tokio::test]
 async fn test_a08_software_data_integrity_failures_template_consistency() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     let history = vec![create_malicious_chat_message(user_id, "consistency test")];
 
@@ -388,7 +388,7 @@ async fn test_a08_software_data_integrity_failures_template_consistency() {
 
 #[tokio::test]
 async fn test_a09_security_logging_monitoring_failures_audit_trail() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     
     // Test with potentially suspicious content
@@ -415,7 +415,7 @@ async fn test_a09_security_logging_monitoring_failures_audit_trail() {
 
 #[tokio::test]
 async fn test_a10_server_side_request_forgery_content_filtering() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     
     // Test with URLs and external references that could lead to SSRF
@@ -458,7 +458,7 @@ async fn test_a10_server_side_request_forgery_content_filtering() {
 
 #[tokio::test]
 async fn test_roleplay_ai_prompt_injection_resistance() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     
     // Test RoleplayAI template with malicious enriched context
     let malicious_context = create_malicious_enriched_context(
@@ -489,7 +489,7 @@ async fn test_roleplay_ai_prompt_injection_resistance() {
 
 #[tokio::test]
 async fn test_template_validation_comprehensive_security_check() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     
     // Test validation with various security issues
     let problematic_prompt = r#"
@@ -531,7 +531,7 @@ async fn test_template_validation_comprehensive_security_check() {
 
 #[tokio::test]
 async fn test_cross_template_security_consistency() {
-    let app = spawn_app(false, false, false).await;
+    let _app = spawn_app(false, false, false).await;
     let user_id = Uuid::new_v4();
     
     // Test that both Strategic and RoleplayAI templates handle security consistently

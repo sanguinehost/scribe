@@ -1,4 +1,5 @@
 #![cfg(test)]
+#![allow(deprecated)]
 // backend/tests/agent_runner_unit_tests.rs
 //
 // Unit tests for the NarrativeAgentRunner build_conversation_text method
@@ -48,7 +49,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
         redis_client: Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
         feature_flags: Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
         ecs_entity_manager: {
-            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
             Arc::new(scribe_backend::services::EcsEntityManager::new(
                 Arc::new(test_app.db_pool.clone()),
                 redis_client,
@@ -62,7 +63,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
             None,
         )),
         ecs_enhanced_rag_service: {
-            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
             let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
             let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
                 Arc::new(test_app.db_pool.clone()),
@@ -92,7 +93,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
             ))
         },
         hybrid_query_service: {
-            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+            let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
             let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
             let entity_manager = Arc::new(scribe_backend::services::EcsEntityManager::new(
                 Arc::new(test_app.db_pool.clone()),
@@ -137,9 +138,9 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
                 None,
             ));
-            let world_model_service = {
+            let _world_model_service = {
                 let hybrid_query_service = {
-                    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                    let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                     let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                     let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                         Default::default(),
@@ -185,7 +186,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
             };
             
             let hybrid_query_service = {
-                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                 let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                     Default::default(),
@@ -226,7 +227,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                 test_app.config.agentic_entity_resolution_model.clone(),
             ));
 
-            let agentic_orchestrator = Arc::new(scribe_backend::services::AgenticOrchestrator::new(
+            let _agentic_orchestrator = Arc::new(scribe_backend::services::AgenticOrchestrator::new(
                 test_app.ai_client.clone(),
                 hybrid_query_service.clone(),
                 Arc::new(test_app.db_pool.clone()),
@@ -272,7 +273,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                 None,
             ));
             let hybrid_query_service = {
-                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                 let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                     Default::default(),
@@ -340,7 +341,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
                 test_app.config.agentic_entity_resolution_model.clone(),
             ));
             let hybrid_query_service = {
-                let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+                let _redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
                 let feature_flags = Arc::new(scribe_backend::config::NarrativeFeatureFlags::default());
                 let degradation = Arc::new(scribe_backend::services::EcsGracefulDegradation::new(
                     Default::default(),
@@ -506,7 +507,7 @@ mod agent_runner_conversation_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create messages with different roles including System messages
-        let mut messages = vec![
+        let messages = vec![
             ChatMessage {
                 id: Uuid::new_v4(),
                 session_id: chat_session_id,

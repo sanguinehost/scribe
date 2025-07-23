@@ -218,7 +218,7 @@ pub struct EntityResolutionTool {
     app_state: Arc<AppState>,
     component_suggester: Arc<AiComponentSuggester>,
     semantic_matcher: Arc<AiSemanticMatcher>,
-    context_extractor: Arc<AiContextExtractor>,
+    _context_extractor: Arc<AiContextExtractor>, // TODO: Use for enhanced context analysis in resolution
 }
 
 impl EntityResolutionTool {
@@ -231,7 +231,7 @@ impl EntityResolutionTool {
             app_state,
             component_suggester,
             semantic_matcher,
-            context_extractor,
+            _context_extractor: context_extractor,
         }
     }
     

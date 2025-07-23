@@ -4,11 +4,6 @@
 //! based on OWASP Top 10 Web Application Security Risks (2021).
 
 use scribe_backend::{
-    models::ecs::{
-        SpatialScale, SpatialArchetypeComponent,
-        ParentLinkComponent, NameComponent, PositionComponent,
-        PositionType, HierarchicalCoordinates, SalienceTier,
-    },
     services::{
         EcsEntityManager, EntityManagerConfig,
         agentic::tools::{ScribeTool, ToolError},
@@ -17,7 +12,7 @@ use scribe_backend::{
     errors::AppError,
     PgPool,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -223,7 +218,7 @@ mod world_interaction_movement_security_tests {
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         
         let user = create_test_user(&_app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await.unwrap();
-        let (system_id, planet_id, location_id) = create_basic_hierarchy(entity_manager.clone(), user.id).await;
+        let (_system_id, planet_id, location_id) = create_basic_hierarchy(entity_manager.clone(), user.id).await;
         let entity_id = create_test_entity(entity_manager.clone(), user.id, location_id, "Test Entity").await;
 
         // Try to move entity with manipulated user_id in parameters
@@ -438,7 +433,7 @@ mod world_interaction_movement_security_tests {
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         
         let user = create_test_user(&_app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await.unwrap();
-        let (system_id, planet_id, location_id) = create_basic_hierarchy(entity_manager.clone(), user.id).await;
+        let (_system_id, planet_id, location_id) = create_basic_hierarchy(entity_manager.clone(), user.id).await;
         let entity_id = create_test_entity(entity_manager.clone(), user.id, location_id, "Test Entity").await;
 
         let move_tool = MoveEntityTool::new(entity_manager.clone());

@@ -196,17 +196,17 @@ pub struct RelationshipSnapshot {
 /// compatibility by falling back to chronicle-only RAG when ECS is unavailable.
 pub struct EcsEnhancedRagService {
     /// Database connection pool
-    db_pool: Arc<PgPool>,
+    _db_pool: Arc<PgPool>, // TODO: Use for direct DB queries when implementing search_chronicle_events
     /// Configuration for enhanced RAG behavior
-    config: EcsEnhancedRagConfig,
+    _config: EcsEnhancedRagConfig, // TODO: Use for configuring search behavior
     /// Feature flags for toggle control
-    feature_flags: Arc<NarrativeFeatureFlags>,
+    _feature_flags: Arc<NarrativeFeatureFlags>, // TODO: Use for feature toggling
     /// ECS entity manager for current state queries
-    entity_manager: Arc<EcsEntityManager>,
+    _entity_manager: Arc<EcsEntityManager>, // TODO: Use for entity state queries
     /// Graceful degradation service for fallback
     degradation_service: Arc<EcsGracefulDegradation>,
     /// Embedding service for semantic search
-    embedding_service: Arc<EmbeddingPipelineService>,
+    _embedding_service: Arc<EmbeddingPipelineService>, // TODO: Use for semantic search implementation
 }
 
 impl EcsEnhancedRagService {
@@ -220,12 +220,12 @@ impl EcsEnhancedRagService {
         embedding_service: Arc<EmbeddingPipelineService>,
     ) -> Self {
         Self {
-            db_pool,
-            config,
-            feature_flags,
-            entity_manager,
+            _db_pool: db_pool,
+            _config: config,
+            _feature_flags: feature_flags,
+            _entity_manager: entity_manager,
             degradation_service,
-            embedding_service,
+            _embedding_service: embedding_service,
         }
     }
 

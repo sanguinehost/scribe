@@ -557,20 +557,20 @@ impl EcsGracefulDegradation {
     /// Create a clone suitable for use in recovery monitoring task
     async fn clone_for_recovery(&self) -> EcsGracefulDegradationRecovery {
         EcsGracefulDegradationRecovery {
-            consistency_monitor: self.consistency_monitor.clone(),
+            _consistency_monitor: self.consistency_monitor.clone(),
             entity_manager: self.entity_manager.clone(),
             feature_flags: Arc::clone(&self.feature_flags),
-            config: self.config.clone(),
+            _config: self.config.clone(),
         }
     }
 }
 
 /// Lightweight recovery handler for background tasks
 struct EcsGracefulDegradationRecovery {
-    consistency_monitor: Option<Arc<ChronicleEcsConsistencyMonitor>>,
+    _consistency_monitor: Option<Arc<ChronicleEcsConsistencyMonitor>>, // TODO: Use for state reconstruction in recovery
     entity_manager: Option<Arc<EcsEntityManager>>,
     feature_flags: Arc<NarrativeFeatureFlags>,
-    config: GracefulDegradationConfig,
+    _config: GracefulDegradationConfig, // TODO: Use for recovery configuration
 }
 
 impl EcsGracefulDegradationRecovery {

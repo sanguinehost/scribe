@@ -434,6 +434,7 @@ impl PlanValidatorService {
     }
 
     /// Validate a single action with comprehensive precondition checking (original single-failure version)
+    #[allow(dead_code)]
     async fn validate_action(
         &self,
         action: &PlannedAction,

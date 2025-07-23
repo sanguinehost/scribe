@@ -20,9 +20,9 @@ use crate::{
 /// Service responsible for generating AI-driven plans
 pub struct PlanningService {
     ai_client: Arc<dyn AiClient>,
-    ecs_manager: Arc<EcsEntityManager>,
+    _ecs_manager: Arc<EcsEntityManager>, // TODO: Use for entity state queries in plan generation
     redis_client: Arc<redis::Client>,
-    db_pool: Arc<PgPool>,
+    _db_pool: Arc<PgPool>, // TODO: Use for chronicle event context in planning
     model: String,
 }
 
@@ -36,9 +36,9 @@ impl PlanningService {
     ) -> Self {
         Self {
             ai_client,
-            ecs_manager,
+            _ecs_manager: ecs_manager,
             redis_client,
-            db_pool,
+            _db_pool: db_pool,
             model,
         }
     }

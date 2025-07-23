@@ -30,7 +30,7 @@ use crate::{
 /// Natural Language Query Handler for basic intent detection and processing
 pub struct NLPQueryHandler {
     world_model_service: Arc<WorldModelService>,
-    query_service: Arc<HybridQueryService>,
+    _query_service: Arc<HybridQueryService>, // TODO: Use for executing queries based on detected intent
 }
 
 impl NLPQueryHandler {
@@ -41,7 +41,7 @@ impl NLPQueryHandler {
     ) -> Self {
         Self {
             world_model_service,
-            query_service,
+            _query_service: query_service,
         }
     }
 

@@ -4,20 +4,14 @@
 //! based on the OWASP Top 10 (2021) security risks.
 
 use scribe_backend::{
-    models::ecs::{
-        SpatialScale, SpatialArchetypeComponent,
-        ParentLinkComponent, NameComponent, TemporalComponent,
-        PositionComponent, RelationshipsComponent, Relationship,
-    },
     services::{
-        EcsEntityManager, EntityManagerConfig, ComponentUpdate, ComponentOperation,
+        EcsEntityManager, EntityManagerConfig,
         agentic::tools::{ScribeTool, ToolError},
     },
     test_helpers::{spawn_app, db::create_test_user},
-    errors::AppError,
     PgPool,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -71,7 +65,7 @@ mod world_interaction_create_update_security_tests {
         });
 
         let result = create_tool.execute(&params).await.expect("Creation failed");
-        let entity_id = result.get("entity_id").unwrap().as_str().unwrap();
+        let _entity_id = result.get("entity_id").unwrap().as_str().unwrap();
 
         // Verify user2 cannot see user1's entity
         let find_tool = FindEntityTool::new(entity_manager.clone());
@@ -196,7 +190,7 @@ mod world_interaction_create_update_security_tests {
             }
         });
 
-        let result = create_tool.execute(&params).await;
+        let _result = create_tool.execute(&params).await;
         // Should either succeed (with escaped values) or fail gracefully
         // But should NOT execute SQL injection
         
@@ -242,7 +236,7 @@ mod world_interaction_create_update_security_tests {
         // Should handle gracefully without prototype pollution
         if result.is_ok() {
             // Verify the malicious fields were not stored
-            let entity_id = result.unwrap().get("entity_id").unwrap().as_str().unwrap().to_string();
+            let _entity_id = result.unwrap().get("entity_id").unwrap().as_str().unwrap().to_string();
             // In a real implementation, we'd verify the stored component doesn't have __proto__
         }
     }
@@ -286,7 +280,7 @@ mod world_interaction_create_update_security_tests {
             ]
         });
 
-        let result = update_tool.execute(&update_params).await;
+        let _result = update_tool.execute(&update_params).await;
         // Should process safely without executing NoSQL operators
     }
 
@@ -462,7 +456,7 @@ mod world_interaction_create_update_security_tests {
             }
         });
 
-        let result = create_tool.execute(&params).await;
+        let _result = create_tool.execute(&params).await;
         // Should handle gracefully without stack overflow
     }
 
@@ -546,7 +540,7 @@ mod world_interaction_create_update_security_tests {
             }
         });
 
-        let result = create_tool.execute(&params).await;
+        let _result = create_tool.execute(&params).await;
         // Tool should log the event but not expose sensitive data in logs
         // In production, we'd verify logs don't contain the SSN or credit card numbers
     }
@@ -615,7 +609,7 @@ mod world_interaction_create_update_security_tests {
             }
         });
 
-        let result = create_tool.execute(&params).await;
+        let _result = create_tool.execute(&params).await;
         // Should either strip external references or handle safely
     }
 
@@ -647,7 +641,7 @@ mod world_interaction_create_update_security_tests {
             }
         });
 
-        let result = create_tool.execute(&params).await;
+        let _result = create_tool.execute(&params).await;
         // Should not allow internal network scanning attempts
     }
 }

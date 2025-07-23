@@ -205,7 +205,7 @@ pub struct ChronicleEcsConsistencyMonitor {
     /// Translation service for chronicle events to ECS
     translator: Arc<ChronicleEcsTranslator>,
     /// ECS entity manager for state queries and updates
-    entity_manager: Arc<EcsEntityManager>,
+    _entity_manager: Arc<EcsEntityManager>, // TODO: Use for consistency checks and state reconciliation
 }
 
 impl ChronicleEcsConsistencyMonitor {
@@ -222,7 +222,7 @@ impl ChronicleEcsConsistencyMonitor {
             config,
             feature_flags,
             translator,
-            entity_manager,
+            _entity_manager: entity_manager,
         }
     }
 
@@ -722,6 +722,7 @@ impl ChronicleEcsConsistencyMonitor {
 // Supporting types for state representation
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // TODO: Implement ECS state comparison logic
 struct ExpectedEcsState {
     entities: HashMap<Uuid, ExpectedEntity>,
     components: HashMap<Uuid, Vec<ExpectedComponent>>,
@@ -729,6 +730,7 @@ struct ExpectedEcsState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // TODO: Implement ECS state comparison logic
 struct ActualEcsState {
     entities: HashMap<Uuid, EcsEntity>,
     components: HashMap<Uuid, Vec<EcsComponent>>,
@@ -736,12 +738,14 @@ struct ActualEcsState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // TODO: Implement ECS state comparison logic
 struct ExpectedEntity {
     id: Uuid,
     archetype_signature: String,
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // TODO: Implement ECS state comparison logic
 struct ExpectedComponent {
     entity_id: Uuid,
     component_type: String,
@@ -749,6 +753,7 @@ struct ExpectedComponent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // TODO: Implement ECS state comparison logic
 struct ExpectedRelationship {
     from_entity_id: Uuid,
     to_entity_id: Uuid,
@@ -757,6 +762,7 @@ struct ExpectedRelationship {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // TODO: Implement ECS state comparison logic
 struct ActualRelationship {
     from_entity_id: Uuid,
     to_entity_id: Uuid,

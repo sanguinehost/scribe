@@ -1,27 +1,26 @@
 use scribe_backend::prompt_builder::*;
 use scribe_backend::services::{
     context_assembly_engine::*,
-    hybrid_token_counter::{HybridTokenCounter, CountingMode},
+    hybrid_token_counter::HybridTokenCounter,
     tokenizer_service::TokenizerService,
 };
 use scribe_backend::models::characters::CharacterMetadata;
 use scribe_backend::config::Config;
-use scribe_backend::test_helpers::{spawn_app, MockAiClient};
+use scribe_backend::test_helpers::spawn_app;
 use genai::chat::ChatMessage as GenAiChatMessage;
 use genai::chat::{ChatRole, MessageContent};
 use std::sync::Arc;
 use uuid::Uuid;
-use chrono::{Duration, Utc};
-use std::collections::HashMap;
+use chrono::Utc;
 use std::path::PathBuf;
 
 /// OWASP A01: Broken Access Control
 /// Test that prompt builder properly validates user ownership and doesn't expose unauthorized data
 #[tokio::test]
 async fn test_a01_broken_access_control_user_data_isolation() {
-    let test_app = spawn_app(false, false, false).await;
-    let config = Arc::new(create_test_config());
-    let token_counter = Arc::new(create_test_token_counter());
+    let _test_app = spawn_app(false, false, false).await;
+    let _config = Arc::new(create_test_config());
+    let _token_counter = Arc::new(create_test_token_counter());
     
     // Create character belonging to a different user
     let unauthorized_character = create_test_character("Restricted Character", Some(b"Secret character belonging to another user".to_vec()));
@@ -44,7 +43,7 @@ async fn test_a01_broken_access_control_user_data_isolation() {
 /// Test that sensitive data is properly handled and not exposed in prompts
 #[tokio::test]
 async fn test_a02_cryptographic_failures_sensitive_data_protection() {
-    let test_app = spawn_app(false, false, false).await;
+    let _test_app = spawn_app(false, false, false).await;
     
     // Create character with potentially sensitive data
     let character = create_test_character("Test Character", Some(b"Character with password: secret123 and API key: sk-12345".to_vec()));
@@ -65,9 +64,9 @@ async fn test_a02_cryptographic_failures_sensitive_data_protection() {
 /// Test that prompt builder properly escapes XML content in prompts
 #[tokio::test]
 async fn test_a03_injection_xml_escaping() {
-    let test_app = spawn_app(false, false, false).await;
-    let config = Arc::new(create_test_config());
-    let token_counter = Arc::new(create_test_token_counter());
+    let _test_app = spawn_app(false, false, false).await;
+    let _config = Arc::new(create_test_config());
+    let _token_counter = Arc::new(create_test_token_counter());
     
     // Create enriched context
     let enriched_context = create_test_enriched_context();
@@ -118,7 +117,7 @@ async fn test_a03_injection_xml_escaping() {
 /// Test that prompt builder implements secure design patterns
 #[tokio::test]
 async fn test_a04_insecure_design_input_validation() {
-    let test_app = spawn_app(false, false, false).await;
+    let _test_app = spawn_app(false, false, false).await;
     
     // Test with empty character description
     let character = create_test_character("", Some(vec![])); // Empty name and description
@@ -136,9 +135,9 @@ async fn test_a04_insecure_design_input_validation() {
 /// Test that prompt builder has secure default configurations
 #[tokio::test]
 async fn test_a05_security_misconfiguration_defaults() {
-    let test_app = spawn_app(false, false, false).await;
-    let config = Arc::new(create_test_config());
-    let token_counter = Arc::new(create_test_token_counter());
+    let _test_app = spawn_app(false, false, false).await;
+    let _config = Arc::new(create_test_config());
+    let _token_counter = Arc::new(create_test_token_counter());
     
     // Test with minimal configuration
     let enriched_context = create_test_enriched_context();
@@ -175,9 +174,9 @@ async fn test_a05_security_misconfiguration_defaults() {
 /// Test that prompt builder operations can be audited
 #[tokio::test]
 async fn test_a09_logging_monitoring_audit_trail() {
-    let test_app = spawn_app(false, false, false).await;
-    let config = Arc::new(create_test_config());
-    let token_counter = Arc::new(create_test_token_counter());
+    let _test_app = spawn_app(false, false, false).await;
+    let _config = Arc::new(create_test_config());
+    let _token_counter = Arc::new(create_test_token_counter());
     
     let enriched_context = create_test_enriched_context();
     
@@ -284,8 +283,8 @@ fn create_test_character(name: &str, description: Option<Vec<u8>>) -> CharacterM
         creator_comment: None,
         creator_comment_nonce: None,
         first_mes: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
     }
 }
 

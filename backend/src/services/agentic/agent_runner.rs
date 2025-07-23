@@ -119,7 +119,7 @@ pub struct NarrativeAgentRunner {
     tool_registry: Arc<ToolRegistry>,
     config: NarrativeWorkflowConfig,
     chronicle_service: Arc<ChronicleService>,
-    token_counter: Arc<HybridTokenCounter>,
+    _token_counter: Arc<HybridTokenCounter>, // TODO: Implement token tracking
     // AI-powered components for intelligent analysis
     triage_analyzer: Arc<AiTriageAnalyzer>,
     plan_generator: Arc<AiPlanGenerator>,
@@ -142,7 +142,7 @@ impl NarrativeAgentRunner {
             tool_registry,
             config,
             chronicle_service,
-            token_counter,
+            _token_counter: token_counter,
             triage_analyzer,
             plan_generator,
         }

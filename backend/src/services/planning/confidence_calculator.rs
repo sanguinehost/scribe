@@ -522,6 +522,7 @@ mod tests {
         // Test the plan quality scoring logic directly
         let mut score = 0.8_f32; // Start with good baseline
         let action_count = repair_plan.actions.len();
+        let original_action_count = original_plan.actions.len();
         
         // Action count factor (prefer fewer actions for repairs)
         if action_count == 0 {
@@ -533,6 +534,11 @@ mod tests {
         // Plan confidence from metadata
         if repair_plan.metadata.confidence < 0.5 {
             score -= 0.2; // Penalty for low-confidence generated plans
+        }
+        
+        // Compare to original plan size - repairs should generally be simpler
+        if action_count > original_action_count {
+            score -= 0.1; // Penalty if repair is more complex than original
         }
 
         assert!(score >= 0.0 && score <= 1.0);

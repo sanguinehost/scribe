@@ -54,9 +54,9 @@ use crate::{
 #[derive(Clone)]
 pub struct PerceptionAgent {
     ai_client: Arc<dyn AiClient>,
-    ecs_entity_manager: Arc<EcsEntityManager>,
-    planning_service: Arc<PlanningService>,
-    plan_validator: Arc<PlanValidatorService>,
+    _ecs_entity_manager: Arc<EcsEntityManager>, // TODO: Use for direct entity operations in perception tasks
+    _planning_service: Arc<PlanningService>, // TODO: Use for perception-driven planning integration
+    _plan_validator: Arc<PlanValidatorService>, // TODO: Use for validating perception-based plans
     redis_client: Arc<redis::Client>,
     model: String,
 }
@@ -82,9 +82,9 @@ impl PerceptionAgent {
         
         Self {
             ai_client,
-            ecs_entity_manager,
-            planning_service,
-            plan_validator,
+            _ecs_entity_manager: ecs_entity_manager,
+            _planning_service: planning_service,
+            _plan_validator: plan_validator,
             redis_client,
             model,
         }
@@ -1555,8 +1555,8 @@ Output JSON with:
         
         Ok(ExecutionResult {
             updates_applied,
-            relationships_updated,
-            errors,
+            _relationships_updated: relationships_updated,
+            _errors: errors,
         })
     }
 
@@ -2052,8 +2052,8 @@ enum WorldActionType {
 #[derive(Debug, Clone)]
 struct ExecutionResult {
     pub updates_applied: usize,
-    pub relationships_updated: usize,
-    pub errors: Vec<String>,
+    pub _relationships_updated: usize, // TODO: Track relationship updates in metrics
+    pub _errors: Vec<String>, // TODO: Report errors to monitoring system
 }
 
 /// Result of pre-response perception analysis

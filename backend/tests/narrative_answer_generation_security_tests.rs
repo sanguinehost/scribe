@@ -13,9 +13,7 @@ use chrono::Utc;
 
 use scribe_backend::{
     models::{chronicle_event::ChronicleEvent},
-    services::agentic::narrative_answer_generation_structured_output::*,
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user, create_test_hybrid_query_service},
-    errors::AppError,
 };
 
 // Helper function to create test ChronicleEvent objects
@@ -59,14 +57,14 @@ async fn test_a01_access_control_user_isolation() {
     let user2 = create_test_user(&test_app.db_pool, "user2".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
     );
     
     // Create narrative data that belongs to user1
-    let events = vec![
+    let _events = vec![
         create_test_chronicle_event(
             user1.id,
             "private_event",
@@ -103,14 +101,14 @@ async fn test_a02_cryptographic_failures_data_protection() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
     );
     
     // Test: Ensure sensitive narrative data is properly handled
-    let events = vec![
+    let _events = vec![
         create_test_chronicle_event(
             user.id,
             "sensitive_narrative",
@@ -152,7 +150,7 @@ async fn test_a03_injection_protection() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -204,7 +202,7 @@ async fn test_a04_insecure_design_security_controls() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -260,7 +258,7 @@ async fn test_a05_security_misconfiguration_secure_defaults() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -297,14 +295,14 @@ async fn test_a06_vulnerable_components_no_exposure() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
     );
     
     // Test: Error handling should not expose component versions
-    let events = vec![
+    let _events = vec![
         create_test_chronicle_event(
             user.id,
             "test",
@@ -332,14 +330,14 @@ async fn test_a07_authentication_failures_context_handling() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
     );
     
     // Test: System should validate user context
-    let events = vec![
+    let _events = vec![
         create_test_chronicle_event(
             user.id,
             "narrative",
@@ -374,7 +372,7 @@ async fn test_a08_data_integrity_validation() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -423,14 +421,14 @@ async fn test_a09_security_logging_monitoring() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
     );
     
     // Test: Service should log security-relevant events
-    let events = vec![
+    let _events = vec![
         create_test_chronicle_event(
             user.id,
             "suspicious_narrative",
@@ -469,7 +467,7 @@ async fn test_a10_ssrf_protection() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -517,7 +515,7 @@ async fn test_comprehensive_security_integration() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -573,7 +571,7 @@ async fn test_performance_security_resource_limits() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),

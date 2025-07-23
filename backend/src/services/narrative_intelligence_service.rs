@@ -124,7 +124,7 @@ pub struct NarrativeIntelligenceService {
     /// Core agent runner with Flash integration
     agent_runner: Arc<NarrativeAgentRunner>,
     /// Application state for service access
-    app_state: Arc<AppState>,
+    _app_state: Arc<AppState>, // TODO: Use for direct service access when needed
     /// Processing configuration
     config: NarrativeProcessingConfig,
 }
@@ -158,7 +158,7 @@ impl NarrativeIntelligenceService {
 
         Ok(Self {
             agent_runner,
-            app_state,
+            _app_state: app_state,
             config,
         })
     }
@@ -194,7 +194,7 @@ impl NarrativeIntelligenceService {
 
         Ok(Self {
             agent_runner,
-            app_state,
+            _app_state: app_state,
             config,
         })
     }
@@ -387,7 +387,7 @@ impl NarrativeIntelligenceService {
         Ok(TriageResult {
             is_significant,
             confidence,
-            reasoning,
+            _reasoning: reasoning,
         })
     }
 
@@ -514,7 +514,7 @@ impl NarrativeIntelligenceService {
 
     /// Process conversation context (for chat generation)
     /// This method processes ongoing conversations and returns narrative insights
-    #[instrument(skip(self, messages, rag_context, session_dek))]
+    #[instrument(skip(self, messages, session_dek))]
     pub async fn process_conversation_context(
         &self,
         user_id: Uuid,
@@ -544,5 +544,5 @@ impl NarrativeIntelligenceService {
 struct TriageResult {
     is_significant: bool,
     confidence: f64,
-    reasoning: String,
+    _reasoning: String, // TODO: Return reasoning in API response for transparency
 }

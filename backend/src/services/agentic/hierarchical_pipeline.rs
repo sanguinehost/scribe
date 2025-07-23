@@ -1921,6 +1921,7 @@ Write the next response only as your assigned character, advancing the world and
     }
     
     /// Generate operational response (extracted from main execute method)
+    #[allow(dead_code)] // TODO: Refactor to use this extracted method in the main execute flow
     async fn generate_operational_response(
         &self,
         prompt: String,

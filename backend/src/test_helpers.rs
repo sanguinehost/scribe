@@ -131,7 +131,7 @@ pub struct MockAiClient {
     last_received_messages: std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
     // For multiple responses support
     responses: Arc<Mutex<VecDeque<String>>>,
-    current_response: Arc<Mutex<usize>>,
+    _current_response: Arc<Mutex<usize>>, // TODO: Implement response cycling if needed
     // model_name: String, // Removed unused
     // provider_model_name: String, // Removed unused
     // embedding_response: Arc<Mutex<Result<Vec<f32>, AppError>>>, // Removed unused
@@ -260,7 +260,7 @@ impl MockAiClient {
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
             responses: Arc::new(Mutex::new(response_queue)),
-            current_response: Arc::new(Mutex::new(0)),
+            _current_response: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -280,7 +280,7 @@ impl MockAiClient {
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
             responses: Arc::new(Mutex::new(VecDeque::new())),
-            current_response: Arc::new(Mutex::new(0)),
+            _current_response: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -305,7 +305,7 @@ impl MockAiClient {
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
             responses: Arc::new(Mutex::new(response_queue)),
-            current_response: Arc::new(Mutex::new(0)),
+            _current_response: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -457,7 +457,7 @@ impl MockAiClient {
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
             responses: Arc::new(Mutex::new(VecDeque::new())),
-            current_response: Arc::new(Mutex::new(0)),
+            _current_response: Arc::new(Mutex::new(0)),
         }
     }
 }

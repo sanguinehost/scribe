@@ -655,6 +655,15 @@ async fn process_messages_with_streaming_pipeline(
         let narrative_service = state.narrative_intelligence_service.as_ref()
             .ok_or_else(|| AppError::InternalServerErrorGeneric("Narrative intelligence service not available".to_string()))?;
 
+        // Stage 1: Heuristic Pre-Filter - Quick rejection of obviously insignificant batches
+        if !is_batch_heuristically_significant(batch, &session_dek) {
+            info!(
+                "Batch {} discarded by Stage 1 heuristic filter (insufficient content)",
+                batch_idx
+            );
+            continue;
+        }
+
         let batch_result = narrative_service.process_chat_history_batch_with_execution(
             user.id,
             request.chat_session_id,
@@ -671,7 +680,7 @@ async fn process_messages_with_streaming_pipeline(
         let confidence_threshold = 0.1; // Drastically lowered from state.config.rechronicle_confidence_threshold
         if !batch_result.is_significant && (batch_result.confidence as f32) < confidence_threshold {
             info!(
-                "Batch {} discarded by AI triage. Significance: {}, Confidence: {:.2}",
+                "Batch {} discarded by Stage 2 AI triage. Significance: {}, Confidence: {:.2}",
                 batch_idx, batch_result.is_significant, batch_result.confidence
             );
             continue;

@@ -303,12 +303,12 @@ struct SemanticMatchResult {
 
 /// AI-powered entity context extractor
 pub struct AiContextExtractor {
-    app_state: Arc<AppState>,
+    _app_state: Arc<AppState>, // TODO: Will be used for AI-enhanced context extraction
 }
 
 impl AiContextExtractor {
     pub fn new(app_state: Arc<AppState>) -> Self {
-        Self { app_state }
+        Self { _app_state: app_state }
     }
 
     /// Extract rich narrative context using AI instead of hardcoded patterns

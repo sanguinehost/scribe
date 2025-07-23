@@ -90,7 +90,7 @@ struct EntityData {
     name: String,
     entity_type: String,
     confidence: f64,
-    is_new: bool,
+    _is_new: bool, // TODO: Track if entity is newly created for lifecycle management
 }
 
 /// Service for translating chronicle events to ECS state changes
@@ -350,7 +350,7 @@ impl ChronicleEcsTranslator {
                                     name: actor_value.get("entity_name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
                                     entity_type: actor_value.get("entity_type").and_then(|v| v.as_str()).unwrap_or("UNKNOWN").to_string(),
                                     confidence: actor_value.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5),
-                                    is_new: actor_value.get("is_new").and_then(|v| v.as_bool()).unwrap_or(true),
+                                    _is_new: actor_value.get("is_new").and_then(|v| v.as_bool()).unwrap_or(true),
                                 };
                                 entity_data_map.insert(entity_id, entity_data);
                             }
@@ -371,7 +371,7 @@ impl ChronicleEcsTranslator {
                                 name: actor_value.get("entity_name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
                                 entity_type: actor_value.get("entity_type").and_then(|v| v.as_str()).unwrap_or("UNKNOWN").to_string(),
                                 confidence: actor_value.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5),
-                                is_new: actor_value.get("is_new").and_then(|v| v.as_bool()).unwrap_or(true),
+                                _is_new: actor_value.get("is_new").and_then(|v| v.as_bool()).unwrap_or(true),
                             };
                             entity_data_map.insert(entity_id, entity_data);
                         }
@@ -661,6 +661,7 @@ impl ChronicleEcsTranslator {
     }
 
     /// Handle help actions - improve trust relationships
+    #[allow(dead_code)] // TODO: Integrate help action handling into event translation
     async fn handle_help_action(&self, actors: &[EventActor], result: &mut TranslationResult) -> Result<(), AppError> {
         let agent = actors.iter().find(|a| a.role == ActorRole::Agent);
         let beneficiary = actors.iter().find(|a| a.role == ActorRole::Beneficiary);

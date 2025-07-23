@@ -169,6 +169,7 @@ struct LivingWorldCampaign {
 
 /// Single conversation exchange between player and GM
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ConversationExchange {
     pub exchange_number: u32,
     pub player_message: String,
@@ -195,6 +196,7 @@ struct PerceptionAnalysisResult {
 
 /// Spatial hierarchy validation for Living World
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SpatialHierarchyValidation {
     pub entity_name: String,
     pub entity_id: Uuid,
@@ -207,6 +209,7 @@ struct SpatialHierarchyValidation {
 
 /// Entity containment validation
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct EntityContainmentValidation {
     pub container_entity: String,
     pub contained_entities: Vec<String>,
@@ -216,6 +219,7 @@ struct EntityContainmentValidation {
 
 /// Living World operation performed during conversation
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct LivingWorldOperation {
     pub operation_type: String, // "entity_resolution", "hybrid_query", "planning", etc.
     pub input_data: String,
@@ -227,6 +231,7 @@ struct LivingWorldOperation {
 
 /// Snapshot of world state at a point in time
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct WorldStateSnapshot {
     pub timestamp: chrono::DateTime<Utc>,
     pub entities_count: u32,
@@ -239,6 +244,7 @@ struct WorldStateSnapshot {
 
 /// Test result tracking all operations for debugging
 #[derive(Debug)]
+#[allow(dead_code)]
 struct TestOperationLog {
     pub operation: String,
     pub timestamp: chrono::DateTime<Utc>,
@@ -277,7 +283,7 @@ struct LivingWorldChatTest {
     pub authenticated_client: Client,
     pub base_url: String,
     pub conversation_history: Vec<ApiChatMessage>,
-    pub orchestration_failures_detected: u32,
+    pub _orchestration_failures_detected: u32,
     pub _guard: TestDataGuard,
 }
 
@@ -350,7 +356,7 @@ impl LivingWorldChatTest {
             authenticated_client,
             base_url,
             conversation_history: Vec::new(),
-            orchestration_failures_detected: 0,
+            _orchestration_failures_detected: 0,
             _guard: guard,
         })
     }
@@ -792,7 +798,7 @@ impl LivingWorldChatTest {
         debug!("📤 Request Body: {:?}", generate_request);
         
         // Track response timing
-        let request_start = std::time::Instant::now();
+        let _request_start = std::time::Instant::now();
         
         // Send to chat generation endpoint
         let response = self.authenticated_client
@@ -842,7 +848,7 @@ impl LivingWorldChatTest {
         let mut final_message = String::new();
         let mut has_error = false;
         let mut error_message = String::new();
-        let mut has_orchestration_metadata = false;
+        let mut _has_orchestration_metadata = false;
         
         for line in sse_text.lines() {
             if line.starts_with("data: ") {
@@ -858,7 +864,7 @@ impl LivingWorldChatTest {
                         
                         // Check for orchestration_status field (if present)
                         if json_data.get("orchestration_status").is_some() {
-                            has_orchestration_metadata = true;
+                            _has_orchestration_metadata = true;
                         }
                         
                         if let Some(content) = json_data.get("content").and_then(|v| v.as_str()) {
@@ -1263,6 +1269,7 @@ impl LivingWorldChatTest {
     }
     
     /// Validate entity hierarchies and containment
+    #[allow(dead_code)]
     async fn validate_spatial_data(&self, expected_hierarchies: &[SpatialHierarchyValidation]) -> Result<Vec<EntityContainmentValidation>, AppError> {
         info!("🔍 Validating spatial data and entity containment");
         

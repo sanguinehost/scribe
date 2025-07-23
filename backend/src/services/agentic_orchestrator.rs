@@ -80,8 +80,8 @@ pub struct AgenticOrchestrator {
     context_engine: Arc<ContextAssemblyEngine>,
     state_update_service: Arc<AgenticStateUpdateService>,
     optimization_service: Arc<ContextOptimizationService>,
-    ai_client: Arc<dyn AiClient>,
-    db_pool: Arc<PgPool>,
+    _ai_client: Arc<dyn AiClient>, // TODO: Use for direct AI calls in orchestration
+    _db_pool: Arc<PgPool>, // TODO: Use for database operations
     metrics_collector: Arc<AgenticMetricsCollector>,
 }
 
@@ -126,8 +126,8 @@ impl AgenticOrchestrator {
             context_engine,
             state_update_service,
             optimization_service,
-            ai_client,
-            db_pool,
+            _ai_client: ai_client,
+            _db_pool: db_pool,
             metrics_collector,
         }
     }

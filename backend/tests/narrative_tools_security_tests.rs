@@ -118,7 +118,7 @@ async fn test_a01_create_chronicle_event_cross_user_access() {
     // Should fail with access denied
     assert!(result.is_err() || result.as_ref().unwrap()["success"] == false);
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 #[tokio::test]
@@ -163,7 +163,7 @@ async fn test_a01_list_chronicle_events_cross_user_access() {
         }
     }
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 // A02: Cryptographic Failures Tests
@@ -200,7 +200,7 @@ async fn test_a02_update_lorebook_without_encryption() {
     let result = tool.execute(&params).await;
     assert!(result.is_err(), "Should fail without encryption key");
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 // A03: Injection Tests
@@ -239,7 +239,7 @@ async fn test_a03_sql_injection_in_search() {
     
     assert!(table_exists, "Users table should still exist");
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 #[tokio::test]
@@ -287,7 +287,7 @@ async fn test_a03_json_injection_in_event_data() {
     // Should succeed without executing injection
     assert!(result.is_ok(), "JSON injection should be safely handled");
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 // A04: Insecure Design Tests
@@ -325,7 +325,7 @@ async fn test_a04_rate_limiting_protection() {
     let successful_calls = results.iter().filter(|r| r.is_ok()).count();
     assert!(successful_calls > 0, "Some calls should succeed");
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 // A05: Security Misconfiguration Tests
@@ -357,7 +357,7 @@ async fn test_a05_verbose_error_messages() {
         assert!(!error_msg.contains("stack trace"), "Should not expose stack traces");
     }
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 // A08: Software and Data Integrity Failures Tests
@@ -396,7 +396,7 @@ async fn test_a08_data_validation_temporal_events() {
     // Should handle malformed AI response gracefully
     assert!(result.is_ok(), "Should handle malformed data gracefully");
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 // A09: Security Logging and Monitoring Failures Tests
@@ -441,7 +441,7 @@ async fn test_a09_security_event_logging() {
     // In a real system, we would verify security logs were created
     // For this test, we just ensure the attempt was handled without crashing
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 // A10: Server-Side Request Forgery (SSRF) Tests
@@ -479,7 +479,7 @@ async fn test_a10_ssrf_protection_in_ai_calls() {
     // Should process normally without making external requests
     assert!(result.is_ok(), "SSRF attempts should be safely handled");
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 // Additional security tests for comprehensive coverage
@@ -514,7 +514,7 @@ async fn test_input_size_limits() {
     // Should handle large inputs gracefully
     assert!(result.is_ok() || result.is_err(), "Should handle large inputs without panic");
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }
 
 #[tokio::test]
@@ -574,5 +574,5 @@ async fn test_concurrent_access_safety() {
     
     assert!(successful > 0, "Concurrent operations should succeed");
     
-    guard.cleanup().await;
+    let _ = guard.cleanup().await;
 }

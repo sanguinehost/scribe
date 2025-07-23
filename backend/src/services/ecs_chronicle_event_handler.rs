@@ -52,8 +52,8 @@ impl Default for ChronicleEventHandlerConfig {
 /// Event handler that integrates ECS events with the Chronicle system
 pub struct EcsChronicleEventHandler {
     db_pool: Arc<PgPool>,
-    chronicle_service: Arc<ChronicleService>,
-    narrative_intelligence: Arc<NarrativeIntelligenceService>,
+    _chronicle_service: Arc<ChronicleService>, // TODO: Use for chronicle event creation from ECS changes
+    _narrative_intelligence: Arc<NarrativeIntelligenceService>, // TODO: Use for narrative significance analysis
     config: ChronicleEventHandlerConfig,
 }
 
@@ -71,8 +71,8 @@ impl EcsChronicleEventHandler {
         
         Self {
             db_pool,
-            chronicle_service,
-            narrative_intelligence,
+            _chronicle_service: chronicle_service,
+            _narrative_intelligence: narrative_intelligence,
             config,
         }
     }

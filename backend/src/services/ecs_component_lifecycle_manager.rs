@@ -100,7 +100,7 @@ impl Default for ComponentLifecycleConfig {
 
 /// Component Lifecycle Manager with validation and dependency management
 pub struct EcsComponentLifecycleManager {
-    db_pool: Arc<PgPool>,
+    _db_pool: Arc<PgPool>, // TODO: Use for direct DB operations in future iterations
     entity_manager: Arc<EcsEntityManager>,
     config: ComponentLifecycleConfig,
     validation_rules: HashMap<String, ComponentValidationRule>,
@@ -115,7 +115,7 @@ impl EcsComponentLifecycleManager {
     ) -> Self {
         let config = config.unwrap_or_default();
         let mut manager = Self {
-            db_pool,
+            _db_pool: db_pool,
             entity_manager,
             config,
             validation_rules: HashMap::new(),

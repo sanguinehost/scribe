@@ -108,15 +108,15 @@ Be precise and actionable in your analysis."#,
             .filter_map(|entity| {
                 entity.components.iter()
                     .find(|c| c.component_type == "DisplayMetadata")
-                    .and_then(|c| c.data.get("display_name"))
+                    .and_then(|c| c.component_data.get("display_name"))
                     .and_then(|name| name.as_str())
                     .map(|display_name| {
                         let entity_type = entity.components.iter()
                             .find(|c| c.component_type == "Type")
-                            .and_then(|c| c.data.get("value"))
+                            .and_then(|c| c.component_data.get("value"))
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown");
-                        format!("ID: {}, Name: {}, Type: {}", entity.entity_id, display_name, entity_type)
+                        format!("ID: {}, Name: {}, Type: {}", entity.entity.id, display_name, entity_type)
                     })
             })
             .collect();
@@ -149,8 +149,7 @@ Return ONLY the entity ID (UUID) of the best match, or "NO_MATCH" if no suitable
             entity_summaries.join("\n")
         );
         
-        let client = self.app_state.ai_client.create_client().await
-            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to create AI client: {}", e)))?;
+        // AI client is already available through app_state
         
         let safety_settings = vec![
             SafetySetting {
@@ -171,27 +170,37 @@ Return ONLY the entity ID (UUID) of the best match, or "NO_MATCH" if no suitable
             },
         ];
         
-        let request = client
-            .generate_content(resolution_prompt)
-            .with_safety_settings(safety_settings);
+        let chat_request = genai::chat::ChatRequest::from_user(resolution_prompt);
+        let chat_options = genai::chat::ChatOptions {
+            max_tokens: Some(100),
+            temperature: Some(0.1),
+            safety_settings: Some(safety_settings),
+            ..Default::default()
+        };
         
-        let response = request
+        let response = self.app_state.ai_client
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("AI entity resolution failed: {}", e)))?
-            .candidates
-            .into_iter()
-            .next()
-            .and_then(|c| c.content.into_parts().into_iter().next())
-            .and_then(|p| p.text)
-            .ok_or_else(|| ToolError::ExecutionFailed("Empty AI response for entity resolution".to_string()))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("AI entity resolution failed: {}", e)))?;
         
-        let resolved_id = response.trim();
+        let response_text = response.contents
+            .iter()
+            .find_map(|content| {
+                if let genai::chat::MessageContent::Text(text) = content {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        
+        let resolved_id = response_text.trim();
         
         if resolved_id == "NO_MATCH" {
             Err(ToolError::ExecutionFailed(format!("No suitable entity found matching '{}'", entity_name)))
         } else {
             // Validate that the returned ID is actually a valid UUID from our list
-            if all_entities.iter().any(|e| e.entity_id.to_string() == resolved_id) {
+            if all_entities.iter().any(|e| e.entity.id.to_string() == resolved_id) {
                 Ok(resolved_id.to_string())
             } else {
                 warn!("AI returned invalid entity ID: {}", resolved_id);

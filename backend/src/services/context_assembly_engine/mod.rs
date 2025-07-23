@@ -446,9 +446,9 @@ pub struct EventSummary {
 /// Implements the Hierarchical Agent Framework for proactive world simulation
 pub struct ContextAssemblyEngine {
     ai_client: Arc<dyn AiClient>,
-    hybrid_query_service: Arc<HybridQueryService>,
-    db_pool: Arc<PgPool>,
-    encryption_service: Arc<EncryptionService>,
+    _hybrid_query_service: Arc<HybridQueryService>, // TODO: Use for context retrieval
+    _db_pool: Arc<PgPool>, // TODO: Use for direct database queries
+    _encryption_service: Arc<EncryptionService>, // TODO: Use for encrypting sensitive context
     model: String,
 }
 
@@ -462,9 +462,9 @@ impl ContextAssemblyEngine {
     ) -> Self {
         Self {
             ai_client,
-            hybrid_query_service,
-            db_pool,
-            encryption_service,
+            _hybrid_query_service: hybrid_query_service,
+            _db_pool: db_pool,
+            _encryption_service: encryption_service,
             model,
         }
     }
@@ -864,8 +864,7 @@ Provide realistic, coherent context that supports the narrative goal."#, entity_
                                     expected_outcomes: vec![],
                                     required_entities: vec![],
                                     estimated_duration: step.get("estimated_duration")
-                                        .and_then(|v| v.as_u64())
-                                        .map(|d| d as u32),
+                                        .and_then(|v| v.as_u64()),
                                 })
                             })
                             .collect()
@@ -891,8 +890,7 @@ Provide realistic, coherent context that supports the narrative goal."#, entity_
                     .unwrap_or_default();
 
                 let estimated_execution_time = json.get("estimated_execution_time")
-                    .and_then(|v| v.as_u64())
-                    .map(|t| t as u32);
+                    .and_then(|v| v.as_u64());
 
                 // Parse risk assessment
                 let risk_assessment = json.get("risk_assessment")
@@ -994,8 +992,21 @@ Provide realistic, coherent context that supports the narrative goal."#, entity_
                     .and_then(|v| v.as_array())
                     .map(|arr| {
                         arr.iter()
-                            .filter_map(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .filter_map(|v| v.as_object())
+                            .map(|req| ContextRequirement {
+                                requirement_type: req.get("requirement_type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown")
+                                    .to_string(),
+                                description: req.get("description")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                priority: req.get("priority")
+                                    .and_then(|v| v.as_f64())
+                                    .map(|f| f as f32)
+                                    .unwrap_or(1.0),
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
@@ -1077,14 +1088,22 @@ Provide realistic, coherent context that supports the narrative goal."#, entity_
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("Zone")
                                 .to_string(),
-                            attributes: loc.get("attributes")
-                                .and_then(|v| v.as_object())
-                                .map(|obj| {
-                                    obj.iter()
-                                        .map(|(k, v)| (k.clone(), v.clone()))
-                                        .collect()
-                                })
-                                .unwrap_or_default(),
+                            coordinates: loc.get("coordinates")
+                                .and_then(|v| v.as_array())
+                                .and_then(|arr| {
+                                    if arr.len() >= 3 {
+                                        Some((
+                                            arr[0].as_f64().unwrap_or(0.0),
+                                            arr[1].as_f64().unwrap_or(0.0),
+                                            arr[2].as_f64().unwrap_or(0.0),
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                }),
+                            parent_location: loc.get("parent_location")
+                                .and_then(|v| v.as_str())
+                                .and_then(|s| Uuid::parse_str(s).ok()),
                         }
                     });
 
@@ -1095,11 +1114,15 @@ Provide realistic, coherent context that supports the narrative goal."#, entity_
                         arr.iter()
                             .filter_map(|rel| {
                                 Some(EntityRelationship {
-                                    target_entity_id: rel.get("target_entity_id")
+                                    relationship_id: rel.get("relationship_id")
                                         .and_then(|v| v.as_str())
                                         .and_then(|s| Uuid::parse_str(s).ok())
                                         .unwrap_or_else(Uuid::new_v4),
-                                    target_entity_name: rel.get("target_entity_name")
+                                    from_entity: rel.get("from_entity")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("Unknown")
+                                        .to_string(),
+                                    to_entity: rel.get("to_entity")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("Unknown")
                                         .to_string(),
@@ -1107,15 +1130,14 @@ Provide realistic, coherent context that supports the narrative goal."#, entity_
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("knows")
                                         .to_string(),
-                                    trust_level: rel.get("trust_level")
+                                    strength: rel.get("strength")
                                         .and_then(|v| v.as_f64())
                                         .map(|f| f as f32)
                                         .unwrap_or(0.5),
-                                    affection_level: rel.get("affection_level")
-                                        .and_then(|v| v.as_f64())
-                                        .map(|f| f as f32)
-                                        .unwrap_or(0.0),
-                                    last_interaction: None,
+                                    context: rel.get("context")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
                                 })
                             })
                             .collect()
@@ -1127,8 +1149,31 @@ Provide realistic, coherent context that supports the narrative goal."#, entity_
                     .and_then(|v| v.as_array())
                     .map(|arr| {
                         arr.iter()
-                            .filter_map(|v| v.as_str())
-                            .map(|s| s.to_string())
+                            .filter_map(|action| {
+                                Some(RecentAction {
+                                    action_id: action.get("action_id")
+                                        .and_then(|v| v.as_str())
+                                        .and_then(|s| Uuid::parse_str(s).ok())
+                                        .unwrap_or_else(Uuid::new_v4),
+                                    description: action.get("description")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    timestamp: action.get("timestamp")
+                                        .and_then(|v| v.as_str())
+                                        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                                        .map(|dt| dt.with_timezone(&Utc))
+                                        .unwrap_or_else(Utc::now),
+                                    action_type: action.get("action_type")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("unknown")
+                                        .to_string(),
+                                    impact_level: action.get("impact_level")
+                                        .and_then(|v| v.as_f64())
+                                        .map(|f| f as f32)
+                                        .unwrap_or(0.5),
+                                })
+                            })
                             .collect()
                     })
                     .unwrap_or_default();

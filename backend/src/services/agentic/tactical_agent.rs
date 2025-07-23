@@ -45,8 +45,8 @@ use crate::{
 /// - Comprehensive logging for security auditing (A09)
 #[derive(Clone)]
 pub struct TacticalAgent {
-    ai_client: Arc<dyn AiClient>,
-    ecs_entity_manager: Arc<EcsEntityManager>,
+    _ai_client: Arc<dyn AiClient>,
+    _ecs_entity_manager: Arc<EcsEntityManager>,
     planning_service: Arc<PlanningService>,
     plan_validator: Arc<PlanValidatorService>,
     redis_client: Arc<redis::Client>,
@@ -71,8 +71,8 @@ impl TacticalAgent {
               ToolRegistry::list_tool_names().len());
         
         Self {
-            ai_client,
-            ecs_entity_manager,
+            _ai_client: ai_client,
+            _ecs_entity_manager: ecs_entity_manager,
             planning_service,
             plan_validator,
             redis_client,
@@ -81,6 +81,8 @@ impl TacticalAgent {
     }
     
     /// Get the formatted tool reference for this agent
+    /// Note: Currently unused but kept for future tool documentation/help features
+    #[allow(dead_code)]
     fn get_tool_reference(&self) -> String {
         ToolRegistry::generate_agent_tool_reference(crate::services::agentic::tool_registry::AgentType::Tactical)
     }
@@ -128,6 +130,17 @@ impl TacticalAgent {
             "Processing strategic directive: {} for user: {}",
             directive.directive_type, user_id
         );
+        
+        // Check rate limiting
+        if let Err(e) = self.check_rate_limit(user_id).await {
+            self.log_security_threat(
+                user_id,
+                Some(directive.directive_id),
+                ThreatType::RateLimitExceeded,
+                "User exceeded rate limit for directive processing",
+            );
+            return Err(e);
+        }
 
         // Step 0: Security validation and input sanitization (OWASP A03, A10)
         let sanitized_directive = self.validate_and_sanitize_directive(directive, user_id).await?;
@@ -680,8 +693,7 @@ impl TacticalAgent {
             "limit": 5
         });
         
-        let find_entity_tool = ToolRegistry::get_tool("find_entity")
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get find_entity tool: {}", e)))?;
+        let find_entity_tool = self.get_tool("find_entity")?;
         
         let result = find_entity_tool.execute(&params).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("FindEntityTool failed: {}", e)))?;
@@ -725,8 +737,7 @@ impl TacticalAgent {
             "include_relationships": true
         });
         
-        let get_entity_details_tool = ToolRegistry::get_tool("get_entity_details")
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get get_entity_details tool: {}", e)))?;
+        let get_entity_details_tool = self.get_tool("get_entity_details")?;
         
         let result = get_entity_details_tool.execute(&params).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("GetEntityDetailsTool failed: {}", e)))?;
@@ -770,8 +781,7 @@ impl TacticalAgent {
             "max_depth": 3
         });
         
-        let get_spatial_context_tool = ToolRegistry::get_tool("get_spatial_context")
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get get_spatial_context tool: {}", e)))?;
+        let get_spatial_context_tool = self.get_tool("get_spatial_context")?;
         
         let result = get_spatial_context_tool.execute(&params).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("GetSpatialContextTool failed: {}", e)))?;
@@ -798,11 +808,10 @@ impl TacticalAgent {
                         
                         // Add spatial relationship
                         spatial_relationships.push(crate::services::context_assembly_engine::SpatialRelationship {
-                            source_location: entity.entity_id.parse().unwrap_or_else(|_| Uuid::new_v4()),
-                            target_location: location_id,
+                            from_location: entity.entity_id.clone(),
+                            to_location: location_id.to_string(),
                             relationship_type: "contains".to_string(),
                             distance: None,
-                            direction: None,
                         });
                     }
                 }
@@ -991,6 +1000,18 @@ impl TacticalAgent {
         if trimmed.is_empty() {
             return Err(AppError::BadRequest("Content cannot be empty".to_string()));
         }
+        
+        // Check for excessive resource usage
+        const MAX_NARRATIVE_LENGTH: usize = 50_000; // Reasonable limit for narrative text
+        if trimmed.len() > MAX_NARRATIVE_LENGTH {
+            self.log_security_threat(
+                Uuid::nil(), // Note: would need user_id passed to this method in production
+                None,
+                ThreatType::ExcessiveResourceUsage,
+                &format!("Narrative text exceeds maximum length: {} > {}", trimmed.len(), MAX_NARRATIVE_LENGTH),
+            );
+            return Err(AppError::BadRequest("Narrative text too long - exceeds resource limits".to_string()));
+        }
 
         // Validate reasonable character set (allow narrative text with extended punctuation)
         // Allow common narrative and markdown punctuation but exclude dangerous injection characters
@@ -1001,6 +1022,30 @@ impl TacticalAgent {
             ".,!?()[]_-':;\"*–—…#/\\@$%^&+=~|{}`.".contains(c)  // Extended punctuation for narrative and markdown
         }) {
             return Err(AppError::BadRequest("Content contains invalid characters".to_string()));
+        }
+        
+        // Check for suspicious patterns that might indicate automated/malicious content
+        let suspicious_indicators = [
+            ("base64", 20), // Base64 encoded data
+            ("0x", 50),      // Hex data
+            ("\\u", 10),     // Unicode escapes
+            ("${", 5),       // Template injection
+            ("{{", 5),       // Template injection
+            ("__", 20),      // Dunder methods
+        ];
+        
+        let lower = trimmed.to_lowercase();
+        for (pattern, threshold) in suspicious_indicators {
+            let count = lower.matches(pattern).count();
+            if count > threshold {
+                self.log_security_threat(
+                    Uuid::nil(), // Note: would need user_id passed to this method in production
+                    None,
+                    ThreatType::SuspiciousPatterns,
+                    &format!("Detected {} occurrences of suspicious pattern '{}' (threshold: {})", count, pattern, threshold),
+                );
+                return Err(AppError::BadRequest("Content contains suspicious patterns".to_string()));
+            }
         }
 
         Ok(trimmed.to_string())
@@ -1057,6 +1102,13 @@ impl TacticalAgent {
         let suspicious_patterns = ["script", "eval", "exec", "system", "cmd", "<", ">", "&", "|"];
         for pattern in suspicious_patterns {
             if lower.contains(pattern) {
+                // Log injection attempt threat
+                self.log_security_threat(
+                    Uuid::nil(), // Note: would need user_id passed to this method in production
+                    None,
+                    ThreatType::InjectionAttempt,
+                    &format!("Detected suspicious pattern '{}' in emotional tone input", pattern),
+                );
                 return Err(AppError::BadRequest("Emotional tone contains suspicious patterns".to_string()));
             }
         }
@@ -1082,6 +1134,39 @@ impl TacticalAgent {
         Ok(trimmed.to_string())
     }
 
+    /// Check rate limiting for directive processing
+    async fn check_rate_limit(&self, user_id: Uuid) -> Result<(), AppError> {
+        // Simple rate limiting using Redis
+        let rate_limit_key = format!("tactical:rate_limit:{}", user_id);
+        let mut conn = self.redis_client.get_multiplexed_async_connection().await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Redis connection failed: {}", e)))?;
+        
+        // Increment counter with 1 hour expiry
+        let count: i32 = redis::cmd("INCR")
+            .arg(&rate_limit_key)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Redis command failed: {}", e)))?;
+        
+        // Set expiry on first request
+        if count == 1 {
+            let _: () = redis::cmd("EXPIRE")
+                .arg(&rate_limit_key)
+                .arg(3600) // 1 hour
+                .query_async(&mut conn)
+                .await
+                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Redis expire failed: {}", e)))?;
+        }
+        
+        // Check limit (e.g., 100 requests per hour)
+        const RATE_LIMIT: i32 = 100;
+        if count > RATE_LIMIT {
+            return Err(AppError::RateLimited(Some(std::time::Duration::from_secs(3600))));
+        }
+        
+        Ok(())
+    }
+    
     /// Validate that content doesn't contain URLs to prevent SSRF
     fn validate_no_urls(&self, input: &str) -> Result<(), AppError> {
         let input_lower = input.to_lowercase();
@@ -1298,11 +1383,11 @@ impl TacticalAgent {
         details: &str,
     ) {
         let severity = match threat_type {
-            ThreatType::InjectionAttempt => SecuritySeverity::High,
-            ThreatType::SsrfAttempt => SecuritySeverity::High,
-            ThreatType::ExcessiveResourceUsage => SecuritySeverity::Medium,
-            ThreatType::SuspiciousPatterns => SecuritySeverity::Medium,
-            ThreatType::RateLimitExceeded => SecuritySeverity::Low,
+            ThreatType::InjectionAttempt => SecuritySeverity::Critical,
+            ThreatType::SsrfAttempt => SecuritySeverity::Critical,
+            ThreatType::ExcessiveResourceUsage => SecuritySeverity::High, // Resource exhaustion attacks
+            ThreatType::SuspiciousPatterns => SecuritySeverity::High, // Potential exploitation attempts
+            ThreatType::RateLimitExceeded => SecuritySeverity::Medium, // Upgraded from Low for abuse prevention
         };
 
         self.log_security_event(

@@ -108,7 +108,7 @@ struct SpatialAnalysis {
     /// Entities that should be in this location
     pub entities_in_location: Vec<(Uuid, String)>,
     /// Nested spatial relationships (e.g., characters in ship)
-    pub spatial_containment: HashMap<String, Vec<String>>,
+    pub _spatial_containment: HashMap<String, Vec<String>>, // TODO: Implement nested containment support
     /// Confidence in spatial analysis
     pub confidence: f32,
 }
@@ -125,7 +125,7 @@ struct RelationshipAnalysis {
 #[derive(Debug, Clone)]
 struct DetectedRelationship {
     pub from_entity: String,
-    pub to_entity: String,
+    pub _to_entity: String, // TODO: Use for bidirectional relationship tracking
     pub relationship_type: String,
     pub strength: f32,
     pub evidence: String, // Why we think this relationship exists
@@ -200,7 +200,7 @@ impl AgenticStateUpdateService {
             SpatialAnalysis {
                 primary_location: None,
                 entities_in_location: Vec::new(),
-                spatial_containment: HashMap::new(),
+                _spatial_containment: HashMap::new(),
                 confidence: 0.0,
             }
         };
@@ -289,7 +289,7 @@ impl AgenticStateUpdateService {
     ) -> Result<SpatialAnalysis, AppError> {
         let mut primary_location = None;
         let mut entities_in_location = Vec::new();
-        let spatial_containment = HashMap::new();
+        let _spatial_containment = HashMap::new();
         let mut confidence = 0.0;
 
         // Look for spatial information in query results
@@ -347,7 +347,7 @@ impl AgenticStateUpdateService {
         Ok(SpatialAnalysis {
             primary_location,
             entities_in_location,
-            spatial_containment,
+            _spatial_containment,
             confidence,
         })
     }
@@ -450,7 +450,7 @@ If the location is unclear or entities are not co-located, use confidence < 0.7.
                     for relationship in &rel_result.relationships {
                         explicit_relationships.push(DetectedRelationship {
                             from_entity: relationship.from_entity.clone(),
-                            to_entity: relationship.to_entity.clone(),
+                            _to_entity: relationship.to_entity.clone(),
                             relationship_type: relationship.relationship_type.clone(),
                             strength: relationship.strength,
                             evidence: "Explicit relationship query result".to_string(),
@@ -549,7 +549,7 @@ Only include relationships you're confident about (>0.5 strength). Use confidenc
         for rel in output.relationships {
             relationships.push(DetectedRelationship {
                 from_entity: rel.from_entity,
-                to_entity: rel.to_entity,
+                _to_entity: rel.to_entity,
                 relationship_type: rel.relationship_type,
                 strength: rel.strength,
                 evidence: rel.evidence,

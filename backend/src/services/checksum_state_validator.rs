@@ -199,7 +199,7 @@ pub struct ChecksumStateValidator {
     /// Feature flags for toggle control
     feature_flags: Arc<NarrativeFeatureFlags>,
     /// ECS entity manager for state queries
-    entity_manager: Arc<EcsEntityManager>,
+    _entity_manager: Arc<EcsEntityManager>, // TODO: Use for ECS state validation
     /// Chronicle service for event queries
     chronicle_service: Arc<ChronicleService>,
 }
@@ -217,7 +217,7 @@ impl ChecksumStateValidator {
             db_pool,
             config,
             feature_flags,
-            entity_manager,
+            _entity_manager: entity_manager,
             chronicle_service,
         }
     }

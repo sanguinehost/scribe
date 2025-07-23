@@ -182,11 +182,11 @@ pub struct HistoricalChronicleProcessor {
 /// Information about an active worker
 #[derive(Debug, Clone)]
 struct WorkerInfo {
-    worker_id: Uuid,
-    started_at: Instant,
-    current_job: Option<Uuid>,
-    jobs_completed: u64,
-    jobs_failed: u64,
+    _worker_id: Uuid, // TODO: Track worker details for monitoring
+    _started_at: Instant, // TODO: Track worker uptime
+    _current_job: Option<Uuid>, // TODO: Track active job per worker
+    _jobs_completed: u64, // TODO: Track worker performance
+    _jobs_failed: u64, // TODO: Track worker error rate
 }
 
 impl HistoricalChronicleProcessor {
@@ -530,7 +530,7 @@ impl HistoricalChronicleProcessor {
     async fn clone_for_worker(&self) -> HistoricalChronicleProcessorWorker {
         HistoricalChronicleProcessorWorker {
             config: self.config.clone(),
-            feature_flags: Arc::clone(&self.feature_flags),
+            _feature_flags: Arc::clone(&self.feature_flags),
             db_pool: Arc::clone(&self.db_pool),
             chronicle_service: Arc::clone(&self.chronicle_service),
             translator: Arc::clone(&self.translator),
@@ -779,7 +779,7 @@ impl HistoricalChronicleProcessor {
 /// Worker component for processing individual jobs
 struct HistoricalChronicleProcessorWorker {
     config: HistoricalProcessorConfig,
-    feature_flags: Arc<NarrativeFeatureFlags>,
+    _feature_flags: Arc<NarrativeFeatureFlags>, // TODO: Check feature flags in worker for per-job processing options
     db_pool: Arc<PgPool>,
     chronicle_service: Arc<ChronicleService>,
     translator: Arc<ChronicleEcsTranslator>,

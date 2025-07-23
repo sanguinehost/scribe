@@ -4,11 +4,6 @@
 //! as outlined in Task 2.3.4 of the Living World Implementation Roadmap.
 
 use scribe_backend::{
-    models::ecs::{
-        SpatialScale, SpatialArchetypeComponent,
-        ParentLinkComponent, NameComponent, PositionComponent,
-        PositionType, HierarchicalCoordinates, SalienceTier,
-    },
     services::{
         EcsEntityManager, EntityManagerConfig,
         agentic::tools::{ScribeTool, ToolError},
@@ -17,7 +12,7 @@ use scribe_backend::{
     errors::AppError,
     PgPool,
 };
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -43,7 +38,7 @@ async fn create_entity_manager(db_pool: PgPool) -> Arc<EcsEntityManager> {
 }
 
 use scribe_backend::services::agentic::tools::world_interaction_tools::{
-    CreateEntityTool, FindEntityTool, GetEntityDetailsTool, MoveEntityTool,
+    CreateEntityTool, GetEntityDetailsTool, MoveEntityTool,
 };
 
 #[cfg(test)]
@@ -221,6 +216,37 @@ mod world_interaction_movement_tests {
         let (galaxy_id, system_id, planet_id, city_id, building_id, room_id) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
 
+        // Verify hierarchy structure before movement test
+        let get_tool = GetEntityDetailsTool::new(entity_manager.clone());
+        
+        // Verify galaxy exists
+        let galaxy_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": galaxy_id.to_string()
+        })).await.expect("Failed to get galaxy");
+        assert_eq!(galaxy_result.get("archetype_name").unwrap(), "Galaxy");
+        
+        // Verify system is in galaxy
+        let system_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": system_id.to_string()
+        })).await.expect("Failed to get system");
+        assert_eq!(system_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
+        
+        // Verify planet is in system
+        let planet_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": planet_id.to_string()
+        })).await.expect("Failed to get planet");
+        assert_eq!(planet_result.get("parent_entity_id").unwrap(), system_id.to_string());
+        
+        // Verify city is on planet
+        let city_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": city_id.to_string()
+        })).await.expect("Failed to get city");
+        assert_eq!(city_result.get("parent_entity_id").unwrap(), planet_id.to_string());
+
         // Create a second room in the building
         let create_tool = CreateEntityTool::new(entity_manager.clone());
         let room2_params = json!({
@@ -291,6 +317,29 @@ mod world_interaction_movement_tests {
         let (galaxy_id, system_id, planet_id, city_id, building_id, room_id) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
 
+        // Verify building hierarchy before cross-level movement
+        let get_tool = GetEntityDetailsTool::new(entity_manager.clone());
+        
+        // Verify galaxy -> system -> planet hierarchy
+        let system_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": system_id.to_string()
+        })).await.expect("Failed to get system");
+        assert_eq!(system_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
+        
+        let planet_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": planet_id.to_string()
+        })).await.expect("Failed to get planet");
+        assert_eq!(planet_result.get("parent_entity_id").unwrap(), system_id.to_string());
+        
+        // Verify building is in city
+        let building_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": building_id.to_string()
+        })).await.expect("Failed to get building");
+        assert_eq!(building_result.get("parent_entity_id").unwrap(), city_id.to_string());
+
         // Create character in the room
         let (character_id, _, _) = create_test_entities(entity_manager.clone(), user.id, room_id).await;
 
@@ -323,6 +372,14 @@ mod world_interaction_movement_tests {
         let user = create_test_user(&_app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await.unwrap();
         let (galaxy_id, system1_id, planet1_id, _, _, _) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
+
+        // Verify first system is in galaxy before creating second system
+        let get_tool = GetEntityDetailsTool::new(entity_manager.clone());
+        let system1_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": system1_id.to_string()
+        })).await.expect("Failed to get system1");
+        assert_eq!(system1_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
 
         // Create second system and planet
         let create_tool = CreateEntityTool::new(entity_manager.clone());
@@ -392,6 +449,39 @@ mod world_interaction_movement_tests {
         let (galaxy_id, system_id, planet_id, city_id, building_id, room_id) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
 
+        // Verify hierarchy before attempting invalid move
+        let get_tool = GetEntityDetailsTool::new(entity_manager.clone());
+        
+        // Verify planet is in system (Planetary scale in Cosmic)
+        let planet_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": planet_id.to_string()
+        })).await.expect("Failed to get planet");
+        assert_eq!(planet_result.get("parent_entity_id").unwrap(), system_id.to_string());
+        assert_eq!(planet_result.get("scale").unwrap(), "Planetary");
+        
+        // Verify room is in building (Intimate scale)
+        let room_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": room_id.to_string()
+        })).await.expect("Failed to get room");
+        assert_eq!(room_result.get("parent_entity_id").unwrap(), building_id.to_string());
+        assert_eq!(room_result.get("scale").unwrap(), "Intimate");
+        
+        // Verify city is on planet
+        let city_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": city_id.to_string()
+        })).await.expect("Failed to get city");
+        assert_eq!(city_result.get("parent_entity_id").unwrap(), planet_id.to_string());
+        
+        // Verify galaxy contains system
+        let system_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": system_id.to_string()
+        })).await.expect("Failed to get system");
+        assert_eq!(system_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
+
         // Try to move planet into a room (should fail)
         let move_tool = MoveEntityTool::new(entity_manager.clone());
         let move_params = json!({
@@ -426,6 +516,29 @@ mod world_interaction_movement_tests {
         let user = create_test_user(&_app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await.unwrap();
         let (galaxy_id, system_id, planet_id, city_id, building_id, room_id) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
+
+        // Verify hierarchy structure
+        let get_tool = GetEntityDetailsTool::new(entity_manager.clone());
+        
+        // Verify galaxy -> system -> planet hierarchy
+        let system_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": system_id.to_string()
+        })).await.expect("Failed to get system");
+        assert_eq!(system_result.get("parent_entity_id").unwrap(), galaxy_id.to_string());
+        
+        let planet_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": planet_id.to_string()
+        })).await.expect("Failed to get planet");
+        assert_eq!(planet_result.get("parent_entity_id").unwrap(), system_id.to_string());
+        
+        // Verify room is in building (to understand scale relationships)
+        let room_result = get_tool.execute(&json!({
+            "user_id": user.id.to_string(),
+            "entity_id": room_id.to_string()
+        })).await.expect("Failed to get room");
+        assert_eq!(room_result.get("parent_entity_id").unwrap(), building_id.to_string());
 
         // Try to move building into another building (should fail)
         let create_tool = CreateEntityTool::new(entity_manager.clone());
@@ -483,7 +596,7 @@ mod world_interaction_movement_tests {
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         
         let user = create_test_user(&_app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await.unwrap();
-        let (galaxy_id, system_id, planet_id, city_id, building_id, room_id) = 
+        let (_galaxy_id, _system_id, _planet_id, city_id, _building_id, room_id) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
 
         // Create character in the room
@@ -530,7 +643,7 @@ mod world_interaction_movement_tests {
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         
         let user = create_test_user(&_app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await.unwrap();
-        let (galaxy_id, system_id, planet_id, city_id, building_id, room_id) = 
+        let (_galaxy_id, _system_id, _planet_id, city_id, building_id, room_id) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
 
         // Create multiple entities in room
@@ -576,7 +689,7 @@ mod world_interaction_movement_tests {
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         
         let user = create_test_user(&_app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await.unwrap();
-        let (galaxy_id, system_id, planet_id, city_id, building_id, room_id) = 
+        let (_galaxy_id, system_id, _planet_id, _city_id, _building_id, room_id) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
 
         // Create character in room
@@ -620,7 +733,7 @@ mod world_interaction_movement_tests {
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         
         let user = create_test_user(&_app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await.unwrap();
-        let (galaxy_id, system_id, planet_id, city_id, building_id, room_id) = 
+        let (_galaxy_id, _system_id, _planet_id, _city_id, building_id, room_id) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
 
         // Create multiple entities for movement testing
@@ -675,7 +788,7 @@ mod world_interaction_movement_tests {
         let entity_manager = create_entity_manager(_app.db_pool.clone()).await;
         
         let user = create_test_user(&_app.db_pool, "test@example.com".to_string(), "testuser".to_string()).await.unwrap();
-        let (galaxy_id, system_id, planet_id, city_id, building_id, room_id) = 
+        let (_galaxy_id, _system_id, _planet_id, _city_id, building_id, room_id) = 
             create_test_hierarchy(entity_manager.clone(), user.id).await;
 
         // Create character in room

@@ -40,7 +40,7 @@ use crate::{
 #[derive(Clone)]
 pub struct StrategicAgent {
     ai_client: Arc<dyn AiClient>,
-    ecs_entity_manager: Arc<EcsEntityManager>,
+    _ecs_entity_manager: Arc<EcsEntityManager>, // TODO: Use for strategic world state analysis
     redis_client: Arc<redis::Client>,
     model: String,
 }
@@ -55,7 +55,7 @@ impl StrategicAgent {
     ) -> Self {
         Self {
             ai_client,
-            ecs_entity_manager,
+            _ecs_entity_manager: ecs_entity_manager,
             redis_client,
             model,
         }
@@ -707,7 +707,7 @@ Respond with only the impact level: GLOBAL, REGIONAL, LOCAL, or PERSONAL"#, conv
     }
 
     /// Generate a detailed narrative arc description using Flash AI
-    #[allow(unused_variables)]
+    #[allow(dead_code, unused_variables)] // TODO: Integrate into strategic directive flow
     async fn generate_narrative_arc_description(
         &self,
         narrative_direction: &str,
@@ -798,6 +798,7 @@ NARRATIVE ARC:"#, narrative_direction, conversation_context);
     }
 
     /// Cache a strategic directive for performance optimization
+    #[allow(dead_code)] // TODO: Implement caching for performance optimization
     async fn cache_directive(
         &self,
         user_id: Uuid,

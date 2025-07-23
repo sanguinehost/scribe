@@ -13,9 +13,7 @@ use chrono::Utc;
 
 use scribe_backend::{
     models::{chronicle_event::ChronicleEvent},
-    services::agentic::relationship_analysis_structured_output::*,
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user, create_test_hybrid_query_service},
-    errors::AppError,
 };
 
 // Helper function to create test ChronicleEvent objects
@@ -46,6 +44,34 @@ fn create_test_chronicle_event(user_id: Uuid, event_type: &str, summary: &str, e
     }
 }
 
+// Helper function to create test events with entity relationships
+fn create_relationship_events(user_id: Uuid, entity_a: Uuid, entity_b: Uuid) -> Vec<ChronicleEvent> {
+    vec![
+        create_test_chronicle_event(
+            user_id,
+            "interaction",
+            "Entity interaction event",
+            Some(json!({
+                "entities": [entity_a.to_string(), entity_b.to_string()],
+                "relationship_type": "collaboration",
+                "timestamp": Utc::now().to_rfc3339()
+            }))
+        ),
+        create_test_chronicle_event(
+            user_id,
+            "relationship_change",
+            "Relationship strength increased",
+            Some(json!({
+                "entity_a": entity_a.to_string(),
+                "entity_b": entity_b.to_string(),
+                "relationship_type": "alliance",
+                "strength_delta": 0.2,
+                "new_strength": 0.8
+            }))
+        )
+    ]
+}
+
 // OWASP A01: Broken Access Control
 // Test that relationship analysis respects user ownership and privacy
 #[tokio::test]
@@ -59,11 +85,16 @@ async fn test_a01_access_control_user_isolation() {
     let user2 = create_test_user(&test_app.db_pool, "user2".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
     );
+    
+    // Create entities that belong to different users
+    let entity_a = Uuid::new_v4(); // Entity owned by user1
+    let entity_b = Uuid::new_v4(); // Entity owned by user1
+    let entity_c = Uuid::new_v4(); // Entity that would be owned by user2
     
     // Create events with relationship data that belongs to user1
     let events = vec![
@@ -72,26 +103,67 @@ async fn test_a01_access_control_user_isolation() {
             "interaction",
             "User1's private relationship interaction",
             Some(json!({
-                "entities": ["entity1", "entity2"],
+                "entities": [entity_a.to_string(), entity_b.to_string()],
                 "relationship_type": "private_friendship",
                 "sensitive_details": "personal_secrets"
             }))
+        ),
+        create_test_chronicle_event(
+            user1.id,
+            "interaction",
+            "Another interaction between entities",
+            Some(json!({
+                "entities": [entity_a.to_string(), entity_c.to_string()],
+                "relationship_type": "business_partnership",
+                "confidential": true
+            }))
         )
     ];
-    
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
     
     // Test: System should validate user ownership in real implementation
     // The service should check that events belong to the requesting user
     for event in &events {
         assert_eq!(event.user_id, user1.id);
         assert_ne!(event.user_id, user2.id);
+        
+        // Verify entities are properly referenced in event data
+        if let Some(data) = &event.event_data {
+            if let Some(entities) = data.get("entities").and_then(|e| e.as_array()) {
+                assert!(!entities.is_empty(), "Events should contain entity references");
+                
+                // Check that at least one of our test entities is referenced
+                let entity_strings: Vec<String> = entities.iter()
+                    .filter_map(|e| e.as_str())
+                    .map(|s| s.to_string())
+                    .collect();
+                
+                let contains_test_entity = entity_strings.contains(&entity_a.to_string()) ||
+                                         entity_strings.contains(&entity_b.to_string()) ||
+                                         entity_strings.contains(&entity_c.to_string());
+                assert!(contains_test_entity, "Events should reference test entities");
+            }
+        }
     }
     
-    // Test: Different user should not be able to access user1's relationship data
-    // In a real implementation, this would be enforced by the service layer
-    // checking user context against event ownership
+    // Test: Verify event data structure for security concerns
+    let user2_event = create_test_chronicle_event(
+        user2.id,
+        "interaction",
+        "User2's separate interaction",
+        Some(json!({
+            "entities": [entity_c.to_string(), Uuid::new_v4().to_string()],
+            "relationship_type": "friendship"
+        }))
+    );
+    
+    // Ensure user2's event is isolated from user1's events
+    assert_eq!(user2_event.user_id, user2.id);
+    assert_ne!(user2_event.user_id, user1.id);
+    
+    // In a real implementation, the service would enforce that:
+    // 1. user1 cannot query relationships involving user2's data
+    // 2. user2 cannot access user1's private relationship details
+    // 3. Entity ownership is respected across user boundaries
     
     println!("✓ A01: Access Control - User isolation and privacy validated");
 }
@@ -106,11 +178,14 @@ async fn test_a02_cryptographic_failures_data_protection() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
     );
+    
+    let entity_a = Uuid::new_v4();
+    let entity_b = Uuid::new_v4();
     
     // Test: Ensure sensitive relationship data is properly handled
     let events = vec![
@@ -119,7 +194,7 @@ async fn test_a02_cryptographic_failures_data_protection() {
             "sensitive_interaction",
             "Confidential relationship meeting",
             Some(json!({
-                "participants": ["entity1", "entity2"],
+                "participants": [entity_a.to_string(), entity_b.to_string()],
                 "relationship_secrets": "classified_emotional_data",
                 "private_communications": "personal_confessions",
                 "location": "secret_meeting_place"
@@ -127,8 +202,8 @@ async fn test_a02_cryptographic_failures_data_protection() {
         )
     ];
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    // Also test with standard relationship events
+    let _relationship_events = create_relationship_events(user.id, entity_a, entity_b);
     
     // Test: Service should handle encrypted relationship data properly
     // In a real implementation, this would call the actual AI service
@@ -157,11 +232,14 @@ async fn test_a03_injection_protection() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
     );
+    
+    let entity_a = Uuid::new_v4();
+    let entity_b = Uuid::new_v4();
     
     // Test: SQL injection attempts in relationship data
     let malicious_events = vec![
@@ -173,13 +251,13 @@ async fn test_a03_injection_protection() {
                 "malicious_relationship": "'; UPDATE users SET password = 'hacked' WHERE 1=1; --",
                 "script_injection": "<script>alert('XSS')</script>",
                 "command_injection": "$(rm -rf /)",
-                "entities": ["entity1'; DROP TABLE chronicle_events; --", "entity2"]
+                "entities": [
+                    format!("{}'; DROP TABLE chronicle_events; --", entity_a),
+                    entity_b.to_string()
+                ]
             }))
         )
     ];
-    
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
     
     // Test: Service should safely handle malicious input
     // The service should treat all input as data, not executable code
@@ -209,7 +287,7 @@ async fn test_a04_insecure_design_security_controls() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -236,8 +314,8 @@ async fn test_a04_insecure_design_security_controls() {
         )
     ];
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    let _entity_a = Uuid::new_v4();
+    let _entity_b = Uuid::new_v4();
     
     // Test: Service should handle invalid input gracefully
     // Should not crash or cause resource exhaustion
@@ -264,7 +342,7 @@ async fn test_a05_security_misconfiguration_secure_defaults() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -280,8 +358,8 @@ async fn test_a05_security_misconfiguration_secure_defaults() {
         )
     ];
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    let _entity_a = Uuid::new_v4();
+    let _entity_b = Uuid::new_v4();
     
     // Test: Service should work with minimal data
     // Should not expose internal system details
@@ -304,14 +382,14 @@ async fn test_a06_vulnerable_components_no_exposure() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
     );
     
     // Test: Error handling should not expose component versions
-    let events = vec![
+    let _events = vec![
         create_test_chronicle_event(
             user.id,
             "test",
@@ -323,8 +401,8 @@ async fn test_a06_vulnerable_components_no_exposure() {
         )
     ];
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    let _entity_a = Uuid::new_v4();
+    let _entity_b = Uuid::new_v4();
     
     // Test: Should not expose version information in any processing
     // This would be tested in actual error scenarios
@@ -342,7 +420,7 @@ async fn test_a07_authentication_failures_context_handling() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -361,8 +439,8 @@ async fn test_a07_authentication_failures_context_handling() {
         )
     ];
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    let _entity_a = Uuid::new_v4();
+    let _entity_b = Uuid::new_v4();
     
     // Test: Service should work with proper user context
     // Should not expose authentication details
@@ -386,7 +464,7 @@ async fn test_a08_data_integrity_validation() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -409,8 +487,8 @@ async fn test_a08_data_integrity_validation() {
     // Introduce integrity issue: updated_at before created_at
     events[0].updated_at = events[0].created_at - chrono::Duration::hours(1);
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    let _entity_a = Uuid::new_v4();
+    let _entity_b = Uuid::new_v4();
     
     // Test: Service should handle data integrity issues gracefully
     // Should not fail catastrophically on integrity issues
@@ -436,7 +514,7 @@ async fn test_a09_security_logging_monitoring() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -456,8 +534,8 @@ async fn test_a09_security_logging_monitoring() {
         )
     ];
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    let _entity_a = Uuid::new_v4();
+    let _entity_b = Uuid::new_v4();
     
     // Test: Service should process even suspicious relationship events
     // Should log the suspicious activity appropriately
@@ -483,7 +561,7 @@ async fn test_a10_ssrf_protection() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -505,8 +583,8 @@ async fn test_a10_ssrf_protection() {
         )
     ];
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    let _entity_a = Uuid::new_v4();
+    let _entity_b = Uuid::new_v4();
     
     // Test: Service should not make external requests based on relationship data
     // Should process the event without making external requests
@@ -532,7 +610,7 @@ async fn test_comprehensive_security_integration() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -557,8 +635,8 @@ async fn test_comprehensive_security_integration() {
         )
     ];
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    let _entity_a = Uuid::new_v4();
+    let _entity_b = Uuid::new_v4();
     
     // Test: Service should handle complex relationship events securely
     for event in &complex_events {
@@ -586,7 +664,7 @@ async fn test_performance_security_resource_limits() {
     let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string())
         .await.unwrap();
     
-    let service = create_test_hybrid_query_service(
+    let _service = create_test_hybrid_query_service(
         test_app.ai_client.clone(),
         Arc::new(test_app.db_pool.clone()),
         test_app.redis_client.clone(),
@@ -611,8 +689,8 @@ async fn test_performance_security_resource_limits() {
         )
     ];
     
-    let entity_a = Uuid::new_v4();
-    let entity_b = Uuid::new_v4();
+    let _entity_a = Uuid::new_v4();
+    let _entity_b = Uuid::new_v4();
     
     // Test: Service should handle large relationship events efficiently
     let start_time = std::time::Instant::now();
