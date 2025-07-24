@@ -12,6 +12,7 @@ pub mod documents;
 pub mod ecs;
 pub mod ecs_diesel;
 pub mod world_model;
+pub mod spatial;
 pub mod narrative_ontology;
 pub mod email_verification;
 pub mod lorebook_dtos;
@@ -48,6 +49,13 @@ pub use ecs::{
 pub use ecs_diesel::*;
 pub use world_model::*;
 pub use narrative_ontology::*;
+pub use spatial::{
+    SpatialType as EnhancedSpatialType, 
+    EnhancedSpatialComponent,
+    RelativePosition,
+    AbsolutePosition,
+    Rotation,
+};
 pub use email_verification::*;
 pub use lorebook_dtos::*;
 pub use lorebooks::*;

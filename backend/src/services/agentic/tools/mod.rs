@@ -6,6 +6,9 @@ pub mod ai_entity_resolution;
 pub mod ai_narrative_analysis;
 pub mod world_interaction_tools;
 pub mod structured_output;
+pub mod lorebook_tools;
+pub mod chronicle_tools;
+pub mod inventory_tools;
 
 use async_trait::async_trait;
 use serde_json::Value;

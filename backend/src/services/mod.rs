@@ -57,6 +57,7 @@ pub mod agentic_state_update_service;
 pub mod agentic_state_update_structured_output;
 pub mod agent_prompt_templates;
 pub mod task_queue;
+pub mod orchestrator;
 
 // Re-export agentic components
 pub use agentic::{
@@ -159,4 +160,9 @@ pub use agent_prompt_templates::{
 pub use task_queue::{
     TaskQueueService, EnrichmentTask, NewEnrichmentTask, EnrichmentTaskPayload,
     CreateTaskRequest, DequeuedTask, TaskStatus, TaskPriority, TaskUpdate
+};
+pub use orchestrator::{
+    OrchestratorAgent, OrchestratorConfig, OrchestratorError, ReasoningPhase,
+    ReasoningContext, PerceptionResult, StrategyResult, PlanResult, ExecutionResult,
+    ReflectionResult, ReasoningLoopResult, TaskContext
 };

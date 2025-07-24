@@ -22,6 +22,9 @@ use super::{
         hierarchy_tools::*,
         ai_powered_tools::*,
         world_interaction_tools::*,
+        lorebook_tools::*,
+        chronicle_tools::*,
+        inventory_tools::*,
     },
     tool_registry::{
         ToolRegistry, ToolMetadataBuilder, ToolCategory, 
@@ -62,6 +65,22 @@ pub fn register_all_tools(
     
     // Register world interaction tools
     register_world_interaction_tools(app_state.ecs_entity_manager.clone())?;
+    
+    // Register lorebook query tools
+    register_lorebook_query_tools(
+        lorebook_service.clone(),
+        app_state.encryption_service.clone(),
+        app_state.get_db_pool(),
+    )?;
+    
+    // Register chronicle query tools
+    register_chronicle_query_tools(chronicle_service.clone())?;
+    
+    // Register inventory management tools
+    register_inventory_management_tools(
+        app_state.world_query_service.clone(),
+        app_state.get_db_pool(),
+    )?;
     
     // Apply access policies to registered tools
     apply_tool_access_policies()?;
@@ -506,6 +525,186 @@ fn register_ai_powered_tools(app_state: Arc<AppState>) -> Result<(), AppError> {
     
     ToolRegistry::register_tool(Arc::new(update_salience_tool), update_salience_metadata)?;
     
+    // AssessCharacterImpactTool
+    let assess_character_tool = AssessCharacterImpactTool::new(app_state.clone());
+    let assess_character_metadata = ToolMetadataBuilder::new(
+        assess_character_tool.name(),
+        assess_character_tool.description()
+    )
+    .category(ToolCategory::AIAnalysis)
+    .when_to_use("To analyze how narrative events impact specific characters")
+    .when_not_to_use("For general world events without character involvement")
+    .execution_time(ExecutionTime::Moderate)
+    .external_calls(true)
+    .modifies_state(false)
+    .tags(vec!["ai".to_string(), "character".to_string(), "impact".to_string()])
+    .input_schema(assess_character_tool.input_schema())
+    .output_format("JSON object with impact assessment including emotional, physical, and social effects")
+    .example(
+        "Assess impact of battle on character",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "character_name": "Alice",
+            "event_description": "Alice defeated the Dark Lord in single combat",
+            "context": "Final battle of the campaign"
+        }),
+        "Returns assessment of physical injuries, emotional trauma, reputation gains, and relationship changes"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(assess_character_tool), assess_character_metadata)?;
+    
+    // AssessEnvironmentTool
+    let assess_environment_tool = AssessEnvironmentTool::new(app_state.clone());
+    let assess_environment_metadata = ToolMetadataBuilder::new(
+        assess_environment_tool.name(),
+        assess_environment_tool.description()
+    )
+    .category(ToolCategory::AIAnalysis)
+    .when_to_use("To analyze environmental conditions and their narrative implications")
+    .when_not_to_use("For character-focused or social situations")
+    .execution_time(ExecutionTime::Moderate)
+    .external_calls(true)
+    .modifies_state(false)
+    .tags(vec!["ai".to_string(), "environment".to_string(), "atmosphere".to_string()])
+    .input_schema(assess_environment_tool.input_schema())
+    .output_format("JSON object with environmental assessment including hazards, opportunities, and mood")
+    .example(
+        "Assess dungeon environment",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "location": "Ancient Crystal Caverns",
+            "conditions": ["dark", "magical crystals", "underground river"],
+            "context": "Party exploring for artifacts"
+        }),
+        "Returns environmental hazards, exploration opportunities, and atmospheric details"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(assess_environment_tool), assess_environment_metadata)?;
+    
+    // AssessNarrativeOpportunitiesTool
+    let assess_narrative_tool = AssessNarrativeOpportunitiesTool::new(app_state.clone());
+    let assess_narrative_metadata = ToolMetadataBuilder::new(
+        assess_narrative_tool.name(),
+        assess_narrative_tool.description()
+    )
+    .category(ToolCategory::AIAnalysis)
+    .when_to_use("To identify potential narrative directions and story opportunities")
+    .when_not_to_use("For predetermined story outcomes")
+    .execution_time(ExecutionTime::Moderate)
+    .external_calls(true)
+    .modifies_state(false)
+    .tags(vec!["ai".to_string(), "narrative".to_string(), "opportunities".to_string()])
+    .input_schema(assess_narrative_tool.input_schema())
+    .output_format("JSON object with narrative opportunities including plot hooks, character arcs, and world events")
+    .example(
+        "Find narrative opportunities after major event",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "current_situation": "The king has been assassinated",
+            "active_characters": ["Prince Marcus", "General Vara", "Court Wizard"],
+            "recent_events": ["War with neighboring kingdom", "Drought affecting crops"]
+        }),
+        "Returns potential succession conflicts, power struggles, investigation quests, and political intrigue"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(assess_narrative_tool), assess_narrative_metadata)?;
+    
+    // GenerateDescriptionTool
+    let generate_description_tool = GenerateDescriptionTool::new(app_state.clone());
+    let generate_description_metadata = ToolMetadataBuilder::new(
+        generate_description_tool.name(),
+        generate_description_tool.description()
+    )
+    .category(ToolCategory::Creation)
+    .when_to_use("To generate rich descriptions for entities, locations, or items")
+    .when_not_to_use("When specific predetermined descriptions are required")
+    .execution_time(ExecutionTime::Fast)
+    .external_calls(true)
+    .modifies_state(false)
+    .tags(vec!["ai".to_string(), "generation".to_string(), "description".to_string()])
+    .input_schema(generate_description_tool.input_schema())
+    .output_format("JSON object with generated description text")
+    .example(
+        "Generate description for magical sword",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "entity_type": "item",
+            "entity_name": "Sunblade",
+            "attributes": {
+                "type": "sword",
+                "material": "celestial steel",
+                "magic": "radiant damage"
+            },
+            "style": "epic fantasy"
+        }),
+        "Returns detailed description of the Sunblade's appearance, history, and magical properties"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(generate_description_tool), generate_description_metadata)?;
+    
+    // GenerateNameTool
+    let generate_name_tool = GenerateNameTool::new(app_state.clone());
+    let generate_name_metadata = ToolMetadataBuilder::new(
+        generate_name_tool.name(),
+        generate_name_tool.description()
+    )
+    .category(ToolCategory::Creation)
+    .when_to_use("To generate contextually appropriate names for entities")
+    .when_not_to_use("When specific naming conventions must be strictly followed")
+    .execution_time(ExecutionTime::Fast)
+    .external_calls(true)
+    .modifies_state(false)
+    .tags(vec!["ai".to_string(), "generation".to_string(), "naming".to_string()])
+    .input_schema(generate_name_tool.input_schema())
+    .output_format("JSON object with generated name and alternatives")
+    .example(
+        "Generate elven city name",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "entity_type": "location",
+            "culture": "elven",
+            "characteristics": ["forest", "ancient", "magical"],
+            "count": 3
+        }),
+        "Returns primary name suggestion and 2 alternatives like 'Silverleaf Glade', 'Moonwhisper Haven'"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(generate_name_tool), generate_name_metadata)?;
+    
+    // GenerateWorldStateTool
+    let generate_world_state_tool = GenerateWorldStateTool::new(app_state.clone());
+    let generate_world_state_metadata = ToolMetadataBuilder::new(
+        generate_world_state_tool.name(),
+        generate_world_state_tool.description()
+    )
+    .category(ToolCategory::Creation)
+    .when_to_use("To generate complex world state changes based on events")
+    .when_not_to_use("For simple, predetermined state updates")
+    .execution_time(ExecutionTime::Slow)
+    .external_calls(true)
+    .modifies_state(false)
+    .tags(vec!["ai".to_string(), "generation".to_string(), "world-state".to_string()])
+    .input_schema(generate_world_state_tool.input_schema())
+    .output_format("JSON object with world state changes including entity updates, new relationships, and consequences")
+    .example(
+        "Generate world state after dragon attack",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "event": "Ancient dragon attacks the capital city",
+            "affected_entities": ["Capital City", "Royal Palace", "City Guard"],
+            "scope": "regional"
+        }),
+        "Returns destruction patterns, casualties, economic impact, political consequences, and refugee movements"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(generate_world_state_tool), generate_world_state_metadata)?;
+    
     Ok(())
 }
 
@@ -826,6 +1025,228 @@ fn register_world_interaction_tools(ecs_manager: Arc<EcsEntityManager>) -> Resul
     .build();
     
     ToolRegistry::register_tool(Arc::new(update_relationship_tool), update_relationship_metadata)?;
+    
+    // GetVisibleEntitiesAndExitsTool
+    let visible_entities_tool = GetVisibleEntitiesAndExitsTool::new(ecs_manager.clone());
+    let visible_entities_metadata = ToolMetadataBuilder::new(
+        visible_entities_tool.name(),
+        visible_entities_tool.description()
+    )
+    .category(ToolCategory::WorldState)
+    .when_to_use("To get all visible entities and available exits from a character's current location")
+    .when_not_to_use("For finding entities that are hidden or in other locations")
+    .execution_time(ExecutionTime::Fast)
+    .external_calls(false)
+    .modifies_state(false)
+    .tags(vec!["perception".to_string(), "visibility".to_string(), "exploration".to_string()])
+    .input_schema(visible_entities_tool.input_schema())
+    .output_format("JSON object with visible entities, available exits, and current location details")
+    .example(
+        "Get what a character can see and where they can go",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "character_id": "character-uuid",
+            "perception_radius": 50.0
+        }),
+        "Returns all visible entities within perception radius and exits to adjacent areas"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(visible_entities_tool), visible_entities_metadata)?;
+    
+    Ok(())
+}
+
+/// Register lorebook query tools
+fn register_lorebook_query_tools(
+    lorebook_service: Arc<LorebookService>,
+    encryption_service: Arc<crate::services::EncryptionService>,
+    db_pool: crate::PgPool,
+) -> Result<(), AppError> {
+    // QueryLorebookTool
+    let query_lorebook_tool = QueryLorebookTool::new(
+        lorebook_service.clone(),
+        encryption_service.clone(),
+        db_pool.clone(),
+    );
+    let query_lorebook_metadata = ToolMetadataBuilder::new(
+        query_lorebook_tool.name(),
+        query_lorebook_tool.description()
+    )
+    .category(ToolCategory::Search)
+    .when_to_use("When you need to find lorebook entries about specific topics, characters, or world elements")
+    .when_not_to_use("For creating new entries (use manage_lorebook instead)")
+    .execution_time(ExecutionTime::Moderate)
+    .external_calls(false)
+    .modifies_state(false)
+    .tags(vec!["lorebook".to_string(), "search".to_string(), "knowledge".to_string()])
+    .input_schema(query_lorebook_tool.input_schema())
+    .output_format("JSON object with matching lorebook entries including title, content, and metadata")
+    .example(
+        "Search for information about the Shanyuan race",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "query": {
+                "type": "ByName",
+                "name": "Shanyuan"
+            },
+            "limit": 5
+        }),
+        "Returns up to 5 lorebook entries mentioning 'Shanyuan' in their titles"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(query_lorebook_tool), query_lorebook_metadata)?;
+    
+    // ManageLorebookTool
+    let manage_lorebook_tool = ManageLorebookTool::new(
+        lorebook_service,
+        encryption_service,
+        db_pool,
+    );
+    let manage_lorebook_metadata = ToolMetadataBuilder::new(
+        manage_lorebook_tool.name(),
+        manage_lorebook_tool.description()
+    )
+    .category(ToolCategory::Creation)
+    .when_to_use("To create new lorebook entries or update existing world knowledge")
+    .when_not_to_use("For searching existing entries (use query_lorebook instead)")
+    .execution_time(ExecutionTime::Fast)
+    .external_calls(false)
+    .modifies_state(true)
+    .tags(vec!["lorebook".to_string(), "creation".to_string(), "knowledge".to_string()])
+    .input_schema(manage_lorebook_tool.input_schema())
+    .output_format("JSON object with operation status and created/updated entry ID")
+    .example(
+        "Create lorebook entry for a new race",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "operation": {
+                "type": "Create",
+                "name": "The Ren",
+                "category": "race",
+                "content": "The Ren are a mysterious race of scholars...",
+                "tags": ["race", "scholars", "magic"]
+            }
+        }),
+        "Creates a new lorebook entry about the Ren race"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(manage_lorebook_tool), manage_lorebook_metadata)?;
+    
+    Ok(())
+}
+
+/// Register chronicle query tools
+fn register_chronicle_query_tools(
+    chronicle_service: Arc<ChronicleService>,
+) -> Result<(), AppError> {
+    // QueryChronicleEventsTool
+    let query_chronicle_tool = QueryChronicleEventsTool::new(chronicle_service);
+    let query_chronicle_metadata = ToolMetadataBuilder::new(
+        query_chronicle_tool.name(),
+        query_chronicle_tool.description()
+    )
+    .category(ToolCategory::Search)
+    .when_to_use("To retrieve historical events, past interactions, or narrative history")
+    .when_not_to_use("For creating new events (use create_chronicle_event instead)")
+    .execution_time(ExecutionTime::Moderate)
+    .external_calls(false)
+    .modifies_state(false)
+    .tags(vec!["chronicle".to_string(), "history".to_string(), "events".to_string()])
+    .input_schema(query_chronicle_tool.input_schema())
+    .output_format("JSON object with matching chronicle events including title, content, timestamp, and participants")
+    .example(
+        "Get recent events for narrative context",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "query": {
+                "type": "RecentEvents",
+                "limit": 10
+            }
+        }),
+        "Returns the 10 most recent chronicle events for the user"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(query_chronicle_tool), query_chronicle_metadata)?;
+    
+    Ok(())
+}
+
+/// Register inventory management tools
+fn register_inventory_management_tools(
+    world_query_service: Arc<crate::services::WorldQueryService>,
+    db_pool: crate::PgPool,
+) -> Result<(), AppError> {
+    // QueryInventoryTool
+    let query_inventory_tool = QueryInventoryTool::new(
+        world_query_service.clone(),
+        db_pool.clone(),
+    );
+    let query_inventory_metadata = ToolMetadataBuilder::new(
+        query_inventory_tool.name(),
+        query_inventory_tool.description()
+    )
+    .category(ToolCategory::Search)
+    .when_to_use("To check what items an entity contains, including nested inventories")
+    .when_not_to_use("For finding entity locations or non-item components")
+    .execution_time(ExecutionTime::Moderate)
+    .external_calls(false)
+    .modifies_state(false)
+    .tags(vec!["inventory".to_string(), "items".to_string(), "search".to_string()])
+    .input_schema(query_inventory_tool.input_schema())
+    .output_format("JSON object with list of items including names, types, quantities, and properties")
+    .example(
+        "Check Sol's inventory including nested containers",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "query": {
+                "type": "ByEntity",
+                "entity_id": "sol-uuid-here",
+                "include_nested": true
+            }
+        }),
+        "Returns all items Sol is carrying, including items inside his bags and pouches"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(query_inventory_tool), query_inventory_metadata)?;
+    
+    // ManageInventoryTool
+    let manage_inventory_tool = ManageInventoryTool::new(
+        world_query_service,
+        db_pool,
+    );
+    let manage_inventory_metadata = ToolMetadataBuilder::new(
+        manage_inventory_tool.name(),
+        manage_inventory_tool.description()
+    )
+    .category(ToolCategory::EntityManagement)
+    .when_to_use("To move items between containers or update item properties")
+    .when_not_to_use("For creating new entities (use create_entity for items)")
+    .execution_time(ExecutionTime::Fast)
+    .external_calls(false)
+    .modifies_state(true)
+    .tags(vec!["inventory".to_string(), "items".to_string(), "management".to_string()])
+    .input_schema(manage_inventory_tool.input_schema())
+    .output_format("JSON object with operation status and affected item details")
+    .example(
+        "Move a healing potion from Sol's backpack to his belt",
+        json!({
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "operation": {
+                "type": "MoveItem",
+                "item_id": "potion-uuid",
+                "target_container_id": "belt-uuid"
+            }
+        }),
+        "Moves the item to the new container"
+    )
+    .build();
+    
+    ToolRegistry::register_tool(Arc::new(manage_inventory_tool), manage_inventory_metadata)?;
     
     Ok(())
 }

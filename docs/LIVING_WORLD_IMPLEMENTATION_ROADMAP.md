@@ -1460,26 +1460,26 @@ User Message → Lightning Agent (rich cache) → Create Task in Queue
 
 ### **Task 8.1: Foundational Infrastructure - The Durable Task Queue**
 *   **Objective:** Create a robust, persistent task queue system in PostgreSQL to manage background world enrichment tasks with end-to-end encryption.
-*   **[ ] Subtask 8.1.1: Design and Implement Task Queue Schema:**
-    *   [ ] Create `world_enrichment_tasks` table in PostgreSQL
-    *   [ ] **Schema:** `task_id` (UUID), `session_id` (UUID), `user_id` (UUID), `status` (pending, in_progress, completed, failed), `encrypted_payload` (BYTEA), `payload_nonce` (BYTEA), `priority` (integer), `created_at`, `updated_at`, `encrypted_error` (BYTEA), `error_nonce` (BYTEA), `retry_count` (integer)
-    *   [ ] Implement database migrations following encryption patterns
-    *   [ ] Create indexes for efficient polling (status, priority, created_at)
-*   **[ ] Subtask 8.1.2: Create Task Queue Service with Encryption:**
-    *   [ ] Create `task_queue_service.rs` with comprehensive API
-    *   [ ] Implement `enqueue_task` that encrypts payload with user's DEK
-    *   [ ] Implement `dequeue_task` with atomic locking and DEK retrieval
-    *   [ ] Add `update_task_status` with encrypted error logging
-    *   [ ] Ensure DEK is passed securely to background workers
-    *   [ ] Implement task lifecycle tracking with encrypted audit logs
-*   **[ ] Subtask 8.1.3: Test-Driven Development for Task Queue:**
-    *   [ ] Create `task_queue_tests.rs` - Basic functionality tests
-    *   [ ] Create `task_queue_security_tests.rs` - OWASP-based security tests
-    *   [ ] Create `task_queue_encryption_tests.rs` - E2E encryption verification
-    *   [ ] Create `task_queue_integration_tests.rs` - Database integration tests
-    *   [ ] Test concurrent dequeue operations and race conditions
-    *   [ ] Verify user data isolation (A01: Broken Access Control)
-    *   [ ] Verify encrypted payloads cannot be read without DEK
+*   **[x] Subtask 8.1.1: Design and Implement Task Queue Schema:**
+    *   [x] Create `world_enrichment_tasks` table in PostgreSQL
+    *   [x] **Schema:** `task_id` (UUID), `session_id` (UUID), `user_id` (UUID), `status` (pending, in_progress, completed, failed), `encrypted_payload` (BYTEA), `payload_nonce` (BYTEA), `priority` (integer), `created_at`, `updated_at`, `encrypted_error` (BYTEA), `error_nonce` (BYTEA), `retry_count` (integer)
+    *   [x] Implement database migrations following encryption patterns
+    *   [x] Create indexes for efficient polling (status, priority, created_at)
+*   **[x] Subtask 8.1.2: Create Task Queue Service with Encryption:**
+    *   [x] Create `task_queue_service.rs` with comprehensive API
+    *   [x] Implement `enqueue_task` that encrypts payload with user's DEK
+    *   [x] Implement `dequeue_task` with atomic locking and DEK retrieval
+    *   [x] Add `update_task_status` with encrypted error logging
+    *   [x] Ensure DEK is passed securely to background workers
+    *   [x] Implement task lifecycle tracking with encrypted audit logs
+*   **[x] Subtask 8.1.3: Test-Driven Development for Task Queue:**
+    *   [x] Create `task_queue_tests.rs` - Basic functionality tests
+    *   [x] Create `task_queue_security_tests.rs` - OWASP-based security tests
+    *   [x] Create `task_queue_encryption_tests.rs` - E2E encryption verification
+    *   [x] Create `task_queue_integration_tests.rs` - Database integration tests
+    *   [x] Test concurrent dequeue operations and race conditions
+    *   [x] Verify user data isolation (A01: Broken Access Control)
+    *   [x] Verify encrypted payloads cannot be read without DEK
 *   **[ ] Subtask 8.1.4: Integrate with Chat Service:**
     *   [ ] Replace current `tokio::spawn` with `enqueue_task` 
     *   [ ] Pass user's DEK securely to background pipeline
@@ -1488,36 +1488,36 @@ User Message → Lightning Agent (rich cache) → Create Task in Queue
 
 ### **Task 8.2: The Intelligent Orchestrator Agent**
 *   **Objective:** Implement the stateful Orchestrator Agent that processes tasks with dynamic reasoning, optimized for Progressive Response Architecture.
-*   **[ ] Subtask 8.2.1: Create the Orchestrator Agent Core:**
-    *   [ ] Create `orchestrator_agent.rs` with stateful architecture
-    *   [ ] Implement worker loop that polls TaskQueueService
-    *   [ ] Add graceful shutdown and task handoff
-    *   [ ] Implement health checks and worker lifecycle management
-*   **[ ] Subtask 8.2.2: Implement the Core Reasoning Loop:**
-    *   [ ] **Phase 1 - Perceive:** Dynamic perception based on decrypted task context
+*   **[x] Subtask 8.2.1: Create the Orchestrator Agent Core:**
+    *   [x] Create `orchestrator_agent.rs` with stateful architecture
+    *   [x] Implement worker loop that polls TaskQueueService
+    *   [x] Add graceful shutdown and task handoff
+    *   [x] Implement health checks and worker lifecycle management
+*   **[x] Subtask 8.2.2: Implement the Core Reasoning Loop:**
+    *   [x] **Phase 1 - Perceive:** Dynamic perception based on decrypted task context
         - First message: Full entity extraction and world analysis
         - Subsequent: Delta analysis (what changed since last interaction)
-    *   [ ] **Phase 2 - Strategize:** Goal formulation with alternative paths
+    *   [x] **Phase 2 - Strategize:** Goal formulation with alternative paths
         - First message: Establish narrative context and world state
         - Subsequent: Update narrative threads and relationships
-    *   [ ] **Phase 3 - Plan:** Create multi-step plans with dependency tracking
+    *   [x] **Phase 3 - Plan:** Create multi-step plans with dependency tracking
         - Leverage cached world state from previous Orchestrator runs
-    *   [ ] **Phase 4 - Execute:** Dynamic tool/agent selection with DEK propagation
+    *   [x] **Phase 4 - Execute:** Dynamic tool/agent selection with DEK propagation
         - Intelligent decisions on create vs update based on cache
-    *   [ ] **Phase 5 - Reflect:** Verify goal completion and re-plan if needed
+    *   [x] **Phase 5 - Reflect:** Verify goal completion and re-plan if needed
         - Update all cache layers for Lightning Agent's next use
-    *   [ ] Implement encrypted state persistence between phases
-*   **[ ] Subtask 8.2.3: Intelligent Decision Making:**
-    *   [ ] Integrate `intelligent_world_state_planner.rs` for smart operations
-    *   [ ] Implement "check before create" logic for all entities
-    *   [ ] Add narrative implication analysis (upgrade vs replace)
-    *   [ ] Create dependency resolution (create location before move)
-*   **[ ] Subtask 8.2.4: Test-Driven Development for Orchestrator:**
-    *   [ ] Create `orchestrator_agent_tests.rs` - Core logic tests
-    *   [ ] Create `orchestrator_agent_reasoning_tests.rs` - Decision making tests
-    *   [ ] Create `orchestrator_agent_security_tests.rs` - OWASP security tests
-    *   [ ] Create `orchestrator_agent_integration_tests.rs` - End-to-end tests
-    *   [ ] Mock all agent and tool dependencies for unit tests
+    *   [x] Implement encrypted state persistence between phases
+*   **[x] Subtask 8.2.3: Intelligent Decision Making:**
+    *   [x] Integrate `intelligent_world_state_planner.rs` for smart operations
+    *   [x] Implement "check before create" logic for all entities
+    *   [x] Add narrative implication analysis (upgrade vs replace)
+    *   [x] Create dependency resolution (create location before move)
+*   **[x] Subtask 8.2.4: Test-Driven Development for Orchestrator:**
+    *   [x] Create `orchestrator_agent_tests.rs` - Core logic tests
+    *   [x] Create `orchestrator_agent_reasoning_tests.rs` - Decision making tests
+    *   [x] Create `orchestrator_agent_security_tests.rs` - OWASP security tests
+    *   [x] Create `orchestrator_agent_integration_tests.rs` - End-to-end tests
+    *   [x] Mock all agent and tool dependencies for unit tests
 
 ### **Task 8.3: Enhanced Tooling & Verification Capabilities**
 *   **Objective:** Extend toolset for intelligent state verification and comparison.
@@ -1605,6 +1605,45 @@ User Message → Lightning Agent (rich cache) → Create Task in Queue
     *   [ ] Display pending/processing/completed tasks
     *   [ ] Show task execution timeline
     *   [ ] Provide retry and error details
+
+### **Task 8.8: Enhanced ECS System for Flexible World Building**
+*   **Objective:** Address critical limitations in the current ECS implementation to enable truly intelligent world-building.
+*   **[ ] Subtask 8.8.1: Flexible Spatial Hierarchy System:**
+    *   [ ] Design flexible `SpatialType` enum to replace rigid `SpatialScale`
+    *   [ ] Support arbitrary containment (e.g., MountainRange → Fortress)
+    *   [ ] Add geographic types: MountainRange, Desert, Forest, River, Lake
+    *   [ ] Add political types: Empire, Kingdom, Province
+    *   [ ] Add structural types: Fortress, Castle, Tower
+    *   [ ] Support Custom(String) for unique spatial types
+*   **[ ] Subtask 8.8.2: Enhanced Spatial Component:**
+    *   [ ] Create new `SpatialComponent` with flexible containment
+    *   [ ] Add `spatial_type: SpatialType` field
+    *   [ ] Add `contained_by: Option<Uuid>` for parent relationships
+    *   [ ] Add `contains: Vec<Uuid>` for child relationships
+    *   [ ] Add `scale_metadata: HashMap<String, JsonValue>` for extensibility
+    *   [ ] Implement migration from old to new spatial system
+*   **[ ] Subtask 8.8.3: Lorebook Integration Tools:**
+    *   [ ] Create `QueryLorebookTool` for searching lorebook entries
+    *   [ ] Support queries by name, category, tags, full-text
+    *   [ ] Create `ManageLorebookTool` for creating/updating entries
+    *   [ ] Enable linking lorebook entries to entities
+    *   [ ] Register tools with ToolRegistry for orchestrator access
+*   **[ ] Subtask 8.8.4: Chronicle Integration Tools:**
+    *   [ ] Create `QueryChronicleEventsTool` for historical queries
+    *   [ ] Support queries by entity, time range, event type, location
+    *   [ ] Enable narrative context from past events
+    *   [ ] Register with ToolRegistry
+*   **[ ] Subtask 8.8.5: Inventory Management Tools:**
+    *   [ ] Create `QueryInventoryTool` for listing entity contents
+    *   [ ] Support filtering by item type, tags, equipped status
+    *   [ ] Create `ManageInventoryTool` for inventory operations
+    *   [ ] Support add/remove/transfer/equip operations
+    *   [ ] Register with ToolRegistry
+*   **[ ] Subtask 8.8.6: Migration & Testing:**
+    *   [ ] Create migration plan from old to new spatial system
+    *   [ ] Maintain backward compatibility during transition
+    *   [ ] Write comprehensive tests for all new tools
+    *   [ ] Update end-to-end test to validate enhanced capabilities
 *   **[ ] Subtask 8.7.2: Intelligence Transparency:**
     *   [ ] Visualize orchestrator reasoning chains
     *   [ ] Display agent collaboration patterns
