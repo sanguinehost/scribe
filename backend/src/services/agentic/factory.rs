@@ -11,9 +11,7 @@ use crate::{
 
 use super::{
     agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig},
-    tool_registration::register_all_tools,
-    tool_registry::ToolRegistry as DynamicToolRegistry,
-    registry::ToolRegistry,
+    // tool_registration::register_all_tools, // Removed during migration to unified tool registry
     tactical_agent::TacticalAgent,
     perception_agent::PerceptionAgent,
     strategic_agent::StrategicAgent,
@@ -34,44 +32,39 @@ impl AgenticNarrativeFactory {
         info!("Creating agentic narrative system with dynamic tool registration");
 
         // Register all tools using the new dynamic system
-        register_all_tools(
-            app_state.clone(),
-            chronicle_service.clone(),
-            lorebook_service.clone(),
-        ).expect("Failed to register tools");
-
-        // Create a legacy registry adapter for compatibility
-        let registry = Self::create_legacy_registry_adapter();
+        // register_all_tools(
+        //     app_state.clone(),
+        //     chronicle_service.clone(),
+        //     lorebook_service.clone(),
+        // ).expect("Failed to register tools");
+        // Using unified tool registry system
         let config = config.unwrap_or_default();
 
-        let tool_count = DynamicToolRegistry::list_tool_names().len();
+        // Get tool counts from unified registry
+        let orchestrator_tools = super::unified_tool_registry::UnifiedToolRegistry::get_tools_for_agent(
+            super::unified_tool_registry::AgentType::Orchestrator
+        );
+        let strategic_tools = super::unified_tool_registry::UnifiedToolRegistry::get_tools_for_agent(
+            super::unified_tool_registry::AgentType::Strategic
+        );
+        let tactical_tools = super::unified_tool_registry::UnifiedToolRegistry::get_tools_for_agent(
+            super::unified_tool_registry::AgentType::Tactical
+        );
+        let perception_tools = super::unified_tool_registry::UnifiedToolRegistry::get_tools_for_agent(
+            super::unified_tool_registry::AgentType::Perception
+        );
+
         info!(
-            "Agentic system created with {} dynamically registered tools, using triage model: {}, planning model: {}",
-            tool_count,
+            "Agentic system created with unified tool registry - Orchestrator: {}, Strategic: {}, Tactical: {}, Perception: {} tools, using triage model: {}, planning model: {}",
+            orchestrator_tools.len(),
+            strategic_tools.len(), 
+            tactical_tools.len(),
+            perception_tools.len(),
             config.triage_model,
             config.planning_model
         );
 
-        // Log available tool categories
-        let categories = [
-            super::tool_registry::ToolCategory::Extraction,
-            super::tool_registry::ToolCategory::Creation,
-            super::tool_registry::ToolCategory::Search,
-            super::tool_registry::ToolCategory::EntityManagement,
-            super::tool_registry::ToolCategory::Hierarchy,
-            super::tool_registry::ToolCategory::AIAnalysis,
-            super::tool_registry::ToolCategory::WorldState,
-            super::tool_registry::ToolCategory::Narrative,
-        ];
-        
-        for category in &categories {
-            let tools = DynamicToolRegistry::get_tools_by_category(category.clone());
-            if !tools.is_empty() {
-                info!("  {:?} tools: {}", category, tools.join(", "));
-            }
-        }
-
-        NarrativeAgentRunner::new(app_state.clone(), registry, config, chronicle_service, app_state.token_counter.clone())
+        NarrativeAgentRunner::new(app_state.clone(), config, chronicle_service, app_state.token_counter.clone())
     }
 
     /// Create agentic narrative system with individual dependencies (no circular dependency)
@@ -88,40 +81,30 @@ impl AgenticNarrativeFactory {
         
         let config = config.unwrap_or_else(Self::create_production_config);
         
-        // Register all tools using the new dynamic system
-        register_all_tools(
-            app_state.clone(),
-            chronicle_service.clone(),
-            lorebook_service.clone(),
-        ).expect("Failed to register tools");
+        // Using unified tool registry system
+        // Tools are automatically registered through the SelfRegisteringTool pattern
         
-        // Create a legacy registry adapter for compatibility
-        let registry = Self::create_legacy_registry_adapter();
-        
-        let tool_count = DynamicToolRegistry::list_tool_names().len();
+        // Get tool counts from unified registry for logging
+        let total_tools = super::unified_tool_registry::UnifiedToolRegistry::get_tools_for_agent(
+            super::unified_tool_registry::AgentType::Orchestrator
+        ).len() + super::unified_tool_registry::UnifiedToolRegistry::get_tools_for_agent(
+            super::unified_tool_registry::AgentType::Strategic
+        ).len() + super::unified_tool_registry::UnifiedToolRegistry::get_tools_for_agent(
+            super::unified_tool_registry::AgentType::Tactical
+        ).len() + super::unified_tool_registry::UnifiedToolRegistry::get_tools_for_agent(
+            super::unified_tool_registry::AgentType::Perception
+        ).len();
+
         info!(
-            "Agentic system created with {} dynamically registered tools, using triage model: {}, planning model: {}",
-            tool_count,
+            "Agentic system created with {} unified registry tools, using triage model: {}, planning model: {}",
+            total_tools,
             config.triage_model,
             config.planning_model
         );
         
-        NarrativeAgentRunner::new(app_state.clone(), registry, config, chronicle_service, app_state.token_counter.clone())
+        NarrativeAgentRunner::new(app_state.clone(), config, chronicle_service, app_state.token_counter.clone())
     }
     
-    /// Create a legacy registry adapter that bridges the new dynamic registry with the old system
-    fn create_legacy_registry_adapter() -> Arc<ToolRegistry> {
-        let mut legacy_registry = ToolRegistry::new();
-        
-        // Get all registered tools from the dynamic registry
-        for tool_name in DynamicToolRegistry::list_tool_names() {
-            if let Ok(tool) = DynamicToolRegistry::get_tool(&tool_name) {
-                legacy_registry.add_tool(tool);
-            }
-        }
-        
-        Arc::new(legacy_registry)
-    }
 
 
     /// Create a development/testing configuration

@@ -4,18 +4,25 @@ pub mod hierarchy_tools;
 pub mod ai_powered_tools;
 pub mod ai_entity_resolution;
 pub mod ai_narrative_analysis;
-pub mod world_interaction_tools;
 pub mod structured_output;
 pub mod lorebook_tools;
 pub mod chronicle_tools;
 pub mod inventory_tools;
+pub mod example_self_registering;
+
+// AI-driven focused tool modules (replaced world_interaction_tools)
+pub mod entity_crud_tools;
+pub mod spatial_interaction_tools;
+pub mod relationship_interaction_tools;
+pub mod general_interaction_tools;
+pub mod narrative_tool_wrappers;
 
 use async_trait::async_trait;
 use serde_json::Value;
 use std::error::Error;
 use std::fmt;
 
-use crate::errors::AppError;
+use crate::{errors::AppError, auth::session_dek::SessionDek};
 
 /// A simple wrapper for tool parameters, which are expected to be a JSON object.
 pub type ToolParams = Value;
@@ -41,8 +48,12 @@ pub trait ScribeTool: Send + Sync {
     /// This helps the LLM to format its requests correctly.
     fn input_schema(&self) -> Value;
 
-    /// Executes the tool with the given parameters.
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError>;
+    /// Executes the tool with the given parameters and session DEK for encryption/decryption.
+    /// 
+    /// The SessionDek is required for all tools to handle encrypted data according to the
+    /// encryption architecture. Tools must decrypt any sensitive data before AI processing
+    /// and re-encrypt results before storage.
+    async fn execute(&self, params: &ToolParams, session_dek: &SessionDek) -> Result<ToolResult, ToolError>;
 }
 
 /// An error that can occur during tool execution.

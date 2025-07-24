@@ -34,7 +34,7 @@ use crate::{
 };
 
 use super::{
-    registry::ToolRegistry,
+    unified_tool_registry::UnifiedToolRegistry,
     tools::{ToolParams, ToolResult, ai_narrative_analysis::{AiTriageAnalyzer, AiPlanGenerator}},
 };
 
@@ -116,7 +116,6 @@ impl UserPersonaContext {
 /// - Implements proper security and error handling
 pub struct NarrativeAgentRunner {
     app_state: Arc<AppState>,
-    tool_registry: Arc<ToolRegistry>,
     config: NarrativeWorkflowConfig,
     chronicle_service: Arc<ChronicleService>,
     _token_counter: Arc<HybridTokenCounter>, // TODO: Implement token tracking
@@ -128,7 +127,6 @@ pub struct NarrativeAgentRunner {
 impl NarrativeAgentRunner {
     pub fn new(
         app_state: Arc<AppState>,
-        tool_registry: Arc<ToolRegistry>,
         config: NarrativeWorkflowConfig,
         chronicle_service: Arc<ChronicleService>,
         token_counter: Arc<HybridTokenCounter>,
@@ -139,7 +137,6 @@ impl NarrativeAgentRunner {
 
         Self {
             app_state,
-            tool_registry,
             config,
             chronicle_service,
             _token_counter: token_counter,
@@ -300,8 +297,8 @@ impl NarrativeAgentRunner {
     ) -> Result<ActionPlan, AppError> {
         debug!("Generating AI-driven action plan for event: {}", triage_result.event_type);
 
-        // Get available tools
-        let available_tools = self.tool_registry.list_tools();
+        // Get available tools names
+        let available_tool_names = super::unified_tool_registry::UnifiedToolRegistry::list_all_tool_names();
 
         // Use AI-powered plan generator
         let result = self.plan_generator.generate_intelligent_plan(
@@ -311,7 +308,7 @@ impl NarrativeAgentRunner {
             chronicle_was_just_created,
             persona_context,
             is_re_chronicle,
-            &available_tools,
+            &available_tool_names,
         ).await?;
 
         info!("AI action plan generated with {} actions (confidence: {})", 
@@ -386,7 +383,7 @@ impl NarrativeAgentRunner {
     async fn execute_single_action(
         &self,
         action: &PlannedAction,
-        _session_dek: &SessionDek,
+        session_dek: &SessionDek,
         user_id: Uuid,
     ) -> Result<ToolResult, AppError> {
         // Add user_id to parameters for security
@@ -396,9 +393,9 @@ impl NarrativeAgentRunner {
         }
 
         // Get the tool and execute it
-        match self.tool_registry.get_tool(&action.tool_name) {
+        match super::unified_tool_registry::UnifiedToolRegistry::get_tool(&action.tool_name) {
             Ok(tool) => {
-                let result = tool.execute(&enhanced_params).await
+                let result = tool.execute(&enhanced_params, session_dek).await
                     .map_err(|e| AppError::InternalServerErrorGeneric(
                         format!("Tool execution failed for {}: {}", action.tool_name, e)
                     ))?;
@@ -445,7 +442,7 @@ impl NarrativeAgentRunner {
         &self,
         user_id: Uuid,
         chronicle_id: Option<Uuid>,
-        _session_dek: &SessionDek,
+        session_dek: &SessionDek,
     ) -> Result<Value, AppError> {
         debug!("Building knowledge context for user {} chronicle {:?}", user_id, chronicle_id);
 
@@ -458,14 +455,38 @@ impl NarrativeAgentRunner {
         if let Some(c_id) = chronicle_id {
             match self.chronicle_service.get_chronicle_events(user_id, c_id, EventFilter::default()).await {
                 Ok(events) => {
-                    context["existing_chronicles"] = json!({
-                        "chronicle_id": c_id.to_string(),
-                        "events": events.into_iter().map(|event| json!({
+                    let mut decrypted_events = Vec::new();
+                    for event in events {
+                        // Decrypt the summary if encrypted, fallback to plain summary
+                        let decrypted_summary = if let (Some(encrypted_summary), Some(nonce)) = 
+                            (&event.summary_encrypted, &event.summary_nonce) {
+                            
+                            match self.app_state.encryption_service.decrypt(encrypted_summary, nonce, session_dek.expose_bytes()) {
+                                Ok(decrypted_bytes) => {
+                                    String::from_utf8_lossy(&decrypted_bytes).to_string()
+                                },
+                                Err(e) => {
+                                    warn!("Failed to decrypt chronicle event summary for event {}: {}", event.id, e);
+                                    // Fallback to plain summary if decryption fails
+                                    event.summary.clone()
+                                }
+                            }
+                        } else {
+                            // Use plain summary if no encrypted version exists
+                            event.summary.clone()
+                        };
+                        
+                        decrypted_events.push(json!({
                             "id": event.id.to_string(),
-                            "summary": event.summary,
+                            "summary": decrypted_summary,
                             "event_type": event.event_type,
                             "timestamp": event.timestamp_iso8601
-                        })).collect::<Vec<_>>()
+                        }));
+                    }
+                    
+                    context["existing_chronicles"] = json!({
+                        "chronicle_id": c_id.to_string(),
+                        "events": decrypted_events
                     });
                     debug!("Added {} existing chronicle events to context", 
                            context["existing_chronicles"]["events"].as_array().unwrap().len());

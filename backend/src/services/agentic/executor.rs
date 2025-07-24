@@ -6,6 +6,7 @@ use super::{
     registry::ToolRegistry,
     tools::{ToolError, ToolParams, ToolResult},
 };
+use crate::auth::session_dek::SessionDek;
 
 /// The `ToolExecutor` is responsible for executing a tool from a `ToolRegistry`.
 pub struct ToolExecutor {
@@ -35,8 +36,9 @@ impl ToolExecutor {
         &self,
         name: &str,
         params: &ToolParams,
+        session_dek: &SessionDek,
     ) -> Result<ToolResult, ToolError> {
         let tool = self.registry.get_tool(name)?;
-        tool.execute(params).await
+        tool.execute(params, session_dek).await
     }
 }

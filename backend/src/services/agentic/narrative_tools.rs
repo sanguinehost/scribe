@@ -16,6 +16,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{
+    auth::session_dek::SessionDek,
     services::{ChronicleService, LorebookService},
     state::AppState,
 };
@@ -60,7 +61,7 @@ impl ScribeTool for AnalyzeTextSignificanceTool {
         })
     }
 
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing analyze_text_significance tool with Flash-Lite integration");
 
         let user_id_str = params.get("user_id")
@@ -174,7 +175,7 @@ impl ScribeTool for CreateChronicleEventTool {
         })
     }
 
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing create_chronicle_event tool");
 
         let user_id_str = params.get("user_id")
@@ -284,7 +285,7 @@ impl ScribeTool for CreateLorebookEntryTool {
         })
     }
 
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing create_lorebook_entry tool");
 
         let user_id_str = params.get("user_id")
@@ -374,7 +375,7 @@ impl ScribeTool for ExtractTemporalEventsTool {
         })
     }
 
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing extract_temporal_events tool");
         
         let user_id_str = params.get("user_id")
@@ -506,7 +507,7 @@ impl ScribeTool for ExtractWorldConceptsTool {
         })
     }
 
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing extract_world_concepts tool");
         
         let user_id_str = params.get("user_id")
@@ -637,7 +638,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         })
     }
 
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing search_knowledge_base tool");
         
         let user_id_str = params.get("user_id")
@@ -818,7 +819,7 @@ impl ScribeTool for UpdateLorebookEntryTool {
         })
     }
 
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing update_lorebook_entry tool");
         
         let user_id_str = params.get("user_id")

@@ -6,7 +6,7 @@
 //! - Tactical Layer ("Stage Manager"): Bridges strategy and execution, decomposes directives
 //! - Perception Layer ("World State Observer"): Processes AI responses, updates world state
 
-use super::tool_registry::{AgentType, ToolAccessPolicy};
+use super::unified_tool_registry::{AgentType, ToolAccessPolicy};
 
 /// Define the default tool access policies for each agent type
 pub fn get_default_tool_policies() -> Vec<(&'static str, ToolAccessPolicy)> {

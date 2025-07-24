@@ -16,7 +16,7 @@ use crate::{
         agentic::{
             perception_structured_output,
             tools::ScribeTool,
-            tool_registry::ToolRegistry,
+            unified_tool_registry::UnifiedToolRegistry,
             perception_structured_output::{
                 PerceptionEntityExtractionOutput, get_entity_extraction_schema,
             },
@@ -63,7 +63,7 @@ pub struct PerceptionAgent {
 
 impl PerceptionAgent {
     // NOTE: This agent has been updated to use the dynamic tool registry.
-    // Tool usage pattern: self.get_tool("tool_name")?.execute(&params).await
+    // Tool usage pattern: self.get_tool("tool_name")?.execute(&params, session_dek).await
     // Remaining tool calls should be migrated to use this pattern as needed.
     
     /// Create a new PerceptionAgent instance
@@ -76,9 +76,12 @@ impl PerceptionAgent {
         _app_state: Arc<AppState>, // Tools accessed via global ToolRegistry
         model: String,
     ) -> Self {
-        // Tools are now available through the global ToolRegistry
+        // Tools are now available through the global UnifiedToolRegistry
+        let perception_tools = UnifiedToolRegistry::get_tools_for_agent(
+            crate::services::agentic::unified_tool_registry::AgentType::Perception
+        );
         info!("PerceptionAgent created with access to {} registered tools", 
-              ToolRegistry::list_tool_names().len());
+              perception_tools.len());
         
         Self {
             ai_client,
@@ -92,13 +95,16 @@ impl PerceptionAgent {
 
     /// Helper method to get a tool from the registry
     fn get_tool(&self, tool_name: &str) -> Result<Arc<dyn ScribeTool>, AppError> {
-        ToolRegistry::get_tool(tool_name)
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get tool '{}': {}", tool_name, e)))
+        // TODO: Implement tool retrieval from unified registry
+        // The unified registry currently doesn't expose individual tools directly
+        // This method will need to be updated when tool execution is implemented
+        Err(AppError::InternalServerErrorGeneric(format!("Tool '{}' access not yet implemented for unified registry", tool_name)))
     }
     
     /// Get the formatted tool reference for this agent
     fn get_tool_reference(&self) -> String {
-        ToolRegistry::generate_agent_tool_reference(crate::services::agentic::tool_registry::AgentType::Perception)
+        // TODO: Implement tool documentation generation for unified registry
+        format!("Perception Agent Tools: Available through UnifiedToolRegistry")
     }
     
     /// Pre-response analysis - analyze conversation state BEFORE AI response generation
@@ -450,7 +456,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
                 "limit": 10  // Get more results to check entity types
             });
             
-            match self.get_tool("find_entity")?.execute(&find_params).await {
+            match self.get_tool("find_entity")?.execute(&find_params, session_dek).await {
                 Ok(find_result) => {
                     if let Some(entities_array) = find_result.get("entities").and_then(|e| e.as_array()) {
                         // Check if any existing entity matches both name and type
@@ -477,7 +483,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
                         if !matching_entity_exists {
                             // Entity with this name and type doesn't exist, create it
                             info!("Creating new entity: {} (type: {})", entity.name, entity.entity_type);
-                            self.create_entity_with_spatial_data(entity, user_id).await?;
+                            self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
                             // Cache that this entity now exists
                             self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
                             // Track in session
@@ -494,7 +500,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
                 Err(e) => {
                     debug!("Error checking entity existence for '{}': {}", entity.name, e);
                     // If error checking, assume it doesn't exist and try to create
-                    self.create_entity_with_spatial_data(entity, user_id).await?;
+                    self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
                     // Cache that this entity now exists
                     self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
                     // Track in session
@@ -505,7 +511,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         
         // Second pass: Establish spatial relationships
         info!("Establishing spatial relationships for {} entities", entities.len());
-        self.establish_spatial_relationships(entities, user_id).await?;
+        self.establish_spatial_relationships(entities, user_id, session_dek).await?;
         
         Ok(())
     }
@@ -515,6 +521,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         &self,
         entity: &ContextualEntity,
         user_id: Uuid,
+        session_dek: &SessionDek,
     ) -> Result<(), AppError> {
         
         
@@ -586,7 +593,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
             "salience_tier": salience_tier  // This will create the Salience component
         });
         
-        match self.get_tool("create_entity")?.execute(&create_params).await {
+        match self.get_tool("create_entity")?.execute(&create_params, session_dek).await {
             Ok(result) => {
                 info!("Created entity '{}' with {:?} scale and {} salience, result: {:?}", 
                     entity.name, scale, salience_tier, result);
@@ -609,6 +616,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         &self,
         entities: &[ContextualEntity],
         user_id: Uuid,
+        session_dek: &SessionDek,
     ) -> Result<(), AppError> {
         if entities.len() < 2 {
             info!("Not enough entities ({}) to establish relationships", entities.len());
@@ -709,7 +717,8 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
                 if let Err(e) = self.update_entity_parent_link(
                     &relationship.child_entity,
                     &relationship.parent_entity,
-                    user_id
+                    user_id,
+                    session_dek
                 ).await {
                     warn!("Failed to establish relationship between {} and {}: {}", 
                         relationship.child_entity, relationship.parent_entity, e);
@@ -729,6 +738,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         entity_name: &str,
         parent_name: &str,
         user_id: Uuid,
+        session_dek: &SessionDek,
     ) -> Result<(), AppError> {
         // First find both entities to get their IDs
         let find_entity_params = serde_json::json!({
@@ -750,7 +760,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         });
         
         // Get entity ID
-        let entity_id = match self.get_tool("find_entity")?.execute(&find_entity_params).await {
+        let entity_id = match self.get_tool("find_entity")?.execute(&find_entity_params, session_dek).await {
             Ok(result) => {
                 if let Some(entities) = result.get("entities").and_then(|e| e.as_array()) {
                     if let Some(entity) = entities.first() {
@@ -766,7 +776,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         };
         
         // Get parent ID
-        let parent_id = match self.get_tool("find_entity")?.execute(&find_parent_params).await {
+        let parent_id = match self.get_tool("find_entity")?.execute(&find_parent_params, session_dek).await {
             Ok(result) => {
                 if let Some(entities) = result.get("entities").and_then(|e| e.as_array()) {
                     if let Some(parent) = entities.first() {
@@ -797,7 +807,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
                 }]
             });
             
-            match self.get_tool("update_entity")?.execute(&update_params).await {
+            match self.get_tool("update_entity")?.execute(&update_params, session_dek).await {
                 Ok(_) => Ok(()),
                 Err(e) => Err(AppError::BadRequest(format!("Failed to update parent link: {}", e))),
             }
@@ -829,7 +839,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
             });
             
             // Find the entity to get its ID
-            match self.get_tool("find_entity")?.execute(&find_params).await {
+            match self.get_tool("find_entity")?.execute(&find_params, session_dek).await {
                 Ok(find_result) => {
                     if let Some(entities_array) = find_result.get("entities").and_then(|e| e.as_array()) {
                         if let Some(found_entity) = entities_array.first() {
@@ -840,7 +850,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
                                     "entity_id": entity_id
                                 });
 
-                                match self.get_tool("get_entity_hierarchy")?.execute(&hierarchy_params).await {
+                                match self.get_tool("get_entity_hierarchy")?.execute(&hierarchy_params, session_dek).await {
                                     Ok(hierarchy_result) => {
                                         // Extract hierarchy path from the result
                                         if let Some(hierarchy_path) = hierarchy_result.get("hierarchy_path").and_then(|p| p.as_array()) {
@@ -1384,6 +1394,7 @@ Output JSON with:
         let intelligent_plan = planner.plan_world_updates(
             &implications,
             user_id,
+            session_dek,
             |tool_name| self.get_tool(tool_name),
         ).await?;
         
@@ -1520,23 +1531,23 @@ Output JSON with:
         for action in &plan.actions {
             let result = match action.action_type {
                 WorldActionType::CreateEntity => {
-                    self.execute_create_entity(action, user_id).await
+                    self.execute_create_entity(action, user_id, session_dek).await
                 }
                 WorldActionType::UpdateEntity => {
-                    self.execute_update_entity(action, user_id).await
+                    self.execute_update_entity(action, user_id, session_dek).await
                 }
                 WorldActionType::MoveEntity => {
-                    self.execute_move_entity(action, user_id).await
+                    self.execute_move_entity(action, user_id, session_dek).await
                 }
                 WorldActionType::UpdateRelationship => {
                     relationships_updated += 1;
-                    self.execute_update_relationship(action, user_id).await
+                    self.execute_update_relationship(action, user_id, session_dek).await
                 }
                 WorldActionType::AddToInventory => {
-                    self.execute_add_to_inventory(action, user_id).await
+                    self.execute_add_to_inventory(action, user_id, session_dek).await
                 }
                 WorldActionType::RemoveFromInventory => {
-                    self.execute_remove_from_inventory(action, user_id).await
+                    self.execute_remove_from_inventory(action, user_id, session_dek).await
                 }
             };
             
@@ -1565,6 +1576,7 @@ Output JSON with:
         &self,
         action: &PlannedWorldAction,
         user_id: Uuid,
+        session_dek: &SessionDek,
     ) -> Result<(), AppError> {
         let params = json!({
             "user_id": user_id.to_string(),
@@ -1573,7 +1585,7 @@ Output JSON with:
             "properties": action.parameters.get("properties").cloned().unwrap_or_default()
         });
         
-        self.get_tool("create_entity")?.execute(&params).await
+        self.get_tool("create_entity")?.execute(&params, session_dek).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to create entity: {}", e)))?;
         Ok(())
     }
@@ -1583,6 +1595,7 @@ Output JSON with:
         &self,
         action: &PlannedWorldAction,
         user_id: Uuid,
+        session_dek: &SessionDek,
     ) -> Result<(), AppError> {
         // First find the entity
         let find_params = json!({
@@ -1594,7 +1607,7 @@ Output JSON with:
             "limit": 1
         });
         
-        let find_result = self.get_tool("find_entity")?.execute(&find_params).await
+        let find_result = self.get_tool("find_entity")?.execute(&find_params, session_dek).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to find entity: {}", e)))?;
         let entities = find_result.get("entities").and_then(|e| e.as_array())
             .ok_or_else(|| AppError::NotFound("Entity not found".to_string()))?;
@@ -1609,7 +1622,7 @@ Output JSON with:
                 "updates": action.parameters
             });
             
-            self.get_tool("update_entity")?.execute(&update_params).await
+            self.get_tool("update_entity")?.execute(&update_params, session_dek).await
                 .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to update entity: {}", e)))?;
         }
         
@@ -1621,6 +1634,7 @@ Output JSON with:
         &self,
         action: &PlannedWorldAction,
         user_id: Uuid,
+        session_dek: &SessionDek,
     ) -> Result<(), AppError> {
         // Find source entity
         let find_params = json!({
@@ -1632,7 +1646,7 @@ Output JSON with:
             "limit": 1
         });
         
-        let find_result = self.get_tool("find_entity")?.execute(&find_params).await
+        let find_result = self.get_tool("find_entity")?.execute(&find_params, session_dek).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to find entity: {}", e)))?;
         let entities = find_result.get("entities").and_then(|e| e.as_array())
             .ok_or_else(|| AppError::NotFound("Entity not found".to_string()))?;
@@ -1654,7 +1668,7 @@ Output JSON with:
                 "limit": 1
             });
             
-            let location_result = self.get_tool("find_entity")?.execute(&find_location_params).await
+            let location_result = self.get_tool("find_entity")?.execute(&find_location_params, session_dek).await
                 .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to find location: {}", e)))?;
             let locations = location_result.get("entities").and_then(|e| e.as_array())
                 .ok_or_else(|| AppError::NotFound("Location not found".to_string()))?;
@@ -1669,7 +1683,7 @@ Output JSON with:
                     "new_parent_id": location_id
                 });
                 
-                self.get_tool("move_entity")?.execute(&move_params).await
+                self.get_tool("move_entity")?.execute(&move_params, session_dek).await
                     .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to move entity: {}", e)))?;
             }
         }
@@ -1682,6 +1696,7 @@ Output JSON with:
         &self,
         action: &PlannedWorldAction,
         user_id: Uuid,
+        session_dek: &SessionDek,
     ) -> Result<(), AppError> {
         // Find source entity
         let find_source_params = json!({
@@ -1693,7 +1708,7 @@ Output JSON with:
             "limit": 1
         });
         
-        let source_result = self.get_tool("find_entity")?.execute(&find_source_params).await
+        let source_result = self.get_tool("find_entity")?.execute(&find_source_params, session_dek).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to find source entity: {}", e)))?;
         let source_entities = source_result.get("entities").and_then(|e| e.as_array())
             .ok_or_else(|| AppError::NotFound("Source entity not found".to_string()))?;
@@ -1715,7 +1730,7 @@ Output JSON with:
                 "limit": 1
             });
             
-            let target_result = self.get_tool("find_entity")?.execute(&find_target_params).await
+            let target_result = self.get_tool("find_entity")?.execute(&find_target_params, session_dek).await
                 .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to find target entity: {}", e)))?;
             let target_entities = target_result.get("entities").and_then(|e| e.as_array())
                 .ok_or_else(|| AppError::NotFound("Target entity not found".to_string()))?;
@@ -1732,7 +1747,7 @@ Output JSON with:
                     "trust_delta": action.parameters.get("trust_delta").and_then(|v| v.as_f64()).unwrap_or(0.0)
                 });
                 
-                self.get_tool("update_relationship")?.execute(&relationship_params).await
+                self.get_tool("update_relationship")?.execute(&relationship_params, session_dek).await
                     .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to update relationship: {}", e)))?;
             }
         }
@@ -1745,6 +1760,7 @@ Output JSON with:
         &self,
         action: &PlannedWorldAction,
         user_id: Uuid,
+        session_dek: &SessionDek,
     ) -> Result<(), AppError> {
         // Find container entity
         let find_params = json!({
@@ -1756,7 +1772,7 @@ Output JSON with:
             "limit": 1
         });
         
-        let find_result = self.get_tool("find_entity")?.execute(&find_params).await
+        let find_result = self.get_tool("find_entity")?.execute(&find_params, session_dek).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to find entity: {}", e)))?;
         let entities = find_result.get("entities").and_then(|e| e.as_array())
             .ok_or_else(|| AppError::NotFound("Entity not found".to_string()))?;
@@ -1776,7 +1792,7 @@ Output JSON with:
                 "properties": {}
             });
             
-            let item_result = self.get_tool("create_entity")?.execute(&create_item_params).await
+            let item_result = self.get_tool("create_entity")?.execute(&create_item_params, session_dek).await
                 .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to create item: {}", e)))?;
             let item_id = item_result.get("entity_id").and_then(|v| v.as_str())
                 .ok_or_else(|| AppError::InternalServerErrorGeneric("Failed to create item".to_string()))?;
@@ -1789,7 +1805,7 @@ Output JSON with:
                 "quantity": action.parameters.get("quantity").and_then(|v| v.as_u64()).unwrap_or(1)
             });
             
-            self.get_tool("add_item_to_inventory")?.execute(&add_params).await
+            self.get_tool("add_item_to_inventory")?.execute(&add_params, session_dek).await
                 .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to add item to inventory: {}", e)))?;
         }
         
@@ -1801,6 +1817,7 @@ Output JSON with:
         &self,
         action: &PlannedWorldAction,
         user_id: Uuid,
+        session_dek: &SessionDek,
     ) -> Result<(), AppError> {
         // Implementation similar to add_to_inventory but removes the item
         // This is a simplified version - in production you'd want more sophisticated item tracking

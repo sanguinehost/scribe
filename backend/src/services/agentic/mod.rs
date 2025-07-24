@@ -18,12 +18,7 @@ pub mod agent_runner;
 pub mod narrative_tools;
 pub mod entity_resolution_tool;
 pub mod factory;
-pub mod registry;
 pub mod tools;
-pub mod tool_registry;
-pub mod tool_registration;
-pub mod tool_discovery;
-pub mod tool_access_config;
 pub mod persona_context;
 pub mod tactical_agent;
 pub mod perception_agent;
@@ -39,16 +34,17 @@ pub mod event_participants_structured_output;
 pub mod query_relevance_structured_output;
 pub mod historical_state_reconstruction_structured_output;
 pub mod event_significance_structured_output;
-pub mod relationship_analysis_structured_output;
 pub mod narrative_answer_generation_structured_output;
 pub mod intelligent_world_state_planner;
 pub mod types;
+pub mod unified_tool_registry;
+pub mod ai_tool_discovery;
+pub mod tool_initialization;
 
 
 // Re-export key types for convenience
 pub use agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig, TriageResult, ActionPlan, PlannedAction, UserPersonaContext};
 pub use factory::AgenticNarrativeFactory;
-pub use registry::ToolRegistry;
 pub use tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 pub use narrative_tools::{
     CreateChronicleEventTool, CreateLorebookEntryTool, 
@@ -65,3 +61,4 @@ pub use hierarchical_pipeline::{
 };
 pub use strategic_structured_output::*;
 pub use tactical_structured_output::*;
+pub use tool_initialization::initialize_all_tools;

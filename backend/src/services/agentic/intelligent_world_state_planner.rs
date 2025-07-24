@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
+    auth::session_dek::SessionDek,
     errors::AppError,
     services::agentic::tools::ScribeTool,
 };
@@ -168,6 +169,7 @@ impl IntelligentWorldStatePlanner {
         &mut self,
         implications: &NarrativeImplications,
         user_id: Uuid,
+        session_dek: &SessionDek,
         get_tool: impl Fn(&str) -> Result<Arc<dyn ScribeTool>, AppError>,
     ) -> Result<IntelligentWorldPlan, AppError> {
         let mut phases = Vec::new();
@@ -177,6 +179,7 @@ impl IntelligentWorldStatePlanner {
         let entity_phase = self.plan_entity_creation_phase(
             &implications.entities_mentioned,
             user_id,
+            session_dek,
             &get_tool,
         ).await?;
         if !entity_phase.actions.is_empty() {
@@ -187,6 +190,7 @@ impl IntelligentWorldStatePlanner {
         let spatial_phase = self.plan_spatial_changes_phase(
             &implications.spatial_changes,
             user_id,
+            session_dek,
             &get_tool,
         ).await?;
         if !spatial_phase.actions.is_empty() {
@@ -230,6 +234,7 @@ impl IntelligentWorldStatePlanner {
         &mut self,
         entities: &[EntityMention],
         user_id: Uuid,
+        session_dek: &SessionDek,
         get_tool: &impl Fn(&str) -> Result<Arc<dyn ScribeTool>, AppError>,
     ) -> Result<PlanPhase, AppError> {
         let mut actions = Vec::new();
@@ -245,7 +250,7 @@ impl IntelligentWorldStatePlanner {
                 "limit": 1
             });
             
-            match get_tool("find_entity")?.execute(&find_params).await {
+            match get_tool("find_entity")?.execute(&find_params, session_dek).await {
                 Ok(result) => {
                     if let Some(entities_array) = result.get("entities").and_then(|e| e.as_array()) {
                         if let Some(existing) = entities_array.first() {
@@ -354,6 +359,7 @@ impl IntelligentWorldStatePlanner {
         &mut self,
         spatial_changes: &[SpatialChange],
         user_id: Uuid,
+        session_dek: &SessionDek,
         get_tool: &impl Fn(&str) -> Result<Arc<dyn ScribeTool>, AppError>,
     ) -> Result<PlanPhase, AppError> {
         let mut actions = Vec::new();
@@ -378,7 +384,7 @@ impl IntelligentWorldStatePlanner {
                 "limit": 1
             });
             
-            match get_tool("find_entity")?.execute(&find_params).await {
+            match get_tool("find_entity")?.execute(&find_params, session_dek).await {
                 Ok(result) => {
                     if result.get("entities").and_then(|e| e.as_array()).map(|a| a.is_empty()).unwrap_or(true) {
                         // Location doesn't exist - create it first

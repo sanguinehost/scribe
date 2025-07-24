@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 use crate::{
     llm::AiClient,
     services::{
-        agentic::tool_registry::ToolRegistry,
+        agentic::unified_tool_registry::UnifiedToolRegistry,
         task_queue::EnrichmentTaskPayload,
     },
 };
@@ -307,7 +307,7 @@ Generate:
             strategy.primary_goals,
             strategy.narrative_threads,
             strategy.world_state_implications,
-            ToolRegistry::list_tool_names()
+            UnifiedToolRegistry::list_all_tool_names()
         );
 
         let plan = self.analyze_with_structured_output(&prompt, schema).await?;

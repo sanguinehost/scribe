@@ -27,7 +27,7 @@ use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSe
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
     PgPool, // This is deadpool_diesel::postgres::Pool
-    auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
+    auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend, session_dek::SessionDek}, // Use crate::auth and alias Backend, Added RegisterPayload
     config::Config,
     // Ensure build_gemini_client is removed if present
     models::chats::{ChatMessage, UpdateChatSettingsRequest}, // Added UpdateChatSettingsRequest
@@ -239,10 +239,26 @@ impl MockAiClient {
             ]
         }"#;
         
-        // Initialize with both responses for PerceptionAgent tests
+        // AI tool discovery response structure for AiToolDiscoveryService
+        let ai_tool_discovery_response = r#"{
+            "recommendations": [
+                {
+                    "tool_name": "narrative_analyzer",
+                    "relevance_score": 0.9,
+                    "reasoning": "This tool can analyze narrative text for significance",
+                    "order": 1
+                }
+            ],
+            "overall_reasoning": "Based on the task requirements, narrative analysis tools are most relevant",
+            "suggested_sequence": ["narrative_analyzer"],
+            "warnings": []
+        }"#;
+
+        // Initialize with all responses for different types of tests
         let mut response_queue = VecDeque::new();
         response_queue.push_back(world_state_analysis_response.to_string());
         response_queue.push_back(extraction_result_response.to_string());
+        response_queue.push_back(ai_tool_discovery_response.to_string());
         
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -2159,7 +2175,8 @@ pub mod ai_tool_testing {
         tool: &T,
         params: JsonValue,
     ) -> Result<JsonValue, String> {
-        tool.execute(&params)
+        let dummy_session_dek = create_dummy_session_dek();
+        tool.execute(&params, &dummy_session_dek)
             .await
             .map_err(|e| format!("Tool execution failed: {}", e))
     }
@@ -2209,13 +2226,21 @@ pub mod ai_tool_testing {
         Ok(())
     }
 
+    /// Create a dummy SessionDek for testing purposes
+    pub fn create_dummy_session_dek() -> SessionDek {
+        // Create a dummy 32-byte key for testing
+        let dummy_key = vec![0u8; 32];
+        SessionDek::new(dummy_key)
+    }
+
     /// Helper to test tool error handling
     pub async fn test_tool_error_handling<T: ScribeTool>(
         tool: &T,
         invalid_params: JsonValue,
         expected_error_contains: &str,
     ) -> Result<(), String> {
-        match tool.execute(&invalid_params).await {
+        let dummy_session_dek = create_dummy_session_dek();
+        match tool.execute(&invalid_params, &dummy_session_dek).await {
             Ok(_) => Err("Expected tool to return error but it succeeded".to_string()),
             Err(e) => {
                 let error_str = e.to_string();

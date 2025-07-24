@@ -63,9 +63,8 @@ impl StrategicAgent {
     
     /// Get the formatted tool reference for this agent
     fn get_tool_reference(&self) -> String {
-        crate::services::agentic::tool_registry::ToolRegistry::generate_agent_tool_reference(
-            crate::services::agentic::tool_registry::AgentType::Strategic
-        )
+        // TODO: Implement tool documentation generation for unified registry
+        format!("Strategic Agent Tools: Available through UnifiedToolRegistry")
     }
 
     /// Analyze conversation history and generate a strategic directive

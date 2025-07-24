@@ -15,7 +15,10 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::state::AppState;
+use crate::{
+    auth::session_dek::SessionDek,
+    state::AppState,
+};
 
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 
@@ -990,7 +993,7 @@ impl ScribeTool for EntityResolutionTool {
         })
     }
 
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing AI-driven entity resolution tool with params: {}", params);
 
         // Extract parameters

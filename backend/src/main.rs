@@ -615,6 +615,9 @@ fn setup_app_state_and_auth(
     
     // Initialize HierarchicalPipeline that includes Perception Agent
     app_state.set_hierarchical_pipeline();
+    
+    // Initialize all self-registering tools with the unified registry
+    scribe_backend::services::agentic::initialize_all_tools(Arc::new(app_state.clone()))?;
 
     Ok((app_state, auth_layer))
 }

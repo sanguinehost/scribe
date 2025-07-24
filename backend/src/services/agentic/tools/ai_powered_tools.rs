@@ -14,7 +14,13 @@ use genai::chat::{SafetySetting, HarmCategory, HarmBlockThreshold};
 use crate::{
     models::ecs::{SpatialScale, SalienceTier},
     services::agentic::tools::{ScribeTool, ToolError, ToolParams, ToolResult},
+    services::agentic::unified_tool_registry::{
+        SelfRegisteringTool, ToolCategory, ToolCapability, ToolSecurityPolicy, AgentType,
+        ToolExample, DataAccessPolicy, AuditLevel, ResourceRequirements, ExecutionTime, ErrorCode
+    },
     state::AppState,
+    errors::AppError,
+    auth::session_dek::SessionDek,
 };
 
 use super::hierarchy_tools::GetEntityHierarchyTool;
@@ -210,7 +216,7 @@ Return ONLY the entity ID (UUID) of the best match, or "NO_MATCH" if no suitable
     }
 
     /// Execute the AI-interpreted hierarchy query
-    async fn execute_interpreted_query(&self, interpretation: &HierarchyInterpretation, user_id: Uuid) -> Result<JsonValue, ToolError> {
+    async fn execute_interpreted_query(&self, interpretation: &HierarchyInterpretation, user_id: Uuid, session_dek: &SessionDek) -> Result<JsonValue, ToolError> {
         match interpretation.suggested_query.action.as_str() {
             "get_entity_hierarchy" => {
                 // Use the existing GetEntityHierarchyTool
@@ -224,7 +230,7 @@ Return ONLY the entity ID (UUID) of the best match, or "NO_MATCH" if no suitable
                         "user_id": user_id
                     });
                     
-                    self.get_hierarchy_tool.execute(&hierarchy_params).await
+                    self.get_hierarchy_tool.execute(&hierarchy_params, session_dek).await
                 } else {
                     Err(ToolError::InvalidParams("No target entities identified".to_string()))
                 }
@@ -302,8 +308,8 @@ impl ScribeTool for AnalyzeHierarchyRequestTool {
         })
     }
 
-    #[instrument(skip(self, params), fields(tool = self.name()))]
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    #[instrument(skip(self, params, session_dek), fields(tool = self.name()))]
+    async fn execute(&self, params: &ToolParams, session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing analyze_hierarchy_request with input: {}", params);
         
         let input: AnalyzeHierarchyInput = serde_json::from_value(params.clone())
@@ -378,10 +384,158 @@ impl ScribeTool for AnalyzeHierarchyRequestTool {
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to parse AI response: {}. Response was: {}", e, response_text)))?;
 
         // Execute the interpreted query
-        let result = self.execute_interpreted_query(&interpretation, user_id).await?;
+        let result = self.execute_interpreted_query(&interpretation, user_id, session_dek).await?;
 
         info!("Successfully analyzed hierarchy request: {}", input.natural_language_request);
         Ok(result)
+    }
+}
+
+#[async_trait]
+impl SelfRegisteringTool for AnalyzeHierarchyRequestTool {
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Discovery
+    }
+    
+    fn capabilities(&self) -> Vec<ToolCapability> {
+        vec![
+            ToolCapability {
+                action: "analyze".to_string(),
+                target: "hierarchy requests".to_string(),
+                context: Some("natural language".to_string()),
+            },
+            ToolCapability {
+                action: "interpret".to_string(),
+                target: "entity relationships".to_string(),
+                context: Some("semantic understanding".to_string()),
+            },
+        ]
+    }
+    
+    fn when_to_use(&self) -> String {
+        "Use when you need to interpret natural language requests about entity hierarchies, \
+         containment relationships, command structures, or spatial organization. Perfect for \
+         queries like 'show me the chain of command' or 'what galaxy is this planet in?'".to_string()
+    }
+    
+    fn when_not_to_use(&self) -> String {
+        "Do not use for direct entity queries when you already know the exact entity IDs, \
+         or for non-hierarchical relationships. Use specific entity or relationship tools instead.".to_string()
+    }
+    
+    fn usage_examples(&self) -> Vec<ToolExample> {
+        vec![
+            ToolExample {
+                scenario: "Understanding command structure".to_string(),
+                input: json!({
+                    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "natural_language_request": "Show me the chain of command for this fleet",
+                    "context": "Player is managing a space fleet"
+                }),
+                expected_output: "Hierarchical command structure showing fleet admiral, ship captains, and subordinate officers".to_string(),
+            },
+        ]
+    }
+    
+    fn security_policy(&self) -> ToolSecurityPolicy {
+        ToolSecurityPolicy {
+            allowed_agents: vec![
+                AgentType::Orchestrator,
+                AgentType::Strategic,
+                AgentType::Tactical,
+                AgentType::Perception,
+            ],
+            required_capabilities: vec![],
+            rate_limit: None,
+            data_access: DataAccessPolicy {
+                user_data: true,
+                system_data: false,
+                write_access: false,
+                allowed_scopes: vec!["hierarchy".to_string(), "entities".to_string()],
+            },
+            audit_level: AuditLevel::Basic,
+        }
+    }
+    
+    fn resource_requirements(&self) -> ResourceRequirements {
+        ResourceRequirements {
+            memory_mb: 70,
+            execution_time: ExecutionTime::Moderate,
+            external_calls: true, // Uses AI client
+            compute_intensive: false,
+        }
+    }
+    
+    fn dependencies(&self) -> Vec<String> {
+        vec![
+            "hierarchy_tools".to_string(),
+            "ai_client".to_string(),
+            "ecs_entity_manager".to_string(),
+        ]
+    }
+    
+    fn tags(&self) -> Vec<String> {
+        vec![
+            "hierarchy".to_string(),
+            "analysis".to_string(),
+            "ai-powered".to_string(),
+            "natural-language".to_string(),
+            "discovery".to_string(),
+        ]
+    }
+    
+    fn output_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "interpretation": {
+                    "type": "string",
+                    "description": "AI's understanding of the hierarchy request"
+                },
+                "query_type": {
+                    "type": "string",
+                    "description": "Type of hierarchy query identified"
+                },
+                "hierarchy_data": {
+                    "type": "object",
+                    "description": "The actual hierarchy information requested"
+                },
+                "entities_analyzed": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of entities involved in the hierarchy analysis"
+                },
+                "scale_context": {
+                    "type": "string",
+                    "description": "The spatial scale context (Cosmic, Planetary, Intimate)"
+                }
+            },
+            "required": ["interpretation", "query_type", "hierarchy_data"]
+        })
+    }
+    
+    fn error_codes(&self) -> Vec<ErrorCode> {
+        vec![
+            ErrorCode {
+                code: "HIERARCHY_NOT_FOUND".to_string(),
+                description: "No hierarchy information found for the specified entities".to_string(),
+                retry_able: false,
+            },
+            ErrorCode {
+                code: "AI_INTERPRETATION_FAILED".to_string(),
+                description: "The AI service failed to interpret the natural language request".to_string(),
+                retry_able: true,
+            },
+            ErrorCode {
+                code: "ENTITY_RESOLUTION_FAILED".to_string(),
+                description: "Could not resolve entity names to valid entity IDs".to_string(),
+                retry_able: false,
+            },
+        ]
+    }
+    
+    fn version(&self) -> &'static str {
+        "1.0.0"
     }
 }
 
@@ -512,8 +666,8 @@ impl ScribeTool for SuggestHierarchyPromotionTool {
         })
     }
 
-    #[instrument(skip(self, params), fields(tool = self.name()))]
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    #[instrument(skip(self, params, _session_dek), fields(tool = self.name()))]
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing suggest_hierarchy_promotion with input: {}", params);
         
         let input: SuggestPromotionInput = serde_json::from_value(params.clone())
@@ -592,6 +746,168 @@ impl ScribeTool for SuggestHierarchyPromotionTool {
     }
 }
 
+#[async_trait]
+impl SelfRegisteringTool for SuggestHierarchyPromotionTool {
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Tactical
+    }
+    
+    fn capabilities(&self) -> Vec<ToolCapability> {
+        vec![
+            ToolCapability {
+                action: "analyze".to_string(),
+                target: "narrative events".to_string(),
+                context: Some("hierarchy promotion".to_string()),
+            },
+            ToolCapability {
+                action: "suggest".to_string(),
+                target: "entity promotions".to_string(),
+                context: Some("significance analysis".to_string()),
+            },
+        ]
+    }
+    
+    fn when_to_use(&self) -> String {
+        "Use when analyzing narrative events to determine if entities should be promoted to \
+         higher hierarchy levels based on their narrative significance, strategic importance, \
+         or dramatic events. Perfect for dynamic world evolution based on story events.".to_string()
+    }
+    
+    fn when_not_to_use(&self) -> String {
+        "Do not use for routine entity updates, simple property changes, or when promotion \
+         decisions have already been made. Use specific entity update tools instead.".to_string()
+    }
+    
+    fn usage_examples(&self) -> Vec<ToolExample> {
+        vec![
+            ToolExample {
+                scenario: "Entity becomes narratively significant".to_string(),
+                input: json!({
+                    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "narrative_event": "The small mining outpost discovered an ancient alien artifact that could change the fate of the galaxy",
+                    "entity_name": "Kepler Mining Station",
+                    "current_context": {
+                        "location": "Outer rim territories",
+                        "current_scale": "Intimate"
+                    }
+                }),
+                expected_output: "Promotion suggestion from Intimate to Planetary scale due to galaxy-changing discovery".to_string(),
+            },
+        ]
+    }
+    
+    fn security_policy(&self) -> ToolSecurityPolicy {
+        ToolSecurityPolicy {
+            allowed_agents: vec![
+                AgentType::Orchestrator,
+                AgentType::Strategic,
+                AgentType::Tactical,
+            ],
+            required_capabilities: vec![],
+            rate_limit: None,
+            data_access: DataAccessPolicy {
+                user_data: true,
+                system_data: false,
+                write_access: false, // Only suggests, doesn't directly modify
+                allowed_scopes: vec!["narrative".to_string(), "hierarchy".to_string()],
+            },
+            audit_level: AuditLevel::Detailed, // Important decisions need auditing
+        }
+    }
+    
+    fn resource_requirements(&self) -> ResourceRequirements {
+        ResourceRequirements {
+            memory_mb: 85,
+            execution_time: ExecutionTime::Moderate,
+            external_calls: true, // Uses AI client
+            compute_intensive: false,
+        }
+    }
+    
+    fn dependencies(&self) -> Vec<String> {
+        vec![
+            "ai_client".to_string(),
+            "ecs_entity_manager".to_string(),
+        ]
+    }
+    
+    fn tags(&self) -> Vec<String> {
+        vec![
+            "narrative".to_string(),
+            "hierarchy".to_string(),
+            "promotion".to_string(),
+            "ai-powered".to_string(),
+            "analysis".to_string(),
+        ]
+    }
+    
+    fn output_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "entity_name": {
+                    "type": "string",
+                    "description": "Name of the entity being analyzed"
+                },
+                "narrative_significance": {
+                    "type": "string",
+                    "description": "AI assessment of the narrative importance"
+                },
+                "promotion_suggestions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "from_scale": {"type": "string"},
+                            "to_scale": {"type": "string"},
+                            "confidence": {"type": "number"},
+                            "reasoning": {"type": "string"}
+                        }
+                    },
+                    "description": "List of suggested promotions with reasoning"
+                },
+                "impact_analysis": {
+                    "type": "string",
+                    "description": "Analysis of the broader impact of this promotion"
+                },
+                "strategic_importance": {
+                    "type": "string",
+                    "description": "Assessment of strategic value in the world model"
+                },
+                "recommendation": {
+                    "type": "string",
+                    "description": "Final AI recommendation for action"
+                }
+            },
+            "required": ["entity_name", "narrative_significance", "promotion_suggestions", "recommendation"]
+        })
+    }
+    
+    fn error_codes(&self) -> Vec<ErrorCode> {
+        vec![
+            ErrorCode {
+                code: "ENTITY_NOT_FOUND".to_string(),
+                description: "The specified entity could not be found in the system".to_string(),
+                retry_able: false,
+            },
+            ErrorCode {
+                code: "AI_ANALYSIS_FAILED".to_string(),
+                description: "The AI service failed to analyze the narrative event".to_string(),
+                retry_able: true,
+            },
+            ErrorCode {
+                code: "INVALID_NARRATIVE_CONTEXT".to_string(),
+                description: "The narrative event lacks sufficient context for analysis".to_string(),
+                retry_able: false,
+            },
+        ]
+    }
+    
+    fn version(&self) -> &'static str {
+        "1.0.0"
+    }
+}
+
 /// AI-powered tool for automatic salience tier assignment and updates
 #[derive(Clone)]
 pub struct UpdateSalienceTool {
@@ -660,7 +976,7 @@ Examples:
     }
 
     /// Apply the AI-determined salience update
-    async fn apply_salience_update(&self, user_id: Uuid, entity_name: &str, analysis: &SalienceAnalysis) -> Result<JsonValue, ToolError> {
+    async fn apply_salience_update(&self, user_id: Uuid, entity_name: &str, analysis: &SalienceAnalysis, session_dek: &SessionDek) -> Result<JsonValue, ToolError> {
         let salience_tier = match analysis.recommended_tier.as_str() {
             "Core" => SalienceTier::Core,
             "Secondary" => SalienceTier::Secondary,
@@ -676,20 +992,17 @@ Examples:
         };
 
         // Step 1: Use FindEntityTool to resolve entity name to ID
-        let find_entity_tool = super::world_interaction_tools::FindEntityTool::new(
-            self.app_state.ecs_entity_manager.clone()
-        );
+        let find_entity_tool = crate::services::agentic::unified_tool_registry::UnifiedToolRegistry::get_tool("find_entity")
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to get FindEntityTool: {}", e)))?;
         
         let find_params = json!({
             "user_id": user_id.to_string(),
-            "criteria": {
-                "type": "ByName",
-                "name": entity_name
-            },
+            "search_request": format!("find entity named '{}'", entity_name),
+            "context": "Looking for specific entity by exact name for chronicle expansion",
             "limit": 1
         });
         
-        let find_result = find_entity_tool.execute(&find_params).await
+        let find_result = find_entity_tool.execute(&find_params, session_dek).await
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to find entity: {}", e)))?;
             
         let entities = find_result.get("entities").and_then(|e| e.as_array())
@@ -816,8 +1129,8 @@ impl ScribeTool for UpdateSalienceTool {
         })
     }
 
-    #[instrument(skip(self, params), fields(tool = self.name()))]
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    #[instrument(skip(self, params, _session_dek), fields(tool = self.name()))]
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing update_salience with input: {}", params);
         
         let input: UpdateSalienceInput = serde_json::from_value(params.clone())
@@ -894,12 +1207,166 @@ impl ScribeTool for UpdateSalienceTool {
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to parse AI response: {}. Response was: {}", e, response_text)))?;
 
         // Apply the salience update
-        let result = self.apply_salience_update(user_id, &input.entity_name, &analysis).await?;
+        let result = self.apply_salience_update(user_id, &input.entity_name, &analysis, _session_dek).await?;
 
         info!("AI recommended {} tier for entity '{}' with {:.2} confidence", 
               analysis.recommended_tier, input.entity_name, analysis.confidence);
         
         Ok(result)
+    }
+}
+
+#[async_trait]
+impl SelfRegisteringTool for UpdateSalienceTool {
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Management
+    }
+    
+    fn capabilities(&self) -> Vec<ToolCapability> {
+        vec![
+            ToolCapability {
+                action: "analyze".to_string(),
+                target: "entity salience".to_string(),
+                context: Some("narrative context".to_string()),
+            },
+            ToolCapability {
+                action: "update".to_string(),
+                target: "salience tier".to_string(),
+                context: Some("automatic classification".to_string()),
+            },
+        ]
+    }
+    
+    fn when_to_use(&self) -> String {
+        "Use when you need to automatically determine or update an entity's salience tier \
+         (Core/Secondary/Flavor) based on narrative context. Perfect for detecting when \
+         background entities become important or when important entities fade to background.".to_string()
+    }
+    
+    fn when_not_to_use(&self) -> String {
+        "Do not use for entities with fixed salience requirements, system entities, or when \
+         salience has been manually set by the user. Use direct entity updates instead.".to_string()
+    }
+    
+    fn usage_examples(&self) -> Vec<ToolExample> {
+        vec![
+            ToolExample {
+                scenario: "Background character becomes important".to_string(),
+                input: json!({
+                    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "entity_name": "Tavern Keeper",
+                    "narrative_context": "The tavern keeper reveals they are actually the lost heir to the throne and holds the key to defeating the dark lord",
+                    "current_tier": "Flavor"
+                }),
+                expected_output: "Upgrade from Flavor to Core tier due to critical plot importance".to_string(),
+            },
+        ]
+    }
+    
+    fn security_policy(&self) -> ToolSecurityPolicy {
+        ToolSecurityPolicy {
+            allowed_agents: vec![
+                AgentType::Orchestrator,
+                AgentType::Strategic,
+                AgentType::Tactical,
+            ],
+            required_capabilities: vec![],
+            rate_limit: None,
+            data_access: DataAccessPolicy {
+                user_data: true,
+                system_data: false,
+                write_access: true, // Updates entity salience
+                allowed_scopes: vec!["salience".to_string(), "entities".to_string()],
+            },
+            audit_level: AuditLevel::Detailed, // Track salience changes
+        }
+    }
+    
+    fn resource_requirements(&self) -> ResourceRequirements {
+        ResourceRequirements {
+            memory_mb: 75,
+            execution_time: ExecutionTime::Moderate,
+            external_calls: true, // Uses AI client
+            compute_intensive: false,
+        }
+    }
+    
+    fn dependencies(&self) -> Vec<String> {
+        vec![
+            "ai_client".to_string(),
+            "ecs_entity_manager".to_string(),
+        ]
+    }
+    
+    fn tags(&self) -> Vec<String> {
+        vec![
+            "salience".to_string(),
+            "narrative".to_string(),
+            "classification".to_string(),
+            "ai-powered".to_string(),
+            "automatic".to_string(),
+        ]
+    }
+    
+    fn output_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "entity_name": {
+                    "type": "string",
+                    "description": "Name of the entity analyzed"
+                },
+                "previous_tier": {
+                    "type": "string",
+                    "enum": ["Core", "Secondary", "Flavor", "None"],
+                    "description": "Previous salience tier (None if new)"
+                },
+                "new_tier": {
+                    "type": "string",
+                    "enum": ["Core", "Secondary", "Flavor"],
+                    "description": "New recommended salience tier"
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "AI confidence in the recommendation"
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "AI reasoning for the salience decision"
+                },
+                "update_applied": {
+                    "type": "boolean",
+                    "description": "Whether the update was actually applied"
+                }
+            },
+            "required": ["entity_name", "new_tier", "confidence", "reasoning", "update_applied"]
+        })
+    }
+    
+    fn error_codes(&self) -> Vec<ErrorCode> {
+        vec![
+            ErrorCode {
+                code: "ENTITY_NOT_FOUND".to_string(),
+                description: "The specified entity could not be found in the system".to_string(),
+                retry_able: false,
+            },
+            ErrorCode {
+                code: "AI_SALIENCE_FAILED".to_string(),
+                description: "The AI service failed to analyze salience requirements".to_string(),
+                retry_able: true,
+            },
+            ErrorCode {
+                code: "UPDATE_FAILED".to_string(),
+                description: "Failed to update the entity's salience tier".to_string(),
+                retry_able: true,
+            },
+        ]
+    }
+    
+    fn version(&self) -> &'static str {
+        "1.0.0"
     }
 }
 
@@ -920,4 +1387,27 @@ impl From<Arc<AppState>> for UpdateSalienceTool {
     fn from(app_state: Arc<AppState>) -> Self {
         Self::new(app_state)
     }
+}
+
+/// Register all AI-powered tools with the unified registry
+pub fn register_ai_powered_tools(app_state: Arc<AppState>) -> Result<(), AppError> {
+    use crate::services::agentic::unified_tool_registry::UnifiedToolRegistry;
+    
+    // Register AnalyzeHierarchyRequestTool
+    let analyze_hierarchy_tool = Arc::new(AnalyzeHierarchyRequestTool::new(app_state.clone())) 
+        as Arc<dyn SelfRegisteringTool + Send + Sync>;
+    UnifiedToolRegistry::register(analyze_hierarchy_tool)?;
+    
+    // Register SuggestHierarchyPromotionTool
+    let suggest_promotion_tool = Arc::new(SuggestHierarchyPromotionTool::new(app_state.clone())) 
+        as Arc<dyn SelfRegisteringTool + Send + Sync>;
+    UnifiedToolRegistry::register(suggest_promotion_tool)?;
+    
+    // Register UpdateSalienceTool
+    let update_salience_tool = Arc::new(UpdateSalienceTool::new(app_state.clone())) 
+        as Arc<dyn SelfRegisteringTool + Send + Sync>;
+    UnifiedToolRegistry::register(update_salience_tool)?;
+    
+    tracing::info!("Registered 3 AI-powered tools with unified registry");
+    Ok(())
 }

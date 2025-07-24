@@ -17,7 +17,7 @@ use crate::{
         },
         agentic::{
             tools::ScribeTool,
-            tool_registry::ToolRegistry,
+            unified_tool_registry::UnifiedToolRegistry,
         },
     },
     llm::AiClient,
@@ -66,9 +66,11 @@ impl TacticalAgent {
         // Initialize context validator
         let context_validator = Arc::new(EnrichedContextValidator::new());
         
-        // Tools are now available through the global ToolRegistry
+        // Tools are now available through the unified tool registry
         info!("TacticalAgent created with access to {} registered tools", 
-              ToolRegistry::list_tool_names().len());
+              super::unified_tool_registry::UnifiedToolRegistry::get_tools_for_agent(
+                  super::unified_tool_registry::AgentType::Tactical
+              ).len());
         
         Self {
             _ai_client: ai_client,
@@ -84,13 +86,16 @@ impl TacticalAgent {
     /// Note: Currently unused but kept for future tool documentation/help features
     #[allow(dead_code)]
     fn get_tool_reference(&self) -> String {
-        ToolRegistry::generate_agent_tool_reference(crate::services::agentic::tool_registry::AgentType::Tactical)
+        // TODO: Implement tool documentation generation for unified registry
+        format!("Tactical Agent Tools: Available through UnifiedToolRegistry")
     }
     
     /// Helper method to get a tool from the registry
     fn get_tool(&self, tool_name: &str) -> Result<Arc<dyn ScribeTool>, AppError> {
-        ToolRegistry::get_tool(tool_name)
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to get tool '{}': {}", tool_name, e)))
+        // TODO: Implement tool retrieval from unified registry
+        // The unified registry currently doesn't expose individual tools directly
+        // This method will need to be updated when tool execution is implemented
+        Err(AppError::InternalServerErrorGeneric(format!("Tool '{}' access not yet implemented for unified registry", tool_name)))
     }
 
     /// Process a strategic directive into an enriched context for the Operational Layer
@@ -596,13 +601,13 @@ impl TacticalAgent {
         
         // Step 2: Find entities by name using FindEntityTool
         for entity_name in &entity_names {
-            match self.find_entity_by_name(&entity_name, user_id).await {
+            match self.find_entity_by_name(&entity_name, user_id, session_dek).await {
                 Ok(found_entities) => {
                     debug!("Found {} entities for name '{}'", found_entities.len(), entity_name);
                     
                     // Step 3: Get detailed information for each found entity
                     for entity_summary in found_entities {
-                        match self.get_entity_details(&entity_summary.entity_id, user_id).await {
+                        match self.get_entity_details(&entity_summary.entity_id, user_id, session_dek).await {
                             Ok(entity_context) => {
                                 entities.push(entity_context);
                             }
@@ -620,7 +625,7 @@ impl TacticalAgent {
         
         // Step 4: Get spatial context for the first relevant entity
         if let Some(first_entity) = entities.first() {
-            match self.get_spatial_context_for_entity(&first_entity.entity_name, user_id).await {
+            match self.get_spatial_context_for_entity(&first_entity.entity_name, user_id, session_dek).await {
                 Ok(context) => {
                     spatial_context = Some(context);
                     debug!("Retrieved spatial context for entity: {}", first_entity.entity_name);
@@ -681,21 +686,19 @@ impl TacticalAgent {
     }
     
     /// Find entities by name using the FindEntityTool
-    async fn find_entity_by_name(&self, entity_name: &str, user_id: Uuid) -> Result<Vec<crate::services::agentic::tools::world_interaction_tools::EntitySummary>, AppError> {
+    async fn find_entity_by_name(&self, entity_name: &str, user_id: Uuid, session_dek: &SessionDek) -> Result<Vec<crate::services::agentic::tools::entity_crud_tools::EntitySummary>, AppError> {
         use serde_json::json;
         
         let params = json!({
             "user_id": user_id.to_string(),
-            "criteria": {
-                "type": "ByName",
-                "name": entity_name
-            },
+            "search_request": format!("find entity named '{}'", entity_name),
+            "context": "Finding specific entity by exact name",
             "limit": 5
         });
         
         let find_entity_tool = self.get_tool("find_entity")?;
         
-        let result = find_entity_tool.execute(&params).await
+        let result = find_entity_tool.execute(&params, session_dek).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("FindEntityTool failed: {}", e)))?;
         
         // Parse the result manually since FindEntityOutput doesn't implement Deserialize
@@ -712,7 +715,7 @@ impl TacticalAgent {
                 entity_value.get("entity_id").and_then(|v| v.as_str()),
                 entity_value.get("name").and_then(|v| v.as_str())
             ) {
-                entities.push(crate::services::agentic::tools::world_interaction_tools::EntitySummary {
+                entities.push(crate::services::agentic::tools::entity_crud_tools::EntitySummary {
                     entity_id: entity_id.to_string(),
                     name: name.to_string(),
                     scale: entity_value.get("scale").and_then(|v| v.as_str()).map(|s| s.to_string()),
@@ -727,7 +730,7 @@ impl TacticalAgent {
     }
     
     /// Get detailed entity information using GetEntityDetailsTool
-    async fn get_entity_details(&self, entity_id: &str, user_id: Uuid) -> Result<EntityContext, AppError> {
+    async fn get_entity_details(&self, entity_id: &str, user_id: Uuid, session_dek: &SessionDek) -> Result<EntityContext, AppError> {
         use serde_json::json;
         
         let params = json!({
@@ -739,7 +742,7 @@ impl TacticalAgent {
         
         let get_entity_details_tool = self.get_tool("get_entity_details")?;
         
-        let result = get_entity_details_tool.execute(&params).await
+        let result = get_entity_details_tool.execute(&params, session_dek).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("GetEntityDetailsTool failed: {}", e)))?;
         
         // Convert the tool result to EntityContext
@@ -763,11 +766,11 @@ impl TacticalAgent {
     }
     
     /// Get spatial context for an entity using GetSpatialContextTool
-    async fn get_spatial_context_for_entity(&self, entity_name: &str, user_id: Uuid) -> Result<SpatialContext, AppError> {
+    async fn get_spatial_context_for_entity(&self, entity_name: &str, user_id: Uuid, session_dek: &SessionDek) -> Result<SpatialContext, AppError> {
         use serde_json::json;
         
         // First find the entity to get its ID
-        let entities = self.find_entity_by_name(entity_name, user_id).await?;
+        let entities = self.find_entity_by_name(entity_name, user_id, session_dek).await?;
         if entities.is_empty() {
             return Err(AppError::NotFound(format!("Entity '{}' not found for spatial context", entity_name)));
         }
@@ -783,7 +786,7 @@ impl TacticalAgent {
         
         let get_spatial_context_tool = self.get_tool("get_spatial_context")?;
         
-        let result = get_spatial_context_tool.execute(&params).await
+        let result = get_spatial_context_tool.execute(&params, session_dek).await
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("GetSpatialContextTool failed: {}", e)))?;
         
         // Convert tool result to SpatialContext

@@ -62,7 +62,7 @@ pub mod orchestrator;
 // Re-export agentic components
 pub use agentic::{
     AgenticNarrativeFactory, NarrativeAgentRunner, NarrativeWorkflowConfig, 
-    ScribeTool, ToolRegistry, TacticalAgent
+    ScribeTool, TacticalAgent
 };
 
 pub use character_service::CharacterService;

@@ -30,9 +30,9 @@ use crate::{
     llm::AiClient,
     models::chronicle_event::ChronicleEvent,
     services::{
-        agentic::relationship_analysis_structured_output::{
-            RelationshipAnalysisOutput, get_relationship_analysis_schema
-        },
+        // agentic::relationship_analysis_structured_output::{
+        //     RelationshipAnalysisOutput, get_relationship_analysis_schema
+        // },
         agentic::narrative_answer_generation_structured_output::{
             NarrativeGenerationOutput, get_narrative_generation_schema
         },
@@ -2623,20 +2623,20 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         // Analyze relationship history from chronicle events
         let relationship_history = self.extract_relationship_history(entity_a, entity_b, events).await?;
         
-        // Use AI to analyze relationship instead of hardcoded logic
-        let ai_analysis = self.analyze_relationship_with_ai(
-            entity_a,
-            entity_b,
-            events,
-            &current_relationship,
-            &relationship_history
-        ).await?;
+        // TODO: Use AI to analyze relationship instead of hardcoded logic
+        // let ai_analysis = self.analyze_relationship_with_ai(
+        //     entity_a,
+        //     entity_b,
+        //     events,
+        //     &current_relationship,
+        //     &relationship_history
+        // ).await?;
         
         // Convert AI analysis to legacy RelationshipMetrics format for backward compatibility
         let metrics = RelationshipMetrics {
-            stability: ai_analysis.relationship_metrics.stability,
-            strength: ai_analysis.relationship_metrics.strength,
-            trend: self.convert_ai_trend_to_legacy(&ai_analysis.relationship_metrics.trend),
+            stability: 0.5, // Placeholder until AI analysis is restored
+            strength: 0.5,  // Placeholder until AI analysis is restored
+            trend: RelationshipTrend::Unknown, // TODO: restore after relationship_analysis_structured_output is implemented
             interaction_count: relationship_history.len(),
         };
         
@@ -2650,6 +2650,8 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
     }
     
     /// Analyze relationship using AI with structured output
+    // TODO: Restore this function after relationship_analysis_structured_output is implemented
+    /*
     async fn analyze_relationship_with_ai(
         &self,
         entity_a: Uuid,
@@ -2769,17 +2771,18 @@ Focus on items relevant to the query. Extract only what is explicitly mentioned 
         
         Ok(analysis)
     }
+    */
     
     /// Convert AI trend direction to legacy RelationshipTrend enum
-    fn convert_ai_trend_to_legacy(&self, ai_trend: &crate::services::agentic::relationship_analysis_structured_output::RelationshipTrendOutput) -> RelationshipTrend {
-        match ai_trend.direction.as_str() {
-            "improving" => RelationshipTrend::Improving,
-            "declining" => RelationshipTrend::Declining,
-            "stable" => RelationshipTrend::Stable,
-            "volatile" => RelationshipTrend::Volatile,
-            _ => RelationshipTrend::Unknown,
-        }
-    }
+    // fn convert_ai_trend_to_legacy(&self, ai_trend: &crate::services::agentic::relationship_analysis_structured_output::RelationshipTrendOutput) -> RelationshipTrend {
+    //     match ai_trend.direction.as_str() {
+    //         "improving" => RelationshipTrend::Improving,
+    //         "declining" => RelationshipTrend::Declining,
+    //         "stable" => RelationshipTrend::Stable,
+    //         "volatile" => RelationshipTrend::Volatile,
+    //         _ => RelationshipTrend::Unknown,
+    //     }
+    // }
 
     /// Build basic entity contexts for fallback mode
     async fn build_basic_entity_contexts(
