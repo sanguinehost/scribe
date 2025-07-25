@@ -63,8 +63,10 @@ Your analysis should identify:
 1. What type of entities the user is looking for
 2. Key characteristics, names, or properties to match
 3. Spatial, temporal, or relationship constraints
-4. The scope and scale of the search (Cosmic, Planetary, Intimate)
+4. The scope and scale of the search (Cosmic/Planetary/Intimate scales, or specific spatial types)
 5. Fuzzy matching requirements (partial names, synonyms, related concepts)
+
+Note: If you need information about available spatial types, use the 'query_spatial_types' tool first.
 
 RESPONSE FORMAT (JSON):
 {{
@@ -263,9 +265,24 @@ impl ScribeTool for FindEntityTool {
                 "search_strategy": {"type": "string", "enum": ["semantic_search", "name_match", "component_based", "relationship_based", "spatial_search"]},
                 "key_terms": {"type": "array", "items": {"type": "string"}},
                 "entity_types": {"type": "array", "items": {"type": "string"}},
-                "spatial_scope": {"type": "string", "enum": ["Cosmic", "Planetary", "Intimate", "Any"]},
+                "spatial_scope": {
+                    "type": "string",
+                    "description": "Spatial scope or specific spatial type (Cosmic/Planetary/Intimate scales, or specific types like Galaxy, Planet, City, Room, etc.)"
+                },
                 "fuzzy_matching": {"type": "boolean"},
-                "relationship_constraints": {"type": "object"},
+                "relationship_constraints": {
+                    "type": "object",
+                    "properties": {
+                        "parent": {"type": "string", "description": "Parent entity name or ID"},
+                        "contains": {"type": "string", "description": "Entity type that should be contained"},
+                        "nearby": {"type": "string", "description": "Location or entity this should be near"},
+                        "within": {"type": "string", "description": "Spatial container entity"},
+                        "owned_by": {"type": "string", "description": "Entity that owns this"},
+                        "related_to": {"type": "string", "description": "Related entity"},
+                        "distance_from": {"type": "string", "description": "Distance constraint from another entity"}
+                    },
+                    "additionalProperties": false
+                },
                 "component_requirements": {"type": "array", "items": {"type": "string"}},
                 "reasoning": {"type": "string"},
                 "expected_results": {"type": "string"}
@@ -2191,6 +2208,246 @@ impl SelfRegisteringTool for DeleteEntityTool {
     }
 }
 
+// ===== SPATIAL TYPES QUERY TOOL =====
+
+/// Tool that provides information about available spatial types and their relationships
+#[derive(Clone)]
+pub struct QuerySpatialTypesTool {
+    app_state: Arc<AppState>,
+}
+
+impl QuerySpatialTypesTool {
+    pub fn new(app_state: Arc<AppState>) -> Self {
+        Self { app_state }
+    }
+}
+
+#[async_trait]
+impl ScribeTool for QuerySpatialTypesTool {
+    fn name(&self) -> &'static str {
+        "query_spatial_types"
+    }
+
+    fn description(&self) -> &'static str {
+        "Query available spatial types and their containment relationships in the enhanced spatial system. \
+         Useful for understanding what spatial types can be used when creating or searching for entities."
+    }
+
+    fn input_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "query_type": {
+                    "type": "string",
+                    "enum": ["all_types", "cosmic_types", "planetary_types", "intimate_types", "containment_rules"],
+                    "description": "Type of spatial information to query"
+                },
+                "spatial_type": {
+                    "type": "string",
+                    "description": "Specific spatial type to get containment information for (when query_type is 'containment_rules')"
+                }
+            },
+            "required": ["query_type"]
+        })
+    }
+
+    #[instrument(skip(self, params, _session_dek), fields(tool = "query_spatial_types"))]
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
+        let query_type = params.get("query_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams("query_type is required".to_string()))?;
+
+        let result = match query_type {
+            "all_types" => {
+                json!({
+                    "cosmic_types": ["Universe", "Galaxy", "GalaxyCluster", "Nebula", "StarSystem", "Star", "Planet", "Moon", "Asteroid", "AsteroidBelt", "Comet", "SpaceStation"],
+                    "vehicle_types": ["Spaceship", "Starship", "Shuttle", "Fighter", "Freighter", "Ship", "Airship", "Aircraft", "Vehicle"],
+                    "geographic_types": ["Continent", "Ocean", "Sea", "MountainRange", "Desert", "Forest", "Jungle", "Tundra", "Grassland", "Swamp", "Marsh", "River", "Lake", "Island", "Peninsula", "Valley", "Canyon", "Cave", "Cavern"],
+                    "political_types": ["Empire", "Kingdom", "Republic", "Province", "State", "County", "City", "Town", "Village", "District", "Neighborhood"],
+                    "structural_types": ["Fortress", "Castle", "Palace", "Temple", "Tower", "Building", "House", "Inn", "Tavern", "Shop", "Market", "Bridge", "Port", "Dock", "Warehouse", "Floor", "Room", "Chamber", "Hall", "Corridor", "Courtyard", "Garden", "Basement", "Attic", "Deck", "Cabin", "Cockpit", "CargoHold", "EngineeringBay"],
+                    "intimate_types": ["Area", "Furniture", "Container", "Compartment", "Locker", "Chest", "Shelf", "Table", "Bed", "Chair"],
+                    "custom_types": "Custom(String) - allows for any custom spatial type"
+                })
+            },
+            "cosmic_types" => {
+                json!({
+                    "types": ["Universe", "Galaxy", "GalaxyCluster", "Nebula", "StarSystem", "Star", "Planet", "Moon", "Asteroid", "AsteroidBelt", "Comet", "SpaceStation"],
+                    "description": "Large-scale spatial types for cosmic entities"
+                })
+            },
+            "planetary_types" => {
+                json!({
+                    "types": ["Continent", "Ocean", "Sea", "MountainRange", "Desert", "Forest", "Jungle", "Tundra", "Grassland", "Swamp", "Marsh", "River", "Lake", "Island", "Peninsula", "Valley", "Canyon", "Cave", "Cavern", "Empire", "Kingdom", "Republic", "Province", "State", "County", "City", "Town", "Village", "District", "Neighborhood"],
+                    "description": "Planet-scale spatial types for geographic and political entities"
+                })
+            },
+            "intimate_types" => {
+                json!({
+                    "types": ["Fortress", "Castle", "Palace", "Temple", "Tower", "Building", "House", "Inn", "Tavern", "Shop", "Market", "Bridge", "Port", "Dock", "Warehouse", "Floor", "Room", "Chamber", "Hall", "Corridor", "Courtyard", "Garden", "Basement", "Attic", "Deck", "Cabin", "Cockpit", "CargoHold", "EngineeringBay", "Area", "Furniture", "Container", "Compartment", "Locker", "Chest", "Shelf", "Table", "Bed", "Chair"],
+                    "description": "Small-scale spatial types for buildings, rooms, and objects"
+                })
+            },
+            "containment_rules" => {
+                json!({
+                    "examples": {
+                        "Universe": "can contain GalaxyCluster, Galaxy",
+                        "Galaxy": "can contain StarSystem, Nebula", 
+                        "StarSystem": "can contain Star, Planet, Moon, Asteroid, AsteroidBelt, Comet, SpaceStation",
+                        "Planet": "can contain geographic features, political entities, and surface structures",
+                        "City": "can contain District, Neighborhood, Building, and infrastructure",
+                        "Building": "can contain Floor, Room, and internal structures",
+                        "Room": "can contain Furniture, Container, and smaller objects"
+                    },
+                    "note": "Custom types are also supported for unique spatial entities"
+                })
+            },
+            _ => return Err(ToolError::InvalidParams(format!("Unknown query_type: {}", query_type)))
+        };
+
+        Ok(result)
+    }
+}
+
+#[async_trait]
+impl SelfRegisteringTool for QuerySpatialTypesTool {
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Discovery
+    }
+    
+    fn capabilities(&self) -> Vec<ToolCapability> {
+        vec![
+            ToolCapability {
+                action: "query".to_string(),
+                target: "spatial types".to_string(),
+                context: Some("system metadata".to_string()),
+            },
+            ToolCapability {
+                action: "list".to_string(),
+                target: "containment rules".to_string(),
+                context: Some("spatial relationships".to_string()),
+            },
+        ]
+    }
+    
+    fn when_to_use(&self) -> String {
+        "Use when you need information about available spatial types for entity creation or spatial queries. \
+         Helps understand what spatial types exist and how they relate to each other.".to_string()
+    }
+    
+    fn when_not_to_use(&self) -> String {
+        "Do not use for entity operations (use other entity CRUD tools instead) or for actual spatial \
+         positioning (use spatial interaction tools).".to_string()
+    }
+    
+    fn usage_examples(&self) -> Vec<ToolExample> {
+        vec![
+            ToolExample {
+                scenario: "Get all available spatial types".to_string(),
+                input: json!({
+                    "query_type": "all_types"
+                }),
+                expected_output: "Comprehensive list of all spatial types organized by category".to_string(),
+            },
+            ToolExample {
+                scenario: "Understanding what can contain what".to_string(),
+                input: json!({
+                    "query_type": "containment_rules"
+                }),
+                expected_output: "Examples of containment relationships between spatial types".to_string(),
+            },
+        ]
+    }
+    
+    fn security_policy(&self) -> ToolSecurityPolicy {
+        ToolSecurityPolicy {
+            allowed_agents: vec![
+                AgentType::Orchestrator,
+                AgentType::Strategic,
+                AgentType::Tactical,
+                AgentType::Perception,
+            ],
+            required_capabilities: vec![],
+            rate_limit: None, // Metadata queries are lightweight
+            data_access: DataAccessPolicy {
+                user_data: false, // Just system metadata
+                system_data: true,
+                write_access: false,
+                allowed_scopes: vec!["spatial_types".to_string()],
+            },
+            audit_level: AuditLevel::None, // Just metadata queries
+        }
+    }
+    
+    fn resource_requirements(&self) -> ResourceRequirements {
+        ResourceRequirements {
+            memory_mb: 10, // Very lightweight
+            execution_time: ExecutionTime::Fast,
+            external_calls: false,
+            compute_intensive: false,
+        }
+    }
+    
+    fn dependencies(&self) -> Vec<String> {
+        vec![] // No dependencies - just returns static spatial type information
+    }
+    
+    fn tags(&self) -> Vec<String> {
+        vec![
+            "spatial".to_string(),
+            "metadata".to_string(),
+            "query".to_string(),
+            "types".to_string(),
+            "reference".to_string(),
+        ]
+    }
+    
+    fn output_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "description": "Information about spatial types based on query_type",
+            "oneOf": [
+                {
+                    "properties": {
+                        "cosmic_types": {"type": "array", "items": {"type": "string"}},
+                        "vehicle_types": {"type": "array", "items": {"type": "string"}},
+                        "geographic_types": {"type": "array", "items": {"type": "string"}},
+                        "political_types": {"type": "array", "items": {"type": "string"}},
+                        "structural_types": {"type": "array", "items": {"type": "string"}},
+                        "intimate_types": {"type": "array", "items": {"type": "string"}},
+                        "custom_types": {"type": "string"}
+                    }
+                },
+                {
+                    "properties": {
+                        "types": {"type": "array", "items": {"type": "string"}},
+                        "description": {"type": "string"}
+                    }
+                },
+                {
+                    "properties": {
+                        "examples": {"type": "object"},
+                        "note": {"type": "string"}
+                    }
+                }
+            ]
+        })
+    }
+    
+    fn error_codes(&self) -> Vec<ErrorCode> {
+        vec![
+            ErrorCode {
+                code: "INVALID_QUERY_TYPE".to_string(),
+                description: "The specified query_type is not supported".to_string(),
+                retry_able: false,
+            },
+        ]
+    }
+    
+    fn version(&self) -> &'static str {
+        "1.0.0"
+    }
+}
+
 // Helper function to register entity CRUD tools
 pub fn register_entity_crud_tools(app_state: Arc<AppState>) -> Result<(), AppError> {
     use crate::services::agentic::unified_tool_registry::UnifiedToolRegistry;
@@ -2215,6 +2472,10 @@ pub fn register_entity_crud_tools(app_state: Arc<AppState>) -> Result<(), AppErr
     let delete_tool = Arc::new(DeleteEntityTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
     UnifiedToolRegistry::register(delete_tool)?;
     
-    tracing::info!("Registered 5 AI-driven entity CRUD tools with unified registry (FindEntityTool, GetEntityDetailsTool, CreateEntityTool, UpdateEntityTool, DeleteEntityTool)");
+    // Register QuerySpatialTypesTool - spatial types metadata query
+    let spatial_query_tool = Arc::new(QuerySpatialTypesTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
+    UnifiedToolRegistry::register(spatial_query_tool)?;
+    
+    tracing::info!("Registered 6 AI-driven entity CRUD tools with unified registry (FindEntityTool, GetEntityDetailsTool, CreateEntityTool, UpdateEntityTool, DeleteEntityTool, QuerySpatialTypesTool)");
     Ok(())
 }
