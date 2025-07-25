@@ -5,6 +5,7 @@
 //! AI models to provide context-aware, reasoning-based entity management.
 
 use std::sync::Arc;
+use std::collections::HashMap;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -15,7 +16,15 @@ use genai::chat::{ChatRequest, ChatMessage, ChatRole, ChatOptions, ChatResponseF
 
 use crate::{
     services::{EcsEntityManager, ComponentQuery, EntityQueryResult, ComponentUpdate, ComponentOperation},
-    models::ecs::{SpatialScale, SalienceTier, ParentLinkComponent},
+    models::ecs::{
+        SpatialScale, SalienceTier, ParentLinkComponent, NameComponent, 
+        EnhancedPositionComponent, HierarchicalCoordinates, SpatialArchetypeComponent, 
+        TemporalComponent, SpatialComponent, SalienceComponent, GameTime, TimeMode
+    },
+    models::spatial::{
+        EnhancedSpatialComponent, SpatialType as EnhancedSpatialType,
+        RelativePosition, AbsolutePosition, Rotation
+    },
     services::agentic::tools::{ScribeTool, ToolError, ToolParams, ToolResult},
     services::agentic::unified_tool_registry::{SelfRegisteringTool, ToolMetadata, ToolCategory, ToolCapability, ToolSecurityPolicy, AgentType, ToolExample, DataAccessPolicy, AuditLevel, ResourceRequirements, ExecutionTime, ErrorCode},
     state::AppState,
@@ -728,9 +737,13 @@ fn get_entity_creation_analysis_schema() -> JsonValue {
                     "name": {"type": "string"},
                     "description": {"type": "string"},
                     "spatial_scale": {"type": "string", "enum": ["Cosmic", "Planetary", "Intimate"]},
+                    "spatial_type": {
+                        "type": "string", 
+                        "description": "Specific spatial type like Planet, City, Building, Room, Spaceship, etc. Can also be a custom type for unique entities (e.g., 'MagicalRealm', 'PocketDimension'). The system will automatically handle custom types."
+                    },
                     "salience_tier": {"type": "string"}
                 },
-                "required": ["name", "description", "spatial_scale"],
+                "required": ["name", "description", "spatial_scale", "spatial_type"],
                 "description": "Core characteristics of the entity"
             },
             "required_components": {
@@ -739,7 +752,15 @@ fn get_entity_creation_analysis_schema() -> JsonValue {
                     "type": "object",
                     "properties": {
                         "component_type": {"type": "string"},
-                        "component_data": {"type": "object"},
+                        "component_data": {
+                            "type": "object",
+                            "description": "Flexible component data structure",
+                            "properties": {
+                                "value": {
+                                    "description": "Component-specific data"
+                                }
+                            }
+                        },
                         "reasoning": {"type": "string"}
                     },
                     "required": ["component_type", "component_data", "reasoning"]
@@ -1009,7 +1030,15 @@ impl SelfRegisteringTool for GetEntityDetailsTool {
                         "type": "object",
                         "properties": {
                             "component_type": {"type": "string"},
-                            "component_data": {"type": "object"}
+                            "component_data": {
+                                "type": "object",
+                                "description": "Flexible component data structure",
+                                "properties": {
+                                    "value": {
+                                        "description": "Component-specific data"
+                                    }
+                                }
+                            }
                         }
                     },
                     "description": "Raw component data from ECS"
@@ -1089,7 +1118,12 @@ Your analysis should provide:
 IMPORTANT GUIDELINES:
 - Create entities that fit the world's narrative context
 - Choose appropriate spatial scales (Cosmic, Planetary, Intimate)
-- Include essential components like Name, Position, SpatialArchetype
+- Select specific spatial types from our enhanced system:
+  * Cosmic: Galaxy, StarSystem, Planet, Moon, Asteroid, SpaceStation, Spaceship, etc.
+  * Planetary: Continent, Ocean, City, Forest, Mountain, etc.
+  * Intimate: Building, Room, Furniture, Container, etc.
+  * Custom: You can create custom spatial types for unique entities (e.g., "MagicalRealm", "PocketDimension", "CyberSpace", "DreamScape", etc.)
+- Include essential components like Name, Position, SpatialArchetype, EnhancedSpatial
 - Consider relationships to existing entities when appropriate
 - Make reasonable assumptions for missing details
 - Ensure components work together logically
@@ -1149,18 +1183,278 @@ Format your response to help create a cohesive, well-structured entity that enha
         let ai_plan: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to parse AI response: {}", e)))?;
 
-        // For now, return the AI plan as the creation output
-        // In a full implementation, this would use the AI plan to actually create the entity in ECS
+        // Extract entity details from the AI plan
         let entity_id = Uuid::new_v4();
-        
         let interpretation = ai_plan.get("interpretation").and_then(|v| v.as_str()).unwrap_or("Unknown entity");
+        
+        // Extract entity characteristics
+        let entity_chars = ai_plan.get("entity_characteristics")
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing entity_characteristics in AI plan".to_string()))?;
+        
+        let entity_name = entity_chars.get("name").and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing entity name".to_string()))?;
+        
+        let spatial_scale_str = entity_chars.get("spatial_scale").and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing spatial scale".to_string()))?;
+        
+        let spatial_scale = match spatial_scale_str {
+            "Cosmic" => SpatialScale::Cosmic,
+            "Planetary" => SpatialScale::Planetary,
+            "Intimate" => SpatialScale::Intimate,
+            _ => return Err(ToolError::ExecutionFailed(format!("Invalid spatial scale: {}", spatial_scale_str))),
+        };
+        
+        let salience_tier_str = entity_chars.get("salience_tier").and_then(|v| v.as_str()).unwrap_or("Flavor");
+        let salience_tier = match salience_tier_str {
+            "Core" => SalienceTier::Core,
+            "Secondary" | "Supporting" => SalienceTier::Secondary,
+            "Flavor" | "Background" => SalienceTier::Flavor,
+            _ => SalienceTier::Flavor,
+        };
+        
+        // Build components based on the AI plan
+        let mut components: Vec<(String, JsonValue)> = Vec::new();
+        
+        // Add Name component
+        let name_component = NameComponent {
+            name: entity_name.to_string(),
+            display_name: entity_name.to_string(),
+            aliases: vec![],
+        };
+        components.push(("Name".to_string(), serde_json::to_value(&name_component).unwrap()));
+        
+        // Add SpatialArchetype component with proper archetype name based on scale
+        let entity_type = ai_plan.get("entity_type").and_then(|v| v.as_str()).unwrap_or("entity");
+        
+        // Determine the correct archetype name based on spatial scale and hierarchical level
+        let hierarchical_level = 0u32; // Default to root level for now
+        let archetype_name = match spatial_scale {
+            SpatialScale::Cosmic => {
+                // For cosmic scale, level 0 is "Universe"
+                spatial_scale.level_name(hierarchical_level).unwrap_or("Universe").to_string()
+            },
+            SpatialScale::Planetary => {
+                // For planetary scale, level 0 is "World"
+                spatial_scale.level_name(hierarchical_level).unwrap_or("World").to_string()
+            },
+            SpatialScale::Intimate => {
+                // For intimate scale, level 0 is "Building"
+                spatial_scale.level_name(hierarchical_level).unwrap_or("Building").to_string()
+            }
+        };
+        
+        let archetype_component = SpatialArchetypeComponent::new(
+            spatial_scale.clone(),
+            hierarchical_level,
+            archetype_name
+        ).map_err(|e| ToolError::ExecutionFailed(format!("Failed to create spatial archetype: {}", e)))?;
+        components.push(("SpatialArchetype".to_string(), serde_json::to_value(&archetype_component).unwrap()));
+        
+        // Add Position component if spatial placement is provided
+        if let Some(spatial_placement) = ai_plan.get("spatial_placement") {
+            let x = spatial_placement.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let y = spatial_placement.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let z = spatial_placement.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            
+            let coords = HierarchicalCoordinates::new(x, y, z, spatial_scale.clone());
+            let position_component = EnhancedPositionComponent::absolute(coords);
+            components.push(("EnhancedPosition".to_string(), serde_json::to_value(&position_component).unwrap()));
+        }
+        
+        // Add Temporal component (for when the entity was created)
+        let game_time = GameTime {
+            timestamp: Utc::now(),
+            turn: None,
+            phase: None,
+            mode: TimeMode::Continuous { tick_rate_ms: 1000 },
+        };
+        
+        let temporal_component = TemporalComponent {
+            created_at: game_time.clone(),
+            destroyed_at: None,
+            last_modified: game_time,
+            time_scale: 1.0, // Normal time progression
+        };
+        components.push(("Temporal".to_string(), serde_json::to_value(&temporal_component).unwrap()));
+        
+        // Extract spatial type from AI plan
+        let spatial_type_str = entity_chars.get("spatial_type").and_then(|v| v.as_str())
+            .unwrap_or_else(|| {
+                // Default based on entity type and scale
+                match (entity_type, spatial_scale_str) {
+                    ("location", "Cosmic") => "Planet",
+                    ("location", "Planetary") => "City",
+                    ("location", "Intimate") => "Building",
+                    ("character", _) => "Custom",
+                    ("item", _) => "Container",
+                    _ => "Custom"
+                }
+            });
+        
+        // Map string to EnhancedSpatialType enum
+        let enhanced_spatial_type = match spatial_type_str {
+            "Universe" => EnhancedSpatialType::Universe,
+            "Galaxy" => EnhancedSpatialType::Galaxy,
+            "GalaxyCluster" => EnhancedSpatialType::GalaxyCluster,
+            "Nebula" => EnhancedSpatialType::Nebula,
+            "StarSystem" => EnhancedSpatialType::StarSystem,
+            "Star" => EnhancedSpatialType::Star,
+            "Planet" => EnhancedSpatialType::Planet,
+            "Moon" => EnhancedSpatialType::Moon,
+            "Asteroid" => EnhancedSpatialType::Asteroid,
+            "AsteroidBelt" => EnhancedSpatialType::AsteroidBelt,
+            "Comet" => EnhancedSpatialType::Comet,
+            "SpaceStation" => EnhancedSpatialType::SpaceStation,
+            "Spaceship" => EnhancedSpatialType::Spaceship,
+            "Starship" => EnhancedSpatialType::Starship,
+            "Shuttle" => EnhancedSpatialType::Shuttle,
+            "Fighter" => EnhancedSpatialType::Fighter,
+            "Freighter" => EnhancedSpatialType::Freighter,
+            "Ship" => EnhancedSpatialType::Ship,
+            "Airship" => EnhancedSpatialType::Airship,
+            "Aircraft" => EnhancedSpatialType::Aircraft,
+            "Vehicle" => EnhancedSpatialType::Vehicle,
+            "Continent" => EnhancedSpatialType::Continent,
+            "Ocean" => EnhancedSpatialType::Ocean,
+            "Sea" => EnhancedSpatialType::Sea,
+            "MountainRange" => EnhancedSpatialType::MountainRange,
+            "Desert" => EnhancedSpatialType::Desert,
+            "Forest" => EnhancedSpatialType::Forest,
+            "Jungle" => EnhancedSpatialType::Jungle,
+            "Tundra" => EnhancedSpatialType::Tundra,
+            "Grassland" => EnhancedSpatialType::Grassland,
+            "Swamp" => EnhancedSpatialType::Swamp,
+            "Marsh" => EnhancedSpatialType::Marsh,
+            "River" => EnhancedSpatialType::River,
+            "Lake" => EnhancedSpatialType::Lake,
+            "Island" => EnhancedSpatialType::Island,
+            "Peninsula" => EnhancedSpatialType::Peninsula,
+            "Valley" => EnhancedSpatialType::Valley,
+            "Canyon" => EnhancedSpatialType::Canyon,
+            "Cave" => EnhancedSpatialType::Cave,
+            "Cavern" => EnhancedSpatialType::Cavern,
+            "Empire" => EnhancedSpatialType::Empire,
+            "Kingdom" => EnhancedSpatialType::Kingdom,
+            "Republic" => EnhancedSpatialType::Republic,
+            "Province" => EnhancedSpatialType::Province,
+            "State" => EnhancedSpatialType::State,
+            "County" => EnhancedSpatialType::County,
+            "City" => EnhancedSpatialType::City,
+            "Town" => EnhancedSpatialType::Town,
+            "Village" => EnhancedSpatialType::Village,
+            "District" => EnhancedSpatialType::District,
+            "Neighborhood" => EnhancedSpatialType::Neighborhood,
+            "Fortress" => EnhancedSpatialType::Fortress,
+            "Castle" => EnhancedSpatialType::Castle,
+            "Palace" => EnhancedSpatialType::Palace,
+            "Temple" => EnhancedSpatialType::Temple,
+            "Tower" => EnhancedSpatialType::Tower,
+            "Building" => EnhancedSpatialType::Building,
+            "House" => EnhancedSpatialType::House,
+            "Inn" => EnhancedSpatialType::Inn,
+            "Tavern" => EnhancedSpatialType::Tavern,
+            "Shop" => EnhancedSpatialType::Shop,
+            "Market" => EnhancedSpatialType::Market,
+            "Bridge" => EnhancedSpatialType::Bridge,
+            "Port" => EnhancedSpatialType::Port,
+            "Dock" => EnhancedSpatialType::Dock,
+            "Warehouse" => EnhancedSpatialType::Warehouse,
+            "Floor" => EnhancedSpatialType::Floor,
+            "Room" => EnhancedSpatialType::Room,
+            "Chamber" => EnhancedSpatialType::Chamber,
+            "Hall" => EnhancedSpatialType::Hall,
+            "Corridor" => EnhancedSpatialType::Corridor,
+            "Courtyard" => EnhancedSpatialType::Courtyard,
+            "Garden" => EnhancedSpatialType::Garden,
+            "Basement" => EnhancedSpatialType::Basement,
+            "Attic" => EnhancedSpatialType::Attic,
+            "Deck" => EnhancedSpatialType::Deck,
+            "Cabin" => EnhancedSpatialType::Cabin,
+            "Cockpit" => EnhancedSpatialType::Cockpit,
+            "CargoHold" => EnhancedSpatialType::CargoHold,
+            "EngineeringBay" => EnhancedSpatialType::EngineeringBay,
+            "Area" => EnhancedSpatialType::Area,
+            "Furniture" => EnhancedSpatialType::Furniture,
+            "Container" => EnhancedSpatialType::Container,
+            "Compartment" => EnhancedSpatialType::Compartment,
+            "Locker" => EnhancedSpatialType::Locker,
+            "Chest" => EnhancedSpatialType::Chest,
+            "Shelf" => EnhancedSpatialType::Shelf,
+            "Table" => EnhancedSpatialType::Table,
+            "Bed" => EnhancedSpatialType::Bed,
+            "Chair" => EnhancedSpatialType::Chair,
+            _ => EnhancedSpatialType::Custom(spatial_type_str.to_string()),
+        };
+        
+        // Create EnhancedSpatialComponent
+        let mut enhanced_spatial_component = EnhancedSpatialComponent::new(enhanced_spatial_type);
+        
+        // Add metadata about the entity
+        enhanced_spatial_component.add_metadata("entity_type".to_string(), json!(entity_type));
+        enhanced_spatial_component.add_metadata("description".to_string(), 
+            json!(entity_chars.get("description").and_then(|v| v.as_str()).unwrap_or("")));
+        
+        components.push(("EnhancedSpatial".to_string(), serde_json::to_value(&enhanced_spatial_component).unwrap()));
+        
+        // Also add the old Spatial component for backwards compatibility
+        use crate::models::ecs::{SpatialType, SpatialConstraints, SpatialCapacity};
+        let spatial_component = SpatialComponent {
+            spatial_type: SpatialType::Container {
+                capacity: Some(SpatialCapacity {
+                    max_count: Some(10),
+                    max_volume: None,
+                    max_mass: None,
+                }),
+                allowed_types: vec!["Actor".to_string(), "Item".to_string()],
+            },
+            constraints: SpatialConstraints::default(),
+            metadata: HashMap::new(),
+        };
+        components.push(("Spatial".to_string(), serde_json::to_value(&spatial_component).unwrap()));
+        
+        // Add any additional components from the AI plan
+        if let Some(required_components) = ai_plan.get("required_components").and_then(|v| v.as_array()) {
+            for comp in required_components {
+                if let (Some(comp_type), Some(comp_data)) = (
+                    comp.get("component_type").and_then(|v| v.as_str()),
+                    comp.get("component_data")
+                ) {
+                    // Skip components we've already added
+                    if !["Name", "SpatialArchetype", "EnhancedPosition", "Temporal", "Spatial", "EnhancedSpatial"].contains(&comp_type) {
+                        components.push((comp_type.to_string(), comp_data.clone()));
+                    }
+                }
+            }
+        }
+        
+        // Create archetype signature
+        let archetype_signature = components.iter()
+            .map(|(comp_type, _)| comp_type.clone())
+            .collect::<Vec<_>>()
+            .join("|");
+        
+        // Actually create the entity in ECS
+        let entity_manager = EcsEntityManager::new(
+            Arc::new(self.app_state.pool.clone()),
+            self.app_state.redis_client.clone(),
+            Default::default()
+        );
+        
+        let entity_result = entity_manager.create_entity_with_salience(
+            user_id,
+            Some(entity_id),
+            archetype_signature,
+            salience_tier,
+            Some(spatial_scale),
+            components
+        ).await.map_err(|e| ToolError::AppError(e))?;
         
         Ok(EntityCreationOutput {
             entity_id: entity_id.to_string(),
             creation_plan: ai_plan.clone(),
             user_request: creation_request.to_string(),
-            created: false, // Placeholder - would be true after actual ECS creation
-            creation_summary: format!("AI-planned entity creation: {}", interpretation),
+            created: true,
+            creation_summary: format!("Created {} entity '{}' at {} scale", entity_type, entity_name, spatial_scale_str),
         })
     }
 }

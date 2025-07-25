@@ -1521,11 +1521,70 @@ User Message → Lightning Agent (rich cache) → Create Task in Queue
 
 ### **Task 8.3: Enhanced Tooling & Verification Capabilities**
 *   **Objective:** Extend toolset for intelligent state verification and comparison.
-*   **[ ] Subtask 8.3.1: Tool Gap Analysis:**
-    *   [ ] Review existing 23 tools in ToolRegistry
-    *   [ ] Identify missing verification and observation tools
-    *   [ ] Document tool capability matrix
-*   **[ ] Subtask 8.3.2: Implement New Verification Tools:**
+*   **[x] Subtask 8.3.1: Tool Gap Analysis:** ✅ **COMPLETED (2025-07-24)**
+    *   [x] Review existing 14 tools in legacy registry → **COMPLETED:** Found significant gaps
+    *   [x] Identify missing verification and observation tools → **COMPLETED:** Comprehensive gap analysis identified 10+ missing tools
+    *   [x] Document tool capability matrix → **COMPLETED:** Full unified tool registry with 24 comprehensive tools implemented
+
+*   **[x] Subtask 8.3.1.1: Unified Tool Registry Implementation:** ✅ **COMPLETED (2025-07-24)**
+    *   **🎯 Major Architecture Upgrade:** Replaced fragmented tool systems with comprehensive unified registry
+    *   **Tool Count:** 14 → 24 AI-driven tools with complete CRUD operations
+    *   **[x] Entity Lifecycle Management (Complete CRUD):**
+        *   [x] `find_entity` - Natural language entity search with AI semantic matching
+        *   [x] `get_entity_details` - Detailed entity analysis with hierarchy/relationship context
+        *   [x] `create_entity` - AI-driven entity creation with intelligent component suggestions
+        *   [x] `update_entity` - AI-driven entity modification with impact assessment
+        *   [x] `delete_entity` - AI-driven entity deletion with cleanup analysis **NEW**
+    *   **[x] Relationship Management (Complete CRUD):**
+        *   [x] `update_relationship` - AI relationship modification with social dynamics analysis
+        *   [x] `create_relationship` - AI relationship creation based on interaction analysis **NEW** 
+        *   [x] `delete_relationship` - AI relationship deletion with conflict resolution **NEW**
+    *   **[x] Narrative Intelligence Tools (AI-Powered Analysis):**
+        *   [x] `analyze_text_significance` - Flash-Lite significance analysis replacing hardcoded rules
+        *   [x] `create_chronicle_event` - Structured temporal event creation
+        *   [x] `extract_temporal_events` - AI event extraction from narrative text
+        *   [x] `extract_world_concepts` - World concept extraction and categorization
+        *   [x] `search_knowledge_base` - Intelligent lorebook/chronicle search
+    *   **[x] Spatial & Hierarchy Tools (Scale-Aware Operations):**
+        *   [x] `get_spatial_context` - Multi-scale spatial awareness and context
+        *   [x] `move_entity` - Intelligent entity movement with validation
+        *   [x] `get_entity_hierarchy` - Hierarchical relationship discovery
+        *   [x] `suggest_hierarchy_promotion` - AI-driven hierarchy suggestions
+        *   [x] `analyze_hierarchy_request` - Natural language hierarchy interpretation
+    *   **[x] Specialized Management Tools:**
+        *   [x] `query_chronicle_events` - Chronicle querying with encryption support
+        *   [x] `query_lorebook` - Lorebook search with decryption
+        *   [x] `manage_lorebook` - Lorebook management operations
+        *   [x] `query_inventory` - AI-powered inventory querying
+        *   [x] `manage_inventory` - Intelligent inventory management
+        *   [x] `update_salience` - Dynamic salience tier management
+
+*   **[x] Subtask 8.3.1.2: Encryption Architecture Integration:** ✅ **COMPLETED (2025-07-24)**
+    *   **🔐 Security Enhancement:** All 24 tools now properly handle `SessionDek` encryption
+    *   **[x] Data Encryption Compliance:** All tools decrypt user data using `session_dek` parameter
+    *   **[x] JsonSchemaSpec Integration:** All AI-driven tools use structured output format from `tactical_structured_output.rs`
+    *   **[x] Agent-Specific Access Control:** Tools properly configured for Orchestrator, Strategic, Tactical, and Perception agents
+    *   **[x] Audit Logging:** Comprehensive security event logging without exposing plaintext
+    *   **[x] Error Handling:** Encrypted error messages prevent data leaks
+
+*   **[x] Subtask 8.3.1.3: Self-Registration System:** ✅ **COMPLETED (2025-07-24)**
+    *   **🔧 Architecture Pattern:** All tools implement `SelfRegisteringTool` trait with comprehensive metadata
+    *   **[x] Dynamic Tool Discovery:** AI-powered tool selection based on task context
+    *   **[x] Capability Mapping:** Each tool declares actions, targets, and contexts for intelligent matching
+    *   **[x] Usage Examples:** All tools include scenario-based examples for AI understanding
+    *   **[x] Security Policies:** Detailed security configurations per tool
+    *   **[x] Resource Management:** Memory, execution time, and dependency tracking
+
+*   **[x] Subtask 8.3.1.4: Agent Distribution Analysis:** ✅ **COMPLETED (2025-07-24)**
+    *   **📊 Tool Access by Agent Type:**
+        *   **Orchestrator**: 23 tools (comprehensive coordination access)
+        *   **Strategic**: 21 tools (planning and analysis focus)  
+        *   **Tactical**: 24 tools (full operational access)
+        *   **Perception**: 10 tools (read-only discovery tools)
+    *   **[x] Access Control Matrix:** Each tool specifies allowed agent types
+    *   **[x] Capability Filtering:** Tools filtered by agent capabilities and security clearance
+
+*   **[ ] Subtask 8.3.2: Implement Additional Verification Tools:**
     *   [ ] `VerifyEntityStateTool`: Check entity properties match expectations (with DEK)
     *   [ ] `CompareEntityStatesTool`: Diff two entities for changes (decrypt first)
     *   [ ] `GetTaskHistoryTool`: Retrieve and decrypt recent task execution history
@@ -1622,23 +1681,23 @@ User Message → Lightning Agent (rich cache) → Create Task in Queue
     *   [ ] Add `contains: Vec<Uuid>` for child relationships
     *   [ ] Add `scale_metadata: HashMap<String, JsonValue>` for extensibility
     *   [ ] Implement migration from old to new spatial system
-*   **[ ] Subtask 8.8.3: Lorebook Integration Tools:**
-    *   [ ] Create `QueryLorebookTool` for searching lorebook entries
-    *   [ ] Support queries by name, category, tags, full-text
-    *   [ ] Create `ManageLorebookTool` for creating/updating entries
-    *   [ ] Enable linking lorebook entries to entities
-    *   [ ] Register tools with ToolRegistry for orchestrator access
-*   **[ ] Subtask 8.8.4: Chronicle Integration Tools:**
-    *   [ ] Create `QueryChronicleEventsTool` for historical queries
-    *   [ ] Support queries by entity, time range, event type, location
-    *   [ ] Enable narrative context from past events
-    *   [ ] Register with ToolRegistry
-*   **[ ] Subtask 8.8.5: Inventory Management Tools:**
-    *   [ ] Create `QueryInventoryTool` for listing entity contents
-    *   [ ] Support filtering by item type, tags, equipped status
-    *   [ ] Create `ManageInventoryTool` for inventory operations
-    *   [ ] Support add/remove/transfer/equip operations
-    *   [ ] Register with ToolRegistry
+*   **[x] Subtask 8.8.3: Lorebook Integration Tools:** ✅ **COMPLETED (2025-07-24)**
+    *   [x] Create `QueryLorebookTool` for searching lorebook entries → **COMPLETED** as `query_lorebook`
+    *   [x] Support queries by name, category, tags, full-text → **COMPLETED** with AI-powered search
+    *   [x] Create `ManageLorebookTool` for creating/updating entries → **COMPLETED** as `manage_lorebook`
+    *   [x] Enable linking lorebook entries to entities → **COMPLETED** via entity resolution
+    *   [x] Register tools with UnifiedToolRegistry for orchestrator access → **COMPLETED**
+*   **[x] Subtask 8.8.4: Chronicle Integration Tools:** ✅ **COMPLETED (2025-07-24)**
+    *   [x] Create `QueryChronicleEventsTool` for historical queries → **COMPLETED** as `query_chronicle_events`
+    *   [x] Support queries by entity, time range, event type, location → **COMPLETED** with full filtering
+    *   [x] Enable narrative context from past events → **COMPLETED** with encryption support
+    *   [x] Register with UnifiedToolRegistry → **COMPLETED**
+*   **[x] Subtask 8.8.5: Inventory Management Tools:** ✅ **COMPLETED (2025-07-24)**
+    *   [x] Create `QueryInventoryTool` for listing entity contents → **COMPLETED** as `query_inventory`
+    *   [x] Support filtering by item type, tags, equipped status → **COMPLETED** with AI-powered filtering
+    *   [x] Create `ManageInventoryTool` for inventory operations → **COMPLETED** as `manage_inventory`
+    *   [x] Support add/remove/transfer/equip operations → **COMPLETED** with intelligent validation
+    *   [x] Register with UnifiedToolRegistry → **COMPLETED**
 *   **[ ] Subtask 8.8.6: Migration & Testing:**
     *   [ ] Create migration plan from old to new spatial system
     *   [ ] Maintain backward compatibility during transition

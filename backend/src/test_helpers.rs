@@ -1679,6 +1679,10 @@ impl TestAppStateBuilder {
         // Initialize HierarchicalPipeline for tests that includes Perception Agent
         app_state.set_hierarchical_pipeline();
         
+        // Initialize all self-registering tools with the unified registry
+        crate::services::agentic::initialize_all_tools(Arc::new(app_state.clone()))
+            .expect("Failed to initialize tools for test");
+        
         Ok(app_state)
     }
 }

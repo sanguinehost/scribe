@@ -15,22 +15,48 @@ pub enum SpatialType {
     // Cosmic Scale
     Universe,
     Galaxy,
+    GalaxyCluster,
+    Nebula,
     StarSystem,
+    Star,
     Planet,
     Moon,
+    Asteroid,
+    AsteroidBelt,
+    Comet,
+    SpaceStation,
+    
+    // Vehicles & Vessels
+    Spaceship,
+    Starship,
+    Shuttle,
+    Fighter,
+    Freighter,
+    Ship,
+    Airship,
+    Aircraft,
+    Vehicle,
     
     // Geographic Scale
     Continent,
     Ocean,
+    Sea,
     MountainRange,
     Desert,
     Forest,
     Jungle,
     Tundra,
     Grassland,
+    Swamp,
+    Marsh,
     River,
     Lake,
     Island,
+    Peninsula,
+    Valley,
+    Canyon,
+    Cave,
+    Cavern,
     
     // Political Scale
     Empire,
@@ -52,16 +78,41 @@ pub enum SpatialType {
     Temple,
     Tower,
     Building,
+    House,
+    Inn,
+    Tavern,
+    Shop,
+    Market,
+    Bridge,
+    Port,
+    Dock,
+    Warehouse,
     Floor,
     Room,
     Chamber,
     Hall,
+    Corridor,
     Courtyard,
+    Garden,
+    Basement,
+    Attic,
+    Deck,
+    Cabin,
+    Cockpit,
+    CargoHold,
+    EngineeringBay,
     
     // Intimate Scale
     Area,
     Furniture,
     Container,
+    Compartment,
+    Locker,
+    Chest,
+    Shelf,
+    Table,
+    Bed,
+    Chair,
     
     // Flexible extension point
     Custom(String),
@@ -73,28 +124,63 @@ impl SpatialType {
         use SpatialType::*;
         
         match (self, other) {
-            // Universe can contain galaxies
-            (Universe, Galaxy) => true,
+            // Universe can contain galaxy clusters and galaxies
+            (Universe, GalaxyCluster) | (Universe, Galaxy) => true,
             
-            // Galaxies can contain star systems
-            (Galaxy, StarSystem) => true,
+            // Galaxy clusters can contain galaxies
+            (GalaxyCluster, Galaxy) => true,
             
-            // Star systems can contain planets and moons
-            (StarSystem, Planet) | (StarSystem, Moon) => true,
+            // Galaxies can contain star systems and nebulae
+            (Galaxy, StarSystem) | (Galaxy, Nebula) => true,
+            
+            // Star systems can contain stars, planets, moons, asteroids, etc.
+            (StarSystem, Star) | (StarSystem, Planet) | (StarSystem, Moon) | 
+            (StarSystem, Asteroid) | (StarSystem, AsteroidBelt) | (StarSystem, Comet) |
+            (StarSystem, SpaceStation) => true,
+            
+            // Asteroid belts can contain individual asteroids
+            (AsteroidBelt, Asteroid) => true,
+            
+            // Planets can contain moons in orbit
+            (Planet, Moon) | (Planet, SpaceStation) => true,
+            
+            // Space stations can contain ships and internal structures
+            (SpaceStation, Spaceship) | (SpaceStation, Starship) | (SpaceStation, Shuttle) |
+            (SpaceStation, Fighter) | (SpaceStation, Freighter) | (SpaceStation, Deck) |
+            (SpaceStation, Corridor) | (SpaceStation, Room) | (SpaceStation, Dock) => true,
+            
+            // Ships can contain decks, rooms, and cargo
+            (Spaceship, Deck) | (Spaceship, Cabin) | (Spaceship, Cockpit) |
+            (Spaceship, CargoHold) | (Spaceship, EngineeringBay) | (Spaceship, Corridor) |
+            (Starship, Deck) | (Starship, Cabin) | (Starship, Cockpit) |
+            (Starship, CargoHold) | (Starship, EngineeringBay) | (Starship, Corridor) |
+            (Freighter, CargoHold) | (Freighter, Cabin) | (Freighter, Cockpit) => true,
             
             // Planets can contain geographic and political entities
-            (Planet, Continent) | (Planet, Ocean) | (Planet, Empire) | 
-            (Planet, Kingdom) | (Planet, Republic) => true,
+            (Planet, Continent) | (Planet, Ocean) | (Planet, Sea) | 
+            (Planet, Empire) | (Planet, Kingdom) | (Planet, Republic) => true,
+            
+            // Oceans can contain seas and islands
+            (Ocean, Sea) | (Ocean, Island) => true,
             
             // Continents can contain various geographic features
             (Continent, MountainRange) | (Continent, Desert) | (Continent, Forest) |
             (Continent, Jungle) | (Continent, Tundra) | (Continent, Grassland) |
-            (Continent, River) | (Continent, Lake) | (Continent, Kingdom) |
-            (Continent, Empire) | (Continent, Republic) => true,
+            (Continent, Swamp) | (Continent, Marsh) | (Continent, Valley) |
+            (Continent, Canyon) | (Continent, Peninsula) | (Continent, River) | 
+            (Continent, Lake) | (Continent, Kingdom) | (Continent, Empire) | 
+            (Continent, Republic) => true,
             
-            // Mountain ranges can contain fortresses, temples, etc.
+            // Mountain ranges can contain fortresses, temples, caves, etc.
             (MountainRange, Fortress) | (MountainRange, Temple) | 
-            (MountainRange, Castle) | (MountainRange, Tower) => true,
+            (MountainRange, Castle) | (MountainRange, Tower) |
+            (MountainRange, Cave) | (MountainRange, Cavern) => true,
+            
+            // Valleys and canyons can contain settlements
+            (Valley, Village) | (Valley, Town) | (Canyon, Cave) => true,
+            
+            // Caves can contain caverns
+            (Cave, Cavern) => true,
             
             // Political entities hierarchy
             (Empire, Kingdom) | (Empire, Province) | (Kingdom, Province) |
@@ -102,16 +188,31 @@ impl SpatialType {
             (City, District) | (District, Neighborhood) => true,
             
             // Cities and towns can contain structures
-            (City, Building) | (City, Castle) | (City, Temple) |
-            (Town, Building) | (Village, Building) => true,
+            (City, Building) | (City, Castle) | (City, Temple) | (City, Palace) |
+            (City, Market) | (City, Port) | (City, Bridge) | (City, Inn) |
+            (City, Tavern) | (City, Shop) | (City, House) | (City, Warehouse) |
+            (Town, Building) | (Town, Inn) | (Town, Tavern) | (Town, Shop) |
+            (Town, Market) | (Town, House) | (Village, Building) | 
+            (Village, Inn) | (Village, House) => true,
+            
+            // Ports can contain docks and warehouses
+            (Port, Dock) | (Port, Warehouse) | (Port, Ship) => true,
             
             // Structural hierarchy
-            (Castle, Tower) | (Castle, Courtyard) | (Castle, Hall) |
-            (Building, Floor) | (Floor, Room) | (Room, Area) |
-            (Room, Furniture) | (Area, Furniture) => true,
+            (Castle, Tower) | (Castle, Courtyard) | (Castle, Hall) | (Castle, Chamber) |
+            (Palace, Hall) | (Palace, Chamber) | (Palace, Courtyard) | (Palace, Garden) |
+            (Building, Floor) | (Building, Basement) | (Building, Attic) |
+            (House, Floor) | (House, Room) | (House, Basement) | (House, Attic) |
+            (Inn, Floor) | (Inn, Room) | (Tavern, Room) | (Shop, Room) |
+            (Floor, Room) | (Floor, Hall) | (Floor, Chamber) | (Floor, Corridor) |
+            (Room, Area) | (Room, Furniture) | (Area, Furniture) |
+            (Chamber, Furniture) | (Hall, Furniture) | (Cabin, Furniture) => true,
             
-            // Furniture can contain containers
-            (Furniture, Container) => true,
+            // Furniture and container hierarchy
+            (Furniture, Container) | (Table, Container) | (Shelf, Container) |
+            (Chest, Compartment) | (Locker, Compartment) | (CargoHold, Container) |
+            (Room, Table) | (Room, Bed) | (Room, Chair) | (Room, Chest) |
+            (Room, Shelf) | (Room, Locker) => true,
             
             // Custom types - allow any containment (validated elsewhere)
             (Custom(_), _) | (_, Custom(_)) => true,
@@ -128,20 +229,44 @@ impl SpatialType {
         match self {
             Universe => "The entirety of existence",
             Galaxy => "A massive collection of star systems",
+            GalaxyCluster => "A gravitationally bound group of galaxies",
+            Nebula => "A vast cloud of gas and dust in space",
             StarSystem => "A star and its orbiting bodies",
+            Star => "A luminous celestial body",
             Planet => "A celestial body orbiting a star",
             Moon => "A natural satellite orbiting a planet",
+            Asteroid => "A small rocky body orbiting a star",
+            AsteroidBelt => "A region containing many asteroids",
+            Comet => "An icy body that releases gas when near a star",
+            SpaceStation => "An artificial structure in space",
+            Spaceship => "A vehicle designed for space travel",
+            Starship => "A large vessel for interstellar travel",
+            Shuttle => "A small spacecraft for short trips",
+            Fighter => "A small combat spacecraft",
+            Freighter => "A cargo transport spacecraft",
+            Ship => "A water-based vessel",
+            Airship => "A lighter-than-air flying vessel",
+            Aircraft => "A powered flying vehicle",
+            Vehicle => "A land-based transport",
             Continent => "A large landmass",
-            Ocean => "A vast body of water",
+            Ocean => "A vast body of salt water",
+            Sea => "A large body of salt water, smaller than an ocean",
             MountainRange => "A series of connected mountains",
-            Desert => "An arid, sandy region",
+            Desert => "An arid region with little vegetation",
             Forest => "A dense collection of trees",
             Jungle => "A tropical forest with dense vegetation",
             Tundra => "A cold, treeless region",
             Grassland => "An area dominated by grasses",
+            Swamp => "A wetland with trees and standing water",
+            Marsh => "A wetland dominated by grasses",
             River => "A flowing body of water",
             Lake => "A body of water surrounded by land",
             Island => "Land surrounded by water",
+            Peninsula => "Land projecting into water",
+            Valley => "A low area between hills or mountains",
+            Canyon => "A deep gorge with steep sides",
+            Cave => "A natural underground space",
+            Cavern => "A large cave or chamber",
             Empire => "A group of nations under single rule",
             Kingdom => "A realm ruled by a monarch",
             Republic => "A state with elected leadership",
@@ -159,14 +284,39 @@ impl SpatialType {
             Temple => "A place of worship",
             Tower => "A tall, narrow structure",
             Building => "A constructed structure",
+            House => "A residential building",
+            Inn => "A building providing lodging",
+            Tavern => "A place serving food and drink",
+            Shop => "A place of commerce",
+            Market => "An area for trading goods",
+            Bridge => "A structure spanning a gap",
+            Port => "A harbor for ships",
+            Dock => "A platform for loading ships",
+            Warehouse => "A building for storing goods",
             Floor => "A level within a building",
             Room => "An enclosed space within a building",
             Chamber => "A private or formal room",
             Hall => "A large room or passageway",
+            Corridor => "A passageway connecting rooms",
             Courtyard => "An enclosed outdoor area",
+            Garden => "A cultivated outdoor space",
+            Basement => "An underground floor",
+            Attic => "A space under the roof",
+            Deck => "A platform on a ship or building",
+            Cabin => "A small room on a ship",
+            Cockpit => "A control room for pilots",
+            CargoHold => "Storage area in a ship",
+            EngineeringBay => "Technical workspace on a ship",
             Area => "A defined space",
             Furniture => "Movable objects in a room",
             Container => "An object that holds items",
+            Compartment => "A separated section within a container",
+            Locker => "A secure storage unit",
+            Chest => "A large storage box",
+            Shelf => "A horizontal surface for storage",
+            Table => "A flat surface with legs",
+            Bed => "Furniture for sleeping",
+            Chair => "Furniture for sitting",
             Custom(name) => name,
         }
     }

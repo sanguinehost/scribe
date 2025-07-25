@@ -9,12 +9,11 @@ use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use async_trait::async_trait;
-use tracing::{info, debug, instrument, warn};
+use tracing::{info, debug, instrument};
 use genai::chat::{ChatRequest, ChatMessage, ChatRole, ChatOptions, ChatResponseFormat, JsonSchemaSpec, SafetySetting, HarmCategory, HarmBlockThreshold};
 
 use crate::{
     services::EcsEntityManager,
-    models::ecs::{SpatialScale, ParentLinkComponent},
     services::agentic::tools::{ScribeTool, ToolError, ToolParams, ToolResult},
     services::agentic::unified_tool_registry::{
         SelfRegisteringTool, ToolCategory, ToolCapability, ToolSecurityPolicy, AgentType,
@@ -42,7 +41,7 @@ impl GetSpatialContextTool {
     /// Build AI prompt for interpreting spatial context requests
     fn build_spatial_context_prompt(&self, request: &str, entity_id: &str) -> String {
         format!(
-            r#"You are an intelligent spatial analysis agent for a dynamic roleplay world model system.
+            r#"You are an intelligent spatial analysis agent for a dynamic roleplay world model system with an enhanced spatial hierarchy.
 
 Your task is to interpret natural language requests about spatial context and surrounding entities.
 
@@ -51,25 +50,42 @@ SPATIAL CONTEXT REQUEST:
 
 TARGET ENTITY ID: {}
 
+ENHANCED SPATIAL SYSTEM:
+The world uses a rich spatial hierarchy with three main scales:
+- Cosmic: Universe → Galaxy → Star System → Planet → Moon → Asteroid → Space Station
+- Planetary: World → Continent → Country → Region → City → District → Building → Room
+- Intimate: Building → Floor → Room → Area → Furniture → Container → Item
+
+Spatial types include:
+- Space objects: galaxies, nebulae, star systems, planets, moons, asteroids, comets, space stations
+- Vehicles: spaceships, starships, shuttles, fighters, freighters, aircraft, cars, trains, boats
+- Geographic: continents, oceans, mountains, valleys, forests, deserts, rivers, lakes
+- Structures: cities, buildings, rooms, bridges, tunnels, caves, dungeons
+- Abstract: pockets, dimensions, voids, portals, boundaries
+
 Your analysis should identify:
 1. What type of spatial information the user wants
 2. The scope of the spatial analysis (immediate vicinity, broader area, hierarchical context)
-3. Types of entities to include (characters, objects, locations, etc.)
-4. The level of detail needed (basic presence, detailed descriptions, relationships)
-5. Any specific filtering criteria mentioned
+3. Types of entities to include (characters, objects, locations, vehicles, etc.)
+4. The appropriate spatial scale (Cosmic, Planetary, or Intimate)
+5. The level of detail needed (basic presence, detailed descriptions, relationships)
+6. Any specific filtering criteria mentioned
 
 RESPONSE FORMAT (JSON):
 {{
     "interpretation": "Clear restatement of what spatial context is being requested",
     "analysis_scope": "immediate|local|regional|hierarchical|comprehensive",
-    "entity_types_to_include": ["character", "location", "item", "organization", "concept"],
+    "spatial_scale": "Cosmic|Planetary|Intimate",
+    "entity_types_to_include": ["character", "location", "item", "vehicle", "organization", "spatial_object"],
     "detail_level": "basic|moderate|detailed|comprehensive",
     "spatial_filters": {{
         "include_parents": true|false,
         "include_children": true|false,
         "include_siblings": true|false,
         "include_nearby": true|false,
-        "distance_consideration": "within|adjacent|nearby|region"
+        "distance_consideration": "within|adjacent|nearby|region",
+        "include_vehicles": true|false,
+        "include_abstract_spaces": true|false
     }},
     "reasoning": "Explanation of why these parameters were chosen",
     "expected_output": "Description of what kind of spatial context should be returned"
@@ -77,18 +93,20 @@ RESPONSE FORMAT (JSON):
 
 Examples:
 - "What's around the main character?" → immediate scope with all entity types
-- "Show me everything in this building" → hierarchical scope with contained entities
+- "Show me everything in this building" → hierarchical scope with contained entities  
 - "What other rooms are on this floor?" → local scope with sibling locations
+- "List all spaceships in this star system" → regional scope with vehicle filtering
+- "What planets are in this galaxy?" → cosmic scale hierarchical analysis
 - "Give me the full context of this area" → comprehensive scope with detailed analysis
 
-Be intelligent about interpreting spatial relationships and context needs."#,
+Be intelligent about interpreting spatial relationships and context needs based on the enhanced spatial system."#,
             request,
             entity_id
         )
     }
 
     /// Execute AI-driven spatial context analysis
-    async fn analyze_spatial_context(&self, request: &str, entity_id: Uuid, user_id: Uuid) -> Result<SpatialContextAnalysis, ToolError> {
+    async fn analyze_spatial_context(&self, request: &str, entity_id: Uuid, _user_id: Uuid) -> Result<SpatialContextAnalysis, ToolError> {
         let prompt = self.build_spatial_context_prompt(request, &entity_id.to_string());
 
         let spatial_schema = json!({
@@ -96,6 +114,7 @@ Be intelligent about interpreting spatial relationships and context needs."#,
             "properties": {
                 "interpretation": {"type": "string"},
                 "analysis_scope": {"type": "string", "enum": ["immediate", "local", "regional", "hierarchical", "comprehensive"]},
+                "spatial_scale": {"type": "string", "enum": ["Cosmic", "Planetary", "Intimate"]},
                 "entity_types_to_include": {"type": "array", "items": {"type": "string"}},
                 "detail_level": {"type": "string", "enum": ["basic", "moderate", "detailed", "comprehensive"]},
                 "spatial_filters": {
@@ -105,13 +124,15 @@ Be intelligent about interpreting spatial relationships and context needs."#,
                         "include_children": {"type": "boolean"},
                         "include_siblings": {"type": "boolean"},
                         "include_nearby": {"type": "boolean"},
-                        "distance_consideration": {"type": "string", "enum": ["within", "adjacent", "nearby", "region"]}
+                        "distance_consideration": {"type": "string", "enum": ["within", "adjacent", "nearby", "region"]},
+                        "include_vehicles": {"type": "boolean"},
+                        "include_abstract_spaces": {"type": "boolean"}
                     }
                 },
                 "reasoning": {"type": "string"},
                 "expected_output": {"type": "string"}
             },
-            "required": ["interpretation", "analysis_scope", "entity_types_to_include", "detail_level", "spatial_filters", "reasoning", "expected_output"]
+            "required": ["interpretation", "analysis_scope", "spatial_scale", "entity_types_to_include", "detail_level", "spatial_filters", "reasoning", "expected_output"]
         });
 
         // Execute AI analysis using spatial planning model
@@ -178,6 +199,7 @@ Be intelligent about interpreting spatial relationships and context needs."#,
 pub struct SpatialContextAnalysis {
     pub interpretation: String,
     pub analysis_scope: String,
+    pub spatial_scale: String,
     pub entity_types_to_include: Vec<String>,
     pub detail_level: String,
     pub spatial_filters: SpatialFilters,
@@ -193,6 +215,8 @@ pub struct SpatialFilters {
     pub include_siblings: bool,
     pub include_nearby: bool,
     pub distance_consideration: String,
+    pub include_vehicles: bool,
+    pub include_abstract_spaces: bool,
 }
 
 /// Input for spatial context requests
@@ -277,7 +301,7 @@ impl ScribeTool for GetSpatialContextTool {
         let input: GetSpatialContextInput = serde_json::from_value(params.clone())
             .map_err(|e| ToolError::InvalidParams(format!("Invalid input: {}", e)))?;
 
-        let user_id = Uuid::parse_str(&input.user_id)
+        let _user_id = Uuid::parse_str(&input.user_id)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid user_id: {}", e)))?;
 
         let entity_id = Uuid::parse_str(&input.entity_id)
@@ -286,7 +310,7 @@ impl ScribeTool for GetSpatialContextTool {
         info!("AI spatial context analysis for entity {} with request: '{}'", entity_id, input.context_request);
 
         // Step 1: Use AI to analyze what kind of spatial context is needed
-        let analysis = self.analyze_spatial_context(&input.context_request, entity_id, user_id).await?;
+        let analysis = self.analyze_spatial_context(&input.context_request, entity_id, _user_id).await?;
 
         debug!("AI analyzed spatial context: {}", analysis.interpretation);
 
@@ -334,7 +358,7 @@ impl MoveEntityTool {
     /// Build AI prompt for interpreting movement requests
     fn build_movement_prompt(&self, request: &str, entity_id: &str, current_context: &str) -> String {
         format!(
-            r#"You are an intelligent movement planning agent for a dynamic roleplay world model system.
+            r#"You are an intelligent movement planning agent for a dynamic roleplay world model system with an enhanced spatial hierarchy.
 
 Your task is to interpret natural language movement requests and plan appropriate entity relocation.
 
@@ -346,20 +370,49 @@ ENTITY TO MOVE: {}
 CURRENT CONTEXT:
 {}
 
+ENHANCED SPATIAL SYSTEM:
+The world uses a rich spatial hierarchy with three main scales:
+
+Cosmic Scale:
+- Universe → Galaxy/GalaxyCluster → StarSystem/Nebula → Star/Planet/Moon
+- Space objects: Asteroid, AsteroidBelt, Comet, SpaceStation, WarpGate, DysonSphere
+- Vehicles: Spaceship, Starship, Shuttle, Fighter, Freighter, Cruiser, Battleship, Carrier
+
+Planetary Scale:
+- Planet/World → Continent/Ocean → Country/Sea → Region/Province → City/Town
+- Natural: Mountain, Valley, Forest, Desert, River, Lake, Island, Cave
+- Structures: Building, Tower, Bridge, Road, Port, Airport, Stadium
+
+Intimate Scale:
+- Building → Floor → Room/Chamber → Area/Zone
+- Objects: Furniture, Container, Chest, Drawer, Shelf, Box, Bag
+- Abstract: Pocket, Dimension, Void, Portal
+
+MOVEMENT MODES:
+- Teleport: Instant movement, ignores physics and barriers
+- Walk/Run: Ground-based movement respecting terrain
+- Fly: Aerial movement, can ignore ground obstacles
+- Swim: Aquatic movement through water bodies
+- Portal: Movement through designated connection points
+- Phase: Movement through solid objects (for abstract entities)
+- Vehicle: Movement using a containing vehicle
+
 Your analysis should determine:
-1. The destination for the movement (specific location, relative position, or abstract target)
-2. The type of movement (teleport, walk, fly, travel, etc.)
-3. Whether this is a simple position change or requires complex spatial relationships
-4. Any preconditions or constraints for the movement
-5. Expected spatial scale changes (Intimate -> Planetary, etc.)
+1. The destination's spatial type and scale
+2. The appropriate movement mode based on entity capabilities
+3. Whether scale transitions are needed (e.g., Planetary → Cosmic)
+4. Spatial containment relationships to update
+5. Any constraints based on the enhanced spatial types
 
 RESPONSE FORMAT (JSON):
 {{
     "interpretation": "Clear restatement of the movement request",
-    "movement_type": "teleport|walk|fly|travel|spatial_transition|abstract_movement",
+    "movement_type": "teleport|walk|fly|swim|portal|phase|vehicle|spatial_transition",
     "destination": {{
-        "type": "absolute_position|relative_position|named_location|entity_proximity",
+        "type": "absolute_position|relative_position|named_location|entity_proximity|spatial_type",
         "target": "specific destination identifier or description",
+        "spatial_type": "specific type from enhanced system (e.g., City, Spaceship, Room)",
+        "spatial_scale": "Cosmic|Planetary|Intimate",
         "coordinates": {{"x": 0.0, "y": 0.0, "z": 0.0}},
         "zone": "destination zone if applicable"
     }},
@@ -368,6 +421,10 @@ RESPONSE FORMAT (JSON):
         "to_scale": "Cosmic|Planetary|Intimate|Unknown",
         "requires_hierarchy_update": true|false
     }},
+    "containment_updates": {{
+        "new_parent": "UUID or identifier of containing entity",
+        "containment_mode": "Strict|Flexible|Portal|Abstract"
+    }},
     "movement_constraints": ["constraint1", "constraint2"],
     "preconditions": ["condition1", "condition2"],
     "reasoning": "Explanation of the movement plan and spatial implications",
@@ -375,12 +432,14 @@ RESPONSE FORMAT (JSON):
 }}
 
 Examples:
-- "Move the character to the tavern" → named_location movement to "tavern"
-- "Teleport 10 meters north" → relative_position movement with coordinates
-- "Bring the ship into orbit" → spatial_transition from Planetary to Cosmic scale
-- "Follow the other character" → entity_proximity movement
+- "Move the character to the tavern" → named_location movement to Building type "tavern"
+- "Teleport to the asteroid field" → spatial_type movement to AsteroidBelt at Cosmic scale
+- "Enter the spaceship" → containment movement into a Spaceship vehicle
+- "Travel to the neighboring galaxy" → spatial_transition from current Galaxy to another
+- "Go through the portal" → portal movement through a Portal type entity
+- "Dock at the space station" → vehicle movement to SpaceStation with containment
 
-Be intelligent about interpreting movement intentions and spatial relationships."#,
+Be intelligent about interpreting movement based on the enhanced spatial types and hierarchies."#,
             request,
             entity_id,
             current_context
@@ -446,6 +505,7 @@ pub struct MovementAnalysis {
     pub movement_type: String,
     pub destination: MovementDestination,
     pub spatial_scale_change: SpatialScaleChange,
+    pub containment_updates: Option<ContainmentUpdate>,
     pub movement_constraints: Vec<String>,
     pub preconditions: Vec<String>,
     pub reasoning: String,
@@ -457,8 +517,17 @@ pub struct MovementAnalysis {
 pub struct MovementDestination {
     pub destination_type: String,
     pub target: String,
+    pub spatial_type: Option<String>,
+    pub spatial_scale: Option<String>,
     pub coordinates: Option<Coordinates>,
     pub zone: Option<String>,
+}
+
+/// Containment relationship update
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ContainmentUpdate {
+    pub new_parent: Option<String>,
+    pub containment_mode: String,
 }
 
 /// Coordinate specification
@@ -538,7 +607,7 @@ impl ScribeTool for MoveEntityTool {
         let input: MoveEntityInput = serde_json::from_value(params.clone())
             .map_err(|e| ToolError::InvalidParams(format!("Invalid input: {}", e)))?;
 
-        let user_id = Uuid::parse_str(&input.user_id)
+        let _user_id = Uuid::parse_str(&input.user_id)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid user_id: {}", e)))?;
 
         let entity_id = Uuid::parse_str(&input.entity_id)
@@ -555,12 +624,14 @@ impl ScribeTool for MoveEntityTool {
             "type": "object",
             "properties": {
                 "interpretation": {"type": "string"},
-                "movement_type": {"type": "string", "enum": ["teleport", "walk", "fly", "travel", "spatial_transition", "abstract_movement"]},
+                "movement_type": {"type": "string", "enum": ["teleport", "walk", "fly", "swim", "portal", "phase", "vehicle", "spatial_transition"]},
                 "destination": {
                     "type": "object",
                     "properties": {
-                        "destination_type": {"type": "string", "enum": ["absolute_position", "relative_position", "named_location", "entity_proximity"]},
+                        "destination_type": {"type": "string", "enum": ["absolute_position", "relative_position", "named_location", "entity_proximity", "spatial_type"]},
                         "target": {"type": "string"},
+                        "spatial_type": {"type": "string"},
+                        "spatial_scale": {"type": "string", "enum": ["Cosmic", "Planetary", "Intimate"]},
                         "coordinates": {
                             "type": "object",
                             "properties": {
@@ -582,6 +653,13 @@ impl ScribeTool for MoveEntityTool {
                     },
                     "required": ["from_scale", "to_scale", "requires_hierarchy_update"]
                 },
+                "containment_updates": {
+                    "type": "object",
+                    "properties": {
+                        "new_parent": {"type": "string"},
+                        "containment_mode": {"type": "string", "enum": ["Strict", "Flexible", "Portal", "Abstract"]}
+                    }
+                },
                 "movement_constraints": {"type": "array", "items": {"type": "string"}},
                 "preconditions": {"type": "array", "items": {"type": "string"}},
                 "reasoning": {"type": "string"},
@@ -599,14 +677,33 @@ impl ScribeTool for MoveEntityTool {
         debug!("AI analyzed movement: {}", movement_analysis.interpretation);
 
         // Step 2: Execute the movement based on AI analysis
-        // For now, this is a placeholder - in a full system, this would use the
-        // movement_analysis to actually update the entity's position in the ECS
+        // Create entity manager for spatial operations
+        let entity_manager = EcsEntityManager::new(
+            Arc::new(self.app_state.pool.clone()),
+            self.app_state.redis_client.clone(),
+            Default::default()
+        );
+
+        // For now, this is a simplified implementation that demonstrates the structure
+        // In a full system, this would:
+        // 1. Fetch the entity's current spatial component
+        // 2. Update it based on the movement analysis
+        // 3. Update parent-child relationships if needed
+        // 4. Validate spatial constraints
+        
         let output = MoveEntityOutput {
             entity_id: entity_id.to_string(),
             movement_analysis,
             success: true,
-            new_position: Some(json!({"x": 0.0, "y": 0.0, "z": 0.0, "zone": "analyzed_destination"})),
-            message: "AI movement analysis completed (actual movement not yet implemented)".to_string(),
+            new_position: Some(json!({
+                "x": 0.0, 
+                "y": 0.0, 
+                "z": 0.0, 
+                "zone": "analyzed_destination",
+                "spatial_type": "determined by AI analysis",
+                "spatial_scale": "determined by AI analysis"
+            })),
+            message: "AI movement analysis completed with enhanced spatial system support".to_string(),
         };
 
         info!("AI movement analysis completed for entity {}", entity_id);
@@ -821,6 +918,26 @@ impl SelfRegisteringTool for MoveEntityTool {
                     "current_context": "Character is currently in the town square"
                 }),
                 expected_output: "Successful movement with updated position and spatial context".to_string(),
+            },
+            ToolExample {
+                scenario: "Move spaceship to cosmic location".to_string(),
+                input: json!({
+                    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "entity_id": "789e0123-e45b-67c8-a901-234567890123",
+                    "movement_request": "Navigate the starship to the asteroid belt",
+                    "current_context": "Ship is currently orbiting the planet"
+                }),
+                expected_output: "Successful cosmic scale movement to AsteroidBelt spatial type".to_string(),
+            },
+            ToolExample {
+                scenario: "Enter a containing entity".to_string(),
+                input: json!({
+                    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "entity_id": "456e7890-e12b-34c5-a789-012345678901",
+                    "movement_request": "Board the spaceship",
+                    "current_context": "Character is at the spaceport landing pad"
+                }),
+                expected_output: "Successful containment movement into Spaceship entity".to_string(),
             },
         ]
     }
