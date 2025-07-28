@@ -570,6 +570,61 @@ impl UnifiedToolRegistry {
         
         registry.tools.keys().cloned().collect()
     }
+    
+    /// Clear the registry (for testing only)
+    #[cfg(test)]
+    pub fn clear() -> Result<(), AppError> {
+        let mut registry = UNIFIED_REGISTRY.write()
+            .map_err(|_| AppError::InternalServerErrorGeneric("Failed to acquire registry lock".into()))?;
+        
+        registry.tools.clear();
+        registry.by_category.clear();
+        registry.by_capability.clear();
+        registry.discovery_context = None;
+        
+        info!("Cleared unified tool registry");
+        Ok(())
+    }
+    
+    /// Register a tool if it doesn't already exist (idempotent registration)
+    pub fn register_if_not_exists(tool: Arc<dyn SelfRegisteringTool>) -> Result<bool, AppError> {
+        let mut registry = UNIFIED_REGISTRY.write()
+            .map_err(|_| AppError::InternalServerErrorGeneric("Failed to acquire registry lock".into()))?;
+        
+        let metadata = tool.metadata();
+        let name = metadata.name.clone();
+        
+        // Check if already registered
+        if registry.tools.contains_key(&name) {
+            info!("Tool '{}' already registered, skipping", name);
+            return Ok(false);
+        }
+        
+        // Index by category
+        registry.by_category
+            .entry(metadata.category)
+            .or_default()
+            .push(name.clone());
+        
+        // Index by capabilities
+        for capability in &metadata.capabilities {
+            let cap_key = format!("{}:{}", capability.action, capability.target);
+            registry.by_capability
+                .entry(cap_key)
+                .or_default()
+                .push(name.clone());
+        }
+        
+        // Store the tool
+        registry.tools.insert(name.clone(), RegisteredTool {
+            implementation: tool,
+            metadata,
+            usage_stats: UsageStats::default(),
+        });
+        
+        info!("Registered tool: {}", name);
+        Ok(true)
+    }
 }
 
 /// Tool recommendation from AI discovery

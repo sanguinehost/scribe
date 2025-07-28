@@ -274,12 +274,18 @@ async fn test_entity_resolution_tool_compiles() {
                 "gemini-2.5-pro".to_string(),
                 "gemini-2.5-pro".to_string(),
                 "gemini-2.5-pro".to_string(),
+                Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+                )),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+        )),
     };
     
     let app_state = Arc::new(AppState::new(

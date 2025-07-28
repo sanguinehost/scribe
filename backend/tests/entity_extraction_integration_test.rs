@@ -104,6 +104,8 @@ async fn test_entity_extraction_fallback_compilation() {
         "gemini-2.5-flash".to_string(),
     ));
 
+    let shared_context = Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(redis_client.clone()));
+    
     let agentic_orchestrator = Arc::new(AgenticOrchestrator::new(
         _test_app.ai_client.clone(),
         hybrid_query_service.clone(),
@@ -113,6 +115,7 @@ async fn test_entity_extraction_fallback_compilation() {
         "gemini-2.5-flash".to_string(),
         "gemini-2.5-flash-lite-preview-06-17".to_string(),
         "gemini-2.5-flash".to_string(),
+        shared_context.clone(),
     ));
 
     let chronicle_ecs_translator = Arc::new(ChronicleEcsTranslator::new(
@@ -170,6 +173,7 @@ async fn test_entity_extraction_fallback_compilation() {
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: shared_context.clone(),
     };
     
     let app_state = Arc::new(scribe_backend::state::AppState::new(
@@ -197,8 +201,11 @@ async fn test_entity_extraction_fallback_compilation() {
         "timestamp_iso8601": "2025-01-15T15:30:00Z"
     });
 
+    // Create a session DEK for the tool execution
+    let session_dek = scribe_backend::auth::session_dek::SessionDek::generate_new();
+    
     // Execute the tool - this should trigger the entity extraction fallback
-    let result = tool.execute(&tool_params).await;
+    let result = tool.execute(&tool_params, &session_dek).await;
     
     // We're just testing that it compiles and runs without panicking
     // In a real test environment, this would test the actual functionality

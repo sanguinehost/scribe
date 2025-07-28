@@ -4,7 +4,6 @@
 // Ensures AI generates valid responses for each phase of the reasoning loop
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use crate::errors::AppError;
 
 /// Structured output schema for the Perceive phase
@@ -31,8 +30,14 @@ pub struct StrategyPhaseOutput {
 pub struct PlanPhaseOutput {
     pub action_steps: Vec<ActionStepOutput>,
     pub dependency_graph: Option<serde_json::Value>,
-    pub tool_selections: HashMap<String, String>,
+    pub tool_selections: Vec<ToolSelectionOutput>,
     pub cache_optimization_hints: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolSelectionOutput {
+    pub action_name: String,
+    pub tool_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,21 +266,16 @@ pub fn get_plan_phase_schema() -> serde_json::Value {
                 "description": "Dependency relationships between actions"
             },
             "tool_selections": {
-                "type": "object",
-                "properties": {
-                    "mappings": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "action": {"type": "string"},
-                                "tool": {"type": "string"}
-                            }
-                        },
-                        "description": "Action name to tool name mappings"
-                    }
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "action_name": {"type": "string"},
+                        "tool_name": {"type": "string"}
+                    },
+                    "required": ["action_name", "tool_name"]
                 },
-                "description": "Mapping of action names to selected tools"
+                "description": "Array of action name to tool name mappings"
             },
             "cache_optimization_hints": {
                 "type": "array",
@@ -354,6 +354,7 @@ impl StrategyPhaseOutput {
 impl PlanPhaseOutput {
     pub fn to_plan_result(&self) -> Result<crate::services::orchestrator::types::PlanResult, AppError> {
         use crate::services::orchestrator::types::PlanResult;
+        use std::collections::HashMap;
         
         // Convert ActionStepOutput to JsonValue for compatibility
         let action_steps: Vec<serde_json::Value> = self.action_steps.iter()
@@ -366,10 +367,15 @@ impl PlanPhaseOutput {
             }))
             .collect();
         
+        // Convert tool selections array to HashMap
+        let tool_selections: HashMap<String, String> = self.tool_selections.iter()
+            .map(|ts| (ts.action_name.clone(), ts.tool_name.clone()))
+            .collect();
+        
         Ok(PlanResult {
             action_steps,
             dependency_graph: self.dependency_graph.clone(),
-            tool_selections: self.tool_selections.clone(),
+            tool_selections,
             cache_optimization_hints: self.cache_optimization_hints.clone(),
         })
     }

@@ -394,12 +394,14 @@ mod tests {
                 config.query_planning_model.clone(),
                 config.optimization_model.clone(),
                 config.fast_model.clone(), // Context engine model
+                Arc::new(crate::services::agentic::shared_context::SharedAgentContext::new(Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()))),
             )),
             agentic_state_update_service: state_update_service.clone(), // Add this line
             hierarchical_context_assembler: None, // Will be set after AppState is built
             tactical_agent: None, // No tactical agent needed for embedding tests
             strategic_agent: None, // No strategic agent needed for embedding tests
             hierarchical_pipeline: None, // No hierarchical pipeline needed for embedding tests
+            shared_agent_context: Arc::new(crate::services::agentic::shared_context::SharedAgentContext::new(Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()))),
         };
 
         let app_state = Arc::new(AppState::new((*pool).clone(), Arc::new(config), services));

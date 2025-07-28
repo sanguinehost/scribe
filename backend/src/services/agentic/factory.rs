@@ -170,6 +170,7 @@ impl AgenticNarrativeFactory {
             planning_service,
             plan_validator,
             app_state.redis_client.clone(),
+            app_state.shared_agent_context.clone(),
         ));
         
         info!("TacticalAgent created successfully");
@@ -227,6 +228,7 @@ impl AgenticNarrativeFactory {
             app_state.ecs_entity_manager.clone(),
             app_state.redis_client.clone(),
             app_state.config.strategic_agent_model.clone(),
+            app_state.shared_agent_context.clone(),
         ));
         
         info!("StrategicAgent created successfully");

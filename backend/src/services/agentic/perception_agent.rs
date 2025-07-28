@@ -6,6 +6,7 @@ use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
 use genai::chat::{ChatMessage, ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, ChatRole};
 use chrono::{DateTime, Utc};
+use tokio::time::{sleep, Duration};
 
 use crate::{
     errors::AppError,
@@ -25,6 +26,7 @@ use crate::{
                 EntityMention, SpatialChange, ItemChange, RelationshipChange,
                 ImpliedAction, IntelligentActionType,
             },
+            shared_context::{SharedAgentContext, ContextType, AgentType, ContextEntry},
         },
     },
     llm::AiClient,
@@ -62,6 +64,7 @@ pub struct PerceptionAgent {
     _plan_validator: Arc<PlanValidatorService>, // TODO: Use for validating perception-based plans
     redis_client: Arc<redis::Client>,
     model: String,
+    shared_context: Arc<SharedAgentContext>,
 }
 
 impl PerceptionAgent {
@@ -76,7 +79,7 @@ impl PerceptionAgent {
         planning_service: Arc<PlanningService>,
         plan_validator: Arc<PlanValidatorService>,
         redis_client: Arc<redis::Client>,
-        _app_state: Arc<AppState>, // Tools accessed via global ToolRegistry
+        app_state: Arc<AppState>, // Tools accessed via global ToolRegistry
         model: String,
     ) -> Self {
         // Tools are now available through the global UnifiedToolRegistry
@@ -93,6 +96,7 @@ impl PerceptionAgent {
             _plan_validator: plan_validator,
             redis_client,
             model,
+            shared_context: app_state.shared_agent_context.clone(),
         }
     }
 
@@ -120,10 +124,11 @@ impl PerceptionAgent {
     /// the AI generates its response.
     /// 
     /// ## Workflow:
-    /// 1. Analyze conversation history for contextual entities
-    /// 2. Evaluate entity hierarchies and spatial relationships
-    /// 3. Update salience tiers based on narrative context
-    /// 4. Enrich context with perception insights
+    /// 1. Prefetch existing entities for the session
+    /// 2. Analyze conversation history for contextual entities
+    /// 3. Evaluate entity hierarchies and spatial relationships
+    /// 4. Update salience tiers based on narrative context
+    /// 5. Enrich context with perception insights
     /// 
     /// ## Security (OWASP Top 10):
     /// - A01: User ownership validated through SessionDek
@@ -157,6 +162,16 @@ impl PerceptionAgent {
             warn!("Perception agent rejecting pre-response analysis with nil user ID");
             return Err(AppError::BadRequest("Invalid user ID".to_string()));
         }
+        
+        // Step 0.5: Prefetch existing entities for better awareness
+        let session_id = if let Some(first_msg) = chat_history.first() {
+            first_msg.session_id.to_string()
+        } else {
+            format!("session_{}", chrono::Utc::now().timestamp())
+        };
+        
+        debug!("Prefetching existing entities for session {}", session_id);
+        self.prefetch_session_entities(user_id, &session_id, session_dek).await?;
 
         // Step 1: Extract contextual entities from conversation history
         debug!("Extracting contextual entities from conversation history");
@@ -230,6 +245,26 @@ impl PerceptionAgent {
         user_id: Uuid,
         session_dek: &SessionDek,
     ) -> Result<Vec<ContextualEntity>, AppError> {
+        // Get session ID for known entity lookup
+        let session_id = if let Some(first_msg) = chat_history.first() {
+            first_msg.session_id.to_string()
+        } else {
+            format!("session_{}", chrono::Utc::now().timestamp())
+        };
+        
+        // Get list of known entities from cache
+        let known_entities = self.get_cached_session_entities(&session_id, user_id).await;
+        let known_entities_text = if !known_entities.is_empty() {
+            format!("\n\nKNOWN EXISTING ENTITIES (use exact names and types when referenced):\n{}", 
+                known_entities.iter()
+                    .map(|(name, entity_type)| format!("- {} (type: {})", name, entity_type))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        } else {
+            String::new()
+        };
+        
         // Build narrative context from recent messages
         let narrative_context = self.build_narrative_context(chat_history, current_message);
         
@@ -246,6 +281,7 @@ impl PerceptionAgent {
 ENTITY EXTRACTION TASK
 
 Analyze the conversation and extract CONCRETE entities that exist in the game world.
+{}
 
 CONVERSATION CONTEXT:
 {}
@@ -282,7 +318,7 @@ IMPORTANT: For locations, consider spatial hierarchy:
 - Sub-locations (e.g., "Stonefang Hold" within the peaks) should note their parent
 - Consider scale: Cosmic (galaxies, systems), Planetary (continents, regions), Intimate (buildings, rooms)
 
-Respond with structured JSON matching the required schema."#, tool_reference, narrative_context);
+Respond with structured JSON matching the required schema."#, tool_reference, known_entities_text, narrative_context);
 
         let chat_request = ChatRequest::new(vec![
             genai::chat::ChatMessage {
@@ -346,9 +382,19 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         let entities = extraction.to_contextual_entities();
         debug!("Extracted {} contextual entities with confidence {}", entities.len(), extraction.confidence);
         
-        // Create entities in ECS if they don't already exist
-        info!("Creating/ensuring {} entities exist in ECS", entities.len());
-        self.ensure_entities_exist(&entities, user_id, session_dek).await?;
+        // Process entities asynchronously in batches for better performance
+        info!("Starting async batch processing of {} entities", entities.len());
+        
+        // For lightning-fast response, spawn background task for entity processing
+        let agent_clone = self.clone();
+        let entities_clone = entities.clone();
+        let session_dek_clone = session_dek.clone();
+        
+        tokio::spawn(async move {
+            if let Err(e) = agent_clone.process_entities_batch_async(&entities_clone, user_id, &session_dek_clone).await {
+                error!("Background entity processing failed: {}", e);
+            }
+        });
         
         Ok(entities)
     }
@@ -418,6 +464,100 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         }
         false
     }
+    
+    /// Get cached entities for the current session
+    async fn get_cached_session_entities(
+        &self,
+        session_id: &str,
+        user_id: Uuid,
+    ) -> Vec<(String, String)> {
+        let session_key = format!("session_entities:{}:{}", user_id, session_id);
+        
+        if let Ok(mut conn) = self.redis_client.get_multiplexed_async_connection().await {
+            use redis::AsyncCommands;
+            if let Ok(entities) = conn.smembers::<_, Vec<String>>(&session_key).await {
+                return entities.into_iter()
+                    .filter_map(|entity_key| {
+                        let parts: Vec<&str> = entity_key.splitn(2, ':').collect();
+                        if parts.len() == 2 {
+                            Some((parts[0].to_string(), parts[1].to_string()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+            }
+        }
+        
+        Vec::new()
+    }
+    
+    /// Prefetch existing entities for the session to improve awareness
+    /// This loads recently used entities into cache for faster lookup
+    async fn prefetch_session_entities(
+        &self,
+        user_id: Uuid,
+        session_id: &str,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        let prefetch_start = std::time::Instant::now();
+        
+        // First, check if we've already prefetched for this session
+        let prefetch_key = format!("session_prefetched:{}:{}", user_id, session_id);
+        if let Ok(mut conn) = self.redis_client.get_multiplexed_async_connection().await {
+            use redis::AsyncCommands;
+            if let Ok(Some(_)) = conn.get::<_, Option<String>>(&prefetch_key).await {
+                debug!("Session entities already prefetched for {}", session_id);
+                return Ok(());
+            }
+        }
+        
+        // Query for the most recently used entities (based on last_updated or creation time)
+        let find_params = json!({
+            "user_id": user_id.to_string(),
+            "search_request": "find all entities",
+            "context": "Prefetching entities for perception agent session awareness",
+            "limit": 100  // Get a reasonable number of recent entities
+        });
+        
+        match self.get_tool("find_entity")?.execute(&find_params, session_dek).await {
+            Ok(result) => {
+                if let Some(entities_array) = result.get("entities").and_then(|e| e.as_array()) {
+                    let mut cached_count = 0;
+                    
+                    // Cache each entity's existence
+                    for entity in entities_array {
+                        if let (Some(name), Some(entity_type)) = (
+                            entity.get("entity_name").and_then(|n| n.as_str()),
+                            entity.get("entity_type").and_then(|t| t.as_str())
+                        ) {
+                            self.cache_entity_existence(user_id, name, entity_type, true).await;
+                            self.track_session_entity(session_id, user_id, name, entity_type).await;
+                            cached_count += 1;
+                        }
+                    }
+                    
+                    info!("Prefetched {} entities for session {} in {}ms", 
+                        cached_count, 
+                        session_id, 
+                        prefetch_start.elapsed().as_millis()
+                    );
+                    
+                    // Mark this session as prefetched (expires after 1 hour)
+                    if let Ok(mut conn) = self.redis_client.get_multiplexed_async_connection().await {
+                        use redis::AsyncCommands;
+                        let _: Result<(), _> = conn.set_ex(&prefetch_key, "1", 3600).await;
+                    }
+                }
+            }
+            Err(e) => {
+                // Non-fatal error - we can continue without prefetching
+                debug!("Failed to prefetch entities for session awareness: {}", e);
+            }
+        }
+        
+        Ok(())
+    }
 
     /// Ensure extracted entities exist in the ECS, creating them if necessary
     #[allow(unused_variables)]
@@ -459,10 +599,17 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
                     if let Some(entities_array) = find_result.get("entities").and_then(|e| e.as_array()) {
                         // Check if any existing entity matches both name and type
                         let matching_entity_exists = entities_array.iter().any(|existing| {
-                            // Extract the entity type from the existing entity
-                            if let Some(components) = existing.get("components").and_then(|c| c.as_object()) {
-                                // Check if this entity has matching type characteristics
-                                // Characters have Container archetype, locations have various spatial archetypes
+                            // Check name match (case insensitive)
+                            let name_matches = existing.get("entity_name")
+                                .and_then(|n| n.as_str())
+                                .map(|n| n.eq_ignore_ascii_case(&entity.name))
+                                .unwrap_or(false);
+                            
+                            // Check type match - use entity_type field if available
+                            let type_matches = if let Some(existing_type) = existing.get("entity_type").and_then(|t| t.as_str()) {
+                                existing_type == entity.entity_type
+                            } else if let Some(components) = existing.get("components").and_then(|c| c.as_object()) {
+                                // Fallback to component-based type detection
                                 match entity.entity_type.as_str() {
                                     "character" => components.contains_key("Container") || 
                                                   components.contains_key("Actor"),
@@ -474,21 +621,27 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
                                     _ => true // For unknown types, assume it exists to avoid duplicates
                                 }
                             } else {
-                                false
-                            }
+                                // If we can't determine type, assume it matches to avoid duplicates
+                                true
+                            };
+                            
+                            name_matches && type_matches
                         });
                         
-                        if !matching_entity_exists {
-                            // Entity with this name and type doesn't exist, create it
-                            info!("Creating new entity: {} (type: {})", entity.name, entity.entity_type);
-                            self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
-                            // Cache that this entity now exists
+                        if matching_entity_exists {
+                            info!(
+                                "Entity '{}' of type '{}' already exists for user {}, skipping creation",
+                                entity.name, entity.entity_type, user_id
+                            );
+                            // Cache the existence for future checks
                             self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
                             // Track in session
                             self.track_session_entity(&session_id, user_id, &entity.name, &entity.entity_type).await;
                         } else {
-                            debug!("Entity '{}' of type '{}' already exists", entity.name, entity.entity_type);
-                            // Cache the existence for future checks
+                            // Entity with this name and type doesn't exist, create it
+                            info!("Creating new entity: {} (type: {})", entity.name, entity.entity_type);
+                            self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
+                            // Cache that this entity now exists
                             self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
                             // Track in session
                             self.track_session_entity(&session_id, user_id, &entity.name, &entity.entity_type).await;
@@ -507,11 +660,245 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
             }
         }
         
-        // Second pass: Establish spatial relationships
-        info!("Establishing spatial relationships for {} entities", entities.len());
-        self.establish_spatial_relationships(entities, user_id, session_dek).await?;
+        // Note: Spatial relationships are now established separately after all entities
+        // are created to avoid timing issues with async database operations
         
         Ok(())
+    }
+    
+    /// Execute a tool with retry logic for transient failures
+    async fn execute_tool_with_retry(
+        &self,
+        tool_name: &str,
+        params: &Value,
+        session_dek: &SessionDek,
+        max_retries: u32,
+    ) -> Result<Value, crate::services::agentic::tools::ToolError> {
+        let mut retries = 0;
+        let mut delay = Duration::from_millis(100);
+        
+        loop {
+            match self.get_tool(tool_name)?.execute(params, session_dek).await {
+                Ok(result) => {
+                    return Ok(result);
+                }
+                Err(e) => {
+                    // Check if it's a duplicate key error - don't retry these
+                    if let crate::services::agentic::tools::ToolError::AppError(app_err) = &e {
+                        if let AppError::DatabaseQueryError(db_err) = app_err {
+                            if db_err.contains("duplicate key value violates unique constraint") {
+                                return Err(e);
+                            }
+                        }
+                    }
+                    
+                    if retries >= max_retries {
+                        return Err(e);
+                    }
+                    
+                    warn!("Tool {} failed (attempt {}/{}): {:?}, retrying in {:?}", 
+                        tool_name, retries + 1, max_retries, e, delay);
+                    
+                    sleep(delay).await;
+                    delay *= 2; // Exponential backoff
+                    retries += 1;
+                }
+            }
+        }
+    }
+    
+    /// Process entities in batches asynchronously (background task)
+    async fn process_entities_batch_async(
+        &self,
+        entities: &[ContextualEntity],
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        info!("Starting background batch processing of {} entities", entities.len());
+        let start_time = std::time::Instant::now();
+        
+        // Group entities for batch processing
+        let batch_size = 10; // Process entities in batches of 10
+        let batches: Vec<_> = entities.chunks(batch_size).collect();
+        
+        for (batch_index, batch) in batches.iter().enumerate() {
+            info!("Processing batch {}/{} with {} entities", 
+                batch_index + 1, batches.len(), batch.len());
+            
+            // Process batch in parallel
+            let futures: Vec<_> = batch.iter().map(|entity| {
+                let agent = self.clone();
+                let entity = entity.clone();
+                let session_dek = session_dek.clone();
+                
+                async move {
+                    agent.process_single_entity_async(&entity, user_id, &session_dek).await
+                }
+            }).collect();
+            
+            let results = futures::future::join_all(futures).await;
+            
+            // Log results
+            let mut successes = 0;
+            let mut errors = 0;
+            for (i, result) in results.iter().enumerate() {
+                match result {
+                    Ok(_) => successes += 1,
+                    Err(e) => {
+                        errors += 1;
+                        warn!("Failed to process entity '{}': {}", batch[i].name, e);
+                    }
+                }
+            }
+            
+            info!("Batch {}/{} completed: {} successes, {} errors", 
+                batch_index + 1, batches.len(), successes, errors);
+        }
+        
+        info!("Background entity processing completed in {:.2}s", start_time.elapsed().as_secs_f32());
+        Ok(())
+    }
+    
+    /// Process a single entity asynchronously
+    async fn process_single_entity_async(
+        &self,
+        entity: &ContextualEntity,
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        let session_id = Uuid::from_slice(session_dek.expose_bytes()).unwrap_or_else(|_| Uuid::new_v4());
+        
+        // First check cache
+        if let Some(exists) = self.check_entity_existence_cache(user_id, &entity.name, &entity.entity_type).await {
+            if exists {
+                debug!("Entity '{}' (type: {}) is cached as existing, skipping", entity.name, entity.entity_type);
+                self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
+                return Ok(());
+            }
+        }
+        
+        // Check if entity exists using entity resolution tool for intelligent matching
+        let find_params = serde_json::json!({
+            "user_id": user_id.to_string(),
+            "search_request": format!("find entity"),
+            "context": "Getting all entities for resolution",
+            "limit": 100
+        });
+        
+        let existing_entities = match self.get_tool("find_entity")?.execute(&find_params, session_dek).await {
+            Ok(result) => {
+                if let Some(entities_array) = result.get("entities").and_then(|e| e.as_array()) {
+                    entities_array.iter().map(|e| {
+                        crate::services::agentic::entity_resolution_tool::ExistingEntity {
+                            entity_id: e.get("entity_id")
+                                .and_then(|id| id.as_str())
+                                .and_then(|s| Uuid::parse_str(s).ok())
+                                .unwrap_or_else(Uuid::new_v4),
+                            name: e.get("entity_name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("Unknown")
+                                .to_string(),
+                            display_name: e.get("display_name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or_else(|| e.get("entity_name")
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("Unknown"))
+                                .to_string(),
+                            aliases: vec![],
+                            entity_type: e.get("entity_type")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("object")
+                                .to_string(),
+                            context: None,
+                        }
+                    }).collect()
+                } else {
+                    vec![]
+                }
+            },
+            Err(e) => {
+                debug!("Error finding existing entities for resolution: {}", e);
+                vec![]
+            }
+        };
+        
+        // Use entity resolution to check for intelligent matching
+        let narrative_text = format!("A {} named {}", entity.entity_type, entity.name);
+        let resolution_params = serde_json::json!({
+            "user_id": user_id.to_string(),
+            "narrative_text": narrative_text,
+            "entity_names": [entity.name.clone()],
+            "existing_entities": existing_entities
+        });
+        
+        match self.get_tool("resolve_entities")?.execute(&resolution_params, session_dek).await {
+            Ok(resolution_result) => {
+                if let Some(resolved_entities) = resolution_result.get("resolved_entities").and_then(|e| e.as_array()) {
+                    for resolved in resolved_entities {
+                        let is_new = resolved.get("is_new").and_then(|v| v.as_bool()).unwrap_or(true);
+                        let confidence = resolved.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+                        
+                        if !is_new && confidence > 0.7 {
+                            // Entity was matched to an existing one with high confidence
+                            info!("AI matched '{}' to existing entity with confidence {:.2}", entity.name, confidence);
+                            self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
+                            self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
+                            return Ok(());
+                        }
+                    }
+                }
+                
+                // If we get here, the entity was resolved as new - create it
+                info!("AI determined '{}' is a new distinct entity, creating", entity.name);
+                self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
+                self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
+                self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
+            },
+            Err(e) => {
+                warn!("Entity resolution failed for '{}': {}, falling back to simple creation", entity.name, e);
+                // Fallback: create entity without resolution
+                self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
+                self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
+                self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Check if entity was recently discovered in shared context
+    async fn check_shared_context_for_entity(
+        &self,
+        user_id: Uuid,
+        entity_name: &str,
+        session_dek: &SessionDek,
+    ) -> bool {
+        if let Some(session_id) = session_dek.expose_bytes().get(0..16) {
+            let session_id = Uuid::from_slice(session_id).unwrap_or_else(|_| Uuid::new_v4());
+            
+            // Query for recent entity discoveries
+            let query = crate::services::agentic::shared_context::ContextQuery {
+                context_types: Some(vec![crate::services::agentic::shared_context::ContextType::EntityDiscovery]),
+                source_agents: None, // Check all agents
+                session_id: Some(session_id),
+                since_timestamp: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
+                keys: Some(vec![format!("entity_{}", entity_name)]),
+                limit: Some(10),
+            };
+            
+            match self.shared_context.query_context(user_id, query, session_dek).await {
+                Ok(entries) => {
+                    if !entries.is_empty() {
+                        debug!("Found {} shared context entries for entity '{}'", entries.len(), entity_name);
+                        return true;
+                    }
+                }
+                Err(e) => {
+                    debug!("Failed to query shared context for entity '{}': {}", entity_name, e);
+                }
+            }
+        }
+        false
     }
     
     /// Create an entity with appropriate spatial components based on its type
@@ -525,6 +912,144 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         
         // Debug: Verify user exists before creating entity
         debug!("Attempting to create entity '{}' for user_id: {}", entity.name, user_id);
+        
+        // First check shared context to see if another agent already created this entity
+        if self.check_shared_context_for_entity(user_id, &entity.name, session_dek).await {
+            info!("Entity '{}' was recently discovered/created according to shared context, skipping", entity.name);
+            return Ok(());
+        }
+        
+        // Get existing entities for entity resolution
+        let find_params = serde_json::json!({
+            "user_id": user_id.to_string(),
+            "search_request": format!("find entity"),
+            "context": "Getting all entities for resolution",
+            "limit": 100
+        });
+        
+        let existing_entities = match self.get_tool("find_entity")?.execute(&find_params, session_dek).await {
+            Ok(result) => {
+                if let Some(entities_array) = result.get("entities").and_then(|e| e.as_array()) {
+                    entities_array.iter().map(|e| {
+                        crate::services::agentic::entity_resolution_tool::ExistingEntity {
+                            entity_id: e.get("entity_id")
+                                .and_then(|id| id.as_str())
+                                .and_then(|s| Uuid::parse_str(s).ok())
+                                .unwrap_or_else(Uuid::new_v4),
+                            name: e.get("entity_name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("Unknown")
+                                .to_string(),
+                            display_name: e.get("display_name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or_else(|| e.get("entity_name")
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("Unknown"))
+                                .to_string(),
+                            aliases: vec![],
+                            entity_type: e.get("entity_type")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("object")
+                                .to_string(),
+                            context: None,
+                        }
+                    }).collect()
+                } else {
+                    vec![]
+                }
+            },
+            Err(e) => {
+                debug!("Error finding existing entities for resolution: {}", e);
+                vec![]
+            }
+        };
+        
+        // Use entity resolution tool to determine if this is a duplicate or distinct entity
+        let narrative_text = format!(
+            "A {} named {}",
+            entity.entity_type,
+            entity.name
+        );
+        
+        let resolution_params = serde_json::json!({
+            "user_id": user_id.to_string(),
+            "narrative_text": narrative_text,
+            "entity_names": [entity.name.clone()],
+            "existing_entities": existing_entities
+        });
+        
+        match self.get_tool("resolve_entities")?.execute(&resolution_params, session_dek).await {
+            Ok(resolution_result) => {
+                if let Some(resolved_entities) = resolution_result.get("resolved_entities").and_then(|e| e.as_array()) {
+                    for resolved in resolved_entities {
+                        let is_new = resolved.get("is_new").and_then(|v| v.as_bool()).unwrap_or(true);
+                        let confidence = resolved.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+                        
+                        if !is_new {
+                            // Entity was matched to an existing one
+                            let entity_id = resolved.get("entity_id").and_then(|v| v.as_str()).unwrap_or("");
+                            info!(
+                                "AI resolved '{}' as existing entity {} with confidence {:.2}",
+                                entity.name, entity_id, confidence
+                            );
+                            
+                            // If confidence is high enough, we might want to update the existing entity
+                            if confidence > 0.8 {
+                                info!("High confidence match - considering update of existing entity");
+                                // TODO: Implement entity update logic if needed
+                            }
+                            
+                            return Ok(());
+                        }
+                    }
+                }
+                
+                // If we get here, the entity was resolved as new
+                info!("AI determined '{}' is a new distinct entity", entity.name);
+            },
+            Err(e) => {
+                warn!("Entity resolution failed: {}, falling back to simple duplicate check", e);
+                
+                // Fallback to simple name matching
+                let find_params = serde_json::json!({
+                    "user_id": user_id.to_string(),
+                    "search_request": format!("find entity named '{}'", entity.name),
+                    "context": "Checking if entity exists before creation",
+                    "limit": 10
+                });
+                
+                match self.get_tool("find_entity")?.execute(&find_params, session_dek).await {
+                    Ok(result) => {
+                        if let Some(entities_array) = result.get("entities").and_then(|e| e.as_array()) {
+                            // Check if any existing entity matches both name and type
+                            let matching_entity = entities_array.iter().find(|existing| {
+                                let name_matches = existing.get("entity_name")
+                                    .and_then(|n| n.as_str())
+                                    .map(|n| n.eq_ignore_ascii_case(&entity.name))
+                                    .unwrap_or(false);
+                                
+                                let type_matches = existing.get("entity_type")
+                                    .and_then(|t| t.as_str())
+                                    .map(|t| t == entity.entity_type)
+                                    .unwrap_or(false);
+                                
+                                name_matches && type_matches
+                            });
+                            
+                            if matching_entity.is_some() {
+                                info!("Entity '{}' of type '{}' already exists, skipping creation", 
+                                    entity.name, entity.entity_type);
+                                return Ok(());
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Failed to check if entity '{}' exists, proceeding with creation: {:?}", 
+                            entity.name, e);
+                    }
+                }
+            }
+        }
         
         // Determine spatial scale and hierarchical level based on entity type and name patterns
         let (scale, hierarchical_level, archetype_name) = match entity.entity_type.as_str() {
@@ -599,18 +1124,128 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
             Ok(result) => {
                 info!("Created entity '{}' with {:?} scale and {} salience, result: {:?}", 
                     entity.name, scale, salience_tier, result);
+                
+                // Store in shared context for coordination
+                let session_id = Uuid::new_v4(); // Generate session ID for this operation
+                let discovery_data = serde_json::json!({
+                    "entity_name": entity.name,
+                    "entity_type": entity.entity_type,
+                    "spatial_scale": format!("{:?}", scale),
+                    "salience_tier": salience_tier,
+                    "created_at": chrono::Utc::now().to_rfc3339(),
+                    "relevance_score": entity.relevance_score
+                });
+                
+                if let Err(e) = self.shared_context.store_entity_discovery(
+                    user_id,
+                    session_id,
+                    &[discovery_data],
+                    Some("Entity created via perception agent".to_string()),
+                    session_dek,
+                ).await {
+                    warn!("Failed to store entity discovery in shared context: {}", e);
+                }
             },
             Err(e) => {
-                error!("Failed to create entity '{}' for user_id {}: {:?}", entity.name, user_id, e);
-                // Log more details about the error
-                if let crate::services::agentic::tools::ToolError::AppError(ref app_err) = e {
-                    error!("AppError details: {:?}", app_err);
+                // Check if it's a duplicate key error
+                if let crate::services::agentic::tools::ToolError::AppError(app_err) = &e {
+                    if let AppError::DatabaseQueryError(db_err) = app_err {
+                        if db_err.contains("duplicate key value violates unique constraint") {
+                            info!("Entity '{}' already exists (duplicate key), treating as success", entity.name);
+                            
+                            // Store in shared context that this entity exists
+                            let session_id = Uuid::new_v4();
+                            let discovery_data = serde_json::json!({
+                                "entity_name": entity.name,
+                                "entity_type": entity.entity_type,
+                                "already_existed": true,
+                                "created_at": chrono::Utc::now().to_rfc3339()
+                            });
+                            
+                            let _ = self.shared_context.store_entity_discovery(
+                                user_id,
+                                session_id,
+                                &[discovery_data],
+                                Some("Entity already existed (duplicate key)".to_string()),
+                                session_dek,
+                            ).await;
+                            return Ok(());
+                        }
+                    }
                 }
+                
+                error!("Failed to create entity '{}' for user_id {}: {:?}", entity.name, user_id, e);
+                error!("AppError details: {:?}", e);
                 // Don't fail the whole process if one entity creation fails
             }
         }
         
         Ok(())
+    }
+    
+    /// Establish spatial relationships for all entities after they have been created
+    /// This should be called after all entity creation is complete to avoid timing issues
+    pub async fn establish_all_spatial_relationships(
+        &self,
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        info!("Establishing spatial relationships for all entities for user {}", user_id);
+        
+        // Query entities directly from the ECS manager instead of using the AI tool
+        // to avoid complex query interpretation issues
+        use crate::services::ecs_entity_manager::ComponentQuery;
+        
+        // Simple query: just get all entities with a Name component
+        let queries = vec![ComponentQuery::HasComponent("Name".to_string())];
+        
+        let entities = self._ecs_entity_manager
+            .query_entities(user_id, queries, Some(1000), None)
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to query entities: {}", e)))?;
+        
+        info!("Found {} entities from ECS manager", entities.len());
+        
+        // Convert to EntityWithId format that preserves IDs for efficient relationship establishment
+        let mut entities_with_ids = Vec::new();
+        for entity in entities {
+            // Extract name from components
+            let name = entity.components.iter()
+                .find(|c| c.component_type == "Name")
+                .and_then(|c| c.component_data.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("Unnamed Entity");
+            
+            // Extract entity type
+            let entity_type = entity.components.iter()
+                .find(|c| c.component_type == "EntityType")
+                .and_then(|c| c.component_data.get("type"))
+                .and_then(|t| t.as_str())
+                .or_else(|| {
+                    // Fallback to SpatialArchetype if no EntityType
+                    entity.components.iter()
+                        .find(|c| c.component_type == "SpatialArchetype")
+                        .and_then(|c| c.component_data.get("value"))
+                        .and_then(|v| v.as_str())
+                })
+                .unwrap_or("unknown");
+            
+            entities_with_ids.push(EntityWithId {
+                id: entity.entity.id,
+                name: name.to_string(),
+                entity_type: entity_type.to_string(),
+            });
+            
+            debug!("Found entity: {} ({}) [ID: {}]", name, entity_type, entity.entity.id);
+        }
+        
+        if entities_with_ids.is_empty() {
+            info!("No entities found to establish spatial relationships");
+            return Ok(());
+        }
+        
+        info!("Found {} entities to analyze for spatial relationships", entities_with_ids.len());
+        self.establish_spatial_relationships_with_ids(&entities_with_ids, user_id, session_dek).await
     }
     
     /// Establish spatial relationships between entities using AI-driven detection
@@ -734,7 +1369,181 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
         Ok(())
     }
     
-    /// Update an entity's parent_link in its Spatial component
+    /// Establish spatial relationships between entities using AI-driven detection with known entity IDs
+    /// This version is more efficient and reliable as it works with already-known entity IDs
+    async fn establish_spatial_relationships_with_ids(
+        &self,
+        entities: &[EntityWithId],
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        if entities.len() < 2 {
+            info!("Not enough entities ({}) to establish relationships", entities.len());
+            return Ok(());
+        }
+        
+        info!("Attempting to establish spatial relationships for {} entities with known IDs", entities.len());
+        
+        // Use AI to detect spatial relationships based on context
+        let entity_list = entities.iter()
+            .map(|e| format!("- {} ({}) [ID: {}]", e.name, e.entity_type, e.id))
+            .collect::<Vec<_>>()
+            .join("\n");
+            
+        let prompt = format!(
+            "Analyze these entities from the conversation and determine their spatial relationships:\n\n{}\n\n\
+            Based on the conversation context and common sense reasoning, identify which entities should be contained within others. \
+            Consider:\n\
+            - Geographic containment (e.g., a hold within mountain peaks)\n\
+            - Characters and objects being in locations\n\
+            - Logical parent-child relationships based on scale\n\n\
+            Only identify clear, logical spatial relationships that make sense in the context.",
+            entity_list
+        );
+        
+        info!("Calling AI to detect spatial relationships for entities with IDs");
+        
+        let system_prompt = "You are analyzing entities to determine spatial containment relationships in a fantasy world. Focus on logical spatial hierarchies based on the conversation context.";
+        
+        // Add structured output schema to the prompt
+        let full_prompt = format!(
+            "{}\n\nProvide your response as valid JSON matching this schema:\n{}\n\nExample response:\n{{\"relationships\": [{{\"parent_entity\": \"Dragon's Crown Peaks\", \"child_entity\": \"Stonefang Hold\", \"relationship_type\": \"contains\", \"reasoning\": \"The hold is located within the mountain peaks\", \"confidence\": 0.9}}], \"confidence\": 0.85}}",
+            prompt,
+            serde_json::to_string_pretty(&perception_structured_output::get_spatial_relationship_detection_schema())?
+        );
+        
+        let messages = vec![
+            ChatMessage::system(system_prompt),
+            ChatMessage::user(full_prompt),
+        ];
+        
+        let request = ChatRequest::new(messages);
+        let chat_options = ChatOptions {
+            temperature: Some(0.3),
+            max_tokens: Some(4000), // Increased to prevent truncation of complex spatial relationships
+            ..Default::default()
+        };
+        
+        let model = &self.model;
+        let chat_response = self.ai_client
+            .exec_chat(model, request, Some(chat_options))
+            .await?;
+        
+        let response_text = chat_response
+            .first_content_text_as_str()
+            .ok_or_else(|| AppError::BadRequest("No text content in AI response".to_string()))?
+            .to_string();
+        
+        debug!("Raw spatial relationship detection response: {}", response_text);
+        
+        // Try to extract JSON from the response (AI might include explanatory text)
+        let json_start = response_text.find('{');
+        let json_end = response_text.rfind('}');
+        
+        let json_text = if let (Some(start), Some(end)) = (json_start, json_end) {
+            &response_text[start..=end]
+        } else {
+            &response_text
+        };
+        
+        let spatial_output: perception_structured_output::SpatialRelationshipDetectionOutput = 
+            serde_json::from_str(json_text)
+                .map_err(|e| {
+                    warn!("Failed to parse spatial relationship JSON: {}. Response length: {} chars, truncated: {}", 
+                        e, json_text.len(), 
+                        if json_text.len() > 200 { 
+                            format!("{}...", &json_text[..200]) 
+                        } else { 
+                            json_text.to_string() 
+                        }
+                    );
+                    // Check if response might be truncated
+                    if json_text.ends_with(',') || json_text.ends_with('[') || !json_text.contains('}') {
+                        warn!("Response appears to be truncated - consider increasing max_tokens");
+                    }
+                    AppError::InternalServerErrorGeneric(
+                        format!("Failed to parse spatial relationship detection: {}", e)
+                    )
+                })?;
+        
+        // Apply the detected relationships using direct entity IDs
+        info!("AI detected {} spatial relationships", spatial_output.relationships.len());
+        let mut relationships_established = 0;
+        
+        for relationship in &spatial_output.relationships {
+            if relationship.confidence >= 0.7 {
+                debug!("Applying spatial relationship: {} contains {} (confidence: {})", 
+                    relationship.parent_entity, relationship.child_entity, relationship.confidence);
+                    
+                if let Err(e) = self.update_entity_parent_link_direct(
+                    &relationship.child_entity,
+                    &relationship.parent_entity,
+                    entities,
+                    user_id,
+                    session_dek
+                ).await {
+                    warn!("Failed to establish relationship between {} and {}: {}", 
+                        relationship.child_entity, relationship.parent_entity, e);
+                } else {
+                    info!("Established AI-detected spatial relationship: {} is contained in {} (reason: {})", 
+                        relationship.child_entity, relationship.parent_entity, relationship.reasoning);
+                    relationships_established += 1;
+                }
+            }
+        }
+        
+        if relationships_established > 0 {
+            info!("Successfully established {} spatial relationships", relationships_established);
+        } else {
+            warn!("No spatial relationships were successfully established despite {} detected relationships", 
+                spatial_output.relationships.len());
+        }
+        
+        Ok(())
+    }
+    
+    /// Update an entity's parent_link directly using known entity IDs
+    /// This version is more efficient and reliable as it bypasses AI search
+    async fn update_entity_parent_link_direct(
+        &self,
+        child_entity_name: &str,
+        parent_entity_name: &str,
+        entities: &[EntityWithId],
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        // Find both entities in our known list
+        let child_entity = entities.iter()
+            .find(|e| e.name == child_entity_name)
+            .ok_or_else(|| AppError::BadRequest(format!("Child entity '{}' not found in entity list", child_entity_name)))?;
+            
+        let parent_entity = entities.iter()
+            .find(|e| e.name == parent_entity_name)
+            .ok_or_else(|| AppError::BadRequest(format!("Parent entity '{}' not found in entity list", parent_entity_name)))?;
+        
+        // Update the child entity's Spatial component with parent_link
+        let update_params = serde_json::json!({
+            "user_id": user_id.to_string(),
+            "entity_identifier": child_entity.id.to_string(),
+            "update_request": format!("Set parent to entity with ID {}", parent_entity.id),
+            "context": format!("Establishing spatial relationship: {} is contained in {}", child_entity_name, parent_entity_name)
+        });
+        
+        match self.execute_tool_with_retry("update_entity", &update_params, session_dek, 2).await {
+            Ok(result) => {
+                info!("Successfully established spatial relationship: {} -> {} (IDs: {} -> {})", 
+                    child_entity_name, parent_entity_name, child_entity.id, parent_entity.id);
+                debug!("Update entity result: {:?}", result);
+                Ok(())
+            },
+            Err(e) => {
+                warn!("Failed to update parent link after retries: {}", e);
+                Err(AppError::InternalServerErrorGeneric(format!("Failed to update parent link: {}", e)))
+            }
+        }
+    }
+    
+    /// Update an entity's parent_link in its Spatial component with retry logic
     async fn update_entity_parent_link(
         &self,
         entity_name: &str,
@@ -757,60 +1566,70 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
             "limit": 1
         });
         
-        // Get entity ID
-        let entity_id = match self.get_tool("find_entity")?.execute(&find_entity_params, session_dek).await {
+        // Get entity ID with retry logic for timing issues
+        let entity_id = match self.execute_tool_with_retry("find_entity", &find_entity_params, session_dek, 3).await {
             Ok(result) => {
                 if let Some(entities) = result.get("entities").and_then(|e| e.as_array()) {
                     if let Some(entity) = entities.first() {
                         entity.get("entity_id").and_then(|id| id.as_str()).map(|s| s.to_string())
                     } else {
-                        return Err(AppError::NotFound(format!("Entity '{}' not found", entity_name)));
+                        // Entity not found yet, might be timing issue
+                        warn!("Entity '{}' not found yet during spatial relationship establishment", entity_name);
+                        return Ok(()); // Skip this relationship for now
                     }
                 } else {
                     return Err(AppError::BadRequest("Invalid find result format".to_string()));
                 }
             },
-            Err(e) => return Err(AppError::BadRequest(format!("Failed to find entity: {}", e))),
+            Err(e) => {
+                warn!("Failed to find entity '{}' after retries: {}", entity_name, e);
+                return Ok(()); // Skip this relationship for now
+            }
         };
         
-        // Get parent ID
-        let parent_id = match self.get_tool("find_entity")?.execute(&find_parent_params, session_dek).await {
+        // Get parent ID with retry logic
+        let parent_id = match self.execute_tool_with_retry("find_entity", &find_parent_params, session_dek, 3).await {
             Ok(result) => {
                 if let Some(entities) = result.get("entities").and_then(|e| e.as_array()) {
                     if let Some(parent) = entities.first() {
                         parent.get("entity_id").and_then(|id| id.as_str()).map(|s| s.to_string())
                     } else {
-                        return Err(AppError::NotFound(format!("Parent entity '{}' not found", parent_name)));
+                        // Parent not found yet, might be timing issue
+                        warn!("Parent entity '{}' not found yet during spatial relationship establishment", parent_name);
+                        return Ok(()); // Skip this relationship for now
                     }
                 } else {
                     return Err(AppError::BadRequest("Invalid find result format".to_string()));
                 }
             },
-            Err(e) => return Err(AppError::BadRequest(format!("Failed to find parent entity: {}", e))),
+            Err(e) => {
+                warn!("Failed to find parent entity '{}' after retries: {}", parent_name, e);
+                return Ok(()); // Skip this relationship for now
+            }
         };
         
         if let (Some(entity_id), Some(parent_id)) = (entity_id, parent_id) {
             // Update the Spatial component with parent_link
             let update_params = serde_json::json!({
                 "user_id": user_id.to_string(),
-                "entity_id": entity_id,
-                "updates": [{
-                    "component_type": "Spatial",
-                    "operation": "Update",
-                    "data": {
-                        "parent_link": parent_id,
-                        "position_type": "Relative",
-                        "scale": "Intimate"
-                    }
-                }]
+                "entity_identifier": entity_id,
+                "update_request": format!("Set parent to entity with ID {}", parent_id),
+                "context": format!("Establishing spatial relationship: {} is contained in {}", entity_name, parent_name)
             });
             
-            match self.get_tool("update_entity")?.execute(&update_params, session_dek).await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(AppError::BadRequest(format!("Failed to update parent link: {}", e))),
+            match self.execute_tool_with_retry("update_entity", &update_params, session_dek, 2).await {
+                Ok(_) => {
+                    info!("Successfully established spatial relationship: {} -> {}", entity_name, parent_name);
+                    Ok(())
+                },
+                Err(e) => {
+                    warn!("Failed to update parent link after retries: {}", e);
+                    Ok(()) // Non-fatal, continue processing
+                }
             }
         } else {
-            Err(AppError::BadRequest("Failed to get entity or parent IDs".to_string()))
+            warn!("Skipping spatial relationship establishment for {} -> {} due to missing IDs", entity_name, parent_name);
+            Ok(()) // Non-fatal, continue processing
         }
     }
 
@@ -965,6 +1784,26 @@ Respond with structured JSON matching the required schema."#, tool_reference, na
                         });
                     }
                 }
+            }
+        }
+        
+        // If no hierarchy insights were generated but we have entities,
+        // create basic insights to ensure hierarchy information is always present
+        if hierarchy_insights.is_empty() && !entities.is_empty() {
+            info!("No hierarchy insights found for {} entities, creating basic insights", entities.len());
+            for entity in entities {
+                hierarchy_insights.push(HierarchyInsight {
+                    entity_name: entity.name.clone(),
+                    current_hierarchy: serde_json::Map::from_iter(vec![
+                        ("status".to_string(), serde_json::json!("hierarchy_pending")),
+                        ("entity_type".to_string(), serde_json::json!(entity.entity_type)),
+                        ("relevance".to_string(), serde_json::json!(entity.relevance_score)),
+                        ("message".to_string(), serde_json::json!("Hierarchy establishment pending")),
+                    ]),
+                    hierarchy_depth: 0,
+                    parent_entity: None,
+                    child_entities: vec![],
+                });
             }
         }
 
@@ -1278,6 +2117,34 @@ Respond with a JSON array where each element corresponds to an entity in the ord
             session_dek,
         ).await?;
 
+        // Generate session ID for shared context operations - in the future this should come from context
+        let session_id = Uuid::new_v4();
+
+        // Step 6: Store entity discoveries in shared context for other agents
+        if !extraction_result.entities_found.is_empty() {
+            let entities_json: Vec<Value> = extraction_result.entities_found.iter()
+                .map(|e| json!({
+                    "name": e.name,
+                    "type": e.entity_type,
+                    "properties": e.properties,
+                    "confidence": analysis_result.confidence
+                }))
+                .collect();
+            
+            if let Err(e) = self.shared_context.store_entity_discovery(
+                user_id,
+                session_id,
+                &entities_json,
+                Some(format!("Discovered {} entities from AI response", entities_json.len())),
+                session_dek,
+            ).await {
+                warn!("Failed to store entity discoveries in shared context: {}", e);
+            } else {
+                debug!("Stored {} entity discoveries in shared context for session {}", 
+                      entities_json.len(), session_id);
+            }
+        }
+
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
 
         // Log operation for security monitoring
@@ -1288,6 +2155,26 @@ Respond with a JSON array where each element corresponds to an entity in the ord
             extraction_result.state_changes.len(),
             execution_result.updates_applied,
         );
+
+        // Step 7: Store performance metrics in shared context
+        let performance_metrics = json!({
+            "execution_time_ms": execution_time_ms,
+            "entities_found": extraction_result.entities_found.len(),
+            "state_changes": extraction_result.state_changes.len(),
+            "updates_applied": execution_result.updates_applied,
+            "confidence_score": analysis_result.confidence,
+            "timestamp": Utc::now().to_rfc3339()
+        });
+        
+        if let Err(e) = self.shared_context.store_performance_metrics(
+            user_id,
+            session_id,
+            AgentType::Perception,
+            performance_metrics,
+            session_dek,
+        ).await {
+            warn!("Failed to store performance metrics in shared context: {}", e);
+        }
 
         // Create comprehensive result matching test expectations
         Ok(PerceptionResult {
@@ -1650,10 +2537,54 @@ Output JSON with:
         user_id: Uuid,
         session_dek: &SessionDek,
     ) -> Result<(), AppError> {
+        let entity_name = &action.target_entity;
+        let entity_type = action.parameters.get("entity_type").and_then(|v| v.as_str()).unwrap_or("object");
+        
+        // First check if entity already exists
+        let find_params = json!({
+            "user_id": user_id.to_string(),
+            "search_request": format!("find entity named '{}'", entity_name),
+            "context": "Checking if entity already exists before creating",
+            "limit": 10
+        });
+        
+        match self.get_tool("find_entity")?.execute(&find_params, session_dek).await {
+            Ok(find_result) => {
+                if let Some(entities_array) = find_result.get("entities").and_then(|e| e.as_array()) {
+                    // Check if any existing entity matches both name and type
+                    let matching_entity = entities_array.iter().find(|existing| {
+                        let name_matches = existing.get("entity_name")
+                            .and_then(|n| n.as_str())
+                            .map(|n| n.eq_ignore_ascii_case(entity_name))
+                            .unwrap_or(false);
+                        
+                        let type_matches = existing.get("entity_type")
+                            .and_then(|t| t.as_str())
+                            .map(|t| t == entity_type)
+                            .unwrap_or(false);
+                        
+                        name_matches && type_matches
+                    });
+                    
+                    if let Some(existing) = matching_entity {
+                        info!(
+                            "Entity '{}' of type '{}' already exists for user {}, skipping creation",
+                            entity_name, entity_type, user_id
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+            Err(e) => {
+                debug!("Error checking for existing entity '{}', proceeding with creation: {:?}", entity_name, e);
+            }
+        }
+        
+        // Entity doesn't exist, create it
         let params = json!({
             "user_id": user_id.to_string(),
-            "name": action.target_entity,
-            "entity_type": action.parameters.get("entity_type").and_then(|v| v.as_str()).unwrap_or("object"),
+            "name": entity_name,
+            "entity_type": entity_type,
             "properties": action.parameters.get("properties").cloned().unwrap_or_default()
         });
         
@@ -1803,10 +2734,14 @@ Output JSON with:
                 
                 let relationship_params = json!({
                     "user_id": user_id.to_string(),
-                    "source_entity_id": source_id,
-                    "target_entity_id": target_id,
-                    "relationship_type": action.parameters.get("relationship_type").and_then(|v| v.as_str()).unwrap_or("knows"),
-                    "trust_delta": action.parameters.get("trust_delta").and_then(|v| v.as_f64()).unwrap_or(0.0)
+                    "entity1_id": source_id,
+                    "entity2_id": target_id,
+                    "relationship_change_request": action.parameters.get("relationship_change_request")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("establish new relationship"),
+                    "current_context": action.parameters.get("current_context")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("From narrative context")
                 });
                 
                 self.get_tool("update_relationship")?.execute(&relationship_params, session_dek).await
@@ -2150,6 +3085,14 @@ pub struct ContextualEntity {
     pub name: String,
     pub entity_type: String,
     pub relevance_score: f32,
+}
+
+/// Entity with preserved ID for efficient relationship establishment
+#[derive(Debug, Clone)]
+struct EntityWithId {
+    pub id: Uuid,
+    pub name: String,
+    pub entity_type: String,
 }
 
 /// Result of hierarchy analysis

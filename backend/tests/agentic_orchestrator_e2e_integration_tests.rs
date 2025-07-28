@@ -4,6 +4,8 @@
 // Tests the full flow: User Query → Intent Detection → Strategy Planning → Context Assembly → Optimization → Final Result
 
 use std::sync::Arc;
+use uuid::Uuid;
+use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::{
     services::agentic_orchestrator::{AgenticOrchestrator, AgenticRequest, QualityMode},
     services::{AgenticStateUpdateService, EcsEntityManager},
@@ -106,6 +108,7 @@ async fn test_orchestrator_simple_query_end_to_end() {
         "gemini-2.5-flash".to_string(),
         "gemini-2.5-flash-lite-preview-06-17".to_string(),
         "gemini-2.5-flash".to_string(),
+        Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()))),
     );
     
     // Test simple query processing
@@ -239,6 +242,7 @@ async fn test_orchestrator_complex_query_with_chronicle() {
         "gemini-2.5-flash".to_string(),
         "gemini-2.5-flash-lite-preview-06-17".to_string(),
         "gemini-2.5-flash".to_string(),
+        Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()))),
     );
     
     // Create user and chronicle
@@ -262,6 +266,8 @@ async fn test_orchestrator_complex_query_with_chronicle() {
         token_budget: 4000,
         quality_mode: QualityMode::Thorough,
         user_dek: None,
+        session_dek: Some(SessionDek::new(vec![0u8; 32])),
+        session_id: Uuid::new_v4(),
     };
     
     let result = orchestrator.process_query(request).await;
@@ -313,6 +319,7 @@ async fn test_orchestrator_error_handling_and_recovery() {
         "gemini-2.5-flash".to_string(),
         "gemini-2.5-flash-lite-preview-06-17".to_string(),
         "gemini-2.5-flash".to_string(),
+        Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()))),
     );
     
     let mut guard = TestDataGuard::new(pool.clone());
@@ -408,6 +415,7 @@ async fn test_orchestrator_metrics_collection() {
         "gemini-2.5-flash".to_string(),
         "gemini-2.5-flash-lite-preview-06-17".to_string(),
         "gemini-2.5-flash".to_string(),
+        Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()))),
     );
     
     let mut guard = TestDataGuard::new(pool.clone());
@@ -507,6 +515,7 @@ async fn test_orchestrator_quality_modes() {
         "gemini-2.5-flash".to_string(),
         "gemini-2.5-flash-lite-preview-06-17".to_string(),
         "gemini-2.5-flash".to_string(),
+        Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()))),
     );
     
     let mut guard = TestDataGuard::new(pool.clone());
@@ -531,6 +540,8 @@ async fn test_orchestrator_quality_modes() {
             token_budget: 4000,
             quality_mode: quality_mode.clone(),
             user_dek: None,
+        session_dek: Some(SessionDek::new(vec![0u8; 32])),
+        session_id: Uuid::new_v4(),
         };
         
         let result = orchestrator.process_query(request).await;
@@ -620,6 +631,7 @@ async fn test_orchestrator_token_budget_constraints() {
         "gemini-2.5-flash".to_string(),
         "gemini-2.5-flash-lite-preview-06-17".to_string(),
         "gemini-2.5-flash".to_string(),
+        Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()))),
     );
     
     let mut guard = TestDataGuard::new(pool.clone());
@@ -636,6 +648,8 @@ async fn test_orchestrator_token_budget_constraints() {
         token_budget: 1000, // Very low budget
         quality_mode: QualityMode::Balanced,
         user_dek: None,
+        session_dek: Some(SessionDek::new(vec![0u8; 32])),
+        session_id: Uuid::new_v4(),
     };
     
     let result = orchestrator.process_query(request).await;

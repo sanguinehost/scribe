@@ -709,6 +709,7 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
                 "gemini-2.5-flash".to_string(),
                 "gemini-2.5-flash-lite-preview-06-17".to_string(),
                 "gemini-2.5-flash".to_string(),
+                test_app.app_state.services.shared_agent_context.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -727,6 +728,7 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: test_app.app_state.services.shared_agent_context.clone(),
     };
 
     Arc::new(AppState::new(

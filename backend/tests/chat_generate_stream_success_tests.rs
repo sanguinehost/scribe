@@ -711,6 +711,7 @@ async fn test_first_mes_included_in_history() {
                 test_app.config.agentic_planning_model.clone(),
                 test_app.config.optimization_model.clone(),
                 test_app.config.advanced_model.clone(),
+                test_app.app_state.services.shared_agent_context.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -729,6 +730,7 @@ async fn test_first_mes_included_in_history() {
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: test_app.app_state.services.shared_agent_context.clone(),
     };
 
     let state_for_service =

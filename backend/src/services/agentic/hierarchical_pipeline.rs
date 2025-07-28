@@ -19,6 +19,7 @@ use std::sync::Arc;
 use tracing::{info, instrument, debug, warn, error};
 use uuid::Uuid;
 use chrono::Utc;
+use serde_json;
 
 use crate::{
     errors::AppError,
@@ -28,6 +29,9 @@ use crate::{
             tactical_agent::TacticalAgent,
             perception_agent::{PerceptionAgent, PreResponseAnalysisResult},
             lightning_agent::{LightningAgent, CacheLayer},
+            shared_context::{SharedAgentContext, ContextType, AgentType},
+            orchestrator::{WorkflowOrchestrator, OrchestratorState, StageResults},
+            executor::ToolExecutor,
         },
         agent_prompt_templates::{AgentPromptTemplates, PromptTemplateVersion},
         context_assembly_engine::{EnrichedContext, PerceptionEnrichment, ContextualEntityInfo, HierarchyInsightInfo, SalienceUpdateInfo, PlotSignificance},
@@ -66,7 +70,7 @@ impl Default for HierarchicalPipelineConfig {
             prompt_template_version: PromptTemplateVersion::V1,
             response_generation_model: config.chat_model,
             enable_optimizations: true,
-            max_pipeline_time_ms: 30000, // 30 seconds max
+            max_pipeline_time_ms: 180000, // 3 minutes max for complex multi-agent operations
             enable_parallel_agents: true, // Enable parallel execution by default
             enable_progressive_response: true, // Enable progressive response by default for <2s responses
         }
@@ -204,9 +208,11 @@ pub struct HierarchicalAgentPipeline {
     tactical_agent: Arc<TacticalAgent>,
     perception_agent: Arc<PerceptionAgent>,
     lightning_agent: Option<Arc<LightningAgent>>,
+    workflow_orchestrator: Arc<WorkflowOrchestrator>,
     ai_client: Arc<dyn AiClient>,
     redis_client: Arc<redis::Client>,
     config: HierarchicalPipelineConfig,
+    shared_context: Arc<SharedAgentContext>,
 }
 
 impl HierarchicalAgentPipeline {
@@ -220,12 +226,13 @@ impl HierarchicalAgentPipeline {
         db_pool: deadpool_diesel::postgres::Pool,
         entity_manager: Arc<crate::services::ecs_entity_manager::EcsEntityManager>,
         config: HierarchicalPipelineConfig,
+        shared_context: Arc<SharedAgentContext>,
     ) -> Self {
         // Create Lightning Agent if progressive response is enabled
+        let cache_service = Arc::new(ProgressiveCacheService::new(redis_client.clone()));
         let lightning_agent = if config.enable_progressive_response {
-            let cache_service = Arc::new(ProgressiveCacheService::new(redis_client.clone()));
             Some(Arc::new(LightningAgent::new(
-                cache_service,
+                cache_service.clone(),
                 redis_client.clone(),
                 db_pool.clone(),
                 entity_manager.clone(),
@@ -234,14 +241,30 @@ impl HierarchicalAgentPipeline {
             None
         };
         
+        // Create the workflow orchestrator
+        let tool_executor = Arc::new(ToolExecutor::new(
+            db_pool.clone(),
+            redis_client.clone(),
+        ));
+        
+        let workflow_orchestrator = Arc::new(WorkflowOrchestrator::new(
+            strategic_agent.clone(),
+            tactical_agent.clone(),
+            perception_agent.clone(),
+            cache_service,
+            tool_executor,
+        ));
+        
         Self {
             strategic_agent,
             tactical_agent,
             perception_agent,
             lightning_agent,
+            workflow_orchestrator,
             ai_client,
             redis_client,
             config,
+            shared_context,
         }
     }
 
@@ -266,6 +289,7 @@ impl HierarchicalAgentPipeline {
             app_state.pool.clone(),
             app_state.ecs_entity_manager.clone(),
             config,
+            app_state.shared_agent_context.clone(),
         )
     }
 
@@ -454,6 +478,11 @@ impl HierarchicalAgentPipeline {
             operational_breakdown.retry_attempts
         );
 
+        // Clone breakdown data for shared context storage before moving into metrics
+        let perception_breakdown_clone = perception_breakdown.clone();
+        let tactical_breakdown_clone = tactical_breakdown.clone(); 
+        let operational_breakdown_clone = operational_breakdown.clone();
+
         // Compile metrics with detailed breakdowns
         let metrics = PipelineMetrics {
             total_execution_time_ms,
@@ -481,6 +510,66 @@ impl HierarchicalAgentPipeline {
             "Hierarchical pipeline completed successfully for user: {} in {}ms",
             user_id, total_execution_time_ms
         );
+
+        // Store coordination metrics in shared context
+        let coordination_data = serde_json::json!({
+            "pipeline_type": "hierarchical_three_layer",
+            "total_execution_time_ms": total_execution_time_ms,
+            "perception_time_ms": perception_time_ms,
+            "strategic_time_ms": strategic_time_ms,
+            "tactical_time_ms": tactical_time_ms,
+            "operational_time_ms": operational_time_ms,
+            "total_tokens_used": metrics.total_tokens_used,
+            "total_ai_calls": metrics.total_ai_calls,
+            "confidence_score": metrics.confidence_score,
+            "entities_processed": perception_breakdown_clone.entities_processed,
+            "tools_planned": tactical_breakdown_clone.tools_planned,
+            "tools_executed": tactical_breakdown_clone.tools_executed,
+            "retry_attempts": operational_breakdown_clone.retry_attempts,
+            "parallel_execution_enabled": self.config.enable_parallel_agents,
+            "created_at": chrono::Utc::now().to_rfc3339()
+        });
+
+        if let Err(e) = self.shared_context.store_coordination_signal(
+            user_id,
+            session_id,
+            AgentType::HierarchicalPipeline,
+            format!("hierarchical_pipeline_{}", chrono::Utc::now().timestamp()),
+            coordination_data,
+            None, // TTL seconds
+            session_dek,
+        ).await {
+            warn!("Failed to store hierarchical pipeline coordination data in shared context: {}", e);
+        }
+
+        // Store performance metrics in shared context
+        let performance_data = serde_json::json!({
+            "total_execution_time_ms": total_execution_time_ms,
+            "perception_analysis_time_ms": perception_time_ms,
+            "strategic_planning_time_ms": strategic_time_ms,
+            "tactical_execution_time_ms": tactical_time_ms,
+            "operational_generation_time_ms": operational_time_ms,
+            "ai_calls_made": metrics.total_ai_calls,
+            "tokens_consumed": metrics.total_tokens_used,
+            "confidence_achieved": metrics.confidence_score,
+            "pipeline_efficiency": (100.0 * metrics.confidence_score) / (total_execution_time_ms as f32 / 1000.0), // confidence per second
+            "entities_per_second": (perception_breakdown_clone.entities_processed as f32) / (perception_time_ms as f32 / 1000.0),
+            "tools_success_rate": if tactical_breakdown_clone.tools_planned > 0 { 
+                (tactical_breakdown_clone.tools_executed as f32 / tactical_breakdown_clone.tools_planned as f32) * 100.0 
+            } else { 
+                100.0 
+            }
+        });
+
+        if let Err(e) = self.shared_context.store_performance_metrics(
+            user_id,
+            session_id,
+            AgentType::HierarchicalPipeline,
+            performance_data,
+            session_dek,
+        ).await {
+            warn!("Failed to store hierarchical pipeline performance metrics in shared context: {}", e);
+        }
 
         Ok(HierarchicalPipelineResult {
             response: final_response,
@@ -1533,24 +1622,33 @@ Write the next response only as your assigned character, advancing the world and
             }
         }
         
+        // Use the new sequential orchestrator for background processing
+        let orchestrator = self.workflow_orchestrator.clone();
         tokio::spawn(async move {
-            info!("Starting background pipeline for full world state updates");
+            info!("Starting sequential orchestrator for background world state updates");
             let bg_start = std::time::Instant::now();
             
-            match pipeline_clone.execute_background_pipeline(
+            match orchestrator.run(
                 &chat_history_clone,
                 user_id,
+                session_id,
                 &session_dek_clone,
                 &current_message_clone,
                 &response,
-                perception_analysis_clone,
             ).await {
-                Ok(()) => {
+                Ok(results) => {
                     let bg_duration = bg_start.elapsed().as_millis() as u64;
-                    info!("Background pipeline completed successfully in {}ms", bg_duration);
+                    info!(
+                        "Background orchestration completed successfully in {}ms. \
+                        Entities created: {}, Relationships: {}, Cache updated: {}",
+                        bg_duration,
+                        results.entities_created.len(),
+                        results.relationships_established,
+                        results.cache_updated
+                    );
                 }
                 Err(e) => {
-                    error!("Background pipeline failed: {}", e);
+                    error!("Background orchestration failed: {}", e);
                     // Log but don't propagate - user already has their response
                 }
             }
@@ -1746,6 +1844,21 @@ Write the next response only as your assigned character, advancing the world and
             ).await {
                 Ok(_) => {
                     debug!("Successfully persisted entities to PostgreSQL");
+                    
+                    // Now establish spatial relationships after all entities are created
+                    info!("Background: Establishing spatial relationships for persisted entities");
+                    match self.perception_agent.establish_all_spatial_relationships(
+                        user_id,
+                        session_dek
+                    ).await {
+                        Ok(_) => {
+                            info!("Successfully established spatial relationships");
+                        },
+                        Err(e) => {
+                            warn!("Failed to establish spatial relationships: {}", e);
+                            // Non-fatal error, continue processing
+                        }
+                    }
                     
                     // Track entity persistence in Redis for test visibility
                     let bg_persistence_key = format!("background_entity_persistence:{}:{}", user_id, session_id);
@@ -2130,7 +2243,7 @@ mod tests {
         assert_eq!(config.prompt_template_version, PromptTemplateVersion::V1);
         assert_eq!(config.response_generation_model, "gemini-2.5-flash");
         assert!(config.enable_optimizations);
-        assert_eq!(config.max_pipeline_time_ms, 30000);
+        assert_eq!(config.max_pipeline_time_ms, 180000);
         assert!(config.enable_parallel_agents); // Verify parallel execution is enabled by default
     }
     
@@ -2201,6 +2314,7 @@ mod tests {
             app.app_state.pool.clone(),
             app.app_state.ecs_entity_manager.clone(),
             invalid_config,
+            app.app_state.shared_agent_context.clone(),
         );
         
         let result = pipeline_invalid.validate_configuration();

@@ -4,6 +4,7 @@
 //! and the self-registration pattern.
 
 use scribe_backend::{
+    auth::session_dek::SessionDek,
     errors::AppError,
     services::agentic::{
         tools::{ScribeTool, ToolError, ToolParams, ToolResult},
@@ -60,7 +61,7 @@ impl ScribeTool for MockAnalysisTool {
         })
     }
     
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         if self.should_fail {
             return Err(ToolError::ExecutionFailed("Mock failure".into()));
         }

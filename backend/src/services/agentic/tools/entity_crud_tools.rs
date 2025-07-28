@@ -280,14 +280,13 @@ impl ScribeTool for FindEntityTool {
                         "owned_by": {"type": "string", "description": "Entity that owns this"},
                         "related_to": {"type": "string", "description": "Related entity"},
                         "distance_from": {"type": "string", "description": "Distance constraint from another entity"}
-                    },
-                    "additionalProperties": false
+                    }
                 },
                 "component_requirements": {"type": "array", "items": {"type": "string"}},
                 "reasoning": {"type": "string"},
                 "expected_results": {"type": "string"}
             },
-            "required": ["interpretation", "search_strategy", "key_terms", "entity_types", "spatial_scope", "fuzzy_matching", "reasoning", "expected_results"]
+            "required": ["interpretation", "search_strategy", "key_terms", "entity_types", "spatial_scope", "fuzzy_matching", "relationship_constraints", "component_requirements", "reasoning", "expected_results"]
         });
 
         // Execute AI interpretation using entity resolution model
@@ -298,18 +297,99 @@ impl ScribeTool for FindEntityTool {
 
         debug!("AI interpreted search: {}", _search_interpretation.interpretation);
 
-        // Step 2: For now, return a placeholder result
-        // In a full implementation, this would use the AI interpretation to query the ECS system
-        let entities = vec![
-            EntitySummary {
-                entity_id: "example-entity-1".to_string(),
-                name: "Example Entity".to_string(),
-                scale: Some("Intimate".to_string()),
-                position: Some(PositionSummary { x: 0.0, y: 0.0, z: 0.0, scale: Some("Intimate".to_string()) }),
-                parent_id: None,
-                component_types: vec!["Name".to_string(), "Position".to_string()],
+        // Step 2: Query the ECS system using the AI interpretation
+        let user_uuid = Uuid::parse_str(&input.user_id)
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid user ID: {}", e)))?;
+        
+        use crate::services::ecs_entity_manager::ComponentQuery;
+        
+        // Build search criteria based on AI interpretation
+        let mut queries = Vec::new();
+        
+        // Always include entities with Name component
+        queries.push(ComponentQuery::HasComponent("Name".to_string()));
+        
+        // Add entity type query if specified
+        if !_search_interpretation.entity_types.is_empty() {
+            for entity_type in &_search_interpretation.entity_types {
+                queries.push(ComponentQuery::ComponentDataEquals(
+                    "EntityType".to_string(),
+                    "type".to_string(),
+                    json!(entity_type),
+                ));
             }
-        ];
+        }
+        
+        // Add name pattern queries if specified
+        for key_term in &_search_interpretation.key_terms {
+            queries.push(ComponentQuery::ComponentDataContains(
+                "Name".to_string(),
+                "name".to_string(),
+                key_term.clone(),
+            ));
+        }
+        
+        // If no specific queries, just look for entities with Name component
+        if queries.len() == 1 && _search_interpretation.key_terms.is_empty() && _search_interpretation.entity_types.is_empty() {
+            debug!("No specific search criteria, returning all entities with Name component");
+        }
+        
+        // Query for entities matching criteria
+        let query_results = self.app_state.ecs_entity_manager
+            .query_entities(user_uuid, queries, Some(10), None)
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to query entities: {}", e)))?;
+        
+        let mut entities = Vec::new();
+        
+        for result in query_results {
+            // Extract entity name from components
+            let entity_name = result.components.iter()
+                .find(|c| c.component_type == "Name")
+                .and_then(|c| c.component_data.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("Unnamed Entity")
+                .to_string();
+            
+            let component_types: Vec<String> = result.components.iter()
+                .map(|c| c.component_type.clone())
+                .collect();
+            
+            // Extract position if available
+            let position = result.components.iter()
+                .find(|c| c.component_type == "Position")
+                .and_then(|c| c.component_data.as_object())
+                .map(|data| PositionSummary {
+                    x: data.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    y: data.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    z: data.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    scale: result.components.iter()
+                        .find(|c| c.component_type == "Scale")
+                        .and_then(|c| c.component_data.get("value"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                });
+            
+            // Extract parent ID if available
+            let parent_id = result.components.iter()
+                .find(|c| c.component_type == "ParentLink")
+                .and_then(|c| c.component_data.get("parent_id"))
+                .and_then(|id| id.as_str())
+                .map(|s| s.to_string());
+            
+            entities.push(EntitySummary {
+                entity_id: result.entity.id.to_string(),
+                name: entity_name,
+                scale: result.components.iter()
+                    .find(|c| c.component_type == "Scale")
+                    .and_then(|c| c.component_data.get("value"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                position,
+                parent_id,
+                component_types,
+            });
+        }
 
         let output = FindEntityOutput {
             total_found: entities.len(),
@@ -1229,6 +1309,61 @@ Format your response to help create a cohesive, well-structured entity that enha
             _ => SalienceTier::Flavor,
         };
         
+        // Check if entity with same name already exists for this user
+        // Create a FindEntityTool instance to search for existing entities
+        let find_tool = FindEntityTool {
+            app_state: self.app_state.clone(),
+        };
+        
+        // Prepare parameters for the find_entity tool
+        let find_params = json!({
+            "user_id": user_id.to_string(),
+            "search_request": format!("find entity named '{}'", entity_name),
+            "context": "Checking for duplicate before creation",
+            "limit": 10
+        });
+        
+        // Use a dummy session key for internal tool calls
+        let dummy_session_dek = SessionDek::new(vec![0u8; 32]);
+        
+        // Try to find the entity first
+        match find_tool.execute(&find_params, &dummy_session_dek).await {
+            Ok(result) => {
+                // Parse the result to check if we found an exact match
+                if let Some(entities) = result.get("entities").and_then(|v| v.as_array()) {
+                    for entity in entities {
+                        if let Some(name) = entity.get("entity_name").and_then(|v| v.as_str()) {
+                            if name.eq_ignore_ascii_case(entity_name) {
+                                // Entity already exists, return info about existing entity
+                                let entity_id = entity.get("entity_id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                
+                                info!("Entity '{}' already exists with ID {}, returning existing entity", 
+                                    entity_name, entity_id);
+                                
+                                return Ok(EntityCreationOutput {
+                                    entity_id: entity_id.to_string(),
+                                    creation_plan: json!({
+                                        "status": "existing",
+                                        "message": format!("Entity '{}' already exists", entity_name),
+                                        "existing_entity": entity
+                                    }),
+                                    creation_summary: format!("Found existing entity '{}' instead of creating duplicate", entity_name),
+                                    created: false,
+                                    user_request: creation_request.to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                // Entity not found or error in search - continue with creation
+                debug!("No existing entity found with name '{}', proceeding with creation: {:?}", entity_name, e);
+            }
+        }
+        
         // Build components based on the AI plan
         let mut components: Vec<(String, JsonValue)> = Vec::new();
         
@@ -1830,17 +1965,96 @@ Format your response to help implement precise, logical entity updates that enha
         let ai_plan: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to parse AI response: {}", e)))?;
 
-        // For now, return the AI plan as the update output
-        // In a full implementation, this would use the AI plan to actually update the entity in ECS
+        // Extract interpretation and handle specific update types
         let interpretation = ai_plan.get("interpretation").and_then(|v| v.as_str()).unwrap_or("Unknown update");
+        
+        // Check if this is a parent relationship update (spatial hierarchy)
+        let mut updated = false;
+        let mut update_summary = format!("AI-planned entity update: {}", interpretation);
+        
+        if update_request.contains("Set parent to entity with ID") {
+            // Extract parent entity ID from the request
+            if let Some(parent_id_start) = update_request.find("Set parent to entity with ID ") {
+                let parent_id_str = &update_request[parent_id_start + "Set parent to entity with ID ".len()..];
+                if let Ok(parent_id) = Uuid::parse_str(parent_id_str.trim()) {
+                    // Implement parent link update via ECS
+                    match self.update_parent_link_in_ecs(user_id, entity_identifier, parent_id).await {
+                        Ok(()) => {
+                            updated = true;
+                            update_summary = format!("Successfully set parent link: {} -> {}", entity_identifier, parent_id);
+                            info!("ECS parent link updated: {} -> {}", entity_identifier, parent_id);
+                        }
+                        Err(e) => {
+                            warn!("Failed to update parent link in ECS: {}", e);
+                            update_summary = format!("AI analysis complete, but ECS update failed: {}", e);
+                        }
+                    }
+                }
+            }
+        }
         
         Ok(EntityUpdateOutput {
             entity_identifier: entity_identifier.to_string(),
             update_plan: ai_plan.clone(),
             user_request: update_request.to_string(),
-            updated: false, // Placeholder - would be true after actual ECS update
-            update_summary: format!("AI-planned entity update: {}", interpretation),
+            updated,
+            update_summary,
         })
+    }
+    
+    /// Update the parent link for an entity in ECS by adding/updating a ParentLink component
+    async fn update_parent_link_in_ecs(
+        &self,
+        user_id: Uuid,
+        entity_identifier: &str,
+        parent_id: Uuid,
+    ) -> Result<(), ToolError> {
+        // Create entity manager
+        let entity_manager = EcsEntityManager::new(
+            Arc::new(self.app_state.pool.clone()),
+            self.app_state.redis_client.clone(),
+            Default::default()
+        );
+        
+        // Try to parse entity_identifier as UUID first, otherwise find by name
+        let entity_id = if let Ok(id) = Uuid::parse_str(entity_identifier) {
+            id
+        } else {
+            // Find entity by name using query_entities
+            let find_criteria = vec![ComponentQuery::ComponentDataEquals(
+                "Identity".to_string(),
+                "name".to_string(),
+                serde_json::json!(entity_identifier),
+            )];
+            
+            let results = entity_manager.query_entities(user_id, find_criteria, None, None).await
+                .map_err(|e| ToolError::AppError(e))?;
+                
+            if results.is_empty() {
+                return Err(ToolError::ExecutionFailed(format!("Entity '{}' not found", entity_identifier)));
+            }
+            
+            results[0].entity.id
+        };
+        
+        // Create ParentLink component data
+        let parent_link_data = serde_json::json!({
+            "parent_id": parent_id.to_string()
+        });
+        
+        // Update the entity with ParentLink component using update_components
+        let component_updates = vec![ComponentUpdate {
+            entity_id,
+            component_type: "ParentLink".to_string(),
+            component_data: parent_link_data,
+            operation: ComponentOperation::Add,
+        }];
+        
+        entity_manager.update_components(user_id, entity_id, component_updates).await
+            .map_err(|e| ToolError::AppError(e))?;
+        
+        info!("Successfully updated ParentLink component for entity {} -> parent {}", entity_id, parent_id);
+        Ok(())
     }
 }
 
@@ -1973,8 +2187,32 @@ fn get_entity_update_analysis_schema() -> JsonValue {
                     "type": "object",
                     "properties": {
                         "component_type": {"type": "string"},
-                        "current_state": {"type": "object"},
-                        "proposed_changes": {"type": "object"},
+                        "current_state": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "object", 
+                                    "description": "Current component data",
+                                    "properties": {
+                                        "value": {"type": "string", "description": "String representation of component data"}
+                                    }
+                                },
+                                "exists": {"type": "boolean", "description": "Whether component currently exists"}
+                            }
+                        },
+                        "proposed_changes": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "object", 
+                                    "description": "New or updated component data",
+                                    "properties": {
+                                        "value": {"type": "string", "description": "String representation of component data"}
+                                    }
+                                },
+                                "operation": {"type": "string", "enum": ["create", "update", "delete"], "description": "Type of change"}
+                            }
+                        },
                         "reasoning": {"type": "string"}
                     },
                     "required": ["component_type", "proposed_changes", "reasoning"]

@@ -72,6 +72,7 @@ async fn test_orchestrator_access_control() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     let processed = orchestrator.process_single_task().await.unwrap();
@@ -134,6 +135,7 @@ async fn test_orchestrator_encryption_integrity() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     orchestrator.process_single_task().await.unwrap();
@@ -197,6 +199,7 @@ async fn test_orchestrator_injection_prevention() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     // Should process without executing injections
@@ -265,6 +268,7 @@ async fn test_orchestrator_phase_isolation() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     // Should still execute all phases in order
@@ -319,6 +323,7 @@ async fn test_orchestrator_configuration_validation() {
             test_app.app_state.encryption_service.clone(),
             test_app.app_state.auth_backend.clone(),
             test_app.app_state.ai_client.clone(),
+            test_app.app_state.config.clone(),
         );
         let result = orchestrator.validate_config();
         
@@ -342,6 +347,7 @@ async fn test_orchestrator_dependency_security() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     // Verify orchestrator checks tool versions
@@ -437,6 +443,7 @@ async fn test_orchestrator_state_integrity() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     // Process and verify state integrity maintained
@@ -496,6 +503,7 @@ async fn test_orchestrator_security_logging() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     // Process - security events should be logged
@@ -558,6 +566,7 @@ async fn test_orchestrator_ssrf_prevention() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     // Should process without making internal requests
@@ -618,6 +627,7 @@ async fn test_orchestrator_rate_limiting() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     // Should respect batch limits
@@ -690,6 +700,7 @@ async fn test_orchestrator_malformed_data_handling() {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        test_app.app_state.config.clone(),
     );
     
     // Should handle malformed data gracefully

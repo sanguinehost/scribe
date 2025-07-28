@@ -6,6 +6,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 use chrono::Utc;
 
+use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::{
     models::chronicle::CreateChronicleRequest,
     services::{
@@ -288,12 +289,18 @@ async fn create_minimal_app_services(test_app: &TestApp) -> AppStateServices {
                 "gemini-2.5-flash".to_string(),
                 "gemini-2.5-flash-lite-preview-06-17".to_string(),
                 "gemini-2.5-flash".to_string(),
+                Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+                    Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+                )),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+        )),
     }
 }
 
@@ -353,7 +360,7 @@ async fn test_entity_extraction_from_empty_actors() {
     });
 
     println!("\n=== Creating Chronicle Event with Empty Actors ===");
-    let result = chronicle_tool.execute(&tool_params).await;
+    let result = chronicle_tool.execute(&tool_params, &SessionDek::new(vec![0u8; 32])).await;
     
     match result {
         Ok(event_result) => {
@@ -440,7 +447,7 @@ async fn test_chronicle_event_actors_population() {
     });
 
     println!("\n=== Creating Chronicle Event with Pre-Populated Actors ===");
-    let result = chronicle_tool.execute(&tool_params).await;
+    let result = chronicle_tool.execute(&tool_params, &SessionDek::new(vec![0u8; 32])).await;
     
     match result {
         Ok(event_result) => {

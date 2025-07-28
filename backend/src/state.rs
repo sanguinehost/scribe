@@ -35,6 +35,7 @@ use crate::services::{
     agentic::tactical_agent::TacticalAgent,
     agentic::strategic_agent::StrategicAgent,
     agentic::hierarchical_pipeline::HierarchicalAgentPipeline,
+    agentic::shared_context::SharedAgentContext,
 };
 use crate::config::NarrativeFeatureFlags;
 use std::fmt;
@@ -75,6 +76,7 @@ pub struct AppStateServices {
     pub tactical_agent: Option<Arc<TacticalAgent>>,
     pub strategic_agent: Option<Arc<StrategicAgent>>,
     pub hierarchical_pipeline: Option<Arc<HierarchicalAgentPipeline>>,
+    pub shared_agent_context: Arc<SharedAgentContext>,
 }
 
 // --- Shared application state ---
@@ -122,6 +124,7 @@ pub struct AppState {
     pub tactical_agent: Option<Arc<TacticalAgent>>,
     pub strategic_agent: Option<Arc<StrategicAgent>>,
     pub hierarchical_pipeline: Option<Arc<HierarchicalAgentPipeline>>,
+    pub shared_agent_context: Arc<SharedAgentContext>,
 }
 
 // Manual Debug implementation for AppState
@@ -161,6 +164,7 @@ impl fmt::Debug for AppState {
             .field("tactical_agent", &"<Option<Arc<TacticalAgent>>>") // Tactical layer agent
             .field("strategic_agent", &"<Option<Arc<StrategicAgent>>>") // Strategic layer agent
             .field("hierarchical_pipeline", &"<Option<Arc<HierarchicalAgentPipeline>>>") // Hierarchical agent pipeline
+            .field("shared_agent_context", &"<Arc<SharedAgentContext>>") // Inter-agent shared context
             .finish()
     }
 }
@@ -204,6 +208,7 @@ impl AppState {
             tactical_agent: services.tactical_agent,
             strategic_agent: services.strategic_agent,
             hierarchical_pipeline: None, // Will be set after agents are configured
+            shared_agent_context: services.shared_agent_context,
         }
     }
 

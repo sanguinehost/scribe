@@ -243,17 +243,30 @@ impl IntelligentWorldStatePlanner {
             // Check if entity exists
             let find_params = json!({
                 "user_id": user_id.to_string(),
-                "criteria": {
-                    "type": "ByName",
-                    "name": entity.name
-                },
-                "limit": 1
+                "search_request": format!("find entity named '{}'", entity.name),
+                "context": "Checking if entity exists before planning creation",
+                "limit": 10
             });
             
             match get_tool("find_entity")?.execute(&find_params, session_dek).await {
                 Ok(result) => {
                     if let Some(entities_array) = result.get("entities").and_then(|e| e.as_array()) {
-                        if let Some(existing) = entities_array.first() {
+                        // Check if any existing entity matches both name and type
+                        let matching_entity = entities_array.iter().find(|existing| {
+                            let name_matches = existing.get("entity_name")
+                                .and_then(|n| n.as_str())
+                                .map(|n| n.eq_ignore_ascii_case(&entity.name))
+                                .unwrap_or(false);
+                            
+                            let type_matches = existing.get("entity_type")
+                                .and_then(|t| t.as_str())
+                                .map(|t| t == entity.entity_type)
+                                .unwrap_or(false);
+                            
+                            name_matches && type_matches
+                        });
+                        
+                        if let Some(existing) = matching_entity {
                             // Entity exists - check if we need to update it
                             let needs_update = self.check_if_entity_needs_update(
                                 existing,
@@ -265,8 +278,8 @@ impl IntelligentWorldStatePlanner {
                                     decision_type: "entity_update".to_string(),
                                     entity: entity.name.clone(),
                                     reasoning: format!(
-                                        "Entity '{}' exists but has new properties mentioned in narrative",
-                                        entity.name
+                                        "Entity '{}' of type '{}' exists but has new properties mentioned in narrative",
+                                        entity.name, entity.entity_type
                                     ),
                                     action_taken: "update_entity".to_string(),
                                     dependencies: vec![],
@@ -287,8 +300,8 @@ impl IntelligentWorldStatePlanner {
                                     decision_type: "entity_exists".to_string(),
                                     entity: entity.name.clone(),
                                     reasoning: format!(
-                                        "Entity '{}' already exists with required properties",
-                                        entity.name
+                                        "Entity '{}' of type '{}' already exists with required properties",
+                                        entity.name, entity.entity_type
                                     ),
                                     action_taken: "none".to_string(),
                                     dependencies: vec![],
@@ -377,11 +390,9 @@ impl IntelligentWorldStatePlanner {
         for location in location_checks {
             let find_params = json!({
                 "user_id": user_id.to_string(),
-                "criteria": {
-                    "type": "ByName",
-                    "name": location
-                },
-                "limit": 1
+                "search_request": format!("find entity named '{}'", location),
+                "context": "Checking if location exists for movement planning",
+                "limit": 10
             });
             
             match get_tool("find_entity")?.execute(&find_params, session_dek).await {

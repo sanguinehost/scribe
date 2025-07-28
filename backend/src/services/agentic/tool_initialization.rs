@@ -25,6 +25,8 @@ use crate::services::agentic::tools::{
     narrative_tool_wrappers::register_narrative_tools,
 };
 
+use crate::services::agentic::entity_resolution_tool::register_entity_resolution_tool;
+
 /// Initialize and register all tools with the unified tool registry
 ///
 /// This function should be called once during application startup after
@@ -33,9 +35,20 @@ use crate::services::agentic::tools::{
 pub fn initialize_all_tools(app_state: Arc<AppState>) -> Result<(), AppError> {
     info!("Initializing unified tool registry with all tools");
     
+    // For tests, clear the registry first to ensure clean state
+    #[cfg(test)]
+    {
+        use crate::services::agentic::unified_tool_registry::UnifiedToolRegistry;
+        UnifiedToolRegistry::clear()?;
+    }
+    
     // Register AI-driven entity CRUD tools (5 tools)
     register_entity_crud_tools(app_state.clone())?;
     info!("Registered entity CRUD tools");
+    
+    // Register AI-driven entity resolution tool (1 tool)
+    register_entity_resolution_tool(app_state.clone())?;
+    info!("Registered entity resolution tool");
     
     // Register AI-driven spatial interaction tools (2 tools)
     register_spatial_interaction_tools(app_state.clone())?;

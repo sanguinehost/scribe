@@ -1628,6 +1628,7 @@ impl TestAppStateBuilder {
                     self.config.query_planning_model.clone(),
                     self.config.optimization_model.clone(),
                     self.config.fast_model.clone(), // Context engine model
+                    Arc::new(crate::services::agentic::shared_context::SharedAgentContext::new(redis_client.clone())),
                 ))
             },
             agentic_state_update_service: {
@@ -1648,6 +1649,9 @@ impl TestAppStateBuilder {
             tactical_agent: None, // Will be set after AppState is built
             strategic_agent: None, // Will be set after AppState is built
             hierarchical_pipeline: None, // Will be set after AppState is built
+            shared_agent_context: Arc::new(crate::services::agentic::shared_context::SharedAgentContext::new(
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+            )),
             // narrative_intelligence_service will be added after AppState is built
         };
 

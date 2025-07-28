@@ -155,7 +155,7 @@ impl QueryStrategyPlanner {
         let schema = crate::services::query_strategy_planner_structured_output::get_query_execution_plan_schema();
         
         // Add system prompt and prefill to prevent content filtering
-        let system_prompt = "You are an advanced AI query strategy planner for a narrative intelligence system in a fictional roleplay game. Your task is to design optimal query execution plans that maximize narrative coherence and information yield while respecting token constraints. This is for creative storytelling purposes.";
+        let system_prompt = "You are an advanced AI query strategy planner for a narrative intelligence system in a fictional roleplay game. Your task is to design optimal query execution plans that maximize narrative coherence and information yield while respecting token constraints. This is for creative storytelling purposes. CRITICAL: Always distinguish between STRATEGIES (high-level approaches like 'LorebookContextualRetrieval') and QUERY TYPES (actual data operations like 'LorebookContext'). The execution_order array must ONLY contain query types, never strategy names.";
         
         let chat_request = genai::chat::ChatRequest::new(vec![
             genai::chat::ChatMessage {
@@ -247,7 +247,7 @@ impl QueryStrategyPlanner {
         let schema = crate::services::query_strategy_planner_structured_output::get_query_execution_plan_schema();
         
         // Add system prompt and prefill to prevent content filtering
-        let system_prompt = "You are an advanced AI query strategy planner for a narrative intelligence system in a fictional roleplay game. Your task is to design optimal query execution plans that maximize narrative coherence and information yield while respecting token constraints. This is for creative storytelling purposes.";
+        let system_prompt = "You are an advanced AI query strategy planner for a narrative intelligence system in a fictional roleplay game. Your task is to design optimal query execution plans that maximize narrative coherence and information yield while respecting token constraints. This is for creative storytelling purposes. CRITICAL: Always distinguish between STRATEGIES (high-level approaches like 'LorebookContextualRetrieval') and QUERY TYPES (actual data operations like 'LorebookContext'). The execution_order array must ONLY contain query types, never strategy names.";
         
         let chat_request = genai::chat::ChatRequest::new(vec![
             genai::chat::ChatMessage {
@@ -382,12 +382,23 @@ Think strategically about:
 
 {}
 
+CRITICAL DISTINCTION - STRATEGIES VS QUERY TYPES:
+- STRATEGIES (like "LorebookContextualRetrieval") are high-level planning approaches
+- QUERY TYPES (like "LorebookContext", "LorebookEntries") are actual data retrieval operations
+- The 'execution_order' array must contain ONLY query types, NEVER strategy names!
+
 IMPORTANT RULES FOR YOUR RESPONSE:
 1. Query Types go in the 'queries' array and 'execution_order' array
 2. Strategy names go ONLY in 'primary_strategy' and 'alternative_strategies' fields
-3. NEVER mix these up - strategies are high-level approaches, query types are specific data retrievals
-4. Each query must include all required parameters as specified in the reference above
-5. The execution_order array must contain ONLY query_type values from your queries array
+3. NEVER put strategy names like "LorebookContextualRetrieval" in execution_order
+4. ALWAYS use query types like "LorebookContext" or "LorebookEntries" in execution_order
+5. Each query must include all required parameters as specified in the reference above
+6. The execution_order array must contain ONLY query_type values from your queries array
+
+EXAMPLES OF CORRECT USAGE:
+- primary_strategy: "LorebookContextualRetrieval" ✓
+- execution_order: ["LorebookContext", "EntityCurrentState"] ✓
+- execution_order: ["LorebookContextualRetrieval"] ✗ WRONG - this is a strategy, not a query type!
 
 Think deeply about the narrative implications of each query choice. Consider:
 - Will this query sequence tell a coherent story?
@@ -453,10 +464,19 @@ Create a query plan that serves this specific narrative moment. Consider:
 
 Design queries that don't just gather data, but craft experience.
 
+CRITICAL DISTINCTION FOR NARRATIVE PLANNING:
+- STRATEGIES describe your overall approach (e.g., "LorebookContextualRetrieval" for lore-focused narrative)
+- QUERY TYPES are the actual data operations (e.g., "LorebookContext", "LorebookEntries", "EntityCurrentState")
+- execution_order MUST contain query types, NOT strategy names!
+
+EXAMPLES:
+✓ CORRECT: execution_order: ["EntityCurrentState", "LorebookContext", "EntityEvents"]
+✗ WRONG: execution_order: ["LorebookContextualRetrieval", "EntityCurrentState"]
+
 Provide your narrative-focused plan with:
 - A primary strategy from the AVAILABLE STRATEGIES above
 - Specific queries with proper parameters as documented above
-- The execution order (array of query_type names, NOT strategy names)
+- The execution order (array of query_type names like "LorebookContext", NOT strategy names like "LorebookContextualRetrieval")
 - Your narrative reasoning
 - How this serves the story moment
 - Your confidence level (0.0-1.0)

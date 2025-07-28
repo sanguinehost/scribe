@@ -6,10 +6,16 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument};
+use genai::chat::{SafetySetting, HarmCategory, HarmBlockThreshold};
 
 use crate::{
     state::AppState,
     services::agentic::entity_resolution_tool::{NarrativeContext, ResolvedEntity},
+};
+
+use super::structured_output::{
+    get_component_suggestion_schema_gemini,
+    get_semantic_match_schema_gemini,
 };
 
 /// AI-powered component suggestion that replaces hardcoded entity type matching
@@ -73,13 +79,6 @@ Your task:
 5. An entity with relationships mentioned needs Relationships component
 6. Consider scale - cosmic entities might need different components than intimate ones
 
-RESPONSE FORMAT (JSON):
-{{
-    "suggested_components": ["Name", "Component2", "Component3"],
-    "reasoning": "Explanation of why these components fit the narrative context",
-    "contextual_insights": "What the narrative reveals about this entity"
-}}
-
 Be intelligent and context-aware. A "CHARACTER" type isn't just Health+Position - 
 it's whatever the narrative suggests they need."#,
             entity.name,
@@ -106,11 +105,31 @@ it's whatever the narrative suggests they need."#,
 
         let prompt = self.build_component_suggestion_prompt(entity, context);
 
-        // Use Flash-Lite for intelligent component analysis
+        // Use Flash-Lite for intelligent component analysis with structured output
         let chat_request = genai::chat::ChatRequest::from_user(prompt);
-        let chat_options = genai::chat::ChatOptions::default()
-            .with_max_tokens(500)
-            .with_temperature(0.3); // Low-medium temperature for creative but consistent suggestions
+        
+        // Configure safety settings
+        let safety_settings = vec![
+            SafetySetting {
+                category: HarmCategory::HateSpeech,
+                threshold: HarmBlockThreshold::BlockMediumAndAbove,
+            },
+            SafetySetting {
+                category: HarmCategory::DangerousContent,
+                threshold: HarmBlockThreshold::BlockMediumAndAbove,
+            },
+        ];
+        
+        let schema = get_component_suggestion_schema_gemini();
+        let chat_options = genai::chat::ChatOptions {
+            max_tokens: Some(800),
+            temperature: Some(0.3), // Low-medium temperature for creative but consistent suggestions
+            response_format: Some(genai::chat::ChatResponseFormat::JsonSchemaSpec(
+                genai::chat::JsonSchemaSpec { schema }
+            )),
+            safety_settings: Some(safety_settings),
+            ..Default::default()
+        };
 
         let response = self.app_state.ai_client
             .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
@@ -129,9 +148,9 @@ it's whatever the narrative suggests they need."#,
             })
             .ok_or("No text response from AI")?;
 
-        // Parse AI response
+        // Parse AI response using structured output
         let suggestion_result: ComponentSuggestionResult = serde_json::from_str(&response_text)
-            .map_err(|e| format!("Failed to parse AI response: {}", e))?;
+            .map_err(|e| format!("Failed to parse structured AI response: {}", e))?;
 
         info!(
             "AI suggested {} components for {}: {}",
@@ -205,15 +224,6 @@ IMPORTANT:
 - Be conservative - only match if reasonably confident
 - If multiple candidates could match, pick the most contextually relevant
 
-RESPONSE FORMAT (JSON):
-{{
-    "match_found": true/false,
-    "matched_index": null or 0-based index of matched entity,
-    "matched_name": "Name of matched entity" or null,
-    "confidence": 0.0-1.0,
-    "reasoning": "Explanation of the match or why no match was found"
-}}
-
 Analyze carefully and match semantically, not just syntactically."#,
             mention_name,
             mention_context,
@@ -245,11 +255,31 @@ Analyze carefully and match semantically, not just syntactically."#,
             &candidate_contexts,
         );
 
-        // Use Flash for intelligent semantic matching
+        // Use Flash for intelligent semantic matching with structured output
         let chat_request = genai::chat::ChatRequest::from_user(prompt);
-        let chat_options = genai::chat::ChatOptions::default()
-            .with_max_tokens(400)
-            .with_temperature(0.1); // Very low temperature for consistent matching
+        
+        // Configure safety settings
+        let safety_settings = vec![
+            SafetySetting {
+                category: HarmCategory::HateSpeech,
+                threshold: HarmBlockThreshold::BlockMediumAndAbove,
+            },
+            SafetySetting {
+                category: HarmCategory::DangerousContent,
+                threshold: HarmBlockThreshold::BlockMediumAndAbove,
+            },
+        ];
+        
+        let schema = get_semantic_match_schema_gemini();
+        let chat_options = genai::chat::ChatOptions {
+            max_tokens: Some(600),
+            temperature: Some(0.1), // Very low temperature for consistent matching
+            response_format: Some(genai::chat::ChatResponseFormat::JsonSchemaSpec(
+                genai::chat::JsonSchemaSpec { schema }
+            )),
+            safety_settings: Some(safety_settings),
+            ..Default::default()
+        };
 
         let response = self.app_state.ai_client
             .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
@@ -268,9 +298,9 @@ Analyze carefully and match semantically, not just syntactically."#,
             })
             .ok_or("No text response from AI")?;
 
-        // Parse AI response
+        // Parse AI response using structured output
         let match_result: SemanticMatchResult = serde_json::from_str(&response_text)
-            .map_err(|e| format!("Failed to parse AI response: {}", e))?;
+            .map_err(|e| format!("Failed to parse structured AI response: {}", e))?;
 
         if match_result.match_found {
             if let Some(index) = match_result.matched_index {

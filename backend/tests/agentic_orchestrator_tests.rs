@@ -4,6 +4,7 @@ use scribe_backend::test_helpers::MockAiClient;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use scribe_backend::auth::session_dek::SessionDek;
 #[tokio::test]
 async fn test_orchestrator_complete_pipeline() {
     // Set up mock responses for each phase
@@ -78,6 +79,8 @@ async fn test_orchestrator_complete_pipeline() {
         token_budget: 4000,
         quality_mode: QualityMode::Balanced,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -155,6 +158,8 @@ async fn test_orchestrator_fast_quality_mode() {
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -253,6 +258,8 @@ async fn test_orchestrator_thorough_quality_mode() {
         token_budget: 6000,
         quality_mode: QualityMode::Thorough,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -356,6 +363,8 @@ async fn test_orchestrator_spatial_analysis() {
         token_budget: 3000,
         quality_mode: QualityMode::Balanced,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -436,6 +445,8 @@ async fn test_orchestrator_token_budget_management() {
         token_budget: 1500, // Tight budget
         quality_mode: QualityMode::Balanced,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -525,6 +536,8 @@ async fn test_orchestrator_error_handling() {
         token_budget: 4000,
         quality_mode: QualityMode::Balanced,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let result = orchestrator.process_query(request).await;
@@ -601,6 +614,8 @@ async fn test_orchestrator_access_control_user_isolation() {
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -684,6 +699,8 @@ async fn test_orchestrator_sensitive_data_exposure() {
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -758,6 +775,8 @@ async fn test_orchestrator_injection_prevention() {
             token_budget: 2000,
             quality_mode: QualityMode::Fast,
             user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
         };
 
         let response = orchestrator.process_query(request).await.unwrap();
@@ -833,6 +852,8 @@ async fn test_orchestrator_token_budget_limits() {
         token_budget: 100, // Very low budget
         quality_mode: QualityMode::Fast,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -908,6 +929,8 @@ async fn test_orchestrator_configuration_validation() {
         token_budget: u32::MAX, // Extreme value
         quality_mode: QualityMode::Fast,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -971,6 +994,8 @@ async fn test_orchestrator_user_validation() {
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -1045,6 +1070,8 @@ async fn test_orchestrator_audit_logging() {
         token_budget: 2000,
         quality_mode: QualityMode::Fast,
         user_dek: None,
+        session_dek: SessionDek::new(vec![0u8; 32]),
+        session_id: Uuid::new_v4(),
     };
 
     let response = orchestrator.process_query(request).await.unwrap();
@@ -1083,4 +1110,5 @@ async fn create_test_orchestrator(ai_client: Arc<MockAiClient>) -> AgenticOrches
         "gemini-2.5-flash-lite-preview-06-17".to_string(),
         "gemini-2.5-flash".to_string(),
     )
+        Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()))),
 }

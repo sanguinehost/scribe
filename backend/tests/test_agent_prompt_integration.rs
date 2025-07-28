@@ -3,7 +3,7 @@
 use scribe_backend::{
     services::{
         agentic::{
-            tool_registry::{ToolRegistry, AgentType},
+            unified_tool_registry::{UnifiedToolRegistry, AgentType},
         },
     },
     test_helpers::spawn_app,
@@ -15,9 +15,9 @@ async fn test_tool_references_match_agent_access() {
     let _test_app = spawn_app(false, false, false).await;
     
     // Get tool references for each agent type
-    let strategic_ref = ToolRegistry::generate_agent_tool_reference(AgentType::Strategic);
-    let perception_ref = ToolRegistry::generate_agent_tool_reference(AgentType::Perception);
-    let tactical_ref = ToolRegistry::generate_agent_tool_reference(AgentType::Tactical);
+    let strategic_ref = UnifiedToolRegistry::generate_agent_tool_reference(AgentType::Strategic);
+    let perception_ref = UnifiedToolRegistry::generate_agent_tool_reference(AgentType::Perception);
+    let tactical_ref = UnifiedToolRegistry::generate_agent_tool_reference(AgentType::Tactical);
     
     info!("Strategic agent tool reference preview: {}", &strategic_ref[..500.min(strategic_ref.len())]);
     

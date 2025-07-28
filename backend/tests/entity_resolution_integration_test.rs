@@ -24,6 +24,10 @@ async fn test_entity_resolution_tool_basic_functionality() {
     _guard.add_user(user.id);
     let user_id = user.id;
     
+    // Create shared context
+    let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
+    let shared_context = Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(redis_client.clone()));
+    
     // Create minimal app state services for the tool
     let services = scribe_backend::state::AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -54,13 +58,12 @@ async fn test_entity_resolution_tool_basic_functionality() {
         auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
         file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
         email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
-        redis_client: Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap()),
+        redis_client: redis_client.clone(),
         feature_flags: Arc::new(scribe_backend::config::NarrativeFeatureFlags::default()),
         ecs_entity_manager: {
-            let redis_client = Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap());
             Arc::new(scribe_backend::services::EcsEntityManager::new(
                 Arc::new(test_app.db_pool.clone()),
-                redis_client,
+                redis_client.clone(),
                 None,
             ))
         },
@@ -272,12 +275,14 @@ async fn test_entity_resolution_tool_basic_functionality() {
                 "gemini-2.5-pro".to_string(),
                 "gemini-2.5-pro".to_string(),
                 "gemini-2.5-pro".to_string(),
+                shared_context.clone(),
             ))
         },
         hierarchical_context_assembler: None,
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: shared_context.clone(),
     };
     
     let app_state = Arc::new(scribe_backend::state::AppState::new(

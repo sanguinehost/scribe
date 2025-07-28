@@ -499,10 +499,12 @@ pub async fn generate_chat_response(
             user_query: current_user_content.clone(),
             conversation_context,
             user_id: user_id_value,
+            session_id,
             chronicle_id: player_chronicle_id,
             token_budget: query_budget, // Use the query portion of the budget
             quality_mode,
             user_dek: None, // TODO: Extract from user session if available
+            session_dek: Some(SessionDek::new(session_dek_arc.expose_secret().clone())),
         };
         
         match state_arc.agentic_orchestrator.process_query(agentic_request).await {
@@ -3220,10 +3222,12 @@ pub async fn generate_agentic_chat_response(
         user_query: payload.user_query,
         conversation_context: payload.conversation_context,
         user_id,
+        session_id,
         chronicle_id: payload.chronicle_id,
         token_budget: payload.token_budget,
         quality_mode: payload.quality_mode,
-        user_dek: Some(Arc::new(session_dek.0)),
+        user_dek: Some(Arc::new(secrecy::SecretBox::new(Box::new(session_dek.0.expose_secret().clone())))),
+        session_dek: Some(session_dek.clone()),
     };
 
     // Process through the agentic orchestrator

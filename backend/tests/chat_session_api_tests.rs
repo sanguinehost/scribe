@@ -1663,6 +1663,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
                 "gemini-2.5-flash".to_string(),
                 "gemini-2.5-flash-lite-preview-06-17".to_string(),
                 "gemini-2.5-flash".to_string(),
+                test_app.app_state.shared_agent_context.clone(),
             ))
         },
         agentic_state_update_service: {
@@ -1681,6 +1682,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: test_app.app_state.shared_agent_context.clone(),
     };
 
     let app_state_arc = Arc::new(AppState::new(

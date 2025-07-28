@@ -38,6 +38,7 @@ async fn test_a01_tactical_agent_user_isolation() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     // Create test user DEKs with different encryption keys to test isolation
@@ -104,6 +105,7 @@ async fn test_a01_cross_user_entity_access_prevention() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -156,6 +158,7 @@ async fn test_a02_session_dek_required_for_operations() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let directive = create_test_strategic_directive("Test encryption");
@@ -199,6 +202,7 @@ async fn test_a02_no_sensitive_data_in_logs() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -243,6 +247,7 @@ async fn test_a03_directive_injection_prevention() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -293,6 +298,7 @@ async fn test_a03_json_injection_prevention() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -345,6 +351,7 @@ async fn test_a04_directive_complexity_limits() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -394,6 +401,7 @@ async fn test_a04_resource_consumption_limits() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -440,6 +448,7 @@ async fn test_a05_error_information_disclosure() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -494,6 +503,7 @@ async fn test_a07_user_id_validation() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let directive = create_test_strategic_directive("Test authentication");
@@ -556,6 +566,7 @@ async fn test_a08_enriched_context_validation() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -613,6 +624,7 @@ async fn test_a09_directive_processing_includes_metadata() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);
@@ -663,6 +675,7 @@ async fn test_a10_no_external_requests_from_directive() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let user_dek = SessionDek::new(vec![0u8; 32]);

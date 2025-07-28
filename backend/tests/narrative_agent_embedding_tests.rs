@@ -80,8 +80,11 @@ async fn test_narrative_agent_chronicle_events_are_embedded() {
         }
     });
 
+    // Create a session DEK for the tool execution
+    let session_dek = scribe_backend::auth::session_dek::SessionDek::generate_new();
+    
     // Execute the tool (this should create AND embed the event)
-    let tool_result = create_tool.execute(&tool_params).await;
+    let tool_result = create_tool.execute(&tool_params, &session_dek).await;
 
     assert!(tool_result.is_ok(), "Tool execution should succeed: {:?}", tool_result.err());
     let result = tool_result.unwrap();

@@ -201,6 +201,29 @@ pub fn get_query_execution_plan_schema() -> serde_json::Value {
 /// Convert structured output to internal QueryExecutionPlan type
 impl QueryExecutionPlanOutput {
     pub fn to_query_execution_plan(&self) -> Result<QueryExecutionPlan, AppError> {
+        // First validate that query types are not strategy names
+        let strategy_names = vec![
+            "SpatialContextMapping", "TemporalContextReconstruction", "CausalChainAnalysis",
+            "EntityFocusedRetrieval", "NarrativeContextAssembly", "HistoricalContextRetrieval",
+            "ContextualRelevanceOptimization", "ChronologicalReassembly", "LorebookContextualRetrieval",
+            "LorebookConceptualMapping", "LorebookCulturalContext", "CausalChainTraversal",
+            "RelationshipNetworkTraversal", "TemporalStateReconstruction", "CausalProjection",
+            "StateSnapshot", "ComparativeAnalysis", "ChronicleNarrativeMapping",
+            "ChronicleThematicAnalysis", "ChronicleTimelineReconstruction",
+            "AdaptiveNarrativeStrategy", "EmergentPatternDiscovery"
+        ];
+        
+        for query in &self.queries {
+            if strategy_names.contains(&query.query_type.as_str()) {
+                return Err(AppError::InvalidInput(
+                    format!(
+                        "Query type '{}' is actually a strategy name. Use specific query types like 'LorebookEntries', 'LorebookContext', or 'EntityCurrentState' instead",
+                        query.query_type
+                    )
+                ));
+            }
+        }
+        
         // Convert primary strategy
         let primary_strategy = match self.primary_strategy.as_str() {
             "CausalChainTraversal" => QueryStrategy::CausalChainTraversal,
@@ -404,7 +427,21 @@ impl QueryExecutionPlanOutput {
         
         // Validate execution order matches query types
         let query_types: Vec<&str> = self.queries.iter().map(|q| q.query_type.as_str()).collect();
+        let strategy_names = vec![
+            "SpatialContextMapping", "TemporalContextReconstruction", "CausalChainAnalysis",
+            "EntityFocusedRetrieval", "NarrativeContextAssembly", "HistoricalContextRetrieval",
+            "ContextualRelevanceOptimization", "ChronologicalReassembly", "LorebookContextualRetrieval",
+            "LorebookConceptualMapping", "LorebookCulturalContext"
+        ];
+        
         for order_item in &self.execution_order {
+            // Check if it's a strategy name instead of a query type
+            if strategy_names.contains(&order_item.as_str()) {
+                return Err(AppError::InvalidInput(
+                    format!("Execution order contains strategy name '{}' instead of query type. Use query types like 'LorebookEntries' or 'EntityCurrentState'", order_item)
+                ));
+            }
+            
             if !query_types.contains(&order_item.as_str()) {
                 return Err(AppError::InvalidInput(
                     format!("Execution order contains invalid query type: {}", order_item)

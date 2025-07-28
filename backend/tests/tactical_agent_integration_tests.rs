@@ -77,6 +77,7 @@ async fn test_tactical_agent_chat_service_integration() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     ));
 
     // Simulate user input that should trigger TacticalAgent
@@ -268,6 +269,7 @@ async fn test_enriched_context_prompt_formatting() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     ));
 
     // Create a directive with specific content we can verify
@@ -406,6 +408,7 @@ async fn test_tactical_agent_failure_fallback() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     ));
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -463,6 +466,7 @@ async fn test_tactical_agent_end_to_end_chat_generation() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     ));
 
     // Verify the agent can be created and is ready for integration

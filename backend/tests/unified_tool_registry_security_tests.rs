@@ -4,6 +4,7 @@
 //! are in place for the tool registry system.
 
 use scribe_backend::{
+    auth::session_dek::SessionDek,
     services::agentic::{
         tools::{ScribeTool, ToolError, ToolParams, ToolResult},
         unified_tool_registry::{
@@ -47,7 +48,7 @@ impl ScribeTool for SecurityTestTool {
         })
     }
     
-    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         // Simulate processing sensitive data
         let input = params.get("input")
             .and_then(|v| v.as_str())

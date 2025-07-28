@@ -2,6 +2,8 @@ use std::sync::Arc;
 use tracing::{info, instrument, debug, warn};
 use uuid::Uuid;
 use genai::chat::ChatRequest;
+use serde_json;
+use chrono::Utc;
 
 use crate::{
     errors::AppError,
@@ -12,6 +14,7 @@ use crate::{
         },
         agentic::{
             strategic_structured_output::{StrategicDirectiveOutput, get_strategic_directive_schema},
+            shared_context::{SharedAgentContext, ContextType, AgentType, ContextEntry},
         },
     },
     llm::AiClient,
@@ -43,6 +46,7 @@ pub struct StrategicAgent {
     _ecs_entity_manager: Arc<EcsEntityManager>, // TODO: Use for strategic world state analysis
     redis_client: Arc<redis::Client>,
     model: String,
+    shared_context: Arc<SharedAgentContext>,
 }
 
 impl StrategicAgent {
@@ -52,12 +56,14 @@ impl StrategicAgent {
         ecs_entity_manager: Arc<EcsEntityManager>,
         redis_client: Arc<redis::Client>,
         model: String,
+        shared_context: Arc<SharedAgentContext>,
     ) -> Self {
         Self {
             ai_client,
             _ecs_entity_manager: ecs_entity_manager,
             redis_client,
             model,
+            shared_context,
         }
     }
     
@@ -176,6 +182,52 @@ impl StrategicAgent {
         }
 
         let total_time = start_time.elapsed();
+
+        // Step 5: Store strategic insights in shared context
+        let strategic_data = serde_json::json!({
+            "directive_id": directive.directive_id,
+            "directive_type": directive.directive_type,
+            "narrative_arc": directive.narrative_arc,
+            "emotional_tone": directive.emotional_tone,
+            "plot_significance": directive.plot_significance,
+            "world_impact_level": directive.world_impact_level,
+            "character_focus": directive.character_focus,
+            "created_at": Utc::now().to_rfc3339()
+        });
+
+        let metadata = Some(std::collections::HashMap::from([
+            ("description".to_string(), serde_json::Value::String(format!("Generated strategic directive: {}", directive.directive_type))),
+        ]));
+
+        if let Err(e) = self.shared_context.store_strategic_insight(
+            user_id,
+            session_id,
+            format!("directive_{}", directive.directive_id),
+            strategic_data,
+            metadata,
+            session_dek,
+        ).await {
+            warn!("Failed to store strategic insights in shared context: {}", e);
+        }
+
+        // Step 6: Store performance metrics in shared context
+        let metrics_data = serde_json::json!({
+            "analysis_time_ms": total_time.as_millis(),
+            "conversation_messages": chat_history.len(),
+            "previous_directives_count": recent_directives.len(),
+            "directive_generated": true,
+            "directive_id": directive.directive_id
+        });
+
+        if let Err(e) = self.shared_context.store_performance_metrics(
+            user_id,
+            session_id,
+            AgentType::Strategic,
+            metrics_data,
+            session_dek,
+        ).await {
+            warn!("Failed to store performance metrics in shared context: {}", e);
+        }
         
         // Log detailed summary of the generated directive
         let directive_summary = self.format_directive_summary(&directive);

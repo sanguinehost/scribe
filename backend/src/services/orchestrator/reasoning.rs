@@ -75,7 +75,7 @@ impl ReasoningEngine {
 
         let options = ChatOptions {
             temperature: Some(0.7),
-            max_tokens: Some(8000),
+            max_tokens: Some(16000), // Increased from 8000 to prevent truncation
             response_format: Some(response_format),
             safety_settings: Some(safety_settings),
             ..Default::default()
@@ -92,13 +92,83 @@ impl ReasoningEngine {
             .to_string();
 
         // Parse JSON directly (structured output should return valid JSON)
-        serde_json::from_str(&text)
-            .map_err(|e| {
+        match serde_json::from_str(&text) {
+            Ok(json) => Ok(json),
+            Err(e) => {
                 warn!("Structured output JSON parsing failed. Error: {}, Response: {}", e, text);
-                OrchestratorError::ReasoningError(
+                
+                // Try to recover from truncated JSON by closing open structures
+                if e.to_string().contains("EOF") {
+                    if let Ok(recovered) = self.attempt_json_recovery(&text) {
+                        info!("Successfully recovered truncated JSON response");
+                        return Ok(recovered);
+                    }
+                }
+                
+                Err(OrchestratorError::ReasoningError(
                     format!("Failed to parse structured output JSON: {}. Response: {}", e, text)
-                )
-            })
+                ))
+            }
+        }
+    }
+
+    /// Attempt to recover from truncated JSON by intelligently closing open structures
+    fn attempt_json_recovery(&self, truncated_json: &str) -> Result<JsonValue, serde_json::Error> {
+        let mut recovered = truncated_json.to_string();
+        
+        // Count open/close braces and brackets
+        let mut brace_count = 0;
+        let mut bracket_count = 0;
+        let mut in_string = false;
+        let mut escape = false;
+        
+        for ch in truncated_json.chars() {
+            if escape {
+                escape = false;
+                continue;
+            }
+            
+            match ch {
+                '\\' => escape = true,
+                '"' if !escape => in_string = !in_string,
+                '{' if !in_string => brace_count += 1,
+                '}' if !in_string => brace_count -= 1,
+                '[' if !in_string => bracket_count += 1,
+                ']' if !in_string => bracket_count -= 1,
+                _ => {}
+            }
+        }
+        
+        // Close any open strings
+        if in_string {
+            recovered.push('"');
+        }
+        
+        // Close any open objects/arrays in the proper order
+        // We need to determine the order by looking at the structure
+        let mut closers = Vec::new();
+        let mut temp_brace = brace_count;
+        let mut temp_bracket = bracket_count;
+        
+        // Simple heuristic: alternate closing based on what we see
+        while temp_brace > 0 || temp_bracket > 0 {
+            if temp_brace > 0 {
+                closers.push('}');
+                temp_brace -= 1;
+            }
+            if temp_bracket > 0 {
+                closers.push(']');
+                temp_bracket -= 1;
+            }
+        }
+        
+        // Apply closers
+        for closer in closers {
+            recovered.push(closer);
+        }
+        
+        // Try to parse the recovered JSON
+        serde_json::from_str(&recovered)
     }
 
     /// Execute Perceive phase - analyze input and extract entities using structured output
@@ -291,7 +361,7 @@ Determine:
         let schema = get_plan_phase_schema();
         
         let prompt = format!(
-            r#"Create an execution plan based on the strategy.
+            r#"Create an execution plan based on the strategy. Be CONCISE - limit to 5-7 most important actions.
 
 Goals: {:?}
 Narrative threads: {:?}
@@ -300,10 +370,12 @@ Implications: {}
 Available tools: {:?}
 
 Generate:
-- Concrete action steps (with tool names)
+- Concrete action steps (MAX 7 steps, focus on most critical)
 - Dependency graph between actions  
-- Tool selections for each action
-- Cache optimization hints"#,
+- Tool selections as an array of mappings (e.g., [{{"action_name": "CreateEntity", "tool_name": "create_entity"}}, {{"action_name": "UpdateRelationship", "tool_name": "manage_relationships"}}])
+- Cache optimization hints (optional, only if relevant)
+
+IMPORTANT: Keep responses focused and concise. Quality over quantity."#,
             strategy.primary_goals,
             strategy.narrative_threads,
             strategy.world_state_implications,
@@ -312,28 +384,20 @@ Generate:
 
         let plan = self.analyze_with_structured_output(&prompt, schema).await?;
 
-        let mut tool_selections = HashMap::new();
-        if let Some(selections) = plan.get("tool_selections").and_then(|v| v.as_object()) {
-            for (action, tool) in selections {
-                if let Some(tool_name) = tool.as_str() {
-                    tool_selections.insert(action.clone(), tool_name.to_string());
-                }
-            }
-        }
+        // Parse the AI response into the structured output type
+        let plan_output: crate::services::orchestrator::structured_output::PlanPhaseOutput = 
+            serde_json::from_value(plan)
+                .map_err(|e| OrchestratorError::ReasoningError(
+                    format!("Failed to parse plan phase output: {}", e)
+                ))?;
 
-        Ok(PlanResult {
-            action_steps: plan.get("action_steps")
-                .and_then(|v| v.as_array())
-                .map(|arr| arr.to_vec())
-                .unwrap_or_default(),
-            dependency_graph: plan.get("dependencies").cloned(),
-            tool_selections,
-            cache_optimization_hints: plan.get("cache_hints")
-                .and_then(|v| v.as_array())
-                .map(|arr| arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()),
-        })
+        // Validate the output
+        plan_output.validate()
+            .map_err(|e| OrchestratorError::ReasoningError(e.to_string()))?;
+
+        // Convert to PlanResult
+        plan_output.to_plan_result()
+            .map_err(|e| OrchestratorError::ReasoningError(e.to_string()))
     }
 
     /// Execute Execute phase - run tools and agents

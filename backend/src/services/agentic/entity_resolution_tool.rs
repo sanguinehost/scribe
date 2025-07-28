@@ -8,12 +8,18 @@
 //! - Semantic entity matching that understands context and roles
 //! - Intelligent entity lifecycle decisions
 //! - No hardcoded rules - all decisions are context-aware
+//! - Batched processing for multiple entities
+//! - Caching for entity resolution results
+//! - Fully async operation to not block response streaming
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::collections::HashMap;
+use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
+use futures;
 
 use crate::{
     auth::session_dek::SessionDek,
@@ -21,6 +27,8 @@ use crate::{
 };
 
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
+use super::unified_tool_registry::{SelfRegisteringTool, ToolCategory, ToolCapability, ToolExample, ToolSecurityPolicy, DataAccessPolicy, AuditLevel, AgentType};
+use serde_json::Value as JsonValue;
 
 // Import AI-powered components
 use super::tools::ai_entity_resolution::{
@@ -216,12 +224,32 @@ pub struct ActorResolutionResult {
     pub narrative_context: NarrativeContext,
 }
 
+/// Cache key for entity resolution results - only for identity resolution
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct ResolutionCacheKey {
+    user_id: Uuid,
+    entity_name: String,
+    entity_type: String,
+    context_hash: u64,
+}
+
+/// Cached resolution result - only stores identity mapping, not entity details
+#[derive(Debug, Clone)]
+struct CachedIdentityResolution {
+    entity_id: Option<Uuid>, // None means it's a new entity
+    match_confidence: f32,
+    timestamp: std::time::Instant,
+}
+
 /// Enhanced entity resolution tool with AI-driven intelligence
+#[derive(Clone)]
 pub struct EntityResolutionTool {
     app_state: Arc<AppState>,
     component_suggester: Arc<AiComponentSuggester>,
     semantic_matcher: Arc<AiSemanticMatcher>,
     _context_extractor: Arc<AiContextExtractor>, // TODO: Use for enhanced context analysis in resolution
+    identity_cache: Arc<RwLock<HashMap<ResolutionCacheKey, CachedIdentityResolution>>>,
+    cache_ttl: std::time::Duration,
 }
 
 impl EntityResolutionTool {
@@ -235,7 +263,70 @@ impl EntityResolutionTool {
             component_suggester,
             semantic_matcher,
             _context_extractor: context_extractor,
+            identity_cache: Arc::new(RwLock::new(HashMap::new())),
+            cache_ttl: std::time::Duration::from_secs(300), // 5 minute cache for identity resolution only
         }
+    }
+    
+    /// Generate cache key for identity resolution
+    fn generate_identity_cache_key(user_id: Uuid, entity_name: &str, entity_type: &str, context: &str) -> ResolutionCacheKey {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        context.hash(&mut hasher);
+        
+        ResolutionCacheKey {
+            user_id,
+            entity_name: entity_name.to_string(),
+            entity_type: entity_type.to_string(),
+            context_hash: hasher.finish(),
+        }
+    }
+    
+    /// Clean expired cache entries
+    async fn clean_cache(&self) {
+        let mut cache = self.identity_cache.write().await;
+        let now = std::time::Instant::now();
+        cache.retain(|_, v| now.duration_since(v.timestamp) < self.cache_ttl);
+    }
+    
+    /// Cache an identity resolution result
+    async fn cache_identity_resolution(
+        &self,
+        user_id: Uuid,
+        entity_name: &str,
+        entity_type: &str,
+        context: &str,
+        entity_id: Option<Uuid>,
+        confidence: f32,
+    ) {
+        let cache_key = Self::generate_identity_cache_key(user_id, entity_name, entity_type, context);
+        let mut cache = self.identity_cache.write().await;
+        cache.insert(cache_key, CachedIdentityResolution {
+            entity_id,
+            match_confidence: confidence,
+            timestamp: std::time::Instant::now(),
+        });
+    }
+    
+    /// Get cached identity resolution if available
+    async fn get_cached_identity_resolution(
+        &self,
+        user_id: Uuid,
+        entity_name: &str,
+        entity_type: &str,
+        context: &str,
+    ) -> Option<(Option<Uuid>, f32)> {
+        let cache_key = Self::generate_identity_cache_key(user_id, entity_name, entity_type, context);
+        let cache = self.identity_cache.read().await;
+        
+        if let Some(cached) = cache.get(&cache_key) {
+            if std::time::Instant::now().duration_since(cached.timestamp) < self.cache_ttl {
+                return Some((cached.entity_id, cached.match_confidence));
+            }
+        }
+        None
     }
     
     /// Performance monitoring helper
@@ -255,7 +346,105 @@ impl EntityResolutionTool {
         }
     }
 
-    /// Extract entity names from narrative text using AI
+    /// Simplified combined extraction and resolution using a single AI call
+    pub async fn extract_and_resolve_entities(
+        &self,
+        narrative_text: &str,
+        existing_entities: &[ExistingEntity],
+    ) -> Result<(Vec<NarrativeEntity>, Vec<(usize, f32)>), ToolError> {
+        let timer = Self::start_timer("extract_and_resolve_entities");
+        debug!("Combined extraction and resolution for narrative: {}", narrative_text);
+        
+        // Prepare existing entities for the prompt
+        let existing_entities_json = serde_json::to_string_pretty(&existing_entities.iter().map(|e| {
+            json!({
+                "name": e.name,
+                "display_name": e.display_name,
+                "entity_type": e.entity_type,
+                "context": e.context
+            })
+        }).collect::<Vec<_>>()).unwrap_or_default();
+        
+        // Build combined AI prompt
+        let prompt = format!(
+            r#"Analyze this narrative text and extract entities, then match them to existing entities if appropriate:
+
+NARRATIVE TEXT:
+"{}"
+
+EXISTING ENTITIES:
+{}
+
+TASK:
+1. Extract all entities (characters, locations, items, organizations) from the narrative
+2. For each entity, check if it matches any existing entity (consider nicknames, context, roles)
+3. Provide confidence scores for matches
+
+Return JSON in this exact format:
+{{
+  "entities": [
+    {{
+      "name": "entity name from text",
+      "entity_type": "character|location|item|organization",
+      "description": "brief description from context",
+      "properties": ["property1", "property2"],
+      "match_index": null,  // or index in existing_entities array if matched
+      "match_confidence": 0.0  // 0.0-1.0, only if matched
+    }}
+  ]
+}}"#,
+            narrative_text,
+            existing_entities_json
+        );
+        
+        // Use Flash for combined extraction and resolution
+        let chat_request = genai::chat::ChatRequest::from_user(prompt);
+        let chat_options = genai::chat::ChatOptions::default()
+            .with_max_tokens(2000)
+            .with_temperature(0.1);
+        
+        let response = self.app_state.ai_client
+            .exec_chat(&self.app_state.config.fast_model, chat_request, Some(chat_options))
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Combined extraction/resolution AI call failed: {}", e)))?;
+        
+        let ai_response = response.first_content_text_as_str().unwrap_or_default();
+        
+        // Parse response
+        let parsed: Value = serde_json::from_str(ai_response)
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to parse AI response: {}", e)))?;
+        
+        let mut narrative_entities = Vec::new();
+        let mut matches = Vec::new();
+        
+        if let Some(entities) = parsed["entities"].as_array() {
+            for entity in entities {
+                let narrative_entity = NarrativeEntity {
+                    name: entity["name"].as_str().unwrap_or_default().to_string(),
+                    entity_type: entity["entity_type"].as_str().unwrap_or("unknown").to_string(),
+                    description: entity["description"].as_str().unwrap_or_default().to_string(),
+                    properties: entity["properties"].as_array()
+                        .map(|arr| arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect())
+                        .unwrap_or_default(),
+                };
+                
+                if let Some(match_index) = entity["match_index"].as_u64() {
+                    let confidence = entity["match_confidence"].as_f64().unwrap_or(0.0) as f32;
+                    matches.push((match_index as usize, confidence));
+                }
+                
+                narrative_entities.push(narrative_entity);
+            }
+        }
+        
+        info!("Extracted {} entities with {} matches", narrative_entities.len(), matches.len());
+        Self::end_timer(timer, "extract_and_resolve_entities");
+        Ok((narrative_entities, matches))
+    }
+    
+    /// Extract entity names from narrative text using AI (kept for compatibility)
     pub async fn extract_entity_names(
         &self,
         narrative_text: &str,
@@ -318,7 +507,7 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
         Ok(context)
     }
 
-    /// Multi-stage entity resolution with AI-driven intelligence
+    /// Multi-stage entity resolution with AI-driven intelligence and caching
     pub async fn resolve_entities_multistage(
         &self,
         narrative_text: &str,
@@ -328,6 +517,14 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
     ) -> Result<MultiStageResolutionResult, ToolError> {
         let total_timer = Self::start_timer("resolve_entities_multistage_TOTAL");
         debug!("Starting AI-driven multi-stage entity resolution for user: {}", user_id);
+        
+        // Clean cache periodically
+        tokio::spawn({
+            let tool = self.clone();
+            async move {
+                tool.clean_cache().await;
+            }
+        });
         
         // Stage 1: Extract entities and context
         let stage1_timer = Self::start_timer("Stage1_extraction");
@@ -351,6 +548,37 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
         
         Self::end_timer(total_timer, "resolve_entities_multistage_TOTAL");
         Ok(final_result)
+    }
+    
+    /// Batch resolve multiple entity sets in parallel
+    pub async fn resolve_entities_batch(
+        &self,
+        batch_requests: Vec<(String, Uuid, Option<Uuid>, Vec<ExistingEntity>)>,
+    ) -> Result<Vec<MultiStageResolutionResult>, ToolError> {
+        let total_timer = Self::start_timer("resolve_entities_batch_TOTAL");
+        debug!("Starting batched entity resolution for {} requests", batch_requests.len());
+        
+        // Process all requests in parallel
+        let futures: Vec<_> = batch_requests.into_iter()
+            .map(|(narrative_text, user_id, chronicle_id, existing_entities)| {
+                let tool = self.clone();
+                async move {
+                    tool.resolve_entities_multistage(&narrative_text, user_id, chronicle_id, &existing_entities).await
+                }
+            })
+            .collect();
+        
+        let results = futures::future::join_all(futures).await;
+        
+        // Collect results, propagating any errors
+        let mut final_results = Vec::new();
+        for result in results {
+            final_results.push(result?);
+        }
+        
+        Self::end_timer(total_timer, "resolve_entities_batch_TOTAL");
+        info!("Batch resolved {} entity sets", final_results.len());
+        Ok(final_results)
     }
     
     /// Stage 1: Extract entities and context from narrative
@@ -993,7 +1221,7 @@ impl ScribeTool for EntityResolutionTool {
         })
     }
 
-    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, params: &ToolParams, session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
         debug!("Executing AI-driven entity resolution tool with params: {}", params);
 
         // Extract parameters
@@ -1065,4 +1293,96 @@ impl ScribeTool for EntityResolutionTool {
         Ok(serde_json::to_value(result)
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to serialize result: {}", e)))?)
     }
+}
+
+impl SelfRegisteringTool for EntityResolutionTool {
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Analysis
+    }
+
+    fn capabilities(&self) -> Vec<ToolCapability> {
+        vec![
+            ToolCapability {
+                action: "analyze".to_string(),
+                target: "entity names".to_string(),
+                context: Some("for semantic similarity".to_string()),
+            },
+            ToolCapability {
+                action: "resolve".to_string(),
+                target: "entities".to_string(),
+                context: Some("to prevent duplicates".to_string()),
+            },
+        ]
+    }
+    
+    fn when_to_use(&self) -> String {
+        "Use when creating entities to check if they already exist or are semantically similar to existing entities. Essential for preventing duplicate entities and maintaining data integrity.".to_string()
+    }
+    
+    fn when_not_to_use(&self) -> String {
+        "Do not use for simple string matching - use find_entity instead. Not suitable for bulk entity creation without context.".to_string()
+    }
+    
+    fn usage_examples(&self) -> Vec<ToolExample> {
+        vec![
+            ToolExample {
+                scenario: "Creating a new character from narrative text".to_string(),
+                input: json!({
+                    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "narrative_text": "The wizard Gandalf approaches",
+                    "entity_names": ["Gandalf"],
+                    "existing_entities": []
+                }),
+                expected_output: "Resolved entities with is_new flags and confidence scores".to_string(),
+            }
+        ]
+    }
+    
+    fn security_policy(&self) -> ToolSecurityPolicy {
+        ToolSecurityPolicy {
+            allowed_agents: vec![AgentType::Perception, AgentType::Tactical, AgentType::Strategic, AgentType::Orchestrator],
+            required_capabilities: vec![],
+            rate_limit: None,
+            data_access: DataAccessPolicy {
+                user_data: true,
+                system_data: false,
+                write_access: false,
+                allowed_scopes: vec!["entities".to_string()],
+            },
+            audit_level: AuditLevel::Basic,
+        }
+    }
+    
+    fn output_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "resolved_entities": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "entity_id": { "type": "string" },
+                            "name": { "type": "string" },
+                            "is_new": { "type": "boolean" },
+                            "confidence": { "type": "number" }
+                        }
+                    }
+                },
+                "relationships": { "type": "array" },
+                "processing_metadata": { "type": "object" }
+            }
+        })
+    }
+}
+
+/// Register entity resolution tool with the unified registry
+pub fn register_entity_resolution_tool(app_state: Arc<AppState>) -> Result<(), crate::errors::AppError> {
+    use super::unified_tool_registry::UnifiedToolRegistry;
+    
+    let tool = Arc::new(EntityResolutionTool::new(app_state)) as Arc<dyn SelfRegisteringTool + Send + Sync>;
+    UnifiedToolRegistry::register(tool)?;
+    
+    info!("Registered AI-driven entity resolution tool with unified registry");
+    Ok(())
 }

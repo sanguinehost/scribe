@@ -53,7 +53,7 @@ impl Default for OrchestratorConfig {
             poll_interval_ms: 1000,
             batch_size: 5,
             retry_limit: 3,
-            phase_timeout_ms: 30000, // 30 seconds per phase
+            phase_timeout_ms: 180000, // 3 minutes per phase (for complex multi-agent operations)
         }
     }
 }

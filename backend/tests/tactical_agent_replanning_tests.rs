@@ -42,6 +42,7 @@ async fn create_test_tactical_agent(app: &TestApp) -> TacticalAgent {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     )
 }
 

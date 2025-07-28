@@ -283,6 +283,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         config.query_planning_model.clone(),
         config.optimization_model.clone(),
         config.fast_model.clone(), // Context engine model
+        Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(ecs_services.redis_client.clone())),
     ));
     
     // --- Initialize Narrative Intelligence Service ---
@@ -310,8 +311,8 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
             )
             .await?
         },
-        // ECS Services
-        redis_client: ecs_services.redis_client,
+        // ECS Services  
+        redis_client: ecs_services.redis_client.clone(),
         feature_flags: ecs_services.feature_flags,
         ecs_entity_manager: ecs_services.ecs_entity_manager,
         ecs_graceful_degradation: ecs_services.ecs_graceful_degradation,
@@ -327,6 +328,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         tactical_agent: None, // Will be set after AppState is built
         strategic_agent: None, // Will be set after AppState is built
         hierarchical_pipeline: None, // Will be set after AppState is built
+        shared_agent_context: Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(ecs_services.redis_client)),
     })
 }
 

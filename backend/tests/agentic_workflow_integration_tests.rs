@@ -330,6 +330,9 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             test_app.config.agentic_planning_model.clone(),
             test_app.config.optimization_model.clone(),
             test_app.config.advanced_model.clone(),
+            Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+            )),
         )),
         agentic_state_update_service: Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
             test_app.ai_client.clone(),
@@ -708,6 +711,9 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
             test_app.config.agentic_planning_model.clone(),
             test_app.config.optimization_model.clone(),
             test_app.config.advanced_model.clone(),
+            Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+            )),
         )),
         agentic_state_update_service: Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
             test_app.ai_client.clone(),
@@ -1071,6 +1077,9 @@ async fn test_dual_mode_extraction_comparison() {
             test_app.config.agentic_planning_model.clone(),
             test_app.config.optimization_model.clone(),
             test_app.config.advanced_model.clone(),
+            Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+            )),
         )),
         agentic_state_update_service: Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
             test_app.ai_client.clone(),
@@ -1438,6 +1447,9 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
             test_app.config.agentic_planning_model.clone(),
             test_app.config.optimization_model.clone(),
             test_app.config.advanced_model.clone(),
+            Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+                Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+            )),
         )),
         agentic_state_update_service: Arc::new(scribe_backend::services::agentic_state_update_service::AgenticStateUpdateService::new(
             test_app.ai_client.clone(),

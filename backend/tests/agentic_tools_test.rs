@@ -25,7 +25,8 @@ async fn test_analyze_text_significance_basic() {
         ]
     });
     
-    let result = tool.execute(&params).await;
+    let session_dek = scribe_backend::auth::session_dek::SessionDek::generate_new();
+    let result = tool.execute(&params, &session_dek).await;
     assert!(result.is_ok());
     
     let output = result.unwrap();
@@ -47,7 +48,8 @@ async fn test_extract_temporal_events_basic() {
         ]
     });
     
-    let result = tool.execute(&params).await;
+    let session_dek = scribe_backend::auth::session_dek::SessionDek::generate_new();
+    let result = tool.execute(&params, &session_dek).await;
     assert!(result.is_ok());
     
     let output = result.unwrap();
@@ -68,7 +70,8 @@ async fn test_extract_world_concepts_basic() {
         ]
     });
     
-    let result = tool.execute(&params).await;
+    let session_dek = scribe_backend::auth::session_dek::SessionDek::generate_new();
+    let result = tool.execute(&params, &session_dek).await;
     assert!(result.is_ok());
     
     let output = result.unwrap();
@@ -84,7 +87,8 @@ async fn test_tool_error_handling() {
     
     // Missing required field should return error
     let invalid_params = json!({});
-    let result = tool.execute(&invalid_params).await;
+    let session_dek = scribe_backend::auth::session_dek::SessionDek::generate_new();
+    let result = tool.execute(&invalid_params, &session_dek).await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("messages array is required"));
     
@@ -92,7 +96,8 @@ async fn test_tool_error_handling() {
     let wrong_type_params = json!({
         "messages": "not an array"
     });
-    let result = tool.execute(&wrong_type_params).await;
+    let session_dek2 = scribe_backend::auth::session_dek::SessionDek::generate_new();
+    let result = tool.execute(&wrong_type_params, &session_dek2).await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("messages array is required"));
     
@@ -100,7 +105,8 @@ async fn test_tool_error_handling() {
     let empty_messages_params = json!({
         "messages": []
     });
-    let result = tool.execute(&empty_messages_params).await;
+    let session_dek3 = scribe_backend::auth::session_dek::SessionDek::generate_new();
+    let result = tool.execute(&empty_messages_params, &session_dek3).await;
     assert!(result.is_ok());
     let output = result.unwrap();
     assert_eq!(output["is_significant"], false);
@@ -121,7 +127,8 @@ async fn test_workflow_simulation() {
         ]
     });
     
-    let triage_result = triage_tool.execute(&messages).await.unwrap();
+    let session_dek = scribe_backend::auth::session_dek::SessionDek::generate_new();
+    let triage_result = triage_tool.execute(&messages, &session_dek).await.unwrap();
     let is_significant = triage_result["is_significant"].as_bool().unwrap();
     
     assert!(is_significant);
@@ -157,8 +164,8 @@ async fn test_workflow_simulation() {
         let events_tool = ExtractTemporalEventsTool::new(test_app.app_state.clone());
         let concepts_tool = ExtractWorldConceptsTool::new(test_app.app_state.clone());
         
-        let events_result = events_tool.execute(&messages).await.unwrap();
-        let concepts_result = concepts_tool.execute(&messages).await.unwrap();
+        let events_result = events_tool.execute(&messages, &session_dek).await.unwrap();
+        let concepts_result = concepts_tool.execute(&messages, &session_dek).await.unwrap();
         
         let events = events_result["events"].as_array().unwrap();
         let concepts = concepts_result["concepts"].as_array().unwrap();

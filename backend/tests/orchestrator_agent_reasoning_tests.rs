@@ -39,6 +39,7 @@ async fn create_test_orchestrator(test_app: &TestApp) -> OrchestratorAgent {
         test_app.app_state.encryption_service.clone(),
         test_app.app_state.auth_backend.clone(),
         test_app.app_state.ai_client.clone(),
+        Arc::new(test_app.config.clone()),
     )
 }
 

@@ -25,6 +25,7 @@ pub mod perception_agent;
 pub mod strategic_agent;
 pub mod hierarchical_pipeline;
 pub mod lightning_agent;
+pub mod orchestrator;
 pub mod performance_analyzer;
 pub mod strategic_structured_output;
 pub mod tactical_structured_output;
@@ -40,6 +41,8 @@ pub mod types;
 pub mod unified_tool_registry;
 pub mod ai_tool_discovery;
 pub mod tool_initialization;
+pub mod shared_context;
+pub mod executor;
 
 
 // Re-export key types for convenience
@@ -59,6 +62,8 @@ pub use hierarchical_pipeline::{
     HierarchicalAgentPipeline, HierarchicalPipelineConfig, 
     HierarchicalPipelineResult, PipelineMetrics
 };
+pub use orchestrator::{WorkflowOrchestrator, OrchestratorState, StageResults};
 pub use strategic_structured_output::*;
 pub use tactical_structured_output::*;
 pub use tool_initialization::initialize_all_tools;
+pub use shared_context::{SharedAgentContext, ContextEntry, ContextType, AgentType, ContextQuery, AgentWithSharedContext};

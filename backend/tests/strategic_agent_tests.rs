@@ -47,6 +47,7 @@ async fn test_strategic_agent_creation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     // Service should be created successfully
@@ -63,6 +64,7 @@ async fn test_analyze_conversation_basic_combat() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -99,6 +101,7 @@ async fn test_generate_narrative_direction_mystery() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -151,6 +154,7 @@ async fn test_create_strategic_directive_social_interaction() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -204,6 +208,7 @@ async fn test_assess_narrative_significance_major_event() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -247,6 +252,7 @@ async fn test_extract_character_focus_multiple_characters() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -292,6 +298,7 @@ async fn test_determine_emotional_tone_tense() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -337,6 +344,7 @@ async fn test_evaluate_world_impact_local() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -380,6 +388,7 @@ async fn test_cache_directive_and_retrieval() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -414,6 +423,7 @@ async fn test_directive_content_validation() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -455,6 +465,7 @@ async fn test_error_handling_empty_chat_history() {
         app.app_state.ecs_entity_manager.clone(),
         app.app_state.redis_client.clone(),
         "gemini-2.5-flash".to_string(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);

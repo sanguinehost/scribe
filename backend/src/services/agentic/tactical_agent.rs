@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tracing::{info, instrument, debug, warn};
 use uuid::Uuid;
 use chrono::Utc;
+use serde_json;
 
 use crate::{
     errors::AppError,
@@ -16,8 +17,9 @@ use crate::{
             EnrichedContextValidator, PlotSignificance, WorldImpactLevel,
         },
         agentic::{
-            tools::ScribeTool,
+            tools::{ScribeTool, ToolParams, ToolResult},
             unified_tool_registry::UnifiedToolRegistry,
+            shared_context::{SharedAgentContext, ContextType, AgentType, ContextEntry},
         },
     },
     llm::AiClient,
@@ -52,6 +54,7 @@ pub struct TacticalAgent {
     redis_client: Arc<redis::Client>,
     // Context validation
     context_validator: Arc<EnrichedContextValidator>,
+    shared_context: Arc<SharedAgentContext>,
 }
 
 impl TacticalAgent {
@@ -62,6 +65,7 @@ impl TacticalAgent {
         planning_service: Arc<PlanningService>,
         plan_validator: Arc<PlanValidatorService>,
         redis_client: Arc<redis::Client>,
+        shared_context: Arc<SharedAgentContext>,
     ) -> Self {
         // Initialize context validator
         let context_validator = Arc::new(EnrichedContextValidator::new());
@@ -79,6 +83,7 @@ impl TacticalAgent {
             plan_validator,
             redis_client,
             context_validator,
+            shared_context,
         }
     }
     
@@ -90,12 +95,31 @@ impl TacticalAgent {
         format!("Tactical Agent Tools: Available through UnifiedToolRegistry")
     }
     
-    /// Helper method to get a tool from the registry
-    fn get_tool(&self, tool_name: &str) -> Result<Arc<dyn ScribeTool>, AppError> {
-        // TODO: Implement tool retrieval from unified registry
-        // The unified registry currently doesn't expose individual tools directly
-        // This method will need to be updated when tool execution is implemented
-        Err(AppError::InternalServerErrorGeneric(format!("Tool '{}' access not yet implemented for unified registry", tool_name)))
+    /// Execute a tool through the unified registry
+    async fn execute_tool(
+        &self,
+        tool_name: &str,
+        params: &ToolParams,
+        session_dek: &SessionDek,
+        user_id: Uuid,
+    ) -> Result<ToolResult, AppError> {
+        use crate::services::agentic::unified_tool_registry::{UnifiedToolRegistry, AgentType, ExecutionContext};
+        
+        let execution_context = ExecutionContext {
+            request_id: Uuid::new_v4(),
+            agent_capabilities: vec![], // Tactical agents have no special capabilities restrictions
+            user_id,
+            session_id: None,
+            parent_tool: None,
+        };
+        
+        UnifiedToolRegistry::execute_tool(
+            AgentType::Tactical,
+            tool_name,
+            params,
+            session_dek,
+            execution_context,
+        ).await.map_err(|e| AppError::InternalServerErrorGeneric(format!("Tool execution failed: {}", e)))
     }
 
     /// Process a strategic directive into an enriched context for the Operational Layer
@@ -305,6 +329,49 @@ impl TacticalAgent {
             "Successfully processed directive in {}ms with {} tokens, context validation: {}ms",
             execution_time_ms, plan_result.total_tokens_used, context_validation_time_ms
         );
+
+        // Store tactical planning decision in shared context for strategic feedback
+        let session_id = Uuid::new_v4(); // Generate session ID - in future this should come from context
+        let planning_data = serde_json::json!({
+            "directive_id": directive.directive_id,
+            "directive_type": directive.directive_type,
+            "plan_actions": plan_result.plan.actions.len(),
+            "validation_passed": validation_report.is_valid,
+            "execution_time_ms": execution_time_ms,
+            "total_tokens_used": plan_result.total_tokens_used
+        });
+        
+        if let Err(e) = self.shared_context.store_tactical_planning(
+            user_id,
+            session_id,
+            format!("directive_{}", directive.directive_id),
+            planning_data,
+            None,
+            session_dek,
+        ).await {
+            warn!("Failed to store tactical planning in shared context: {}", e);
+        }
+        
+        // Store performance metrics in shared context
+        let performance_metrics = serde_json::json!({
+            "execution_time_ms": execution_time_ms,
+            "context_validation_time_ms": context_validation_time_ms,
+            "plan_actions_generated": plan_result.plan.actions.len(),
+            "tokens_used": plan_result.total_tokens_used,
+            "validation_passed": validation_report.is_valid,
+            "context_size_bytes": context_size,
+            "timestamp": Utc::now().to_rfc3339()
+        });
+        
+        if let Err(e) = self.shared_context.store_performance_metrics(
+            user_id,
+            session_id,
+            AgentType::Tactical,
+            performance_metrics,
+            session_dek,
+        ).await {
+            warn!("Failed to store performance metrics in shared context: {}", e);
+        }
 
         Ok(enriched_context)
     }
@@ -665,15 +732,31 @@ impl TacticalAgent {
             entity_names.push(entity_id.clone());
         }
         
-        // Simple entity name extraction from description
-        // Look for capitalized words that might be entity names
-        let words: Vec<&str> = sub_goal.description.split_whitespace().collect();
-        for word in words {
-            let clean_word = word.trim_matches(|c: char| !c.is_alphanumeric());
-            if clean_word.len() > 2 && clean_word.chars().next().unwrap_or('a').is_uppercase() {
-                // Skip common words that aren't entity names
-                if !["The", "This", "That", "And", "Or", "But", "In", "On", "At", "To", "For", "With", "By"].contains(&clean_word) {
-                    entity_names.push(clean_word.to_string());
+        // Skip automatic extraction for directive-style goals
+        // These are instructions about HOW to process entities, not entity names
+        let directive_keywords = ["emphasize", "focus", "highlight", "process", "analyze", 
+                                "establish", "determine", "validate", "verify", "update"];
+        
+        let description_lower = sub_goal.description.to_lowercase();
+        let is_directive = directive_keywords.iter()
+            .any(|keyword| description_lower.starts_with(keyword));
+        
+        if !is_directive {
+            // Simple entity name extraction from description
+            // Look for capitalized words that might be entity names
+            let words: Vec<&str> = sub_goal.description.split_whitespace().collect();
+            for word in words {
+                let clean_word = word.trim_matches(|c: char| !c.is_alphanumeric());
+                if clean_word.len() > 2 && clean_word.chars().next().unwrap_or('a').is_uppercase() {
+                    // Skip common words that aren't entity names
+                    if !["The", "This", "That", "And", "Or", "But", "In", "On", "At", "To", "For", 
+                         "With", "By", "From", "Into", "Through", "During", "About", "After",
+                         "Before", "Under", "Over", "Between", "Among", "Within", "Without",
+                         "Emphasize", "Focus", "Highlight", "Process", "Analyze", "Establish",
+                         "Determine", "Validate", "Verify", "Update", "Create", "Modify",
+                         "Remove", "Delete", "Add", "Change", "Set", "Get", "Find"].contains(&clean_word) {
+                        entity_names.push(clean_word.to_string());
+                    }
                 }
             }
         }
@@ -696,10 +779,7 @@ impl TacticalAgent {
             "limit": 5
         });
         
-        let find_entity_tool = self.get_tool("find_entity")?;
-        
-        let result = find_entity_tool.execute(&params, session_dek).await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("FindEntityTool failed: {}", e)))?;
+        let result = self.execute_tool("find_entity", &params, session_dek, user_id).await?;
         
         // Parse the result manually since FindEntityOutput doesn't implement Deserialize
         let entities_value = result.get("entities")
@@ -735,15 +815,11 @@ impl TacticalAgent {
         
         let params = json!({
             "user_id": user_id.to_string(),
-            "entity_id": entity_id,
-            "include_hierarchy": true,
-            "include_relationships": true
+            "entity_identifier": entity_id,
+            "detail_request": "Retrieve full entity details including hierarchy and relationships"
         });
         
-        let get_entity_details_tool = self.get_tool("get_entity_details")?;
-        
-        let result = get_entity_details_tool.execute(&params, session_dek).await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("GetEntityDetailsTool failed: {}", e)))?;
+        let result = self.execute_tool("get_entity_details", &params, session_dek, user_id).await?;
         
         // Convert the tool result to EntityContext
         // This is a simplified conversion - in a full implementation, you'd have proper mapping
@@ -784,10 +860,7 @@ impl TacticalAgent {
             "max_depth": 3
         });
         
-        let get_spatial_context_tool = self.get_tool("get_spatial_context")?;
-        
-        let result = get_spatial_context_tool.execute(&params, session_dek).await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("GetSpatialContextTool failed: {}", e)))?;
+        let result = self.execute_tool("get_spatial_context", &params, session_dek, user_id).await?;
         
         // Convert tool result to SpatialContext
         let mut nearby_locations = vec![];

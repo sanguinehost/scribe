@@ -55,6 +55,7 @@ async fn test_reasoning_directive_priority_assessment() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -135,6 +136,7 @@ async fn test_reasoning_plan_complexity_assessment() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -211,6 +213,7 @@ async fn test_reasoning_entity_dependency_analysis() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -294,6 +297,7 @@ async fn test_reasoning_temporal_constraint_analysis() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -372,6 +376,7 @@ async fn test_reasoning_failure_recovery_analysis() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -448,6 +453,7 @@ async fn test_reasoning_resource_requirement_analysis() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -527,6 +533,7 @@ async fn test_reasoning_sub_goal_decomposition_logic() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -605,6 +612,7 @@ async fn test_reasoning_plan_validation_status_logic() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);

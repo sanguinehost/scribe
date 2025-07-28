@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
-use tracing::{info, debug, instrument};
+use tracing::{info, debug, instrument, warn};
+use serde_json;
+use chrono::Utc;
 
 use crate::{
     errors::AppError,
@@ -17,8 +19,12 @@ use crate::{
             AgenticMetricsCollector, MetricsConfig, RequestTracker, AiCallMetric, 
             DbQueryMetric, ErrorInfo, TokenUsageEntry
         },
+        agentic::{
+            shared_context::{SharedAgentContext, ContextType, AgentType},
+        },
     },
     llm::AiClient,
+    auth::session_dek::SessionDek,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,11 +32,14 @@ pub struct AgenticRequest {
     pub user_query: String,
     pub conversation_context: Option<String>,
     pub user_id: Uuid,
+    pub session_id: Uuid,
     pub chronicle_id: Option<Uuid>,
     pub token_budget: u32,
     pub quality_mode: QualityMode,
     #[serde(skip)] // Skip serialization for security
     pub user_dek: Option<std::sync::Arc<secrecy::SecretBox<Vec<u8>>>>,
+    #[serde(skip)] // Skip serialization for security
+    pub session_dek: Option<SessionDek>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -83,6 +92,7 @@ pub struct AgenticOrchestrator {
     _ai_client: Arc<dyn AiClient>, // TODO: Use for direct AI calls in orchestration
     _db_pool: Arc<PgPool>, // TODO: Use for database operations
     metrics_collector: Arc<AgenticMetricsCollector>,
+    shared_context: Arc<SharedAgentContext>,
 }
 
 impl AgenticOrchestrator {
@@ -95,6 +105,7 @@ impl AgenticOrchestrator {
         query_planning_model: String,
         optimization_model: String,
         context_engine_model: String,
+        shared_context: Arc<SharedAgentContext>,
     ) -> Self {
         let intent_service = Arc::new(IntentDetectionService::new(
             ai_client.clone(),
@@ -129,6 +140,7 @@ impl AgenticOrchestrator {
             _ai_client: ai_client,
             _db_pool: db_pool,
             metrics_collector,
+            shared_context,
         }
     }
 
@@ -379,6 +391,57 @@ impl AgenticOrchestrator {
             confidence: final_confidence,
         };
 
+        // Store coordination insights in shared context
+        if let (Some(session_dek), ) = (&request.session_dek, ) {
+            let coordination_data = serde_json::json!({
+                "intent_detected": response.execution_summary.intent_detected,
+                "strategy_used": response.execution_summary.strategy_used,
+                "queries_executed": response.execution_summary.queries_executed,
+                "entities_analyzed": response.execution_summary.entities_analyzed,
+                "content_pruned": response.execution_summary.content_pruned,
+                "execution_time_ms": response.execution_summary.execution_time_ms,
+                "final_confidence": response.confidence,
+                "token_budget": request.token_budget,
+                "token_utilization": (token_usage.final_tokens_used as f32 / request.token_budget as f32) * 100.0,
+                "created_at": Utc::now().to_rfc3339()
+            });
+
+            if let Err(e) = self.shared_context.store_coordination_signal(
+                request.user_id,
+                request.session_id,
+                AgentType::Orchestrator,
+                format!("orchestration_{}", Utc::now().timestamp()),
+                coordination_data,
+                None, // TTL seconds
+                session_dek,
+            ).await {
+                warn!("Failed to store coordination insights in shared context: {}", e);
+            }
+
+            // Store performance metrics in shared context
+            let metrics_data = serde_json::json!({
+                "intent_detection_tokens": token_usage.intent_detection_tokens,
+                "strategy_planning_tokens": token_usage.strategy_planning_tokens,
+                "optimization_tokens": token_usage.optimization_tokens,
+                "total_llm_tokens": token_usage.total_llm_tokens,
+                "context_tokens_generated": token_usage.context_tokens_generated,
+                "final_tokens_used": token_usage.final_tokens_used,
+                "execution_time_ms": execution_time,
+                "final_confidence": response.confidence,
+                "budget_utilization": (token_usage.final_tokens_used as f32 / request.token_budget as f32) * 100.0
+            });
+
+            if let Err(e) = self.shared_context.store_performance_metrics(
+                request.user_id,
+                request.session_id,
+                AgentType::Orchestrator,
+                metrics_data,
+                session_dek,
+            ).await {
+                warn!("Failed to store performance metrics in shared context: {}", e);
+            }
+        }
+
         // Token usage and response is handled by the outer method
 
         info!(
@@ -466,14 +529,19 @@ impl AgenticOrchestrator {
         query: &str,
         user_id: Uuid,
     ) -> Result<String, AppError> {
+        // Generate a session DEK for encryption even in simple queries
+        let session_dek = SessionDek::new(vec![0u8; 32]); // Use dummy key for simple queries
+        
         let request = AgenticRequest {
             user_query: query.to_string(),
             conversation_context: None,
             user_id,
+            session_id: Uuid::new_v4(), // Generate a session ID for simple queries
             chronicle_id: None,
             token_budget: 4000,
             quality_mode: QualityMode::default(),
-            user_dek: None, // No DEK available in simple query
+            user_dek: None, // No user DEK available in simple query
+            session_dek: Some(session_dek), // Always encrypt even basic queries for security
         };
 
         let response = self.process_query(request).await?;

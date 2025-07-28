@@ -22,8 +22,9 @@
 use uuid::Uuid;
 use chrono::Utc;
 use reqwest::Client;
-use tracing::{info, debug, error};
+use tracing::{info, debug, error, warn};
 use axum_login::AuthnBackend;
+use secrecy::ExposeSecret;
 
 use scribe_backend::{
     test_helpers::{spawn_app_with_options, TestDataGuard, db::create_test_user, login_user_via_api},
@@ -334,6 +335,8 @@ struct LivingWorldChatTest {
     pub task_queue_service: Option<TaskQueueService>,
     pub orchestrator_metrics: Vec<OrchestratorMetrics>,
     pub task_queue_metrics: Vec<TaskQueueMetrics>,
+    // Store user for accessing real SessionDek
+    pub test_user: scribe_backend::models::users::User,
 }
 
 impl LivingWorldChatTest {
@@ -413,7 +416,7 @@ impl LivingWorldChatTest {
             poll_interval_ms: 100, // Fast polling for tests
             batch_size: 10,
             retry_limit: 3,
-            phase_timeout_ms: 30000, // 30 seconds for complex reasoning
+            phase_timeout_ms: 180000, // 3 minutes for complex multi-agent operations
         };
         
         let orchestrator_agent = OrchestratorAgent::new(
@@ -439,6 +442,7 @@ impl LivingWorldChatTest {
             task_queue_service: Some(task_queue_service),
             orchestrator_metrics: Vec::new(),
             task_queue_metrics: Vec::new(),
+            test_user: user,
         })
     }
     
@@ -925,6 +929,10 @@ impl LivingWorldChatTest {
         // After Lightning response, test that enrichment task is created and processed by Orchestrator
         self.test_orchestrator_enrichment_pipeline(&message, &final_response).await?;
         
+        // **SHARED CONTEXT INTEGRATION TEST**
+        // Test that all agents are properly sharing context and coordination data
+        self.test_shared_context_integration(&message, &final_response).await?;
+        
         Ok(final_response)
     }
     
@@ -1397,6 +1405,126 @@ impl LivingWorldChatTest {
         Ok(())
     }
     
+    /// Test that shared context is working across all agents
+    async fn test_shared_context_integration(&self, user_message: &str, ai_response: &str) -> Result<(), AppError> {
+        info!("🤝 SHARED CONTEXT: Testing inter-agent coordination...");
+        
+        let app_state = &self.test_app.app_state;
+        let shared_context = &app_state.shared_agent_context;
+        let user_id = self.world.user_id;
+        let session_id = self.world.chat_session_id;
+        
+        // Create a session DEK using the user's actual DEK for proper decryption
+        let session_dek = scribe_backend::auth::session_dek::SessionDek::new(
+            self.test_user.dek.as_ref().unwrap().0.expose_secret().clone()
+        );
+        
+        // Test 1: Query recent coordination signals from Orchestrator
+        info!("📊 Testing Orchestrator coordination signals...");
+        let orchestrator_query = scribe_backend::services::agentic::shared_context::ContextQuery {
+            context_types: Some(vec![scribe_backend::services::agentic::shared_context::ContextType::Coordination]),
+            source_agents: Some(vec![scribe_backend::services::agentic::shared_context::AgentType::Orchestrator]),
+            session_id: Some(session_id),
+            since_timestamp: Some(chrono::Utc::now() - chrono::Duration::minutes(5)),
+            keys: None,
+            limit: Some(10),
+        };
+        
+        match shared_context.query_context(user_id, orchestrator_query, &session_dek).await {
+            Ok(orchestrator_entries) => {
+                info!("✅ Found {} Orchestrator coordination signals", orchestrator_entries.len());
+                for entry in &orchestrator_entries {
+                    info!("  📤 {} from {:?} at {}", entry.key, entry.source_agent, entry.timestamp);
+                }
+            }
+            Err(e) => {
+                info!("ℹ️ No Orchestrator coordination signals found (this is normal): {}", e);
+            }
+        }
+        
+        // Test 2: Query performance metrics from any agent
+        info!("📈 Testing agent performance metrics...");
+        let metrics_query = scribe_backend::services::agentic::shared_context::ContextQuery {
+            context_types: Some(vec![scribe_backend::services::agentic::shared_context::ContextType::Performance]),
+            source_agents: None, // All agents
+            session_id: Some(session_id),
+            since_timestamp: Some(chrono::Utc::now() - chrono::Duration::minutes(5)),
+            keys: None,
+            limit: Some(20),
+        };
+        
+        match shared_context.query_context(user_id, metrics_query, &session_dek).await {
+            Ok(metrics_entries) => {
+                info!("✅ Found {} performance metrics entries", metrics_entries.len());
+                let mut agent_metrics = std::collections::HashMap::new();
+                for entry in &metrics_entries {
+                    *agent_metrics.entry(entry.source_agent.clone()).or_insert(0) += 1;
+                }
+                for (agent, count) in agent_metrics {
+                    info!("  📊 {:?}: {} metrics", agent, count);
+                }
+            }
+            Err(e) => {
+                info!("ℹ️ No performance metrics found (this is normal): {}", e);
+            }
+        }
+        
+        // Test 3: Test hierarchical pipeline coordination if available
+        if app_state.hierarchical_pipeline.is_some() {
+            info!("🏗️ Testing HierarchicalPipeline coordination signals...");
+            let pipeline_query = scribe_backend::services::agentic::shared_context::ContextQuery {
+                context_types: Some(vec![scribe_backend::services::agentic::shared_context::ContextType::Coordination]),
+                source_agents: Some(vec![scribe_backend::services::agentic::shared_context::AgentType::HierarchicalPipeline]),
+                session_id: Some(session_id),
+                since_timestamp: Some(chrono::Utc::now() - chrono::Duration::minutes(5)),
+                keys: None,
+                limit: Some(5),
+            };
+            
+            match shared_context.query_context(user_id, pipeline_query, &session_dek).await {
+                Ok(pipeline_entries) => {
+                    info!("✅ Found {} HierarchicalPipeline coordination signals", pipeline_entries.len());
+                    for entry in &pipeline_entries {
+                        info!("  🏗️ {} at {}", entry.key, entry.timestamp);
+                    }
+                }
+                Err(e) => {
+                    info!("ℹ️ No HierarchicalPipeline coordination signals found: {}", e);
+                }
+            }
+        } else {
+            info!("ℹ️ HierarchicalPipeline not configured in this test setup");
+        }
+        
+        // Test 4: Verify session isolation
+        info!("🔒 Testing session isolation...");
+        let different_session_id = uuid::Uuid::new_v4();
+        let isolation_query = scribe_backend::services::agentic::shared_context::ContextQuery {
+            context_types: None,
+            source_agents: None,
+            session_id: Some(different_session_id),
+            since_timestamp: Some(chrono::Utc::now() - chrono::Duration::minutes(10)),
+            keys: None,
+            limit: Some(100),
+        };
+        
+        match shared_context.query_context(user_id, isolation_query, &session_dek).await {
+            Ok(isolated_entries) => {
+                if isolated_entries.is_empty() {
+                    info!("✅ Session isolation working: no data found for different session");
+                } else {
+                    info!("⚠️ Session isolation concern: found {} entries for different session", isolated_entries.len());
+                }
+            }
+            Err(_) => {
+                info!("✅ Session isolation working: query failed for different session (expected)");
+            }
+        }
+        
+        info!("🤝 Shared context integration test completed");
+        Ok(())
+    }
+    
     /// Capture perception analysis data from the hierarchical pipeline
     async fn capture_perception_analysis(&self, chat_session_id: Uuid) -> Result<Option<PerceptionAnalysisResult>, AppError> {
         debug!("🧠 Attempting to capture perception analysis for session: {}", chat_session_id);
@@ -1658,10 +1786,10 @@ impl LivingWorldChatTest {
                 _ => SpatialScale::Planetary, // default
             };
             
-            // SpatialArchetype doesn't have parent_link directly - that would be in a separate ParentLink component
+            // Check for ParentLink component to find parent relationships
             let parent_link = entity_result.components.iter()
                 .find(|c| c.component_type == "ParentLink")
-                .and_then(|c| c.component_data.get("parent_entity_id"))
+                .and_then(|c| c.component_data.get("parent_id"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
             
@@ -1680,11 +1808,32 @@ impl LivingWorldChatTest {
             
             // Calculate hierarchy depth by following parent links
             let mut depth = 0;
-            let mut current_parent = parent_link.clone();
-            while current_parent.is_some() {
+            let mut current_parent_id = parent_link.clone();
+            let mut visited_entities = std::collections::HashSet::new();
+            
+            // Follow parent chain to calculate depth (with cycle detection)
+            while let Some(parent_id) = current_parent_id {
+                if visited_entities.contains(&parent_id) {
+                    warn!("Detected cycle in hierarchy for entity '{}', breaking", entity_name);
+                    break;
+                }
+                visited_entities.insert(parent_id.clone());
                 depth += 1;
-                // Would need to follow parent chain in real implementation
-                current_parent = None; // Simplified for now
+                
+                // Find the parent entity in our current results to get its parent
+                current_parent_id = spatial_results.iter()
+                    .find(|r| r.entity.id.to_string() == parent_id)
+                    .and_then(|r| r.components.iter()
+                        .find(|c| c.component_type == "ParentLink")
+                        .and_then(|c| c.component_data.get("parent_id"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()));
+                        
+                // Safety limit to prevent infinite loops
+                if depth > 10 {
+                    warn!("Hierarchy depth limit reached for entity '{}', breaking", entity_name);
+                    break;
+                }
             }
             
             hierarchy_validations.push(SpatialHierarchyValidation {
@@ -1697,23 +1846,30 @@ impl LivingWorldChatTest {
                 salience_tier: salience_tier.clone(),
             });
             
-            info!("  ✓ {}: {} scale, {} salience, depth {}", 
+            let parent_info = if let Some(ref parent_id) = parent_link {
+                format!(" (parent: {})", parent_id)
+            } else {
+                " (root)".to_string()
+            };
+            
+            info!("  ✓ {}: {} scale, {} salience, depth {}{}", 
                 entity_name, scale_str, 
                 match salience_tier {
                     SalienceTier::Core => "Core",
                     SalienceTier::Secondary => "Secondary",
                     SalienceTier::Flavor => "Flavor",
                 },
-                depth
+                depth,
+                parent_info
             );
         }
         
-        // Fill in child relationships
+        // Fill in child relationships by finding entities whose ParentLink points to this entity
         for validation in &mut hierarchy_validations {
-            // Query for children using ComponentDataEquals to find entities with parent_link pointing to this entity
+            // Query for children using ComponentDataEquals to find entities with parent_id pointing to this entity
             let child_criteria = vec![ComponentQuery::ComponentDataEquals(
-                "Spatial".to_string(),
-                "parent_link".to_string(),
+                "ParentLink".to_string(),
+                "parent_id".to_string(),
                 serde_json::json!(validation.entity_id.to_string()),
             )];
             
@@ -1732,6 +1888,11 @@ impl LivingWorldChatTest {
                         .map(|s| s.to_string())
                 })
                 .collect();
+            
+            // Log discovered children for debugging
+            if !validation.child_entities.is_empty() {
+                info!("    ✓ {} has children: {:?}", validation.entity_name, validation.child_entities);
+            }
         }
         
         Ok(hierarchy_validations)

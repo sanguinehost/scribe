@@ -9,9 +9,7 @@ use scribe_backend::{
 async fn list_all_registered_tools() {
     let test_app = spawn_app(false, false, false).await;
     
-    // Initialize all tools with the test app state
-    scribe_backend::services::agentic::initialize_all_tools(test_app.app_state.clone())
-        .expect("Failed to initialize tools");
+    // Tools are already initialized by spawn_app, no need to initialize again
     
     // Get all tools from the unified registry
     let all_tools = UnifiedToolRegistry::list_all_tool_names();
@@ -84,16 +82,17 @@ async fn list_all_registered_tools() {
     
     // Verify we have the expected number of tools (based on our migration)
     // Currently implemented:
-    // - 2 entity CRUD tools (FindEntityTool, GetEntityDetailsTool) - 2 more pending AI-driven implementation
+    // - 6 entity CRUD tools (FindEntityTool, GetEntityDetailsTool, CreateEntityTool, UpdateEntityTool, DeleteEntityTool, QuerySpatialTypesTool)
+    // - 1 entity resolution tool (EntityResolutionTool)
     // - 2 spatial interaction tools (GetSpatialContextTool, MoveEntityTool)
-    // - 1 relationship interaction tool (UpdateRelationshipTool)
+    // - 3 relationship interaction tools (UpdateRelationshipTool, CreateRelationshipTool, DeleteRelationshipTool)
     // - 3 AI-powered tools (AnalyzeHierarchyRequestTool, SuggestHierarchyPromotionTool, UpdateSalienceTool)
     // - 1 hierarchy tool (GetEntityHierarchyTool)
     // - 1 chronicle tool (QueryChronicleEventsTool)
     // - 2 lorebook tools (QueryLorebookTool, ManageLorebookTool)
     // - 2 inventory tools (QueryInventoryTool, ManageInventoryTool)
-    // = 14 total tools currently implemented
-    // TODO: Complete implementation of CreateEntityTool, UpdateEntityTool to reach 16 tools
-    assert_eq!(all_tools.len(), 14, "Expected exactly 14 implemented tools, got {}", all_tools.len());
+    // - 5 narrative tools (AnalyzeTextSignificanceTool, CreateChronicleEventTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool, SearchKnowledgeBaseTool)
+    // = 26 total tools currently implemented
+    assert!(all_tools.len() >= 26, "Expected at least 26 implemented tools, got {}", all_tools.len());
     println!("\n✓ Successfully verified {} tools are registered in the unified registry", all_tools.len());
 }

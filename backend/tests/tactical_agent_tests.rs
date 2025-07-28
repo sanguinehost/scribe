@@ -45,6 +45,7 @@ async fn test_tactical_agent_creation() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     // Service should be created successfully
@@ -75,6 +76,7 @@ async fn test_process_directive_basic_movement() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -129,6 +131,7 @@ async fn test_directive_to_plan_integration() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -198,6 +201,7 @@ async fn test_world_state_context_gathering() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -256,6 +260,7 @@ async fn test_sub_goal_extraction() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -319,6 +324,7 @@ async fn test_plan_validation_integration() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -388,6 +394,7 @@ async fn test_enriched_context_assembly() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -459,6 +466,7 @@ async fn test_error_handling_planning_failure() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -515,6 +523,7 @@ async fn test_directive_with_temporal_constraints() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);
@@ -573,6 +582,7 @@ async fn test_multiple_entity_coordination() {
         planning_service,
         plan_validator,
         app.app_state.redis_client.clone(),
+        app.app_state.shared_agent_context.clone(),
     );
 
     let session_dek = SessionDek::new(vec![0u8; 32]);

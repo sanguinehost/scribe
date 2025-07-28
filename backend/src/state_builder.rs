@@ -15,6 +15,7 @@ use crate::{
         narrative_intelligence_service::NarrativeIntelligenceService,
         tokenizer_service::TokenizerService,
         user_persona_service::UserPersonaService,
+        agentic::shared_context::SharedAgentContext,
     },
     state::{AppState, AppStateServices, DbPool},
     text_processing::chunking::ChunkConfig,
@@ -306,6 +307,9 @@ impl AppStateServicesBuilder {
             chronicle_service.clone(),
         ));
 
+        // Create SharedAgentContext for inter-agent coordination
+        let shared_agent_context = Arc::new(crate::services::agentic::shared_context::SharedAgentContext::new(redis_client.clone()));
+
         // Create agentic state update service first
         let agentic_state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
             ai_client.clone(),
@@ -323,6 +327,7 @@ impl AppStateServicesBuilder {
             self.config.query_planning_model.clone(),
             self.config.optimization_model.clone(),
             self.config.fast_model.clone(), // Context engine model
+            shared_agent_context.clone(),
         ));
 
         // HierarchicalContextAssembler will be set after AppState creation
@@ -358,6 +363,7 @@ impl AppStateServicesBuilder {
             tactical_agent: None, // Will be set after AppState is built
             strategic_agent: None, // Will be set after AppState is built
             hierarchical_pipeline: None, // Will be set after AppState is built
+            shared_agent_context,
             // narrative_intelligence_service will be added after AppState is built
         })
     }

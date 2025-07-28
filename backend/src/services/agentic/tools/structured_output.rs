@@ -164,6 +164,18 @@ pub fn get_promotion_analysis_schema_gemini() -> JsonValue {
     remove_additional_properties(schema)
 }
 
+/// Get JSON schema for component suggestion output (Gemini-compatible version without additionalProperties)
+pub fn get_component_suggestion_schema_gemini() -> JsonValue {
+    let schema = get_component_suggestion_schema();
+    remove_additional_properties(schema)
+}
+
+/// Get JSON schema for semantic match output (Gemini-compatible version without additionalProperties)
+pub fn get_semantic_match_schema_gemini() -> JsonValue {
+    let schema = get_semantic_match_schema();
+    remove_additional_properties(schema)
+}
+
 /// Get JSON schema for promotion analysis output
 pub fn get_promotion_analysis_schema() -> JsonValue {
     json!({
@@ -248,6 +260,75 @@ pub fn get_promotion_analysis_schema() -> JsonValue {
             "analysis",
             "promotion_suggestions",
             "confidence"
+        ],
+        "additionalProperties": false
+    })
+}
+
+/// Get JSON schema for component suggestion output
+pub fn get_component_suggestion_schema() -> JsonValue {
+    json!({
+        "type": "object",
+        "properties": {
+            "suggested_components": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "List of ECS components suggested for the entity"
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Explanation of why these components fit the narrative context"
+            },
+            "contextual_insights": {
+                "type": "string",
+                "description": "What the narrative reveals about this entity"
+            }
+        },
+        "required": [
+            "suggested_components",
+            "reasoning",
+            "contextual_insights"
+        ],
+        "additionalProperties": false
+    })
+}
+
+/// Get JSON schema for semantic match output
+pub fn get_semantic_match_schema() -> JsonValue {
+    json!({
+        "type": "object",
+        "properties": {
+            "match_found": {
+                "type": "boolean",
+                "description": "Whether a semantic match was found"
+            },
+            "matched_index": {
+                "type": ["integer", "null"],
+                "description": "0-based index of matched entity or null if no match"
+            },
+            "matched_name": {
+                "type": ["string", "null"],
+                "description": "Name of matched entity or null if no match"
+            },
+            "confidence": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "Confidence level in the match (0.0-1.0)"
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Explanation of the match or why no match was found"
+            }
+        },
+        "required": [
+            "match_found",
+            "matched_index",
+            "matched_name",
+            "confidence",
+            "reasoning"
         ],
         "additionalProperties": false
     })
