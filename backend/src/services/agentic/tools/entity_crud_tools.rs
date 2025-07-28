@@ -1087,7 +1087,6 @@ impl SelfRegisteringTool for GetEntityDetailsTool {
     
     fn dependencies(&self) -> Vec<String> {
         vec![
-            "find_entity".to_string(),
             "ai_client".to_string(),
             "ecs_entity_manager".to_string(),
         ]
@@ -1309,60 +1308,9 @@ Format your response to help create a cohesive, well-structured entity that enha
             _ => SalienceTier::Flavor,
         };
         
-        // Check if entity with same name already exists for this user
-        // Create a FindEntityTool instance to search for existing entities
-        let find_tool = FindEntityTool {
-            app_state: self.app_state.clone(),
-        };
-        
-        // Prepare parameters for the find_entity tool
-        let find_params = json!({
-            "user_id": user_id.to_string(),
-            "search_request": format!("find entity named '{}'", entity_name),
-            "context": "Checking for duplicate before creation",
-            "limit": 10
-        });
-        
-        // Use a dummy session key for internal tool calls
-        let dummy_session_dek = SessionDek::new(vec![0u8; 32]);
-        
-        // Try to find the entity first
-        match find_tool.execute(&find_params, &dummy_session_dek).await {
-            Ok(result) => {
-                // Parse the result to check if we found an exact match
-                if let Some(entities) = result.get("entities").and_then(|v| v.as_array()) {
-                    for entity in entities {
-                        if let Some(name) = entity.get("entity_name").and_then(|v| v.as_str()) {
-                            if name.eq_ignore_ascii_case(entity_name) {
-                                // Entity already exists, return info about existing entity
-                                let entity_id = entity.get("entity_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown");
-                                
-                                info!("Entity '{}' already exists with ID {}, returning existing entity", 
-                                    entity_name, entity_id);
-                                
-                                return Ok(EntityCreationOutput {
-                                    entity_id: entity_id.to_string(),
-                                    creation_plan: json!({
-                                        "status": "existing",
-                                        "message": format!("Entity '{}' already exists", entity_name),
-                                        "existing_entity": entity
-                                    }),
-                                    creation_summary: format!("Found existing entity '{}' instead of creating duplicate", entity_name),
-                                    created: false,
-                                    user_request: creation_request.to_string(),
-                                });
-                            }
-                        }
-                    }
-                }
-            },
-            Err(e) => {
-                // Entity not found or error in search - continue with creation
-                debug!("No existing entity found with name '{}', proceeding with creation: {:?}", entity_name, e);
-            }
-        }
+        // CreateEntityTool is now atomic - it creates entities without checking for duplicates
+        // Duplicate checking should be done by orchestration layer using CheckEntityExistsTool
+        info!("Creating new entity '{}' with ID {} (atomic creation - no duplicate checking)", entity_name, entity_id);
         
         // Build components based on the AI plan
         let mut components: Vec<(String, JsonValue)> = Vec::new();
@@ -1717,7 +1665,7 @@ impl SelfRegisteringTool for CreateEntityTool {
     }
 
     fn when_not_to_use(&self) -> String {
-        "Don't use for modifying existing entities (use update_entity), simple queries (use find_entity), or when you need detailed information about existing entities (use get_entity_details).".to_string()
+        "Don't use for modifying existing entities (use update_entity), simple queries (use find_entity), checking if entities exist (use check_entity_exists), or when you need detailed information about existing entities (use get_entity_details). This tool creates entities unconditionally - duplicate checking must be done separately.".to_string()
     }
 
     fn usage_examples(&self) -> Vec<ToolExample> {
@@ -2686,34 +2634,341 @@ impl SelfRegisteringTool for QuerySpatialTypesTool {
     }
 }
 
+// ===== CHECK ENTITY EXISTS TOOL =====
+
+/// Atomic tool that checks if an entity exists by name or ID.
+/// This is a pure existence check - no creation, no resolution, just a simple boolean answer.
+#[derive(Clone)]
+pub struct CheckEntityExistsTool {
+    app_state: Arc<AppState>,
+}
+
+impl CheckEntityExistsTool {
+    pub fn new(app_state: Arc<AppState>) -> Self {
+        Self { app_state }
+    }
+}
+
+#[async_trait]
+impl ScribeTool for CheckEntityExistsTool {
+    fn name(&self) -> &'static str {
+        "check_entity_exists"
+    }
+
+    fn description(&self) -> &'static str {
+        "Check if an entity exists by name or ID. Returns a simple boolean result with optional entity ID if found."
+    }
+
+    fn input_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "user_id": { 
+                    "type": "string", 
+                    "format": "uuid",
+                    "description": "The user ID to scope the entity search"
+                },
+                "identifier": { 
+                    "type": "string", 
+                    "description": "Entity name or UUID to check for existence"
+                },
+                "entity_type": {
+                    "type": "string",
+                    "description": "Optional entity type filter (character, location, item, etc.)",
+                    "enum": ["character", "location", "item", "organization", "concept", "any"]
+                }
+            },
+            "required": ["user_id", "identifier"]
+        })
+    }
+
+
+    #[instrument(skip(self, params, _session_dek))]
+    async fn execute(&self, params: &ToolParams, _session_dek: &SessionDek) -> Result<ToolResult, ToolError> {
+        let user_id = params.get("user_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or_else(|| ToolError::InvalidParams("user_id must be a valid UUID".to_string()))?;
+
+        let identifier = params.get("identifier")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams("identifier must be a string".to_string()))?;
+
+        let entity_type_filter = params.get("entity_type")
+            .and_then(|v| v.as_str())
+            .filter(|&t| t != "any");
+
+        let entity_manager = EcsEntityManager::new(
+            Arc::new(self.app_state.pool.clone()),
+            self.app_state.redis_client.clone(),
+            Default::default()
+        );
+
+        // First try to parse as UUID
+        if let Ok(entity_id) = Uuid::parse_str(identifier) {
+            // Direct ID lookup using get_entity
+            match entity_manager.get_entity(user_id, entity_id).await {
+                Ok(Some(result)) => {
+                    // Check entity type filter if provided
+                    if let Some(filter) = entity_type_filter {
+                        // Get entity type from components
+                        let entity_type = result.components.iter()
+                            .find(|c| c.component_type == "Identity")
+                            .and_then(|c| c.component_data.get("entity_type"))
+                            .and_then(|v| v.as_str());
+
+                        if entity_type != Some(filter) {
+                            return Ok(json!({
+                                "exists": false,
+                                "entity_id": null,
+                                "entity_type": null,
+                                "name": null
+                            }));
+                        }
+                    }
+
+                    // Get entity name from components
+                    let name = result.components.iter()
+                        .find(|c| c.component_type == "Identity")
+                        .and_then(|c| c.component_data.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
+
+                    let entity_type = result.components.iter()
+                        .find(|c| c.component_type == "Identity")
+                        .and_then(|c| c.component_data.get("entity_type"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+
+                    Ok(json!({
+                        "exists": true,
+                        "entity_id": entity_id.to_string(),
+                        "entity_type": entity_type,
+                        "name": name
+                    }))
+                }
+                Ok(None) => {
+                    Ok(json!({
+                        "exists": false,
+                        "entity_id": null,
+                        "entity_type": null,
+                        "name": null
+                    }))
+                }
+                Err(_) => {
+                    Ok(json!({
+                        "exists": false,
+                        "entity_id": null,
+                        "entity_type": null,
+                        "name": null
+                    }))
+                }
+            }
+        } else {
+            // Name-based lookup
+            let mut query_criteria = vec![
+                ComponentQuery::ComponentDataEquals(
+                    "Identity".to_string(),
+                    "name".to_string(),
+                    json!(identifier),
+                )
+            ];
+
+            // Add entity type filter if provided
+            if let Some(entity_type) = entity_type_filter {
+                query_criteria.push(ComponentQuery::ComponentDataEquals(
+                    "Identity".to_string(),
+                    "entity_type".to_string(),
+                    json!(entity_type),
+                ));
+            }
+
+            let results = entity_manager.query_entities(
+                user_id,
+                query_criteria,
+                Some(1), // Only need first match
+                None
+            ).await.map_err(|e| ToolError::AppError(e))?;
+
+            if let Some(result) = results.first() {
+                let entity_type = result.components.iter()
+                    .find(|c| c.component_type == "Identity")
+                    .and_then(|c| c.component_data.get("entity_type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+
+                Ok(json!({
+                    "exists": true,
+                    "entity_id": result.entity.id.to_string(),
+                    "entity_type": entity_type,
+                    "name": identifier
+                }))
+            } else {
+                Ok(json!({
+                    "exists": false,
+                    "entity_id": null,
+                    "entity_type": null,
+                    "name": null
+                }))
+            }
+        }
+    }
+}
+
+impl SelfRegisteringTool for CheckEntityExistsTool {
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Discovery
+    }
+    
+    fn output_schema(&self) -> JsonValue {
+        json!({
+            "type": "object",
+            "properties": {
+                "exists": { 
+                    "type": "boolean",
+                    "description": "Whether the entity exists"
+                },
+                "entity_id": {
+                    "type": ["string", "null"],
+                    "format": "uuid",
+                    "description": "The entity's UUID if it exists"
+                },
+                "entity_type": {
+                    "type": ["string", "null"],
+                    "description": "The entity's type if it exists"
+                },
+                "name": {
+                    "type": ["string", "null"],
+                    "description": "The entity's canonical name if it exists"
+                }
+            },
+            "required": ["exists"]
+        })
+    }
+    
+    fn capabilities(&self) -> Vec<ToolCapability> {
+        vec![
+            ToolCapability {
+                action: "check".to_string(),
+                target: "entity existence".to_string(),
+                context: Some("by name or ID".to_string()),
+            },
+        ]
+    }
+    
+    fn when_to_use(&self) -> String {
+        "Use when you need to check if an entity already exists before creating a new one. \
+         Perfect for preventing duplicate entities or verifying entity references.".to_string()
+    }
+    
+    fn when_not_to_use(&self) -> String {
+        "Do not use for entity resolution, semantic matching, or finding similar entities. \
+         Use EntityResolutionTool for those purposes. This is purely for existence checking.".to_string()
+    }
+    
+    fn usage_examples(&self) -> Vec<ToolExample> {
+        vec![
+            ToolExample {
+                scenario: "Check if a character exists before creating".to_string(),
+                input: json!({
+                    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "identifier": "Gandalf",
+                    "entity_type": "character"
+                }),
+                expected_output: "Boolean exists flag with optional entity details if found".to_string(),
+            },
+            ToolExample {
+                scenario: "Verify entity ID is valid".to_string(),
+                input: json!({
+                    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "identifier": "550e8400-e29b-41d4-a716-446655440000"
+                }),
+                expected_output: "Boolean exists flag with entity details if ID is valid".to_string(),
+            },
+        ]
+    }
+    
+    fn security_policy(&self) -> ToolSecurityPolicy {
+        ToolSecurityPolicy {
+            allowed_agents: vec![
+                AgentType::Orchestrator,
+                AgentType::Strategic,
+                AgentType::Tactical,
+                AgentType::Perception,
+            ],
+            required_capabilities: vec![],
+            rate_limit: None, // No rate limiting for simple existence checks
+            data_access: DataAccessPolicy {
+                user_data: true,
+                system_data: false,
+                write_access: false,
+                allowed_scopes: vec!["entities".to_string()],
+            },
+            audit_level: AuditLevel::Basic,
+        }
+    }
+    
+    fn resource_requirements(&self) -> ResourceRequirements {
+        ResourceRequirements {
+            memory_mb: 5,
+            execution_time: ExecutionTime::Fast,
+            external_calls: false,
+            compute_intensive: false,
+        }
+    }
+    
+    fn error_codes(&self) -> Vec<ErrorCode> {
+        vec![
+            ErrorCode {
+                code: "INVALID_IDENTIFIER".to_string(),
+                description: "The identifier parameter is missing or invalid".to_string(),
+                retry_able: false,
+            },
+            ErrorCode {
+                code: "DATABASE_ERROR".to_string(),
+                description: "Failed to query the entity database".to_string(),
+                retry_able: true,
+            },
+        ]
+    }
+    
+    fn version(&self) -> &'static str {
+        "1.0.0"
+    }
+}
+
 // Helper function to register entity CRUD tools
 pub fn register_entity_crud_tools(app_state: Arc<AppState>) -> Result<(), AppError> {
     use crate::services::agentic::unified_tool_registry::UnifiedToolRegistry;
     
+    // Register CheckEntityExistsTool - Atomic entity existence checking
+    let check_exists_tool = Arc::new(CheckEntityExistsTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
+    UnifiedToolRegistry::register_if_not_exists(check_exists_tool)?;
+    
     // Register FindEntityTool - AI-driven natural language entity search
     let find_tool = Arc::new(FindEntityTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(find_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(find_tool)?;
     
     // Register GetEntityDetailsTool - AI-driven detailed entity analysis
     let details_tool = Arc::new(GetEntityDetailsTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(details_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(details_tool)?;
     
     // Register CreateEntityTool - AI-driven entity creation
     let create_tool = Arc::new(CreateEntityTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(create_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(create_tool)?;
     
     // Register UpdateEntityTool - AI-driven entity modification
     let update_tool = Arc::new(UpdateEntityTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(update_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(update_tool)?;
     
     // Register DeleteEntityTool - AI-driven entity deletion
     let delete_tool = Arc::new(DeleteEntityTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(delete_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(delete_tool)?;
     
     // Register QuerySpatialTypesTool - spatial types metadata query
     let spatial_query_tool = Arc::new(QuerySpatialTypesTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(spatial_query_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(spatial_query_tool)?;
     
-    tracing::info!("Registered 6 AI-driven entity CRUD tools with unified registry (FindEntityTool, GetEntityDetailsTool, CreateEntityTool, UpdateEntityTool, DeleteEntityTool, QuerySpatialTypesTool)");
+    tracing::info!("Registered 7 AI-driven entity CRUD tools with unified registry (CheckEntityExistsTool, FindEntityTool, GetEntityDetailsTool, CreateEntityTool, UpdateEntityTool, DeleteEntityTool, QuerySpatialTypesTool)");
     Ok(())
 }

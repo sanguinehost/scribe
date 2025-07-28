@@ -892,12 +892,12 @@ pub fn register_inventory_tools(app_state: Arc<AppState>) -> Result<(), AppError
     // Register QueryInventoryTool
     let query_tool = Arc::new(QueryInventoryTool::new(app_state.clone())) 
         as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(query_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(query_tool)?;
     
     // Register ManageInventoryTool
     let manage_tool = Arc::new(ManageInventoryTool::new(app_state.clone())) 
         as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(manage_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(manage_tool)?;
     
     tracing::info!("Registered 2 AI-powered inventory tools");
     Ok(())

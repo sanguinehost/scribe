@@ -411,7 +411,10 @@ impl MockAiClient {
                 {
                     "name": "Test Entity",
                     "entity_type": "character",
-                    "context": "test context"
+                    "context": "test context",
+                    "properties_mentioned": {
+                        "test_property": "test_value"
+                    }
                 }
             ],
             "potential_state_changes": ["test state change"],

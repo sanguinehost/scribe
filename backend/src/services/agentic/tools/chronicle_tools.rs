@@ -629,7 +629,7 @@ pub fn register_chronicle_tools(chronicle_service: Arc<ChronicleService>, app_st
     
     let query_tool = Arc::new(QueryChronicleEventsTool::new(chronicle_service, app_state)) 
         as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(query_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(query_tool)?;
     
     tracing::info!("Registered 1 chronicle tool with unified registry");
     Ok(())

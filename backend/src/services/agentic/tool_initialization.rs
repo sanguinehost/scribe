@@ -3,7 +3,7 @@
 //! This module handles the registration of all self-registering tools
 //! with the unified tool registry during application startup.
 
-use std::sync::Arc;
+use std::sync::{Arc, Once, Mutex};
 use tracing::info;
 
 use crate::{
@@ -27,12 +27,27 @@ use crate::services::agentic::tools::{
 
 use crate::services::agentic::entity_resolution_tool::register_entity_resolution_tool;
 
+// Global initialization state to ensure tools are only registered once
+static INIT_TOOLS: Once = Once::new();
+static INIT_RESULT: Mutex<Option<Result<(), AppError>>> = Mutex::new(None);
+
 /// Initialize and register all tools with the unified tool registry
 ///
-/// This function should be called once during application startup after
-/// the AppState has been created. It registers all available tools that
-/// implement the SelfRegisteringTool trait.
+/// This function ensures tools are only registered once, even when called 
+/// multiple times (e.g., in test environments). It's thread-safe and idempotent.
 pub fn initialize_all_tools(app_state: Arc<AppState>) -> Result<(), AppError> {
+    // Use Once to ensure initialization only happens once across all threads
+    INIT_TOOLS.call_once(|| {
+        let result = perform_tool_initialization(app_state);
+        *INIT_RESULT.lock().unwrap() = Some(result);
+    });
+    
+    // Return the cached result
+    INIT_RESULT.lock().unwrap().as_ref().unwrap().clone()
+}
+
+/// Internal function that actually performs the tool registration
+fn perform_tool_initialization(app_state: Arc<AppState>) -> Result<(), AppError> {
     info!("Initializing unified tool registry with all tools");
     
     // For tests, clear the registry first to ensure clean state

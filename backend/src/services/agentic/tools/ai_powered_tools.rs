@@ -1396,17 +1396,17 @@ pub fn register_ai_powered_tools(app_state: Arc<AppState>) -> Result<(), AppErro
     // Register AnalyzeHierarchyRequestTool
     let analyze_hierarchy_tool = Arc::new(AnalyzeHierarchyRequestTool::new(app_state.clone())) 
         as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(analyze_hierarchy_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(analyze_hierarchy_tool)?;
     
     // Register SuggestHierarchyPromotionTool
     let suggest_promotion_tool = Arc::new(SuggestHierarchyPromotionTool::new(app_state.clone())) 
         as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(suggest_promotion_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(suggest_promotion_tool)?;
     
     // Register UpdateSalienceTool
     let update_salience_tool = Arc::new(UpdateSalienceTool::new(app_state.clone())) 
         as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(update_salience_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(update_salience_tool)?;
     
     tracing::info!("Registered 3 AI-powered tools with unified registry");
     Ok(())

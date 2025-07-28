@@ -652,15 +652,15 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
                     });
                 }
                 _ => {
-                    // No confident match found - create new entity
-                    debug!("AI found no match for '{}' - creating new entity", narrative_entity.name);
+                    // No confident match found - mark as unresolved (atomic resolution only)
+                    debug!("AI found no match for '{}' - marking as unresolved (no ID generation)", narrative_entity.name);
                     new_entities.push(ResolvedEntity {
-                        entity_id: Uuid::new_v4(),
+                        entity_id: Uuid::nil(), // Use nil UUID to indicate unresolved
                         name: narrative_entity.name.clone(),
                         display_name: narrative_entity.name.clone(),
                         entity_type: narrative_entity.entity_type.clone(),
                         is_new: true,
-                        confidence: 0.8,
+                        confidence: 0.0, // 0.0 confidence for unresolved entities
                         context: Some(narrative_entity.description.clone()),
                         properties: narrative_entity.properties.clone(),
                     });
@@ -1181,8 +1181,9 @@ impl ScribeTool for EntityResolutionTool {
     }
 
     fn description(&self) -> &'static str {
-        "AI-driven entity resolution that uses Flash/Flash-Lite for intelligent entity matching, \
-         component suggestion, and context-aware decision making. No hardcoded rules."
+        "Atomic AI-driven entity resolution that ONLY finds matches to existing entities. \
+         Uses Flash/Flash-Lite for intelligent semantic matching. Does NOT generate IDs or create entities - \
+         returns resolution results with nil UUIDs for unmatched entities. Pure resolution only."
     }
 
     fn input_schema(&self) -> Value {
@@ -1316,24 +1317,24 @@ impl SelfRegisteringTool for EntityResolutionTool {
     }
     
     fn when_to_use(&self) -> String {
-        "Use when creating entities to check if they already exist or are semantically similar to existing entities. Essential for preventing duplicate entities and maintaining data integrity.".to_string()
+        "Use ONLY for checking if entities match existing entities before creation. Provides AI-powered semantic matching to find similar entities. Returns resolution results but does NOT create entities or generate IDs.".to_string()
     }
     
     fn when_not_to_use(&self) -> String {
-        "Do not use for simple string matching - use find_entity instead. Not suitable for bulk entity creation without context.".to_string()
+        "Do NOT use for entity creation (use create_entity tool instead). Do NOT use for simple string matching (use find_entity instead). This is a pure resolution tool - it only finds matches, does not generate new IDs or create entities.".to_string()
     }
     
     fn usage_examples(&self) -> Vec<ToolExample> {
         vec![
             ToolExample {
-                scenario: "Creating a new character from narrative text".to_string(),
+                scenario: "Checking if Gandalf matches existing entities before creation".to_string(),
                 input: json!({
                     "user_id": "123e4567-e89b-12d3-a456-426614174000",
                     "narrative_text": "The wizard Gandalf approaches",
                     "entity_names": ["Gandalf"],
                     "existing_entities": []
                 }),
-                expected_output: "Resolved entities with is_new flags and confidence scores".to_string(),
+                expected_output: "Resolution results: matched entities have real UUIDs and high confidence; unmatched entities have nil UUID (00000000-0000-0000-0000-000000000000) and 0.0 confidence".to_string(),
             }
         ]
     }
@@ -1362,10 +1363,19 @@ impl SelfRegisteringTool for EntityResolutionTool {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "entity_id": { "type": "string" },
+                            "entity_id": { 
+                                "type": "string",
+                                "description": "UUID of matched entity, or 00000000-0000-0000-0000-000000000000 if no match found"
+                            },
                             "name": { "type": "string" },
-                            "is_new": { "type": "boolean" },
-                            "confidence": { "type": "number" }
+                            "is_new": { 
+                                "type": "boolean",
+                                "description": "true if no existing entity match was found"
+                            },
+                            "confidence": { 
+                                "type": "number",
+                                "description": "Match confidence (0.0 for unresolved entities, >0.7 for confident matches)"
+                            }
                         }
                     }
                 },
@@ -1381,7 +1391,7 @@ pub fn register_entity_resolution_tool(app_state: Arc<AppState>) -> Result<(), c
     use super::unified_tool_registry::UnifiedToolRegistry;
     
     let tool = Arc::new(EntityResolutionTool::new(app_state)) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(tool)?;
+    UnifiedToolRegistry::register_if_not_exists(tool)?;
     
     info!("Registered AI-driven entity resolution tool with unified registry");
     Ok(())

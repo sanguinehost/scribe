@@ -961,11 +961,11 @@ pub fn register_lorebook_tools(app_state: Arc<AppState>) -> Result<(), AppError>
     
     let query_tool = Arc::new(QueryLorebookTool::new(app_state.clone())) 
         as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(query_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(query_tool)?;
     
     let manage_tool = Arc::new(ManageLorebookTool::new(app_state.clone())) 
         as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(manage_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(manage_tool)?;
     
     tracing::info!("Registered 2 AI-driven lorebook tools with unified registry");
     Ok(())

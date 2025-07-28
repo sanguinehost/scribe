@@ -298,7 +298,7 @@ pub fn register_hierarchy_tools(entity_manager: Arc<EcsEntityManager>) -> Result
     // Register GetEntityHierarchyTool (still needed by AI tools as data layer)
     let get_hierarchy_tool = Arc::new(GetEntityHierarchyTool::new(entity_manager.clone())) 
         as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(get_hierarchy_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(get_hierarchy_tool)?;
     
     tracing::info!("Registered 1 hierarchy tool (GetEntityHierarchyTool) - still needed by AI tools");
     Ok(())

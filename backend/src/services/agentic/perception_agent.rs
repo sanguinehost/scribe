@@ -568,12 +568,12 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         session_dek: &SessionDek,  // TODO: Use for encrypting entity data before storage
     ) -> Result<(), AppError> {
         // Generate a session ID from the current timestamp (you could also pass this from the caller)
-        let session_id = format!("session_{}", chrono::Utc::now().timestamp());
+        let session_id = uuid::Uuid::new_v4();
         
         // First pass: Create all entities
         for entity in entities {
             // Check if we already processed this entity in this session
-            if self.check_session_entity(&session_id, user_id, &entity.name, &entity.entity_type).await {
+            if self.check_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await {
                 debug!("Entity '{}' type '{}' already processed in this session, skipping", entity.name, entity.entity_type);
                 continue;
             }
@@ -594,68 +594,71 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
                 "limit": 10  // Get more results to check entity types
             });
             
-            match self.get_tool("find_entity")?.execute(&find_params, session_dek).await {
-                Ok(find_result) => {
-                    if let Some(entities_array) = find_result.get("entities").and_then(|e| e.as_array()) {
-                        // Check if any existing entity matches both name and type
-                        let matching_entity_exists = entities_array.iter().any(|existing| {
-                            // Check name match (case insensitive)
-                            let name_matches = existing.get("entity_name")
+            // Phase 1: Replace direct tool call with EcsEntityManager atomic approach
+            // Use atomic pattern: check directly with EcsEntityManager, then coordinate creation via SharedAgentContext
+            use crate::services::ecs_entity_manager::ComponentQuery;
+            use serde_json::json;
+            
+            let name_query = ComponentQuery::ComponentDataEquals(
+                "NameComponent".to_string(),
+                "name".to_string(),
+                json!(entity.name)
+            );
+            
+            match self._ecs_entity_manager.query_entities(user_id, vec![name_query], Some(10), None).await {
+                Ok(existing_entities) => {
+                    // Check if any existing entity matches both name and type
+                    let matching_entity_exists = existing_entities.iter().any(|existing_result| {
+                        // Check for NameComponent and EntityTypeComponent in the components
+                        let name_matches = existing_result.components.iter().any(|comp| {
+                            comp.component_type == "NameComponent" &&
+                            comp.component_data.get("name")
                                 .and_then(|n| n.as_str())
-                                .map(|n| n.eq_ignore_ascii_case(&entity.name))
-                                .unwrap_or(false);
-                            
-                            // Check type match - use entity_type field if available
-                            let type_matches = if let Some(existing_type) = existing.get("entity_type").and_then(|t| t.as_str()) {
-                                existing_type == entity.entity_type
-                            } else if let Some(components) = existing.get("components").and_then(|c| c.as_object()) {
-                                // Fallback to component-based type detection
-                                match entity.entity_type.as_str() {
-                                    "character" => components.contains_key("Container") || 
-                                                  components.contains_key("Actor"),
-                                    "location" => components.contains_key("SpatialArchetype"),
-                                    "object" | "item" => components.contains_key("Container") || 
-                                                        components.contains_key("Equipment"),
-                                    "organization" => components.contains_key("SpatialArchetype") &&
-                                                     !components.contains_key("Position"),
-                                    _ => true // For unknown types, assume it exists to avoid duplicates
-                                }
-                            } else {
-                                // If we can't determine type, assume it matches to avoid duplicates
-                                true
-                            };
-                            
-                            name_matches && type_matches
+                                .map(|name| name.eq_ignore_ascii_case(&entity.name))
+                                .unwrap_or(false)
                         });
                         
-                        if matching_entity_exists {
-                            info!(
-                                "Entity '{}' of type '{}' already exists for user {}, skipping creation",
-                                entity.name, entity.entity_type, user_id
-                            );
-                            // Cache the existence for future checks
-                            self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
-                            // Track in session
-                            self.track_session_entity(&session_id, user_id, &entity.name, &entity.entity_type).await;
-                        } else {
-                            // Entity with this name and type doesn't exist, create it
-                            info!("Creating new entity: {} (type: {})", entity.name, entity.entity_type);
-                            self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
-                            // Cache that this entity now exists
-                            self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
-                            // Track in session
-                            self.track_session_entity(&session_id, user_id, &entity.name, &entity.entity_type).await;
-                        }
+                        let type_matches = existing_result.components.iter().any(|comp| {
+                            comp.component_type == "EntityTypeComponent" &&
+                            comp.component_data.get("entity_type")
+                                .and_then(|t| t.as_str())
+                                .map(|etype| etype == entity.entity_type)
+                                .unwrap_or(false)
+                        });
+                        
+                        name_matches && type_matches
+                    });
+                    
+                    if matching_entity_exists {
+                        info!(
+                            "Entity '{}' of type '{}' already exists for user {}, skipping creation",
+                            entity.name, entity.entity_type, user_id
+                        );
+                        // Cache the existence for future checks
+                        self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
+                        // Track in session
+                        self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
+                    } else {
+                        // Entity with this name and type doesn't exist, coordinate creation
+                        info!("Entity '{}' of type '{}' not found, coordinating creation via SharedAgentContext", entity.name, entity.entity_type);
+                        
+                        // Phase 1: Store entity creation request in SharedAgentContext for coordination
+                        self.coordinate_entity_creation(entity, user_id, &session_id, session_dek).await?;
+                        
+                        // Cache that this entity now exists (will be created by coordination)
+                        self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
+                        // Track in session
+                        self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
                     }
                 },
                 Err(e) => {
-                    debug!("Error checking entity existence for '{}': {}", entity.name, e);
-                    // If error checking, assume it doesn't exist and try to create
-                    self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
-                    // Cache that this entity now exists
+                    debug!("Error checking entity existence for '{}' with EcsEntityManager: {}", entity.name, e);
+                    // If error checking, coordinate creation via SharedAgentContext
+                    self.coordinate_entity_creation(entity, user_id, &session_id, session_dek).await?;
+                    // Cache that this entity now exists (will be created by coordination)
                     self.cache_entity_existence(user_id, &entity.name, &entity.entity_type, true).await;
                     // Track in session
-                    self.track_session_entity(&session_id, user_id, &entity.name, &entity.entity_type).await;
+                    self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
                 }
             }
         }
@@ -2860,6 +2863,50 @@ Output JSON with:
             updates_applied = updates_applied,
             "Perception agent completed processing"
         );
+    }
+
+    /// Coordinate entity creation through SharedAgentContext instead of direct tool calls
+    /// Part of Phase 1: Atomic tool patterns - store creation requests for orchestrator to handle
+    async fn coordinate_entity_creation(
+        &self,
+        entity: &ContextualEntity,
+        user_id: Uuid,
+        session_id: &Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        use crate::services::agentic::shared_context::{ContextType, AgentType};
+        use serde_json::json;
+        
+        debug!("Coordinating creation of entity '{}' (type: {}) through SharedAgentContext", entity.name, entity.entity_type);
+        
+        // Store entity creation request in shared context for orchestrator to pick up
+        let entity_data = json!({
+            "entity_to_create": {
+                "name": entity.name,
+                "entity_type": entity.entity_type,
+                "relevance_score": entity.relevance_score,
+                "source": "perception_analysis"
+            },
+            "creation_reason": "entity_resolution_failed",
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "requesting_agent": "perception"
+        });
+        
+        // Store coordination signal for entity creation
+        let shared_context = &self.shared_context;
+        shared_context.store_coordination_signal(
+            user_id,
+            *session_id,
+            AgentType::Perception,
+            format!("entity_creation_request_{}_{}", entity.name.replace(' ', "_"), chrono::Utc::now().timestamp()),
+            entity_data,
+            Some(3600), // 1 hour TTL
+            session_dek
+        ).await?;
+        
+        info!("Stored entity creation coordination signal for entity '{}' of type '{}'", entity.name, entity.entity_type);
+        
+        Ok(())
     }
 }
 

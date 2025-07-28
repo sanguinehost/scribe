@@ -1048,8 +1048,8 @@ pub fn register_spatial_interaction_tools(app_state: Arc<AppState>) -> Result<()
     let spatial_context_tool = Arc::new(GetSpatialContextTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
     let move_entity_tool = Arc::new(MoveEntityTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
     
-    UnifiedToolRegistry::register(spatial_context_tool)?;
-    UnifiedToolRegistry::register(move_entity_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(spatial_context_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(move_entity_tool)?;
     
     tracing::info!("Registered 2 AI-driven spatial interaction tools with unified registry");
     Ok(())

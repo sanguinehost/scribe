@@ -705,29 +705,29 @@ pub fn register_narrative_tools(app_state: Arc<AppState>) -> Result<(), AppError
     // Register AnalyzeTextSignificanceTool
     let analyze_tool = Arc::new(AnalyzeTextSignificanceToolWrapper::new(app_state.clone())) 
         as Arc<dyn SelfRegisteringTool>;
-    UnifiedToolRegistry::register(analyze_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(analyze_tool)?;
 
     // Register CreateChronicleEventTool
     let create_chronicle_tool = Arc::new(CreateChronicleEventToolWrapper::new(
         app_state.chronicle_service.clone(),
         app_state.clone(),
     )) as Arc<dyn SelfRegisteringTool>;
-    UnifiedToolRegistry::register(create_chronicle_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(create_chronicle_tool)?;
 
     // Register ExtractTemporalEventsTool
     let extract_events_tool = Arc::new(ExtractTemporalEventsToolWrapper::new(app_state.clone()))
         as Arc<dyn SelfRegisteringTool>;
-    UnifiedToolRegistry::register(extract_events_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(extract_events_tool)?;
 
     // Register ExtractWorldConceptsTool
     let extract_concepts_tool = Arc::new(ExtractWorldConceptsToolWrapper::new(app_state.clone()))
         as Arc<dyn SelfRegisteringTool>;
-    UnifiedToolRegistry::register(extract_concepts_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(extract_concepts_tool)?;
 
     // Register SearchKnowledgeBaseTool
     let search_tool = Arc::new(SearchKnowledgeBaseToolWrapper::new(app_state.clone()))
         as Arc<dyn SelfRegisteringTool>;
-    UnifiedToolRegistry::register(search_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(search_tool)?;
 
     Ok(())
 }

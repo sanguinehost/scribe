@@ -1074,15 +1074,15 @@ pub fn register_relationship_interaction_tools(app_state: Arc<AppState>) -> Resu
     
     // Register UpdateRelationshipTool - AI-driven relationship modification
     let update_relationship_tool = Arc::new(UpdateRelationshipTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(update_relationship_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(update_relationship_tool)?;
     
     // Register CreateRelationshipTool - AI-driven relationship creation
     let create_relationship_tool = Arc::new(CreateRelationshipTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(create_relationship_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(create_relationship_tool)?;
     
     // Register DeleteRelationshipTool - AI-driven relationship deletion
     let delete_relationship_tool = Arc::new(DeleteRelationshipTool::new(app_state.clone())) as Arc<dyn SelfRegisteringTool + Send + Sync>;
-    UnifiedToolRegistry::register(delete_relationship_tool)?;
+    UnifiedToolRegistry::register_if_not_exists(delete_relationship_tool)?;
     
     tracing::info!("Registered 3 AI-driven relationship interaction tools with unified registry (UpdateRelationshipTool, CreateRelationshipTool, DeleteRelationshipTool)");
     Ok(())

@@ -908,7 +908,27 @@ pub struct ContextCache {
 - **Task 6.5:** ✅ Integration Points - Chronicle, lorebook, and ECS synchronization active in pipeline
 - **Task 6.6:** 🟡 Performance Issues - System works but requires optimization (see Epic 7)
 
-*   **[ ] Task 6.1: 🚨 Critical System Completeness (BLOCKING)**
+*   **[x] Task 6.1: 🚨 Critical System Completeness (BLOCKING)** ✅ **COMPLETED (2025-07-28)**
+    *   **[x] Subtask 6.1.0: Tool Infrastructure & Atomic Patterns** ✅ **COMPLETED (2025-07-28)**
+        *   [x] **Tool Registration Race Conditions Fixed**: Identified and resolved race conditions in `UnifiedToolRegistry` during concurrent test execution
+            *   [x] Root cause analysis: Multiple tests calling `initialize_all_tools()` simultaneously causing "Tool already registered" errors
+            *   [x] Thread-safe solution: Implemented proper initialization using `std::sync::Once` in `tool_initialization.rs`
+            *   [x] Eliminated duplicate registrations at source instead of masking with `register_if_not_exists()`
+            *   [x] Result: All 10 CheckEntityExistsTool tests now pass consistently without registration conflicts
+        *   [x] **Atomic Tool Patterns Implementation**: Made tools single-purpose to prevent circular dependencies
+            *   [x] **EntityResolutionTool**: Refactored to pure resolution - returns nil UUID for unresolved entities instead of creating them
+            *   [x] **CreateEntityTool**: Made pure creation tool without duplicate checking logic
+            *   [x] **CheckEntityExistsTool**: Implemented atomic existence checking with comprehensive OWASP security tests
+            *   [x] **Agent Orchestration**: Replaced direct tool-to-tool calls with EcsEntityManager and SharedAgentContext coordination
+        *   [x] **PerceptionAgent Phase 1 Refactoring**: Removed direct entity tool calls from core methods
+            *   [x] Replaced direct `find_entity` tool calls with `EcsEntityManager.query_entities()` for proper data layer access
+            *   [x] Implemented `coordinate_entity_creation()` method using SharedAgentContext for orchestrator coordination
+            *   [x] Agents now coordinate through proper abstractions instead of direct tool calls
+        *   [x] **Test Coverage**: Added comprehensive functional and security tests for all atomic tool patterns
+            *   [x] EntityResolutionTool: Updated 15 security tests for new atomic behavior
+            *   [x] CheckEntityExistsTool: 10 functional tests passing consistently
+            *   [x] CreateEntityTool: Enhanced functional tests for pure creation behavior
+            *   [x] All tests now use proper mock AI setup with `spawn_app(true, false, false)`
     *   **[x] Subtask 6.1.1: Repair System Implementation** ✅ **COMPLETED**
         *   [x] **PlanRepairService Creation**: Implement the missing PlanRepairService for intelligent plan repair
         *   [x] **Enhanced PlanValidatorService**: Add repair capability methods to validation service
