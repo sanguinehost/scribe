@@ -23,6 +23,8 @@ pub mod persona_context;
 pub mod tactical_agent;
 pub mod perception_agent;
 pub mod strategic_agent;
+pub mod chronicler_agent;
+pub mod chronicler_structured_output;
 pub mod hierarchical_pipeline;
 pub mod lightning_agent;
 pub mod orchestrator;
@@ -55,6 +57,7 @@ pub use entity_resolution_tool::{EntityResolutionTool, ProcessingMode};
 pub use tactical_agent::TacticalAgent;
 pub use perception_agent::{PerceptionAgent, PerceptionContext, PerceptionResult};
 pub use strategic_agent::StrategicAgent;
+pub use chronicler_agent::{ChroniclerAgent, ChronicleProcessingResult};
 pub use hierarchical_pipeline::{
     HierarchicalAgentPipeline, HierarchicalPipelineConfig, 
     HierarchicalPipelineResult, PipelineMetrics

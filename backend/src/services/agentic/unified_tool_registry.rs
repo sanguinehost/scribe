@@ -182,6 +182,8 @@ pub enum AgentType {
     Tactical,
     /// Perception Agent - world state observation
     Perception,
+    /// Chronicler Agent - chronicle event creation
+    Chronicler,
     /// Custom agent type for extensibility
     Custom(u32),
 }

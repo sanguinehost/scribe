@@ -127,6 +127,7 @@ impl AiToolDiscoveryService {
             AgentType::Strategic => "the Strategic Agent focused on high-level planning",
             AgentType::Tactical => "the Tactical Agent focused on execution planning",
             AgentType::Perception => "the Perception Agent observing world state",
+            AgentType::Chronicler => "the Chronicler Agent focused on chronicle event creation",
             AgentType::Custom(_) => "a custom agent",
         };
         
@@ -361,6 +362,12 @@ impl AgentToolDiscovery {
                 "get_visible_entities_and_exits",
                 "get_spatial_context",
                 "query_inventory",
+            ],
+            AgentType::Chronicler => vec![
+                "analyze_text_significance",
+                "extract_temporal_events",
+                "create_chronicle_event",
+                "extract_world_concepts",
             ],
             AgentType::Custom(_) => vec![],
         }

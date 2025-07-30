@@ -80,6 +80,7 @@ pub enum AgentType {
     Lightning,
     Orchestrator,
     HierarchicalPipeline,
+    Chronicler,
 }
 
 /// Context query filters for retrieving specific context
