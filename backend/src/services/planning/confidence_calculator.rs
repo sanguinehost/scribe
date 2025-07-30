@@ -460,7 +460,7 @@ mod tests {
             goal: "Test repair plan".to_string(),
             actions: vec![PlannedAction {
                 id: "test_action".to_string(),
-                name: ActionName::MoveEntity,
+                name: "move_entity".to_string(),
                 parameters: serde_json::json!({"entity_id": "test"}),
                 preconditions: Preconditions {
                     entity_exists: Some(vec![EntityExistenceCheck {

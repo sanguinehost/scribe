@@ -127,6 +127,13 @@ pub struct Config {
     pub query_planning_model: String,
     #[serde(default = "default_hybrid_query_model")]
     pub hybrid_query_model: String,
+    
+    // Redis Configuration - Optional for caching
+    pub redis_url: Option<String>,
+    #[serde(default = "default_redis_enabled")]
+    pub redis_enabled: bool,
+    #[serde(default = "default_redis_timeout_ms")]
+    pub redis_timeout_ms: u64,
 }
 
 impl std::fmt::Debug for Config {
@@ -198,6 +205,9 @@ impl std::fmt::Debug for Config {
             .field("intent_detection_model", &self.intent_detection_model)
             .field("query_planning_model", &self.query_planning_model)
             .field("hybrid_query_model", &self.hybrid_query_model)
+            .field("redis_url", &self.redis_url.as_ref().map(|_| "[REDACTED]"))
+            .field("redis_enabled", &self.redis_enabled)
+            .field("redis_timeout_ms", &self.redis_timeout_ms)
             .finish()
     }
 }
@@ -351,6 +361,15 @@ fn default_hybrid_query_model() -> String {
     "gemini-2.5-flash-lite-preview-06-17".to_string()
 }
 
+// Redis configuration defaults
+const fn default_redis_enabled() -> bool {
+    false // Disabled by default for self-hosting
+}
+
+const fn default_redis_timeout_ms() -> u64 {
+    500 // 500ms timeout for Redis operations
+}
+
 impl Config {
     /// Loads configuration from environment variables.
     ///
@@ -434,6 +453,10 @@ impl Default for Config {
             intent_detection_model: default_intent_detection_model(),
             query_planning_model: default_query_planning_model(),
             hybrid_query_model: default_hybrid_query_model(),
+            // Redis configuration
+            redis_url: None,
+            redis_enabled: default_redis_enabled(),
+            redis_timeout_ms: default_redis_timeout_ms(),
         }
     }
 }

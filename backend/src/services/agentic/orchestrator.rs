@@ -21,6 +21,8 @@ use super::{
 };
 use crate::llm::AiClient;
 use crate::services::progressive_cache::ProgressiveCacheService;
+use crate::services::AgentResultsService;
+use crate::models::agent_results::{AgentType, OperationType};
 
 /// Represents the current state of the sequential agentic workflow.
 #[derive(Debug, Clone, PartialEq)]
@@ -83,6 +85,7 @@ pub struct WorkflowOrchestrator {
     perception_agent: Arc<PerceptionAgent>,
     cache_service: Arc<ProgressiveCacheService>,
     tool_executor: Arc<ToolExecutor>,
+    agent_results_service: Arc<AgentResultsService>,
 }
 
 impl WorkflowOrchestrator {
@@ -93,6 +96,7 @@ impl WorkflowOrchestrator {
         perception_agent: Arc<PerceptionAgent>,
         cache_service: Arc<ProgressiveCacheService>,
         tool_executor: Arc<ToolExecutor>,
+        agent_results_service: Arc<AgentResultsService>,
     ) -> Self {
         Self {
             strategic_agent,
@@ -100,6 +104,7 @@ impl WorkflowOrchestrator {
             perception_agent,
             cache_service,
             tool_executor,
+            agent_results_service,
         }
     }
 
@@ -161,6 +166,7 @@ impl WorkflowOrchestrator {
                 OrchestratorState::TacticalPlanning => {
                     self.execute_tactical_planning(
                         user_id,
+                        session_id,
                         session_dek,
                         &mut results
                     ).await?
@@ -171,6 +177,7 @@ impl WorkflowOrchestrator {
                         &extended_history,
                         current_message,
                         user_id,
+                        session_id,
                         session_dek,
                         &mut results
                     ).await?
@@ -230,6 +237,7 @@ impl WorkflowOrchestrator {
         results: &mut StageResults,
     ) -> Result<OrchestratorState, AppError> {
         info!("Stage 1: Executing strategic analysis");
+        let start_time = std::time::Instant::now();
         
         match self.strategic_agent
             .analyze_conversation(chat_history, user_id, session_id, session_dek)
@@ -237,6 +245,42 @@ impl WorkflowOrchestrator {
         {
             Ok(directive) => {
                 info!("Strategic analysis successful: {:?}", directive.directive_type);
+                
+                // Store strategic analysis results in PostgreSQL for lightning agent retrieval
+                let result_data = serde_json::json!({
+                    "directive_type": directive.directive_type,
+                    "narrative_arc": directive.narrative_arc,
+                    "plot_significance": format!("{:?}", directive.plot_significance),
+                    "emotional_tone": directive.emotional_tone,
+                    "character_focus": directive.character_focus,
+                    "world_impact_level": format!("{:?}", directive.world_impact_level)
+                });
+                
+                let metadata = serde_json::json!({
+                    "messages_analyzed": chat_history.len(),
+                    "processing_time_ms": start_time.elapsed().as_millis(),
+                    "stage": "strategic_analysis"
+                });
+                
+                // Store the result (non-blocking, log errors but don't fail the pipeline)
+                if let Err(e) = self.agent_results_service.store_agent_result(
+                    user_id,
+                    session_id,
+                    None, // No specific message_id for strategic analysis
+                    AgentType::Strategic,
+                    OperationType::StrategicDirective,
+                    result_data,
+                    Some(metadata),
+                    start_time.elapsed().as_millis() as i32,
+                    None, // TODO: Add token counting
+                    None, // TODO: Add confidence scoring for strategic directive
+                    Some("strategic".to_string()),
+                    Some(format!("strategic_{}", Utc::now().timestamp())),
+                    session_dek,
+                ).await {
+                    warn!("Failed to store strategic analysis results: {}", e);
+                }
+                
                 results.strategic_directive = Some(directive);
                 Ok(OrchestratorState::TacticalPlanning)
             }
@@ -252,10 +296,12 @@ impl WorkflowOrchestrator {
     async fn execute_tactical_planning(
         &self,
         user_id: Uuid,
+        session_id: Uuid,
         session_dek: &SessionDek,
         results: &mut StageResults,
     ) -> Result<OrchestratorState, AppError> {
         info!("Stage 2: Executing tactical planning");
+        let start_time = std::time::Instant::now();
         
         let directive = results.strategic_directive.as_ref()
             .ok_or_else(|| AppError::InternalServerErrorGeneric(
@@ -263,12 +309,62 @@ impl WorkflowOrchestrator {
             ))?;
         
         match self.tactical_agent
-            .process_directive(directive, user_id, session_dek)
+            .process_directive(directive, user_id, session_dek, None)
             .await
         {
             Ok(context) => {
                 info!("Tactical planning successful, entities involved: {}", 
                     context.relevant_entities.len());
+                
+                // Store tactical planning results in PostgreSQL for lightning agent retrieval
+                let result_data = serde_json::json!({
+                    "relevant_entities_count": context.relevant_entities.len(),
+                    "has_spatial_context": context.spatial_context.is_some(),
+                    "has_temporal_context": context.temporal_context.is_some(),
+                    "has_causal_context": context.causal_context.is_some(),
+                    "validated_plan": {
+                        "plan_id": context.validated_plan.plan_id,
+                        "steps_count": context.validated_plan.steps.len(),
+                        "preconditions_met": context.validated_plan.preconditions_met,
+                        "causal_consistency_verified": context.validated_plan.causal_consistency_verified,
+                        "entity_dependencies": context.validated_plan.entity_dependencies
+                    },
+                    "current_sub_goal": {
+                        "goal_id": context.current_sub_goal.goal_id,
+                        "description": context.current_sub_goal.description,
+                        "priority_level": context.current_sub_goal.priority_level
+                    },
+                    "plan_validation_status": format!("{:?}", context.plan_validation_status)
+                });
+                
+                let metadata = serde_json::json!({
+                    "entities_count": context.relevant_entities.len(),
+                    "plan_steps_count": context.validated_plan.steps.len(),
+                    "processing_time_ms": start_time.elapsed().as_millis(),
+                    "stage": "tactical_planning",
+                    "source_directive": format!("{:?}", directive.directive_type),
+                    "has_perception_analysis": context.perception_analysis.is_some()
+                });
+                
+                // Store the result (non-blocking, log errors but don't fail the pipeline)
+                if let Err(e) = self.agent_results_service.store_agent_result(
+                    user_id,
+                    session_id,
+                    None, // No specific message_id for tactical planning
+                    AgentType::Tactical,
+                    OperationType::TacticalPlanning,
+                    result_data,
+                    Some(metadata),
+                    start_time.elapsed().as_millis() as i32,
+                    None, // TODO: Add token counting
+                    None, // TODO: Add confidence scoring for tactical planning
+                    Some("tactical".to_string()),
+                    Some(format!("tactical_{}", Utc::now().timestamp())),
+                    session_dek,
+                ).await {
+                    warn!("Failed to store tactical planning results: {}", e);
+                }
+                
                 results.enriched_context = Some(context);
                 Ok(OrchestratorState::EntityCreation)
             }
@@ -286,10 +382,12 @@ impl WorkflowOrchestrator {
         chat_history: &[crate::models::chats::ChatMessageForClient],
         current_message: &str,
         user_id: Uuid,
+        session_id: Uuid,
         session_dek: &SessionDek,
         results: &mut StageResults,
     ) -> Result<OrchestratorState, AppError> {
         info!("Stage 3: Executing entity creation");
+        let start_time = std::time::Instant::now();
         
         // Run fresh perception analysis to extract entities
         let perception_result = self.perception_agent
@@ -298,6 +396,41 @@ impl WorkflowOrchestrator {
         
         if perception_result.contextual_entities.is_empty() {
             info!("No entities to create, skipping to cache update");
+            
+            // Still store the perception result even if no entities were found
+            let result_data = serde_json::json!({
+                "contextual_entities": [],
+                "hierarchy_analysis": perception_result.hierarchy_analysis,
+                "salience_updates": perception_result.salience_updates,
+                "confidence_score": perception_result.confidence_score,
+                "entities_created": 0
+            });
+            
+            let metadata = serde_json::json!({
+                "messages_analyzed": chat_history.len(),
+                "current_message_length": current_message.len(),
+                "processing_time_ms": start_time.elapsed().as_millis(),
+                "stage": "entity_creation"
+            });
+            
+            if let Err(e) = self.agent_results_service.store_agent_result(
+                user_id,
+                session_id,
+                None, // No specific message_id for perception analysis
+                AgentType::Perception,
+                OperationType::EntityExtraction,
+                result_data,
+                Some(metadata),
+                start_time.elapsed().as_millis() as i32,
+                None, // TODO: Add token counting
+                None, // TODO: Add confidence scoring
+                Some("entity".to_string()),
+                Some(format!("perception_{}", Utc::now().timestamp())),
+                session_dek,
+            ).await {
+                warn!("Failed to store perception analysis results: {}", e);
+            }
+            
             return Ok(OrchestratorState::CacheUpdate);
         }
         
@@ -313,6 +446,48 @@ impl WorkflowOrchestrator {
                     .iter()
                     .map(|e| e.name.clone())
                     .collect();
+                
+                // Store perception analysis results in PostgreSQL for lightning agent retrieval
+                let result_data = serde_json::json!({
+                    "contextual_entities": perception_result.contextual_entities.iter().map(|e| serde_json::json!({
+                        "name": e.name,
+                        "entity_type": e.entity_type,
+                        "relevance_score": e.relevance_score
+                    })).collect::<Vec<_>>(),
+                    "hierarchy_analysis": perception_result.hierarchy_analysis,
+                    "salience_updates": perception_result.salience_updates,
+                    "confidence_score": perception_result.confidence_score,
+                    "entities_created": results.entities_created.len()
+                });
+                
+                let metadata = serde_json::json!({
+                    "messages_analyzed": chat_history.len(),
+                    "current_message_length": current_message.len(),
+                    "entities_extracted": perception_result.contextual_entities.len(),
+                    "entities_created": results.entities_created.len(),
+                    "processing_time_ms": start_time.elapsed().as_millis(),
+                    "stage": "entity_creation"
+                });
+                
+                // Store the result (non-blocking, log errors but don't fail the pipeline)
+                if let Err(e) = self.agent_results_service.store_agent_result(
+                    user_id,
+                    session_id,
+                    None, // No specific message_id for perception analysis
+                    AgentType::Perception,
+                    OperationType::EntityExtraction,
+                    result_data,
+                    Some(metadata),
+                    start_time.elapsed().as_millis() as i32,
+                    None, // TODO: Add token counting
+                    None, // TODO: Add confidence scoring
+                    Some("entity".to_string()),
+                    Some(format!("perception_{}", Utc::now().timestamp())),
+                    session_dek,
+                ).await {
+                    warn!("Failed to store perception analysis results: {}", e);
+                }
+                
                 info!("Successfully created {} entities", results.entities_created.len());
                 Ok(OrchestratorState::RelationshipBuilding)
             }

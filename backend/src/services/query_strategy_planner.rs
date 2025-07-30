@@ -219,10 +219,29 @@ impl QueryStrategyPlanner {
             })
             .unwrap_or_default();
 
+        // Clean JSON response (strip markdown code blocks if present)
+        let cleaned_json = if response_text.trim().starts_with("```json") {
+            response_text
+                .trim()
+                .strip_prefix("```json")
+                .and_then(|s| s.strip_suffix("```"))
+                .unwrap_or(&response_text)
+                .trim()
+        } else if response_text.trim().starts_with("```") {
+            response_text
+                .trim()
+                .strip_prefix("```")
+                .and_then(|s| s.strip_suffix("```"))
+                .unwrap_or(&response_text)
+                .trim()
+        } else {
+            response_text.trim()
+        };
+
         // Parse the structured output
         let output: crate::services::query_strategy_planner_structured_output::QueryExecutionPlanOutput = 
-            serde_json::from_str(&response_text)
-                .map_err(|e| AppError::SerializationError(format!("Failed to parse Flash strategy response: {}", e)))?;
+            serde_json::from_str(cleaned_json)
+                .map_err(|e| AppError::SerializationError(format!("Failed to parse Flash strategy response: {}. Response: {}", e, response_text)))?;
         
         // Validate the output
         output.validate()?;
@@ -311,10 +330,29 @@ impl QueryStrategyPlanner {
             })
             .unwrap_or_default();
 
+        // Clean JSON response (strip markdown code blocks if present)
+        let cleaned_json = if response_text.trim().starts_with("```json") {
+            response_text
+                .trim()
+                .strip_prefix("```json")
+                .and_then(|s| s.strip_suffix("```"))
+                .unwrap_or(&response_text)
+                .trim()
+        } else if response_text.trim().starts_with("```") {
+            response_text
+                .trim()
+                .strip_prefix("```")
+                .and_then(|s| s.strip_suffix("```"))
+                .unwrap_or(&response_text)
+                .trim()
+        } else {
+            response_text.trim()
+        };
+
         // Parse the structured output
         let output: crate::services::query_strategy_planner_structured_output::QueryExecutionPlanOutput = 
-            serde_json::from_str(&response_text)
-                .map_err(|e| AppError::SerializationError(format!("Failed to parse Flash strategy response: {}", e)))?;
+            serde_json::from_str(cleaned_json)
+                .map_err(|e| AppError::SerializationError(format!("Failed to parse Flash strategy response: {}. Response: {}", e, response_text)))?;
         
         // Validate the output
         output.validate()?;

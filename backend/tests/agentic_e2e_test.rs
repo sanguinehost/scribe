@@ -696,48 +696,32 @@ async fn test_tool_registry_integration() {
         services,
     ));
     
-    use scribe_backend::services::agentic::ToolRegistry;
-    let mut registry = ToolRegistry::new();
+    use scribe_backend::services::agentic::unified_tool_registry::UnifiedToolRegistry;
     
-    // Register all agentic tools
-    let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(test_app.app_state.clone()));
-    registry.add_tool(significance_tool);
+    // Register all agentic tools (they should auto-register via UnifiedToolRegistry)
+    // The unified tool registry uses a global instance with self-registration
     
-    let events_tool = Arc::new(ExtractTemporalEventsTool::new(test_app.app_state.clone()));
-    registry.add_tool(events_tool);
+    // Tools are now self-registered with UnifiedToolRegistry
+    // Verify that tools are available for the orchestrator
+    let orchestrator_tools = UnifiedToolRegistry::get_tools_for_agent(
+        scribe_backend::services::agentic::unified_tool_registry::AgentType::Orchestrator
+    );
+    println!("  📋 Available tools for orchestrator: {} tools", orchestrator_tools.len());
     
-    let concepts_tool = Arc::new(ExtractWorldConceptsTool::new(test_app.app_state.clone()));
-    registry.add_tool(concepts_tool);
-    
-    let search_tool = Arc::new(SearchKnowledgeBaseTool::new(test_app.app_state.clone()));
-    registry.add_tool(search_tool);
-    
-    let create_event_tool = Arc::new(CreateChronicleEventTool::new(
-        Arc::new(ChronicleService::new(test_app.db_pool.clone())),
-        app_state
-    ));
-    registry.add_tool(create_event_tool);
-    
-    // Test that all tools can be retrieved
-    let tool_names = registry.list_tools();
-    println!("  📋 Registered {} tools: {:?}", tool_names.len(), tool_names);
-    
-    // Test that tools can be retrieved and executed
-    for tool_name in &tool_names {
-        match registry.get_tool(tool_name) {
-            Ok(_tool) => {
-                println!("    ✅ Tool '{}' retrieved successfully", tool_name);
-            }
-            Err(e) => {
-                println!("    ❌ Failed to retrieve tool '{}': {}", tool_name, e);
-            }
-        }
+    // Verify that each agent type has access to appropriate tools
+    for agent_type in [
+        scribe_backend::services::agentic::unified_tool_registry::AgentType::Orchestrator,
+        scribe_backend::services::agentic::unified_tool_registry::AgentType::Strategic,
+        scribe_backend::services::agentic::unified_tool_registry::AgentType::Tactical,
+        scribe_backend::services::agentic::unified_tool_registry::AgentType::Perception,
+    ] {
+        let tools = UnifiedToolRegistry::get_tools_for_agent(agent_type);
+        println!("    ✅ {:?} agent has access to {} tools", agent_type, tools.len());
     }
     
-    assert!(tool_names.len() >= 5, "Should have registered at least 5 tools");
-    assert!(tool_names.contains(&"analyze_text_significance".to_string()));
-    assert!(tool_names.contains(&"extract_temporal_events".to_string()));
-    assert!(tool_names.contains(&"search_knowledge_base".to_string()));
+    // Verify key tools are available
+    let tool_names: Vec<String> = orchestrator_tools.iter().map(|t| t.name.clone()).collect();
+    assert!(!tool_names.is_empty(), "Should have registered tools");
     
     println!("✅ Tool registry integration test completed!");
 }

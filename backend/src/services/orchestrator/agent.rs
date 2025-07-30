@@ -317,6 +317,7 @@ impl OrchestratorAgent {
             },
             phase_history: Vec::new(),
             metadata: HashMap::new(),
+            chronicle_id: dequeued.payload.chronicle_id,
         };
         
         // Execute phases

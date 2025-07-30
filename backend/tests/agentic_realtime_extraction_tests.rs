@@ -82,6 +82,10 @@ fn create_agentic_services(test_app: &TestApp) -> (Arc<scribe_backend::services:
         test_app.config.advanced_model.clone(),
     ));
     
+    let shared_context = Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+        Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+    ));
+    
     let agentic_orchestrator = Arc::new(scribe_backend::services::AgenticOrchestrator::new(
         test_app.ai_client.clone(),
         hybrid_query_service,
@@ -91,6 +95,7 @@ fn create_agentic_services(test_app: &TestApp) -> (Arc<scribe_backend::services:
         test_app.config.query_planning_model.clone(),
         test_app.config.optimization_model.clone(),
         test_app.config.advanced_model.clone(),
+        shared_context,
     ));
     
     (world_model_service, agentic_orchestrator, agentic_state_update_service)
@@ -387,6 +392,9 @@ mod realtime_extraction_tests {
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+        )),
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -641,6 +649,9 @@ mod realtime_extraction_tests {
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+        )),
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -914,6 +925,9 @@ mod realtime_extraction_tests {
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+        )),
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -1185,6 +1199,9 @@ mod realtime_extraction_tests {
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+        )),
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),
@@ -1461,6 +1478,9 @@ mod realtime_extraction_tests {
         tactical_agent: None,
         strategic_agent: None,
         hierarchical_pipeline: None,
+        shared_agent_context: Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(
+            Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+        )),
         };
         let app_state = Arc::new(scribe_backend::state::AppState::new(
             test_app.db_pool.clone(),

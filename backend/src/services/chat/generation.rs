@@ -1599,6 +1599,11 @@ pub async fn stream_ai_response_and_save_message(
                       //                 let thinking_message = format!("Attempting to use tool: {} with ID: {}", tool_call.fn_name, tool_call.call_id);
                       //                 yield Ok(ScribeSseEvent::Thinking(thinking_message));
                       //             }
+                      Ok(GeminiResponseChunkAlias::ToolCall(tool_call)) => {
+                       debug!(tool_call_id = %tool_call.call_id, tool_fn_name = %tool_call.fn_name, "Received ToolCall event from AI stream in chat_service");
+                       let thinking_message = format!("Attempting to use tool: {} with ID: {}", tool_call.fn_name, tool_call.call_id);
+                       yield Ok(ScribeSseEvent::Thinking(thinking_message));
+                   }
                       Ok(GeminiResponseChunkAlias::End(_)) => {
                        debug!("Received End event from AI stream in chat_service");
                 }

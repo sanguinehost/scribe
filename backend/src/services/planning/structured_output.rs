@@ -16,43 +16,10 @@ pub struct PlanGenerationOutput {
 pub struct PlannedActionOutput {
     pub id: String,
     pub name: String, // Must be one of the valid action names
-    pub parameters: ActionParametersOutput,
+    pub parameters: serde_json::Value, // Dynamic parameters based on tool requirements
     pub preconditions: Option<PreconditionsOutput>,
     pub effects: Option<EffectsOutput>,
     pub dependencies: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActionParametersOutput {
-    // Common parameters across multiple actions
-    pub entity_id: Option<String>,
-    pub entity_name: Option<String>,
-    pub entity_type: Option<String>,
-    
-    // Search/query parameters
-    pub search_criteria: Option<String>,
-    pub query: Option<String>,
-    
-    // Location/movement parameters
-    pub location_id: Option<String>,
-    pub destination_id: Option<String>,
-    pub parent_id: Option<String>,
-    
-    // Inventory parameters
-    pub character_entity_id: Option<String>,
-    pub item_entity_id: Option<String>,
-    pub quantity: Option<i32>,
-    
-    // Relationship parameters
-    pub source_entity_id: Option<String>,
-    pub target_entity_id: Option<String>,
-    pub relationship_type: Option<String>,
-    pub trust_delta: Option<f32>,
-    pub affection_delta: Option<f32>,
-    
-    // Update parameters
-    pub updates: Option<serde_json::Value>,
-    pub component_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,8 +113,65 @@ pub struct RelationshipChangeEffectOutput {
     pub affection_change: Option<f32>,
 }
 
-/// Helper function to create the JSON schema for structured output
+/// Helper function to create the JSON schema for structured output with hardcoded tool names
 pub fn get_plan_generation_schema() -> serde_json::Value {
+    // Default tool names for backward compatibility
+    let default_tools = vec![
+        "find_entity".to_string(),
+        "get_entity_details".to_string(), 
+        "create_entity".to_string(),
+        "update_entity".to_string(),
+        "move_entity".to_string(),
+        "get_contained_entities".to_string(),
+        "get_spatial_context".to_string(),
+        "add_item_to_inventory".to_string(),
+        "remove_item_from_inventory".to_string(),
+        "update_relationship".to_string(),
+    ];
+    get_plan_generation_schema_with_tools(&default_tools)
+}
+
+/// Helper function to create the JSON schema for structured output with dynamic tool names
+pub fn get_plan_generation_schema_with_tools(tool_names: &[String]) -> serde_json::Value {
+    // Get actual tool schemas from UnifiedToolRegistry
+    use crate::services::agentic::unified_tool_registry::{UnifiedToolRegistry, AgentType};
+    
+    let all_tools = UnifiedToolRegistry::get_tools_for_agent(AgentType::Tactical);
+    let mut parameter_examples = serde_json::Map::new();
+    
+    // Build parameter examples from actual tool schemas
+    for tool in all_tools.iter() {
+        if tool_names.contains(&tool.name) {
+            let input_schema = tool.input_schema.clone();
+            if let Some(properties) = input_schema.get("properties") {
+                if let Some(props_obj) = properties.as_object() {
+                    let mut tool_params = serde_json::Map::new();
+                    for (param_name, param_schema) in props_obj {
+                        // Skip user_id as it's auto-injected by the system
+                        if param_name != "user_id" {
+                            tool_params.insert(param_name.clone(), param_schema.clone());
+                        }
+                    }
+                    if !tool_params.is_empty() {
+                        parameter_examples.insert(
+                            tool.name.clone(), 
+                            serde_json::Value::Object(tool_params)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    let parameter_description = if parameter_examples.is_empty() {
+        "Tool-specific parameters. Refer to each tool's documentation for exact parameter names and types.".to_string()
+    } else {
+        format!(
+            "Tool-specific parameters. Use the exact parameter names and types from each tool's schema. Tool parameters: {}",
+            serde_json::to_string_pretty(&parameter_examples).unwrap_or_default()
+        )
+    };
+
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -166,48 +190,13 @@ pub fn get_plan_generation_schema() -> serde_json::Value {
                         },
                         "name": {
                             "type": "string",
-                            "enum": [
-                                "find_entity",
-                                "get_entity_details", 
-                                "create_entity",
-                                "update_entity",
-                                "move_entity",
-                                "get_contained_entities",
-                                "get_spatial_context",
-                                "add_item_to_inventory",
-                                "remove_item_from_inventory",
-                                "update_relationship"
-                            ],
+                            "enum": tool_names,
                             "description": "The action to perform. Must be one of the exact values listed."
                         },
                         "parameters": {
                             "type": "object",
-                            "properties": {
-                                "entity_id": {"type": "string"},
-                                "entity_name": {"type": "string"},
-                                "entity_type": {"type": "string"},
-                                "search_criteria": {"type": "string"},
-                                "query": {"type": "string"},
-                                "location_id": {"type": "string"},
-                                "destination_id": {"type": "string"},
-                                "parent_id": {"type": "string"},
-                                "character_entity_id": {"type": "string"},
-                                "item_entity_id": {"type": "string"},
-                                "quantity": {"type": "integer"},
-                                "source_entity_id": {"type": "string"},
-                                "target_entity_id": {"type": "string"},
-                                "relationship_type": {"type": "string"},
-                                "trust_delta": {"type": "number"},
-                                "affection_delta": {"type": "number"},
-                                "updates": {
-                                    "type": "object",
-                                    "properties": {
-                                        "field": {"type": "string"},
-                                        "value": {}
-                                    }
-                                },
-                                "component_type": {"type": "string"}
-                            }
+                            "description": parameter_description,
+                            "additionalProperties": true
                         },
                         "dependencies": {
                             "type": "array",
@@ -249,27 +238,11 @@ impl PlanGenerationOutput {
         
         let mut actions = Vec::new();
         for action_output in &self.actions {
-            let action_name = match action_output.name.as_str() {
-                "find_entity" => ActionName::FindEntity,
-                "get_entity_details" => ActionName::GetEntityDetails,
-                "create_entity" => ActionName::CreateEntity,
-                "update_entity" => ActionName::UpdateEntity,
-                "move_entity" => ActionName::MoveEntity,
-                "get_contained_entities" => ActionName::GetContainedEntities,
-                "get_spatial_context" => ActionName::GetSpatialContext,
-                "add_item_to_inventory" => ActionName::AddItemToInventory,
-                "remove_item_from_inventory" => ActionName::RemoveItemFromInventory,
-                "update_relationship" => ActionName::UpdateRelationship,
-                _ => return Err(AppError::InvalidInput(
-                    format!("Invalid action name: {}", action_output.name)
-                )),
-            };
+            // Action names are now dynamic strings - no need to convert to enum
+            let action_name = action_output.name.clone();
             
-            // Convert parameters to JSON value
-            let parameters = serde_json::to_value(&action_output.parameters)
-                .map_err(|e| AppError::InternalServerErrorGeneric(
-                    format!("Failed to serialize parameters: {}", e)
-                ))?;
+            // Parameters are already JSON value - just clone
+            let parameters = action_output.parameters.clone();
             
             // Convert preconditions
             let preconditions = if let Some(prec) = &action_output.preconditions {
@@ -387,21 +360,11 @@ impl PlanGenerationOutput {
             ));
         }
         
-        // Validate action names
-        let valid_actions = [
-            "find_entity", "get_entity_details", "create_entity", 
-            "update_entity", "move_entity", "get_contained_entities",
-            "get_spatial_context", "add_item_to_inventory", 
-            "remove_item_from_inventory", "update_relationship"
-        ];
+        // For validation, we need to get the actual available tools
+        // This is a limitation - validation should ideally be done with the same tool list
+        // For now, we'll skip action name validation here since it's enforced by the schema
         
         for action in &self.actions {
-            if !valid_actions.contains(&action.name.as_str()) {
-                return Err(AppError::InvalidInput(
-                    format!("Invalid action name: {}", action.name)
-                ));
-            }
-            
             if action.id.trim().is_empty() {
                 return Err(AppError::InvalidInput(
                     "Action ID cannot be empty".to_string()

@@ -484,11 +484,14 @@ impl UnifiedToolRegistry {
             registered_tool.implementation.clone()
         };
         
+        // Filter parameters to only include those expected by the tool
+        let filtered_params = Self::filter_tool_parameters(tool_name, params, &context)?;
+        
         // Update usage stats
         let start_time = std::time::Instant::now();
         
         // Execute with monitoring
-        let result = tool.execute(params, session_dek).await;
+        let result = tool.execute(&filtered_params, session_dek).await;
         
         // Update stats
         {
@@ -537,6 +540,50 @@ impl UnifiedToolRegistry {
         }
         
         result
+    }
+    
+    /// Filter tool parameters to only include those expected by the tool's schema
+    /// Removes null values and parameters not defined in the tool's input schema
+    fn filter_tool_parameters(tool_name: &str, params: &ToolParams, context: &ExecutionContext) -> Result<ToolParams, ToolError> {
+        let tool_schema = {
+            let registry = UNIFIED_REGISTRY.read()
+                .map_err(|_| ToolError::ExecutionFailed("Registry lock failed".into()))?;
+            
+            let registered_tool = registry.tools.get(tool_name)
+                .ok_or_else(|| ToolError::ExecutionFailed(format!("Tool '{}' not found", tool_name)))?;
+            
+            registered_tool.implementation.input_schema()
+        };
+        
+        // Extract expected parameters from the schema
+        let expected_params = if let Some(properties) = tool_schema.get("properties").and_then(|p| p.as_object()) {
+            properties.keys().map(|k| k.as_str()).collect::<std::collections::HashSet<_>>()
+        } else {
+            // If no properties defined, allow all parameters
+            return Ok(params.clone());
+        };
+        
+        // Filter the input parameters
+        let mut filtered = serde_json::Map::new();
+        
+        if let Some(params_obj) = params.as_object() {
+            for (key, value) in params_obj {
+                // Only include parameters that:
+                // 1. Are expected by the tool's schema
+                // 2. Are not null
+                if expected_params.contains(key.as_str()) && !value.is_null() {
+                    filtered.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        
+        // Auto-add user_id if it's expected but missing
+        if expected_params.contains("user_id") && !filtered.contains_key("user_id") {
+            // Extract user_id from the execution context
+            filtered.insert("user_id".to_string(), serde_json::Value::String(context.user_id.to_string()));
+        }
+        
+        Ok(serde_json::Value::Object(filtered))
     }
     
     /// Get a specific tool by name (for compatibility with old ToolRegistry API)

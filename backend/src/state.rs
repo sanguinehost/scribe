@@ -30,7 +30,7 @@ use crate::services::{
     EcsEntityManager, EcsGracefulDegradation, EcsEnhancedRagService, HybridQueryService, 
     ChronicleEventListener, ChronicleEcsTranslator, ChronicleService, WorldModelService, 
     AgenticOrchestrator, AgenticStateUpdateService, HierarchicalContextAssembler,
-    IntentDetectionService, QueryStrategyPlanner,
+    IntentDetectionService, QueryStrategyPlanner, AgentResultsService,
     agentic::entity_resolution_tool::EntityResolutionTool,
     agentic::tactical_agent::TacticalAgent,
     agentic::strategic_agent::StrategicAgent,
@@ -77,6 +77,7 @@ pub struct AppStateServices {
     pub strategic_agent: Option<Arc<StrategicAgent>>,
     pub hierarchical_pipeline: Option<Arc<HierarchicalAgentPipeline>>,
     pub shared_agent_context: Arc<SharedAgentContext>,
+    pub agent_results_service: Arc<AgentResultsService>,
 }
 
 // --- Shared application state ---
@@ -125,6 +126,7 @@ pub struct AppState {
     pub strategic_agent: Option<Arc<StrategicAgent>>,
     pub hierarchical_pipeline: Option<Arc<HierarchicalAgentPipeline>>,
     pub shared_agent_context: Arc<SharedAgentContext>,
+    pub agent_results_service: Arc<AgentResultsService>,
 }
 
 // Manual Debug implementation for AppState
@@ -165,6 +167,7 @@ impl fmt::Debug for AppState {
             .field("strategic_agent", &"<Option<Arc<StrategicAgent>>>") // Strategic layer agent
             .field("hierarchical_pipeline", &"<Option<Arc<HierarchicalAgentPipeline>>>") // Hierarchical agent pipeline
             .field("shared_agent_context", &"<Arc<SharedAgentContext>>") // Inter-agent shared context
+            .field("agent_results_service", &"<Arc<AgentResultsService>>") // Agent results storage
             .finish()
     }
 }
@@ -209,6 +212,7 @@ impl AppState {
             strategic_agent: services.strategic_agent,
             hierarchical_pipeline: None, // Will be set after agents are configured
             shared_agent_context: services.shared_agent_context,
+            agent_results_service: services.agent_results_service,
         }
     }
 

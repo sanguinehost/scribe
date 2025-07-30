@@ -5,6 +5,7 @@ use scribe_backend::{
             types::*,
         },
         EcsEntityManager,
+        agentic::unified_tool_registry::AgentType,
     },
     test_helpers::{spawn_app, TestDataGuard},
     PgPool,
@@ -182,7 +183,7 @@ async fn test_valid_plan_simple_movement() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::MoveEntity,
+                name: "move_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_to_move": sol_id.to_string(),
                     "new_parent": cantina_id.to_string(),
@@ -217,7 +218,7 @@ async fn test_valid_plan_simple_movement() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(validated) => {
@@ -258,7 +259,7 @@ async fn test_invalid_plan_entity_not_found() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::MoveEntity,
+                name: "move_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_to_move": fake_id.to_string(),
                     "new_parent": fake_id.to_string(),
@@ -283,7 +284,7 @@ async fn test_invalid_plan_entity_not_found() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(_) => {
@@ -317,7 +318,7 @@ async fn test_invalid_plan_location_precondition_not_met() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::RemoveItemFromInventory,
+                name: "remove_item_from_inventory".to_string(),
                 parameters: serde_json::json!({
                     "owner_entity_id": borga_id.to_string(),
                     "item_entity_id": datapad_id.to_string(),
@@ -343,7 +344,7 @@ async fn test_invalid_plan_location_precondition_not_met() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(_) => {
@@ -407,7 +408,7 @@ async fn test_invalid_plan_missing_component() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::AddItemToInventory,
+                name: "add_item_to_inventory".to_string(),
                 parameters: serde_json::json!({
                     "owner_entity_id": no_inventory_id.to_string(),
                     "item_entity_id": Uuid::new_v4().to_string(),
@@ -433,7 +434,7 @@ async fn test_invalid_plan_missing_component() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(_) => {
@@ -492,7 +493,7 @@ async fn test_invalid_plan_insufficient_inventory_space() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::AddItemToInventory,
+                name: "add_item_to_inventory".to_string(),
                 parameters: serde_json::json!({
                     "owner_entity_id": sol_id.to_string(),
                     "item_entity_id": datapad_id.to_string(),
@@ -516,7 +517,7 @@ async fn test_invalid_plan_insufficient_inventory_space() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(_) => {
@@ -563,7 +564,7 @@ async fn test_invalid_plan_relationship_trust_too_low() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::RemoveItemFromInventory,
+                name: "remove_item_from_inventory".to_string(),
                 parameters: serde_json::json!({
                     "owner_entity_id": borga_id.to_string(),
                     "item_entity_id": datapad_id.to_string(),
@@ -590,7 +591,7 @@ async fn test_invalid_plan_relationship_trust_too_low() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(_) => {
@@ -638,7 +639,7 @@ async fn test_valid_plan_complex_multi_step() {
             // Step 1: Move Sol to cantina
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::MoveEntity,
+                name: "move_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_to_move": sol_id.to_string(),
                     "new_parent": cantina_id.to_string(),
@@ -668,7 +669,7 @@ async fn test_valid_plan_complex_multi_step() {
             // Step 2: Remove datapad from Borga
             PlannedAction {
                 id: "step2".to_string(),
-                name: ActionName::RemoveItemFromInventory,
+                name: "remove_item_from_inventory".to_string(),
                 parameters: serde_json::json!({
                     "owner_entity_id": borga_id.to_string(),
                     "item_entity_id": datapad_id.to_string(),
@@ -703,7 +704,7 @@ async fn test_valid_plan_complex_multi_step() {
             // Step 3: Add datapad to Sol
             PlannedAction {
                 id: "step3".to_string(),
-                name: ActionName::AddItemToInventory,
+                name: "add_item_to_inventory".to_string(),
                 parameters: serde_json::json!({
                     "owner_entity_id": sol_id.to_string(),
                     "item_entity_id": datapad_id.to_string(),
@@ -754,7 +755,7 @@ async fn test_valid_plan_complex_multi_step() {
         ]
     ).await.unwrap();
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(validated) => {
@@ -794,7 +795,7 @@ async fn test_invalid_plan_circular_dependencies() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::FindEntity,
+                name: "find_entity".to_string(),
                 parameters: serde_json::json!({}),
                 preconditions: Preconditions::default(),
                 effects: Effects::default(),
@@ -802,7 +803,7 @@ async fn test_invalid_plan_circular_dependencies() {
             },
             PlannedAction {
                 id: "step2".to_string(),
-                name: ActionName::GetEntityDetails,
+                name: "get_entity_details".to_string(),
                 parameters: serde_json::json!({}),
                 preconditions: Preconditions::default(),
                 effects: Effects::default(),
@@ -816,7 +817,7 @@ async fn test_invalid_plan_circular_dependencies() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(_) => {
@@ -851,7 +852,7 @@ async fn test_plan_validation_caching() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::MoveEntity,
+                name: "move_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_to_move": sol_id.to_string(),
                     "new_parent": cantina_id.to_string(),
@@ -877,7 +878,7 @@ async fn test_plan_validation_caching() {
     };
     
     // First validation
-    let result1 = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result1 = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     let cache_key = match &result1 {
         PlanValidationResult::Valid(v) => v.cache_key.clone(),
         _ => panic!("Expected valid plan"),
@@ -890,7 +891,7 @@ async fn test_plan_validation_caching() {
     assert!(cached.is_some(), "Validation result should be cached");
     
     // Second validation should use cache
-    let result2 = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result2 = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     match (result1, result2) {
         (PlanValidationResult::Valid(v1), PlanValidationResult::Valid(v2)) => {
             assert_eq!(v1.cache_key, v2.cache_key);

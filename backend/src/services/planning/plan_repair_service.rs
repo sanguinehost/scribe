@@ -270,7 +270,7 @@ impl PlanRepairService {
 
                 let repair_action = PlannedAction {
                     id: "repair_movement".to_string(),
-                    name: ActionName::MoveEntity,
+                    name: "move_entity".to_string(),
                     parameters: serde_json::json!({
                         "entity_id": entity_id.to_string(),
                         "destination_id": expected_location.to_string(),
@@ -329,7 +329,7 @@ impl PlanRepairService {
         if let Some((entity_id, component_type)) = component_info {
             let repair_action = PlannedAction {
                 id: "repair_component".to_string(),
-                name: ActionName::UpdateEntity,
+                name: "update_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_id": entity_id.to_string(),
                     "component_operations": [{
@@ -390,7 +390,7 @@ impl PlanRepairService {
         if let Some((source_entity, target_entity)) = relationship_info {
             let repair_action = PlannedAction {
                 id: "repair_relationship".to_string(),
-                name: ActionName::UpdateRelationship,
+                name: "update_relationship".to_string(),
                 parameters: serde_json::json!({
                     "source_entity_id": source_entity.to_string(),
                     "target_entity_id": target_entity.to_string(),
@@ -574,7 +574,7 @@ Generate the repair plan:
                     actions: vec![
                         PlannedAction {
                             id: "fallback_repair".to_string(),
-                            name: ActionName::FindEntity,
+                            name: "find_entity".to_string(),
                             parameters: serde_json::json!({
                                 "criteria": {
                                     "type": "ByName",

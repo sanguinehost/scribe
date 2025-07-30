@@ -1,4 +1,5 @@
 pub mod agentic;
+pub mod agent_results_service;
 pub mod character_generation;
 pub mod character_parser;
 pub mod character_service;
@@ -65,6 +66,7 @@ pub use agentic::{
     ScribeTool, TacticalAgent
 };
 
+pub use agent_results_service::AgentResultsService;
 pub use character_service::CharacterService;
 pub use chat_override_service::ChatOverrideService;
 pub use checksum_state_validator::{

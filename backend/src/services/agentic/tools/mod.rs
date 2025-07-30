@@ -15,7 +15,13 @@ pub mod entity_crud_tools;
 pub mod spatial_interaction_tools;
 pub mod relationship_interaction_tools;
 pub mod general_interaction_tools;
-pub mod narrative_tool_wrappers;
+
+// Individual self-registering narrative tools
+pub mod analyze_text_significance_tool;
+pub mod create_chronicle_event_tool;
+pub mod extract_temporal_events_tool;
+pub mod extract_world_concepts_tool;
+pub mod search_knowledge_base_tool;
 
 use async_trait::async_trait;
 use serde_json::Value;

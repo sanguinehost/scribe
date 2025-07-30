@@ -17,6 +17,7 @@ use scribe_backend::{
     auth::session_dek::SessionDek,
     errors::AppError,
 };
+use sqlx;
 
 /// A01: Broken Access Control - Test user isolation
 #[tokio::test]

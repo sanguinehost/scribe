@@ -400,6 +400,66 @@ impl MockAiClient {
         responses.push_back(response);
     }
     
+    /// Configure MockAiClient specifically for TacticalAgent tests
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
+    pub fn configure_for_tactical_agent(&self) {
+        // Clear any existing responses first to ensure we only return plan JSON
+        {
+            let mut responses = self.responses.lock().unwrap();
+            responses.clear();
+        }
+        
+        let plan_response = r#"{
+            "goal": "Process tactical directive with coordination",
+            "actions": [
+                {
+                    "id": "action_1",
+                    "name": "find_entity",
+                    "parameters": {
+                        "entity_name": "TestEntity",
+                        "entity_type": "character"
+                    },
+                    "dependencies": [],
+                    "description": "Find test entity for tactical processing"
+                }
+            ],
+            "metadata": {
+                "confidence": 0.8,
+                "estimated_duration": 60
+            }
+        }"#;
+        
+        // Response for find_entity tool's AI interpretation of entity search
+        let entity_search_interpretation = r#"{
+            "interpretation": "Looking for test entity named TestEntity of type character",
+            "search_strategy": "name_match",
+            "key_terms": ["TestEntity"],
+            "entity_types": ["character"],
+            "spatial_scope": "Local",
+            "fuzzy_matching": false,
+            "relationship_constraints": {},
+            "component_requirements": [],
+            "reasoning": "Direct search for a specific test entity by name",
+            "expected_results": "Single entity matching the name TestEntity"
+        }"#;
+        
+        // Add responses in the order they will be consumed:
+        // 1. First: plan generation (PlanningService)
+        self.add_response(plan_response.to_string());
+        
+        // 2. Then: entity search interpretation (find_entity tool)  
+        self.add_response(entity_search_interpretation.to_string());
+        
+        // 3. Add a few more of each in case of retries
+        for _ in 0..3 {
+            self.add_response(plan_response.to_string());
+            self.add_response(entity_search_interpretation.to_string());
+        }
+    }
+
     /// Configure MockAiClient specifically for PerceptionAgent tests
     ///
     /// # Panics
@@ -466,6 +526,56 @@ impl MockAiClient {
         responses.push_back(extraction_result.to_string());
     }
 
+    /// Configure MockAiClient specifically for StrategicAgent tests
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex lock is poisoned
+    pub fn configure_for_strategic_agent(&self) {
+        // Strategic directive structured output response
+        let strategic_directive_response = r#"{
+            "directive_type": "World Building",
+            "emotional_tone": "mysterious and contemplative",
+            "narrative_focus": "ancient secrets and forbidden knowledge",
+            "character_motivation": "uncover the truth about the lost kingdom",
+            "scene_context": "exploring the dimly lit ancient library",
+            "character_focus": ["TestLibrarian", "Librarian", "Scholar", "Scribe"],
+            "suggested_complications": ["ancient defenses might activate", "forbidden knowledge comes with a price", "someone else seeks the same secrets"],
+            "pacing_guidance": "slow burn discovery with moments of revelation",
+            "plot_significance": "MODERATE",
+            "world_impact_level": "LOCAL"
+        }"#;
+        
+        // Add responses for various AI calls made by StrategicAgent
+        let mut responses = self.responses.lock().unwrap();
+        responses.clear();
+        
+        // Response for structured output directive generation
+        responses.push_back(strategic_directive_response.to_string());
+        
+        // Response for extract_character_focus
+        responses.push_back("TestLibrarian, Librarian, Scholar, Scribe".to_string());
+        
+        // Response for plot significance assessment
+        responses.push_back("MODERATE".to_string());
+        
+        // Response for emotional tone determination
+        responses.push_back("mysterious and contemplative".to_string());
+        
+        // Response for character focus extraction
+        responses.push_back("Librarian, Scholar, Scribe".to_string());
+        
+        // Response for world impact evaluation
+        responses.push_back("LOCAL".to_string());
+        
+        // Add extra copies for multiple test runs
+        responses.push_back(strategic_directive_response.to_string());
+        responses.push_back("MODERATE".to_string());
+        responses.push_back("mysterious and contemplative".to_string());
+        responses.push_back("Librarian, Scholar, Scribe".to_string());
+        responses.push_back("LOCAL".to_string());
+    }
+
     /// Create a new MockAiClient that returns an error
     #[must_use]
     pub fn new_with_error(error_message: String) -> Self {
@@ -517,8 +627,11 @@ impl AiClient for MockAiClient {
             }
         }
         
-        // Fall back to single response behavior
-        self.response_to_return.lock().unwrap().clone()
+        // If we have no more responses queued, fail instead of falling back
+        // This ensures tests fail properly when they run out of expected responses
+        Err(AppError::InternalServerErrorGeneric(
+            "MockAiClient: No more responses available. Configure more responses for this test.".to_string()
+        ))
     }
     async fn stream_chat(
         &self,
@@ -552,14 +665,14 @@ impl AiClient for MockAiClient {
                                         content: chunk.content.clone(),
                                     })
                                 }
-                                // ChatStreamEvent::ToolCall(tool_call) => { // Commented out as ToolCall is not expected from Gemini Streamer
-                                //     // Assuming genai::chat::ToolCall is effectively cloneable by its fields
-                                //     ChatStreamEvent::ToolCall(genai::chat::ToolCall {
-                                //         call_id: tool_call.call_id.clone(),
-                                //         fn_name: tool_call.fn_name.clone(),
-                                //         fn_arguments: tool_call.fn_arguments.clone(),
-                                //     })
-                                // }
+                                ChatStreamEvent::ToolCall(tool_call) => {
+                                    // Assuming genai::chat::ToolCall is effectively cloneable by its fields
+                                    ChatStreamEvent::ToolCall(genai::chat::ToolCall {
+                                        call_id: tool_call.call_id.clone(),
+                                        fn_name: tool_call.fn_name.clone(),
+                                        fn_arguments: tool_call.fn_arguments.clone(),
+                                    })
+                                }
                                 ChatStreamEvent::End(_end_event) => {
                                     ChatStreamEvent::End(StreamEnd::default())
                                 } // StreamEnd is not Clone, use Default
@@ -1405,7 +1518,7 @@ impl TestAppStateBuilder {
             chat_override_service,
             user_persona_service,
             token_counter,
-            encryption_service,
+            encryption_service: encryption_service.clone(),
             lorebook_service,
             auth_backend: self.auth_backend,
             file_storage_service: Arc::new(FileStorageService::new("./test_uploads").unwrap()),
@@ -1654,6 +1767,10 @@ impl TestAppStateBuilder {
             hierarchical_pipeline: None, // Will be set after AppState is built
             shared_agent_context: Arc::new(crate::services::agentic::shared_context::SharedAgentContext::new(
                 Arc::new(redis::Client::open("redis://127.0.0.1:6379/").unwrap())
+            )),
+            agent_results_service: Arc::new(crate::services::AgentResultsService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
             )),
             // narrative_intelligence_service will be added after AppState is built
         };

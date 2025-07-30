@@ -22,7 +22,11 @@ use crate::services::agentic::tools::{
     chronicle_tools::register_chronicle_tools,
     lorebook_tools::register_lorebook_tools,
     inventory_tools::register_inventory_tools,
-    narrative_tool_wrappers::register_narrative_tools,
+    analyze_text_significance_tool::register_analyze_text_significance_tool,
+    create_chronicle_event_tool::register_create_chronicle_event_tool,
+    extract_temporal_events_tool::register_extract_temporal_events_tool,
+    extract_world_concepts_tool::register_extract_world_concepts_tool,
+    search_knowledge_base_tool::register_search_knowledge_base_tool,
 };
 
 use crate::services::agentic::entity_resolution_tool::register_entity_resolution_tool;
@@ -97,9 +101,13 @@ fn perform_tool_initialization(app_state: Arc<AppState>) -> Result<(), AppError>
     register_inventory_tools(app_state.clone())?;
     info!("Registered inventory tools");
     
-    // Register narrative tools (5 tools) - AI-driven analysis and creation tools
-    register_narrative_tools(app_state.clone())?;
-    info!("Registered narrative tools");
+    // Register individual narrative analysis tools
+    register_analyze_text_significance_tool(app_state.clone())?;
+    register_create_chronicle_event_tool(app_state.clone())?;
+    register_extract_temporal_events_tool(app_state.clone())?;
+    register_extract_world_concepts_tool(app_state.clone())?;
+    register_search_knowledge_base_tool(app_state.clone())?;
+    info!("Registered narrative analysis tools");
     
     // Log total tool counts by agent type
     use crate::services::agentic::unified_tool_registry::{UnifiedToolRegistry, AgentType};

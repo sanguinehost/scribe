@@ -3,6 +3,7 @@ use crate::{
     config::Config,
     llm::{AiClient, EmbeddingClient},
     services::{
+        agent_results_service::AgentResultsService,
         chat_override_service::ChatOverrideService,
         chronicle_service::ChronicleService,
         email_service::{EmailService, create_email_service},
@@ -15,7 +16,6 @@ use crate::{
         narrative_intelligence_service::NarrativeIntelligenceService,
         tokenizer_service::TokenizerService,
         user_persona_service::UserPersonaService,
-        agentic::shared_context::SharedAgentContext,
     },
     state::{AppState, AppStateServices, DbPool},
     text_processing::chunking::ChunkConfig,
@@ -310,6 +310,12 @@ impl AppStateServicesBuilder {
         // Create SharedAgentContext for inter-agent coordination
         let shared_agent_context = Arc::new(crate::services::agentic::shared_context::SharedAgentContext::new(redis_client.clone()));
 
+        // Create AgentResultsService for storing agent processing results
+        let agent_results_service = Arc::new(AgentResultsService::new(
+            self.db_pool.clone(),
+            encryption_service.clone(),
+        ));
+
         // Create agentic state update service first
         let agentic_state_update_service = Arc::new(crate::services::AgenticStateUpdateService::new(
             ai_client.clone(),
@@ -364,6 +370,7 @@ impl AppStateServicesBuilder {
             strategic_agent: None, // Will be set after AppState is built
             hierarchical_pipeline: None, // Will be set after AppState is built
             shared_agent_context,
+            agent_results_service,
             // narrative_intelligence_service will be added after AppState is built
         })
     }

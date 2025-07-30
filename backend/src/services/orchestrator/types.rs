@@ -41,6 +41,7 @@ pub struct ReasoningContext {
     pub cached_world_state: Option<JsonValue>,
     pub phase_history: Vec<ReasoningPhase>,
     pub metadata: HashMap<String, JsonValue>,
+    pub chronicle_id: Option<Uuid>,
 }
 
 /// Result from Perceive phase

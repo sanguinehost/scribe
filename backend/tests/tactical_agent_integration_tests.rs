@@ -76,7 +76,6 @@ async fn test_tactical_agent_chat_service_integration() {
         app.app_state.ecs_entity_manager.clone(),
         planning_service,
         plan_validator,
-        app.app_state.redis_client.clone(),
         app.app_state.shared_agent_context.clone(),
     ));
 
@@ -268,7 +267,6 @@ async fn test_enriched_context_prompt_formatting() {
         app.app_state.ecs_entity_manager.clone(),
         planning_service,
         plan_validator,
-        app.app_state.redis_client.clone(),
         app.app_state.shared_agent_context.clone(),
     ));
 
@@ -407,7 +405,6 @@ async fn test_tactical_agent_failure_fallback() {
         app.app_state.ecs_entity_manager.clone(),
         planning_service,
         plan_validator,
-        app.app_state.redis_client.clone(),
         app.app_state.shared_agent_context.clone(),
     ));
 
@@ -465,7 +462,6 @@ async fn test_tactical_agent_end_to_end_chat_generation() {
         app.app_state.ecs_entity_manager.clone(),
         planning_service,
         plan_validator,
-        app.app_state.redis_client.clone(),
         app.app_state.shared_agent_context.clone(),
     ));
 

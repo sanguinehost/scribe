@@ -2,6 +2,7 @@ use scribe_backend::services::planning::PlanningService;
 use scribe_backend::services::context_assembly_engine::{
     EnrichedContext, SubGoal, ValidatedPlan, RiskAssessment, RiskLevel, PlanValidationStatus
 };
+use scribe_backend::services::agentic::unified_tool_registry::AgentType as RegistryAgentType;
 use scribe_backend::test_helpers::*;
 use scribe_backend::auth::session_dek::SessionDek;
 use uuid::Uuid;
@@ -54,6 +55,7 @@ async fn test_generate_simple_movement_plan() {
         &context,
         user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result.is_ok());
@@ -97,6 +99,7 @@ async fn test_plan_caching_same_goal() {
         &context,
         user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result1.is_ok());
@@ -107,6 +110,7 @@ async fn test_plan_caching_same_goal() {
         &context,
         user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result2.is_ok());
@@ -146,6 +150,7 @@ async fn test_plan_caching_different_users() {
         &context,
         user1_id,
         &session_dek1,
+        RegistryAgentType::Tactical,
     ).await;
 
     let result2 = planning_service.generate_plan(
@@ -153,6 +158,7 @@ async fn test_plan_caching_different_users() {
         &context,
         user2_id,
         &session_dek2,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result1.is_ok());
@@ -189,6 +195,7 @@ async fn test_complex_plan_generation() {
         &context,
         user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result.is_ok());
@@ -232,6 +239,7 @@ async fn test_flash_model_integration() {
         &context,
         user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result.is_ok());
@@ -293,6 +301,7 @@ async fn test_planning_with_world_state_context() {
         &context,
         user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result.is_ok());
@@ -518,6 +527,7 @@ async fn test_planning_service_user_isolation_a01() {
         &context,
         user1_id,
         &user1_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     // Configure mock AI for user 2's different goal
@@ -530,6 +540,7 @@ async fn test_planning_service_user_isolation_a01() {
         &context,
         user2_id,
         &user2_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result1.is_ok());
@@ -572,6 +583,7 @@ async fn test_planning_service_encryption_a02() {
         &context,
         user_id,
         &valid_session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result.is_ok());
@@ -612,6 +624,7 @@ async fn test_planning_service_input_validation_a03() {
         &context,
         user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     // Should handle input safely without injection
@@ -680,6 +693,7 @@ async fn test_planning_service_error_handling_a09() {
         &context,
         invalid_user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     // Even if it succeeds, verify error handling patterns are secure
@@ -727,6 +741,7 @@ async fn test_planning_service_security_misconfiguration_a05() {
         &context,
         user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result.is_ok());
@@ -767,6 +782,7 @@ async fn test_planning_service_vulnerable_components_a06() {
         &context,
         user_id,
         &session_dek,
+        RegistryAgentType::Tactical,
     ).await;
 
     assert!(result.is_ok());

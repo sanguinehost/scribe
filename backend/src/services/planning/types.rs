@@ -29,44 +29,11 @@ pub struct PlanMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlannedAction {
     pub id: String,
-    pub name: ActionName,
+    pub name: String, // Changed from ActionName enum to dynamic String
     pub parameters: serde_json::Value,
     pub preconditions: Preconditions,
     pub effects: Effects,
     pub dependencies: Vec<String>,
-}
-
-/// Enumeration of all available actions (matching Tactical Toolkit)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum ActionName {
-    FindEntity,
-    GetEntityDetails,
-    CreateEntity,
-    UpdateEntity,
-    MoveEntity,
-    GetContainedEntities,
-    GetSpatialContext,
-    AddItemToInventory,
-    RemoveItemFromInventory,
-    UpdateRelationship,
-}
-
-impl std::fmt::Display for ActionName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ActionName::FindEntity => write!(f, "find_entity"),
-            ActionName::GetEntityDetails => write!(f, "get_entity_details"),
-            ActionName::CreateEntity => write!(f, "create_entity"),
-            ActionName::UpdateEntity => write!(f, "update_entity"),
-            ActionName::MoveEntity => write!(f, "move_entity"),
-            ActionName::GetContainedEntities => write!(f, "get_contained_entities"),
-            ActionName::GetSpatialContext => write!(f, "get_spatial_context"),
-            ActionName::AddItemToInventory => write!(f, "add_item_to_inventory"),
-            ActionName::RemoveItemFromInventory => write!(f, "remove_item_from_inventory"),
-            ActionName::UpdateRelationship => write!(f, "update_relationship"),
-        }
-    }
 }
 
 /// Preconditions that must be met before action execution

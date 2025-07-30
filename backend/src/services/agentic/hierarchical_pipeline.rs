@@ -227,15 +227,27 @@ impl HierarchicalAgentPipeline {
         entity_manager: Arc<crate::services::ecs_entity_manager::EcsEntityManager>,
         config: HierarchicalPipelineConfig,
         shared_context: Arc<SharedAgentContext>,
+        agent_results_service: Arc<crate::services::AgentResultsService>,
+        redis_enabled: bool,
+        redis_timeout_ms: u64,
     ) -> Self {
         // Create Lightning Agent if progressive response is enabled
         let cache_service = Arc::new(ProgressiveCacheService::new(redis_client.clone()));
         let lightning_agent = if config.enable_progressive_response {
+            let redis_client_option = if redis_enabled {
+                Some(redis_client.clone())
+            } else {
+                None
+            };
+            
             Some(Arc::new(LightningAgent::new(
                 cache_service.clone(),
-                redis_client.clone(),
+                redis_client_option,
+                redis_enabled,
+                redis_timeout_ms,
                 db_pool.clone(),
                 entity_manager.clone(),
+                agent_results_service.clone(),
             )))
         } else {
             None
@@ -253,6 +265,7 @@ impl HierarchicalAgentPipeline {
             perception_agent.clone(),
             cache_service,
             tool_executor,
+            agent_results_service.clone(),
         ));
         
         Self {
@@ -290,6 +303,9 @@ impl HierarchicalAgentPipeline {
             app_state.ecs_entity_manager.clone(),
             config,
             app_state.shared_agent_context.clone(),
+            app_state.agent_results_service.clone(),
+            app_state.config.redis_enabled,
+            app_state.config.redis_timeout_ms,
         )
     }
 
@@ -395,7 +411,7 @@ impl HierarchicalAgentPipeline {
         
         let tactical_inner_start = std::time::Instant::now();
         let mut enriched_context = self.tactical_agent
-            .process_directive(&strategic_directive, user_id, session_dek)
+            .process_directive(&strategic_directive, user_id, session_dek, None)
             .await
             .map_err(|e| {
                 error!("Tactical layer failed: {}", e);
@@ -1805,7 +1821,7 @@ Write the next response only as your assigned character, advancing the world and
         debug!("Background Step 2: Tactical planning and world updates");
         let tactical_start = std::time::Instant::now();
         let enriched_context = self.tactical_agent
-            .process_directive(&strategic_directive, user_id, session_dek)
+            .process_directive(&strategic_directive, user_id, session_dek, None)
             .await?;
         let tactical_duration = tactical_start.elapsed().as_millis() as u64;
         info!("Background tactical completed in {}ms", tactical_duration);
@@ -2315,6 +2331,7 @@ mod tests {
             app.app_state.ecs_entity_manager.clone(),
             invalid_config,
             app.app_state.shared_agent_context.clone(),
+            app.app_state.agent_results_service.clone(),
         );
         
         let result = pipeline_invalid.validate_configuration();

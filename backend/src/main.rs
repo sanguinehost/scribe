@@ -297,7 +297,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         chat_override_service,
         user_persona_service,
         token_counter: hybrid_token_counter,
-        encryption_service,
+        encryption_service: encryption_service.clone(),
         lorebook_service,
         auth_backend,
         file_storage_service,
@@ -329,6 +329,10 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         strategic_agent: None, // Will be set after AppState is built
         hierarchical_pipeline: None, // Will be set after AppState is built
         shared_agent_context: Arc::new(scribe_backend::services::agentic::shared_context::SharedAgentContext::new(ecs_services.redis_client)),
+        agent_results_service: Arc::new(scribe_backend::services::AgentResultsService::new(
+            pool.clone(),
+            encryption_service.clone(),
+        )),
     })
 }
 

@@ -93,6 +93,7 @@ pub struct EnrichmentTaskPayload {
     pub ai_response: String,
     pub timestamp: DateTime<Utc>,
     pub metadata: Option<serde_json::Value>,
+    pub chronicle_id: Option<Uuid>,
 }
 
 /// Request structure for creating new tasks

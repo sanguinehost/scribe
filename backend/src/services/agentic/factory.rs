@@ -163,13 +163,12 @@ impl AgenticNarrativeFactory {
             app_state.redis_client.clone(),
         ));
         
-        // Create TacticalAgent with all dependencies
+        // Create TacticalAgent with Phase 1 changes: removed Redis dependency
         let tactical_agent = Arc::new(TacticalAgent::new(
             app_state.ai_client.clone(),
             app_state.ecs_entity_manager.clone(),
             planning_service,
             plan_validator,
-            app_state.redis_client.clone(),
             app_state.shared_agent_context.clone(),
         ));
         
@@ -222,11 +221,10 @@ impl AgenticNarrativeFactory {
     pub fn create_strategic_agent(app_state: &Arc<AppState>) -> Arc<StrategicAgent> {
         info!("Creating StrategicAgent with dependencies");
         
-        // Create StrategicAgent with minimal dependencies (doesn't need planning services)
+        // Phase 1: Create StrategicAgent without Redis dependency
         let strategic_agent = Arc::new(StrategicAgent::new(
             app_state.ai_client.clone(),
             app_state.ecs_entity_manager.clone(),
-            app_state.redis_client.clone(),
             app_state.config.strategic_agent_model.clone(),
             app_state.shared_agent_context.clone(),
         ));

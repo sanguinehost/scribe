@@ -7,6 +7,7 @@ use scribe_backend::{
             types::*,
         },
         EcsEntityManager,
+        agentic::unified_tool_registry::AgentType,
     },
     models::chats::{ChatMessage, MessageRole},
     test_helpers::{spawn_app, TestDataGuard, db::create_test_user, MockAiClient},
@@ -163,7 +164,7 @@ async fn test_end_to_end_movement_repair_workflow() {
         actions: vec![
             PlannedAction {
                 id: "buy_supplies".to_string(),
-                name: ActionName::AddItemToInventory,
+                name: "add_item_to_inventory".to_string(),
                 parameters: json!({
                     "owner_entity_id": character_id.to_string(),
                     "item_entity_id": Uuid::new_v4().to_string(),
@@ -194,7 +195,7 @@ async fn test_end_to_end_movement_repair_workflow() {
     let validator = create_repair_enabled_validator(entity_manager.clone(), config).await;
     
     // Step 1: Standard validation should fail (character not at market)
-    let standard_result = validator.validate_plan(&plan_assuming_at_market, user_id).await.unwrap();
+    let standard_result = validator.validate_plan(&plan_assuming_at_market, user_id, AgentType::Tactical).await.unwrap();
     let failures = match &standard_result {
         PlanValidationResult::Invalid(invalid) => {
             assert!(invalid.failures.iter().any(|f| 
@@ -303,7 +304,7 @@ async fn test_end_to_end_component_repair_workflow() {
         actions: vec![
             PlannedAction {
                 id: "check_reputation".to_string(),
-                name: ActionName::GetEntityDetails,
+                name: "get_entity_details".to_string(),
                 parameters: json!({
                     "entity_id": character_id.to_string(),
                     "component_types": ["Reputation"]
@@ -333,7 +334,7 @@ async fn test_end_to_end_component_repair_workflow() {
     let validator = create_repair_enabled_validator(entity_manager.clone(), config).await;
     
     // Standard validation should fail (missing Reputation component)
-    let standard_result = validator.validate_plan(&plan_requiring_reputation, user_id).await.unwrap();
+    let standard_result = validator.validate_plan(&plan_requiring_reputation, user_id, AgentType::Tactical).await.unwrap();
     match standard_result {
         PlanValidationResult::Invalid(invalid) => {
             assert!(invalid.failures.iter().any(|f| 
@@ -376,7 +377,7 @@ async fn test_end_to_end_component_repair_workflow() {
     
     // Verify repair plan structure
     assert_eq!(repair_plan.actions.len(), 1);
-    assert_eq!(repair_plan.actions[0].name, ActionName::UpdateEntity);
+    assert_eq!(repair_plan.actions[0].name, "update_entity".to_string());
     assert!(repair_plan.goal.contains("Reputation"));
     
     // Test plan combination
@@ -456,7 +457,7 @@ async fn test_end_to_end_relationship_repair_workflow() {
         actions: vec![
             PlannedAction {
                 id: "check_trust".to_string(),
-                name: ActionName::GetEntityDetails,
+                name: "get_entity_details".to_string(),
                 parameters: json!({
                     "source_entity_id": alice_id.to_string(),
                     "target_entity_id": bob_id.to_string()
@@ -487,7 +488,7 @@ async fn test_end_to_end_relationship_repair_workflow() {
     let validator = create_repair_enabled_validator(entity_manager.clone(), config).await;
     
     // Standard validation should fail (missing relationship)
-    let standard_result = validator.validate_plan(&plan_requiring_relationship, user_id).await.unwrap();
+    let standard_result = validator.validate_plan(&plan_requiring_relationship, user_id, AgentType::Tactical).await.unwrap();
     match standard_result {
         PlanValidationResult::Invalid(invalid) => {
             assert!(invalid.failures.iter().any(|f| 
@@ -529,7 +530,7 @@ async fn test_end_to_end_relationship_repair_workflow() {
     
     // Verify repair plan creates relationship
     assert_eq!(repair_plan.actions.len(), 1);
-    assert_eq!(repair_plan.actions[0].name, ActionName::UpdateRelationship);
+    assert_eq!(repair_plan.actions[0].name, "update_relationship".to_string());
     assert!(repair_plan.goal.contains("relationship"));
 }
 
@@ -587,7 +588,7 @@ async fn test_repair_confidence_threshold_enforcement() {
         actions: vec![
             PlannedAction {
                 id: "ambiguous".to_string(),
-                name: ActionName::FindEntity,
+                name: "find_entity".to_string(),
                 parameters: json!({"criteria": {"type": "ByName", "name": "Unknown"}}),
                 preconditions: Preconditions::default(),
                 effects: Effects::default(),
@@ -698,7 +699,7 @@ async fn test_repair_system_handles_multiple_inconsistencies() {
         actions: vec![
             PlannedAction {
                 id: "check_location".to_string(),
-                name: ActionName::GetEntityDetails,
+                name: "get_entity_details".to_string(),
                 parameters: json!({
                     "entity_id": character_id.to_string(),
                     "component_types": ["Health", "Skills"]
@@ -738,7 +739,7 @@ async fn test_repair_system_handles_multiple_inconsistencies() {
     let validator = create_repair_enabled_validator(entity_manager.clone(), config).await;
     
     // Standard validation should fail with multiple failures
-    let standard_result = validator.validate_plan(&complex_plan, user_id).await.unwrap();
+    let standard_result = validator.validate_plan(&complex_plan, user_id, AgentType::Tactical).await.unwrap();
     match standard_result {
         PlanValidationResult::Invalid(invalid) => {
             // Should have multiple failures: location + missing components

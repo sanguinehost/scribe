@@ -251,7 +251,7 @@ impl PipelineValidator {
         scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut _details = String::new();
+        let mut details = String::new();
         let mut metrics = HashMap::new();
 
         println!("  📖 Validating chronicle event processing...");
@@ -304,7 +304,7 @@ impl PipelineValidator {
         _scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut _details = String::new();
+        let mut details = String::new();
         let mut metrics = HashMap::new();
         let mut passed = true;
 
@@ -365,7 +365,7 @@ impl PipelineValidator {
         scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut _details = String::new();
+        let mut details = String::new();
         let mut metrics = HashMap::new();
 
         println!("  🔄 Validating hybrid query integration...");
@@ -429,7 +429,7 @@ impl PipelineValidator {
         _scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut _details = String::new();
+        let mut details = String::new();
         let mut metrics = HashMap::new();
 
         println!("  ⚡ Validating performance contracts...");
@@ -490,7 +490,7 @@ impl PipelineValidator {
         _scenarios: &[PipelineTestScenario],
     ) -> AnyhowResult<ValidationStep> {
         let start_time = Instant::now();
-        let mut _details = String::new();
+        let mut details = String::new();
         let mut metrics = HashMap::new();
 
         println!("  🔒 Validating data consistency...");

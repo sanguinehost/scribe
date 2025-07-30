@@ -993,6 +993,7 @@ pub async fn generate_chat_response(
             &strategic_directive,
             user_id_value,
             &session_dek,
+            None,
         ).await {
             Ok(enriched_ctx) => {
                 info!(

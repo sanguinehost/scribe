@@ -14,6 +14,9 @@ use crate::{
             plan_repair_service::PlanRepairService,
             virtual_ecs_state::PlanStateProjector,
         },
+        agentic::{
+            unified_tool_registry::{UnifiedToolRegistry, AgentType},
+        },
     },
     models::{
         ecs::InventoryComponent,
@@ -105,6 +108,7 @@ impl PlanValidatorService {
         &self,
         plan: &Plan,
         user_id: Uuid,
+        agent_type: AgentType,
     ) -> Result<PlanValidationResult, AppError> {
         info!("Validating plan for goal: {}", plan.goal);
         
@@ -125,7 +129,7 @@ impl PlanValidatorService {
         // Then validate each action in sequence
         for action in &plan.actions {
             // Collect all failures from this action
-            match self.validate_action_comprehensive(action, user_id).await {
+            match self.validate_action_comprehensive(action, user_id, agent_type).await {
                 Ok(_) => {},
                 Err(action_failures) => {
                     failures.extend(action_failures);
@@ -159,12 +163,13 @@ impl PlanValidatorService {
         &self,
         plan: &Plan,
         user_id: Uuid,
+        agent_type: AgentType,
         recent_context: &[ChatMessage],
     ) -> Result<PlanValidationResult, AppError> {
         info!("Validating plan with repair capability for goal: {}", plan.goal);
 
         // 1. Standard validation first
-        let validation_result = self.validate_plan(plan, user_id).await?;
+        let validation_result = self.validate_plan(plan, user_id, agent_type).await?;
 
         match validation_result {
             PlanValidationResult::Valid(valid) => {
@@ -197,7 +202,7 @@ impl PlanValidatorService {
                                         let combined_plan = repair_service.combine_plans(&repair_plan, plan);
                                         
                                         // 6. Validate combined plan using projection (critical for repair plans)
-                                        let combined_validation = self.validate_plan_with_projection(&combined_plan, user_id).await?;
+                                        let combined_validation = self.validate_plan_with_projection(&combined_plan, user_id, agent_type).await?;
                                         
                                         match combined_validation {
                                             PlanValidationResult::Valid(_) => {
@@ -251,6 +256,7 @@ impl PlanValidatorService {
         &self,
         plan: &Plan,
         user_id: Uuid,
+        agent_type: AgentType,
     ) -> Result<PlanValidationResult, AppError> {
         info!("Validating plan with projection for goal: {}", plan.goal);
         
@@ -280,7 +286,7 @@ impl PlanValidatorService {
         // Validate actions sequentially against projected state
         for action in execution_order {
             // 1. Validate action structure (action exists, parameters valid)
-            if let Err(structural_failures) = self.validate_action_structure(action) {
+            if let Err(structural_failures) = self.validate_action_structure(action, agent_type) {
                 all_failures.extend(structural_failures);
                 continue; // Still apply effects for subsequent validations
             }
@@ -356,15 +362,15 @@ impl PlanValidatorService {
     }
 
     /// Validate action structure (name, parameters) without preconditions
-    fn validate_action_structure(&self, action: &PlannedAction) -> Result<(), Vec<ValidationFailure>> {
+    fn validate_action_structure(&self, action: &PlannedAction, agent_type: AgentType) -> Result<(), Vec<ValidationFailure>> {
         let mut failures = Vec::new();
         
-        // Check if action exists in Tactical Toolkit
-        if !self.is_valid_action(&action.name) {
+        // Check if action exists in UnifiedToolRegistry for this agent type
+        if !self.is_valid_action(&action.name, agent_type) {
             failures.push(ValidationFailure {
                 action_id: action.id.clone(),
                 failure_type: ValidationFailureType::ActionNotFound,
-                message: format!("Action '{}' not found in Tactical Toolkit", action.name),
+                message: format!("Action '{}' not found in UnifiedToolRegistry for agent type {:?}", action.name, agent_type),
             });
         }
         
@@ -394,15 +400,16 @@ impl PlanValidatorService {
         &self,
         action: &PlannedAction,
         user_id: Uuid,
+        agent_type: AgentType,
     ) -> Result<(), Vec<ValidationFailure>> {
         let mut failures = Vec::new();
         
-        // 1. Check if action exists in Tactical Toolkit
-        if !self.is_valid_action(&action.name) {
+        // 1. Check if action exists in UnifiedToolRegistry for this agent type
+        if !self.is_valid_action(&action.name, agent_type) {
             failures.push(ValidationFailure {
                 action_id: action.id.clone(),
                 failure_type: ValidationFailureType::ActionNotFound,
-                message: format!("Action '{}' not found in Tactical Toolkit", action.name),
+                message: format!("Action '{}' not found in UnifiedToolRegistry for agent type {:?}", action.name, agent_type),
             });
         }
         
@@ -439,15 +446,16 @@ impl PlanValidatorService {
         &self,
         action: &PlannedAction,
         user_id: Uuid,
+        agent_type: AgentType,
     ) -> Result<(), ValidationFailure> {
         debug!("Validating action: {} ({})", action.name, action.id);
         
-        // 1. Check if action exists in Tactical Toolkit
-        if !self.is_valid_action(&action.name) {
+        // 1. Check if action exists in UnifiedToolRegistry for this agent type
+        if !self.is_valid_action(&action.name, agent_type) {
             return Err(ValidationFailure {
                 action_id: action.id.clone(),
                 failure_type: ValidationFailureType::ActionNotFound,
-                message: format!("Action '{}' not found in Tactical Toolkit", action.name),
+                message: format!("Action '{}' not found in UnifiedToolRegistry for agent type {:?}", action.name, agent_type),
             });
         }
         
@@ -474,21 +482,10 @@ impl PlanValidatorService {
         Ok(())
     }
 
-    /// Check if action exists in the Tactical Toolkit
-    fn is_valid_action(&self, action_name: &ActionName) -> bool {
-        // Valid action names from the Tactical Toolkit (Task 2.3 & 2.4)
-        matches!(action_name, 
-            ActionName::CreateEntity |
-            ActionName::UpdateEntity |
-            ActionName::FindEntity |
-            ActionName::GetEntityDetails |
-            ActionName::MoveEntity |
-            ActionName::GetContainedEntities |
-            ActionName::GetSpatialContext |
-            ActionName::AddItemToInventory |
-            ActionName::RemoveItemFromInventory |
-            ActionName::UpdateRelationship
-        )
+    /// Check if action exists in the UnifiedToolRegistry for the given agent type
+    fn is_valid_action(&self, action_name: &str, agent_type: AgentType) -> bool {
+        let available_tools = UnifiedToolRegistry::get_tools_for_agent(agent_type);
+        available_tools.iter().any(|tool| tool.name == action_name)
     }
 
     /// Build cache key for validation results
@@ -507,7 +504,7 @@ impl PlanValidatorService {
     /// Validate action parameters match expected schema
     fn validate_action_parameters(
         &self,
-        action_name: &ActionName,
+        action_name: &str,
         parameters: &serde_json::Value,
     ) -> Result<(), ValidationFailure> {
         let obj = parameters.as_object()
@@ -517,18 +514,19 @@ impl PlanValidatorService {
                 message: "Parameters must be an object".to_string(),
             })?;
         
-        // Validate required parameters for each action type
+        // Validate required parameters for specific action types
+        // Note: We could get this from the UnifiedToolRegistry's input schema in the future
         match action_name {
-            ActionName::MoveEntity => {
+            "move_entity" => {
                 if !obj.contains_key("entity_id") || !obj.contains_key("destination_id") {
                     return Err(ValidationFailure {
                         action_id: "unknown".to_string(),
                         failure_type: ValidationFailureType::InvalidParameters,
-                        message: "MoveEntity requires 'entity_id' and 'destination_id'".to_string(),
+                        message: "move_entity requires 'entity_id' and 'destination_id'".to_string(),
                     });
                 }
             }
-            ActionName::AddItemToInventory | ActionName::RemoveItemFromInventory => {
+            "add_item_to_inventory" | "remove_item_from_inventory" => {
                 // Use the actual tool parameter names
                 if !obj.contains_key("character_entity_id") || !obj.contains_key("item_entity_id") || !obj.contains_key("quantity") {
                     return Err(ValidationFailure {
@@ -538,17 +536,17 @@ impl PlanValidatorService {
                     });
                 }
             }
-            ActionName::UpdateRelationship => {
+            "update_relationship" => {
                 if !obj.contains_key("source_entity_id") || !obj.contains_key("target_entity_id") {
                     return Err(ValidationFailure {
                         action_id: "unknown".to_string(),
                         failure_type: ValidationFailureType::InvalidParameters,
-                        message: "UpdateRelationship requires 'source_entity_id' and 'target_entity_id'".to_string(),
+                        message: "update_relationship requires 'source_entity_id' and 'target_entity_id'".to_string(),
                     });
                 }
             }
             _ => {
-                // Other actions have flexible parameters
+                // Other actions have flexible parameters - could validate against registry schema
             }
         }
         

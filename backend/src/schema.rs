@@ -22,6 +22,38 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    agent_results (id) {
+        id -> Uuid,
+        session_id -> Uuid,
+        user_id -> Uuid,
+        message_id -> Nullable<Uuid>,
+        #[max_length = 50]
+        agent_type -> Varchar,
+        #[max_length = 100]
+        operation_type -> Varchar,
+        encrypted_result -> Bytea,
+        result_nonce -> Bytea,
+        encrypted_metadata -> Nullable<Bytea>,
+        metadata_nonce -> Nullable<Bytea>,
+        processing_time_ms -> Int4,
+        token_count -> Nullable<Int4>,
+        confidence_score -> Nullable<Float4>,
+        #[max_length = 20]
+        status -> Varchar,
+        error_message -> Nullable<Text>,
+        created_at -> Timestamptz,
+        retrieved_at -> Nullable<Timestamptz>,
+        #[max_length = 10]
+        processing_phase -> Nullable<Varchar>,
+        #[max_length = 255]
+        coordination_key -> Nullable<Varchar>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     character_assets (id) {
         id -> Int4,
         character_id -> Uuid,
@@ -722,6 +754,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(agent_results -> users (user_id));
 diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(character_lorebooks -> characters (character_id));
 diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
@@ -770,6 +803,7 @@ diesel::joinable!(user_settings -> users (user_id));
 diesel::joinable!(world_enrichment_tasks -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    agent_results,
     character_assets,
     character_lorebooks,
     characters,

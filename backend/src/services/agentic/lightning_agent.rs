@@ -5,6 +5,9 @@ use crate::services::progressive_cache::{
 use crate::auth::session_dek::SessionDek;
 use crate::schema::characters;
 use crate::services::ecs_entity_manager::EcsEntityManager;
+use crate::services::agent_results_service::AgentResultsService;
+use crate::models::agent_results::{AgentResultQuery, AgentType, OperationType};
+use crate::models::agent_results::DecryptedAgentResult;
 use diesel::prelude::*;
 use deadpool_diesel::postgres::Pool as PgPool;
 use std::sync::Arc;
@@ -22,9 +25,12 @@ use tokio::time::timeout;
 #[derive(Clone)]
 pub struct LightningAgent {
     cache_service: Arc<ProgressiveCacheService>,
-    redis_client: Arc<redis::Client>,
+    redis_client: Option<Arc<redis::Client>>, // Optional Redis for caching
+    redis_enabled: bool,
+    redis_timeout_ms: u64,
     db_pool: PgPool,
     entity_manager: Arc<EcsEntityManager>,
+    agent_results_service: Arc<AgentResultsService>,
 }
 
 /// Progressive context retrieved by the Lightning Agent
@@ -58,15 +64,21 @@ impl LightningAgent {
     /// Create a new Lightning Agent
     pub fn new(
         cache_service: Arc<ProgressiveCacheService>,
-        redis_client: Arc<redis::Client>,
+        redis_client: Option<Arc<redis::Client>>,
+        redis_enabled: bool,
+        redis_timeout_ms: u64,
         db_pool: PgPool,
         entity_manager: Arc<EcsEntityManager>,
+        agent_results_service: Arc<AgentResultsService>,
     ) -> Self {
         Self {
             cache_service,
             redis_client,
+            redis_enabled,
+            redis_timeout_ms,
             db_pool,
             entity_manager,
+            agent_results_service,
         }
     }
 
@@ -74,23 +86,35 @@ impl LightningAgent {
     /// 
     /// This method attempts to retrieve the richest available context
     /// within a 500ms timeout window. It falls through cache layers
-    /// from Full -> Enhanced -> Immediate -> Minimal.
-    #[instrument(skip(self, _session_dek), fields(session_id = %session_id, user_id = %user_id))]
+    /// from Full -> Enhanced -> Immediate -> Minimal, and progressively
+    /// enriches the context with agent results from background processing.
+    #[instrument(skip(self, session_dek), fields(session_id = %session_id, user_id = %user_id))]
     pub async fn retrieve_progressive_context(
         &self,
         session_id: Uuid,
         user_id: Uuid,
-        _session_dek: &SessionDek,
+        session_dek: &SessionDek,
     ) -> Result<ProgressiveContext, AppError> {
         let start = Instant::now();
         
-        // Attempt cache retrieval with strict timeout
-        let context_result = timeout(
-            Duration::from_millis(500),
+        // Launch both cache retrieval and agent results retrieval concurrently
+        // This ensures we maximize our chances of enriching the context within the time budget
+        let cache_future = timeout(
+            Duration::from_millis(300),
             self.cache_service.get_context(session_id)
-        ).await;
+        );
         
-        let (context, cache_layer) = match context_result {
+        let agent_results_future = self.retrieve_relevant_agent_results(
+            session_id,
+            user_id,
+            session_dek
+        );
+        
+        // Execute both futures concurrently
+        let (context_result, agent_results_result) = tokio::join!(cache_future, agent_results_future);
+        
+        // Process cache results
+        let (mut context, cache_layer) = match context_result {
             Ok(Ok(ctx)) => {
                 let layer = match &ctx {
                     Context::Full(_) => CacheLayer::Full,
@@ -105,10 +129,24 @@ impl LightningAgent {
                 (Context::Minimal, CacheLayer::None)
             }
             Err(_) => {
-                warn!("Cache retrieval timeout after 500ms");
+                warn!("Cache retrieval timeout after 300ms");
                 (Context::Minimal, CacheLayer::None)
             }
         };
+        
+        // Process agent results and integrate into context
+        match agent_results_result {
+            Ok(agent_results) if !agent_results.is_empty() => {
+                info!("Enriching context with {} agent results", agent_results.len());
+                context = self.integrate_agent_results_into_context(context, agent_results);
+            }
+            Ok(_) => {
+                debug!("No new agent results to integrate");
+            }
+            Err(e) => {
+                warn!("Failed to retrieve agent results: {}", e);
+            }
+        }
         
         let quality_score = match &context {
             Context::Full(_) => 1.0,
@@ -125,9 +163,9 @@ impl LightningAgent {
         );
         
         // Log performance metrics
-        if retrieval_time_ms > 100 {
+        if retrieval_time_ms > 200 {
             warn!(
-                "Lightning retrieval exceeded 100ms target: {}ms",
+                "Lightning retrieval exceeded 200ms target: {}ms",
                 retrieval_time_ms
             );
         }
@@ -140,6 +178,185 @@ impl LightningAgent {
             session_id,
             user_id,
         })
+    }
+
+    /// Retrieve relevant agent results for progressive enrichment
+    /// 
+    /// This method selectively fetches agent results that are relevant to the current
+    /// roleplay context based on session and timing. It retrieves unretrieved results
+    /// from the background orchestration to progressively enrich the lightning agent's
+    /// responses.
+    #[instrument(skip(self, session_dek), fields(session_id = %session_id, user_id = %user_id))]
+    pub async fn retrieve_relevant_agent_results(
+        &self,
+        session_id: Uuid,
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<Vec<DecryptedAgentResult>, AppError> {
+        let start = Instant::now();
+        
+        // Query for unretrieved agent results from the current session
+        // This ensures we only get new insights from the background orchestration
+        let query = AgentResultQuery {
+            session_id: Some(session_id),
+            user_id: Some(user_id),
+            agent_types: None, // Get all agent types
+            operation_types: None, // Get all operation types
+            unretrieved_only: true, // Only get results not yet used by lightning agent
+            since_timestamp: None, // Get all unretrieved results
+            limit: Some(50), // Reasonable limit to avoid overwhelming the lightning agent
+        };
+        
+        // Retrieve with timeout to maintain lightning speed
+        let results = timeout(
+            Duration::from_millis(300), // 300ms timeout for agent results retrieval
+            self.agent_results_service.retrieve_agent_results(query, session_dek)
+        ).await;
+        
+        let decrypted_results = match results {
+            Ok(Ok(results)) => {
+                debug!(
+                    "Retrieved {} agent results in {}ms",
+                    results.len(),
+                    start.elapsed().as_millis()
+                );
+                results
+            }
+            Ok(Err(e)) => {
+                warn!("Failed to retrieve agent results: {}", e);
+                Vec::new()
+            }
+            Err(_) => {
+                warn!("Agent results retrieval timeout after 300ms");
+                Vec::new()
+            }
+        };
+        
+        // Mark retrieved results as used to prevent re-processing
+        if !decrypted_results.is_empty() {
+            let mark_result = self.agent_results_service
+                .mark_results_retrieved(session_id, user_id, None)
+                .await;
+            
+            if let Err(e) = mark_result {
+                warn!("Failed to mark agent results as retrieved: {}", e);
+            }
+        }
+        
+        Ok(decrypted_results)
+    }
+
+    /// Integrate agent results into the context for progressive enrichment
+    /// 
+    /// This method takes agent results and integrates them into the appropriate
+    /// context layer based on their relevance and type. This enables progressive
+    /// enrichment where subsequent lightning agent calls have access to background
+    /// processing results.
+    pub fn integrate_agent_results_into_context(
+        &self,
+        base_context: Context,
+        agent_results: Vec<DecryptedAgentResult>,
+    ) -> Context {
+        if agent_results.is_empty() {
+            return base_context;
+        }
+
+        debug!("Integrating {} agent results into context", agent_results.len());
+
+        // Group results by agent type for organized integration
+        let mut perception_insights = Vec::new();
+        let mut tactical_insights = Vec::new();
+        let mut strategic_insights = Vec::new();
+
+        for result in agent_results {
+            match result.agent_type.as_str() {
+                "Perception" => {
+                    perception_insights.push(result.result.clone());
+                }
+                "Tactical" => {
+                    tactical_insights.push(result.result.clone());
+                }
+                "Strategic" => {
+                    strategic_insights.push(result.result.clone());
+                }
+                _ => {
+                    debug!("Unknown agent type: {:?}", result.agent_type);
+                }
+            }
+        }
+
+        // For now, we'll add insights as additional context to existing structures
+        // In a future iteration, we might want to create specialized fields for agent insights
+        match base_context {
+            Context::Full(mut full) => {
+                // TODO: Integrate insights into FullContext structure
+                Context::Full(full)
+            }
+            Context::Enhanced(mut enhanced) => {
+                // TODO: Integrate insights into EnhancedContext structure
+                Context::Enhanced(enhanced)
+            }
+            Context::Immediate(immediate) => {
+                // For immediate context, we can create an enhanced context with agent insights
+                let mut visible_entities = Vec::new();
+                let mut active_threads = Vec::new();
+
+                // Extract entity information from perception insights
+                for insight in &perception_insights {
+                    if let Some(entities) = insight.get("entities").and_then(|e| e.as_array()) {
+                        for entity in entities {
+                            if let Some(name) = entity.get("name").and_then(|n| n.as_str()) {
+                                visible_entities.push(crate::services::progressive_cache::EntitySummary {
+                                    entity_id: Uuid::new_v4(), // Placeholder
+                                    name: name.to_string(),
+                                    description: entity.get("description")
+                                        .and_then(|d| d.as_str())
+                                        .unwrap_or("").to_string(),
+                                    entity_type: entity.get("type")
+                                        .and_then(|t| t.as_str())
+                                        .unwrap_or("unknown").to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Extract narrative threads from strategic insights
+                for insight in &strategic_insights {
+                    if let Some(threads) = insight.get("narrative_threads").and_then(|t| t.as_array()) {
+                        for thread in threads {
+                            if let Some(description) = thread.get("description").and_then(|d| d.as_str()) {
+                                active_threads.push(crate::services::progressive_cache::NarrativeThread {
+                                    thread_id: Uuid::new_v4(), // Placeholder
+                                    description: description.to_string(),
+                                    priority: thread.get("priority")
+                                        .and_then(|p| p.as_f64())
+                                        .unwrap_or(0.5) as f32,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                let enhanced = crate::services::progressive_cache::EnhancedContext {
+                    immediate,
+                    visible_entities,
+                    location_details: crate::services::progressive_cache::Location {
+                        location_id: Uuid::new_v4(), // Placeholder
+                        name: "Current Location".to_string(),
+                        description: "Location enriched with agent insights".to_string(),
+                        scale: "local".to_string(),
+                    },
+                    character_relationships: Vec::new(), // TODO: Extract from agent results
+                    active_narrative_threads: active_threads,
+                };
+                Context::Enhanced(enhanced)
+            }
+            Context::Minimal => {
+                // For minimal context, stay minimal unless we have very relevant insights
+                base_context
+            }
+        }
     }
 
     /// Build minimal prompt for when no cache is available
@@ -255,17 +472,29 @@ impl LightningAgent {
     pub async fn check_cache_health(&self) -> Result<CacheHealth, AppError> {
         let start = Instant::now();
         
-        // Try to ping Redis
-        let mut conn = self.redis_client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| AppError::DatabaseQueryError(format!("Redis connection failed: {}", e)))?;
+        // Check Redis health only if enabled and available
+        let redis_healthy = if self.redis_enabled {
+            if let Some(redis_client) = &self.redis_client {
+                match redis_client.get_multiplexed_async_connection().await {
+                    Ok(mut conn) => {
+                        let ping_result: Result<String, _> = redis::cmd("PING")
+                            .query_async(&mut conn)
+                            .await;
+                        ping_result.is_ok()
+                    }
+                    Err(e) => {
+                        warn!("Redis connection failed: {}", e);
+                        false
+                    }
+                }
+            } else {
+                warn!("Redis enabled but no client configured");
+                false
+            }
+        } else {
+            true // Redis disabled, consider healthy
+        };
         
-        let ping_result: Result<String, _> = redis::cmd("PING")
-            .query_async(&mut conn)
-            .await;
-        
-        let redis_healthy = ping_result.is_ok();
         let response_time_ms = start.elapsed().as_millis() as u64;
         
         Ok(CacheHealth {

@@ -1,3 +1,4 @@
+pub mod agent_results;
 pub mod auth;
 pub mod character_assets;
 pub mod character_card;
@@ -63,3 +64,4 @@ pub use user_assets::{NewUserAsset, UserAsset};
 pub use user_personas::*;
 pub use user_settings::*;
 pub use users::*;
+pub use agent_results::*;
