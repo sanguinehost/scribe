@@ -462,6 +462,78 @@ impl CreateEntityTool {
     ) -> Result<EntityCreationOutput, ToolError> {
         let ecs_manager = &self.app_state.ecs_entity_manager;
         
+        // First, check if an entity with this name already exists
+        use crate::services::agentic::entity_resolution_tool::EntityResolutionTool;
+        
+        let resolution_tool = EntityResolutionTool::new(self.app_state.clone());
+        
+        // Get existing entities for resolution check
+        let existing_entities = ecs_manager
+            .query_entities(user_id, vec![], Some(200), None)
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to query existing entities: {}", e)))?;
+        
+        let mut existing_for_resolution = vec![];
+        for entity in &existing_entities {
+            if let Some(name_component) = entity.components.iter().find(|c| c.component_type == "Name") {
+                if let Some(entity_name) = name_component.component_data.get("name").and_then(|n| n.as_str()) {
+                    // Get entity type from SpatialArchetype component
+                    let archetype = entity.components.iter()
+                        .find(|c| c.component_type == "SpatialArchetype")
+                        .and_then(|c| c.component_data.get("archetype_name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    
+                    existing_for_resolution.push(json!({
+                        "entity_id": entity.entity.id.to_string(),
+                        "name": entity_name,
+                        "display_name": name_component.component_data.get("display_name").and_then(|n| n.as_str()).unwrap_or(entity_name),
+                        "entity_type": archetype,
+                        "context": format!("{} at scale {:?}", entity_type, spatial_scale)
+                    }));
+                }
+            }
+        }
+        
+        // Call entity resolution to check if this entity already exists
+        let resolution_params = json!({
+            "user_id": user_id.to_string(),
+            "narrative_text": format!("Looking for existing {} named {}", entity_type, name),
+            "entity_names": [&name],
+            "existing_entities": existing_for_resolution
+        });
+        
+        let resolution_result = resolution_tool.execute(&resolution_params, &SessionDek::new(vec![0u8; 32])).await?;
+        
+        // Check if we found a high-confidence match
+        if let Some(resolved_entities) = resolution_result.get("resolved_entities").and_then(|e| e.as_array()) {
+            if let Some(first_entity) = resolved_entities.first() {
+                if let Some(entity_id_str) = first_entity.get("entity_id").and_then(|id| id.as_str()) {
+                    if let Ok(entity_id) = Uuid::parse_str(entity_id_str) {
+                        if entity_id != Uuid::nil() {
+                            let confidence = first_entity.get("confidence").and_then(|c| c.as_f64()).unwrap_or(0.0);
+                            // High confidence match found - check if it's the same type
+                            if confidence > 0.8 {
+                                if let Some(matched_type) = first_entity.get("entity_type").and_then(|t| t.as_str()) {
+                                    if matched_type == entity_type || matched_type == "unknown" {
+                                        // Entity already exists - return it instead of creating a duplicate
+                                        info!("Entity '{}' of type '{}' already exists with ID {}, returning existing entity", 
+                                              name, entity_type, entity_id);
+                                        
+                                        return Ok(EntityCreationOutput {
+                                            entity_id,
+                                            entity_type,
+                                            name: display_name.unwrap_or(name),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         // Prepare base components
         let mut components = HashMap::new();
         
@@ -570,7 +642,7 @@ impl ScribeTool for CreateEntityTool {
     }
 
     fn description(&self) -> &'static str {
-        "Create a new entity with specified type, name, spatial properties, and components"
+        "Create a new entity with specified type, name, spatial properties, and components. Automatically checks for existing entities with the same name and returns them if found with high confidence (>0.8)."
     }
 
     fn input_schema(&self) -> JsonValue {
@@ -710,7 +782,7 @@ impl SelfRegisteringTool for CreateEntityTool {
     }
     
     fn when_to_use(&self) -> String {
-        "Use when you need to create a new entity with specific type, name, and spatial properties".to_string()
+        "Use when you need to create a new entity with specific type, name, and spatial properties. The tool will automatically return existing entities if they match with high confidence, preventing duplicates.".to_string()
     }
     
     fn when_not_to_use(&self) -> String {
