@@ -674,8 +674,7 @@ impl LivingWorldChatTest {
         let session_payload = serde_json::json!({
             "character_id": self.world.gm_character.id,
             "active_custom_persona_id": self.world.player_persona.id,
-            "chat_mode": "Character",
-            "player_chronicle_id": self.world.chronicle_id
+            "chat_mode": "Character"
         });
         
         info!("🔄 Making API call to create chat session...");
@@ -706,6 +705,15 @@ impl LivingWorldChatTest {
         self.world.chat_session_id = session_uuid;
         
         info!("✅ Created chat session: {} with Weaver of Whispers GM", session_uuid);
+        
+        // Link the chat session to the chronicle
+        info!("🔗 Linking chat session to chronicle");
+        self.test_app.app_state.chronicle_service.link_chat_session(
+            self.world.user_id,
+            session_uuid,
+            self.world.chronicle_id
+        ).await?;
+        info!("✅ Linked chat session to chronicle");
         
         Ok(())
     }
