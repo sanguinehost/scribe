@@ -439,9 +439,9 @@ impl WorkflowOrchestrator {
         
         info!("Creating {} entities", perception_result.contextual_entities.len());
         
-        // Ensure all entities exist in the system
+        // Ensure all entities exist in the system with consistent session ID
         match self.perception_agent
-            .ensure_entities_exist(&perception_result.contextual_entities, user_id, session_dek)
+            .ensure_entities_exist_with_session(&perception_result.contextual_entities, user_id, session_id, session_dek)
             .await
         {
             Ok(_) => {
