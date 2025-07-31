@@ -678,6 +678,18 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         // Phase 4: Always use atomic patterns now
         self.ensure_entities_exist_atomic(entities, user_id, session_id, session_dek).await
     }
+    
+    /// Ensure entities exist with explicit session ID for proper cross-message persistence
+    pub async fn ensure_entities_exist_with_session(
+        &self,
+        entities: &[ContextualEntity],
+        user_id: Uuid,
+        session_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        // Use the provided session ID for consistent entity visibility across messages
+        self.ensure_entities_exist_atomic(entities, user_id, session_id, session_dek).await
+    }
 
     /// Legacy wrapper - DEPRECATED: Use ensure_entities_exist_atomic directly  
     #[deprecated(note = "Use ensure_entities_exist_atomic instead")]
@@ -1024,14 +1036,14 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
                 
                 // If we get here, the entity was resolved as new - create it
                 info!("AI determined '{}' is a new distinct entity, creating", entity.name);
-                self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
+                self.create_entity_with_spatial_data(entity, user_id, session_id, session_dek).await?;
                 // Phase 2: No caching - entity existence tracked directly in EcsEntityManager after creation
                 self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
             },
             Err(e) => {
                 warn!("Entity resolution failed for '{}': {}, falling back to simple creation", entity.name, e);
                 // Fallback: create entity without resolution
-                self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
+                self.create_entity_with_spatial_data(entity, user_id, session_id, session_dek).await?;
                 // Phase 2: No caching - entity existence tracked directly in EcsEntityManager after creation
                 self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
             }
@@ -1080,9 +1092,10 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         &self,
         entity: &ContextualEntity,
         user_id: Uuid,
+        session_id: Uuid,
         session_dek: &SessionDek,
     ) -> Result<(), AppError> {
-        self.create_entity_with_spatial_data_optimized(entity, user_id, session_dek, false).await
+        self.create_entity_with_spatial_data_optimized(entity, user_id, session_id, session_dek, false).await
     }
     
     /// Optimized entity creation that can skip redundant checks
@@ -1090,6 +1103,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         &self,
         entity: &ContextualEntity,
         user_id: Uuid,
+        session_id: Uuid,
         session_dek: &SessionDek,
         skip_existence_checks: bool,
     ) -> Result<(), AppError> {
@@ -1307,7 +1321,6 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
                     entity.name, scale, salience_tier, result);
                 
                 // Store in shared context for coordination
-                let session_id = Uuid::new_v4(); // Generate session ID for this operation
                 let discovery_data = serde_json::json!({
                     "entity_name": entity.name,
                     "entity_type": entity.entity_type,
@@ -1335,7 +1348,6 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
                             info!("Entity '{}' already exists (duplicate key), treating as success", entity.name);
                             
                             // Store in shared context that this entity exists
-                            let session_id = Uuid::new_v4();
                             let discovery_data = serde_json::json!({
                                 "entity_name": entity.name,
                                 "entity_type": entity.entity_type,
@@ -2248,6 +2260,7 @@ Respond with a JSON array where each element corresponds to an entity in the ord
         ai_response: &str,
         context: &EnrichedContext,
         user_id: Uuid,
+        session_id: Uuid,
         session_dek: &SessionDek,
     ) -> Result<PerceptionResult, AppError> {
         let start_time = std::time::Instant::now();
@@ -2298,8 +2311,7 @@ Respond with a JSON array where each element corresponds to an entity in the ord
             session_dek,
         ).await?;
 
-        // Generate session ID for shared context operations - in the future this should come from context
-        let session_id = Uuid::new_v4();
+        // Use the provided session ID for shared context operations
 
         // Step 6: Store entity discoveries in shared context for other agents
         if !extraction_result.entities_found.is_empty() {
@@ -3188,7 +3200,7 @@ Output JSON with:
         
         // Phase 4 Fix: Actually create the entity after coordination
         // The coordination pattern was only storing signals but not creating entities
-        self.create_entity_with_spatial_data(entity, user_id, session_dek).await?;
+        self.create_entity_with_spatial_data(entity, user_id, *session_id, session_dek).await?;
         
         Ok(())
     }
