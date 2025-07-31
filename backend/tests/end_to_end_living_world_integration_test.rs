@@ -3158,5 +3158,24 @@ async fn test_comprehensive_living_world_end_to_end_with_orchestrator() {
     assert!(all_entities.len() > 0, "Phase 3: Should have created entities through atomic workflow");
     
     info!("🎆 END-TO-END LIVING WORLD INTEGRATION TEST WITH PHASE 3 ATOMIC PATTERNS COMPLETE!");
+    
+    // Cleanup phase
+    info!("🧹 Starting test cleanup...");
+    
+    // Delete all entities created during the test
+    let entity_cleanup_result = test.test_app.app_state.ecs_entity_manager
+        .delete_all_entities_for_user(test.world.user_id)
+        .await;
+    
+    match entity_cleanup_result {
+        Ok(deleted_count) => info!("✅ Deleted {} entities for test user", deleted_count),
+        Err(e) => error!("❌ Failed to delete entities: {:?}", e),
+    }
+    
+    // Clean up all other test data (users, characters, chats, etc.)
+    match test.guard.cleanup().await {
+        Ok(_) => info!("✅ Test data cleanup complete"),
+        Err(e) => error!("❌ Failed to cleanup test data: {:?}", e),
+    }
 }
 

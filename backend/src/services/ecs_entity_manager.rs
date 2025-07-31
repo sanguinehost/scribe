@@ -3052,6 +3052,69 @@ impl EcsEntityManager {
         self.simplify_components_for_salience(components, new_salience_tier)
     }
     
+    /// Delete all entities for a user (useful for test cleanup)
+    #[instrument(skip(self), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id))))]
+    pub async fn delete_all_entities_for_user(&self, user_id: Uuid) -> Result<usize, AppError> {
+        info!("Deleting all ECS entities for user {}", user_id);
+        
+        let conn = self.db_pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+            
+        let deleted_count = conn.interact({
+            let user_id = user_id;
+            move |conn| -> Result<usize, AppError> {
+                conn.transaction(|conn| {
+                    use crate::schema::{ecs_components, ecs_entities, ecs_entity_relationships};
+                    
+                    // Delete all relationships for user's entities
+                    diesel::delete(
+                        ecs_entity_relationships::table
+                            .filter(ecs_entity_relationships::user_id.eq(user_id))
+                    )
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    
+                    // Delete all components for user's entities
+                    diesel::delete(
+                        ecs_components::table
+                            .filter(ecs_components::user_id.eq(user_id))
+                    )
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    
+                    // Delete all entities for user
+                    let count = diesel::delete(
+                        ecs_entities::table
+                            .filter(ecs_entities::user_id.eq(user_id))
+                    )
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    
+                    Ok(count)
+                })
+            }
+        }).await.map_err(|e| AppError::DbInteractError(e.to_string()))??;
+        
+        // Clear all cache entries for this user
+        let clear_cache_result: Result<(), redis::RedisError> = async {
+            let mut conn = self.redis_client.get_multiplexed_async_connection().await?;
+            // Use pattern matching to delete all keys for this user
+            let pattern = format!("entity:{}:*", user_id);
+            let keys: Vec<String> = conn.keys(&pattern).await?;
+            if !keys.is_empty() {
+                let _: () = conn.del(keys).await?;
+            }
+            Ok(())
+        }.await;
+        
+        if let Err(e) = clear_cache_result {
+            warn!("Failed to clear cache entries for user {}: {}", user_id, e);
+        }
+        
+        info!("Deleted {} entities for user {}", deleted_count, user_id);
+        Ok(deleted_count)
+    }
+
     /// Internal method to delete an entity and all its components
     async fn delete_entity_internal(&self, user_id: Uuid, entity_id: Uuid) -> Result<(), AppError> {
         let conn = self.db_pool.get().await
