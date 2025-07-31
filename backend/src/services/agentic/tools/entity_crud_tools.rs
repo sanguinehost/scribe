@@ -578,6 +578,7 @@ impl CreateEntityTool {
                                         return Ok(EntityCreationOutput {
                                             entity_id,
                                             entity_type,
+                                            already_existed: Some(true),
                                             name: display_name.unwrap_or(name),
                                         });
                                     } else {
@@ -683,6 +684,7 @@ impl CreateEntityTool {
             entity_id,
             entity_type,
             name: display_name_value,
+            already_existed: Some(false),
         })
     }
 }
@@ -692,6 +694,8 @@ pub struct EntityCreationOutput {
     pub entity_id: Uuid,
     pub entity_type: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub already_existed: Option<bool>,
 }
 
 #[async_trait]

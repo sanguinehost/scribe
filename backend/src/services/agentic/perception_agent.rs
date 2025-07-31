@@ -1317,8 +1317,16 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         
         match self.get_tool("create_entity")?.execute(&create_params, session_dek).await {
             Ok(result) => {
-                info!("Created entity '{}' with {:?} scale and {} salience, result: {:?}", 
-                    entity.name, scale, salience_tier, result);
+                // Check if this was a new entity or existing one
+                let is_new = !result.get("already_existed").and_then(|v| v.as_bool()).unwrap_or(false);
+                
+                if is_new {
+                    info!("Created new entity '{}' with {:?} scale and {} salience, result: {:?}", 
+                        entity.name, scale, salience_tier, result);
+                } else {
+                    info!("Entity '{}' already exists, returned existing entity with result: {:?}", 
+                        entity.name, result);
+                }
                 
                 // Store in shared context for coordination
                 let discovery_data = serde_json::json!({
@@ -3609,7 +3617,7 @@ Output JSON with:
             ).await?;
             
             // Create the entity with optimized flow (skip redundant checks)
-            self.create_entity_with_spatial_data_optimized(entity, user_id, session_dek, true).await?;
+            self.create_entity_with_spatial_data_optimized(entity, user_id, session_id, session_dek, true).await?;
         }
         
         info!("Batch created {} entities", entities.len());
