@@ -10,7 +10,7 @@ use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use async_trait::async_trait;
-use tracing::info;
+use tracing::{info, debug, warn};
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -475,27 +475,62 @@ impl CreateEntityTool {
         
         let mut existing_for_resolution = vec![];
         for entity in &existing_entities {
+            debug!("Processing entity {} with {} components", entity.entity.id, entity.components.len());
+            for component in &entity.components {
+                debug!("  Component type: {}, data: {:?}", component.component_type, component.component_data);
+            }
+            
             if let Some(name_component) = entity.components.iter().find(|c| c.component_type == "Name") {
                 if let Some(entity_name) = name_component.component_data.get("name").and_then(|n| n.as_str()) {
                     // Get entity type from SpatialArchetype component
                     let archetype = entity.components.iter()
                         .find(|c| c.component_type == "SpatialArchetype")
                         .and_then(|c| c.component_data.get("archetype_name"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
+                        .and_then(|v| v.as_str());
+                    
+                    // Map archetype to entity type
+                    let entity_type_str = match archetype {
+                        Some("CHARACTER") => "CHARACTER",
+                        Some("LOCATION") | Some("Building") | Some("Room") | Some("City") | Some("Region") | Some("World") => "LOCATION",
+                        Some("ITEM") | Some("Container") => "ITEM",
+                        Some("ORGANIZATION") | Some("Faction") => "ORGANIZATION",
+                        _ => {
+                            // Try to infer from scale/level
+                            if entity.components.iter().any(|c| c.component_type == "Health" || c.component_type == "CharacterStats") {
+                                "CHARACTER"
+                            } else if entity.components.iter().any(|c| c.component_type == "Position") {
+                                "LOCATION"
+                            } else {
+                                "UNKNOWN"
+                            }
+                        }
+                    };
+                    
+                    // For display_name, try to find it in various places
+                    let display_name = name_component.component_data.get("display_name")
+                        .and_then(|n| n.as_str())
+                        .or_else(|| name_component.component_data.get("displayName").and_then(|n| n.as_str()))
+                        .unwrap_or(entity_name);
                     
                     existing_for_resolution.push(json!({
                         "entity_id": entity.entity.id.to_string(),
                         "name": entity_name,
-                        "display_name": name_component.component_data.get("display_name").and_then(|n| n.as_str()).unwrap_or(entity_name),
-                        "entity_type": archetype,
-                        "context": format!("{} at scale {:?}", entity_type, spatial_scale)
+                        "display_name": display_name,
+                        "entity_type": entity_type_str,
+                        "context": format!("{} at scale {:?}", entity_type_str, spatial_scale)
                     }));
+                } else {
+                    warn!("Name component found but no 'name' field in component data: {:?}", name_component.component_data);
                 }
+            } else {
+                warn!("Entity {} has no Name component", entity.entity.id);
             }
         }
         
         // Call entity resolution to check if this entity already exists
+        info!("Checking for existing entity '{}' of type '{}' before creation", name, entity_type);
+        info!("Found {} existing entities for resolution", existing_for_resolution.len());
+        
         let resolution_params = json!({
             "user_id": user_id.to_string(),
             "narrative_text": format!("Looking for existing {} named {}", entity_type, name),
@@ -505,17 +540,37 @@ impl CreateEntityTool {
         
         let resolution_result = resolution_tool.execute(&resolution_params, &SessionDek::new(vec![0u8; 32])).await?;
         
+        info!("Entity resolution result for '{}': {:?}", name, resolution_result);
+        
         // Check if we found a high-confidence match
         if let Some(resolved_entities) = resolution_result.get("resolved_entities").and_then(|e| e.as_array()) {
+            info!("Found {} resolved entities in result", resolved_entities.len());
             if let Some(first_entity) = resolved_entities.first() {
+                info!("First resolved entity: {:?}", first_entity);
                 if let Some(entity_id_str) = first_entity.get("entity_id").and_then(|id| id.as_str()) {
                     if let Ok(entity_id) = Uuid::parse_str(entity_id_str) {
                         if entity_id != Uuid::nil() {
                             let confidence = first_entity.get("confidence").and_then(|c| c.as_f64()).unwrap_or(0.0);
+                            info!("Found potential match for '{}' with confidence {}", name, confidence);
                             // High confidence match found - check if it's the same type
                             if confidence > 0.8 {
+                                info!("High confidence match ({}), checking entity type", confidence);
                                 if let Some(matched_type) = first_entity.get("entity_type").and_then(|t| t.as_str()) {
-                                    if matched_type == entity_type || matched_type == "unknown" {
+                                    info!("Matched entity type: '{}' vs requested type: '{}'", matched_type, entity_type);
+                                    
+                                    // Log the exact comparison being made
+                                    let matched_type_lower = matched_type.to_lowercase();
+                                    let entity_type_lower = entity_type.to_lowercase();
+                                    
+                                    // Handle special mappings: ITEM -> object
+                                    let types_match = matched_type_lower == entity_type_lower || 
+                                                     (matched_type_lower == "item" && entity_type_lower == "object") ||
+                                                     (matched_type_lower == "object" && entity_type_lower == "item");
+                                    let matched_unknown = matched_type_lower == "unknown";
+                                    info!("Type comparison: matched=='{}' (lowercased='{}'), requested=='{}' (lowercased='{}'), equals={}", 
+                                          matched_type, matched_type_lower, entity_type, entity_type_lower, types_match);
+                                    
+                                    if types_match || matched_unknown {
                                         // Entity already exists - return it instead of creating a duplicate
                                         info!("Entity '{}' of type '{}' already exists with ID {}, returning existing entity", 
                                               name, entity_type, entity_id);
@@ -525,7 +580,11 @@ impl CreateEntityTool {
                                             entity_type,
                                             name: display_name.unwrap_or(name),
                                         });
+                                    } else {
+                                        info!("Type mismatch - not deduplicating: matched_type='{}' != entity_type='{}'", matched_type, entity_type);
                                     }
+                                } else {
+                                    info!("No entity_type found in resolved entity, skipping deduplication");
                                 }
                             }
                         }
@@ -808,10 +867,7 @@ impl SelfRegisteringTool for CreateEntityTool {
     fn security_policy(&self) -> ToolSecurityPolicy {
         ToolSecurityPolicy {
             allowed_agents: vec![
-                AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
-                AgentType::Perception,
+                AgentType::Perception,  // ONLY Perception Agent can create entities
             ],
             required_capabilities: vec!["entity_creation".to_string()],
             data_access: DataAccessPolicy {
@@ -820,8 +876,12 @@ impl SelfRegisteringTool for CreateEntityTool {
                 write_access: true,
                 allowed_scopes: vec!["entities".to_string()],
             },
-            audit_level: AuditLevel::Detailed,
-            rate_limit: None,
+            audit_level: AuditLevel::Full,  // Full audit for entity creation
+            rate_limit: Some(crate::services::agentic::unified_tool_registry::RateLimit {
+                calls_per_minute: 100,
+                calls_per_hour: 1000,
+                burst_size: 10,
+            }),
         }
     }
     
@@ -1039,10 +1099,8 @@ impl SelfRegisteringTool for UpdateEntityTool {
     fn security_policy(&self) -> ToolSecurityPolicy {
         ToolSecurityPolicy {
             allowed_agents: vec![
-                AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
-                AgentType::Perception,
+                AgentType::Perception,  // Can update entities it creates
+                AgentType::Tactical,    // Can update for spatial relationships and movements
             ],
             required_capabilities: vec!["entity_modification".to_string()],
             data_access: DataAccessPolicy {

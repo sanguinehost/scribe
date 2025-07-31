@@ -429,9 +429,8 @@ impl SelfRegisteringTool for UpdateRelationshipTool {
     fn security_policy(&self) -> ToolSecurityPolicy {
         ToolSecurityPolicy {
             allowed_agents: vec![
-                AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
+                AgentType::Strategic,  // Strategic Agent plans high-level relationships
+                AgentType::Tactical,   // Tactical Agent executes relationship updates
             ],
             required_capabilities: vec![],
             rate_limit: None,
@@ -778,9 +777,8 @@ impl SelfRegisteringTool for CreateRelationshipTool {
     fn security_policy(&self) -> ToolSecurityPolicy {
         ToolSecurityPolicy {
             allowed_agents: vec![
-                AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
+                AgentType::Perception,  // Perception Agent discovers and creates relationships
+                AgentType::Tactical,    // Tactical Agent can also create tactical relationships
             ],
             required_capabilities: vec!["relationship_creation".to_string()],
             rate_limit: None,
@@ -976,9 +974,8 @@ impl SelfRegisteringTool for DeleteRelationshipTool {
     fn security_policy(&self) -> ToolSecurityPolicy {
         ToolSecurityPolicy {
             allowed_agents: vec![
-                AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
+                // No agent should have deletion access - relationships should evolve not be deleted
+                // If needed, this could be restricted to Orchestrator only for exceptional cases
             ],
             required_capabilities: vec!["relationship_management".to_string()],
             rate_limit: None,
@@ -988,7 +985,7 @@ impl SelfRegisteringTool for DeleteRelationshipTool {
                 write_access: true,
                 allowed_scopes: vec!["relationships".to_string(), "entities".to_string()],
             },
-            audit_level: AuditLevel::Detailed,
+            audit_level: AuditLevel::Full,  // Full audit for deletions
         }
     }
 

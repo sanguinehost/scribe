@@ -345,9 +345,7 @@ impl SelfRegisteringTool for CreateChronicleEventTool {
     fn security_policy(&self) -> ToolSecurityPolicy {
         ToolSecurityPolicy {
             allowed_agents: vec![
-                AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
+                AgentType::Chronicler,  // ONLY Chronicler Agent can create chronicle events
             ],
             required_capabilities: vec!["chronicle_write".to_string()],
             rate_limit: None,
@@ -357,7 +355,7 @@ impl SelfRegisteringTool for CreateChronicleEventTool {
                 write_access: true, // Creates chronicle events
                 allowed_scopes: vec!["chronicles".to_string()],
             },
-            audit_level: AuditLevel::Detailed, // Chronicle creation should be audited
+            audit_level: AuditLevel::Full, // Full audit for chronicle creation
         }
     }
 

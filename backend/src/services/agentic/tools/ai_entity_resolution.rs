@@ -247,6 +247,11 @@ Analyze carefully and match semantically, not just syntactically."#,
 
         let candidate_names: Vec<String> = existing_entities.iter().map(|(name, _)| name.clone()).collect();
         let candidate_contexts: Vec<String> = existing_entities.iter().map(|(_, context)| context.clone()).collect();
+        
+        debug!("Mention to match: name='{}', context='{}'", mention_name, mention_context);
+        for (i, (name, context)) in existing_entities.iter().enumerate() {
+            debug!("  Candidate {}: name='{}', context='{}'", i, name, context);
+        }
 
         let prompt = self.build_matching_prompt(
             mention_name,
@@ -299,6 +304,7 @@ Analyze carefully and match semantically, not just syntactically."#,
             .ok_or("No text response from AI")?;
 
         // Parse AI response using structured output
+        debug!("AI semantic match response: {}", response_text);
         let match_result: SemanticMatchResult = serde_json::from_str(&response_text)
             .map_err(|e| format!("Failed to parse structured AI response: {}", e))?;
 

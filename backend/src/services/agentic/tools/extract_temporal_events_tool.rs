@@ -351,9 +351,8 @@ impl SelfRegisteringTool for ExtractTemporalEventsTool {
     fn security_policy(&self) -> ToolSecurityPolicy {
         ToolSecurityPolicy {
             allowed_agents: vec![
-                AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
+                AgentType::Perception,  // Primary extractor of temporal events
+                AgentType::Chronicler,  // Can extract for chronicle creation
             ],
             required_capabilities: vec!["narrative_analysis".to_string()],
             rate_limit: None,

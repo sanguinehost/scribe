@@ -619,6 +619,11 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
             ))
             .collect();
         
+        debug!("Prepared {} existing candidates for semantic matching", existing_candidates.len());
+        for (i, (name, context)) in existing_candidates.iter().enumerate() {
+            debug!("  Candidate {}: name='{}', context='{}'", i, name, context);
+        }
+        
         // Process entities from rich context
         for narrative_entity in &extraction.narrative_context.entities {
             let context = format!(
@@ -627,6 +632,8 @@ Return ONLY a JSON array of entity names. Example: ["Sol", "Borga", "Cantina"]"#
                 narrative_entity.description,
                 narrative_entity.properties
             );
+            
+            debug!("Processing narrative entity '{}' with context: {}", narrative_entity.name, context);
             
             // Use AI semantic matching instead of simple string comparison
             match self.semantic_matcher.find_semantic_match(
@@ -1243,7 +1250,31 @@ impl ScribeTool for EntityResolutionTool {
 
         // Get existing entities from the database if chronicle_id is provided
         let mut existing_entities = Vec::new();
-        if let Some(chron_id) = chronicle_id {
+        
+        // First, check if existing entities were provided as a parameter
+        if let Some(provided_entities) = params.get("existing_entities").and_then(|v| v.as_array()) {
+            debug!("Using {} provided existing entities", provided_entities.len());
+            for entity_obj in provided_entities {
+                if let Some(entity_id_str) = entity_obj.get("entity_id").and_then(|v| v.as_str()) {
+                    if let Ok(entity_id) = Uuid::parse_str(entity_id_str) {
+                        let name = entity_obj.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+                        let display_name = entity_obj.get("display_name").and_then(|v| v.as_str()).unwrap_or(&name).to_string();
+                        let entity_type = entity_obj.get("entity_type").and_then(|v| v.as_str()).unwrap_or("UNKNOWN").to_string();
+                        let context = entity_obj.get("context").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        
+                        existing_entities.push(ExistingEntity {
+                            entity_id,
+                            name: name.clone(),
+                            display_name,
+                            aliases: vec![],
+                            entity_type,
+                            context,
+                        });
+                    }
+                }
+            }
+        } else if let Some(chron_id) = chronicle_id {
+            // Fall back to fetching from database if no entities provided
             debug!("Fetching existing entities for chronicle {}", chron_id);
             match self.app_state.ecs_entity_manager
                 .get_entities_by_chronicle(user_id, chron_id, Some(50))

@@ -945,9 +945,7 @@ impl SelfRegisteringTool for MoveEntityTool {
     fn security_policy(&self) -> ToolSecurityPolicy {
         ToolSecurityPolicy {
             allowed_agents: vec![
-                AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
+                AgentType::Tactical,  // ONLY Tactical Agent can move entities
             ],
             required_capabilities: vec![],
             rate_limit: None,

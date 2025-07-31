@@ -226,9 +226,9 @@ impl SelfRegisteringTool for AnalyzeTextSignificanceTool {
         ToolSecurityPolicy {
             allowed_agents: vec![
                 AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
-                AgentType::Perception,
+                AgentType::Perception,  // Primary analyzer
+                AgentType::Strategic,   // Can analyze for planning
+                AgentType::Chronicler,  // Can analyze for event creation
             ],
             required_capabilities: vec!["narrative_analysis".to_string()],
             rate_limit: None,

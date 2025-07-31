@@ -367,9 +367,8 @@ impl SelfRegisteringTool for ExtractWorldConceptsTool {
     fn security_policy(&self) -> ToolSecurityPolicy {
         ToolSecurityPolicy {
             allowed_agents: vec![
-                AgentType::Orchestrator,
-                AgentType::Strategic,
-                AgentType::Tactical,
+                AgentType::Perception,  // Primary extractor of world concepts
+                AgentType::Strategic,   // Can extract for strategic planning
             ],
             required_capabilities: vec!["narrative_analysis".to_string(), "lorebook_access".to_string()],
             rate_limit: None,
