@@ -299,18 +299,20 @@ CRITICAL PARAMETER REQUIREMENTS:
 - You MUST use ONLY the parameter names specified in each tool's "Parameters:" section above
 - Do NOT invent or use any other parameter names
 - The user_id parameter is automatically injected - do NOT include it
+- For chronicle_id parameters:
+  * If a Chronicle ID is mentioned in the WORLD STATE CONTEXT above, you MUST include it
+  * The Chronicle ID will be shown as "Chronicle ID: <uuid>" in the context
+  * Use that exact UUID value for the chronicle_id parameter when required
 - Each tool has completely different parameters - read them carefully
 - Example for create_entity:
   * CORRECT: {{"creation_request": "Create a warrior named Borin", "context": "At Stonefang Hold entrance"}}
   * WRONG: {{"entity_type": "character", "updates": {{"name": "Borin"}}}} // These parameters don't exist!
+- Example for create_chronicle_event when Chronicle ID is provided:
+  * CORRECT: {{"chronicle_id": "456e7890-e89b-12d3-a456-426614174001", "summary": "Borin arrives", "event_type": "NARRATIVE.EVENT"}}
+  * WRONG: {{"summary": "Borin arrives"}} // Missing required chronicle_id!
 
 PLANNING REQUEST:
 Generate a step-by-step action plan to accomplish the goal using ONLY the available actions listed above. Consider the current world state and entity relationships. Ensure actions are ordered logically with proper dependencies.
-
-IMPORTANT NOTES:
-- If a tool requires chronicle_id parameter and one is mentioned in the world state context above, use that exact chronicle_id
-- If no chronicle_id is mentioned in the context, do NOT include chronicle_id in tool parameters
-- Never use placeholder values like "example_chronicle_id" - use the actual chronicle_id from context or omit the parameter
 
 REQUIRED JSON STRUCTURE:
 {{

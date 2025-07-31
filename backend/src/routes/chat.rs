@@ -584,6 +584,7 @@ pub async fn generate_chat_response(
                 user_id_value,
                 &session_dek,
                 &current_user_content,
+                player_chronicle_id,
             ).await
         } else {
             info!(%session_id, "Using full hierarchical pipeline (legacy mode)");
@@ -592,6 +593,7 @@ pub async fn generate_chat_response(
                 user_id_value,
                 &session_dek,
                 &current_user_content,
+                player_chronicle_id,
             ).await
         };
         

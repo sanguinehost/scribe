@@ -338,6 +338,7 @@ impl HierarchicalAgentPipeline {
         user_id: Uuid,
         session_dek: &SessionDek,
         current_message: &str,
+        chronicle_id: Option<Uuid>,
     ) -> Result<HierarchicalPipelineResult, AppError> {
         let pipeline_start = std::time::Instant::now();
         let pipeline_timeout = std::time::Duration::from_millis(self.config.max_pipeline_time_ms);
@@ -1293,6 +1294,7 @@ Write the next response only as your assigned character, advancing the world and
         user_id: Uuid,
         session_dek: &SessionDek,
         current_message: &str,
+        chronicle_id: Option<Uuid>,
     ) -> Result<HierarchicalPipelineResult, AppError> {
         let pipeline_start = std::time::Instant::now();
         info!("Starting PROGRESSIVE response pipeline for fast <2s responses");
@@ -1651,6 +1653,7 @@ Write the next response only as your assigned character, advancing the world and
                 &session_dek_clone,
                 &current_message_clone,
                 &response,
+                chronicle_id,
             ).await {
                 Ok(results) => {
                     let bg_duration = bg_start.elapsed().as_millis() as u64;

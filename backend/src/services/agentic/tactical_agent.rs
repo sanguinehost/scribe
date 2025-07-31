@@ -986,7 +986,7 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
         
         let params = json!({
             "user_id": user_id.to_string(),
-            "entity_identifier": entity_id,
+            "entity_id": entity_id,
             "detail_request": "Retrieve full entity details including hierarchy and relationships"
         });
         
@@ -2393,6 +2393,7 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
         user_id: Uuid,
         session_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         use serde_json::json;
         
@@ -2440,7 +2441,7 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
                 action.name, action.id, action.dependencies);
             
             // Phase 3: Enhanced action execution with atomic patterns
-            self.execute_single_action_atomic(action, directive, user_id, session_id, session_dek).await?;
+            self.execute_single_action_atomic(action, directive, user_id, session_id, session_dek, chronicle_id).await?;
             
             // Mark action as executed for dependency tracking
             executed_actions.insert(action.id.clone());
@@ -2459,6 +2460,7 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
         user_id: Uuid,
         session_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<serde_json::Value, AppError> {
         debug!("Phase 3: Executing action '{}' (id: {}) with atomic patterns", action.name, action.id);
         
@@ -2554,7 +2556,15 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
             },
             "create_entity" => {
                 // Phase 3: Enhanced entity creation with atomic patterns
-                let result = self.execute_tool("create_entity", &action.parameters, session_dek, user_id).await?;
+                // Ensure user_id is included in parameters
+                let mut tool_params = if let Some(obj) = action.parameters.as_object() {
+                    obj.clone()
+                } else {
+                    serde_json::Map::new()
+                };
+                tool_params.insert("user_id".to_string(), json!(user_id.to_string()));
+                
+                let result = self.execute_tool("create_entity", &serde_json::Value::Object(tool_params), session_dek, user_id).await?;
                 
                 // Track the created entity in coordination context
                 if let Some(entity_id) = result.get("entity_id").and_then(|id| id.as_str()) {
@@ -2606,6 +2616,29 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
                 
                 // Execute with mapped parameters
                 self.execute_tool("query_lorebook", &serde_json::Value::Object(tool_params), session_dek, user_id).await?
+            },
+            "create_chronicle_event" => {
+                // Phase 3: Handle chronicle event creation with proper chronicle_id
+                let mut tool_params = if let Some(obj) = action.parameters.as_object() {
+                    obj.clone()
+                } else {
+                    serde_json::Map::new()
+                };
+                
+                // Always ensure user_id is included
+                tool_params.insert("user_id".to_string(), json!(user_id.to_string()));
+                
+                // Use the actual chronicle_id parameter instead of SubGoal goal_id
+                if let Some(actual_chronicle_id) = chronicle_id {
+                    tool_params.insert("chronicle_id".to_string(), json!(actual_chronicle_id.to_string()));
+                    debug!("Phase 3: Using actual chronicle_id {} for create_chronicle_event", actual_chronicle_id);
+                } else {
+                    warn!("Phase 3: No chronicle_id provided for create_chronicle_event action");
+                    return Err(AppError::InvalidInput("create_chronicle_event requires chronicle_id".to_string()));
+                }
+                
+                // Execute with correct chronicle_id
+                self.execute_tool("create_chronicle_event", &serde_json::Value::Object(tool_params), session_dek, user_id).await?
             },
             "get_spatial_context" => {
                 // Phase 3: Map plan parameters to tool parameters
@@ -2816,7 +2849,7 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
         
         // Phase 3: Execute plan with atomic coordination
         if matches!(&validation_report, PlanValidationResult::Valid(_)) {
-            self.process_plan_with_atomic_coordination(&plan_result.plan, directive, user_id, session_id, session_dek).await?;
+            self.process_plan_with_atomic_coordination(&plan_result.plan, directive, user_id, session_id, session_dek, chronicle_id).await?;
         }
         
         let execution_time = start_time.elapsed();

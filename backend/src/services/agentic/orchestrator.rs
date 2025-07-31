@@ -112,7 +112,7 @@ impl WorkflowOrchestrator {
     ///
     /// Each stage must complete successfully before the next begins.
     /// Failed stages will terminate the workflow.
-    #[instrument(skip(self, chat_history, session_dek), fields(user_id = %user_id, session_id = %session_id))]
+    #[instrument(skip(self, chat_history, session_dek), fields(user_id = %user_id, session_id = %session_id, chronicle_id = ?chronicle_id))]
     pub async fn run(
         &self,
         chat_history: &[crate::models::chats::ChatMessageForClient],
@@ -121,6 +121,7 @@ impl WorkflowOrchestrator {
         session_dek: &SessionDek,
         current_message: &str,
         ai_response: &str,
+        chronicle_id: Option<Uuid>,
     ) -> Result<StageResults, AppError> {
         info!("Starting sequential agentic workflow");
         let workflow_start = std::time::Instant::now();
@@ -168,6 +169,7 @@ impl WorkflowOrchestrator {
                         user_id,
                         session_id,
                         session_dek,
+                        chronicle_id,
                         &mut results
                     ).await?
                 }
@@ -292,12 +294,13 @@ impl WorkflowOrchestrator {
     }
     
     /// Stage 2: Tactical Planning
-    #[instrument(skip(self, session_dek, results))]
+    #[instrument(skip(self, session_dek, results), fields(chronicle_id = ?chronicle_id))]
     async fn execute_tactical_planning(
         &self,
         user_id: Uuid,
         session_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
         results: &mut StageResults,
     ) -> Result<OrchestratorState, AppError> {
         info!("Stage 2: Executing tactical planning");
@@ -309,7 +312,7 @@ impl WorkflowOrchestrator {
             ))?;
         
         match self.tactical_agent
-            .process_directive(directive, user_id, session_dek, None)
+            .process_directive(directive, user_id, session_dek, chronicle_id)
             .await
         {
             Ok(context) => {

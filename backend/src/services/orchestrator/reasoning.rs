@@ -73,9 +73,16 @@ impl ReasoningEngine {
         let json_schema_spec = JsonSchemaSpec::new(schema);
         let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
 
+        // Dynamically set max_tokens based on the expected response size
+        let max_tokens = if prompt.contains("MAXIMUM 5 steps") {
+            Some(8000) // Smaller limit for concise Plan phase
+        } else {
+            Some(16000) // Default for other phases
+        };
+        
         let options = ChatOptions {
             temperature: Some(0.7),
-            max_tokens: Some(16000), // Increased from 8000 to prevent truncation
+            max_tokens,
             response_format: Some(response_format),
             safety_settings: Some(safety_settings),
             ..Default::default()
@@ -116,59 +123,96 @@ impl ReasoningEngine {
     fn attempt_json_recovery(&self, truncated_json: &str) -> Result<JsonValue, serde_json::Error> {
         let mut recovered = truncated_json.to_string();
         
-        // Count open/close braces and brackets
-        let mut brace_count = 0;
-        let mut bracket_count = 0;
+        // Track structure stack to close in proper order
+        let mut structure_stack = Vec::new();
         let mut in_string = false;
         let mut escape = false;
+        let mut last_char = ' ';
         
         for ch in truncated_json.chars() {
             if escape {
                 escape = false;
+                last_char = ch;
                 continue;
             }
             
             match ch {
                 '\\' => escape = true,
                 '"' if !escape => in_string = !in_string,
-                '{' if !in_string => brace_count += 1,
-                '}' if !in_string => brace_count -= 1,
-                '[' if !in_string => bracket_count += 1,
-                ']' if !in_string => bracket_count -= 1,
+                '{' if !in_string => structure_stack.push('{'),
+                '}' if !in_string => {
+                    if let Some(&'{') = structure_stack.last() {
+                        structure_stack.pop();
+                    }
+                },
+                '[' if !in_string => structure_stack.push('['),
+                ']' if !in_string => {
+                    if let Some(&'[') = structure_stack.last() {
+                        structure_stack.pop();
+                    }
+                },
+                _ => {}
+            }
+            last_char = ch;
+        }
+        
+        // If we're in the middle of a string, close it
+        if in_string {
+            // Check if we need to add a comma before closing
+            if last_char != '"' && last_char != ',' && !last_char.is_whitespace() {
+                recovered.push('"');
+            } else {
+                recovered.push('"');
+            }
+        }
+        
+        // If the last character was a comma, we might be in the middle of an array/object
+        // Add a null value to complete the structure
+        if last_char == ',' || (last_char == ':' && !in_string) {
+            recovered.push_str("null");
+        }
+        
+        // Close structures in reverse order
+        while let Some(opener) = structure_stack.pop() {
+            match opener {
+                '{' => recovered.push('}'),
+                '[' => recovered.push(']'),
                 _ => {}
             }
         }
         
-        // Close any open strings
-        if in_string {
-            recovered.push('"');
-        }
-        
-        // Close any open objects/arrays in the proper order
-        // We need to determine the order by looking at the structure
-        let mut closers = Vec::new();
-        let mut temp_brace = brace_count;
-        let mut temp_bracket = bracket_count;
-        
-        // Simple heuristic: alternate closing based on what we see
-        while temp_brace > 0 || temp_bracket > 0 {
-            if temp_brace > 0 {
-                closers.push('}');
-                temp_brace -= 1;
-            }
-            if temp_bracket > 0 {
-                closers.push(']');
-                temp_bracket -= 1;
-            }
-        }
-        
-        // Apply closers
-        for closer in closers {
-            recovered.push(closer);
-        }
-        
         // Try to parse the recovered JSON
-        serde_json::from_str(&recovered)
+        match serde_json::from_str(&recovered) {
+            Ok(json) => Ok(json),
+            Err(_) => {
+                // If recovery failed, try a more aggressive approach
+                // Find the last complete value and truncate there
+                if let Some(last_complete) = self.find_last_complete_value(truncated_json) {
+                    serde_json::from_str(&last_complete)
+                } else {
+                    serde_json::from_str(&recovered)
+                }
+            }
+        }
+    }
+    
+    /// Find the last complete JSON value in a truncated string
+    fn find_last_complete_value(&self, truncated_json: &str) -> Option<String> {
+        // Try to find common JSON structure endings
+        let possible_endings = vec![
+            "}]}", "}]", "]}", "}", "]", "\"}\"", "\"]\"", "\"}"
+        ];
+        
+        for ending in possible_endings {
+            if let Some(pos) = truncated_json.rfind(ending) {
+                let candidate = &truncated_json[..pos + ending.len()];
+                if serde_json::from_str::<JsonValue>(candidate).is_ok() {
+                    return Some(candidate.to_string());
+                }
+            }
+        }
+        
+        None
     }
 
     /// Execute Perceive phase - analyze input and extract entities using structured output
@@ -361,7 +405,7 @@ Determine:
         let schema = get_plan_phase_schema();
         
         let prompt = format!(
-            r#"Create an execution plan based on the strategy. Be CONCISE - limit to 5-7 most important actions.
+            r#"Create an execution plan based on the strategy. Be EXTREMELY CONCISE - limit to 3-5 most critical actions only.
 
 Goals: {:?}
 Narrative threads: {:?}
@@ -370,16 +414,21 @@ Implications: {}
 Available tools: {:?}
 
 Generate:
-- Concrete action steps (MAX 7 steps, focus on most critical)
-- Dependency graph between actions  
-- Tool selections as an array of mappings (e.g., [{{"action_name": "CreateEntity", "tool_name": "create_entity"}}, {{"action_name": "UpdateRelationship", "tool_name": "manage_relationships"}}])
-- Cache optimization hints (optional, only if relevant)
+- Concrete action steps (MAXIMUM 5 steps, focus ONLY on most critical actions)
+- Minimal dependency graph (only if actions depend on each other)
+- Tool selections as a simple array (e.g., [{{"action_name": "CreateEntity", "tool_name": "create_entity"}}])
+- OMIT cache optimization hints unless absolutely critical
 
-IMPORTANT: Keep responses focused and concise. Quality over quantity."#,
-            strategy.primary_goals,
-            strategy.narrative_threads,
+CRITICAL INSTRUCTIONS:
+- Keep ALL descriptions under 20 words
+- NO verbose explanations
+- Focus on ESSENTIAL actions only
+- Prioritize quality over quantity
+- If chronicle_id is mentioned in context, include it in relevant tool parameters"#,
+            strategy.primary_goals.iter().take(3).collect::<Vec<_>>(), // Limit goals
+            strategy.narrative_threads.iter().take(2).collect::<Vec<_>>(), // Limit threads
             strategy.world_state_implications,
-            UnifiedToolRegistry::list_all_tool_names()
+            UnifiedToolRegistry::list_all_tool_names().iter().take(10).collect::<Vec<_>>() // Limit tools shown
         );
 
         let plan = self.analyze_with_structured_output(&prompt, schema).await?;

@@ -168,20 +168,32 @@ impl ScribeTool for FindEntityTool {
     }
 
     fn description(&self) -> &'static str {
-        "Search for entities by type, name, components, or spatial filters"
+        "Search for entities by type, name, components, or spatial filters. Use name_pattern for partial matches or search_by_name for exact entity resolution."
     }
 
     fn input_schema(&self) -> JsonValue {
         json!({
             "type": "object",
             "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "User ID performing the operation"
+                },
                 "entity_type": {
                     "type": "string",
                     "description": "Type of entity to search for (e.g., 'character', 'location', 'item')"
                 },
                 "name_pattern": {
                     "type": "string",
-                    "description": "Partial name to search for"
+                    "description": "Partial name to search for (substring match)"
+                },
+                "search_by_name": {
+                    "type": "string",
+                    "description": "Exact entity name to find (uses entity resolution for intelligent matching)"
+                },
+                "search_context": {
+                    "type": "string",
+                    "description": "Additional context to help resolve ambiguous entity names when using search_by_name"
                 },
                 "component_filters": {
                     "type": "object",
@@ -200,7 +212,8 @@ impl ScribeTool for FindEntityTool {
                     "type": "integer",
                     "description": "Maximum number of results"
                 }
-            }
+            },
+            "required": ["user_id"]
         })
     }
 
@@ -210,7 +223,90 @@ impl ScribeTool for FindEntityTool {
             .ok_or_else(|| ToolError::InvalidParams("user_id is required".to_string()))?)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid user_id: {}", e)))?;
         
-        // Extract structured parameters
+        // Check if we're doing entity resolution by exact name
+        if let Some(search_by_name) = params.get("search_by_name").and_then(|v| v.as_str()) {
+            // Use GetEntityDetailsTool's resolution logic
+            use crate::services::agentic::entity_resolution_tool::EntityResolutionTool;
+            
+            let resolution_tool = EntityResolutionTool::new(self.app_state.clone());
+            let context = params.get("search_context").and_then(|v| v.as_str());
+            
+            // Get existing entities for resolution
+            let existing_entities = self.app_state.ecs_entity_manager
+                .query_entities(user_id, vec![], Some(100), None)
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to query entities: {}", e)))?;
+            
+            let mut existing_for_resolution = vec![];
+            for entity in &existing_entities {
+                if let Some(name_component) = entity.components.iter().find(|c| c.component_type == "Name") {
+                    if let Some(name) = name_component.component_data.get("name").and_then(|n| n.as_str()) {
+                        existing_for_resolution.push(json!({
+                            "entity_id": entity.entity.id.to_string(),
+                            "name": name,
+                            "display_name": name_component.component_data.get("display_name").and_then(|n| n.as_str()).unwrap_or(name),
+                            "entity_type": "unknown",
+                            "context": context
+                        }));
+                    }
+                }
+            }
+            
+            // Call entity resolution
+            let resolution_params = json!({
+                "user_id": user_id.to_string(),
+                "narrative_text": context.unwrap_or(search_by_name),
+                "entity_names": [search_by_name],
+                "existing_entities": existing_for_resolution
+            });
+            
+            let resolution_result = resolution_tool.execute(&resolution_params, &SessionDek::new(vec![0u8; 32])).await?;
+            
+            // Extract resolved entity and convert to search result
+            if let Some(resolved_entities) = resolution_result.get("resolved_entities").and_then(|e| e.as_array()) {
+                if let Some(first_entity) = resolved_entities.first() {
+                    if let Some(entity_id_str) = first_entity.get("entity_id").and_then(|id| id.as_str()) {
+                        if let Ok(entity_id) = Uuid::parse_str(entity_id_str) {
+                            if entity_id != Uuid::nil() {
+                                let confidence = first_entity.get("confidence").and_then(|c| c.as_f64()).unwrap_or(0.0);
+                                if confidence > 0.7 {
+                                    // Find the resolved entity in our existing entities list
+                                    if let Some(entity) = existing_entities.iter().find(|e| e.entity.id == entity_id) {
+                                        let name = entity.components.iter()
+                                            .find(|c| c.component_type == "Name")
+                                            .and_then(|c| c.component_data.get("display_name"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("Unnamed")
+                                            .to_string();
+                                            
+                                        let entity_type = entity.components.iter()
+                                            .find(|c| c.component_type == "SpatialArchetype")
+                                            .and_then(|c| c.component_data.get("archetype_name"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("Unknown")
+                                            .to_string();
+                                            
+                                        let result = EntitySearchResult {
+                                            entity_id,
+                                            entity_type,
+                                            name,
+                                            components: entity.components.iter().map(|c| c.component_type.clone()).collect(),
+                                        };
+                                        
+                                        return Ok(json!({"entities": [result]}));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // If we couldn't resolve, return empty results
+            return Ok(json!({"entities": []}));
+        }
+        
+        // Extract structured parameters for regular search
         let entity_type = params.get("entity_type")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
@@ -757,6 +853,10 @@ impl ScribeTool for UpdateEntityTool {
         json!({
             "type": "object",
             "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "User ID performing the operation"
+                },
                 "entity_id": {
                     "type": "string",
                     "description": "UUID of the entity to update"
@@ -780,7 +880,7 @@ impl ScribeTool for UpdateEntityTool {
                     }
                 }
             },
-            "required": ["entity_id", "updates"]
+            "required": ["user_id", "entity_id", "updates"]
         })
     }
 
@@ -910,6 +1010,75 @@ impl GetEntityDetailsTool {
         Self { app_state }
     }
     
+    /// Resolve entity name to ID using the entity resolution tool
+    async fn resolve_entity_name(
+        &self,
+        user_id: Uuid,
+        entity_name: &str,
+        context: Option<&str>,
+    ) -> Result<Option<Uuid>, ToolError> {
+        // Import entity resolution tool
+        use crate::services::agentic::entity_resolution_tool::EntityResolutionTool;
+        
+        let resolution_tool = EntityResolutionTool::new(self.app_state.clone());
+        
+        // Get existing entities for the user
+        let existing_entities = self.app_state.ecs_entity_manager
+            .query_entities(
+                user_id,
+                vec![],  // No specific criteria, we want all entities
+                Some(100),  // Reasonable limit
+                None,
+            )
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to query existing entities: {}", e)))?;
+        
+        // Convert to the format expected by entity resolution
+        let mut existing_for_resolution = vec![];
+        for entity in existing_entities {
+            if let Some(name_component) = entity.components.iter().find(|c| c.component_type == "Name") {
+                if let Some(name) = name_component.component_data.get("name").and_then(|n| n.as_str()) {
+                    existing_for_resolution.push(json!({
+                        "entity_id": entity.entity.id.to_string(),
+                        "name": name,
+                        "display_name": name_component.component_data.get("display_name").and_then(|n| n.as_str()).unwrap_or(name),
+                        "entity_type": "unknown",  // We'll let the resolution tool figure this out
+                        "context": context
+                    }));
+                }
+            }
+        }
+        
+        // Call entity resolution
+        let resolution_params = json!({
+            "user_id": user_id.to_string(),
+            "narrative_text": context.unwrap_or(entity_name),
+            "entity_names": [entity_name],
+            "existing_entities": existing_for_resolution
+        });
+        
+        let resolution_result = resolution_tool.execute(&resolution_params, &SessionDek::new(vec![0u8; 32])).await?;
+        
+        // Extract the first resolved entity
+        if let Some(resolved_entities) = resolution_result.get("resolved_entities").and_then(|e| e.as_array()) {
+            if let Some(first_entity) = resolved_entities.first() {
+                if let Some(entity_id_str) = first_entity.get("entity_id").and_then(|id| id.as_str()) {
+                    if let Ok(entity_id) = Uuid::parse_str(entity_id_str) {
+                        // Check if it's a nil UUID (unresolved)
+                        if entity_id != Uuid::nil() {
+                            let confidence = first_entity.get("confidence").and_then(|c| c.as_f64()).unwrap_or(0.0);
+                            if confidence > 0.7 {  // Only accept high-confidence matches
+                                return Ok(Some(entity_id));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(None)
+    }
+    
     /// Get detailed entity information
     async fn get_entity_details(
         &self,
@@ -974,19 +1143,35 @@ impl ScribeTool for GetEntityDetailsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Get detailed information about an entity including all its components"
+        "Get detailed information about an entity by ID or name. Supports entity resolution for name-based lookups."
     }
 
     fn input_schema(&self) -> JsonValue {
         json!({
             "type": "object",
             "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "User ID performing the operation"
+                },
                 "entity_id": {
                     "type": "string",
-                    "description": "UUID of the entity to retrieve"
+                    "description": "UUID of the entity to retrieve (optional if entity_name is provided)"
+                },
+                "entity_name": {
+                    "type": "string",
+                    "description": "Name of the entity to retrieve (will be resolved to ID)"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Additional context to help resolve ambiguous entity names"
                 }
             },
-            "required": ["entity_id"]
+            "required": ["user_id"],
+            "oneOf": [
+                {"required": ["entity_id"]},
+                {"required": ["entity_name"]}
+            ]
         })
     }
 
@@ -996,10 +1181,24 @@ impl ScribeTool for GetEntityDetailsTool {
             .ok_or_else(|| ToolError::InvalidParams("user_id is required".to_string()))?)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid user_id: {}", e)))?;
         
-        let entity_id = Uuid::parse_str(params.get("entity_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ToolError::InvalidParams("entity_id is required".to_string()))?)
-            .map_err(|e| ToolError::InvalidParams(format!("Invalid entity_id: {}", e)))?;
+        // Try to get entity_id directly first
+        let entity_id = if let Some(id_str) = params.get("entity_id").and_then(|v| v.as_str()) {
+            Uuid::parse_str(id_str)
+                .map_err(|e| ToolError::InvalidParams(format!("Invalid entity_id: {}", e)))?
+        } else if let Some(entity_name) = params.get("entity_name").and_then(|v| v.as_str()) {
+            // Resolve entity name to ID
+            let context = params.get("context").and_then(|v| v.as_str());
+            match self.resolve_entity_name(user_id, entity_name, context).await? {
+                Some(resolved_id) => resolved_id,
+                None => return Err(ToolError::ExecutionFailed(format!(
+                    "Could not resolve entity name '{}' to an existing entity", entity_name
+                )))
+            }
+        } else {
+            return Err(ToolError::InvalidParams(
+                "Either entity_id or entity_name must be provided".to_string()
+            ));
+        };
         
         // Get entity details
         let result = self.get_entity_details(user_id, entity_id).await?;

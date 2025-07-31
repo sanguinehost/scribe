@@ -1290,22 +1290,15 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
             "reasoning": format!("Auto-created from conversation with relevance {:.2}", entity.relevance_score)
         });
         
-        // Create the entity using the AI-driven creation tool
-        // The tool expects a natural language request describing what to create
-        let scale_str = match scale {
-            SpatialScale::Cosmic => "cosmic",
-            SpatialScale::Planetary => "planetary",
-            SpatialScale::Intimate => "intimate",
-        };
-        let creation_request = format!(
-            "Create a {} entity named '{}' with {} scale and {} salience in the context of a fantasy world",
-            entity.entity_type, entity.name, scale_str, salience_tier
-        );
-        
+        // Create the entity using atomic parameters
         let create_params = serde_json::json!({
             "user_id": user_id.to_string(),
-            "creation_request": creation_request,
-            "context": "Entity detected from conversation analysis"
+            "entity_type": entity.entity_type,
+            "name": entity.name,
+            "display_name": entity.name,
+            "spatial_scale": format!("{:?}", scale),
+            "salience_tier": salience_tier,
+            "additional_components": components
         });
         
         match self.get_tool("create_entity")?.execute(&create_params, session_dek).await {
@@ -1712,7 +1705,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         // Update the child entity's Spatial component with parent_link
         let update_params = serde_json::json!({
             "user_id": user_id.to_string(),
-            "entity_identifier": child_entity.id.to_string(),
+            "entity_id": child_entity.id.to_string(),
             "update_request": format!("Set parent to entity with ID {}", parent_entity.id),
             "context": format!("Establishing spatial relationship: {} is contained in {}", child_entity_name, parent_entity_name)
         });
@@ -1800,7 +1793,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
             // Update the Spatial component with parent_link
             let update_params = serde_json::json!({
                 "user_id": user_id.to_string(),
-                "entity_identifier": entity_id,
+                "entity_id": entity_id,
                 "update_request": format!("Set parent to entity with ID {}", parent_id),
                 "context": format!("Establishing spatial relationship: {} is contained in {}", entity_name, parent_name)
             });
@@ -2771,9 +2764,13 @@ Output JSON with:
         // Entity doesn't exist, create it
         let params = json!({
             "user_id": user_id.to_string(),
-            "name": entity_name,
             "entity_type": entity_type,
-            "properties": action.parameters.get("properties").cloned().unwrap_or_default()
+            "name": entity_name,
+            "display_name": entity_name,
+            "spatial_scale": action.parameters.get("spatial_scale")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Intimate"),
+            "additional_components": action.parameters.get("properties").cloned().unwrap_or_default()
         });
         
         self.get_tool("create_entity")?.execute(&params, session_dek).await
@@ -2970,9 +2967,11 @@ Output JSON with:
             // Create the item first
             let create_item_params = json!({
                 "user_id": user_id.to_string(),
-                "name": item_name,
                 "entity_type": "item",
-                "properties": {}
+                "name": item_name,
+                "display_name": item_name,
+                "spatial_scale": "Intimate",
+                "additional_components": {}
             });
             
             let item_result = self.get_tool("create_entity")?.execute(&create_item_params, session_dek).await
