@@ -223,6 +223,7 @@ pub struct SpatialFilters {
 #[derive(Debug, Deserialize)]
 pub struct GetSpatialContextInput {
     pub user_id: String,
+    pub chronicle_id: Option<String>,
     pub entity_id: String,
     pub context_request: String,
     pub include_details: Option<bool>,
@@ -277,6 +278,10 @@ impl ScribeTool for GetSpatialContextTool {
                 "user_id": {
                     "type": "string",
                     "description": "User ID performing the operation"
+                },
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "Chronicle ID to filter spatial context by. If provided, only shows entities from this chronicle."
                 },
                 "entity_id": {
                     "type": "string",

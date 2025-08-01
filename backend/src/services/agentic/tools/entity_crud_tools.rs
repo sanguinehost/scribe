@@ -50,6 +50,7 @@ impl FindEntityTool {
     async fn search_entities(
         &self,
         user_id: Uuid,
+        chronicle_id: Option<Uuid>,
         entity_type: Option<String>,
         name_pattern: Option<String>,
         component_filters: Option<HashMap<String, JsonValue>>,
@@ -60,6 +61,16 @@ impl FindEntityTool {
         
         // Build component criteria
         let mut criteria = Vec::new();
+        
+        // Add chronicle filter if specified
+        if let Some(chronicle_id) = chronicle_id {
+            // Filter by entities that have this chronicle in their ChronicleComponent
+            criteria.push(crate::services::ecs_entity_manager::ComponentQuery::ComponentDataContains(
+                "Chronicle".to_string(),
+                "primary_chronicle_id".to_string(),
+                chronicle_id.to_string(),
+            ));
+        }
         
         // Add component type filters
         if let Some(filters) = component_filters {
@@ -179,6 +190,10 @@ impl ScribeTool for FindEntityTool {
                     "type": "string",
                     "description": "User ID performing the operation"
                 },
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "Chronicle ID to filter entities by. If not provided, searches across all user's chronicles."
+                },
                 "entity_type": {
                     "type": "string",
                     "description": "Type of entity to search for (e.g., 'character', 'location', 'item')"
@@ -223,6 +238,11 @@ impl ScribeTool for FindEntityTool {
             .ok_or_else(|| ToolError::InvalidParams("user_id is required".to_string()))?)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid user_id: {}", e)))?;
         
+        // Extract chronicle_id if provided
+        let chronicle_id = params.get("chronicle_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
+        
         // Check if we're doing entity resolution by exact name
         if let Some(search_by_name) = params.get("search_by_name").and_then(|v| v.as_str()) {
             // Use GetEntityDetailsTool's resolution logic
@@ -232,8 +252,17 @@ impl ScribeTool for FindEntityTool {
             let context = params.get("search_context").and_then(|v| v.as_str());
             
             // Get existing entities for resolution
+            let mut query_criteria = vec![];
+            if let Some(chronicle_id) = chronicle_id {
+                query_criteria.push(crate::services::ecs_entity_manager::ComponentQuery::ComponentDataContains(
+                    "Chronicle".to_string(),
+                    "primary_chronicle_id".to_string(),
+                    chronicle_id.to_string(),
+                ));
+            }
+            
             let existing_entities = self.app_state.ecs_entity_manager
-                .query_entities(user_id, vec![], Some(100), None)
+                .query_entities(user_id, query_criteria, Some(100), None)
                 .await
                 .map_err(|e| ToolError::ExecutionFailed(format!("Failed to query entities: {}", e)))?;
             
@@ -329,6 +358,7 @@ impl ScribeTool for FindEntityTool {
         // Execute search
         let results = self.search_entities(
             user_id,
+            chronicle_id,
             entity_type,
             name_pattern,
             component_filters,
@@ -1309,6 +1339,10 @@ impl ScribeTool for GetEntityDetailsTool {
                     "type": "string",
                     "description": "User ID performing the operation"
                 },
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "Chronicle ID to validate entity access. If provided, ensures entity belongs to this chronicle."
+                },
                 "entity_id": {
                     "type": "string",
                     "description": "UUID of the entity to retrieve (optional if entity_name is provided)"
@@ -1335,6 +1369,11 @@ impl ScribeTool for GetEntityDetailsTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParams("user_id is required".to_string()))?)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid user_id: {}", e)))?;
+            
+        // Extract chronicle_id if provided
+        let chronicle_id = params.get("chronicle_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
         
         // Try to get entity_id directly first
         let entity_id = if let Some(id_str) = params.get("entity_id").and_then(|v| v.as_str()) {
@@ -1357,6 +1396,45 @@ impl ScribeTool for GetEntityDetailsTool {
         
         // Get entity details
         let result = self.get_entity_details(user_id, entity_id).await?;
+        
+        // If chronicle_id is provided, validate that the entity belongs to it
+        if let Some(requested_chronicle_id) = chronicle_id {
+            if let Some(chronicle_component) = result.components.get("Chronicle") {
+                // Check if the entity's chronicle matches the requested one
+                if let Some(primary_chronicle_id_value) = chronicle_component.get("primary_chronicle_id") {
+                    if let Some(primary_chronicle_str) = primary_chronicle_id_value.as_str() {
+                        if let Ok(primary_chronicle_id) = Uuid::parse_str(primary_chronicle_str) {
+                            if primary_chronicle_id != requested_chronicle_id {
+                                // Check secondary chronicles
+                                let is_in_secondary = chronicle_component.get("secondary_chronicle_ids")
+                                    .and_then(|v| v.as_array())
+                                    .map(|arr| {
+                                        arr.iter().any(|id| {
+                                            id.as_str()
+                                                .and_then(|s| Uuid::parse_str(s).ok())
+                                                .map(|uuid| uuid == requested_chronicle_id)
+                                                .unwrap_or(false)
+                                        })
+                                    })
+                                    .unwrap_or(false);
+                                    
+                                if !is_in_secondary {
+                                    return Err(ToolError::ExecutionFailed(format!(
+                                        "Entity {} does not belong to chronicle {}", 
+                                        entity_id, requested_chronicle_id
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Entity has no chronicle component - this shouldn't happen under the new model
+                return Err(ToolError::ExecutionFailed(format!(
+                    "Entity {} has no chronicle association", entity_id
+                )));
+            }
+        }
         
         Ok(serde_json::to_value(&result)
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to serialize result: {}", e)))?)

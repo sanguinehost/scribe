@@ -839,7 +839,7 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
         
         // Step 2: Find entities by name using FindEntityTool
         for entity_name in &entity_names {
-            match self.find_entity_by_name(&entity_name, user_id, session_dek).await {
+            match self.find_entity_by_name(&entity_name, user_id, None, session_dek).await {
                 Ok(found_entities) => {
                     debug!("Found {} entities for name '{}'", found_entities.len(), entity_name);
                     
@@ -940,15 +940,20 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
     }
     
     /// Find entities by name using the FindEntityTool
-    async fn find_entity_by_name(&self, entity_name: &str, user_id: Uuid, session_dek: &SessionDek) -> Result<Vec<crate::services::agentic::tools::entity_crud_tools::EntitySummary>, AppError> {
+    async fn find_entity_by_name(&self, entity_name: &str, user_id: Uuid, chronicle_id: Option<Uuid>, session_dek: &SessionDek) -> Result<Vec<crate::services::agentic::tools::entity_crud_tools::EntitySummary>, AppError> {
         use serde_json::json;
         
-        let params = json!({
+        let mut params = json!({
             "user_id": user_id.to_string(),
             "search_request": format!("find entity named '{}'", entity_name),
             "context": "Finding specific entity by exact name",
             "limit": 5
         });
+        
+        // Add chronicle_id if provided
+        if let Some(chronicle_id) = chronicle_id {
+            params["chronicle_id"] = json!(chronicle_id.to_string());
+        }
         
         let result = self.execute_tool("find_entity", &params, session_dek, user_id).await?;
         
@@ -1017,7 +1022,7 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
         use serde_json::json;
         
         // First find the entity to get its ID
-        let entities = self.find_entity_by_name(entity_name, user_id, session_dek).await?;
+        let entities = self.find_entity_by_name(entity_name, user_id, None, session_dek).await?;
         if entities.is_empty() {
             return Err(AppError::NotFound(format!("Entity '{}' not found for spatial context", entity_name)));
         }
