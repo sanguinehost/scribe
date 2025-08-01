@@ -824,6 +824,7 @@ pub async fn generate_chat_response(
             &current_user_content,
             user_id_value,
             &session_dek,
+            player_chronicle_id,
         ).await {
             Ok(analysis) => {
                 info!(%session_id, 

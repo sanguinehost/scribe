@@ -18,7 +18,7 @@ use crate::{
     models::ecs::{
         SpatialScale, NameComponent, 
         SpatialArchetypeComponent, HierarchicalCoordinates,
-        PositionType,
+        PositionType, ChronicleComponent,
     },
     models::ecs_diesel::{EcsEntity, EcsComponent},
     services::agentic::tools::{ScribeTool, ToolError, ToolParams, ToolResult},
@@ -451,6 +451,7 @@ impl CreateEntityTool {
     async fn create_entity_atomic(
         &self,
         user_id: Uuid,
+        chronicle_id: Uuid,
         entity_type: String,
         name: String,
         display_name: Option<String>,
@@ -656,6 +657,14 @@ impl CreateEntityTool {
             })
         );
         
+        // Chronicle component - associates entity with narrative context
+        let chronicle_component = ChronicleComponent::new(chronicle_id);
+        components.insert(
+            "Chronicle".to_string(),
+            serde_json::to_value(&chronicle_component)
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to serialize chronicle component: {}", e)))?
+        );
+        
         // Add any additional components
         if let Some(additional) = additional_components {
             components.extend(additional);
@@ -712,6 +721,10 @@ impl ScribeTool for CreateEntityTool {
         json!({
             "type": "object",
             "properties": {
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "UUID of the chronicle this entity belongs to (required for narrative context)"
+                },
                 "entity_type": {
                     "type": "string",
                     "description": "Type of entity (e.g., 'character', 'location', 'item')"
@@ -753,7 +766,7 @@ impl ScribeTool for CreateEntityTool {
                     "additionalProperties": true
                 }
             },
-            "required": ["entity_type", "name", "spatial_scale"]
+            "required": ["chronicle_id", "entity_type", "name", "spatial_scale"]
         })
     }
 
@@ -762,6 +775,12 @@ impl ScribeTool for CreateEntityTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParams("user_id is required".to_string()))?)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid user_id: {}", e)))?;
+        
+        // Extract chronicle_id (required for narrative context)
+        let chronicle_id = Uuid::parse_str(params.get("chronicle_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams("chronicle_id is required".to_string()))?)
+            .map_err(|e| ToolError::InvalidParams(format!("Invalid chronicle_id: {}", e)))?;
         
         // Extract required parameters
         let entity_type = params.get("entity_type")
@@ -814,6 +833,7 @@ impl ScribeTool for CreateEntityTool {
         // Create entity
         let result = self.create_entity_atomic(
             user_id,
+            chronicle_id,
             entity_type,
             name,
             display_name,
@@ -857,6 +877,7 @@ impl SelfRegisteringTool for CreateEntityTool {
             ToolExample {
                 scenario: "Create a new character".to_string(),
                 input: json!({
+                    "chronicle_id": "123e4567-e89b-12d3-a456-426614174000",
                     "entity_type": "character",
                     "name": "guard_01",
                     "display_name": "Town Guard",

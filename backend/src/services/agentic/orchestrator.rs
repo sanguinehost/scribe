@@ -181,7 +181,8 @@ impl WorkflowOrchestrator {
                         user_id,
                         session_id,
                         session_dek,
-                        &mut results
+                        &mut results,
+                        chronicle_id
                     ).await?
                 }
                 
@@ -388,13 +389,14 @@ impl WorkflowOrchestrator {
         session_id: Uuid,
         session_dek: &SessionDek,
         results: &mut StageResults,
+        chronicle_id: Option<Uuid>,
     ) -> Result<OrchestratorState, AppError> {
         info!("Stage 3: Executing entity creation");
         let start_time = std::time::Instant::now();
         
         // Run fresh perception analysis to extract entities
         let perception_result = self.perception_agent
-            .analyze_pre_response(chat_history, current_message, user_id, session_dek)
+            .analyze_pre_response(chat_history, current_message, user_id, session_dek, chronicle_id)
             .await?;
         
         if perception_result.contextual_entities.is_empty() {
@@ -441,7 +443,7 @@ impl WorkflowOrchestrator {
         
         // Ensure all entities exist in the system with consistent session ID
         match self.perception_agent
-            .ensure_entities_exist_with_session(&perception_result.contextual_entities, user_id, session_id, session_dek)
+            .ensure_entities_exist_with_session(&perception_result.contextual_entities, user_id, session_id, session_dek, chronicle_id)
             .await
         {
             Ok(_) => {

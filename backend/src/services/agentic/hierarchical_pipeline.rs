@@ -377,6 +377,7 @@ impl HierarchicalAgentPipeline {
                     session_dek,
                     pipeline_start,
                     pipeline_timeout,
+                    chronicle_id,
                 ).await?
             } else {
                 // SEQUENTIAL EXECUTION: Run agents one after another (legacy mode)
@@ -389,6 +390,7 @@ impl HierarchicalAgentPipeline {
                     session_dek,
                     pipeline_start,
                     pipeline_timeout,
+                    chronicle_id,
                 ).await?
             };
 
@@ -1161,6 +1163,7 @@ Write the next response only as your assigned character, advancing the world and
         session_dek: &SessionDek,
         pipeline_start: std::time::Instant,
         pipeline_timeout: std::time::Duration,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(
         PreResponseAnalysisResult,
         PerceptionTimingBreakdown,
@@ -1180,6 +1183,7 @@ Write the next response only as your assigned character, advancing the world and
         let current_message_perception = current_message.to_string();
         let session_dek_perception = session_dek.clone();
         let session_dek_strategic = session_dek.clone();
+        let chronicle_id_perception = chronicle_id;
         
         // Execute both agents in parallel
         let (perception_result, strategic_result) = tokio::join!(
@@ -1187,7 +1191,7 @@ Write the next response only as your assigned character, advancing the world and
             async move {
                 let inner_start = std::time::Instant::now();
                 let result = perception_agent
-                    .analyze_pre_response(&chat_history_perception, &current_message_perception, user_id, &session_dek_perception)
+                    .analyze_pre_response(&chat_history_perception, &current_message_perception, user_id, &session_dek_perception, chronicle_id_perception)
                     .await
                     .map_err(|e| {
                         error!("Perception layer failed: {}", e);
@@ -1347,7 +1351,7 @@ Write the next response only as your assigned character, advancing the world and
             } else {
                 // No cache or minimal cache - run perception synchronously
                 self.perception_agent
-                    .analyze_pre_response(chat_history, current_message, user_id, session_dek)
+                    .analyze_pre_response(chat_history, current_message, user_id, session_dek, chronicle_id)
                     .await
                     .map_err(|e| {
                         error!("Perception layer failed: {}", e);
@@ -1359,7 +1363,7 @@ Write the next response only as your assigned character, advancing the world and
         } else {
             // Fall back to perception agent if Lightning Agent not available
             let perception_analysis = self.perception_agent
-                .analyze_pre_response(chat_history, current_message, user_id, session_dek)
+                .analyze_pre_response(chat_history, current_message, user_id, session_dek, chronicle_id)
                 .await
                 .map_err(|e| {
                     error!("Perception layer failed: {}", e);
@@ -1735,6 +1739,7 @@ Write the next response only as your assigned character, advancing the world and
         current_message: &str,
         ai_response: &str,
         _perception_analysis: PreResponseAnalysisResult,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         let bg_start = std::time::Instant::now();
         
@@ -1758,7 +1763,7 @@ Write the next response only as your assigned character, advancing the world and
         debug!("Background Step 0: Running fresh perception analysis");
         let perception_start = std::time::Instant::now();
         let fresh_perception = self.perception_agent
-            .analyze_pre_response(&extended_history, current_message, user_id, session_dek)
+            .analyze_pre_response(&extended_history, current_message, user_id, session_dek, chronicle_id)
             .await
             .map_err(|e| {
                 error!("Background perception failed: {}", e);
@@ -2150,6 +2155,7 @@ Write the next response only as your assigned character, advancing the world and
         session_dek: &SessionDek,
         pipeline_start: std::time::Instant,
         pipeline_timeout: std::time::Duration,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(
         PreResponseAnalysisResult,
         PerceptionTimingBreakdown,
@@ -2178,7 +2184,7 @@ Write the next response only as your assigned character, advancing the world and
         // Track detailed perception timing
         let perception_inner_start = std::time::Instant::now();
         let perception_analysis = self.perception_agent
-            .analyze_pre_response(chat_history, current_message, user_id, session_dek)
+            .analyze_pre_response(chat_history, current_message, user_id, session_dek, chronicle_id)
             .await
             .map_err(|e| {
                 error!("Perception layer failed: {}", e);

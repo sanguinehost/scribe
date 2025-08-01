@@ -1582,6 +1582,90 @@ impl Component for SpatialComponent {
 }
 
 // ============================================================================
+// Chronicle Association Component
+// ============================================================================
+
+/// Links entities to chronicles for narrative context and access control
+/// Every entity should have a ChronicleComponent to ensure proper boundaries
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChronicleComponent {
+    /// Primary chronicle this entity belongs to
+    pub primary_chronicle_id: Uuid,
+    
+    /// Additional chronicles this entity may appear in (for shared entities)
+    pub secondary_chronicle_ids: Vec<Uuid>,
+    
+    /// Visibility level within the chronicle
+    pub visibility: ChronicleVisibility,
+    
+    /// When this entity was first introduced to the chronicle
+    pub introduced_at: DateTime<Utc>,
+    
+    /// Optional metadata about the entity's role in the chronicle
+    pub chronicle_metadata: HashMap<String, JsonValue>,
+}
+
+/// Visibility levels for entities within chronicles
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ChronicleVisibility {
+    /// Visible to all participants in the chronicle
+    Public,
+    /// Only visible to the GM/narrator
+    GmOnly,
+    /// Only visible to specific players
+    RestrictedTo(Vec<Uuid>),
+    /// Hidden but can be discovered
+    Hidden,
+}
+
+impl ChronicleComponent {
+    /// Create a new chronicle component with the given primary chronicle
+    pub fn new(chronicle_id: Uuid) -> Self {
+        Self {
+            primary_chronicle_id: chronicle_id,
+            secondary_chronicle_ids: Vec::new(),
+            visibility: ChronicleVisibility::Public,
+            introduced_at: Utc::now(),
+            chronicle_metadata: HashMap::new(),
+        }
+    }
+    
+    /// Create with specific visibility
+    pub fn with_visibility(chronicle_id: Uuid, visibility: ChronicleVisibility) -> Self {
+        let mut component = Self::new(chronicle_id);
+        component.visibility = visibility;
+        component
+    }
+    
+    /// Add a secondary chronicle association
+    pub fn add_secondary_chronicle(&mut self, chronicle_id: Uuid) {
+        if !self.secondary_chronicle_ids.contains(&chronicle_id) 
+            && chronicle_id != self.primary_chronicle_id {
+            self.secondary_chronicle_ids.push(chronicle_id);
+        }
+    }
+    
+    /// Check if entity is associated with a specific chronicle
+    pub fn is_in_chronicle(&self, chronicle_id: &Uuid) -> bool {
+        &self.primary_chronicle_id == chronicle_id 
+            || self.secondary_chronicle_ids.contains(chronicle_id)
+    }
+    
+    /// Get all associated chronicle IDs
+    pub fn all_chronicle_ids(&self) -> Vec<Uuid> {
+        let mut ids = vec![self.primary_chronicle_id];
+        ids.extend(self.secondary_chronicle_ids.iter().cloned());
+        ids
+    }
+}
+
+impl Component for ChronicleComponent {
+    fn component_type() -> &'static str {
+        "Chronicle"
+    }
+}
+
+// ============================================================================
 // Entity Archetype System
 // ============================================================================
 

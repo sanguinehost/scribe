@@ -114,6 +114,47 @@ impl PerceptionAgent {
     /// Phase 4: Enhanced tool reference generation for atomic tool patterns
     /// Provides comprehensive guidance on the agent's atomic workflow and coordination capabilities
     fn get_tool_reference(&self) -> String {
+        use crate::services::agentic::unified_tool_registry::{UnifiedToolRegistry, AgentType};
+        
+        // Get available tools for perception agent from UnifiedToolRegistry
+        let available_tools = UnifiedToolRegistry::get_tools_for_agent(AgentType::Perception);
+        
+        // Build tool descriptions
+        let mut tool_descriptions = Vec::new();
+        for tool in available_tools.iter() {
+            let mut desc = format!("- {}: {}", tool.name, tool.description);
+            
+            // Add parameter information if available
+            if let Some(properties) = tool.input_schema.get("properties") {
+                if let Some(props_obj) = properties.as_object() {
+                    let mut param_details = Vec::new();
+                    
+                    for (param_name, param_schema) in props_obj {
+                        // Skip user_id as it's auto-injected
+                        if param_name == "user_id" {
+                            continue;
+                        }
+                        
+                        let param_type = param_schema.get("type")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("unknown");
+                        
+                        let param_desc = param_schema.get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("");
+                        
+                        param_details.push(format!("    - {} ({}): {}", param_name, param_type, param_desc));
+                    }
+                    
+                    if !param_details.is_empty() {
+                        desc.push_str(&format!("\n  Parameters:\n{}", param_details.join("\n")));
+                    }
+                }
+            }
+            
+            tool_descriptions.push(desc);
+        }
+        
         format!(r#"PERCEPTION AGENT - ATOMIC TOOL ARCHITECTURE
 
 PHASE 4 ENHANCED WORKFLOW:
@@ -126,11 +167,7 @@ ATOMIC ENTITY WORKFLOW:
 4. RACE PREVENTION: Automatic detection and prevention of duplicate operations
 
 AVAILABLE ATOMIC TOOLS:
-- check_entity_exists: Direct ECS-based existence verification
-- find_entity: Intelligent entity search with AI-driven matching
-- get_entity_details: Comprehensive entity information retrieval
-- create_entity: Atomic entity creation with full component setup
-- resolve_entities: AI-powered entity resolution and deduplication
+{}
 
 COORDINATION FEATURES (Phase 3):
 - Race condition prevention for concurrent operations
@@ -144,7 +181,7 @@ ENTITY PROCESSING RULES:
 - Proper user isolation: All operations scoped to user context
 - Comprehensive logging: All security-relevant events audited
 
-The agent now focuses purely on perception and coordination rather than direct entity manipulation."#)
+The agent now focuses purely on perception and coordination rather than direct entity manipulation."#, tool_descriptions.join("\n"))
     }
     
     /// Pre-response analysis - analyze conversation state BEFORE AI response generation
@@ -179,6 +216,7 @@ The agent now focuses purely on perception and coordination rather than direct e
         current_message: &str,
         user_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<PreResponseAnalysisResult, AppError> {
         let start_time = std::time::Instant::now();
         
@@ -211,6 +249,7 @@ The agent now focuses purely on perception and coordination rather than direct e
             current_message,
             user_id,
             session_dek,
+            chronicle_id,
         ).await?;
         let entity_extraction_ms = entity_extraction_start.elapsed().as_millis() as u64;
         info!("Entity extraction completed in {}ms, found {} entities", entity_extraction_ms, contextual_entities.len());
@@ -274,6 +313,7 @@ The agent now focuses purely on perception and coordination rather than direct e
         current_message: &str,
         user_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<Vec<ContextualEntity>, AppError> {
         // Get session ID for known entity lookup
         let session_id = if let Some(first_msg) = chat_history.first() {
@@ -430,7 +470,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         let session_dek_clone = session_dek.clone();
         
         tokio::spawn(async move {
-            if let Err(e) = agent_clone.process_entities_batch_async(&entities_clone, user_id, &session_dek_clone).await {
+            if let Err(e) = agent_clone.process_entities_batch_async(&entities_clone, user_id, &session_dek_clone, chronicle_id).await {
                 error!("Background entity processing failed: {}", e);
             }
         });
@@ -606,6 +646,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         user_id: Uuid,
         session_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         let start_time = std::time::Instant::now();
         info!("Phase 4: Ensuring {} entities exist using atomic coordination patterns", entities.len());
@@ -635,7 +676,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         self.shared_context.store_context(processing_entry, session_dek).await?;
         
         // Use the new atomic coordination workflow
-        self.process_entities_with_atomic_coordination(entities, user_id, session_id, session_dek).await?;
+        self.process_entities_with_atomic_coordination(entities, user_id, session_id, session_dek, chronicle_id).await?;
         
         // Record atomic completion signal (expected by integration test)
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -676,7 +717,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         let session_id = uuid::Uuid::new_v4();
         
         // Phase 4: Always use atomic patterns now
-        self.ensure_entities_exist_atomic(entities, user_id, session_id, session_dek).await
+        self.ensure_entities_exist_atomic(entities, user_id, session_id, session_dek, None).await
     }
     
     /// Ensure entities exist with explicit session ID for proper cross-message persistence
@@ -686,9 +727,10 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         user_id: Uuid,
         session_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         // Use the provided session ID for consistent entity visibility across messages
-        self.ensure_entities_exist_atomic(entities, user_id, session_id, session_dek).await
+        self.ensure_entities_exist_atomic(entities, user_id, session_id, session_dek, chronicle_id).await
     }
 
     /// Legacy wrapper - DEPRECATED: Use ensure_entities_exist_atomic directly  
@@ -708,7 +750,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         
         if use_atomic_patterns {
             debug!("Phase 4: Using atomic coordination patterns for entity processing");
-            return self.ensure_entities_exist_atomic(entities, user_id, session_id, session_dek).await;
+            return self.ensure_entities_exist_atomic(entities, user_id, session_id, session_dek, None).await;
         }
         
         // First pass: Create all entities
@@ -805,7 +847,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
                         info!("Entity '{}' of type '{}' not found, coordinating creation via SharedAgentContext", entity.name, entity.entity_type);
                         
                         // Phase 3: Enhanced coordination for entity creation
-                        self.coordinate_entity_creation(entity, user_id, &session_id, session_dek).await?;
+                        self.coordinate_entity_creation(entity, user_id, &session_id, session_dek, None).await?;
                         
                         // Phase 2: No caching - entity will be tracked directly in EcsEntityManager when created
                         // Track in session
@@ -830,7 +872,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
                     ).await;
                     
                     // Phase 3: Enhanced coordination for entity creation due to error
-                    self.coordinate_entity_creation(entity, user_id, &session_id, session_dek).await?;
+                    self.coordinate_entity_creation(entity, user_id, &session_id, session_dek, None).await?;
                     // Phase 2: No caching - entity will be tracked directly in EcsEntityManager when created
                     // Track in session
                     self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
@@ -891,6 +933,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         entities: &[ContextualEntity],
         user_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         info!("Starting background batch processing of {} entities", entities.len());
         let start_time = std::time::Instant::now();
@@ -910,7 +953,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
                 let session_dek = session_dek.clone();
                 
                 async move {
-                    agent.process_single_entity_async(&entity, user_id, &session_dek).await
+                    agent.process_single_entity_async(&entity, user_id, &session_dek, chronicle_id).await
                 }
             }).collect();
             
@@ -943,6 +986,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         entity: &ContextualEntity,
         user_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         let session_id = Uuid::from_slice(session_dek.expose_bytes()).unwrap_or_else(|_| Uuid::new_v4());
         
@@ -1036,14 +1080,14 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
                 
                 // If we get here, the entity was resolved as new - create it
                 info!("AI determined '{}' is a new distinct entity, creating", entity.name);
-                self.create_entity_with_spatial_data(entity, user_id, session_id, session_dek).await?;
+                self.create_entity_with_spatial_data(entity, user_id, session_id, session_dek, chronicle_id).await?;
                 // Phase 2: No caching - entity existence tracked directly in EcsEntityManager after creation
                 self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
             },
             Err(e) => {
                 warn!("Entity resolution failed for '{}': {}, falling back to simple creation", entity.name, e);
                 // Fallback: create entity without resolution
-                self.create_entity_with_spatial_data(entity, user_id, session_id, session_dek).await?;
+                self.create_entity_with_spatial_data(entity, user_id, session_id, session_dek, chronicle_id).await?;
                 // Phase 2: No caching - entity existence tracked directly in EcsEntityManager after creation
                 self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
             }
@@ -1094,8 +1138,9 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         user_id: Uuid,
         session_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
-        self.create_entity_with_spatial_data_optimized(entity, user_id, session_id, session_dek, false).await
+        self.create_entity_with_spatial_data_optimized(entity, user_id, session_id, session_dek, false, chronicle_id).await
     }
     
     /// Optimized entity creation that can skip redundant checks
@@ -1106,6 +1151,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         session_id: Uuid,
         session_dek: &SessionDek,
         skip_existence_checks: bool,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         
         
@@ -1305,7 +1351,7 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         });
         
         // Create the entity using atomic parameters
-        let create_params = serde_json::json!({
+        let mut create_params = serde_json::json!({
             "user_id": user_id.to_string(),
             "entity_type": entity.entity_type,
             "name": entity.name,
@@ -1314,6 +1360,11 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
             "salience_tier": salience_tier,
             "additional_components": components
         });
+        
+        // Add chronicle_id if provided
+        if let Some(chronicle_id) = chronicle_id {
+            create_params["chronicle_id"] = serde_json::json!(chronicle_id.to_string());
+        }
         
         match self.get_tool("create_entity")?.execute(&create_params, session_dek).await {
             Ok(result) => {
@@ -3077,6 +3128,7 @@ Output JSON with:
         user_id: Uuid,
         session_id: &Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         use crate::services::agentic::shared_context::{ContextType, AgentType};
         use serde_json::json;
@@ -3208,7 +3260,7 @@ Output JSON with:
         
         // Phase 4 Fix: Actually create the entity after coordination
         // The coordination pattern was only storing signals but not creating entities
-        self.create_entity_with_spatial_data(entity, user_id, *session_id, session_dek).await?;
+        self.create_entity_with_spatial_data(entity, user_id, *session_id, session_dek, chronicle_id).await?;
         
         Ok(())
     }
@@ -3414,6 +3466,7 @@ Output JSON with:
         user_id: Uuid,
         session_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         use serde_json::json;
         
@@ -3473,7 +3526,7 @@ Output JSON with:
             // Process entities in batches of 10 to balance efficiency and error handling
             const BATCH_SIZE: usize = 10;
             for chunk in entities_to_create.chunks(BATCH_SIZE) {
-                self.batch_create_entities(chunk, user_id, session_id, session_dek).await?;
+                self.batch_create_entities(chunk, user_id, session_id, session_dek, chronicle_id).await?;
                 
                 // Track created entities in session
                 for entity in chunk {
@@ -3556,6 +3609,7 @@ Output JSON with:
         user_id: Uuid,
         session_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         use serde_json::json;
         
@@ -3617,7 +3671,7 @@ Output JSON with:
             ).await?;
             
             // Create the entity with optimized flow (skip redundant checks)
-            self.create_entity_with_spatial_data_optimized(entity, user_id, session_id, session_dek, true).await?;
+            self.create_entity_with_spatial_data_optimized(entity, user_id, session_id, session_dek, true, chronicle_id).await?;
         }
         
         info!("Batch created {} entities", entities.len());
@@ -3631,6 +3685,7 @@ Output JSON with:
         user_id: Uuid,
         session_id: Uuid,
         session_dek: &SessionDek,
+        chronicle_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         debug!("Phase 4: Processing entity '{}' (type: {}) with atomic patterns", entity.name, entity.entity_type);
         
@@ -3680,7 +3735,7 @@ Output JSON with:
                 debug!("Phase 4: Entity '{}' does not exist, coordinating atomic creation", entity.name);
                 
                 // Phase 4: Enhanced atomic coordination
-                self.coordinate_entity_creation(entity, user_id, &session_id, session_dek).await?;
+                self.coordinate_entity_creation(entity, user_id, &session_id, session_dek, chronicle_id).await?;
                 self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
             },
             Err(e) => {
@@ -3701,7 +3756,7 @@ Output JSON with:
                     session_dek
                 ).await;
                 
-                self.coordinate_entity_creation(entity, user_id, &session_id, session_dek).await?;
+                self.coordinate_entity_creation(entity, user_id, &session_id, session_dek, chronicle_id).await?;
                 self.track_session_entity(&session_id.to_string(), user_id, &entity.name, &entity.entity_type).await;
             }
         }
