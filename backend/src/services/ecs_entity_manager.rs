@@ -461,6 +461,44 @@ impl EcsEntityManager {
         Ok(result.entities)
     }
 
+    /// Query entities by component criteria with chronicle filtering
+    #[instrument(skip(self, component_criteria), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id)), chronicle_id = ?chronicle_id))]
+    pub async fn query_entities_by_chronicle(
+        &self,
+        user_id: Uuid,
+        chronicle_id: Option<Uuid>,
+        component_criteria: Vec<ComponentQuery>,
+        limit: Option<i64>,
+        offset: Option<i64>,
+    ) -> Result<Vec<EntityQueryResult>, AppError> {
+        let mut criteria = component_criteria;
+        
+        // Add chronicle filtering if specified
+        if let Some(cid) = chronicle_id {
+            // Add a criterion to filter by ChronicleComponent
+            criteria.push(ComponentQuery::HasComponent("ChronicleComponent".to_string()));
+            criteria.push(ComponentQuery::ComponentDataEquals(
+                "ChronicleComponent".to_string(),
+                "primary_chronicle_id".to_string(),
+                serde_json::Value::String(cid.to_string())
+            ));
+        }
+
+        let query_options = EntityQueryOptions {
+            criteria,
+            limit: limit.map(|l| l as i64),
+            offset,
+            sort_by: None,
+            min_components: None,
+            max_components: None,
+            cache_key: None,
+            cache_ttl: None,
+        };
+
+        let result = self.query_entities_advanced(user_id, query_options).await?;
+        Ok(result.entities)
+    }
+
     /// Advanced entity queries with full query options and performance tracking
     #[instrument(skip(self, options), fields(user_hash = %format!("{:x}", Self::hash_user_id(user_id)), criteria_count = options.criteria.len()))]
     pub async fn query_entities_advanced(
@@ -1057,13 +1095,14 @@ impl EcsEntityManager {
                 use crate::schema::{ecs_entities, ecs_components};
                 use diesel::prelude::*;
 
+                // First try the new ChronicleComponent
                 let mut query = ecs_entities::table
                     .inner_join(ecs_components::table.on(ecs_entities::id.eq(ecs_components::entity_id)))
                     .filter(ecs_entities::user_id.eq(user_id))
-                    .filter(ecs_components::component_type.eq("ChronicleSource"))
+                    .filter(ecs_components::component_type.eq("ChronicleComponent"))
                     .filter(
                         diesel::dsl::sql::<diesel::sql_types::Bool>(
-                            "cast(component_data->>'chronicle_id' as uuid) = $1"
+                            "cast(component_data->>'primary_chronicle_id' as uuid) = $1 OR component_data->'secondary_chronicle_ids' @> to_jsonb($1::text)"
                         )
                         .bind::<diesel::sql_types::Uuid, _>(chronicle_id)
                     )
@@ -1075,8 +1114,34 @@ impl EcsEntityManager {
                     query = query.limit(limit as i64);
                 }
 
-                query.load::<Uuid>(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                let mut entity_ids = query.load::<Uuid>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                // If no results with ChronicleComponent, fall back to legacy ChronicleSource
+                if entity_ids.is_empty() {
+                    let mut legacy_query = ecs_entities::table
+                        .inner_join(ecs_components::table.on(ecs_entities::id.eq(ecs_components::entity_id)))
+                        .filter(ecs_entities::user_id.eq(user_id))
+                        .filter(ecs_components::component_type.eq("ChronicleSource"))
+                        .filter(
+                            diesel::dsl::sql::<diesel::sql_types::Bool>(
+                                "cast(component_data->>'chronicle_id' as uuid) = $1"
+                            )
+                            .bind::<diesel::sql_types::Uuid, _>(chronicle_id)
+                        )
+                        .select(ecs_entities::id)
+                        .distinct()
+                        .into_boxed();
+
+                    if let Some(limit) = limit {
+                        legacy_query = legacy_query.limit(limit as i64);
+                    }
+
+                    entity_ids = legacy_query.load::<Uuid>(conn)
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                }
+
+                Ok(entity_ids)
             }
         }).await.map_err(|e| AppError::DbInteractError(e.to_string()))??;
 

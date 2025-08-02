@@ -976,7 +976,7 @@ Examples:
     }
 
     /// Apply the AI-determined salience update
-    async fn apply_salience_update(&self, user_id: Uuid, entity_name: &str, analysis: &SalienceAnalysis, session_dek: &SessionDek) -> Result<JsonValue, ToolError> {
+    async fn apply_salience_update(&self, user_id: Uuid, chronicle_id: Option<Uuid>, entity_name: &str, analysis: &SalienceAnalysis, session_dek: &SessionDek) -> Result<JsonValue, ToolError> {
         let salience_tier = match analysis.recommended_tier.as_str() {
             "Core" => SalienceTier::Core,
             "Secondary" => SalienceTier::Secondary,
@@ -995,12 +995,17 @@ Examples:
         let find_entity_tool = crate::services::agentic::unified_tool_registry::UnifiedToolRegistry::get_tool("find_entity")
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to get FindEntityTool: {}", e)))?;
         
-        let find_params = json!({
+        let mut find_params = json!({
             "user_id": user_id.to_string(),
             "search_request": format!("find entity named '{}'", entity_name),
             "context": "Looking for specific entity by exact name for chronicle expansion",
             "limit": 1
         });
+        
+        // Add chronicle_id if provided
+        if let Some(chronicle_id) = chronicle_id {
+            find_params["chronicle_id"] = json!(chronicle_id.to_string());
+        }
         
         let find_result = find_entity_tool.execute(&find_params, session_dek).await
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to find entity: {}", e)))?;
@@ -1073,6 +1078,7 @@ Examples:
 #[derive(Debug, Deserialize)]
 pub struct UpdateSalienceInput {
     pub user_id: String,
+    pub chronicle_id: Option<String>,
     pub entity_name: String,
     pub narrative_context: String,
     pub current_tier: Option<String>,
@@ -1110,6 +1116,10 @@ impl ScribeTool for UpdateSalienceTool {
                 "user_id": {
                     "type": "string",
                     "description": "UUID of the user"
+                },
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "UUID of the chronicle to filter entities by"
                 },
                 "entity_name": {
                     "type": "string",
@@ -1206,8 +1216,12 @@ impl ScribeTool for UpdateSalienceTool {
         let analysis: SalienceAnalysis = serde_json::from_str(&response_text)
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to parse AI response: {}. Response was: {}", e, response_text)))?;
 
+        // Parse chronicle_id if provided
+        let chronicle_id = input.chronicle_id.as_ref()
+            .and_then(|id| Uuid::parse_str(id).ok());
+        
         // Apply the salience update
-        let result = self.apply_salience_update(user_id, &input.entity_name, &analysis, _session_dek).await?;
+        let result = self.apply_salience_update(user_id, chronicle_id, &input.entity_name, &analysis, _session_dek).await?;
 
         info!("AI recommended {} tier for entity '{}' with {:.2} confidence", 
               analysis.recommended_tier, input.entity_name, analysis.confidence);

@@ -2545,6 +2545,11 @@ The TacticalAgent ensures all tool operations maintain world state consistency t
                 // Add user_id which is required by the tool
                 tool_params.insert("user_id".to_string(), json!(user_id.to_string()));
                 
+                // Add chronicle_id if available
+                if let Some(chronicle_id) = chronicle_id {
+                    tool_params.insert("chronicle_id".to_string(), json!(chronicle_id.to_string()));
+                }
+                
                 // Convert entity_name and entity_type from plan into search_request
                 let entity_name = action.parameters.get("entity_name")
                     .and_then(|v| v.as_str())

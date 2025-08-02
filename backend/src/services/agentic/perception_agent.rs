@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tracing::{info, instrument, debug, warn, error};
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
-use serde_json::{json, Value};
+use serde_json::{json, Value, Value as JsonValue};
 use genai::chat::{ChatMessage, ChatRequest, ChatOptions, ChatResponseFormat, JsonSchemaSpec, ChatRole};
 use chrono::{DateTime, Utc};
 use tokio::time::{sleep, Duration};
@@ -322,8 +322,47 @@ The agent now focuses purely on perception and coordination rather than direct e
             format!("session_{}", chrono::Utc::now().timestamp())
         };
         
+        // Get known species/races from lorebooks to prevent creating them as entities
+        let known_species = self.get_known_species_from_lorebooks(user_id, session_dek).await
+            .unwrap_or_else(|e| {
+                warn!("Failed to get known species from lorebooks: {}", e);
+                Vec::new()
+            });
+        
         // Get list of known entities from cache
-        let known_entities = self.get_cached_session_entities(&session_id, user_id).await;
+        let mut known_entities = self.get_cached_session_entities(&session_id, user_id).await;
+        
+        // Also get recently discovered entities from SharedAgentContext
+        if let Ok(recent_discoveries) = self.shared_context.get_recent_entity_discoveries(
+            user_id,
+            session_id.parse::<Uuid>().unwrap_or(Uuid::nil()),
+            Some(30), // Get last 30 entity discoveries
+            session_dek
+        ).await {
+            // Convert to HashSet for deduplication
+            let mut entity_set = std::collections::HashSet::new();
+            for (name, entity_type) in &known_entities {
+                entity_set.insert((name.clone(), entity_type.clone()));
+            }
+            
+            // Add recently discovered entities
+            for discovery in &recent_discoveries {
+                if let Some(entities) = discovery.data.get("entities").and_then(|e| e.as_array()) {
+                    for entity_data in entities {
+                        if let (Some(name), Some(entity_type)) = (
+                            entity_data.get("name").and_then(|n| n.as_str()),
+                            entity_data.get("entity_type").and_then(|t| t.as_str())
+                        ) {
+                            entity_set.insert((name.to_string(), entity_type.to_string()));
+                        }
+                    }
+                }
+            }
+            
+            // Convert back to Vec
+            known_entities = entity_set.into_iter().collect();
+        }
+        
         let known_entities_text = if !known_entities.is_empty() {
             format!("\n\nKNOWN EXISTING ENTITIES (use exact names and types when referenced):\n{}", 
                 known_entities.iter()
@@ -344,12 +383,22 @@ The agent now focuses purely on perception and coordination rather than direct e
         // Get tool reference for Perception agent
         let tool_reference = self.get_tool_reference();
         
+        // Build the known species text
+        let known_species_text = if known_species.is_empty() {
+            "No specific species information available from lorebooks.".to_string()
+        } else {
+            format!("Known species/races from lorebooks (DO NOT CREATE AS ENTITIES): {}", known_species.join(", "))
+        };
+        
         let extraction_prompt = format!(r#"
 {}
 
 PHASE 4 ATOMIC ENTITY EXTRACTION
 
 As a PerceptionAgent operating with atomic tool patterns, analyze the conversation and extract CONCRETE entities that exist in the game world.
+
+IMPORTANT: Some names in the narrative may refer to species, races, or types rather than individuals. 
+Focus on extracting only specific, unique instances that can be individually identified and tracked.
 
 ATOMIC WORKFLOW CONTEXT:
 - You identify entities for potential creation/resolution through SharedAgentContext coordination
@@ -361,29 +410,56 @@ ATOMIC WORKFLOW CONTEXT:
 CONVERSATION CONTEXT:
 {}
 
-ECS ENTITY TYPES TO EXTRACT:
-- Characters: Named individuals with specific identities (e.g., "Sol" - a specific character, "Commander Sarah", "Borga the merchant")
-  NOT: Race names (Ren, Shanyuan), generic titles (Elder, warrior), or group references
-- Locations: Specific places, regions, buildings (e.g., "Dragon's Crown Peaks", "Stonefang Hold", "Geyserfoot")  
-- Objects: Physical items, artifacts, tools (e.g., "Crude Flint Knife", "Waterskin", "Torn Map Fragment")
-- Organizations: Named groups, factions, guilds (e.g., "Stonefang Clan", "Iron Merchant Guild")
+CRITICAL DISTINCTION - ENTITIES vs LOREBOOK:
+An ENTITY is a specific, unique individual or instance that exists in the world.
+A LOREBOOK ENTRY describes types, species, races, cultures, or general knowledge.
 
-DO NOT EXTRACT:
-- Abstract concepts (emotions, philosophies, ideas like "Prejudice", "Power", "Old Magic", "strategy", "cultivation", "trial")
-- General systems or mechanics ("Cultivation Techniques", "Qi potential", "Magic Systems")
-- Broad categories ("Harsh Winter")
-- Generic descriptors ("Primal Strength", "ancient knowledge")
-- Events (events are not entities in ECS - they are temporal occurrences)
-- Race/species names when used generically (e.g., "a Ren", "the Shanyuan", "an Elder")
-- Generic roles/titles without specific names (e.g., "warrior", "elder", "guard")
+ENTITY VALIDATION CHECKLIST (AI must ask itself):
+1. Does this have a unique, specific name that identifies ONE individual/place/item/group?
+2. Is this a specific instance rather than a type or category?
+3. Would this exist as a unique entity in the game world that characters could interact with?
+4. Can I point to this specific thing and say "THIS one, not any other"?
 
-CRITICAL RACE NAME RULES:
-- "a Shanyuan" or "the Shanyuan" = NOT AN ENTITY (it's a race reference)
-- "Shanyuan warrior" or "Shanyuan guard" = NOT AN ENTITY (it's a generic race member)
-- "Borga the Shanyuan" = IS AN ENTITY (named individual who happens to be Shanyuan)
-- "Elder Thorgrim" = IS AN ENTITY (named individual with title)
-- "an Elder" or "the Elder" = NOT AN ENTITY (generic reference)
-- Race names (Ren, Shanyuan, Human, Elf, etc.) are NEVER entities by themselves
+If ALL answers are YES → It's an ENTITY
+If ANY answer is NO → It belongs in the LOREBOOK
+
+ENTITIES TO EXTRACT:
+- Characters: Specific individuals with unique personal names
+  ✓ "Sol" (a specific person)
+  ✓ "Commander Thessa Ironheart" (a specific commander)
+  ✓ "Grimnar the Bold" (a specific warrior)
+  ✗ "a guard" (generic role, not an individual)
+  ✗ "Shanyuan warriors" (generic group of a race)
+  ✗ "the elder" (title without name)
+
+- Locations: Specific places that exist uniquely in the world
+  ✓ "Stonefang Hold" (a specific fortress)
+  ✓ "The Crimson Tavern" (a specific establishment)
+  ✓ "Dragon's Crown Peaks" (a specific mountain range)
+  ✗ "a village" (generic location)
+  ✗ "Ren settlements" (generic category)
+
+- Objects: Specific items with unique identity
+  ✓ "The Sunblade" (a specific artifact)
+  ✓ "Elder Mira's Staff" (a specific item)
+  ✓ "Torn Map of the Northern Wastes" (a specific map)
+  ✗ "a sword" (generic item)
+  ✗ "Shanyuan weapons" (category of items)
+
+- Organizations: Specific groups with unique identity
+  ✓ "The Stonefang Clan" (a specific clan)
+  ✓ "Merchant's Guild of Geyserfoot" (a specific guild)
+  ✗ "traders" (generic group)
+  ✗ "[species] merchants" (generic group of a race)
+
+LOREBOOK CONTENT (DO NOT create as entities):
+- Species/Races (any racial or species names)
+- Cultural descriptions and general knowledge
+- Types of creatures, items, or magic
+- Abstract concepts, systems, or mechanics
+- General categories or classifications
+
+Remember: If someone is "looking for [species name]", they're looking for MEMBERS of that species, not creating an entity with the species name itself.
 
 ATOMIC EXTRACTION PRINCIPLES:
 - Extract entities you PERCEIVE in the narrative (your core function)
@@ -458,8 +534,27 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
                 AppError::InternalServerErrorGeneric(format!("Entity extraction parsing failed: {}", e))
             })?;
 
-        let entities = extraction.to_contextual_entities();
-        debug!("Extracted {} contextual entities with confidence {}", entities.len(), extraction.confidence);
+        let mut entities = extraction.to_contextual_entities();
+        info!("Extracted {} contextual entities with confidence {}", entities.len(), extraction.confidence);
+        
+        // Log what entities were extracted for debugging
+        for entity in &entities {
+            info!("Extracted entity: '{}' (type: {}, relevance: {})", 
+                entity.name, entity.entity_type, entity.relevance_score);
+        }
+        
+        // NEW: Validate entities against lorebook to filter out species/races
+        entities = match self.validate_entities_with_lorebook(entities, user_id, session_dek).await {
+            Ok(validated) => {
+                info!("After lorebook validation: {} entities remain", validated.len());
+                validated
+            }
+            Err(e) => {
+                error!("Failed to validate entities with lorebook: {}", e);
+                // Continue with unvalidated entities rather than failing
+                Vec::new()
+            }
+        };
         
         // Process entities asynchronously in batches for better performance
         info!("Starting async batch processing of {} entities", entities.len());
@@ -569,6 +664,239 @@ Respond with structured JSON matching the required schema."#, tool_reference, kn
         }
         
         Vec::new()
+    }
+    
+    /// Get known species/races from lorebooks to prevent creating them as entities
+    async fn get_known_species_from_lorebooks(&self, user_id: Uuid, session_dek: &SessionDek) -> Result<Vec<String>, AppError> {
+        let mut known_species = Vec::new();
+        
+        // Use the search_knowledge_base tool to find species/race information
+        let search_params = json!({
+            "user_id": user_id.to_string(),
+            "query": "species races creatures sentient beings Ren Shanyuan Linghou Tianling Banished_Kin",
+            "sources": ["lorebook"],
+            "limit": 50,
+            "context": "Looking for species and race names to prevent creating them as individual entities"
+        });
+        
+        if let Ok(search_tool) = self.get_tool("search_knowledge_base") {
+            if let Ok(search_result) = search_tool.execute(&search_params, session_dek).await {
+                if let Some(results) = search_result.get("results").and_then(|r| r.as_array()) {
+                    for result in results {
+                        if let Some(title) = result.get("title").and_then(|t| t.as_str()) {
+                            // Look for known species/race titles
+                            if title.contains("Ren") || title.contains("Shanyuan") || title.contains("Linghou") || 
+                               title.contains("Tianling") || title.contains("Banished Kin") {
+                                // Extract species names from lorebook titles/content
+                                if let Some(content) = result.get("content").and_then(|c| c.as_str()) {
+                                    // Parse species names from content
+                                    if content.contains("species") || content.contains("race") || content.contains("sentient") {
+                                        known_species.push(title.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // No hardcoded species - all species knowledge comes from lorebooks dynamically
+        
+        // Deduplicate
+        known_species.sort();
+        known_species.dedup();
+        
+        debug!("Found {} known species from lorebooks: {:?}", known_species.len(), known_species);
+        Ok(known_species)
+    }
+    
+    /// Validate entities against lorebook to filter out species/races
+    async fn validate_entities_with_lorebook(
+        &self,
+        entities: Vec<ContextualEntity>,
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<Vec<ContextualEntity>, AppError> {
+        let total_entities = entities.len();
+        info!("Starting lorebook validation for {} entities", total_entities);
+        let mut validated_entities = Vec::new();
+        
+        for entity in entities {
+            debug!("Validating entity '{}' (type: {}) against lorebook", entity.name, entity.entity_type);
+            
+            // Skip lorebook validation for entity types that are clearly not species
+            let entity_type_lower = entity.entity_type.to_lowercase();
+            if entity_type_lower.contains("item") || 
+               entity_type_lower.contains("object") || 
+               entity_type_lower.contains("location") || 
+               entity_type_lower.contains("place") ||
+               entity_type_lower.contains("organization") ||
+               entity_type_lower.contains("faction") ||
+               entity_type_lower.contains("equipment") ||
+               entity_type_lower.contains("weapon") ||
+               entity_type_lower.contains("armor") {
+                debug!("Entity '{}' has type '{}' which is clearly not a species - skipping lorebook validation", 
+                    entity.name, entity.entity_type);
+                validated_entities.push(entity);
+                continue;
+            }
+            
+            // Search for lorebook entries using embeddings directly
+            let lorebook_entries = match self.search_lorebook_embeddings(&entity.name, user_id, session_dek).await {
+                Ok(entries) => entries,
+                Err(e) => {
+                    error!("Failed to search lorebook embeddings for entity '{}': {}", entity.name, e);
+                    // Continue without validation if search fails
+                    vec![]
+                }
+            };
+            
+            info!("Found {} lorebook entries for entity '{}'", lorebook_entries.len(), entity.name);
+            
+            // If lorebook entries exist, analyze them to determine if this is a species
+            let is_species = if !lorebook_entries.is_empty() {
+                // Log lorebook content for debugging
+                for (i, entry) in lorebook_entries.iter().take(3).enumerate() {
+                    if let Some(content) = entry.get("content").and_then(|c| c.as_str()) {
+                        debug!("Lorebook result {} for '{}': {}", i+1, entity.name, 
+                            content.chars().take(200).collect::<String>());
+                    }
+                }
+                
+                // Use AI to analyze if the lorebook entries indicate this is a species/race
+                let analysis_prompt = format!(
+                    "Analyze if '{}' refers to a SPECIES/RACE (a category of beings like 'Human', 'Elf', 'Ren', 'Shanyuan') or an INDIVIDUAL/ITEM (a specific person, place, or object).\n\n\
+                    SPECIES/RACE indicators:\n\
+                    - Described as 'a species', 'a race', 'a people', 'a kind of creature'\n\
+                    - Multiple individuals of this type exist\n\
+                    - Has biological/cultural traits shared by many\n\
+                    - Examples: Human, Elf, Dwarf, Ren, Shanyuan, Dragon\n\n\
+                    INDIVIDUAL/ITEM indicators:\n\
+                    - A specific named person, place, or object\n\
+                    - Unique individual with personal history\n\
+                    - Physical items or equipment\n\
+                    - Examples: Gandalf (person), Excalibur (item), Mount Doom (place)\n\n\
+                    Entity being analyzed: '{}'\n\
+                    Entity type from context: '{}'\n\n\
+                    Lorebook entries:\n{}\n\n\
+                    Respond with ONLY 'SPECIES' or 'ENTITY'. If uncertain or if it's clearly an item/object, respond 'ENTITY'.",
+                    entity.name,
+                    entity.name,
+                    entity.entity_type,
+                    lorebook_entries.iter()
+                        .filter_map(|e| e.get("content").and_then(|c| c.as_str()))
+                        .take(3)
+                        .collect::<Vec<_>>()
+                        .join("\n---\n")
+                );
+                
+                let chat_request = ChatRequest::new(vec![
+                    genai::chat::ChatMessage {
+                        role: genai::chat::ChatRole::User,
+                        content: analysis_prompt.into(),
+                        options: None,
+                    }
+                ]);
+                
+                let chat_options = ChatOptions {
+                    temperature: Some(0.1),
+                    ..Default::default()
+                };
+                
+                match self.ai_client.exec_chat(&self.model, chat_request, Some(chat_options)).await {
+                    Ok(response) => {
+                        if let Some(content) = response.contents.into_iter().next() {
+                            if let genai::chat::MessageContent::Text(text) = content {
+                                debug!("AI analysis response for '{}': {}", entity.name, text.trim());
+                                if text.trim().contains("SPECIES") {
+                                    info!("Lorebook validation: '{}' identified as species/race - filtering out", entity.name);
+                                    true
+                                } else {
+                                    debug!("Entity '{}' validated as individual entity, not species", entity.name);
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to analyze lorebook entries for '{}': {}", entity.name, e);
+                        false // Default to not a species if analysis fails
+                    }
+                }
+            } else {
+                debug!("No lorebook entries found for '{}', treating as entity", entity.name);
+                false
+            };
+            
+            if !is_species {
+                validated_entities.push(entity);
+            }
+        }
+        
+        info!("Lorebook validation complete: {} entities validated out of {} total", 
+            validated_entities.len(), total_entities);
+        
+        Ok(validated_entities)
+    }
+    
+    /// Search lorebook embeddings directly using Qdrant
+    async fn search_lorebook_embeddings(
+        &self,
+        query: &str,
+        user_id: Uuid,
+        session_dek: &SessionDek,
+    ) -> Result<Vec<JsonValue>, AppError> {
+        info!("Searching lorebook embeddings for query: '{}'", query);
+        
+        // Since we don't have access to embedding client or qdrant service directly,
+        // we'll use the query_lorebook tool which does have proper search capability
+        let search_params = json!({
+            "user_id": user_id.to_string(),
+            "query_request": query,
+            "current_context": format!("Checking if '{}' is a species/race or an individual entity", query),
+            "limit": 10
+        });
+        
+        match self.get_tool("query_lorebook") {
+            Ok(lorebook_tool) => {
+                match lorebook_tool.execute(&search_params, session_dek).await {
+                    Ok(result) => {
+                        if let Some(entries) = result.get("entries").and_then(|e| e.as_array()) {
+                            // Convert query_lorebook results to our expected format
+                            let lorebook_entries: Vec<JsonValue> = entries.iter()
+                                .map(|entry| {
+                                    json!({
+                                        "title": entry.get("title").and_then(|t| t.as_str()).unwrap_or(""),
+                                        "content": entry.get("content").and_then(|c| c.as_str()).unwrap_or(""),
+                                        "keywords": entry.get("tags").and_then(|t| t.as_array()).unwrap_or(&vec![]),
+                                        "score": entry.get("relevance_score").and_then(|s| s.as_f64()).unwrap_or(0.0),
+                                        "lorebook_id": entry.get("lorebook_id").and_then(|id| id.as_str()).unwrap_or("")
+                                    })
+                                })
+                                .collect();
+                            
+                            info!("Successfully retrieved {} lorebook entries from query_lorebook tool", lorebook_entries.len());
+                            Ok(lorebook_entries)
+                        } else {
+                            Ok(vec![])
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to execute query_lorebook tool: {}", e);
+                        Ok(vec![])
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to get query_lorebook tool: {}", e);
+                Ok(vec![])
+            }
+        }
     }
     
     /// Prefetch existing entities for the session to improve awareness
@@ -3134,6 +3462,33 @@ Output JSON with:
         use serde_json::json;
         
         debug!("Phase 3: Coordinating creation of entity '{}' (type: {}) with enhanced SharedAgentContext", entity.name, entity.entity_type);
+        
+        // First check for recently created entities to avoid duplicates
+        let recent_entities = self.shared_context.get_recent_entity_discoveries(
+            user_id,
+            *session_id,
+            Some(20), // Check last 20 entity discoveries
+            session_dek
+        ).await?;
+        
+        // Check if this entity was already created recently
+        for recent_entry in &recent_entities {
+            if let Some(entities) = recent_entry.data.get("entities").and_then(|e| e.as_array()) {
+                for entity_data in entities {
+                    if let (Some(name), Some(entity_type)) = (
+                        entity_data.get("name").and_then(|n| n.as_str()),
+                        entity_data.get("entity_type").and_then(|t| t.as_str())
+                    ) {
+                        if name.to_lowercase() == entity.name.to_lowercase() && 
+                           entity_type.to_lowercase() == entity.entity_type.to_lowercase() {
+                            info!("Entity '{}' of type '{}' was recently created, skipping duplicate creation", 
+                                entity.name, entity.entity_type);
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
         
         // Phase 3: Check for existing coordination requests to prevent race conditions
         let coordination_key = format!("entity_creation_{}_{}", 

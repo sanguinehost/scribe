@@ -227,6 +227,7 @@ pub struct RelationshipData {
 #[derive(Debug, Deserialize)]
 pub struct UpdateRelationshipInput {
     pub user_id: String,
+    pub chronicle_id: Option<String>,
     pub entity1_id: String,
     pub entity2_id: String,
     pub relationship_change_request: String,
@@ -274,6 +275,10 @@ impl ScribeTool for UpdateRelationshipTool {
                     "type": "string",
                     "description": "User ID performing the operation"
                 },
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "Chronicle ID to filter entities by. If not provided, searches across all user's chronicles."
+                },
                 "entity1_id": {
                     "type": "string",
                     "description": "UUID of the first character in the relationship"
@@ -303,15 +308,25 @@ impl ScribeTool for UpdateRelationshipTool {
         let user_id = Uuid::parse_str(&input.user_id)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid user_id: {}", e)))?;
 
+        let chronicle_id = if let Some(chronicle_id_str) = &input.chronicle_id {
+            Some(Uuid::parse_str(chronicle_id_str)
+                .map_err(|e| ToolError::InvalidParams(format!("Invalid chronicle_id: {}", e)))?)
+        } else {
+            None
+        };
+
         let entity1_id = Uuid::parse_str(&input.entity1_id)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid entity1_id: {}", e)))?;
 
         let entity2_id = Uuid::parse_str(&input.entity2_id)
             .map_err(|e| ToolError::InvalidParams(format!("Invalid entity2_id: {}", e)))?;
 
+        // TODO: Validate both entities belong to the same chronicle
+        // This would involve querying the ECS to check if both entities exist and belong to the specified chronicle
+
         let current_context = input.current_context.unwrap_or_else(|| "No additional context provided".to_string());
 
-        info!("AI relationship update between {} and {}: '{}'", entity1_id, entity2_id, input.relationship_change_request);
+        info!("AI relationship update between {} and {} in chronicle {:?}: '{}'", entity1_id, entity2_id, chronicle_id, input.relationship_change_request);
 
         // Step 1: Use AI to analyze the relationship change request
         let analysis = self.analyze_relationship_change(
@@ -614,6 +629,10 @@ impl ScribeTool for CreateRelationshipTool {
                     "type": "string",
                     "description": "The UUID of the user"
                 },
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "Chronicle ID to filter entities by. If not provided, searches across all user's chronicles."
+                },
                 "entity1_id": {
                     "type": "string", 
                     "description": "The first entity ID or identifier"
@@ -645,6 +664,12 @@ impl ScribeTool for CreateRelationshipTool {
         let _user_id = Uuid::parse_str(user_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid user_id format".to_string()))?;
 
+        let chronicle_id = params.get("chronicle_id")
+            .and_then(|v| v.as_str())
+            .map(|id| Uuid::parse_str(id))
+            .transpose()
+            .map_err(|_| ToolError::InvalidParams("Invalid chronicle_id format".to_string()))?;
+
         let entity1_id = params.get("entity1_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParams("entity1_id is required".to_string()))?;
@@ -661,7 +686,10 @@ impl ScribeTool for CreateRelationshipTool {
             .and_then(|v| v.as_str())
             .unwrap_or("No additional context provided");
 
-        info!("Creating relationship between '{}' and '{}': '{}'", entity1_id, entity2_id, relationship_request);
+        info!("Creating relationship between '{}' and '{}' in chronicle {:?}: '{}'", entity1_id, entity2_id, chronicle_id, relationship_request);
+
+        // TODO: Validate both entities belong to the same chronicle
+        // This would involve querying the ECS to check if both entities exist and belong to the specified chronicle
 
         // Build the prompt for AI analysis
         let prompt = self.build_relationship_creation_prompt(relationship_request, entity1_id, entity2_id, context);
@@ -862,6 +890,10 @@ impl ScribeTool for DeleteRelationshipTool {
                     "type": "string",
                     "description": "The UUID of the user"
                 },
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "Chronicle ID to filter entities by. If not provided, searches across all user's chronicles."
+                },
                 "entity1_id": {
                     "type": "string", 
                     "description": "The first entity ID or identifier"
@@ -893,6 +925,12 @@ impl ScribeTool for DeleteRelationshipTool {
         let _user_id = Uuid::parse_str(user_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid user_id format".to_string()))?;
 
+        let chronicle_id = params.get("chronicle_id")
+            .and_then(|v| v.as_str())
+            .map(|id| Uuid::parse_str(id))
+            .transpose()
+            .map_err(|_| ToolError::InvalidParams("Invalid chronicle_id format".to_string()))?;
+
         let entity1_id = params.get("entity1_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParams("entity1_id is required".to_string()))?;
@@ -909,7 +947,10 @@ impl ScribeTool for DeleteRelationshipTool {
             .and_then(|v| v.as_str())
             .unwrap_or("No additional context provided");
 
-        info!("Deleting relationship between '{}' and '{}': '{}'", entity1_id, entity2_id, deletion_request);
+        info!("Deleting relationship between '{}' and '{}' in chronicle {:?}: '{}'", entity1_id, entity2_id, chronicle_id, deletion_request);
+
+        // TODO: Validate both entities belong to the same chronicle
+        // This would involve querying the ECS to check if both entities exist and belong to the specified chronicle
 
         // For now, return AI analysis of why the relationship should be deleted
         // In a full system, this would actually remove the relationship from ECS

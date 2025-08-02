@@ -27,9 +27,9 @@ use axum_login::AuthnBackend;
 use secrecy::ExposeSecret;
 
 use scribe_backend::{
-    test_helpers::{spawn_app_permissive_rate_limiting, TestDataGuard, db::create_test_user, login_user_via_api},
+    test_helpers::{spawn_app_with_rate_limiting_options, TestDataGuard, db::create_test_user, login_user_via_api, TestApp},
     models::{
-        characters::Character,
+        characters::{Character, CharacterDataForClient},
         chats::ApiChatMessage,
         user_personas::{CreateUserPersonaDto, UserPersonaDataForClient},
         ecs::{SalienceTier, SpatialScale},
@@ -41,7 +41,10 @@ use scribe_backend::{
         orchestrator::{OrchestratorAgent, OrchestratorConfig},
         task_queue::{TaskQueueService, EnrichmentTaskPayload, CreateTaskRequest, TaskPriority},
     },
+    vector_db::qdrant_client::{QdrantClientServiceTrait, Filter, FieldCondition, Match},
 };
+
+use qdrant_client::qdrant::{r#match::MatchValue, Condition, condition::ConditionOneOf};
 
 /// Helper function to create a temporary character for testing
 fn create_temp_character(user_id: Uuid) -> Character {
@@ -353,14 +356,19 @@ impl LivingWorldChatTest {
         
         // Spawn the test application with real AI, Qdrant, and embedding services for end-to-end testing
         // Use permissive rate limiting (100 req/s) to avoid rate limit errors when agents make multiple AI calls
-        let test_app = spawn_app_permissive_rate_limiting(false, true, true).await;
+        // Use real services for true end-to-end testing
+        // Parameters: multi_thread, use_real_ai, use_real_qdrant
+        // We need to use the full spawn function to also enable real embedding pipeline
+        let test_app = spawn_app_with_rate_limiting_options(
+            false,  // multi_thread
+            true,   // use_real_ai
+            true,   // use_real_qdrant
+            true,   // use_real_embedding_pipeline - THIS IS THE KEY CHANGE
+            100,    // rate_limit_per_second
+            50      // rate_limit_burst_size
+        ).await;
         
-        // Even when using real services, we need to set up the mock embedding pipeline service
-        // in case there's a fallback or race condition
-        // Set up multiple empty responses for the 5 conversation exchanges
-        let empty_responses: Vec<Result<Vec<scribe_backend::services::embeddings::retrieval::RetrievedChunk>, AppError>> = 
-            (0..10).map(|_| Ok(vec![])).collect();
-        test_app.mock_embedding_pipeline_service.set_retrieve_responses_sequence(empty_responses);
+        // We're using real embedding pipeline service, so no mock setup needed
         
         let base_url = format!("http://127.0.0.1:{}", test_app.address.split(':').last().unwrap_or("8080"));
         
@@ -453,97 +461,72 @@ impl LivingWorldChatTest {
         
         // Read the actual Weaver of Whispers character card JSON file
         info!("📖 Reading Weaver of Whispers character card from assets/Weaver_of_Whispers.json");
-        let character_json = std::fs::read_to_string("/home/socol/Workspace/sanguine-scribe/assets/Weaver_of_Whispers.json")
+        let character_json_bytes = std::fs::read("/home/socol/Workspace/sanguine-scribe/assets/Weaver_of_Whispers.json")
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to read character file: {}", e)))?;
         
-        let character_card: serde_json::Value = serde_json::from_str(&character_json)
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to parse character JSON: {}", e)))?;
+        // Use the character upload endpoint to properly import the character with lorebook
+        info!("🌍 Uploading GM Character: Weaver of Whispers via character upload API");
         
-        // Extract the data section from the character card v3 format
-        let character_data = character_card.get("data")
-            .ok_or_else(|| AppError::InternalServerErrorGeneric("Character card missing 'data' section".to_string()))?;
+        // Use the authenticated client to upload the character
+        let form = reqwest::multipart::Form::new()
+            .part("character_card", reqwest::multipart::Part::bytes(character_json_bytes)
+                .file_name("weaver.json")
+                .mime_str("application/json")?);
         
-        // Create CharacterCreateDto from the character card data
-        info!("🌍 Creating GM Character: Weaver of Whispers via API");
-        let create_dto = scribe_backend::models::character_dto::CharacterCreateDto {
-            name: character_data.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            description: character_data.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            first_mes: character_data.get("first_mes").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            personality: character_data.get("personality").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            scenario: character_data.get("scenario").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            mes_example: character_data.get("mes_example").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            creator_notes: character_data.get("creator_notes").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            system_prompt: character_data.get("system_prompt").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            post_history_instructions: character_data.get("post_history_instructions").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            tags: character_data.get("tags").and_then(|v| v.as_array()).map(|arr| {
-                arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
-            }).unwrap_or_default(),
-            creator: character_data.get("creator").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            character_version: character_data.get("character_version").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            alternate_greetings: character_data.get("alternate_greetings").and_then(|v| v.as_array()).map(|arr| {
-                arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
-            }).unwrap_or_default(),
-            creator_notes_multilingual: None,
-            nickname: None,
-            source: None,
-            group_only_greetings: character_data.get("group_only_greetings").and_then(|v| v.as_array()).map(|arr| {
-                arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
-            }).unwrap_or_default(),
-            creation_date: None,
-            modification_date: None,
-            extensions: character_data.get("extensions").map(|v| diesel_json::Json(v.clone())),
-            fav: character_data.get("fav").and_then(|v| v.as_bool()),
-            world: character_data.get("world").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            creator_comment: None,
-            depth_prompt: character_data.get("extensions").and_then(|ext| {
-                ext.get("depth_prompt").and_then(|dp| dp.get("prompt")).and_then(|v| v.as_str()).map(|s| s.to_string())
-            }),
-            depth_prompt_depth: character_data.get("extensions").and_then(|ext| {
-                ext.get("depth_prompt").and_then(|dp| dp.get("depth")).and_then(|v| v.as_i64()).map(|i| i as i32)
-            }),
-            depth_prompt_role: character_data.get("extensions").and_then(|ext| {
-                ext.get("depth_prompt").and_then(|dp| dp.get("role")).and_then(|v| v.as_str()).map(|s| s.to_string())
-            }),
-        };
-        
-        // Create character using the actual API endpoint
-        let response = self.authenticated_client
-            .post(&format!("{}/api/characters", self.base_url))
-            .json(&create_dto)
+        let upload_response = self.authenticated_client
+            .post(&format!("{}/api/characters/upload", self.base_url))
+            .multipart(form)
             .send()
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to create character: {}", e)))?;
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to upload character: {}", e)))?;
         
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(AppError::InternalServerErrorGeneric(format!("Character creation failed: {}", error_text)));
+        if !upload_response.status().is_success() {
+            let status = upload_response.status();
+            let error_text = upload_response.text().await.unwrap_or_default();
+            return Err(AppError::InternalServerErrorGeneric(
+                format!("Failed to upload character. Status: {}, Error: {}", status, error_text)
+            ));
         }
         
-        let character_response: serde_json::Value = response.json().await
+        // Parse the character response
+        let response_text = upload_response.text().await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to read response: {}", e)))?;
+        let gm_character: CharacterDataForClient = serde_json::from_str(&response_text)
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to parse character response: {}", e)))?;
         
-        let character_id = character_response.get("id").and_then(|v| v.as_str())
-            .ok_or_else(|| AppError::InternalServerErrorGeneric("Character response missing ID".to_string()))?;
-        let character_uuid = Uuid::parse_str(character_id)
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Invalid character ID: {}", e)))?;
+        info!("✅ Created GM Character: {} (ID: {})", gm_character.name, gm_character.id);
         
-        info!("✅ Created GM Character: Weaver of Whispers (ID: {})", character_uuid);
+        // Track the character for cleanup
+        self.guard.add_character(gm_character.id);
         
-        // Create a Character object to store
-        let gm_character = Character {
-            id: character_uuid,
+        // Track any lorebooks that were imported (they should be in the character's lorebook_ids)
+        for lorebook_id in &gm_character.lorebook_ids {
+            self.guard.add_lorebook(*lorebook_id);
+            info!("📚 Tracking lorebook {} for cleanup", lorebook_id);
+        }
+        
+        // Add delay to allow lorebook entries to be embedded and indexed
+        info!("⏳ Waiting 10 seconds for lorebook embeddings to be created and indexed...");
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        
+        // TODO: Add embedding verification once QdrantClientServiceTrait has proper search methods
+        info!("🔍 Skipping lorebook embedding verification (method not available in trait)");
+        
+        // Create a Character object from the response
+        let gm_character_obj = Character {
+            id: gm_character.id,
             user_id: self.world.user_id,
             spec: "chara_card_v3".to_string(),
             spec_version: "3.0".to_string(),
-            name: create_dto.name.unwrap_or_default(),
-            description: create_dto.description.map(|s| s.into_bytes()),
-            personality: None,
-            scenario: None,
-            first_mes: None,
-            mes_example: None,
-            creator_notes: None,
-            system_prompt: None,
-            post_history_instructions: None,
+            name: gm_character.name,
+            description: gm_character.description.map(|s| s.into_bytes()),
+            personality: gm_character.personality.map(|s| s.into_bytes()),
+            scenario: gm_character.scenario.map(|s| s.into_bytes()),
+            first_mes: gm_character.first_mes.map(|s| s.into_bytes()),
+            mes_example: gm_character.mes_example.map(|s| s.into_bytes()),
+            creator_notes: gm_character.creator_notes.map(|s| s.into_bytes()),
+            system_prompt: gm_character.system_prompt.map(|s| s.into_bytes()),
+            post_history_instructions: gm_character.post_history_instructions.map(|s| s.into_bytes()),
             tags: None,
             creator: None,
             character_version: None,
@@ -659,8 +642,11 @@ impl LivingWorldChatTest {
         
         info!("✅ Created Player Persona: {} (ID: {})", player_persona.name, player_persona.id);
         
+        // Track the persona for cleanup
+        self.guard.add_user_persona(player_persona.id);
+        
         // Update world state
-        self.world.gm_character = gm_character;
+        self.world.gm_character = gm_character_obj;
         self.world.player_persona = player_persona;
         
         Ok(())
@@ -703,6 +689,9 @@ impl LivingWorldChatTest {
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Invalid session ID: {}", e)))?;
         
         self.world.chat_session_id = session_uuid;
+        
+        // Track the chat session for cleanup
+        self.guard.add_chat(session_uuid);
         
         info!("✅ Created chat session: {} with Weaver of Whispers GM", session_uuid);
         
@@ -2444,6 +2433,34 @@ impl LivingWorldChatTest {
     
 }
 
+/// Clean up all embeddings for a test user from Qdrant
+async fn cleanup_test_embeddings(test_app: &TestApp, user_id: Uuid) -> Result<(), AppError> {
+    info!("🧹 Deleting all embeddings for test user: {}", user_id);
+    
+    // Create a filter to match all points belonging to this user
+    let filter = Filter {
+        must: vec![Condition {
+            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                key: "user_id".to_string(),
+                r#match: Some(Match {
+                    match_value: Some(MatchValue::Keyword(
+                        user_id.to_string()
+                    )),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }))
+        }],
+        ..Default::default()
+    };
+    
+    // Delete all points matching the filter
+    test_app.app_state.qdrant_service.delete_points_by_filter(filter).await?;
+    
+    info!("✅ Successfully deleted embeddings for user: {}", user_id);
+    Ok(())
+}
+
 /// Main integration test function
 #[tokio::test]
 #[ignore] 
@@ -3181,6 +3198,12 @@ async fn test_comprehensive_living_world_end_to_end_with_orchestrator() {
     }
     
     // Clean up all other test data (users, characters, chats, etc.)
+    // Clean up embeddings from Qdrant before cleaning up database records
+    info!("🧹 Cleaning up embeddings from Qdrant...");
+    if let Err(e) = cleanup_test_embeddings(&test.test_app, test.world.user_id).await {
+        error!("❌ Failed to cleanup embeddings: {:?}", e);
+    }
+    
     match test.guard.cleanup().await {
         Ok(_) => info!("✅ Test data cleanup complete"),
         Err(e) => error!("❌ Failed to cleanup test data: {:?}", e),

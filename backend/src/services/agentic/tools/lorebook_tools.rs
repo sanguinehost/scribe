@@ -9,7 +9,7 @@ use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use async_trait::async_trait;
-use tracing::{info, debug, warn, instrument};
+use tracing::{info, debug, warn, error, instrument};
 use secrecy::{SecretBox, ExposeSecret};
 use genai::chat::{ChatRequest, ChatMessage, ChatRole, ChatOptions, ChatResponseFormat, JsonSchemaSpec, SafetySetting, HarmCategory, HarmBlockThreshold};
 
@@ -47,6 +47,144 @@ pub struct QueryLorebookTool {
 impl QueryLorebookTool {
     pub fn new(app_state: Arc<AppState>) -> Self {
         Self { app_state }
+    }
+    
+    /// Search lorebook entries in Qdrant based on the AI analysis
+    async fn search_lorebook_entries(
+        &self,
+        user_id: Uuid,
+        analysis: &LoreQueryAnalysis,
+        _session_dek: &SessionDek,
+        limit: usize,
+    ) -> Result<Vec<LorebookEntryInfo>, ToolError> {
+        let mut all_entries = Vec::new();
+        
+        // Search for each primary search term
+        for search_term in &analysis.search_strategy.search_terms {
+            // Generate embedding for the search term
+            let query_embedding = self.app_state.embedding_client
+                .embed_content(search_term, "RETRIEVAL_QUERY", None)
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to embed search term: {}", e)))?;
+            
+            // Construct filter for lorebook entries
+            use crate::vector_db::qdrant_client::{Filter, Condition, ConditionOneOf, FieldCondition, Match, MatchValue};
+            
+            let lorebook_filter = Filter {
+                must: vec![
+                    Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(
+                            FieldCondition {
+                                key: "user_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                                }),
+                                ..Default::default()
+                            }
+                        )),
+                    },
+                    Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(
+                            FieldCondition {
+                                key: "source_type".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword("lorebook_entry".to_string())),
+                                }),
+                                ..Default::default()
+                            }
+                        )),
+                    },
+                ],
+                ..Default::default()
+            };
+            
+            // Search Qdrant
+            match self.app_state.qdrant_service
+                .search_points(query_embedding, limit as u64, Some(lorebook_filter))
+                .await {
+                Ok(search_results) => {
+                    info!("Found {} lorebook results for search term '{}'", search_results.len(), search_term);
+                    
+                    for scored_point in search_results {
+                        // Extract lorebook entry data from payload
+                        let entry_id = scored_point.payload.get("original_lorebook_entry_id")
+                            .and_then(|v| v.kind.as_ref())
+                            .and_then(|k| match k {
+                                qdrant_client::qdrant::value::Kind::StringValue(s) => Uuid::parse_str(s).ok(),
+                                _ => None
+                            })
+                            .unwrap_or_else(Uuid::new_v4);
+                            
+                        let lorebook_id = scored_point.payload.get("lorebook_id")
+                            .and_then(|v| v.kind.as_ref())
+                            .and_then(|k| match k {
+                                qdrant_client::qdrant::value::Kind::StringValue(s) => Uuid::parse_str(s).ok(),
+                                _ => None
+                            })
+                            .unwrap_or_else(Uuid::new_v4);
+                            
+                        let title = scored_point.payload.get("entry_title")
+                            .and_then(|v| v.kind.as_ref())
+                            .and_then(|k| match k {
+                                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
+                                _ => None
+                            })
+                            .unwrap_or_else(|| "Unknown Entry".to_string());
+                            
+                        let content = scored_point.payload.get("chunk_text")
+                            .and_then(|v| v.kind.as_ref())
+                            .and_then(|k| match k {
+                                qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
+                                _ => None
+                            })
+                            .unwrap_or_else(|| "No content available".to_string());
+                            
+                        let tags = scored_point.payload.get("decrypted_keywords")
+                            .and_then(|v| {
+                                // Handle Qdrant Value type - extract string list from value
+                                if let qdrant_client::qdrant::value::Kind::ListValue(list) = &v.kind.as_ref()? {
+                                    Some(list.values.iter()
+                                        .filter_map(|val| {
+                                            if let Some(qdrant_client::qdrant::value::Kind::StringValue(s)) = &val.kind {
+                                                Some(s.clone())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .collect())
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default();
+                            
+                        all_entries.push(LorebookEntryInfo {
+                            id: entry_id,
+                            lorebook_id,
+                            title,
+                            content,
+                            tags,
+                            relevance_score: scored_point.score as f64,
+                            relevance_reasoning: format!("Semantic match for query term: {}", search_term),
+                        });
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to search lorebook in Qdrant: {}", e);
+                    // Continue with other search terms even if one fails
+                }
+            }
+        }
+        
+        // Deduplicate entries by ID and sort by relevance score
+        let mut seen_ids = std::collections::HashSet::new();
+        all_entries.retain(|entry| seen_ids.insert(entry.id));
+        all_entries.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());
+        
+        // Limit to requested number
+        all_entries.truncate(limit);
+        
+        Ok(all_entries)
     }
 
     /// Build AI prompt for interpreting lore queries
@@ -318,19 +456,7 @@ impl ScribeTool for QueryLorebookTool {
         debug!("AI analyzed lore query: {}", analysis.interpretation);
         
         // Step 2: Execute the search based on AI analysis
-        // For now, this is a placeholder - in a full system, this would use the
-        // analysis to search the actual lorebook database with decryption
-        let entries = vec![
-            LorebookEntryInfo {
-                id: Uuid::new_v4(),
-                lorebook_id: Uuid::new_v4(),
-                title: "Example Lore Entry".to_string(),
-                content: "This would contain the actual lore content based on the search".to_string(),
-                tags: vec!["example".to_string(), "placeholder".to_string()],
-                relevance_score: 0.95,
-                relevance_reasoning: "Highly relevant to the query based on semantic analysis".to_string(),
-            }
-        ];
+        let entries = self.search_lorebook_entries(user_id, &analysis, _session_dek, limit).await?;
         
         let output = QueryLorebookOutput {
             query_analysis: analysis,
