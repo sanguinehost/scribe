@@ -292,20 +292,15 @@ diesel::table! {
         summary -> Text,
         #[max_length = 50]
         source -> Varchar,
-        event_data -> Nullable<Jsonb>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         summary_encrypted -> Nullable<Bytea>,
         summary_nonce -> Nullable<Bytea>,
         timestamp_iso8601 -> Timestamptz,
-        actors -> Nullable<Jsonb>,
-        #[max_length = 100]
-        action -> Nullable<Varchar>,
-        context_data -> Nullable<Jsonb>,
-        causality -> Nullable<Jsonb>,
-        valence -> Nullable<Jsonb>,
-        #[max_length = 50]
-        modality -> Nullable<Varchar>,
+        keywords -> Nullable<Array<Nullable<Text>>>,
+        keywords_encrypted -> Nullable<Bytea>,
+        keywords_nonce -> Nullable<Bytea>,
+        chat_session_id -> Nullable<Uuid>,
     }
 }
 
@@ -585,6 +580,7 @@ diesel::joinable!(chat_session_lorebooks -> users (user_id));
 diesel::joinable!(chat_sessions -> player_chronicles (player_chronicle_id));
 diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
+diesel::joinable!(chronicle_events -> chat_sessions (chat_session_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));

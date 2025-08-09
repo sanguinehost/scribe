@@ -40,7 +40,7 @@ impl ScribeTool for CreateChronicleEventTool {
     }
 
     fn description(&self) -> &'static str {
-        "Creates a single chronicle event. Use this for recording discrete temporal events that happened at a specific time in the game world. Examples: combat outcomes, character deaths, major plot developments, player actions with consequences."
+        "Creates a single chronicle event. Use this for recording significant narrative moments that happened in the story. Examples: major plot developments, character achievements, important discoveries, meaningful interactions."
     }
 
     fn input_schema(&self) -> Value {
@@ -57,88 +57,26 @@ impl ScribeTool for CreateChronicleEventTool {
                 },
                 "event_type": {
                     "type": "string",
-                    "description": "Hierarchical event classification using dot-notation: CATEGORY.TYPE.SUBTYPE",
-                    "examples": [
-                        "CHARACTER.STATE_CHANGE.DEATH",
-                        "CHARACTER.STATE_CHANGE.INJURY", 
-                        "CHARACTER.DEVELOPMENT.POWER_GAINED",
-                        "CHARACTER.DEVELOPMENT.CHARACTER_GROWTH",
-                        "WORLD.DISCOVERY.LOCATION_DISCOVERY",
-                        "WORLD.ALTERATION.WORLD_CHANGE",
-                        "WORLD.LORE_EXPANSION.WORLD_KNOWLEDGE",
-                        "PLOT.REVELATION.SECRET_REVELATION",
-                        "PLOT.TURNING_POINT.DECISION_POINT",
-                        "PLOT.PROGRESSION.QUEST_PROGRESS",
-                        "RELATIONSHIP.FORMATION.CHARACTER_MET",
-                        "RELATIONSHIP.MODIFICATION.RELATIONSHIP_CHANGE",
-                        "RELATIONSHIP.INTERACTION.SOCIAL_INTERACTION"
-                    ]
-                },
-                "action": {
-                    "type": "string",
-                    "description": "The core verb representing the fundamental act that occurred",
-                    "examples": ["Betrayed", "Discovered", "Defeated", "Transformed", "Created"]
-                },
-                "actors": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string", "description": "Entity identifier"},
-                            "role": {
-                                "type": "string", 
-                                "enum": ["Agent", "Patient", "Beneficiary", "Instrument", "Helper", "Opponent", "Witness"],
-                                "description": "Narrative role of the actor"
-                            }
-                        },
-                        "required": ["id", "role"]
-                    },
-                    "description": "All entities participating in the event and their narrative roles"
+                    "description": "Simple event type, usually 'NARRATIVE.EVENT'",
+                    "default": "NARRATIVE.EVENT"
                 },
                 "summary": {
                     "type": "string",
-                    "description": "A concise summary of what happened"
+                    "description": "A rich, narrative description of what happened (like an excerpt from an epic novel)"
                 },
-                "context_data": {
-                    "type": "object",
-                    "description": "Spatio-temporal and situational information",
-                    "properties": {
-                        "location_id": {"type": "string", "description": "Where the event took place"},
-                        "time_of_day": {"type": "string", "description": "Time context"},
-                        "details": {"type": "string", "description": "Additional context"}
-                    }
-                },
-                "causality": {
-                    "type": "object",
-                    "description": "Causal relationships with other events",
-                    "properties": {
-                        "causedBy": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Event IDs that caused this event"
-                        },
-                        "causes": {
-                            "type": "array", 
-                            "items": {"type": "string"},
-                            "description": "Event IDs that this event causes"
-                        }
-                    }
-                },
-                "valence": {
+                "keywords": {
                     "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "target": {"type": "string", "description": "Entity affected"},
-                            "type": {"type": "string", "description": "Type of value (Trust, Fear, Health, Power, etc.)"},
-                            "change": {"type": "number", "description": "Numerical change (-1.0 to 1.0)"}
-                        },
-                        "required": ["target", "type", "change"]
-                    },
-                    "description": "Emotional or relational impact of the event"
+                    "items": {"type": "string"},
+                    "description": "3-5 searchable terms from the event (character names, locations, important objects, actions)",
+                    "examples": [["dragon", "battle", "victory"], ["betrayal", "throne room", "assassination"]]
+                },
+                "timestamp_iso8601": {
+                    "type": "string",
+                    "description": "When this event occurred in the story timeline (ISO 8601 format)",
+                    "examples": ["2025-06-28T15:30:00Z"]
                 }
             },
-            "required": ["user_id", "chronicle_id", "event_type", "action", "actors", "summary"]
+            "required": ["user_id", "chronicle_id", "event_type", "summary", "keywords"]
         })
     }
 
@@ -156,23 +94,25 @@ impl ScribeTool for CreateChronicleEventTool {
 
         let event_type = params.get("event_type")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| ToolError::InvalidParams("event_type is required".to_string()))?;
-
-        let action = params.get("action")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ToolError::InvalidParams("action is required".to_string()))?;
-
-        let actors = params.get("actors")
-            .ok_or_else(|| ToolError::InvalidParams("actors is required".to_string()))?;
+            .unwrap_or("NARRATIVE.EVENT"); // Default to simple type
 
         let summary = params.get("summary")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParams("summary is required".to_string()))?;
 
-        // Optional parameters
-        let context_data = params.get("context_data").cloned();
-        let causality = params.get("causality").cloned();
-        let valence = params.get("valence").cloned();
+        // Extract keywords array
+        let keywords = params.get("keywords")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect::<Vec<String>>()
+            });
+
+        // Optional timestamp
+        let timestamp_str = params.get("timestamp_iso8601")
+            .and_then(|v| v.as_str());
 
         // Parse UUIDs
         let user_uuid = Uuid::parse_str(user_id_str)
@@ -181,28 +121,22 @@ impl ScribeTool for CreateChronicleEventTool {
         let chronicle_uuid = Uuid::parse_str(chronicle_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid chronicle_id format".to_string()))?;
 
-        // Build event_data with Ars Fabula structured data
-        let mut event_data_obj = serde_json::Map::new();
-        event_data_obj.insert("action".to_string(), json!(action));
-        event_data_obj.insert("actors".to_string(), actors.clone());
-        
-        if let Some(context) = context_data {
-            event_data_obj.insert("context_data".to_string(), context);
-        }
-        
-        if let Some(causal) = causality {
-            event_data_obj.insert("causality".to_string(), causal);
-        }
-        
-        if let Some(val) = valence {
-            event_data_obj.insert("valence".to_string(), val);
-        }
+        // Parse timestamp if provided
+        let timestamp = if let Some(ts_str) = timestamp_str {
+            chrono::DateTime::parse_from_rfc3339(ts_str)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .ok()
+        } else {
+            None
+        };
 
-        let create_request = crate::models::CreateEventRequest {
+        let create_request = crate::models::chronicle_event::CreateEventRequest {
             event_type: event_type.to_string(),
             summary: summary.to_string(),
-            source: crate::models::EventSource::AiExtracted,
-            event_data: Some(json!(event_data_obj)),
+            source: crate::models::chronicle_event::EventSource::AiExtracted,
+            keywords,
+            timestamp_iso8601: timestamp,
+            chat_session_id: None, // Will be set by the service if processing from chat
         };
 
         info!(
@@ -261,8 +195,8 @@ impl ScribeTool for CreateChronicleEventTool {
                     "success": true,
                     "event_id": event.id,
                     "event_type": event_type,
-                    "action": action,
                     "summary": summary,
+                    "keywords": event.get_keywords(),
                     "message": "Chronicle event created and embedded successfully"
                 }))
             }

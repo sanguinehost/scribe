@@ -85,11 +85,10 @@ impl From<EventQuery> for EventFilter {
         Self {
             event_type: query.event_type,
             source: query.source,
-            action: None,
-            modality: None,
-            involves_entity: None,
+            keywords: None, // Will be used for search in the future
             after_timestamp: None,
             before_timestamp: None,
+            chat_session_id: None,
             order_by: query.order_by,
             limit: query.limit,
             offset: query.offset,

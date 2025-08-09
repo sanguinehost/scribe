@@ -973,39 +973,20 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             "event_id": event.id.to_string(),
         });
         
-        // Add action if available
-        if let Some(action) = &event.action {
-            event_json["action"] = serde_json::Value::String(action.clone());
+        // Add keywords if available
+        let keywords = if let Some(dek) = session_dek {
+            event.get_decrypted_keywords(&dek.0).unwrap_or_else(|_| event.get_keywords())
+        } else {
+            event.get_keywords()
+        };
+        
+        if !keywords.is_empty() {
+            event_json["keywords"] = serde_json::json!(keywords);
         }
         
-        // Add actors if available
-        if let Some(actors) = &event.actors {
-            event_json["actors"] = actors.clone();
-        }
-        
-        // Add valence if available
-        if let Some(valence) = &event.valence {
-            event_json["valence"] = valence.clone();
-        }
-        
-        // Add context_data if available
-        if let Some(context) = &event.context_data {
-            event_json["context_data"] = context.clone();
-        }
-        
-        // Add causality if available
-        if let Some(causality) = &event.causality {
-            event_json["causality"] = causality.clone();
-        }
-        
-        // Add modality if available
-        if let Some(modality) = &event.modality {
-            event_json["modality"] = serde_json::Value::String(modality.clone());
-        }
-        
-        // Add event_data if available (for additional metadata)
-        if let Some(event_data) = &event.event_data {
-            event_json["metadata"] = event_data.clone();
+        // Add chat session ID if available
+        if let Some(chat_session_id) = event.chat_session_id {
+            event_json["chat_session_id"] = serde_json::Value::String(chat_session_id.to_string());
         }
         
         // Serialize the JSON to string for storage

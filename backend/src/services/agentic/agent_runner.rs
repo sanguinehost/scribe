@@ -458,16 +458,13 @@ Create a JSON plan following Ars Fabula principles:
     ]
 }}
 
-ARS FABULA NARRATIVE ONTOLOGY RULES:
+SIMPLIFIED CHRONICLE RULES:
 
-1.  **TEMPORAL EVENTS (for create_chronicle_event):**
-    *   **Structure:** Events must be atomic and capture a single, significant moment.
-    *   **`event_type`:** Use dot-notation: `CATEGORY.TYPE.SUBTYPE` (e.g., `CHARACTER.STATE_CHANGE.DEATH`).
-    *   **`actors`:** A JSON array detailing all participants and their roles (`Agent`, `Patient`, `Beneficiary`, `Instrument`, `Witness`).
-    *   **`action`:** The core verb of the event (e.g., `Betrayed`, `Discovered`, `Killed`).
-    *   **`causality`:** A JSON object with `causedBy` (an array of event IDs that led to this one) and `causes` (an array of event IDs this one leads to). Use this to link events into a causal chain. If an event in EXISTING KNOWLEDGE is a direct cause, reference its ID.
-    *   **`valence`:** A JSON array quantifying emotional/relational impact. Each object needs a `target` (entity ID), `type` (`Trust`, `Fear`, `Health`, `Power`), and `change` (float from -1.0 to 1.0).
-    *   **`context_data`:** A JSON object for situational context like `location_id`, `time_of_day`, etc.
+1.  **CHRONICLE EVENTS (for create_chronicle_event):**
+    *   **Purpose:** Capture significant narrative moments as searchable text summaries
+    *   **`event_type`:** Use simple dot-notation: `NARRATIVE.EVENT` (keep it simple)
+    *   **`summary`:** A rich, narrative description of what happened (see writing principles below)
+    *   **`keywords`:** Extract 3-5 searchable terms from the event (character names, locations, important objects, actions)
 
 2.  **PERSISTENT CONCEPTS (for create_lorebook_entry):**
     *   Create entries for **new, persistent entities** (characters, locations, items, organizations) that are likely to be mentioned again.
@@ -475,8 +472,7 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
 
 3.  **KNOWLEDGE INTEGRATION:**
     *   **CRITICAL:** Review <EXISTING_CHRONICLES> to avoid creating duplicate events or lorebook entries.
-    *   If a similar event exists in the XML section above, consider if this is new information that should **update** an existing lorebook entry instead of creating a new event.
-    *   Use the `causality` field to explicitly link new events to existing ones.
+    *   If a similar event exists, consider if this is truly new information worth chronicling.
     *   **XML GUIDANCE:** The <EXISTING_CHRONICLES> section shows ALL relevant events - do not duplicate what's already there.
 
 4.  **CRAFTING IMMERSIVE EVENT SUMMARIES (The Most Important Part):**
@@ -509,35 +505,17 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
     *   Hint at larger implications and consequences
     *   Make every event feel like it matters to the epic narrative
 
-5.  **COMPLETE JSON EXAMPLES for `create_chronicle_event`:**
+5.  **SIMPLIFIED JSON EXAMPLES for `create_chronicle_event`:**
 
 **Example 1 - Character Development:**
 ```json
 {{
     "tool_name": "create_chronicle_event",
     "parameters": {{
-        "event_type": "CHARACTER.DEVELOPMENT.MASTERY",
-        "action": "Mastered",
-        "actors": [
-            {{\"id\": \"sol_steele\", \"role\": \"Agent\"}},
-            {{\"id\": \"lumiya\", \"role\": \"Witness\"}}
-        ],
+        "event_type": "NARRATIVE.EVENT",
         "summary": "In the heat of brutal combat training, Sol finally broke through his limitations and mastered the deadly art of advanced Force projection under Lumiya's ruthless tutelage, the achievement marking his transformation from apprentice to true warrior.",
-        "timestamp_iso8601": "2025-06-28T15:30:00Z",
-        "causality": {{
-            \"causedBy\": [\"force_training_session_001\"],
-            \"causes\": []
-        }},
-        "valence": [
-            {{\"target\": \"sol_steele\", \"type\": \"Power\", \"change\": 0.7}},
-            {{\"target\": \"sol_steele\", \"type\": \"Confidence\", \"change\": 0.5}},
-            {{\"target\": \"lumiya\", \"type\": \"Respect\", \"change\": 0.3}}
-        ],
-        "context_data": {{
-            \"location_id\": \"training_chamber\",
-            \"technique\": \"force_projection\",
-            \"difficulty\": \"advanced\"
-        }}
+        "keywords": ["Sol Steele", "Lumiya", "Force projection", "training", "mastery"],
+        "timestamp_iso8601": "2025-06-28T15:30:00Z"
     }},
     "reasoning": "This represents a significant character progression that will affect future interactions and abilities"
 }}
@@ -548,27 +526,10 @@ ARS FABULA NARRATIVE ONTOLOGY RULES:
 {{
     "tool_name": "create_chronicle_event",
     "parameters": {{
-        "event_type": "PLOT.REVELATION.SECRET",
-        "action": "Revealed",
-        "actors": [
-            {{\"id\": \"informant_npc\", \"role\": \"Agent\"}},
-            {{\"id\": \"main_character\", \"role\": \"Patient\"}}
-        ],
+        "event_type": "NARRATIVE.EVENT",
         "summary": "In the shadowy depths of the cantina's back room, the nervous informant's whispered revelation shattered everything—the Empire had been hunting Asset Zeta-Six for months, their web of surveillance closing like a noose around the unsuspecting target.",
-        "timestamp_iso8601": "2025-06-28T15:45:00Z",
-        "causality": {{
-            \"causedBy\": [\"interrogation_session_007\"],
-            \"causes\": []
-        }},
-        "valence": [
-            {{\"target\": \"main_character\", \"type\": \"Fear\", \"change\": 0.6}},
-            {{\"target\": \"main_character\", \"type\": \"Trust\", \"change\": -0.4}}
-        ],
-        "context_data": {{
-            \"location_id\": \"cantina_backroom\",
-            \"information_type\": \"empire_intelligence\",
-            \"classification\": \"top_secret\"
-        }}
+        "keywords": ["informant", "Empire", "Asset Zeta-Six", "surveillance", "revelation"],
+        "timestamp_iso8601": "2025-06-28T15:45:00Z"
     }},
     "reasoning": "This revelation fundamentally changes the character's understanding of their situation and will drive future plot decisions"
 }}

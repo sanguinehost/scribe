@@ -798,10 +798,13 @@ export interface UpdateChronicleRequest {
 export interface ChronicleEvent {
 	id: string;
 	chronicle_id: string;
+	user_id: string;
 	event_type: string;
 	summary: string;
 	source: EventSource;
-	event_data: any | null;
+	keywords?: string[] | null;  // New simplified field
+	timestamp_iso8601: string;   // Story timeline timestamp
+	chat_session_id?: string | null;  // Link to originating chat
 	created_at: string;
 	updated_at: string;
 }
@@ -812,18 +815,24 @@ export interface CreateEventRequest {
 	event_type: string;
 	summary: string;
 	source: EventSource;
-	event_data?: any | null;
+	keywords?: string[] | null;
+	timestamp_iso8601?: string | null;
+	chat_session_id?: string | null;
 }
 
 export interface EventFilter {
 	event_type?: string | null;
 	source?: EventSource | null;
+	keywords?: string[] | null;
+	after_timestamp?: string | null;
+	before_timestamp?: string | null;
+	chat_session_id?: string | null;
 	order_by?: EventOrderBy | null;
 	limit?: number | null;
 	offset?: number | null;
 }
 
-export type EventOrderBy = 'created_at_asc' | 'created_at_desc' | 'updated_at_asc' | 'updated_at_desc';
+export type EventOrderBy = 'created_at_asc' | 'created_at_desc' | 'updated_at_asc' | 'updated_at_desc' | 'timestamp_asc' | 'timestamp_desc';
 
 // Token counting types
 export interface TokenCountRequest {

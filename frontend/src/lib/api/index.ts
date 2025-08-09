@@ -1046,6 +1046,12 @@ class ApiClient {
 		if (filter) {
 			if (filter.event_type) params.append('event_type', filter.event_type);
 			if (filter.source) params.append('source', filter.source);
+			if (filter.keywords && filter.keywords.length > 0) {
+				filter.keywords.forEach(keyword => params.append('keywords', keyword));
+			}
+			if (filter.after_timestamp) params.append('after_timestamp', filter.after_timestamp);
+			if (filter.before_timestamp) params.append('before_timestamp', filter.before_timestamp);
+			if (filter.chat_session_id) params.append('chat_session_id', filter.chat_session_id);
 			if (filter.order_by) params.append('order_by', filter.order_by);
 			if (filter.limit) params.append('limit', filter.limit.toString());
 			if (filter.offset) params.append('offset', filter.offset.toString());

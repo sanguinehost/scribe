@@ -3,19 +3,14 @@
 //! Implements structured query-based de-duplication using Ars Fabula narrative ontology.
 //! This moves beyond simple semantic similarity to structured event reasoning.
 
-use std::sync::Arc;
-use std::collections::HashSet;
-use tracing::{info, warn, debug, instrument};
+use tracing::{info, debug, instrument};
 use uuid::Uuid;
-use chrono::{DateTime, Utc, Duration};
-use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods, PgTextExpressionMethods};
+use chrono::Duration;
+use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods};
 
 use crate::{
     errors::AppError,
-    models::{
-        chronicle_event::{ChronicleEvent, DeduplicationFilter},
-        narrative_ontology::{EventActor, NarrativeAction},
-    },
+    models::chronicle_event::ChronicleEvent,
     schema::chronicle_events::dsl as chronicle_events_dsl,
     state::DbPool,
 };
@@ -212,79 +207,36 @@ impl ChronicleDeduplicationService {
         }))
     }
 
-    /// Calculate similarity between two actions
+    /// Calculate similarity between two events based on keywords
     fn calculate_action_similarity(&self, event1: &ChronicleEvent, event2: &ChronicleEvent) -> f32 {
-        match (&event1.action, &event2.action) {
-            (Some(action1), Some(action2)) => {
-                if action1 == action2 {
-                    1.0 // Exact match
-                } else if self.config.enable_action_similarity {
-                    // Check for semantically similar actions
-                    self.calculate_semantic_action_similarity(action1, action2)
-                } else {
-                    0.0
-                }
-            }
-            (None, None) => 0.5, // Both missing action
-            _ => 0.0, // One has action, other doesn't
+        let keywords1 = event1.get_keywords();
+        let keywords2 = event2.get_keywords();
+        
+        if keywords1.is_empty() && keywords2.is_empty() {
+            return 0.5; // Both have no keywords
         }
-    }
-
-    /// Calculate semantic similarity between actions
-    fn calculate_semantic_action_similarity(&self, action1: &str, action2: &str) -> f32 {
-        // Define action similarity groups
-        let discovery_actions = ["DISCOVERED", "FOUND", "UNCOVERED", "REVEALED"];
-        let social_actions = ["MET", "BEFRIENDED", "MARRIED", "DIVORCED"];
-        let conflict_actions = ["ATTACKED", "DEFENDED", "DEFEATED", "FLED"];
-        let acquisition_actions = ["ACQUIRED", "GAVE", "LOST", "STOLE"];
-        let transformation_actions = ["TRANSFORMED", "EVOLVED", "DIED", "RESURRECTED"];
-        let communication_actions = ["TOLD", "ASKED", "LIED", "CONFESSED"];
-
-        let action_groups = [
-            &discovery_actions[..],
-            &social_actions[..],
-            &conflict_actions[..],
-            &acquisition_actions[..],
-            &transformation_actions[..],
-            &communication_actions[..],
-        ];
-
-        // Check if both actions are in the same semantic group
-        for group in &action_groups {
-            if group.contains(&action1) && group.contains(&action2) {
-                return 0.8; // High similarity for same group
+        
+        if keywords1.is_empty() || keywords2.is_empty() {
+            return 0.0; // One has keywords, other doesn't
+        }
+        
+        // Calculate keyword overlap
+        let mut overlap_count = 0;
+        for kw1 in &keywords1 {
+            if keywords2.iter().any(|kw2| kw1.to_lowercase() == kw2.to_lowercase()) {
+                overlap_count += 1;
             }
         }
-
-        0.0 // No semantic similarity found
+        
+        let total_keywords = (keywords1.len() + keywords2.len()) as f32;
+        (overlap_count as f32 * 2.0) / total_keywords // Jaccard similarity
     }
 
-    /// Calculate overlap between actors in two events
+    /// Calculate overlap between keywords (simplified from actor overlap)
     async fn calculate_actor_overlap(&self, event1: &ChronicleEvent, event2: &ChronicleEvent) -> Result<f32, AppError> {
-        let actors1 = event1.get_actors().map_err(|e| AppError::SerializationError(e.to_string()))?;
-        let actors2 = event2.get_actors().map_err(|e| AppError::SerializationError(e.to_string()))?;
-
-        if actors1.is_empty() && actors2.is_empty() {
-            return Ok(0.5); // Both have no actors
-        }
-
-        if actors1.is_empty() || actors2.is_empty() {
-            return Ok(0.0); // One has actors, other doesn't
-        }
-
-        // Extract entity IDs
-        let entities1: HashSet<Uuid> = actors1.iter().map(|a| a.entity_id).collect();
-        let entities2: HashSet<Uuid> = actors2.iter().map(|a| a.entity_id).collect();
-
-        // Calculate Jaccard similarity (intersection / union)
-        let intersection_count = entities1.intersection(&entities2).count();
-        let union_count = entities1.union(&entities2).count();
-
-        if union_count == 0 {
-            Ok(0.0)
-        } else {
-            Ok(intersection_count as f32 / union_count as f32)
-        }
+        // For simplified chronicles, we use keyword overlap instead of actors
+        let similarity = self.calculate_action_similarity(event1, event2);
+        Ok(similarity)
     }
 
     /// Calculate temporal similarity between two events
@@ -309,25 +261,20 @@ impl ChronicleDeduplicationService {
     #[instrument(skip(self))]
     pub async fn find_duplicate_events(
         &self,
-        filter: &DeduplicationFilter,
+        chronicle_id: Uuid,
+        user_id: Uuid,
     ) -> Result<Vec<(Uuid, Uuid)>, AppError> {
-        debug!("Finding duplicate events with filter: {:?}", filter);
+        debug!("Finding duplicate events for chronicle {}", chronicle_id);
 
         let connection = self.db_pool.get().await
             .map_err(|e| AppError::DbPoolError(format!("Failed to get DB connection: {}", e)))?;
 
-        // Copy values to move into closure
-        let chronicle_id = filter.chronicle_id;
-        let user_id = filter.user_id;
-        let action = filter.action.clone();
-
-        // Get events matching the filter criteria
+        // Get all events for the chronicle
         let events = connection
             .interact(move |conn| {
                 chronicle_events_dsl::chronicle_events
                     .filter(chronicle_events_dsl::chronicle_id.eq(chronicle_id))
                     .filter(chronicle_events_dsl::user_id.eq(user_id))
-                    .filter(chronicle_events_dsl::action.eq(&action))
                     .order(chronicle_events_dsl::timestamp_iso8601.asc())
                     .load::<ChronicleEvent>(conn)
             })
@@ -345,12 +292,12 @@ impl ChronicleDeduplicationService {
 
                 // Check if they're within the time window
                 let time_diff = (event2.timestamp_iso8601 - event1.timestamp_iso8601).num_minutes();
-                if time_diff > filter.window_minutes {
+                if time_diff > self.config.time_window_minutes {
                     break; // No need to check further events for this base event
                 }
 
                 if let Some(result) = self.check_event_similarity(event1, event2).await? {
-                    if result.is_duplicate && result.confidence >= filter.similarity_threshold {
+                    if result.is_duplicate && result.confidence >= self.config.actor_overlap_threshold {
                         // Keep the earlier event, mark the later one as duplicate
                         duplicates.push((event1.id, event2.id));
                         info!(
