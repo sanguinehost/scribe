@@ -80,10 +80,11 @@
 
 	// Create event state
 	let createEventDialogOpen = $state(false);
-	let eventType = $state('');
+	let eventType = $state('NARRATIVE.EVENT');
 	let eventSummary = $state('');
 	let eventSource = $state<EventSource>('USER_ADDED');
-	let eventData = $state('{}');
+	let eventKeywords = $state('');
+	let eventTimestamp = $state('');
 	let isCreatingEvent = $state(false);
 
 	// Delete confirmation state
@@ -201,13 +202,18 @@
 
 		isCreatingEvent = true;
 		try {
-			let parsedEventData = null;
-			if (eventData.trim()) {
-				try {
-					parsedEventData = JSON.parse(eventData);
-				} catch (e) {
-					toast.error('Invalid JSON in event data');
-					return;
+			// Parse keywords from comma-separated string
+			const keywords = eventKeywords
+				.split(',')
+				.map(k => k.trim())
+				.filter(k => k.length > 0);
+
+			// Parse timestamp if provided
+			let timestamp = undefined;
+			if (eventTimestamp.trim()) {
+				const date = new Date(eventTimestamp);
+				if (!isNaN(date.getTime())) {
+					timestamp = date.toISOString();
 				}
 			}
 
@@ -215,17 +221,19 @@
 				event_type: eventType.trim(),
 				summary: eventSummary.trim(),
 				source: eventSource,
-				event_data: parsedEventData
+				keywords: keywords.length > 0 ? keywords : undefined,
+				timestamp_iso8601: timestamp
 			};
 
 			const result = await apiClient.createChronicleEvent(chronicleId, data);
 			if (result.isOk()) {
 				toast.success('Event created successfully');
 				createEventDialogOpen = false;
-				eventType = '';
+				eventType = 'NARRATIVE.EVENT';
 				eventSummary = '';
 				eventSource = 'USER_ADDED';
-				eventData = '{}';
+				eventKeywords = '';
+				eventTimestamp = '';
 				await loadEvents();
 			} else {
 				toast.error('Failed to create event', {
@@ -503,16 +511,18 @@
 													<Badge>{event.event_type}</Badge>
 												</div>
 												<CardDescription class="mt-2">{event.summary}</CardDescription>
-												{#if event.event_data}
-													<details class="mt-2">
-														<summary
-															class="cursor-pointer text-sm text-muted-foreground hover:text-foreground"
-														>
-															View data
-														</summary>
-														<pre class="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
-{JSON.stringify(event.event_data, null, 2)}</pre>
-													</details>
+												{#if event.keywords && event.keywords.length > 0}
+													<div class="mt-2 flex flex-wrap gap-1">
+														{#each event.keywords as keyword}
+															<Badge variant="secondary" class="text-xs">{keyword}</Badge>
+														{/each}
+													</div>
+												{/if}
+												{#if event.timestamp_iso8601}
+													<div class="mt-2 text-xs text-muted-foreground">
+														<Clock class="mr-1 inline h-3 w-3" />
+														Story time: {formatDate(event.timestamp_iso8601)}
+													</div>
 												{/if}
 											</div>
 											<Button
@@ -550,22 +560,41 @@
 
 		<div class="space-y-4 py-4">
 			<div class="space-y-2">
-				<Label for="event-type">Event Type</Label>
-				<Input
-					id="event-type"
-					bind:value={eventType}
-					placeholder="e.g., COMBAT, DISCOVERY, CHARACTER_DEATH"
-				/>
-			</div>
-
-			<div class="space-y-2">
 				<Label for="event-summary">Summary</Label>
 				<Textarea
 					id="event-summary"
 					bind:value={eventSummary}
-					placeholder="Describe what happened..."
+					placeholder="Describe what happened in your story..."
 					rows={3}
 				/>
+			</div>
+
+			<div class="space-y-2">
+				<Label for="event-keywords">
+					Keywords <span class="text-muted-foreground">(comma-separated, optional)</span>
+				</Label>
+				<Input
+					id="event-keywords"
+					bind:value={eventKeywords}
+					placeholder="e.g., dragon, battle, victory, castle"
+				/>
+				<p class="text-xs text-muted-foreground">
+					Keywords help you find this event later when searching your chronicle
+				</p>
+			</div>
+
+			<div class="space-y-2">
+				<Label for="event-timestamp">
+					Story Date/Time <span class="text-muted-foreground">(optional)</span>
+				</Label>
+				<Input
+					id="event-timestamp"
+					type="datetime-local"
+					bind:value={eventTimestamp}
+				/>
+				<p class="text-xs text-muted-foreground">
+					When this event happened in your story world's timeline
+				</p>
 			</div>
 
 			<div class="space-y-2">
@@ -583,15 +612,13 @@
 			</div>
 
 			<div class="space-y-2">
-				<Label for="event-data">
-					Additional Data (JSON) <span class="text-muted-foreground">(optional)</span>
+				<Label for="event-type">
+					Event Type <span class="text-muted-foreground">(advanced)</span>
 				</Label>
-				<Textarea
-					id="event-data"
-					bind:value={eventData}
-					placeholder={`{"location": "Tavern", "participants": ["Alice", "Bob"]}`}
-					rows={4}
-					class="font-mono text-sm"
+				<Input
+					id="event-type"
+					bind:value={eventType}
+					placeholder="NARRATIVE.EVENT"
 				/>
 			</div>
 		</div>
@@ -606,7 +633,7 @@
 			</Button>
 			<Button
 				onclick={createEvent}
-				disabled={isCreatingEvent || !eventType.trim() || !eventSummary.trim()}
+				disabled={isCreatingEvent || !eventSummary.trim()}
 			>
 				{isCreatingEvent ? 'Creating...' : 'Create Event'}
 			</Button>

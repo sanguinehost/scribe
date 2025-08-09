@@ -345,8 +345,9 @@ impl ChronicleService {
         new_event.chronicle_id = chronicle_id;
         new_event.user_id = user_id;
 
-        // Encrypt the summary if DEK is provided
+        // Encrypt the summary and keywords if DEK is provided
         if let Some(dek) = session_dek {
+            // Encrypt summary
             let summary_bytes = new_event.summary.as_bytes();
             match crate::crypto::encrypt_gcm(summary_bytes, &dek.0) {
                 Ok((ciphertext, nonce)) => {
@@ -360,6 +361,32 @@ impl ChronicleService {
                     return Err(AppError::CryptoError(format!("Failed to encrypt event summary: {}", e)));
                 }
             }
+            
+            // Encrypt keywords if present
+            if let Some(ref keywords_vec) = new_event.keywords {
+                // Convert Vec<Option<String>> to Vec<String> for serialization
+                let keywords: Vec<String> = keywords_vec.iter()
+                    .filter_map(|opt| opt.clone())
+                    .collect();
+                
+                if !keywords.is_empty() {
+                    let keywords_json = serde_json::to_string(&keywords)
+                        .map_err(|e| AppError::SerializationError(format!("Failed to serialize keywords: {}", e)))?;
+                    
+                    match crate::crypto::encrypt_gcm(keywords_json.as_bytes(), &dek.0) {
+                        Ok((ciphertext, nonce)) => {
+                            new_event.keywords_encrypted = Some(ciphertext);
+                            new_event.keywords_nonce = Some(nonce);
+                            tracing::debug!(event_type = %new_event.event_type, "Encrypted chronicle event keywords");
+                        }
+                        Err(e) => {
+                            error!(error = %e, event_type = %new_event.event_type, "Failed to encrypt chronicle event keywords");
+                            // Don't fail if keyword encryption fails - keywords are optional
+                            tracing::warn!("Continuing without encrypted keywords");
+                        }
+                    }
+                }
+            }
         }
 
         // Create temporary event for deduplication check
@@ -370,18 +397,15 @@ impl ChronicleService {
             event_type: new_event.event_type.clone(),
             summary: new_event.summary.clone(),
             source: new_event.source.clone(),
-            event_data: new_event.event_data.clone(),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             summary_encrypted: new_event.summary_encrypted.clone(),
             summary_nonce: new_event.summary_nonce.clone(),
             timestamp_iso8601: new_event.timestamp_iso8601,
-            actors: new_event.actors.clone(),
-            action: new_event.action.clone(),
-            context_data: new_event.context_data.clone(),
-            causality: new_event.causality.clone(),
-            valence: new_event.valence.clone(),
-            modality: new_event.modality.clone(),
+            keywords: new_event.keywords.clone(),
+            keywords_encrypted: new_event.keywords_encrypted.clone(),
+            keywords_nonce: new_event.keywords_nonce.clone(),
+            chat_session_id: new_event.chat_session_id,
         };
 
         // Check for duplicates before inserting
@@ -480,6 +504,8 @@ impl ChronicleService {
                     EventOrderBy::CreatedAtDesc => query = query.order(chronicle_events::created_at.desc()),
                     EventOrderBy::UpdatedAtAsc => query = query.order(chronicle_events::updated_at.asc()),
                     EventOrderBy::UpdatedAtDesc => query = query.order(chronicle_events::updated_at.desc()),
+                    EventOrderBy::TimestampAsc => query = query.order(chronicle_events::timestamp_iso8601.asc()),
+                    EventOrderBy::TimestampDesc => query = query.order(chronicle_events::timestamp_iso8601.desc()),
                 }
 
                 // Apply pagination
