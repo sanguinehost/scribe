@@ -241,71 +241,69 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             return Ok(());
         }
 
-        let chunks = match chunk_text(
-            &decrypted_content,
-            &self.chunk_config,
-            None, // TODO: Consider if title should be prepended for chunking context
-            0,    // TODO: Consider if a specific overlap is needed for lorebook entries
-        ) {
-            Ok(chunks) => {
-                if chunks.is_empty() {
-                    warn!(%original_lorebook_entry_id, "Chunking produced no chunks for lorebook entry. Skipping embedding.");
-                    return Ok(());
-                }
-                chunks
+        // Lorebook entries are stored atomically as single units, not chunked
+        // This preserves the full semantic context of each entry
+        info!(%original_lorebook_entry_id, content_length = decrypted_content.len(), "Processing lorebook entry as atomic unit (no chunking)");
+
+        // Create a structured representation of the lorebook entry
+        let combined_content = if let Some(title) = &decrypted_title {
+            format!("Title: {}\n\nContent: {}", title, decrypted_content)
+        } else {
+            decrypted_content.clone()
+        };
+
+        // Add keywords to the content for better semantic matching
+        let full_content = if let Some(keywords) = &decrypted_keywords {
+            if !keywords.is_empty() {
+                format!("{}\n\nKeywords: {}", combined_content, keywords.join(", "))
+            } else {
+                combined_content
             }
+        } else {
+            combined_content
+        };
+
+        let task_type = "RETRIEVAL_DOCUMENT";
+        let embedding_vector = match embedding_client
+            .embed_content(&full_content, task_type, decrypted_title.as_deref())
+            .await
+        {
+            Ok(vector) => vector,
             Err(e) => {
-                error!(error = %e, %original_lorebook_entry_id, "Failed to chunk lorebook entry content");
+                error!(error = %e, %original_lorebook_entry_id, "Failed to get embedding for lorebook entry");
+                return Err(AppError::EmbeddingError(format!("Lorebook entry embedding failed: {e}")));
+            }
+        };
+
+        // Add a small delay to mitigate potential rate limiting
+        sleep(Duration::from_millis(100)).await;
+
+        let metadata = LorebookChunkMetadata {
+            original_lorebook_entry_id,
+            lorebook_id,
+            user_id,
+            chunk_text: full_content.clone(), // Store full content
+            entry_title: decrypted_title.clone(),
+            keywords: decrypted_keywords.clone(),
+            is_enabled,
+            is_constant,
+            source_type: "lorebook_entry".to_string(),
+        };
+
+        let point_id = Uuid::new_v4(); // Unique ID for the atomic lorebook entry
+        let point = match create_qdrant_point(
+            point_id,
+            embedding_vector,
+            Some(serde_json::to_value(metadata)?),
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                error!(error = %e, %original_lorebook_entry_id, "Failed to create Qdrant point struct for lorebook entry");
                 return Err(e);
             }
         };
-        info!(%original_lorebook_entry_id, "Lorebook entry content split into {} chunks", chunks.len());
-
-        let mut points_to_upsert = Vec::new();
-
-        for (index, chunk) in chunks.into_iter().enumerate() {
-            let task_type = "RETRIEVAL_DOCUMENT";
-            let embedding_vector = match embedding_client
-                .embed_content(&chunk.content, task_type, decrypted_title.as_deref()) // Pass title here
-                .await
-            {
-                Ok(vector) => vector,
-                Err(e) => {
-                    error!(error = %e, chunk_index = index, %original_lorebook_entry_id, "Failed to get embedding for lorebook chunk");
-                    continue;
-                }
-            };
-
-            // TODO: Re-evaluate if this sleep is necessary or if batch embedding can be used.
-            // For now, keeping it consistent with message embedding.
-            sleep(Duration::from_millis(100)).await; // Reduced sleep for testing
-
-            let metadata = LorebookChunkMetadata {
-                original_lorebook_entry_id,
-                lorebook_id,
-                user_id,
-                chunk_text: chunk.content.clone(),
-                entry_title: decrypted_title.clone(),
-                keywords: decrypted_keywords.clone(),
-                is_enabled,
-                is_constant,
-                source_type: "lorebook_entry".to_string(),
-            };
-
-            let point_id = Uuid::new_v4(); // Unique ID per chunk point
-            let point = match create_qdrant_point(
-                point_id,
-                embedding_vector,
-                Some(serde_json::to_value(metadata)?),
-            ) {
-                Ok(p) => p,
-                Err(e) => {
-                    error!(error = %e, chunk_index = index, %original_lorebook_entry_id, "Failed to create Qdrant point struct for lorebook chunk");
-                    continue;
-                }
-            };
-            points_to_upsert.push(point);
-        }
+        
+        let mut points_to_upsert = vec![point];
 
         if points_to_upsert.is_empty() {
             info!(%original_lorebook_entry_id, "No valid points generated for lorebook entry upserting.");
@@ -995,75 +993,56 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             AppError::SerializationError(format!("Chronicle event serialization failed: {e}"))
         })?;
         
-        // Chronicle events should be stored as single units to preserve JSON integrity
-        // Use a large chunk config to avoid breaking JSON structure
-        let chronicle_chunk_config = ChunkConfig {
-            max_size: 10000, // Very large to accommodate full JSON
-            overlap: 0,
-            metric: self.chunk_config.metric,
+        // Chronicle events are stored atomically as single units, not chunked
+        // This preserves the full JSON structure and semantic integrity
+        info!(event_id = %event.id, content_length = content_to_embed.len(), "Processing chronicle event as atomic unit (no chunking)");
+
+        // 2. Generate embedding for the entire chronicle event
+        let embedding_vector = match embedding_client
+            .embed_content(&content_to_embed, "RETRIEVAL_DOCUMENT", None)
+            .await
+        {
+            Ok(vec) => vec,
+            Err(e) => {
+                error!(error = %e, event_id = %event.id, "Failed to embed chronicle event");
+                return Err(AppError::EmbeddingError(format!("Chronicle event embedding failed: {e}")));
+            }
+        };
+
+        // Add a small delay to mitigate potential rate limiting
+        sleep(Duration::from_millis(6100)).await;
+
+        // 2b. Prepare metadata
+        let metadata = super::retrieval::ChronicleEventMetadata {
+            event_id: event.id,
+            event_type: event.event_type.clone(),
+            chronicle_id: event.chronicle_id,
+            created_at: event.created_at,
+        };
+
+        // 2c. Create Qdrant point with proper metadata structure
+        let point_id = Uuid::new_v4(); // Unique ID for the atomic chronicle event
+        let point = match create_qdrant_point(
+            point_id,
+            embedding_vector,
+            Some(serde_json::json!({
+                "event_id": metadata.event_id.to_string(),
+                "event_type": metadata.event_type,
+                "chronicle_id": metadata.chronicle_id.to_string(),
+                "created_at": metadata.created_at.to_rfc3339(),
+                "user_id": event.user_id.to_string(),
+                "source_type": "chronicle_event",
+                "chunk_text": content_to_embed.clone(), // Store full JSON content
+            })),
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                error!(error = %e, event_id = %event.id, "Failed to create Qdrant point struct for chronicle event");
+                return Err(e);
+            }
         };
         
-        let chunks = chunk_text(&content_to_embed, &chronicle_chunk_config, Some(format!("chronicle_event_{}", event.id)), 0).map_err(|e| {
-            error!(error = %e, event_id = %event.id, "Failed to chunk chronicle event content");
-            AppError::ChunkingError(format!("Chronicle event chunking failed: {e}"))
-        })?;
-
-        if chunks.is_empty() {
-            warn!(event_id = %event.id, "No chunks generated for chronicle event");
-            return Ok(());
-        }
-
-        info!(event_id = %event.id, num_chunks = chunks.len(), content_length = content_to_embed.len(), "Chronicle event chunked with large config to preserve JSON structure");
-
-        // 2. Process each chunk
-        let mut points_to_upsert = Vec::new();
-        for (index, chunk) in chunks.iter().enumerate() {
-            // 2a. Generate embedding
-            let embedding_vector = match embedding_client
-                .embed_content(&chunk.content, "RETRIEVAL_DOCUMENT", None)
-                .await
-            {
-                Ok(vec) => vec,
-                Err(e) => {
-                    error!(error = %e, chunk_index = index, event_id = %event.id, "Failed to embed chronicle event chunk");
-                    continue; // Skip this chunk
-                }
-            };
-
-            // Add a small delay to mitigate potential rate limiting
-            sleep(Duration::from_millis(6100)).await;
-
-            // 2b. Prepare metadata
-            let metadata = super::retrieval::ChronicleEventMetadata {
-                event_id: event.id,
-                event_type: event.event_type.clone(),
-                chronicle_id: event.chronicle_id,
-                created_at: event.created_at,
-            };
-
-            // 2c. Create Qdrant point with proper metadata structure
-            let point_id = Uuid::new_v4(); // Unique ID per chunk point
-            let point = match create_qdrant_point(
-                point_id,
-                embedding_vector,
-                Some(serde_json::json!({
-                    "event_id": metadata.event_id.to_string(),
-                    "event_type": metadata.event_type,
-                    "chronicle_id": metadata.chronicle_id.to_string(),
-                    "created_at": metadata.created_at.to_rfc3339(),
-                    "user_id": event.user_id.to_string(),
-                    "source_type": "chronicle_event",
-                    "chunk_text": chunk.content.clone(),
-                })),
-            ) {
-                Ok(p) => p,
-                Err(e) => {
-                    error!(error = %e, chunk_index = index, event_id = %event.id, "Failed to create Qdrant point struct for chronicle event");
-                    continue; // Skip this chunk
-                }
-            };
-            points_to_upsert.push(point);
-        }
+        let mut points_to_upsert = vec![point];
 
         // 3. Upsert points to Qdrant in batch
         if points_to_upsert.is_empty() {
