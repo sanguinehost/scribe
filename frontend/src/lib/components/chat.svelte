@@ -20,6 +20,8 @@
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
+	import ChronicleOptInDialog from './chronicle-opt-in-dialog.svelte';
+	import { browser } from '$app/environment';
 
 	// Get reactive state from streaming service
 	// By directly accessing the $state properties of the service, we ensure reactivity.
@@ -58,12 +60,27 @@
 	let hasMoreMessages = $state(initialCursor !== null);
 	let loadedMessagesBatches = $state<ScribeChatMessage[][]>([initialMessages]);
 	let suppressAutoScroll = $state(false);
+	
+	// Chronicle opt-in state
+	let showChronicleOptIn = $state(false);
+	let pendingMessage = $state<string | null>(null);
+	let chroniclePreference: boolean | null = $state(null);
 
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
 		settingsStore.loadTypingSpeed();
 		// Update StreamingService with user's typing speed preference
 		streamingService.setTypingSpeed(settingsStore.typingSpeed);
+	});
+	
+	// Load saved chronicle preference from localStorage
+	$effect(() => {
+		if (browser) {
+			const saved = localStorage.getItem('chroniclePreference');
+			if (saved !== null) {
+				chroniclePreference = saved === 'true';
+			}
+		}
 	});
 
 	// Clear selected character and persona when we have a chat
@@ -773,6 +790,75 @@
 		}
 	}
 
+	// Check if this is the first user message in the chat
+	function isFirstUserMessage(): boolean {
+		// Check if there are any user messages in the current messages
+		const hasUserMessage = streamingService.messages.some(
+			msg => msg.sender === 'user'
+		);
+		return !hasUserMessage;
+	}
+	
+	// Handle chronicle opt-in choice
+	function handleChronicleChoice(enableChronicle: boolean, rememberChoice: boolean) {
+		if (rememberChoice && browser) {
+			localStorage.setItem('chroniclePreference', String(enableChronicle));
+			chroniclePreference = enableChronicle;
+		}
+		
+		showChronicleOptIn = false;
+		
+		if (enableChronicle && chat?.id) {
+			// Create chronicle and associate with chat
+			createChronicleForChat();
+		}
+		
+		// Send the pending message
+		if (pendingMessage) {
+			const message = pendingMessage;
+			pendingMessage = null;
+			sendMessageInternal(message);
+		}
+	}
+	
+	// Create chronicle and associate with current chat
+	async function createChronicleForChat() {
+		if (!chat?.id) return;
+		
+		try {
+			// Create a new chronicle
+			const chronicleName = chat.title || 'New Chronicle';
+			const chronicleResult = await apiClient.createChronicle({
+				name: chronicleName,
+				description: `Chronicle for ${chat.title || 'chat session'}`
+			});
+			
+			if (chronicleResult.isOk()) {
+				const chronicle = chronicleResult.value;
+				
+				// Update chat to associate with the chronicle
+				const updateResult = await apiClient.updateChatSessionSettings(chat.id, {
+					chronicle_id: chronicle.id
+				});
+				
+				if (updateResult.isOk()) {
+					// Update local chat object
+					chat.player_chronicle_id = chronicle.id;
+					toast.success('Chronicle created and linked to chat');
+				} else {
+					console.error('Failed to link chronicle to chat:', updateResult.error);
+					toast.error('Failed to link chronicle to chat');
+				}
+			} else {
+				console.error('Failed to create chronicle:', chronicleResult.error);
+				toast.error('Failed to create chronicle');
+			}
+		} catch (error) {
+			console.error('Error creating chronicle:', error);
+			toast.error('An error occurred while creating chronicle');
+		}
+	}
+
 	async function sendMessage(content: string) {
 		// DEBUG: Add stack trace to identify unwanted calls
 		console.log('🚨🚨🚨 SENDMESSAGE START - content:', content.slice(0, 50) + '...');
@@ -781,6 +867,28 @@
 		
 		dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
 
+		if (!chat?.id || !user?.id) {
+			toast.error('Chat session or user information is missing.');
+			return;
+		}
+		
+		// Check if we need to show chronicle opt-in
+		// Show if: no chronicle, first user message, and no saved preference
+		if (!chat.player_chronicle_id && isFirstUserMessage() && chroniclePreference === null) {
+			pendingMessage = content;
+			showChronicleOptIn = true;
+			return;
+		}
+		
+		// If user has a saved preference and no chronicle, handle it automatically
+		if (!chat.player_chronicle_id && isFirstUserMessage() && chroniclePreference === true) {
+			await createChronicleForChat();
+		}
+		
+		sendMessageInternal(content);
+	}
+	
+	async function sendMessageInternal(content: string) {
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
 			return;
@@ -1427,3 +1535,9 @@
 		}}
 	/>
 {/if}
+
+<!-- Chronicle Opt-in Dialog -->
+<ChronicleOptInDialog 
+	bind:open={showChronicleOptIn}
+	onConfirm={handleChronicleChoice}
+/>

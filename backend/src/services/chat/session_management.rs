@@ -430,6 +430,7 @@ struct ChatSessionInsertParams {
     default_model_name: String,
     default_history_management_strategy: String,
     default_history_management_limit: i32,
+    player_chronicle_id: Option<Uuid>,
 }
 
 /// Inserts the chat session into the database
@@ -452,6 +453,7 @@ fn insert_chat_session(
             chat_sessions::history_management_strategy
                 .eq(params.default_history_management_strategy),
             chat_sessions::history_management_limit.eq(params.default_history_management_limit),
+            chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
         ))
         .returning(Chat::as_returning())
         .get_result(transaction_conn)
@@ -630,6 +632,9 @@ fn create_session_in_transaction(
 
     let new_session_id = Uuid::new_v4();
 
+    // Chronicles are now created when the first message is sent, not at session creation
+    let chronicle_id = None;
+
     insert_chat_session(
         ChatSessionInsertParams {
             new_session_id,
@@ -644,6 +649,7 @@ fn create_session_in_transaction(
             default_model_name,
             default_history_management_strategy,
             default_history_management_limit,
+            player_chronicle_id: chronicle_id,
         },
         transaction_conn,
     )?;
