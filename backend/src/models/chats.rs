@@ -40,6 +40,8 @@ pub type SettingsTuple = (
     Option<bool>, // gemini_enable_code_execution
     // -- Chronicle Support --
     Option<Uuid>, // player_chronicle_id
+    // -- Agent Mode --
+    Option<String>, // agent_mode
 ); // Close the tuple definition
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_sessions)]
@@ -72,6 +74,7 @@ pub struct Chat {
     pub stop_sequences: Option<Vec<Option<String>>>,
     pub chat_mode: ChatMode,
     pub player_chronicle_id: Option<Uuid>,
+    pub agent_mode: Option<String>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -1465,6 +1468,8 @@ pub struct ChatSettingsResponse {
     pub gemini_enable_code_execution: Option<bool>,
     // Chronicle association
     pub chronicle_id: Option<Uuid>,
+    // Agent mode for context enrichment
+    pub agent_mode: Option<String>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -1516,6 +1521,7 @@ impl From<Chat> for ChatSettingsResponse {
             gemini_thinking_budget: chat.gemini_thinking_budget,
             gemini_enable_code_execution: chat.gemini_enable_code_execution,
             chronicle_id: chat.player_chronicle_id,
+            agent_mode: chat.agent_mode,
         }
     }
 }
@@ -1551,6 +1557,9 @@ pub struct UpdateChatSettingsRequest {
     pub gemini_enable_code_execution: Option<bool>,
     // Chronicle association
     pub chronicle_id: Option<Uuid>,
+    // Agent mode for context enrichment
+    #[validate(custom(function = "validate_optional_agent_mode"))]
+    pub agent_mode: Option<String>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -1581,6 +1590,22 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
             )
             .field("chronicle_id", &self.chronicle_id)
             .finish()
+    }
+}
+
+/// Custom validation function for `agent_mode` (called only when Some)
+///
+/// # Errors
+/// Returns `ValidationError` if the mode is not one of the allowed values
+fn validate_optional_agent_mode(mode: &String) -> Result<(), ValidationError> {
+    // Check if the mode is a known value
+    match mode.as_str() {
+        "disabled" | "pre_processing" | "post_processing" => Ok(()),
+        _ => {
+            let mut err = ValidationError::new("unknown_agent_mode");
+            err.message = Some(format!("Unknown agent mode: {mode}. Allowed values are: disabled, pre_processing, post_processing").into());
+            Err(err)
+        }
     }
 }
 

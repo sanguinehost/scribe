@@ -703,9 +703,21 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     "default": 10,
                     "minimum": 1,
                     "maximum": 50
+                },
+                "user_id": {
+                    "type": "string",
+                    "description": "REQUIRED: User ID to filter search results to user's own data only"
+                },
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "Optional: Chronicle ID to prioritize results from this chronicle"
+                },
+                "session_id": {
+                    "type": "string", 
+                    "description": "Optional: Session ID for additional context and logging"
                 }
             },
-            "required": ["query"]
+            "required": ["query", "user_id"]
         })
     }
 
@@ -716,6 +728,14 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParams("query is required".to_string()))?;
 
+        // SECURITY CRITICAL: Extract user_id for filtering
+        let user_id_str = params.get("user_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams("user_id is required for security".to_string()))?;
+
+        let user_id = Uuid::parse_str(user_id_str)
+            .map_err(|_| ToolError::InvalidParams("Invalid user_id format".to_string()))?;
+
         let search_type = params.get("search_type")
             .and_then(|v| v.as_str())
             .unwrap_or("all");
@@ -724,7 +744,13 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             .and_then(|v| v.as_u64())
             .unwrap_or(10);
 
-        info!("Vector searching knowledge base for '{}' (type: {}, limit: {})", query, search_type, limit);
+        // Optional chronicle_id for prioritization (not security-critical)
+        let chronicle_id_opt = params.get("chronicle_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
+
+        info!("Vector searching knowledge base for '{}' (type: {}, limit: {}) for user {}", 
+              query, search_type, limit, user_id);
 
         // Use the existing embeddings infrastructure for vector search
         let query_embedding = match self.embedding_client
@@ -738,12 +764,29 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             }
         };
 
-        // Perform vector search using Qdrant
+        // SECURITY CRITICAL: Create filter to only return results for this user
+        use crate::vector_db::qdrant_client::{Filter, Condition, FieldCondition, Match};
+        use qdrant_client::qdrant::{condition::ConditionOneOf, r#match::MatchValue};
+        
+        let user_filter = Filter {
+            must: vec![Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "user_id".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                    }),
+                    ..Default::default()
+                })),
+            }],
+            ..Default::default()
+        };
+
+        // Perform vector search using Qdrant with user filter
         let search_results = match self.qdrant_service
             .search_points(
                 query_embedding,
                 limit,
-                None, // no additional filters for now - search across all content types
+                Some(user_filter), // SECURITY: Only search within user's own data
             )
             .await
         {
@@ -756,11 +799,22 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
         // Convert search results to our format and filter by search_type
         let mut results = Vec::new();
+        let mut chronicle_priority_results = Vec::new();
+        
         for scored_point in search_results {
             let payload_map = scored_point.payload.clone();
             
             // Try to parse as different metadata types
             if let Ok(lorebook_meta) = LorebookChunkMetadata::try_from(payload_map.clone()) {
+                // SECURITY: Double-check that this result belongs to the requesting user
+                if lorebook_meta.user_id != user_id {
+                    error!(
+                        "SECURITY VIOLATION: Lorebook result for user {} returned to user {}",
+                        lorebook_meta.user_id, user_id
+                    );
+                    continue;
+                }
+                
                 let should_include = matches!(search_type, "all" | "lorebooks");
                 if should_include {
                     results.push(json!({
@@ -774,6 +828,15 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     }));
                 }
             } else if let Ok(chat_meta) = ChatMessageChunkMetadata::try_from(payload_map.clone()) {
+                // SECURITY: Double-check that this result belongs to the requesting user
+                if chat_meta.user_id != user_id {
+                    error!(
+                        "SECURITY VIOLATION: Chat result for user {} returned to user {}",
+                        chat_meta.user_id, user_id
+                    );
+                    continue;
+                }
+                
                 let should_include = matches!(search_type, "all");
                 if should_include {
                     results.push(json!({
@@ -787,9 +850,18 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     }));
                 }
             } else if let Ok(chronicle_meta) = ChronicleEventMetadata::try_from(payload_map.clone()) {
+                // SECURITY: Double-check that this result belongs to the requesting user
+                if chronicle_meta.user_id != user_id {
+                    error!(
+                        "SECURITY VIOLATION: Chronicle result for user {} returned to user {}",
+                        chronicle_meta.user_id, user_id
+                    );
+                    continue;
+                }
+                
                 let should_include = matches!(search_type, "all" | "chronicles");
                 if should_include {
-                    results.push(json!({
+                    let result = json!({
                         "type": "chronicle_event", 
                         "id": chronicle_meta.event_id,
                         "title": format!("Chronicle Event: {}", chronicle_meta.event_type),
@@ -802,7 +874,18 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                         "event_type": chronicle_meta.event_type,
                         "chronicle_id": chronicle_meta.chronicle_id.to_string(),
                         "created_at": chronicle_meta.created_at.to_rfc3339()
-                    }));
+                    });
+                    
+                    // Prioritize results from the specified chronicle_id
+                    if let Some(target_chronicle_id) = chronicle_id_opt {
+                        if chronicle_meta.chronicle_id == target_chronicle_id {
+                            chronicle_priority_results.push(result);
+                        } else {
+                            results.push(result);
+                        }
+                    } else {
+                        results.push(result);
+                    }
                 }
             } else {
                 // Skip unknown payload types with debug info
@@ -812,13 +895,19 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 );
             }
         }
+        
+        // Combine results: priority chronicle results first, then others
+        chronicle_priority_results.extend(results);
+        let final_results = chronicle_priority_results;
 
         Ok(json!({
             "success": true,
             "query": query,
-            "total_results": results.len(),
-            "results": results,
-            "search_method": "vector_embeddings"
+            "total_results": final_results.len(),
+            "results": final_results,
+            "search_method": "vector_embeddings",
+            "user_filtered": true,
+            "chronicle_prioritized": chronicle_id_opt.is_some()
         }))
     }
 }

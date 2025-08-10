@@ -2666,6 +2666,7 @@ pub async fn set_history_settings(
         gemini_enable_code_execution: None,
         gemini_thinking_budget: None,
         chronicle_id: None,
+        agent_mode: None,
     };
 
     let client = reqwest::Client::new();

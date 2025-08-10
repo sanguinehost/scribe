@@ -512,6 +512,7 @@ export interface UpdateChatSessionSettingsRequest {
 	context_total_token_limit?: number | null;
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
+	agent_mode?: string | null;
 }
 
 export interface ChatSessionSettingsResponse {
@@ -535,6 +536,7 @@ export interface ChatSessionSettingsResponse {
 	context_total_token_limit?: number | null;
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
+	agent_mode?: string | null;
 }
 
 // Types for Global User Settings

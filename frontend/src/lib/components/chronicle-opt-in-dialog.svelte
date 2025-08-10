@@ -53,6 +53,10 @@
 						</li>
 						<li class="flex items-start gap-2">
 							<Sparkles class="h-4 w-4 mt-0.5 text-primary" />
+							<span>Optional AI agent for automatic context enrichment</span>
+						</li>
+						<li class="flex items-start gap-2">
+							<Sparkles class="h-4 w-4 mt-0.5 text-primary" />
 							<span>Character and world evolution tracking</span>
 						</li>
 						<li class="flex items-start gap-2">

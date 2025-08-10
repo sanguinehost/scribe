@@ -62,7 +62,8 @@
 		gemini_enable_code_execution: false, // Will be set from global or chat settings
 		context_total_token_limit: DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT, // Will be set from global or chat settings
 		context_recent_history_budget: DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, // Will be set from global or chat settings
-		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET // Will be set from global or chat settings
+		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET, // Will be set from global or chat settings
+		agent_mode: 'disabled' as 'disabled' | 'pre_processing' | 'post_processing' // Context enrichment agent mode
 	});
 
 	// Expandable sections
@@ -156,7 +157,8 @@
 					globalUserSettings.default_context_recent_history_budget ??
 					DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
 				context_rag_budget:
-					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET
+					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET,
+				agent_mode: 'disabled'
 			};
 		}
 	});
@@ -205,7 +207,9 @@
 				context_rag_budget:
 					settings.context_rag_budget ??
 					globalUserSettings?.default_context_rag_budget ??
-					DEFAULT_CONTEXT_RAG_BUDGET
+					DEFAULT_CONTEXT_RAG_BUDGET,
+				agent_mode:
+					settings.agent_mode ?? 'disabled'
 			};
 
 			// IMPORTANT: Update currentChronicleId from the fresh backend settings
@@ -220,6 +224,7 @@
 			localSettings.context_recent_history_budget =
 				chat.context_recent_history_budget ?? DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
 			localSettings.context_rag_budget = chat.context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
+			localSettings.agent_mode = 'disabled';
 		}
 		isLoading = false;
 	}
@@ -340,7 +345,8 @@
 				context_total_token_limit: localSettings.context_total_token_limit,
 				context_recent_history_budget: localSettings.context_recent_history_budget,
 				context_rag_budget: localSettings.context_rag_budget,
-				chronicle_id: currentChronicleId
+				chronicle_id: currentChronicleId,
+				agent_mode: localSettings.agent_mode
 			};
 
 			const result = await apiClient.updateChatSessionSettings(chat.id, updateRequest);
@@ -818,6 +824,28 @@
 								</select>
 								<p class="text-xs text-muted-foreground">
 									Override the global model setting for this specific chat
+								</p>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="agent-mode">Context Enhancement Agent</Label>
+								<select
+									id="agent-mode"
+									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+									bind:value={localSettings.agent_mode}
+								>
+									<option value="disabled">Disabled</option>
+									<option value="pre_processing">Pre-process (before AI response)</option>
+									<option value="post_processing">Post-process (after AI response)</option>
+								</select>
+								<p class="text-xs text-muted-foreground">
+									{#if localSettings.agent_mode === 'pre_processing'}
+										Agent searches for context before generating response (slight delay)
+									{:else if localSettings.agent_mode === 'post_processing'}
+										Agent enriches context after response (no delay)
+									{:else}
+										No automatic context enrichment
+									{/if}
 								</p>
 							</div>
 

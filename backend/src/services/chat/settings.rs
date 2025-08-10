@@ -84,6 +84,7 @@ struct ChatSessionUpdateBuilder {
     gemini_thinking_budget: DatabaseUpdate<i32>,
     gemini_enable_code_execution: DatabaseUpdate<bool>,
     player_chronicle_id: DatabaseUpdate<Option<Uuid>>,
+    agent_mode: DatabaseUpdate<String>,
     updated_at: DatabaseUpdate<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -149,6 +150,10 @@ impl ChatSessionUpdateBuilder {
                 DatabaseUpdate::SetNull => Some(None),
                 DatabaseUpdate::NoChange => None,
             },
+            agent_mode: match self.agent_mode {
+                DatabaseUpdate::SetValue(v) => Some(v),
+                _ => None,
+            },
             updated_at: match self.updated_at {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
@@ -175,6 +180,7 @@ impl ChatSessionUpdateBuilder {
             || !matches!(self.gemini_thinking_budget, DatabaseUpdate::NoChange)
             || !matches!(self.gemini_enable_code_execution, DatabaseUpdate::NoChange)
             || !matches!(self.player_chronicle_id, DatabaseUpdate::NoChange)
+            || !matches!(self.agent_mode, DatabaseUpdate::NoChange)
     }
 }
 
@@ -203,6 +209,7 @@ struct ChatSessionUpdateChangeset {
     gemini_thinking_budget: Option<i32>,
     gemini_enable_code_execution: Option<bool>,
     player_chronicle_id: Option<Option<Uuid>>,
+    agent_mode: Option<String>,
     updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 /// Verifies session ownership and returns the owner ID
@@ -322,6 +329,7 @@ pub async fn get_session_settings(
                 chat_sessions::gemini_thinking_budget,
                 chat_sessions::gemini_enable_code_execution,
                 chat_sessions::player_chronicle_id,
+                chat_sessions::agent_mode,
             ))
             .first::<SettingsTuple>(conn)
             .map_err(|e| {
@@ -346,6 +354,7 @@ pub async fn get_session_settings(
             gemini_thinking_budget,
             gemini_enable_code_execution,
             player_chronicle_id,
+            agent_mode,
         ) = settings_tuple;
 
         let decrypted_system_prompt = decrypt_system_prompt(
@@ -377,6 +386,7 @@ pub async fn get_session_settings(
             gemini_thinking_budget,
             gemini_enable_code_execution,
             chronicle_id: player_chronicle_id,
+            agent_mode,
         };
 
         info!(%session_id, %user_id, 
@@ -480,6 +490,11 @@ fn apply_payload_to_builder(
             // to distinguish between "not provided" and "set to null"
             update_builder.player_chronicle_id = DatabaseUpdate::SetValue(None);
         }
+    }
+    
+    // Agent mode handling
+    if let Some(mode) = payload.agent_mode {
+        update_builder.agent_mode = DatabaseUpdate::SetValue(mode);
     }
 
     Ok(update_builder)

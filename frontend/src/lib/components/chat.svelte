@@ -475,6 +475,9 @@
 	// --- Chat Config Sidebar State ---
 	let isChatConfigOpen = $state(false);
 
+	// --- Context Enrichment Mode ---
+	let agentMode = $state<'disabled' | 'pre_processing' | 'post_processing'>('disabled');
+
 	// --- Token Counter State ---
 	const tokenCounter = useTokenCounter();
 	let showTokenUsage = $state(false);
@@ -666,9 +669,50 @@
 		return null;
 	}
 
+	// --- Load Agent Mode from Chat Settings ---
+	async function loadAgentMode() {
+		if (!chat?.id) return;
+		try {
+			const result = await apiClient.getChatSessionSettings(chat.id);
+			if (result.isOk()) {
+				agentMode = (result.value.agent_mode as typeof agentMode) || 'disabled';
+			} else {
+				console.error('Failed to load agent mode:', result.error);
+			}
+		} catch (error) {
+			console.error('Failed to load agent mode:', error);
+		}
+	}
+
+	// --- Save Agent Mode to Chat Settings ---
+	async function saveAgentMode(mode: typeof agentMode) {
+		if (!chat?.id) return;
+		try {
+			const result = await apiClient.updateChatSessionSettings(chat.id, {
+				agent_mode: mode
+			});
+			if (result.isOk()) {
+				agentMode = mode;
+			} else {
+				console.error('Failed to save agent mode:', result.error);
+				toast.error('Failed to save context enrichment mode');
+			}
+		} catch (error) {
+			console.error('Failed to save agent mode:', error);
+			toast.error('Failed to save context enrichment mode');
+		}
+	}
+
 	// Load personas when component mounts (regardless of chat)
 	$effect(() => {
 		loadAvailablePersonas();
+	});
+
+	// Load agent mode when chat changes
+	$effect(() => {
+		if (chat?.id) {
+			loadAgentMode();
+		}
 	});
 
 	// --- Token Counting Effect ---
@@ -961,7 +1005,8 @@
 				chatId: chat.id,
 				userMessage: content,
 				history: existingHistoryForApi,
-				model: currentModel || undefined
+				model: currentModel || undefined,
+				agentMode: agentMode
 			});
 			console.log(`✅ StreamingService.connect() completed at ${Date.now()}`);
 		} catch (error) {
@@ -1002,7 +1047,8 @@
 				chatId: chat.id,
 				userMessage: lastUserMessage.content,
 				history: historyToSend.slice(0, -1), // Exclude the last user message since it's passed separately
-				model: currentModel || undefined
+				model: currentModel || undefined,
+				agentMode: agentMode
 			});
 		} catch (error) {
 			console.error('Failed to generate AI response:', error);
@@ -1063,7 +1109,8 @@
 				chatId: chat.id,
 				userMessage: lastUserMessage.content,
 				history: historyToSend.slice(0, -1), // Exclude the last user message since it's passed separately
-				model: currentModel || undefined
+				model: currentModel || undefined,
+				agentMode: agentMode
 			});
 
 			// Update chat preview after successful regeneration
@@ -1538,6 +1585,8 @@
 						onImpersonate={(response) => {
 							chatInput = response;
 						}}
+						{agentMode}
+						onAgentModeChange={saveAgentMode}
 					/>
 
 					<!-- Token Usage Display -->

@@ -15,6 +15,7 @@ pub struct ChronicleEventMetadata {
     pub event_id: Uuid,
     pub event_type: String,
     pub chronicle_id: Uuid,
+    pub user_id: Uuid, // SECURITY: Added user_id for access control
     pub created_at: DateTime<Utc>,
 }
 
@@ -25,6 +26,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
         let event_id = extract_uuid_from_payload(&payload, "event_id", "ChronicleEventMetadata")?;
         let event_type = extract_string_from_payload(&payload, "event_type", "ChronicleEventMetadata")?;
         let chronicle_id = extract_uuid_from_payload(&payload, "chronicle_id", "ChronicleEventMetadata")?;
+        let user_id = extract_uuid_from_payload(&payload, "user_id", "ChronicleEventMetadata")?;
         let created_at_str = extract_string_from_payload(&payload, "created_at", "ChronicleEventMetadata")?;
         
         let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
@@ -39,6 +41,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
             event_id,
             event_type,
             chronicle_id,
+            user_id,
             created_at,
         })
     }

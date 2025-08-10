@@ -69,6 +69,7 @@ type SessionDataTuple = (
     Option<String>,              // effective_system_prompt
     Option<String>,              // raw_character_system_prompt
     Option<Uuid>,                // player_chronicle_id
+    Option<String>,              // agent_mode
 );
 
 // These functions/types will be in sibling modules
@@ -231,6 +232,7 @@ pub async fn get_session_data_for_generation(
         final_effective_system_prompt, // This is the system_prompt for the builder (persona/override only)
         raw_character_system_prompt,   // This is the raw system_prompt from the character itself
         player_chronicle_id_from_session, // The chronicle ID for RAG retrieval
+        agent_mode_from_session, // The agent mode for context enrichment
     ): SessionDataTuple = {
         let conn = state
             .pool
@@ -260,6 +262,7 @@ pub async fn get_session_data_for_generation(
                 gem_think_budget,
                 gem_enable_code_exec,
                 player_chronicle_id,
+                agent_mode,
             ) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
@@ -281,6 +284,7 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::gemini_thinking_budget,
                     chat_sessions::gemini_enable_code_execution,
                     chat_sessions::player_chronicle_id,
+                    chat_sessions::agent_mode,
                 ))
                 .first::<(
                     String,
@@ -300,6 +304,7 @@ pub async fn get_session_data_for_generation(
                     Option<i32>,
                     Option<bool>,
                     Option<Uuid>,
+                    Option<String>,
                 )>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
@@ -447,6 +452,7 @@ pub async fn get_session_data_for_generation(
                 current_effective_system_prompt, // This is the one for the builder (persona/override only)
                 raw_character_system_prompt_from_db, // The new one
                 player_chronicle_id,
+                agent_mode,
             ))
         })
         .await
@@ -983,6 +989,7 @@ pub async fn get_session_data_for_generation(
         history_management_limit_db_val,    // 19: history_management_limit (i32) - MOVED
         user_persona_name,                  // 20: user_persona_name (Option<String>) - NEW
         player_chronicle_id_from_session,   // 21: player_chronicle_id (Option<Uuid>) - NEW
+        agent_mode_from_session,            // 22: agent_mode (Option<String>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.

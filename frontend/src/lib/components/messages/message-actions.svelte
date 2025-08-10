@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { ChevronLeft, ChevronRight, MoreHorizontal, Copy, Code, RotateCcw, Edit, Trash2 } from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight, MoreHorizontal, Copy, Code, RotateCcw, Edit, Trash2, Brain } from 'lucide-svelte';
 	import { clickOutside } from '$lib/utils/click-outside';
 	import RawPromptModal from './raw-prompt-modal.svelte';
+	import AgentAnalysisModal from './agent-analysis-modal.svelte';
 	import type { ScribeChatMessage } from '$lib/types';
 
 	let { 
@@ -30,6 +31,7 @@
 	} = $props();
 
 	let showRawPromptModal = $state(false);
+	let showAgentAnalysisModal = $state(false);
 	let showDropdown = $state(false);
 	let copyClicked = $state(false);
 
@@ -173,6 +175,16 @@
 								Show raw prompt
 							</button>
 							<button 
+								class="flex w-full items-center px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+								onclick={() => {
+									showAgentAnalysisModal = true;
+									closeDropdown();
+								}}
+							>
+								<Brain size={14} class="mr-2" />
+								Show agent analysis
+							</button>
+							<button 
 								class="flex w-full items-center px-3 py-2 text-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
 								onclick={() => {
 									onDelete?.();
@@ -196,5 +208,14 @@
 		bind:open={showRawPromptModal}
 		messageId={message.backend_id || message.id} 
 		sessionId={message.session_id || ''} 
+	/>
+{/if}
+
+<!-- Agent Analysis Modal -->
+{#if !isFirstMessage(message) && message.message_type === 'Assistant'}
+	<AgentAnalysisModal 
+		bind:open={showAgentAnalysisModal}
+		messageId={message.backend_id || message.id}
+		sessionId={message.session_id || ''}
 	/>
 {/if}

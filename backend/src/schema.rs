@@ -18,6 +18,34 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    agent_context_analysis (id) {
+        id -> Uuid,
+        chat_session_id -> Uuid,
+        user_id -> Uuid,
+        #[max_length = 50]
+        analysis_type -> Varchar,
+        agent_reasoning -> Nullable<Text>,
+        agent_reasoning_nonce -> Nullable<Bytea>,
+        planned_searches -> Nullable<Jsonb>,
+        execution_log -> Nullable<Jsonb>,
+        execution_log_nonce -> Nullable<Bytea>,
+        retrieved_context -> Nullable<Text>,
+        retrieved_context_nonce -> Nullable<Bytea>,
+        analysis_summary -> Nullable<Text>,
+        analysis_summary_nonce -> Nullable<Bytea>,
+        total_tokens_used -> Nullable<Int4>,
+        execution_time_ms -> Nullable<Int4>,
+        #[max_length = 100]
+        model_used -> Nullable<Varchar>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     character_assets (id) {
         id -> Int4,
         character_id -> Uuid,
@@ -276,6 +304,8 @@ diesel::table! {
         stop_sequences -> Nullable<Array<Nullable<Text>>>,
         chat_mode -> Varchar,
         player_chronicle_id -> Nullable<Uuid>,
+        #[max_length = 20]
+        agent_mode -> Nullable<Varchar>,
     }
 }
 
@@ -562,6 +592,8 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(agent_context_analysis -> chat_sessions (chat_session_id));
+diesel::joinable!(agent_context_analysis -> users (user_id));
 diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(character_lorebooks -> characters (character_id));
 diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
@@ -599,6 +631,7 @@ diesel::joinable!(user_assets -> users (user_id));
 diesel::joinable!(user_settings -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    agent_context_analysis,
     character_assets,
     character_lorebooks,
     characters,

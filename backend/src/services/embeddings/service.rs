@@ -1017,6 +1017,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             event_id: event.id,
             event_type: event.event_type.clone(),
             chronicle_id: event.chronicle_id,
+            user_id: event.user_id, // SECURITY: Include user_id for access control
             created_at: event.created_at,
         };
 

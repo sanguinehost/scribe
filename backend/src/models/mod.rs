@@ -1,3 +1,4 @@
+pub mod agent_context_analysis;
 pub mod auth;
 pub mod character_assets;
 pub mod character_card;
@@ -16,6 +17,7 @@ pub mod user_personas;
 pub mod user_settings;
 pub mod users;
 
+pub use agent_context_analysis::*;
 pub use auth::*;
 pub use character_assets::{CharacterAsset, NewCharacterAsset};
 pub use character_card::*;

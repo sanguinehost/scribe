@@ -9,6 +9,7 @@
 	import { Button } from './ui/button';
 	import StopIcon from './icons/stop.svelte';
 	import ImpersonateWidget from './impersonate-widget.svelte';
+	import ContextEnrichmentButton from './context-enrichment-button.svelte';
 	// import { replaceState } from '$app/navigation'; // Unused? Let's remove for cleanup.
 
 	// Props definition
@@ -19,6 +20,8 @@
 		stopGeneration: () => void;
 		chatId?: string; // Add chatId for impersonate/expand features
 		onImpersonate?: (response: string) => void; // Callback for impersonate results
+		agentMode?: 'disabled' | 'pre_processing' | 'post_processing'; // Context enrichment mode
+		onAgentModeChange?: (mode: 'disabled' | 'pre_processing' | 'post_processing') => void; // Callback for mode changes
 		placeholder?: string; // Custom placeholder text
 		class?: string;
 	};
@@ -30,6 +33,8 @@
 		stopGeneration,
 		chatId,
 		onImpersonate,
+		agentMode = 'disabled',
+		onAgentModeChange,
 		placeholder = "Send a message...", // Default placeholder
 		class: c
 	}: Props = $props();
@@ -170,6 +175,13 @@
 		></textarea>
 
 		<div class="absolute bottom-0 right-0 flex w-fit flex-row items-center gap-1 p-4">
+			{#if chatId && onAgentModeChange}
+				<ContextEnrichmentButton
+					value={agentMode}
+					onChange={onAgentModeChange}
+					disabled={isLoading}
+				/>
+			{/if}
 			{#if chatId}
 				<ImpersonateWidget
 					{value}
