@@ -15,6 +15,7 @@
 //!     lorebook management.
 
 pub mod agent_runner;
+pub mod context_enrichment_agent;
 pub mod narrative_tools;
 pub mod factory;
 pub mod registry;
@@ -26,6 +27,10 @@ mod narrative_tools_tests;
 
 // Re-export key types for convenience
 pub use agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig, NarrativeWorkflowResult};
+pub use context_enrichment_agent::{
+    ContextEnrichmentAgent, ContextEnrichmentResult, EnrichmentMode,
+    AgentExecutionLog, AgentStep, PlannedSearch,
+};
 pub use factory::AgenticNarrativeFactory;
 pub use registry::ToolRegistry;
 pub use tools::{ScribeTool, ToolError, ToolParams, ToolResult};

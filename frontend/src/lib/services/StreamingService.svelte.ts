@@ -325,6 +325,7 @@ class StreamingService {
     userMessage: string;
     history: Array<{ role: 'user' | 'assistant'; content: string }>;
     model?: string;
+    agentMode?: string;
   }): Promise<void> {
     // Connect to streaming service
     
@@ -396,6 +397,7 @@ class StreamingService {
       userMessage: string;
       history: Array<{ role: 'user' | 'assistant'; content: string }>;
       model?: string;
+      agentMode?: string;
     },
     assistantMessageId: string
   ): Promise<void> {
@@ -404,7 +406,8 @@ class StreamingService {
 
     const requestBody = {
       history: [...params.history, { role: 'user' as const, content: params.userMessage }],
-      model: params.model
+      model: params.model,
+      agent_mode: params.agentMode
     };
 
     console.log('🚀 Starting fetchEventSource with URL:', apiUrl);

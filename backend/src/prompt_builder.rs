@@ -224,6 +224,7 @@ pub struct PromptBuildParams<'a> {
     pub model_name: String,
     pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>, // For decrypting character data
     pub user_persona_name: Option<String>,                 // For {{user}} template substitution
+    pub agent_context: Option<String>,                      // Pre-processing agent context to inject
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -743,6 +744,7 @@ async fn build_final_prompt_strings(
     character_metadata: Option<&CharacterMetadata>,
     token_counter: &HybridTokenCounter,
     model_name: &str,
+    agent_context: Option<&str>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Rebuild the meta system prompt based on final RAG items after truncation
     let has_final_rag_items = !calculation.rag_items_with_tokens.is_empty();
@@ -1013,8 +1015,18 @@ async fn build_final_prompt_strings(
             
             rag_context_for_user_message.push_str("</lorebook_entries>\n\n");
         }
+        
     }
-
+    
+    // Add agent context if available from pre-processing analysis
+    if let Some(agent_ctx) = agent_context {
+        if !agent_ctx.is_empty() {
+            rag_context_for_user_message.push_str("<agent_context>\n");
+            rag_context_for_user_message.push_str(&escape_xml(agent_ctx));
+            rag_context_for_user_message.push_str("\n</agent_context>\n\n");
+        }
+    }
+    
     // Combine RAG context with the current user message
     let mut final_user_message = current_user_message.clone();
     if let MessageContent::Text(text_content) = final_user_message.content {
@@ -1057,6 +1069,7 @@ pub async fn build_final_llm_prompt(
         params.character_metadata,
         &params.token_counter,
         &params.model_name,
+        params.agent_context.as_deref(),
     )
     .await?;
 

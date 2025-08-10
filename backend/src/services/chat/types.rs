@@ -42,6 +42,7 @@ pub type GenerationDataWithUnsavedUserMessage = (
     i32,            // 19: history_management_limit (was 22)
     Option<String>, // 20: user_persona_name (NEW - for template substitution)
     Option<Uuid>,   // 21: player_chronicle_id (NEW - for narrative processing)
+    Option<String>, // 22: agent_mode (NEW - for context enrichment)
 );
 
 /// Structured chunk with integrity checking for reliable streaming
