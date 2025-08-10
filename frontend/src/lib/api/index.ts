@@ -573,10 +573,10 @@ class ApiClient {
 		if (options?.limit) params.append('limit', options.limit.toString());
 		if (options?.cursor) params.append('cursor', options.cursor);
 		const query = params.toString() ? `?${params.toString()}` : '';
-		
+
 		// The backend now returns PaginatedMessagesResponse, but we maintain backwards compatibility
 		const result = await this.fetch<any>(`/api/chats/${chatId}/messages${query}`);
-		
+
 		if (result.isOk() && result.value) {
 			// Check if it's the new paginated response format
 			if ('messages' in result.value && 'nextCursor' in result.value) {
@@ -585,7 +585,7 @@ class ApiClient {
 			// Fallback to array format for backwards compatibility
 			return ok(result.value as Message[]);
 		}
-		
+
 		return result;
 	}
 
@@ -1011,6 +1011,16 @@ class ApiClient {
 		return this.fetch<PlayerChronicle>(`/api/chronicles/${id}`);
 	}
 
+	// Generate a chronicle name from chat messages
+	async generateChronicleName(
+		chatSessionId: string
+	): Promise<Result<{ name: string; reasoning?: string }, ApiError>> {
+		return this.fetch<{ name: string; reasoning?: string }>('/api/chronicles/generate-name', {
+			method: 'POST',
+			body: JSON.stringify({ chat_session_id: chatSessionId })
+		});
+	}
+
 	// Create a new chronicle
 	async createChronicle(data: CreateChronicleRequest): Promise<Result<PlayerChronicle, ApiError>> {
 		return this.fetch<PlayerChronicle>('/api/chronicles', {
@@ -1047,7 +1057,7 @@ class ApiClient {
 			if (filter.event_type) params.append('event_type', filter.event_type);
 			if (filter.source) params.append('source', filter.source);
 			if (filter.keywords && filter.keywords.length > 0) {
-				filter.keywords.forEach(keyword => params.append('keywords', keyword));
+				filter.keywords.forEach((keyword) => params.append('keywords', keyword));
 			}
 			if (filter.after_timestamp) params.append('after_timestamp', filter.after_timestamp);
 			if (filter.before_timestamp) params.append('before_timestamp', filter.before_timestamp);

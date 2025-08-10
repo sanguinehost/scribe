@@ -79,6 +79,22 @@ pub struct ReChronicleResponse {
     pub summary: String,
 }
 
+/// Request payload for generating a chronicle name from chat session
+#[derive(Debug, Deserialize, Validate)]
+pub struct GenerateChronicleNameRequest {
+    /// The chat session ID to analyze for name generation
+    pub chat_session_id: Uuid,
+}
+
+/// Response with the generated chronicle name
+#[derive(Debug, Serialize)]
+pub struct GenerateChronicleNameResponse {
+    /// The generated chronicle name
+    pub name: String,
+    /// Optional reasoning for the name choice (for debugging)
+    pub reasoning: Option<String>,
+}
+
 
 impl From<EventQuery> for EventFilter {
     fn from(query: EventQuery) -> Self {
@@ -101,6 +117,7 @@ pub fn create_chronicles_router(state: AppState) -> Router<AppState> {
     info!("=== CREATING CHRONICLES ROUTER ===");
     Router::new()
         .route("/", post(create_chronicle).get(list_chronicles))
+        .route("/generate-name", post(generate_chronicle_name))
         .route("/:chronicle_id", get(get_chronicle).put(update_chronicle).delete(delete_chronicle))
         .route("/:chronicle_id/events", post(create_event).get(list_events))
         .route("/:chronicle_id/events/:event_id", delete(delete_event))
@@ -463,6 +480,34 @@ async fn re_chronicle_from_chat(
     }))
 }
 
+/// Helper function to get the character name for a chat session
+async fn get_character_name_for_session(
+    state: &AppState,
+    chat_session_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<String>, AppError> {
+    use crate::schema::{chat_sessions, characters};
+    use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods, JoinOnDsl, SelectableHelper, BoolExpressionMethods, NullableExpressionMethods};
+    
+    let conn = state.pool.get().await?;
+    
+    let character_name = conn.interact(move |conn| {
+        chat_sessions::table
+            .left_join(characters::table.on(
+                chat_sessions::character_id.eq(characters::id.nullable())
+            ))
+            .filter(chat_sessions::id.eq(chat_session_id))
+            .filter(chat_sessions::user_id.eq(user_id))
+            .select(characters::name.nullable())
+            .first::<Option<String>>(conn)
+    })
+    .await
+    .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch character name: {}", e)))?;
+    
+    Ok(character_name)
+}
+
 /// Helper function to get chat messages for a session
 async fn get_chat_messages(
     state: &AppState,
@@ -492,4 +537,90 @@ async fn get_chat_messages(
     .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch chat messages: {}", e)))?;
     
     Ok(messages)
+}
+
+/// Generate a chronicle name from a chat session using AI
+#[instrument(skip(auth_session, session_dek, state))]
+async fn generate_chronicle_name(
+    auth_session: AuthSession<AuthBackend>,
+    session_dek: SessionDek,
+    State(state): State<AppState>,
+    Json(request): Json<GenerateChronicleNameRequest>,
+) -> Result<Json<GenerateChronicleNameResponse>, AppError> {
+    use diesel::prelude::*;
+    use crate::schema::{chat_messages, chat_sessions};
+    use crate::services::agentic::AgenticNarrativeFactory;
+    
+    // Validate the request
+    request.validate()?;
+    
+    let user = auth_session.user.ok_or_else(|| {
+        error!("No authenticated user found in session");
+        AppError::Unauthorized("Authentication required".to_string())
+    })?;
+
+    info!(
+        "Generating chronicle name for chat session {} by user {}",
+        request.chat_session_id, user.id
+    );
+
+    // Fetch chat messages for the session
+    let messages: Vec<ChatMessage> = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?
+        .interact(move |conn| {
+            chat_messages::table
+                .inner_join(
+                    chat_sessions::table.on(
+                        chat_messages::session_id.eq(chat_sessions::id)
+                            .and(chat_sessions::user_id.eq(user.id))
+                    )
+                )
+                .filter(chat_messages::session_id.eq(request.chat_session_id))
+                .select(ChatMessage::as_select())
+                .order(chat_messages::created_at.asc())
+                .load::<ChatMessage>(conn)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch chat messages: {}", e)))?;
+    
+    if messages.is_empty() {
+        return Err(AppError::NotFound(
+            "No messages found in the specified chat session".to_string()
+        ));
+    }
+    
+    // Fetch the character name if available
+    let character_name = get_character_name_for_session(&state, request.chat_session_id, user.id).await?;
+    
+    // Create a NarrativeAgentRunner using the factory
+    let chronicle_service = Arc::new(ChronicleService::new(state.pool.clone()));
+    let app_state = Arc::new(state.clone());
+    
+    let agent_runner = AgenticNarrativeFactory::create_system_with_deps(
+        state.ai_client.clone(),
+        chronicle_service.clone(),
+        state.lorebook_service.clone(),
+        state.qdrant_service.clone(),
+        state.embedding_client.clone(),
+        app_state,
+        Some(AgenticNarrativeFactory::create_dev_config()),
+    );
+    
+    let generated_name = agent_runner
+        .generate_chronicle_name_from_messages(&messages, &session_dek, character_name)
+        .await?;
+    
+    info!(
+        "Successfully generated chronicle name '{}' for chat session {}",
+        generated_name, request.chat_session_id
+    );
+    
+    Ok(Json(GenerateChronicleNameResponse {
+        name: generated_name,
+        reasoning: None, // We could extract this from the structured output if needed
+    }))
 }

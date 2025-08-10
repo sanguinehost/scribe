@@ -10,7 +10,7 @@ use crate::{
     llm::{EmbeddingClient, AiClient},
     services::{
         embeddings::{ChatMessageChunkMetadata, LorebookChunkMetadata, ChronicleEventMetadata},
-        ChronicleService, LorebookService,
+        ChronicleService, LorebookService, safety_utils::create_unrestricted_safety_settings,
     },
     state::AppState,
     vector_db::qdrant_client::QdrantClientServiceTrait,
@@ -342,20 +342,14 @@ impl AnalyzeTextSignificanceTool {
         genai_chat_options = genai_chat_options.with_max_tokens(1024);
         
         // Add safety settings
-        let safety_settings = vec![
-            SafetySetting::new(HarmCategory::Harassment, HarmBlockThreshold::BlockNone),
-            SafetySetting::new(HarmCategory::HateSpeech, HarmBlockThreshold::BlockNone),
-            SafetySetting::new(HarmCategory::SexuallyExplicit, HarmBlockThreshold::BlockNone),
-            SafetySetting::new(HarmCategory::DangerousContent, HarmBlockThreshold::BlockNone),
-            SafetySetting::new(HarmCategory::CivicIntegrity, HarmBlockThreshold::BlockNone),
-        ];
+        let safety_settings = create_unrestricted_safety_settings();
         genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
 
         let system_prompt = "You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording. Respond only with valid JSON.";
         let chat_req = genai::chat::ChatRequest::new(vec![user_message]).with_system(system_prompt);
         
         let response = self.ai_client
-            .exec_chat("gemini-2.5-flash-lite-preview-06-17", chat_req, Some(genai_chat_options))
+            .exec_chat("gemini-2.5-flash-lite", chat_req, Some(genai_chat_options))
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("AI call failed: {}", e)))?;
 

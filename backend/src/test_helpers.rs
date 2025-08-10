@@ -162,6 +162,18 @@ impl MockAiClient {
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
+    
+    /// Create a new MockAiClient that returns an error
+    #[must_use]
+    pub fn new_with_error(error: AppError) -> Self {
+        Self {
+            last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Err(error))),
+            stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
 
     // Add placeholder methods called by tests
     /// Gets the last request sent to the mock client
