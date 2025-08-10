@@ -32,6 +32,7 @@ use crate::{
         // history_manager::HistoryManager, // Removed, manage_history is a free function
         hybrid_token_counter::CountingMode,
         rag_budget_manager::{ContextBudgetPlanner, DynamicRagSelector}, // For unified RAG budget management
+        safety_utils::create_unrestricted_safety_settings,
         tokenizer_service::TokenEstimate,
         user_settings_service::UserSettingsService, // For retrieving user context settings
     },
@@ -1333,19 +1334,7 @@ pub async fn stream_ai_response_and_save_message(
     // The `gemini_enable_code_execution` variable will still affect tool declaration logic below.
 
     // Disable all safety filters to prevent content filtering errors
-    let safety_settings = vec![
-        SafetySetting::new(HarmCategory::Harassment, HarmBlockThreshold::BlockNone),
-        SafetySetting::new(HarmCategory::HateSpeech, HarmBlockThreshold::BlockNone),
-        SafetySetting::new(
-            HarmCategory::SexuallyExplicit,
-            HarmBlockThreshold::BlockNone,
-        ),
-        SafetySetting::new(
-            HarmCategory::DangerousContent,
-            HarmBlockThreshold::BlockNone,
-        ),
-        SafetySetting::new(HarmCategory::CivicIntegrity, HarmBlockThreshold::BlockNone),
-    ];
+    let safety_settings = create_unrestricted_safety_settings();
     genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
 
     // NEW LOGIC FOR TOOL CONFIGURATION

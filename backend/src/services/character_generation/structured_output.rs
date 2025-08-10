@@ -140,8 +140,7 @@ pub fn get_field_generation_schema() -> serde_json::Value {
                 "description": "Self-assessment of content quality from 1-10"
             }
         },
-        "required": ["content", "style_applied"],
-        "additionalProperties": false
+        "required": ["content", "style_applied"]
     })
 }
 
@@ -197,8 +196,7 @@ pub fn get_full_character_schema() -> serde_json::Value {
                 "description": "Brief summary of the character concept"
             }
         },
-        "required": ["name", "description", "first_mes", "tags"],
-        "additionalProperties": false
+        "required": ["name", "description", "first_mes", "tags"]
     })
 }
 
@@ -228,8 +226,7 @@ pub fn get_enhancement_schema() -> serde_json::Value {
                 "description": "Assessment of how much the content was improved"
             }
         },
-        "required": ["enhanced_content", "changes_made", "improvement_reasoning"],
-        "additionalProperties": false
+        "required": ["enhanced_content", "changes_made", "improvement_reasoning"]
     })
 }
 
@@ -263,7 +260,6 @@ pub fn get_style_analysis_schema() -> serde_json::Value {
                 "description": "Suggestions for improving the content"
             }
         },
-        "required": ["detected_style", "confidence"],
-        "additionalProperties": false
+        "required": ["detected_style", "confidence"]
     })
 }

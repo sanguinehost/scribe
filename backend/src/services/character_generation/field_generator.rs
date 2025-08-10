@@ -6,7 +6,7 @@ use tracing::{debug, info, instrument};
 use crate::{
     AppState,
     errors::AppError,
-    services::hybrid_token_counter::CountingMode,
+    services::{hybrid_token_counter::CountingMode, safety_utils::create_unrestricted_safety_settings},
 };
 
 use super::{
@@ -815,13 +815,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         }
         
         // Add safety settings to allow mature content (same as main generation)
-        let safety_settings = vec![
-            SafetySetting::new(HarmCategory::Harassment, HarmBlockThreshold::BlockNone),
-            SafetySetting::new(HarmCategory::HateSpeech, HarmBlockThreshold::BlockNone),
-            SafetySetting::new(HarmCategory::SexuallyExplicit, HarmBlockThreshold::BlockNone),
-            SafetySetting::new(HarmCategory::DangerousContent, HarmBlockThreshold::BlockNone),
-            SafetySetting::new(HarmCategory::CivicIntegrity, HarmBlockThreshold::BlockNone),
-        ];
+        let safety_settings = create_unrestricted_safety_settings();
         genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
 
         // Enable structured output using JSON schema (Gemini 2.5+ feature)

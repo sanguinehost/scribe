@@ -17,6 +17,7 @@ pub mod hybrid_token_counter;
 pub mod lorebook;
 pub mod narrative_intelligence_service;
 pub mod rag_budget_manager;
+pub mod safety_utils;
 pub mod tokenizer_service;
 pub mod user_persona_service;
 pub mod user_settings_service;

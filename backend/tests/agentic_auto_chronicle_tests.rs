@@ -138,6 +138,29 @@ mod agentic_chronicle_tests {
         let user_id = user.id;
         let chat_session_id = Uuid::new_v4();
 
+        // Create a minimal chat session in the database to satisfy foreign key constraint
+        {
+            let conn = test_app.db_pool.get().await.expect("Failed to get db connection");
+            conn.interact(move |conn| {
+                use scribe_backend::schema::chat_sessions;
+                use diesel::{RunQueryDsl, insert_into, ExpressionMethods};
+                
+                insert_into(chat_sessions::table)
+                    .values((
+                        chat_sessions::id.eq(chat_session_id),
+                        chat_sessions::user_id.eq(user_id),
+                        chat_sessions::character_id.eq::<Option<Uuid>>(None),
+                        chat_sessions::created_at.eq(chrono::Utc::now()),
+                        chat_sessions::updated_at.eq(chrono::Utc::now()),
+                        chat_sessions::history_management_strategy.eq("truncate".to_string()),
+                        chat_sessions::history_management_limit.eq(4000),
+                        chat_sessions::model_name.eq("gemini-2.5-pro".to_string()),
+                        chat_sessions::visibility.eq(Some("private".to_string())),
+                    ))
+                    .execute(conn)
+            }).await.expect("Failed to create chat session").expect("Failed to insert chat session");
+        }
+
         // Create a combined response that works for both triage and planning phases
         // The planning step will use the actions array, and triage will use the other fields
         let combined_response = json!({
@@ -200,19 +223,11 @@ mod agentic_chronicle_tests {
             .await;
 
         // Verify the workflow succeeded
-        assert!(result.is_ok(), "Agentic workflow should succeed: {:?}", result.err());
+        assert!(result.is_ok(), "Simplified chronicle workflow should succeed: {:?}", result.err());
         let workflow_result = result.unwrap();
 
-        // Verify triage detected significance
-        assert!(workflow_result.triage_result.is_significant, "Triage should detect significant events");
-        assert!(workflow_result.triage_result.confidence > 0.8, "Should have high confidence");
-
-        // Verify tools were executed (chronicle and events created)
-        assert!(!workflow_result.actions_taken.is_empty(), "Should have executed actions");
-        assert!(
-            workflow_result.actions_taken.iter().any(|action| action.tool_name == "create_chronicle_event"),
-            "Should have created chronicle events"
-        );
+        // Verify triage detected significance (simplified approach always returns true)
+        assert!(workflow_result.triage_result.is_significant, "Simplified triage should always detect significant events");
 
         // Verify chronicle was auto-created in database
         let chronicles = chronicle_service.get_user_chronicles(user_id).await.unwrap();

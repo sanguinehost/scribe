@@ -53,14 +53,14 @@
 	// Note: In Svelte 5, props are already reactive, so we can use them directly
 
 	const chatHistory = ChatHistory.fromContext();
-	
+
 	// Pagination state
 	let nextCursor = $state<string | null>(initialCursor || null);
 	let isLoadingMore = $state(false);
 	let hasMoreMessages = $state(initialCursor !== null);
 	let loadedMessagesBatches = $state<ScribeChatMessage[][]>([initialMessages]);
 	let suppressAutoScroll = $state(false);
-	
+
 	// Chronicle opt-in state
 	let showChronicleOptIn = $state(false);
 	let pendingMessage = $state<string | null>(null);
@@ -72,7 +72,7 @@
 		// Update StreamingService with user's typing speed preference
 		streamingService.setTypingSpeed(settingsStore.typingSpeed);
 	});
-	
+
 	// Load saved chronicle preference from localStorage
 	$effect(() => {
 		if (browser) {
@@ -96,7 +96,6 @@
 	// This component will populate the service with initial messages on load,
 	// and derive its display messages directly from the service's state.
 
-
 	// Message variants storage: messageId -> array of variant contents
 	let messageVariants = $state<Map<string, { content: string; timestamp: string }[]>>(new Map());
 	let currentVariantIndex = $state<Map<string, number>>(new Map());
@@ -104,7 +103,7 @@
 	// This single effect handles both populating messages for the current chat
 	// and cleaning them up when the chat changes or the component is destroyed.
 	let previousChatId = $state<string | null>(null);
-	
+
 	$effect(() => {
 		const currentChatId = chat?.id;
 
@@ -113,14 +112,14 @@
 			// Clear messages for previous chat if switching chats
 			if (previousChatId && currentChatId !== previousChatId) {
 				streamingService.clearMessages();
-				
+
 				// Reset pagination state when switching chats
 				loadedMessagesBatches = [initialMessages];
 				nextCursor = initialCursor || null;
 				hasMoreMessages = initialCursor !== null;
 				isLoadingMore = false;
 			}
-			
+
 			if (currentChatId) {
 				let newInitialMessages: StreamingMessage[];
 
@@ -163,17 +162,17 @@
 					streamingService.messages.push(message);
 				}
 			}
-			
+
 			// Update the previous chat ID
 			previousChatId = currentChatId || null;
 		}
 	});
-	
+
 	// Separate effect for cleanup when component unmounts
 	// This needs to track the chat ID to prevent clearing on every render
 	$effect(() => {
 		const currentChatId = chat?.id;
-		
+
 		return () => {
 			// Only clear if we actually had a chat
 			if (currentChatId) {
@@ -186,41 +185,41 @@
 	// Include both SSE connection phase AND local animation phase
 	let isLoading = $derived(
 		streamingService.connectionStatus === 'connecting' ||
-		streamingService.connectionStatus === 'open' ||
-		streamingService.messages.some(msg => msg.isAnimating === true)
+			streamingService.connectionStatus === 'open' ||
+			streamingService.messages.some((msg) => msg.isAnimating === true)
 	);
-	
+
 	// Load more messages function for infinite scroll
 	async function loadMoreMessages() {
 		if (!chat?.id || isLoadingMore || !hasMoreMessages || !nextCursor) {
 			return;
 		}
-		
+
 		isLoadingMore = true;
 		suppressAutoScroll = true;
-		
+
 		try {
-			const result = await apiClient.getMessagesByChatId(chat.id, { 
-				limit: 20, 
-				cursor: nextCursor 
+			const result = await apiClient.getMessagesByChatId(chat.id, {
+				limit: 20,
+				cursor: nextCursor
 			});
-			
+
 			if (result.isErr()) {
 				console.error('Failed to load more messages:', result.error);
 				toast.error('Failed to load older messages');
 				return;
 			}
-			
+
 			// Handle paginated response
 			if (!Array.isArray(result.value) && 'messages' in result.value) {
 				const { messages: newMessages, nextCursor: newCursor } = result.value;
-				
+
 				console.log('📥 Loading more messages:', {
 					newMessagesCount: newMessages.length,
 					newCursor,
 					currentStreamingCount: streamingService.messages.length
 				});
-				
+
 				// Convert to ScribeChatMessage format
 				const convertedMessages: ScribeChatMessage[] = newMessages.map(
 					(rawMsg): ScribeChatMessage => ({
@@ -229,10 +228,16 @@
 						session_id: rawMsg.session_id,
 						message_type: rawMsg.message_type,
 						content:
-							rawMsg.parts && rawMsg.parts.length > 0 && 'text' in rawMsg.parts[0] && typeof rawMsg.parts[0].text === 'string'
+							rawMsg.parts &&
+							rawMsg.parts.length > 0 &&
+							'text' in rawMsg.parts[0] &&
+							typeof rawMsg.parts[0].text === 'string'
 								? rawMsg.parts[0].text
 								: '',
-						created_at: typeof rawMsg.created_at === 'string' ? rawMsg.created_at : rawMsg.created_at.toISOString(),
+						created_at:
+							typeof rawMsg.created_at === 'string'
+								? rawMsg.created_at
+								: rawMsg.created_at.toISOString(),
 						user_id: '',
 						loading: false,
 						raw_prompt: rawMsg.raw_prompt,
@@ -241,25 +246,26 @@
 						model_name: rawMsg.model_name
 					})
 				);
-				
+
 				// Get reference to messages container for scroll preservation
-				const messagesContainer = document.querySelector('[data-messages-container]') || 
+				const messagesContainer =
+					document.querySelector('[data-messages-container]') ||
 					document.querySelector('.overflow-y-scroll');
-					
+
 				if (messagesContainer) {
 					// Store current scroll position relative to bottom
 					const oldScrollTop = messagesContainer.scrollTop;
 					const oldScrollHeight = messagesContainer.scrollHeight;
 					const containerHeight = messagesContainer.clientHeight;
 					const distanceFromBottom = oldScrollHeight - oldScrollTop - containerHeight;
-					
+
 					console.log('📍 Scroll position before:', {
 						oldScrollTop,
 						oldScrollHeight,
 						containerHeight,
 						distanceFromBottom
 					});
-					
+
 					// Convert to StreamingMessage format and prepend to streaming service
 					const streamingMessages = convertedMessages.map(
 						(msg): StreamingMessage => ({
@@ -277,38 +283,38 @@
 							backend_id: msg.backend_id
 						})
 					);
-					
+
 					// Prepend the new messages to the beginning of the array (create new array reference)
 					streamingService.messages = [...streamingMessages, ...streamingService.messages];
-					
+
 					console.log('✅ Added messages to streaming service:', {
 						addedCount: streamingMessages.length,
 						newTotalCount: streamingService.messages.length,
 						firstNewMessage: streamingMessages[0]?.id,
 						lastNewMessage: streamingMessages[streamingMessages.length - 1]?.id
 					});
-					
+
 					// Add to loaded batches for tracking
 					loadedMessagesBatches.push(convertedMessages);
-					
+
 					// Use tick to wait for DOM update
 					await tick();
-					
+
 					// Calculate new scroll position to maintain same distance from bottom
 					const newScrollHeight = messagesContainer.scrollHeight;
 					const newContainerHeight = messagesContainer.clientHeight;
 					const targetScrollTop = newScrollHeight - distanceFromBottom - newContainerHeight;
-					
+
 					console.log('📍 Scroll position after:', {
 						newScrollHeight,
 						newContainerHeight,
 						targetScrollTop,
 						heightAdded: newScrollHeight - oldScrollHeight
 					});
-					
+
 					// Adjust scroll position to maintain the same relative position
 					messagesContainer.scrollTop = targetScrollTop;
-					
+
 					// Add another tick and delay to ensure scroll position sticks
 					await tick();
 					setTimeout(() => {
@@ -318,7 +324,6 @@
 						// Re-enable auto-scroll after scroll position is set
 						suppressAutoScroll = false;
 					}, 150);
-					
 				} else {
 					// Fallback if we can't find the container
 					const streamingMessages = convertedMessages.map(
@@ -337,15 +342,14 @@
 							backend_id: msg.backend_id
 						})
 					);
-					
+
 					streamingService.messages = [...streamingMessages, ...streamingService.messages];
 					loadedMessagesBatches.push(convertedMessages);
 				}
-				
+
 				// Update cursor and hasMore state
 				nextCursor = newCursor;
 				hasMoreMessages = newCursor !== null;
-				
 			}
 		} catch (error) {
 			console.error('Error loading more messages:', error);
@@ -360,7 +364,7 @@
 			}
 		}
 	}
-	
+
 	// Watch for streaming completion - DISABLED to prevent refresh issues
 	// $effect(() => {
 	// 	if (streamingService.connectionStatus === 'closed') {
@@ -383,46 +387,49 @@
 			firstMessage: streamingMessages[0]?.id,
 			lastMessage: streamingMessages[streamingMessages.length - 1]?.id
 		});
-		
+
 		// Check if messages array actually changed to avoid unnecessary work
 		if (streamingMessages === lastStreamingMessages) {
 			console.log('⚠️ displayMessages: Using cached result, no change detected');
 			return Array.from(messageCache.values());
 		}
-		
+
 		console.log('🔄 displayMessages: Processing new messages array');
-		
+
 		const messages: ScribeChatMessage[] = [];
 		const newCache = new Map<string, ScribeChatMessage>();
-		
+
 		streamingMessages.forEach((msg) => {
 			const cached = messageCache.get(msg.id);
-			
+
 			// Check if message content/state actually changed (NEW: using displayedContent and isAnimating)
 			const isAnimatingOrLoading = msg.isAnimating ?? false;
 			const displayContent = msg.displayedContent ?? msg.content; // Fallback to full content if no displayedContent
-			
-			const hasChanged = !cached || 
+
+			const hasChanged =
+				!cached ||
 				cached.loading !== isAnimatingOrLoading ||
 				cached.content !== displayContent ||
 				cached.prompt_tokens !== msg.prompt_tokens ||
 				cached.completion_tokens !== msg.completion_tokens ||
 				cached.error !== msg.error;
-			
+
 			if (hasChanged) {
 				// Only log when not animating to avoid spam
 				if (!msg.isAnimating) {
-					console.log(`🔄 Message ${msg.id.slice(-8)} changed - displayed: ${displayContent.length}chars, full: ${msg.content.length}chars, tokens: ${msg.prompt_tokens}/${msg.completion_tokens}`);
+					console.log(
+						`🔄 Message ${msg.id.slice(-8)} changed - displayed: ${displayContent.length}chars, full: ${msg.content.length}chars, tokens: ${msg.prompt_tokens}/${msg.completion_tokens}`
+					);
 				}
-				
+
 				// Create new message object only if changed (NEW: using displayedContent for UI)
 				const newMessage: ScribeChatMessage = {
 					id: msg.id,
 					session_id: chat?.id ?? 'unknown-session',
-					message_type: msg.sender === 'user' ? 'User' as const : 'Assistant' as const,
+					message_type: msg.sender === 'user' ? ('User' as const) : ('Assistant' as const),
 					content: displayContent, // Use displayedContent for UI rendering
 					created_at: msg.created_at,
-					user_id: msg.sender === 'user' ? user?.id ?? '' : '',
+					user_id: msg.sender === 'user' ? (user?.id ?? '') : '',
 					loading: isAnimatingOrLoading, // Use isAnimating for loading state
 					error: msg.error,
 					retryable: msg.retryable ?? false,
@@ -431,7 +438,7 @@
 					model_name: msg.model_name,
 					backend_id: msg.backend_id
 				};
-				
+
 				newCache.set(msg.id, newMessage);
 				messages.push(newMessage);
 			} else {
@@ -440,16 +447,16 @@
 				messages.push(cached);
 			}
 		});
-		
+
 		// Update cache and reference
 		messageCache = newCache;
 		lastStreamingMessages = streamingMessages;
-		
+
 		// Sort messages by timestamp (oldest first) for proper chronological display
 		messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-		
+
 		// Only log when no messages are animating to avoid spam
-		const hasAnimatingMessages = streamingMessages.some(m => m.isAnimating);
+		const hasAnimatingMessages = streamingMessages.some((m) => m.isAnimating);
 		return messages;
 	});
 
@@ -462,7 +469,6 @@
 	let suggestionsError = $state<string | null>(null);
 	let suggestionsRetryable = $state(false);
 
-
 	// --- Impersonate Response State ---
 	// Removed - impersonate now directly sets input text
 
@@ -472,7 +478,7 @@
 	// --- Token Counter State ---
 	const tokenCounter = useTokenCounter();
 	let showTokenUsage = $state(false);
-	
+
 	// --- Cumulative Usage Tracking ---
 	let cumulativeTokens = $state({
 		input: 0,
@@ -491,9 +497,9 @@
 
 	// Pricing per model (per 1M tokens)
 	const modelPricing = {
-		'gemini-2.5-flash': { input: 0.30, output: 2.50 },
-		'gemini-2.5-pro': { input: 1.25, output: 10.00 },
-		'gemini-2.5-flash-lite-preview': { input: 0.10, output: 0.40 }
+		'gemini-2.5-flash': { input: 0.3, output: 2.5 },
+		'gemini-2.5-pro': { input: 1.25, output: 10.0 },
+		'gemini-2.5-flash-lite-preview': { input: 0.1, output: 0.4 }
 	};
 
 	// Calculate cumulative usage from messages (backend already includes system context)
@@ -502,38 +508,43 @@
 		let inputTokens = 0;
 		let outputTokens = 0;
 		let totalCost = 0;
-		
-		displayMessages.forEach(message => {
+
+		displayMessages.forEach((message) => {
 			// Skip first messages (character greetings) - they shouldn't count toward usage
-			const isFirstMessage = message.id.startsWith('first-message-') || 
+			const isFirstMessage =
+				message.id.startsWith('first-message-') ||
 				(message.message_type === 'Assistant' && message.content === character?.first_mes);
-			
+
 			if (!isFirstMessage) {
 				const messageInputTokens = message.prompt_tokens || 0;
 				const messageOutputTokens = message.completion_tokens || 0;
-				
+
 				if (messageInputTokens > 0 || messageOutputTokens > 0) {
 					inputTokens += messageInputTokens;
 					outputTokens += messageOutputTokens;
-					
+
 					// Calculate cost using the model used for THIS specific message
 					const messageModel = message.model_name || chat?.model_name || 'gemini-2.5-pro';
-					const pricing = modelPricing[messageModel as keyof typeof modelPricing] || { input: 1.25, output: 10.00 };
-					
-					const messageCost = (messageInputTokens / 1_000_000 * pricing.input) + 
-									   (messageOutputTokens / 1_000_000 * pricing.output);
+					const pricing = modelPricing[messageModel as keyof typeof modelPricing] || {
+						input: 1.25,
+						output: 10.0
+					};
+
+					const messageCost =
+						(messageInputTokens / 1_000_000) * pricing.input +
+						(messageOutputTokens / 1_000_000) * pricing.output;
 					totalCost += messageCost;
 				}
 			}
 		});
-		
+
 		cumulativeTokens = {
 			input: inputTokens + suggestedActionsTokens.input,
 			output: outputTokens + suggestedActionsTokens.output,
 			total: inputTokens + outputTokens + suggestedActionsTokens.total,
 			cost: totalCost + suggestedActionsTokens.cost
 		};
-		
+
 		// Token calculation completed
 	});
 	let availablePersonas = $state<UserPersona[]>([]);
@@ -545,13 +556,13 @@
 	// Create strategy based on chat mode
 	let chatModeStrategy = $derived.by(() => {
 		if (!chat) return null;
-		
+
 		// Check if chat_mode exists and is valid
 		if (!chat.chat_mode) {
 			console.error('Chat object missing chat_mode field:', chat);
 			return null;
 		}
-		
+
 		try {
 			return createChatModeStrategy(chat.chat_mode);
 		} catch (error) {
@@ -563,7 +574,7 @@
 	// Create derived placeholder text
 	let placeholderText = $derived.by(() => {
 		const strategy = chatModeStrategy;
-		if (!strategy) return "Send a message...";
+		if (!strategy) return 'Send a message...';
 		return strategy.getMessageInputPlaceholder(character || null);
 	});
 
@@ -674,7 +685,11 @@
 			tokenCountTimeout = setTimeout(async () => {
 				try {
 					const model = await getCurrentChatModel();
-					const result = await tokenCounter.countTokensSimple(chatInput.trim(), model || undefined, false);
+					const result = await tokenCounter.countTokensSimple(
+						chatInput.trim(),
+						model || undefined,
+						false
+					);
 					// Only show if we actually got a meaningful result
 					showTokenUsage = !!(result && result.total > 0);
 				} catch (error) {
@@ -714,7 +729,7 @@
 			isLoadingSuggestions = true;
 			suggestionsError = null;
 			suggestionsRetryable = false;
-			
+
 			const result = await apiClient.fetchSuggestedActions(chat.id);
 
 			if (result.isOk()) {
@@ -732,8 +747,9 @@
 					const tokenUsage = responseData.token_usage;
 					// Use Flash pricing since suggested actions always use gemini-2.5-flash
 					const flashPricing = modelPricing['gemini-2.5-flash'];
-					const cost = (tokenUsage.input_tokens / 1_000_000 * flashPricing.input) + 
-								(tokenUsage.output_tokens / 1_000_000 * flashPricing.output);
+					const cost =
+						(tokenUsage.input_tokens / 1_000_000) * flashPricing.input +
+						(tokenUsage.output_tokens / 1_000_000) * flashPricing.output;
 
 					suggestedActionsTokens = {
 						input: tokenUsage.input_tokens,
@@ -752,18 +768,25 @@
 			} else {
 				const error = result.error;
 				console.error('Error fetching suggested actions:', error.message);
-				
+
 				// Clean up error message for user display
 				let cleanErrorMessage = error.message;
-				if (error.message.includes('PropertyNotFound("/content/parts")') || error.message.includes('PropertyNotFound("/candidates")')) {
-					cleanErrorMessage = 'AI safety filters blocked the suggestion request. Try again or continue chatting.';
-				} else if (error.message.includes('Failed to parse stream data') || error.message.includes('trailing characters')) {
+				if (
+					error.message.includes('PropertyNotFound("/content/parts")') ||
+					error.message.includes('PropertyNotFound("/candidates")')
+				) {
+					cleanErrorMessage =
+						'AI safety filters blocked the suggestion request. Try again or continue chatting.';
+				} else if (
+					error.message.includes('Failed to parse stream data') ||
+					error.message.includes('trailing characters')
+				) {
 					cleanErrorMessage = 'AI service returned malformed data. Please try again.';
 				} else if (error.message.includes('Gemini API error:')) {
 					// Remove redundant "Gemini API error:" prefix
 					cleanErrorMessage = error.message.replace('Gemini API error: ', '');
 				}
-				
+
 				suggestionsError = cleanErrorMessage;
 				suggestionsRetryable = true;
 				dynamicSuggestedActions = [];
@@ -772,15 +795,22 @@
 		} catch (err: any) {
 			// Catch any unexpected errors during the API client call itself
 			console.error('Error fetching suggested actions:', err);
-			
+
 			// Clean up error message for user display
 			let cleanErrorMessage = err.message || 'An unexpected error occurred.';
-			if (cleanErrorMessage.includes('PropertyNotFound("/content/parts")') || cleanErrorMessage.includes('PropertyNotFound("/candidates")')) {
-				cleanErrorMessage = 'AI safety filters blocked the suggestion request. Try again or continue chatting.';
-			} else if (cleanErrorMessage.includes('Failed to parse stream data') || cleanErrorMessage.includes('trailing characters')) {
+			if (
+				cleanErrorMessage.includes('PropertyNotFound("/content/parts")') ||
+				cleanErrorMessage.includes('PropertyNotFound("/candidates")')
+			) {
+				cleanErrorMessage =
+					'AI safety filters blocked the suggestion request. Try again or continue chatting.';
+			} else if (
+				cleanErrorMessage.includes('Failed to parse stream data') ||
+				cleanErrorMessage.includes('trailing characters')
+			) {
 				cleanErrorMessage = 'AI service returned malformed data. Please try again.';
 			}
-			
+
 			suggestionsError = cleanErrorMessage;
 			suggestionsRetryable = true;
 			dynamicSuggestedActions = [];
@@ -793,26 +823,24 @@
 	// Check if this is the first user message in the chat
 	function isFirstUserMessage(): boolean {
 		// Check if there are any user messages in the current messages
-		const hasUserMessage = streamingService.messages.some(
-			msg => msg.sender === 'user'
-		);
+		const hasUserMessage = streamingService.messages.some((msg) => msg.sender === 'user');
 		return !hasUserMessage;
 	}
-	
+
 	// Handle chronicle opt-in choice
 	function handleChronicleChoice(enableChronicle: boolean, rememberChoice: boolean) {
 		if (rememberChoice && browser) {
 			localStorage.setItem('chroniclePreference', String(enableChronicle));
 			chroniclePreference = enableChronicle;
 		}
-		
+
 		showChronicleOptIn = false;
-		
+
 		if (enableChronicle && chat?.id) {
 			// Create chronicle and associate with chat
 			createChronicleForChat();
 		}
-		
+
 		// Send the pending message
 		if (pendingMessage) {
 			const message = pendingMessage;
@@ -820,31 +848,49 @@
 			sendMessageInternal(message);
 		}
 	}
-	
+
 	// Create chronicle and associate with current chat
 	async function createChronicleForChat() {
 		if (!chat?.id) return;
-		
+
 		try {
-			// Create a new chronicle
-			const chronicleName = chat.title || 'New Chronicle';
+			// Generate an AI-powered chronicle name
+			let chronicleName = chat.title || 'New Chronicle';
+
+			try {
+				console.log('Generating AI chronicle name for chat:', chat.id);
+				const nameResult = await apiClient.generateChronicleName(chat.id);
+
+				if (nameResult.isOk()) {
+					chronicleName = nameResult.value.name;
+					console.log('Generated chronicle name:', chronicleName);
+				} else {
+					console.warn('Failed to generate AI chronicle name, using fallback:', nameResult.error);
+					// Continue with fallback name
+				}
+			} catch (error) {
+				console.warn('Error generating AI chronicle name, using fallback:', error);
+				// Continue with fallback name
+			}
+
+			// Create a new chronicle with the generated/fallback name
 			const chronicleResult = await apiClient.createChronicle({
 				name: chronicleName,
 				description: `Chronicle for ${chat.title || 'chat session'}`
 			});
-			
+
 			if (chronicleResult.isOk()) {
 				const chronicle = chronicleResult.value;
-				
+
 				// Update chat to associate with the chronicle
 				const updateResult = await apiClient.updateChatSessionSettings(chat.id, {
 					chronicle_id: chronicle.id
 				});
-				
+
 				if (updateResult.isOk()) {
 					// Update local chat object
 					chat.player_chronicle_id = chronicle.id;
-					toast.success('Chronicle created and linked to chat');
+					toast.success(`Chronicle "${chronicleName}" created and linked to chat`);
 				} else {
 					console.error('Failed to link chronicle to chat:', updateResult.error);
 					toast.error('Failed to link chronicle to chat');
@@ -864,14 +910,14 @@
 		console.log('🚨🚨🚨 SENDMESSAGE START - content:', content.slice(0, 50) + '...');
 		console.log('🚨 sendMessage called with content:', content.slice(0, 50) + '...');
 		console.log('🚨 sendMessage STACK TRACE:', new Error().stack);
-		
+
 		dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
 
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
 			return;
 		}
-		
+
 		// Check if we need to show chronicle opt-in
 		// Show if: no chronicle, first user message, and no saved preference
 		if (!chat.player_chronicle_id && isFirstUserMessage() && chroniclePreference === null) {
@@ -879,15 +925,15 @@
 			showChronicleOptIn = true;
 			return;
 		}
-		
+
 		// If user has a saved preference and no chronicle, handle it automatically
 		if (!chat.player_chronicle_id && isFirstUserMessage() && chroniclePreference === true) {
 			await createChronicleForChat();
 		}
-		
+
 		sendMessageInternal(content);
 	}
-	
+
 	async function sendMessageInternal(content: string) {
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
@@ -929,7 +975,7 @@
 		// DEBUG: Add stack trace to identify unwanted calls
 		console.log('🚨 generateAIResponse called');
 		console.log('🚨 generateAIResponse STACK TRACE:', new Error().stack);
-		
+
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
 			return;
@@ -945,7 +991,7 @@
 
 		try {
 			// Use StreamingService - it will handle the last user message from history
-			const lastUserMessage = historyToSend.filter(h => h.role === 'user').pop();
+			const lastUserMessage = historyToSend.filter((h) => h.role === 'user').pop();
 			if (!lastUserMessage) {
 				toast.error('No user message found to generate response.');
 				return;
@@ -982,7 +1028,7 @@
 		// DEBUG: Add stack trace to identify unwanted calls
 		console.log('🚨 regenerateResponse called for message:', _originalMessageId);
 		console.log('🚨 regenerateResponse STACK TRACE:', new Error().stack);
-		
+
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
 			return;
@@ -1004,7 +1050,7 @@
 			}));
 
 		// Find the last user message to regenerate response for
-		const lastUserMessage = historyToSend.filter(h => h.role === 'user').pop();
+		const lastUserMessage = historyToSend.filter((h) => h.role === 'user').pop();
 		if (!lastUserMessage) {
 			toast.error('No user message found to regenerate response.');
 			return;
@@ -1046,13 +1092,15 @@
 		// DEBUG: Add stack trace to identify unwanted calls
 		console.log('🚨 handleRetryMessage called for:', messageId);
 		console.log('🚨 handleRetryMessage STACK TRACE:', new Error().stack);
-		
+
 		if (!chat?.id || isLoading) return;
 
 		console.log('Retry message:', messageId);
 
 		// Find the assistant message to retry
-		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex((msg) => msg.id === messageId);
+		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+			(msg) => msg.id === messageId
+		);
 		if (messageIndex === -1) return;
 
 		const targetMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
@@ -1118,15 +1166,22 @@
 
 	async function handleSaveEditedMessage(messageId: string, newContent: string) {
 		// DEBUG: Add stack trace to identify unwanted calls
-		console.log('🚨 handleSaveEditedMessage called for:', messageId, 'content:', newContent.slice(0, 50) + '...');
+		console.log(
+			'🚨 handleSaveEditedMessage called for:',
+			messageId,
+			'content:',
+			newContent.slice(0, 50) + '...'
+		);
 		console.log('🚨 handleSaveEditedMessage STACK TRACE:', new Error().stack);
-		
+
 		console.log('Save edited message:', messageId, 'New content:', newContent);
 
 		if (!chat?.id || isLoading) return;
 
 		// Find the message index
-		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex((msg) => msg.id === messageId);
+		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+			(msg) => msg.id === messageId
+		);
 		if (messageIndex === -1) return;
 
 		const targetMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
@@ -1193,7 +1248,7 @@
 		// DEBUG: Add stack trace to identify unwanted calls
 		console.log('🚨 handleNextVariant called for:', messageId);
 		console.log('🚨 handleNextVariant STACK TRACE:', new Error().stack);
-		
+
 		console.log('Next variant / Regenerate:', messageId);
 
 		const variants = messageVariants.get(messageId) || [];
@@ -1224,7 +1279,9 @@
 		console.log('Retry failed message:', messageId);
 
 		// Find the failed assistant message
-		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex((msg) => msg.id === messageId);
+		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+			(msg) => msg.id === messageId
+		);
 		if (messageIndex === -1) return;
 
 		const failedMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
@@ -1279,7 +1336,9 @@
 		console.log('Delete message:', messageId);
 
 		// Find the message to delete
-		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex((msg) => msg.id === messageId);
+		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+			(msg) => msg.id === messageId
+		);
 		if (messageIndex === -1) return;
 
 		// Get the message before removing it
@@ -1312,15 +1371,15 @@
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
 	<ChatHeader {user} {chat} {readonly} />
 	{#key displayMessages.length}
-		{console.log('🎯 About to render Messages component:', { 
-			displayMessagesCount: displayMessages.length, 
-			isLoadingMore, 
+		{console.log('🎯 About to render Messages component:', {
+			displayMessagesCount: displayMessages.length,
+			isLoadingMore,
 			hasMoreMessages,
 			firstDisplayMessage: displayMessages[0]?.id,
-			lastDisplayMessage: displayMessages[displayMessages.length - 1]?.id 
+			lastDisplayMessage: displayMessages[displayMessages.length - 1]?.id
 		})}
 	{/key}
-	
+
 	<Messages
 		{readonly}
 		loading={isLoading}
@@ -1398,26 +1457,31 @@
 			</div>
 		{/if}
 
-
 		<!-- Suggested Actions Error -->
 		{#if suggestionsError && !isLoading && !isLoadingSuggestions}
 			<div class="mx-auto w-full px-4 pb-2 md:max-w-3xl">
-				<div class="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/20">
+				<div
+					class="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/20"
+				>
 					<div class="flex items-start gap-3">
-						<div class="flex-shrink-0 text-red-500 mt-0.5">
-							<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-								<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+						<div class="mt-0.5 flex-shrink-0 text-red-500">
+							<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+								<path
+									fill-rule="evenodd"
+									d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"
+									clip-rule="evenodd"
+								/>
 							</svg>
 						</div>
 						<div class="flex-1">
-							<p class="text-red-700 dark:text-red-300 font-medium text-sm">
+							<p class="text-sm font-medium text-red-700 dark:text-red-300">
 								Failed to load suggestions
 							</p>
-							<p class="text-red-600 dark:text-red-400 text-sm mt-1">
+							<p class="mt-1 text-sm text-red-600 dark:text-red-400">
 								{suggestionsError}
 							</p>
 							{#if suggestionsRetryable}
-								<div class="flex gap-2 mt-3">
+								<div class="mt-3 flex gap-2">
 									<button
 										type="button"
 										onclick={() => {
@@ -1425,10 +1489,15 @@
 											suggestionsRetryable = false;
 											fetchSuggestedActions();
 										}}
-										class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 dark:text-red-300 dark:bg-red-950/30 dark:border-red-700 dark:hover:bg-red-950/50"
+										class="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-red-100 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 dark:border-red-700 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
 									>
-										<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+										<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+											/>
 										</svg>
 										Retry
 									</button>
@@ -1438,7 +1507,7 @@
 											suggestionsError = null;
 											suggestionsRetryable = false;
 										}}
-										class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1 dark:text-gray-300 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700"
+										class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
 									>
 										Dismiss
 									</button>
@@ -1450,7 +1519,6 @@
 			</div>
 		{/if}
 
-
 		<!-- Message Input Form -->
 		<div class="mx-auto w-full px-4 pb-4 md:max-w-3xl md:pb-6">
 			<form
@@ -1461,21 +1529,21 @@
 				}}
 			>
 				{#if !readonly}
-					<MultimodalInput 
-						bind:value={chatInput} 
-						{isLoading} 
-						{stopGeneration} 
+					<MultimodalInput
+						bind:value={chatInput}
+						{isLoading}
+						{stopGeneration}
 						chatId={chat?.id}
 						placeholder={placeholderText}
 						onImpersonate={(response) => {
 							chatInput = response;
 						}}
 					/>
-					
+
 					<!-- Token Usage Display -->
 					{#if showTokenUsage && tokenCounter.data}
 						<div class="mt-2 flex justify-end">
-							<TokenUsageDisplay 
+							<TokenUsageDisplay
 								promptTokens={tokenCounter.data.total}
 								completionTokens={0}
 								modelName={chat?.model_name}
@@ -1484,14 +1552,15 @@
 							/>
 						</div>
 					{/if}
-					
+
 					<!-- Cumulative Session Usage Display -->
 					{#if cumulativeTokens.total > 0}
-						{@const formatSessionCost = (cost: number) => cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`}
-						
-						<div class="mt-2 space-y-1 text-xs text-muted-foreground border-t pt-2">
+						{@const formatSessionCost = (cost: number) =>
+							cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`}
+
+						<div class="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
 							<!-- Main breakdown -->
-							<div class="flex justify-between items-center">
+							<div class="flex items-center justify-between">
 								<span class="font-medium">Session Usage:</span>
 								<div class="flex items-center gap-2">
 									<span class="text-blue-600 dark:text-blue-400">
@@ -1503,12 +1572,12 @@
 									<span class="font-medium">
 										{cumulativeTokens.total} total
 									</span>
-									<span class="text-amber-600 dark:text-amber-400 font-mono font-medium">
+									<span class="font-mono font-medium text-amber-600 dark:text-amber-400">
 										{formatSessionCost(cumulativeTokens.cost)}
 									</span>
 								</div>
 							</div>
-							
+
 							<!-- Note about system context -->
 							<div class="text-center text-xs opacity-75">
 								Hover messages for individual token counts & costs • Using per-message model pricing
@@ -1537,7 +1606,4 @@
 {/if}
 
 <!-- Chronicle Opt-in Dialog -->
-<ChronicleOptInDialog 
-	bind:open={showChronicleOptIn}
-	onConfirm={handleChronicleChoice}
-/>
+<ChronicleOptInDialog bind:open={showChronicleOptIn} onConfirm={handleChronicleChoice} />

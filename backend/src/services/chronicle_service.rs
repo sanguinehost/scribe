@@ -1,7 +1,7 @@
 use deadpool_diesel::postgres::Pool as DeadpoolPgPool;
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
-    result::Error as DieselError,
+    result::Error as DieselError, OptionalExtension,
 };
 use tracing::{error, info, instrument};
 use uuid::Uuid;
@@ -655,6 +655,104 @@ impl ChronicleService {
 
         info!("Linked chat session {} to chronicle {} for user {}", session_id, chronicle_id, user_id);
         Ok(())
+    }
+
+    /// Get the character name for a chat session
+    #[instrument(skip(self), fields(session_id = %session_id))]
+    pub async fn get_chat_session_character_name(
+        &self,
+        session_id: Uuid,
+    ) -> Result<Option<String>, AppError> {
+        let conn = self.db_pool.get().await.map_err(|e| {
+            error!("Failed to get database connection: {}", e);
+            AppError::DbPoolError(format!("Connection pool error: {e}"))
+        })?;
+
+        // First get the character_id from the chat session
+        let character_id: Option<Uuid> = conn
+            .interact(move |conn| {
+                chat_sessions::table
+                    .filter(chat_sessions::id.eq(session_id))
+                    .select(chat_sessions::character_id)
+                    .first::<Option<Uuid>>(conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| {
+                error!("Database interaction error when getting character_id: {}", e);
+                AppError::DbInteractError(format!("Failed to get character_id: {e}"))
+            })?
+            .map_err(|e| {
+                error!("Diesel error when getting character_id: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to get character_id: {e}"))
+            })?
+            .flatten();
+
+        // If we have a character_id, get the character name
+        let character_name = if let Some(char_id) = character_id {
+            let conn = self.db_pool.get().await.map_err(|e| {
+                error!("Failed to get database connection: {}", e);
+                AppError::DbPoolError(format!("Connection pool error: {e}"))
+            })?;
+            
+            conn.interact(move |conn| {
+                use crate::schema::characters;
+                
+                characters::table
+                    .filter(characters::id.eq(char_id))
+                    .select(characters::name)
+                    .first::<String>(conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| {
+                error!("Database interaction error when getting character name: {}", e);
+                AppError::DbInteractError(format!("Failed to get character name: {e}"))
+            })?
+            .map_err(|e| {
+                error!("Diesel error when getting character name: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to get character name: {e}"))
+            })?
+        } else {
+            None
+        };
+
+        info!("Chat session {} has character_name: {:?}", session_id, character_name);
+        Ok(character_name)
+    }
+
+    /// Get the chronicle ID linked to a chat session
+    #[instrument(skip(self), fields(session_id = %session_id))]
+    pub async fn get_chat_session_chronicle(
+        &self,
+        session_id: Uuid,
+    ) -> Result<Option<Uuid>, AppError> {
+        let conn = self.db_pool.get().await.map_err(|e| {
+            error!("Failed to get database connection: {}", e);
+            AppError::DbPoolError(format!("Connection pool error: {e}"))
+        })?;
+
+        let chronicle_id = conn
+            .interact(move |conn| {
+                chat_sessions::table
+                    .filter(chat_sessions::id.eq(session_id))
+                    .select(chat_sessions::player_chronicle_id)
+                    .first::<Option<Uuid>>(conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| {
+                error!("Database interaction error when getting chat session chronicle: {}", e);
+                AppError::DbInteractError(format!("Failed to get chat session chronicle: {e}"))
+            })?
+            .map_err(|e| {
+                error!("Diesel error when getting chat session chronicle: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to get chat session chronicle: {e}"))
+            })?
+            .flatten();
+
+        info!("Chat session {} has chronicle_id: {:?}", session_id, chronicle_id);
+        Ok(chronicle_id)
     }
 
     /// Unlink a chat session from a chronicle
