@@ -549,6 +549,8 @@ async fn fetch_paginated_chat_messages(
             );
             let mut query = chat_messages::table
                 .filter(chat_messages::session_id.eq(chat_id))
+                .filter(chat_messages::superseded_at.is_null()) // Only get active (non-superseded) messages
+                .filter(chat_messages::status.eq("completed")) // Only get completed messages
                 .order_by(chat_messages::created_at.desc()) // Order by descending for reverse pagination
                 .limit(limit)
                 .select(Message::as_select())
@@ -811,6 +813,8 @@ pub async fn create_message_handler(
             user_dek_secret_box: user_dek_arc.clone(),
             model_name: chat.model_name.clone(),
             raw_prompt_debug: None, // Manual message creation doesn't need raw prompt debug
+            status: crate::models::chats::MessageStatus::Completed,
+            error_message: None,
         })
         .await?;
 
@@ -834,6 +838,9 @@ pub async fn create_message_handler(
         raw_prompt_ciphertext: saved_db_message.raw_prompt_ciphertext,
         raw_prompt_nonce: saved_db_message.raw_prompt_nonce,
         model_name: saved_db_message.model_name.clone(),
+        status: saved_db_message.status,
+        error_message: saved_db_message.error_message,
+        superseded_at: saved_db_message.superseded_at,
     };
     let client_message =
         message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;

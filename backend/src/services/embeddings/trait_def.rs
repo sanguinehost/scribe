@@ -58,6 +58,14 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         user_id: Uuid,
     ) -> Result<(), AppError>;
 
+    /// Deletes all chronicle event chunks associated with a specific chronicle.
+    async fn delete_chronicle_events_by_chronicle_id(
+        &self,
+        state: Arc<AppState>,
+        chronicle_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError>;
+
     /// Retrieves relevant chunks based on a query.
     async fn retrieve_relevant_chunks(
         &self,

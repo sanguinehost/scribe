@@ -51,6 +51,30 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         info!("Starting embedding process for chat message");
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
+        
+        // Fetch the session to get the chronicle_id
+        let chronicle_id = match crate::services::chat::session_management::get_chat_session_by_id(
+            &state.pool,
+            message.user_id,
+            message.session_id,
+        )
+        .await
+        {
+            Ok(session) => {
+                debug!(
+                    "Fetched session for message embedding, chronicle_id: {:?}",
+                    session.player_chronicle_id
+                );
+                session.player_chronicle_id
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to fetch session for chronicle_id: {}. Proceeding without chronicle_id.",
+                    e
+                );
+                None
+            }
+        };
 
         let content_to_embed = match (&session_dek, &message.content_nonce) {
             (Some(dek), Some(nonce_bytes))
@@ -157,6 +181,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
                 session_id: message.session_id,
+                chronicle_id, // Include the chronicle_id from the session
                 user_id: message.user_id, // Added user_id from the message
                 speaker: speaker_str,
                 timestamp: message.created_at,
@@ -1118,6 +1143,89 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         info!(
             "Successfully deleted chunks for chronicle event {} for user {}",
             event_id, user_id
+        );
+        Ok(())
+    }
+
+    /// Deletes all chronicle event chunks associated with a specific chronicle.
+    /// 
+    /// This method is used when deleting an entire chronicle to ensure all associated
+    /// vector embeddings are cleaned up from Qdrant.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `state` - Application state containing Qdrant service
+    /// * `chronicle_id` - ID of the chronicle whose events should be deleted
+    /// * `user_id` - ID of the user who owns the chronicle (for security)
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `AppError::VectorDbError` if Qdrant deletion fails.
+    #[instrument(skip_all, fields(chronicle_id = %chronicle_id, user_id = %user_id))]
+    async fn delete_chronicle_events_by_chronicle_id(
+        &self,
+        state: Arc<AppState>,
+        chronicle_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        info!("Attempting to delete all chronicle event chunks for chronicle {}", chronicle_id);
+        
+        let qdrant_service = &state.qdrant_service;
+        
+        // Create filter to match all chronicle events for this chronicle and user
+        let filter = Filter {
+            must: vec![
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "user_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "chronicle_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(chronicle_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "source_type".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword("chronicle_event".to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+            ],
+            ..Default::default()
+        };
+        
+        // Delete all matching points from Qdrant
+        qdrant_service
+            .delete_points_by_filter(filter.clone())
+            .await
+            .map_err(|e| {
+                error!(
+                    chronicle_id = %chronicle_id,
+                    user_id = %user_id,
+                    error = %e,
+                    "Failed to delete chronicle event chunks from Qdrant"
+                );
+                AppError::VectorDbError(format!(
+                    "Failed to delete chronicle event chunks for chronicle {}: {}",
+                    chronicle_id, e
+                ))
+            })?;
+        
+        info!(
+            "Successfully deleted all chronicle event chunks for chronicle {} and user {}",
+            chronicle_id, user_id
         );
         Ok(())
     }

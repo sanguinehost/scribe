@@ -49,6 +49,7 @@ pub struct ContextEnrichmentResult {
     pub total_tokens_used: u32,
     pub execution_time_ms: u64,
     pub model_used: String,
+    pub analysis_id: Option<Uuid>, // ID of the stored analysis for later updates
 }
 
 /// A search query planned by the agent
@@ -115,9 +116,11 @@ impl ContextEnrichmentAgent {
         &self,
         session_id: Uuid,
         user_id: Uuid,
+        chronicle_id: Option<Uuid>, // Added for scoped search
         messages: &[(String, String)], // (role, content) pairs
         mode: EnrichmentMode,
         session_dek: &[u8],
+        message_id: Uuid, // Required message ID to link analysis to specific message
     ) -> Result<ContextEnrichmentResult, AppError> {
         let start_time = Instant::now();
         let mut execution_log = AgentExecutionLog {
@@ -130,104 +133,129 @@ impl ContextEnrichmentAgent {
             "Starting context enrichment for session {} in {:?} mode",
             session_id, mode
         );
-
-        // Step 1: Planning - Analyze conversation and plan searches
-        let (agent_reasoning, planned_searches, planning_step) = 
-            self.plan_searches(messages, mode).await?;
-        execution_log.steps.push(planning_step);
-
-        // Step 2: Execute searches
-        let mut all_search_results = Vec::new();
-        for search in &planned_searches {
-            let step_start = Instant::now();
-            
-            match self.execute_search(search, user_id, None).await {
-                Ok((results, tokens)) => {
-                    all_search_results.push(results.clone());
-                    
-                    let search_step = AgentStep {
-                        step_number: execution_log.steps.len() as u32 + 1,
-                        timestamp: Utc::now(),
-                        action_type: "search".to_string(),
-                        thought: format!("Searching for '{}' because: {}", search.query, search.reason),
-                        tool_call: Some(ToolCall {
-                            tool_name: "search_knowledge_base".to_string(),
-                            parameters: json!({
-                                "query": search.query,
-                                "search_type": search.search_type,
-                                "limit": 10,
-                                "user_id": user_id.to_string()  // SECURITY: Log user_id in audit trail
-                            }),
-                        }),
-                        result: Some(results),
-                        tokens_used: tokens,
-                        duration_ms: step_start.elapsed().as_millis() as u64,
-                    };
-                    execution_log.steps.push(search_step);
-                }
-                Err(e) => {
-                    warn!("Search failed for query '{}': {}", search.query, e);
-                    // Log the failure but continue with other searches
-                    let error_step = AgentStep {
-                        step_number: execution_log.steps.len() as u32 + 1,
-                        timestamp: Utc::now(),
-                        action_type: "search_error".to_string(),
-                        thought: format!("Search failed for '{}'", search.query),
-                        tool_call: None,
-                        result: Some(json!({"error": e.to_string()})),
-                        tokens_used: 0,
-                        duration_ms: step_start.elapsed().as_millis() as u64,
-                    };
-                    execution_log.steps.push(error_step);
-                }
-            }
-        }
-
-        // Step 3: Synthesize results into useful context
-        let (retrieved_context, analysis_summary, synthesis_step) = 
-            self.synthesize_results(&all_search_results, messages).await?;
-        execution_log.steps.push(synthesis_step);
-
-        // Calculate totals
-        let total_tokens: u32 = execution_log.steps.iter().map(|s| s.tokens_used).sum();
-        let execution_time_ms = start_time.elapsed().as_millis() as u64;
-        execution_log.total_duration_ms = execution_time_ms;
-
-        info!(
-            "Context enrichment completed: {} tokens, {}ms, {} search results",
-            total_tokens,
-            execution_time_ms,
-            all_search_results.len()
-        );
-
-        // Store the analysis for audit trail (encrypted)
-        self.store_analysis(
+        
+        // First, supersede any failed analyses for this session and type
+        self.supersede_failed_analyses(session_id, mode).await?;
+        
+        // Create a pending analysis record to track this attempt
+        let analysis_id = self.create_pending_analysis(
             session_id,
             user_id,
-            &agent_reasoning,
-            &planned_searches,
-            &execution_log,
-            &retrieved_context,
-            &analysis_summary,
-            total_tokens,
-            execution_time_ms,
             mode,
             session_dek,
+            message_id,
         ).await?;
 
-        Ok(ContextEnrichmentResult {
-            session_id,
-            user_id,
-            mode,
-            agent_reasoning,
-            planned_searches,
-            execution_log,
-            retrieved_context,
-            analysis_summary,
-            total_tokens_used: total_tokens,
-            execution_time_ms,
-            model_used: self.model.clone(),
-        })
+        // Try to execute the enrichment, handling errors gracefully
+        let result: Result<(String, Vec<PlannedSearch>, AgentExecutionLog, String, String, u32, u64), AppError> = async {
+            // Step 1: Planning - Analyze conversation and plan searches
+            let (agent_reasoning, planned_searches, planning_step) = 
+                self.plan_searches(messages, mode).await?;
+            execution_log.steps.push(planning_step);
+
+            // Step 2: Execute searches
+            let mut all_search_results = Vec::new();
+            for search in &planned_searches {
+                let step_start = Instant::now();
+                
+                match self.execute_search(search, user_id, session_id, chronicle_id).await {
+                    Ok((results, tokens)) => {
+                        all_search_results.push(results.clone());
+                        
+                        let search_step = AgentStep {
+                            step_number: execution_log.steps.len() as u32 + 1,
+                            timestamp: Utc::now(),
+                            action_type: "search".to_string(),
+                            thought: format!("Searching for '{}' because: {}", search.query, search.reason),
+                            tool_call: Some(ToolCall {
+                                tool_name: "search_knowledge_base".to_string(),
+                                parameters: json!({
+                                    "query": search.query,
+                                    "search_type": search.search_type,
+                                    "limit": 10,
+                                    "user_id": user_id.to_string()  // SECURITY: Log user_id in audit trail
+                                }),
+                            }),
+                            result: Some(results),
+                            tokens_used: tokens,
+                            duration_ms: step_start.elapsed().as_millis() as u64,
+                        };
+                        execution_log.steps.push(search_step);
+                    }
+                    Err(e) => {
+                        warn!("Search failed for query '{}': {}", search.query, e);
+                        // Log the failure but continue with other searches
+                        let error_step = AgentStep {
+                            step_number: execution_log.steps.len() as u32 + 1,
+                            timestamp: Utc::now(),
+                            action_type: "search_error".to_string(),
+                            thought: format!("Search failed for '{}'", search.query),
+                            tool_call: None,
+                            result: Some(json!({"error": e.to_string()})),
+                            tokens_used: 0,
+                            duration_ms: step_start.elapsed().as_millis() as u64,
+                        };
+                        execution_log.steps.push(error_step);
+                    }
+                }
+            }
+
+            // Step 3: Synthesize results into useful context
+            let (retrieved_context, analysis_summary, synthesis_step) = 
+                self.synthesize_results(&all_search_results, messages).await?;
+            execution_log.steps.push(synthesis_step);
+
+            // Calculate totals
+            let total_tokens: u32 = execution_log.steps.iter().map(|s| s.tokens_used).sum();
+            let execution_time_ms = start_time.elapsed().as_millis() as u64;
+            execution_log.total_duration_ms = execution_time_ms;
+
+            info!(
+                "Context enrichment completed: {} tokens, {}ms, {} search results",
+                total_tokens,
+                execution_time_ms,
+                all_search_results.len()
+            );
+
+            // Update the analysis with results (changes status from pending to success)
+            self.update_analysis(
+                analysis_id,
+                &agent_reasoning,
+                &planned_searches,
+                &execution_log,
+                &retrieved_context,
+                &analysis_summary,
+                total_tokens,
+                execution_time_ms,
+                session_dek,
+            ).await?;
+
+            Ok((agent_reasoning, planned_searches, execution_log, retrieved_context, analysis_summary, total_tokens, execution_time_ms))
+        }.await;
+
+        match result {
+            Ok((agent_reasoning, planned_searches, execution_log, retrieved_context, analysis_summary, total_tokens, execution_time_ms)) => {
+                Ok(ContextEnrichmentResult {
+                    session_id,
+                    user_id,
+                    mode,
+                    agent_reasoning,
+                    planned_searches,
+                    execution_log,
+                    retrieved_context,
+                    analysis_summary,
+                    total_tokens_used: total_tokens,
+                    execution_time_ms,
+                    model_used: self.model.clone(),
+                    analysis_id: Some(analysis_id),
+                })
+            }
+            Err(e) => {
+                // Mark the analysis as failed
+                self.mark_analysis_failed(analysis_id, &e.to_string()).await?;
+                Err(e)
+            }
+        }
     }
 
     /// Step 1: Plan what searches to execute based on the conversation
@@ -504,21 +532,31 @@ Be specific with character names, locations, and key concepts mentioned.",
     async fn execute_search(
         &self, 
         search: &PlannedSearch, 
-        user_id: Uuid, 
+        user_id: Uuid,
+        session_id: Uuid,
         chronicle_id: Option<Uuid>
     ) -> Result<(Value, u32), AppError> {
-        debug!("Executing search: '{}' for user {}", search.query, user_id);
+        debug!("Executing search: '{}' for user {}, session: {}, chronicle: {:?}", 
+               search.query, user_id, session_id, chronicle_id);
 
         let mut params = json!({
             "query": search.query,
             "search_type": search.search_type,
             "limit": 10,
-            "user_id": user_id.to_string()  // SECURITY: Pass user_id for filtering
+            "user_id": user_id.to_string()  // SECURITY: Always pass user_id for filtering
         });
 
-        // Add chronicle_id if provided for prioritization
+        // Determine search scope:
+        // - If chronicle exists, search across all sessions in that chronicle (broader scope)
+        // - If no chronicle, search only within the current session (narrower scope)
         if let Some(chron_id) = chronicle_id {
+            // Chronicle-scoped search: finds content from all sessions linked to this chronicle
             params["chronicle_id"] = json!(chron_id.to_string());
+            debug!("Using chronicle-scoped search for chronicle {}", chron_id);
+        } else {
+            // Session-scoped search: only finds content from this specific session
+            params["session_id"] = json!(session_id.to_string());
+            debug!("Using session-scoped search for session {} (no chronicle)", session_id);
         }
 
         let result = self.search_tool
@@ -717,11 +755,95 @@ Be specific with character names, locations, and key concepts mentioned.",
         Ok((retrieved_context, fallback_summary, synthesis_step))
     }
 
-    /// Store the analysis in the database for audit trail
-    async fn store_analysis(
+    /// Supersede any failed analyses for this session
+    async fn supersede_failed_analyses(
+        &self,
+        session_id: Uuid,
+        mode: EnrichmentMode,
+    ) -> Result<(), AppError> {
+        use crate::models::{AgentContextAnalysis, AnalysisType};
+        
+        let analysis_type = match mode {
+            EnrichmentMode::PreProcessing => AnalysisType::PreProcessing,
+            EnrichmentMode::PostProcessing => AnalysisType::PostProcessing,
+        };
+        
+        // Get database connection
+        let conn = self.state.pool.get()
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get DB connection: {}", e)))?;
+        
+        // Supersede failed analyses
+        let count = conn.interact(move |conn| {
+            AgentContextAnalysis::supersede_failed_analyses(conn, session_id, analysis_type)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to interact with DB: {}", e)))??;
+        
+        if count > 0 {
+            info!("Superseded {} failed analyses for session {} in {:?} mode", count, session_id, mode);
+        }
+        
+        Ok(())
+    }
+
+    /// Create a new pending analysis record
+    async fn create_pending_analysis(
         &self,
         session_id: Uuid,
         user_id: Uuid,
+        mode: EnrichmentMode,
+        session_dek: &[u8],
+        message_id: Uuid,
+    ) -> Result<Uuid, AppError> {
+        use diesel::prelude::*;
+        use crate::schema::agent_context_analysis;
+        use crate::models::{AnalysisType, AnalysisStatus};
+        
+        // Convert session_dek to SecretBox
+        let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
+        
+        let analysis_type_str = match mode {
+            EnrichmentMode::PreProcessing => AnalysisType::PreProcessing,
+            EnrichmentMode::PostProcessing => AnalysisType::PostProcessing,
+        }.to_string();
+        
+        // Get database connection
+        let conn = self.state.pool.get()
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get DB connection: {}", e)))?;
+        
+        // Create a minimal pending analysis record
+        let analysis_id = conn.interact(move |conn| {
+            diesel::insert_into(agent_context_analysis::table)
+                .values((
+                    agent_context_analysis::id.eq(Uuid::new_v4()),
+                    agent_context_analysis::chat_session_id.eq(session_id),
+                    agent_context_analysis::user_id.eq(user_id),
+                    agent_context_analysis::analysis_type.eq(analysis_type_str),
+                    agent_context_analysis::message_id.eq(message_id),
+                    agent_context_analysis::status.eq(AnalysisStatus::Pending.to_string()),
+                    agent_context_analysis::retry_count.eq(0),
+                    agent_context_analysis::model_used.eq(Some("gemini-2.5-flash-lite")),
+                    agent_context_analysis::created_at.eq(diesel::dsl::now),
+                    agent_context_analysis::updated_at.eq(diesel::dsl::now),
+                ))
+                .returning(agent_context_analysis::id)
+                .get_result::<Uuid>(conn)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to interact with DB: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to create pending analysis: {}", e)))?;
+        
+        info!("Created pending analysis: id={}, session={}, mode={:?}", analysis_id, session_id, mode);
+        
+        Ok(analysis_id)
+    }
+
+    /// Update an existing analysis with results
+    async fn update_analysis(
+        &self,
+        analysis_id: Uuid,
         agent_reasoning: &str,
         planned_searches: &[PlannedSearch],
         execution_log: &AgentExecutionLog,
@@ -729,12 +851,11 @@ Be specific with character names, locations, and key concepts mentioned.",
         analysis_summary: &str,
         total_tokens: u32,
         execution_time_ms: u64,
-        mode: EnrichmentMode,
         session_dek: &[u8],
     ) -> Result<(), AppError> {
         use diesel::prelude::*;
-        use crate::models::NewAgentContextAnalysis;
         use crate::schema::agent_context_analysis;
+        use crate::models::AnalysisStatus;
         
         // Convert session_dek to SecretBox
         let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
@@ -742,64 +863,106 @@ Be specific with character names, locations, and key concepts mentioned.",
         // Convert planned searches to JSON value
         let planned_searches_json = serde_json::to_value(planned_searches)?;
         
-        // Create new agent context analysis record with encryption
-        let new_analysis = NewAgentContextAnalysis::new_encrypted(
-            session_id,
-            user_id,
-            match mode {
-                EnrichmentMode::PreProcessing => crate::models::AnalysisType::PreProcessing,
-                EnrichmentMode::PostProcessing => crate::models::AnalysisType::PostProcessing,
-            },
-            agent_reasoning,
-            &planned_searches_json,
-            &serde_json::to_value(execution_log)?,
-            retrieved_context,
-            analysis_summary,
-            total_tokens,
-            execution_time_ms,
-            &self.model,
-            &dek_secret,
-        )?;
+        // Encrypt fields
+        let (encrypted_reasoning, reasoning_nonce) = if !agent_reasoning.is_empty() {
+            let (encrypted, nonce) = crypto::encrypt_gcm(agent_reasoning.as_bytes(), &dek_secret)
+                .map_err(|e| AppError::CryptoError(format!("Failed to encrypt reasoning: {}", e)))?;
+            (Some(hex::encode(encrypted)), Some(nonce))
+        } else {
+            (Some(String::new()), None)
+        };
+
+        let (encrypted_log, log_nonce) = {
+            let log_str = serde_json::to_string(execution_log)?;
+            if !log_str.is_empty() && log_str != "null" {
+                let (encrypted, nonce) = crypto::encrypt_gcm(log_str.as_bytes(), &dek_secret)
+                    .map_err(|e| AppError::CryptoError(format!("Failed to encrypt execution log: {}", e)))?;
+                (Some(serde_json::Value::String(hex::encode(encrypted))), Some(nonce))
+            } else {
+                (Some(serde_json::to_value(execution_log)?), None)
+            }
+        };
+
+        let (encrypted_context, context_nonce) = if !retrieved_context.is_empty() {
+            let (encrypted, nonce) = crypto::encrypt_gcm(retrieved_context.as_bytes(), &dek_secret)
+                .map_err(|e| AppError::CryptoError(format!("Failed to encrypt context: {}", e)))?;
+            (Some(hex::encode(encrypted)), Some(nonce))
+        } else {
+            (Some(String::new()), None)
+        };
+
+        let (encrypted_summary, summary_nonce) = if !analysis_summary.is_empty() {
+            let (encrypted, nonce) = crypto::encrypt_gcm(analysis_summary.as_bytes(), &dek_secret)
+                .map_err(|e| AppError::CryptoError(format!("Failed to encrypt summary: {}", e)))?;
+            (Some(hex::encode(encrypted)), Some(nonce))
+        } else {
+            (Some(String::new()), None)
+        };
         
         // Get database connection
         let conn = self.state.pool.get()
             .await
             .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get DB connection: {}", e)))?;
         
-        // Insert or update the analysis record (upsert on session_id + analysis_type)
+        // Update the analysis record
         conn.interact(move |conn| {
-            diesel::insert_into(agent_context_analysis::table)
-                .values(&new_analysis)
-                .on_conflict((
-                    agent_context_analysis::chat_session_id,
-                    agent_context_analysis::analysis_type,
-                ))
-                .do_update()
+            diesel::update(agent_context_analysis::table.find(analysis_id))
                 .set((
-                    agent_context_analysis::agent_reasoning.eq(&new_analysis.agent_reasoning),
-                    agent_context_analysis::agent_reasoning_nonce.eq(&new_analysis.agent_reasoning_nonce),
-                    agent_context_analysis::planned_searches.eq(&new_analysis.planned_searches),
-                    agent_context_analysis::execution_log.eq(&new_analysis.execution_log),
-                    agent_context_analysis::execution_log_nonce.eq(&new_analysis.execution_log_nonce),
-                    agent_context_analysis::retrieved_context.eq(&new_analysis.retrieved_context),
-                    agent_context_analysis::retrieved_context_nonce.eq(&new_analysis.retrieved_context_nonce),
-                    agent_context_analysis::analysis_summary.eq(&new_analysis.analysis_summary),
-                    agent_context_analysis::analysis_summary_nonce.eq(&new_analysis.analysis_summary_nonce),
-                    agent_context_analysis::total_tokens_used.eq(&new_analysis.total_tokens_used),
-                    agent_context_analysis::execution_time_ms.eq(&new_analysis.execution_time_ms),
-                    agent_context_analysis::model_used.eq(&new_analysis.model_used),
+                    agent_context_analysis::agent_reasoning.eq(encrypted_reasoning),
+                    agent_context_analysis::agent_reasoning_nonce.eq(reasoning_nonce),
+                    agent_context_analysis::planned_searches.eq(Some(planned_searches_json)),
+                    agent_context_analysis::execution_log.eq(encrypted_log),
+                    agent_context_analysis::execution_log_nonce.eq(log_nonce),
+                    agent_context_analysis::retrieved_context.eq(encrypted_context),
+                    agent_context_analysis::retrieved_context_nonce.eq(context_nonce),
+                    agent_context_analysis::analysis_summary.eq(encrypted_summary),
+                    agent_context_analysis::analysis_summary_nonce.eq(summary_nonce),
+                    agent_context_analysis::total_tokens_used.eq(Some(total_tokens as i32)),
+                    agent_context_analysis::execution_time_ms.eq(Some(execution_time_ms as i32)),
+                    agent_context_analysis::status.eq(AnalysisStatus::Success.to_string()),
+                    agent_context_analysis::error_message.eq(None::<String>),
                     agent_context_analysis::updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to interact with DB: {}", e)))?
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to store agent analysis: {}", e)))?;
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update analysis: {}", e)))?;
         
         info!(
-            "Stored agent analysis: session={}, mode={:?}, tokens={}, time={}ms",
-            session_id, mode, total_tokens, execution_time_ms
+            "Updated analysis: id={}, status=success, tokens={}, time={}ms",
+            analysis_id, total_tokens, execution_time_ms
         );
+        
+        Ok(())
+    }
+
+    /// Mark an analysis as failed
+    async fn mark_analysis_failed(
+        &self,
+        analysis_id: Uuid,
+        error_message: &str,
+    ) -> Result<(), AppError> {
+        use crate::models::{AgentContextAnalysis, AnalysisStatus};
+        
+        // Get database connection
+        let conn = self.state.pool.get()
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get DB connection: {}", e)))?;
+        
+        let error_msg = error_message.to_string();
+        conn.interact(move |conn| {
+            AgentContextAnalysis::update_status(
+                conn,
+                analysis_id,
+                AnalysisStatus::Failed,
+                Some(error_msg),
+            )
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to interact with DB: {}", e)))??;
+        
+        warn!("Marked analysis {} as failed: {}", analysis_id, error_message);
         
         Ok(())
     }

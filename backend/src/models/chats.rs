@@ -2,6 +2,7 @@ use crate::schema::{chat_messages, chat_sessions, message_variants};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
+use diesel::{PgConnection, ExpressionMethods, RunQueryDsl, QueryDsl, BoolExpressionMethods, NullableExpressionMethods};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -18,6 +19,44 @@ use crate::crypto::{decrypt_gcm, encrypt_gcm};
 use crate::errors::AppError;
 use secrecy::ExposeSecret;
 use secrecy::SecretBox;
+
+/// Represents the status of a chat message
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MessageStatus {
+    /// Message is being generated
+    Streaming,
+    /// Message was successfully completed
+    Completed,
+    /// Message generation failed with an error
+    Failed,
+    /// Message was partially generated before an error
+    Partial,
+    /// Message is pending (queued for generation)
+    Pending,
+}
+
+impl MessageStatus {
+    pub fn to_string(&self) -> String {
+        match self {
+            Self::Streaming => "streaming".to_string(),
+            Self::Completed => "completed".to_string(),
+            Self::Failed => "failed".to_string(),
+            Self::Partial => "partial".to_string(),
+            Self::Pending => "pending".to_string(),
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, AppError> {
+        match s {
+            "streaming" => Ok(Self::Streaming),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "partial" => Ok(Self::Partial),
+            "pending" => Ok(Self::Pending),
+            _ => Err(AppError::BadRequest(format!("Invalid message status: {}", s))),
+        }
+    }
+}
 
 // Main Chat model (similar to the frontend Chat type)
 // Type alias for the tuple returned when selecting/returning chat settings
@@ -349,6 +388,9 @@ pub struct ChatMessage {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub superseded_at: Option<DateTime<Utc>>,
 }
 
 impl std::fmt::Debug for ChatMessage {
@@ -367,7 +409,9 @@ impl std::fmt::Debug for ChatMessage {
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
             .field("model_name", &self.model_name)
-            .field("model_name", &self.model_name)
+            .field("status", &self.status)
+            .field("error_message", &self.error_message)
+            .field("superseded_at", &self.superseded_at)
             .field(
                 "raw_prompt_ciphertext",
                 &self
@@ -537,6 +581,53 @@ impl ChatMessage {
         }
     }
 
+    /// Update the status and error message of this message in the database
+    pub fn update_status(
+        conn: &mut PgConnection,
+        message_id: Uuid,
+        new_status: MessageStatus,
+        error_msg: Option<String>,
+    ) -> Result<(), AppError> {
+        use crate::schema::chat_messages::dsl::*;
+        
+        diesel::update(chat_messages.find(message_id))
+            .set((
+                status.eq(new_status.to_string()),
+                error_message.eq(error_msg),
+                updated_at.eq(chrono::Utc::now()),
+            ))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update message status: {e}")))?;
+        
+        Ok(())
+    }
+    
+    /// Mark messages as superseded when retrying
+    pub fn supersede_failed_messages(
+        conn: &mut PgConnection,
+        session_id_val: Uuid,
+        after_timestamp: DateTime<Utc>,
+    ) -> Result<usize, AppError> {
+        use crate::schema::chat_messages::dsl::*;
+        
+        let count = diesel::update(
+            chat_messages
+                .filter(session_id.eq(session_id_val))
+                .filter(created_at.ge(after_timestamp))
+                .filter(superseded_at.is_null())
+                .filter(
+                    status.eq("failed")
+                        .or(status.eq("partial"))
+                        .or(status.eq("streaming"))
+                )
+        )
+        .set(superseded_at.eq(Some(chrono::Utc::now())))
+        .execute(conn)
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to supersede messages: {e}")))?;
+        
+        Ok(count)
+    }
+
     /// Convert this `ChatMessage` to a decrypted `ChatMessageForClient`
     ///
     /// # Errors
@@ -626,6 +717,8 @@ impl ChatMessage {
             completion_tokens: self.completion_tokens,
             raw_prompt,
             model_name: self.model_name,
+            status: self.status,
+            error_message: self.error_message,
         })
     }
 }
@@ -652,6 +745,9 @@ pub struct Message {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub superseded_at: Option<DateTime<Utc>>,
 }
 
 impl std::fmt::Debug for Message {
@@ -678,6 +774,9 @@ impl std::fmt::Debug for Message {
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
             .field("model_name", &self.model_name)
+            .field("status", &self.status)
+            .field("error_message", &self.error_message)
+            .field("superseded_at", &self.superseded_at)
             .field(
                 "raw_prompt_ciphertext",
                 &self
@@ -911,6 +1010,8 @@ impl Message {
             completion_tokens: self.completion_tokens,
             raw_prompt,
             model_name: self.model_name,
+            status: self.status,
+            error_message: self.error_message,
         })
     }
 }
@@ -954,6 +1055,8 @@ pub struct ChatMessageForClient {
     pub completion_tokens: Option<i32>,
     pub raw_prompt: Option<String>,
     pub model_name: String,
+    pub status: String,
+    pub error_message: Option<String>,
 }
 
 impl std::fmt::Debug for ChatMessageForClient {
@@ -1055,6 +1158,8 @@ pub struct DbInsertableChatMessage {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
+    pub status: String,
+    pub error_message: Option<String>,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1117,6 +1222,8 @@ impl DbInsertableChatMessage {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            status: MessageStatus::Completed.to_string(),
+            error_message: None,
         }
     }
 
@@ -1158,6 +1265,18 @@ impl DbInsertableChatMessage {
     ) -> Self {
         self.raw_prompt_ciphertext = raw_prompt_ciphertext;
         self.raw_prompt_nonce = raw_prompt_nonce;
+        self
+    }
+    
+    #[must_use]
+    pub fn with_status(mut self, status: MessageStatus) -> Self {
+        self.status = status.to_string();
+        self
+    }
+    
+    #[must_use]
+    pub fn with_error_message(mut self, error_message: String) -> Self {
+        self.error_message = Some(error_message);
         self
     }
 }
@@ -1266,6 +1385,7 @@ pub struct GenerateChatRequest {
     pub history: Vec<ApiChatMessage>,
     pub model: Option<String>,
     pub query_text_for_rag: Option<String>,
+    pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
 }
 
 impl std::fmt::Debug for GenerateChatRequest {
@@ -1284,6 +1404,7 @@ impl std::fmt::Debug for GenerateChatRequest {
                 "query_text_for_rag",
                 &self.query_text_for_rag.as_ref().map(|_| "[REDACTED]"),
             )
+            .field("analysis_mode", &self.analysis_mode)
             .finish()
     }
 }

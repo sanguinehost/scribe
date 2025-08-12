@@ -18,6 +18,19 @@ pub enum AnalysisType {
     PostProcessing,
 }
 
+/// Status of the agent analysis
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AnalysisStatus {
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "success")]
+    Success,
+    #[serde(rename = "failed")]
+    Failed,
+    #[serde(rename = "partial")]
+    Partial,
+}
+
 impl std::fmt::Display for AnalysisType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -35,6 +48,31 @@ impl std::str::FromStr for AnalysisType {
             "pre_processing" => Ok(AnalysisType::PreProcessing),
             "post_processing" => Ok(AnalysisType::PostProcessing),
             _ => Err(format!("Unknown analysis type: {}", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for AnalysisStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AnalysisStatus::Pending => write!(f, "pending"),
+            AnalysisStatus::Success => write!(f, "success"),
+            AnalysisStatus::Failed => write!(f, "failed"),
+            AnalysisStatus::Partial => write!(f, "partial"),
+        }
+    }
+}
+
+impl std::str::FromStr for AnalysisStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(AnalysisStatus::Pending),
+            "success" => Ok(AnalysisStatus::Success),
+            "failed" => Ok(AnalysisStatus::Failed),
+            "partial" => Ok(AnalysisStatus::Partial),
+            _ => Err(format!("Unknown analysis status: {}", s)),
         }
     }
 }
@@ -62,10 +100,16 @@ pub struct AgentContextAnalysis {
     pub model_used: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    pub message_id: Uuid, // Link to specific message this analysis is for (REQUIRED)
+    pub assistant_message_id: Option<Uuid>, // Link to assistant message (set after assistant responds)
+    pub status: String, // Will be converted to/from AnalysisStatus
+    pub error_message: Option<String>,
+    pub retry_count: i32,
+    pub superseded_at: Option<DateTime<Utc>>,
 }
 
 impl AgentContextAnalysis {
-    /// Fetch agent analysis for a session and type
+    /// Fetch active (non-superseded) agent analysis for a session and type
     pub fn get_for_session(
         conn: &mut PgConnection,
         session_id: Uuid,
@@ -75,9 +119,11 @@ impl AgentContextAnalysis {
         
         let analysis_type_str = analysis_type.to_string();
         
+        // Only get non-superseded analyses
         dsl::agent_context_analysis
             .filter(dsl::chat_session_id.eq(session_id))
             .filter(dsl::analysis_type.eq(analysis_type_str))
+            .filter(dsl::superseded_at.is_null())
             .first::<Self>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch agent analysis: {}", e)))
@@ -86,6 +132,85 @@ impl AgentContextAnalysis {
     /// Get the analysis type as an enum
     pub fn get_analysis_type(&self) -> Result<AnalysisType, String> {
         self.analysis_type.parse()
+    }
+    
+    /// Get the analysis status as an enum
+    pub fn get_analysis_status(&self) -> Result<AnalysisStatus, String> {
+        self.status.parse()
+    }
+    
+    /// Mark failed/partial analyses as superseded for a session
+    pub fn supersede_failed_analyses(
+        conn: &mut PgConnection,
+        session_id: Uuid,
+        analysis_type: AnalysisType,
+    ) -> Result<usize, AppError> {
+        use crate::schema::agent_context_analysis::dsl;
+        use diesel::prelude::*;
+        
+        let analysis_type_str = analysis_type.to_string();
+        
+        diesel::update(
+            dsl::agent_context_analysis
+                .filter(dsl::chat_session_id.eq(session_id))
+                .filter(dsl::analysis_type.eq(analysis_type_str))
+                .filter(dsl::superseded_at.is_null())
+                .filter(
+                    dsl::status.eq("failed")
+                        .or(dsl::status.eq("partial"))
+                        .or(dsl::status.eq("pending"))
+                )
+        )
+        .set(dsl::superseded_at.eq(diesel::dsl::now))
+        .execute(conn)
+        .map_err(|e| AppError::DatabaseQueryError(
+            format!("Failed to supersede failed analyses: {}", e)
+        ))
+    }
+    
+    /// Update the status of an analysis
+    pub fn update_status(
+        conn: &mut PgConnection,
+        analysis_id: Uuid,
+        status: AnalysisStatus,
+        error_message: Option<String>,
+    ) -> Result<(), AppError> {
+        use crate::schema::agent_context_analysis::dsl;
+        use diesel::prelude::*;
+        
+        let status_str = status.to_string();
+        
+        diesel::update(dsl::agent_context_analysis.find(analysis_id))
+            .set((
+                dsl::status.eq(status_str),
+                dsl::error_message.eq(error_message),
+                dsl::updated_at.eq(diesel::dsl::now),
+            ))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(
+                format!("Failed to update analysis status: {}", e)
+            ))?;
+        
+        Ok(())
+    }
+
+    /// Update the assistant_message_id for this analysis
+    pub fn update_assistant_message_id(
+        conn: &mut PgConnection,
+        analysis_id: Uuid,
+        assistant_message_id: Uuid,
+    ) -> Result<(), AppError> {
+        use crate::schema::agent_context_analysis::dsl;
+        use diesel::prelude::*;
+        
+        diesel::update(dsl::agent_context_analysis.find(analysis_id))
+            .set(dsl::assistant_message_id.eq(Some(assistant_message_id)))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(
+                format!("Failed to update assistant_message_id: {}", e)
+            ))?;
+        
+        Ok(())
     }
 
     /// Get the decrypted agent reasoning using the provided DEK
@@ -210,6 +335,12 @@ pub struct NewAgentContextAnalysis {
     pub total_tokens_used: Option<i32>,
     pub execution_time_ms: Option<i32>,
     pub model_used: Option<String>,
+    pub message_id: Uuid, // Link to specific message this analysis is for (REQUIRED)
+    pub assistant_message_id: Option<Uuid>, // Link to assistant message (set after assistant responds)
+    pub status: String,
+    pub error_message: Option<String>,
+    pub retry_count: i32,
+    pub superseded_at: Option<DateTime<Utc>>,
 }
 
 impl NewAgentContextAnalysis {
@@ -227,6 +358,7 @@ impl NewAgentContextAnalysis {
         execution_time_ms: u64,
         model_used: &str,
         dek: &SecretBox<Vec<u8>>,
+        message_id: Uuid, // Required message ID to link analysis to specific message
     ) -> Result<Self, AppError> {
         // Encrypt sensitive text fields
         let (encrypted_reasoning, reasoning_nonce) = if !agent_reasoning.is_empty() {
@@ -281,6 +413,12 @@ impl NewAgentContextAnalysis {
             total_tokens_used: Some(total_tokens_used as i32),
             execution_time_ms: Some(execution_time_ms as i32),
             model_used: Some(model_used.to_string()),
+            message_id,
+            assistant_message_id: None, // Will be set later when assistant message is created
+            status: AnalysisStatus::Success.to_string(), // Default to success for backward compatibility
+            error_message: None,
+            retry_count: 0,
+            superseded_at: None,
         })
     }
 }
@@ -302,4 +440,9 @@ pub struct UpdateAgentContextAnalysis {
     pub execution_time_ms: Option<i32>,
     pub model_used: Option<String>,
     pub updated_at: Option<DateTime<Utc>>,
+    pub assistant_message_id: Option<Option<Uuid>>, // Option<Option> to allow setting NULL or a value
+    pub status: Option<String>,
+    pub error_message: Option<Option<String>>, // Option<Option> to allow setting NULL or a value
+    pub retry_count: Option<i32>,
+    pub superseded_at: Option<Option<DateTime<Utc>>>, // Option<Option> to allow setting NULL or a value
 }

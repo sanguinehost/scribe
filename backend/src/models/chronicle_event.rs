@@ -58,11 +58,15 @@ pub struct ChronicleEvent {
     pub source: String, // Will be converted to/from EventSource
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(skip_serializing)]
     pub summary_encrypted: Option<Vec<u8>>,
+    #[serde(skip_serializing)]
     pub summary_nonce: Option<Vec<u8>>,
     pub timestamp_iso8601: DateTime<Utc>,
     pub keywords: Option<Vec<Option<String>>>, // For search optimization
+    #[serde(skip_serializing)]
     pub keywords_encrypted: Option<Vec<u8>>,
+    #[serde(skip_serializing)]
     pub keywords_nonce: Option<Vec<u8>>,
     pub chat_session_id: Option<Uuid>, // Link to originating chat
 }

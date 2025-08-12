@@ -26,6 +26,8 @@ export interface StreamingMessage {
   completion_tokens?: number;
   model_name?: string;
   backend_id?: string; // For mapping back to ScribeChatMessage
+  status?: string; // Message status: streaming, completed, failed, partial, pending
+  superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
 }
 
 // Connection states following the architectural design
@@ -326,6 +328,7 @@ class StreamingService {
     history: Array<{ role: 'user' | 'assistant'; content: string }>;
     model?: string;
     agentMode?: string;
+    analysisMode?: 'existing' | 'refresh' | 'skip'; // For variant regeneration
   }): Promise<void> {
     // Connect to streaming service
     
@@ -398,6 +401,7 @@ class StreamingService {
       history: Array<{ role: 'user' | 'assistant'; content: string }>;
       model?: string;
       agentMode?: string;
+      analysisMode?: 'existing' | 'refresh' | 'skip';
     },
     assistantMessageId: string
   ): Promise<void> {
@@ -407,7 +411,8 @@ class StreamingService {
     const requestBody = {
       history: [...params.history, { role: 'user' as const, content: params.userMessage }],
       model: params.model,
-      agent_mode: params.agentMode
+      agent_mode: params.agentMode,
+      analysis_mode: params.analysisMode // Pass analysis mode for regeneration
     };
 
     console.log('🚀 Starting fetchEventSource with URL:', apiUrl);

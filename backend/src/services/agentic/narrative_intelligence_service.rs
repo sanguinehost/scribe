@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::{
     executor::ToolExecutor, orchestrator::WorkflowOrchestrator, registry::ToolRegistry,
-    search_knowledge_base::SearchKnowledgeBaseTool,
+    narrative_tools::SearchKnowledgeBaseTool,
 };
 use crate::llm::AiClient;
 use crate::vector_db::VectorDb;
@@ -24,12 +24,15 @@ impl NarrativeIntelligenceService {
     pub fn new(
         triage_client: Arc<dyn AiClient>,
         planning_client: Arc<dyn AiClient>,
-        qdrant_service: Arc<dyn VectorDb>,
+        _qdrant_service: Arc<dyn VectorDb>,
     ) -> Self {
         // 1. Create and populate the ToolRegistry
         let mut registry = ToolRegistry::new();
-        let search_tool = Arc::new(SearchKnowledgeBaseTool::new(qdrant_service));
-        registry.add_tool(search_tool);
+        // NOTE: SearchKnowledgeBaseTool now requires AppState which isn't available here
+        // This appears to be an older implementation. The actual tool registration
+        // happens in factory.rs which has proper dependencies.
+        // let search_tool = Arc::new(SearchKnowledgeBaseTool::new(qdrant_service));
+        // registry.add_tool(search_tool);
         // ... add other tools here in the future
 
         let registry = Arc::new(registry);

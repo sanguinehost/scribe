@@ -12,6 +12,7 @@ use uuid::Uuid;
 pub struct ChatMessageChunkMetadata {
     pub message_id: Uuid,
     pub session_id: Uuid,
+    pub chronicle_id: Option<Uuid>, // Added for chronicle-scoped search
     pub user_id: Uuid, // Added user_id
     pub speaker: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
@@ -26,6 +27,9 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
             extract_uuid_from_payload(&payload, "message_id", "ChatMessageChunkMetadata")?;
         let session_id =
             extract_uuid_from_payload(&payload, "session_id", "ChatMessageChunkMetadata")?;
+        let chronicle_id = payload.get("chronicle_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
         let user_id = extract_uuid_from_payload(&payload, "user_id", "ChatMessageChunkMetadata")?;
 
         let speaker = extract_string_from_payload(&payload, "speaker", "ChatMessageChunkMetadata")?;
@@ -46,6 +50,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
         Ok(Self {
             message_id,
             session_id,
+            chronicle_id,
             user_id, // Added user_id
             speaker,
             timestamp,

@@ -353,7 +353,8 @@ impl ChronicleService {
                 Ok((ciphertext, nonce)) => {
                     new_event.summary_encrypted = Some(ciphertext);
                     new_event.summary_nonce = Some(nonce);
-                    // Keep the plaintext summary for backward compatibility during migration
+                    // Replace plaintext with placeholder - we MUST NOT store actual plaintext in the database
+                    new_event.summary = "[ENCRYPTED]".to_string();
                     tracing::debug!(event_type = %new_event.event_type, "Encrypted chronicle event summary");
                 }
                 Err(e) => {
@@ -377,6 +378,8 @@ impl ChronicleService {
                         Ok((ciphertext, nonce)) => {
                             new_event.keywords_encrypted = Some(ciphertext);
                             new_event.keywords_nonce = Some(nonce);
+                            // Clear plaintext keywords - we MUST NOT store plaintext in the database
+                            new_event.keywords = Some(vec![Some("[ENCRYPTED]".to_string())]);
                             tracing::debug!(event_type = %new_event.event_type, "Encrypted chronicle event keywords");
                         }
                         Err(e) => {

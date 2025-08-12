@@ -133,6 +133,7 @@ impl AgenticNarrativeFactory {
         let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
             app_state.qdrant_service.clone(),
             app_state.embedding_client.clone(),
+            app_state.clone(),
         ));
         registry.add_tool(search_tool);
 
@@ -183,6 +184,7 @@ impl AgenticNarrativeFactory {
         let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
             qdrant_service,
             embedding_client,
+            app_state.clone(),
         ));
         registry.add_tool(search_tool);
         

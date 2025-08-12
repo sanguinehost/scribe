@@ -659,17 +659,43 @@ impl ScribeTool for ExtractWorldConceptsTool {
 pub struct SearchKnowledgeBaseTool {
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,
+    app_state: Arc<AppState>,
 }
 
 impl SearchKnowledgeBaseTool {
     pub fn new(
         qdrant_service: Arc<dyn QdrantClientServiceTrait>,
         embedding_client: Arc<dyn EmbeddingClient>,
+        app_state: Arc<AppState>,
     ) -> Self {
         Self {
             qdrant_service,
             embedding_client,
+            app_state,
         }
+    }
+    
+    /// Fetch lorebook IDs associated with a chat session
+    async fn get_session_lorebook_ids(&self, session_id: Uuid) -> Result<Vec<Uuid>, ToolError> {
+        use crate::schema::chat_session_lorebooks;
+        use diesel::prelude::*;
+        
+        let conn = self.app_state.pool.get()
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to get DB connection: {}", e)))?;
+            
+        let lorebook_ids = conn.interact(move |conn| {
+            chat_session_lorebooks::table
+                .filter(chat_session_lorebooks::chat_session_id.eq(session_id))
+                .select(chat_session_lorebooks::lorebook_id)
+                .get_results::<Uuid>(conn)
+        })
+        .await
+        .map_err(|e| ToolError::ExecutionFailed(format!("Failed to interact with DB: {}", e)))?
+        .map_err(|e| ToolError::ExecutionFailed(format!("Failed to query lorebook associations: {}", e)))?;
+        
+        debug!("Found {} lorebooks associated with session {}", lorebook_ids.len(), session_id);
+        Ok(lorebook_ids)
     }
 }
 
@@ -710,11 +736,11 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 },
                 "chronicle_id": {
                     "type": "string",
-                    "description": "Optional: Chronicle ID to prioritize results from this chronicle"
+                    "description": "Optional: Chronicle ID to filter results to all sessions within this chronicle"
                 },
                 "session_id": {
                     "type": "string", 
-                    "description": "Optional: Session ID for additional context and logging"
+                    "description": "Optional: Session ID to filter results to only this specific session (used when no chronicle exists)"
                 }
             },
             "required": ["query", "user_id"]
@@ -744,13 +770,18 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             .and_then(|v| v.as_u64())
             .unwrap_or(10);
 
-        // Optional chronicle_id for prioritization (not security-critical)
+        // Optional chronicle_id for filtering (part of scope control)
         let chronicle_id_opt = params.get("chronicle_id")
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok());
+        
+        // Optional session_id for even tighter filtering
+        let session_id_opt = params.get("session_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
 
-        info!("Vector searching knowledge base for '{}' (type: {}, limit: {}) for user {}", 
-              query, search_type, limit, user_id);
+        info!("Vector searching knowledge base for '{}' (type: {}, limit: {}) for user {}, chronicle: {:?}, session: {:?}", 
+              query, search_type, limit, user_id, chronicle_id_opt, session_id_opt);
 
         // Use the existing embeddings infrastructure for vector search
         let query_embedding = match self.embedding_client
@@ -765,28 +796,181 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         };
 
         // SECURITY CRITICAL: Create filter to only return results for this user
+        // With optional session/chronicle scoping for context control
         use crate::vector_db::qdrant_client::{Filter, Condition, FieldCondition, Match};
         use qdrant_client::qdrant::{condition::ConditionOneOf, r#match::MatchValue};
         
-        let user_filter = Filter {
-            must: vec![Condition {
-                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
-                    key: "user_id".to_string(),
-                    r#match: Some(Match {
-                        match_value: Some(MatchValue::Keyword(user_id.to_string())),
-                    }),
+        // Base security filter - ALWAYS filter by user_id
+        let user_condition = Condition {
+            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                key: "user_id".to_string(),
+                r#match: Some(Match {
+                    match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                }),
+                ..Default::default()
+            })),
+        };
+        
+        // Build the filter based on search scope and type
+        let search_filter = if let Some(session_id) = session_id_opt {
+            // Session-scoped search: Need to handle lorebooks specially
+            debug!("Building session-scoped search filter for session: {}", session_id);
+            
+            // Check if we need to search lorebooks
+            let includes_lorebooks = matches!(search_type, "all" | "lorebooks");
+            
+            if includes_lorebooks {
+                // Fetch lorebook IDs associated with this session
+                let lorebook_ids = self.get_session_lorebook_ids(session_id).await?;
+                debug!("Session {} has {} associated lorebooks", session_id, lorebook_ids.len());
+                
+                // Build conditions for different content types
+                let mut should_conditions = Vec::new();
+                
+                // Add condition for chat messages (if searching all)
+                if matches!(search_type, "all") {
+                    should_conditions.push(Condition {
+                        condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                            must: vec![
+                                Condition {
+                                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                        key: "source_type".to_string(),
+                                        r#match: Some(Match {
+                                            match_value: Some(MatchValue::Keyword("chat_message".to_string())),
+                                        }),
+                                        ..Default::default()
+                                    })),
+                                },
+                                Condition {
+                                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                        key: "session_id".to_string(),
+                                        r#match: Some(Match {
+                                            match_value: Some(MatchValue::Keyword(session_id.to_string())),
+                                        }),
+                                        ..Default::default()
+                                    })),
+                                },
+                            ],
+                            ..Default::default()
+                        })),
+                    });
+                }
+                
+                // Add condition for lorebook entries (if we have associated lorebooks)
+                if !lorebook_ids.is_empty() {
+                    // Create OR condition for all lorebook IDs
+                    let lorebook_id_conditions: Vec<Condition> = lorebook_ids.iter().map(|lb_id| {
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "lorebook_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(lb_id.to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        }
+                    }).collect();
+                    
+                    should_conditions.push(Condition {
+                        condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                            must: vec![
+                                Condition {
+                                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                        key: "source_type".to_string(),
+                                        r#match: Some(Match {
+                                            match_value: Some(MatchValue::Keyword("lorebook_entry".to_string())),
+                                        }),
+                                        ..Default::default()
+                                    })),
+                                },
+                            ],
+                            should: lorebook_id_conditions, // Any of the associated lorebook IDs
+                            ..Default::default()
+                        })),
+                    });
+                }
+                
+                // Add condition for chronicle events (if searching all)
+                if matches!(search_type, "all" | "chronicles") {
+                    // Chronicle events might be associated with the session
+                    should_conditions.push(Condition {
+                        condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                            must: vec![
+                                Condition {
+                                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                        key: "source_type".to_string(),
+                                        r#match: Some(Match {
+                                            match_value: Some(MatchValue::Keyword("chronicle_event".to_string())),
+                                        }),
+                                        ..Default::default()
+                                    })),
+                                },
+                            ],
+                            ..Default::default()
+                        })),
+                    });
+                }
+                
+                // Combine with user filter
+                Filter {
+                    must: vec![user_condition],
+                    should: should_conditions, // At least one of these conditions must match
                     ..Default::default()
-                })),
-            }],
-            ..Default::default()
+                }
+            } else {
+                // Not searching lorebooks, use simple session filter
+                Filter {
+                    must: vec![
+                        user_condition,
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "session_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(session_id.to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                    ],
+                    ..Default::default()
+                }
+            }
+        } else if let Some(chronicle_id) = chronicle_id_opt {
+            // Chronicle-scoped search: Similar logic but with chronicle filter
+            debug!("Building chronicle-scoped search filter for chronicle: {}", chronicle_id);
+            
+            // For chronicle scope, we search across all sessions in the chronicle
+            // This is simpler since chronicle events have chronicle_id
+            Filter {
+                must: vec![
+                    user_condition,
+                    Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "chronicle_id".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword(chronicle_id.to_string())),
+                            }),
+                            ..Default::default()
+                        })),
+                    },
+                ],
+                ..Default::default()
+            }
+        } else {
+            // No specific scope - search all user's data
+            debug!("No session or chronicle filter - searching all user's data");
+            Filter {
+                must: vec![user_condition],
+                ..Default::default()
+            }
         };
 
-        // Perform vector search using Qdrant with user filter
+        // Perform vector search using Qdrant with appropriate filters
         let search_results = match self.qdrant_service
             .search_points(
                 query_embedding,
                 limit,
-                Some(user_filter), // SECURITY: Only search within user's own data
+                Some(search_filter), // SECURITY + SCOPE: Filter by user, session, or chronicle
             )
             .await
         {

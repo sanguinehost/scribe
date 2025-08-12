@@ -106,6 +106,8 @@ pub struct SaveMessageParams<'a> {
     pub user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
     pub model_name: String,                // Added model_name parameter
     pub raw_prompt_debug: Option<&'a str>, // Raw prompt for debugging (only for AI responses)
+    pub status: crate::models::chats::MessageStatus, // Status of the message (streaming, completed, failed, partial)
+    pub error_message: Option<String>,     // Error message if status is failed
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -123,6 +125,8 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         user_dek_secret_box,
         model_name,
         raw_prompt_debug,
+        status,
+        error_message,
     } = params;
 
     // Changed DbChatMessage to ChatMessage
@@ -228,7 +232,12 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         content_to_save,   // content field
         nonce_to_save,     // content_nonce field
         model_name,        // model_name field
-    );
+    )
+    .with_status(status);
+    
+    if let Some(err_msg) = error_message {
+        new_message_to_insert = new_message_to_insert.with_error_message(err_msg);
+    }
 
     if let Some(role) = role_str {
         new_message_to_insert = new_message_to_insert.with_role(role);

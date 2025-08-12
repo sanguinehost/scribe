@@ -83,6 +83,7 @@ async fn test_context_enrichment_complete_workflow_preprocessing() {
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
     let context_agent = ContextEnrichmentAgent::new(
         app_state,
@@ -101,13 +102,18 @@ async fn test_context_enrichment_complete_workflow_preprocessing() {
 
     info!("Testing complete context enrichment workflow in pre-processing mode...");
 
+    // Create a message ID for this analysis
+    let message_id = Uuid::new_v4();
+
     // Execute context enrichment
     let result = context_agent.enrich_context(
         session_id,
         user.id,
+        None, // chronicle_id
         &messages,
         EnrichmentMode::PreProcessing,
         user_dek.0.expose_secret(),
+        message_id, // Required message ID
     ).await;
 
     // The test should succeed even if AI calls fail - the agent has fallback behavior
@@ -178,6 +184,7 @@ async fn test_context_enrichment_complete_workflow_postprocessing() {
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
     let context_agent = ContextEnrichmentAgent::new(
         app_state,
@@ -197,13 +204,18 @@ async fn test_context_enrichment_complete_workflow_postprocessing() {
 
     info!("Testing complete context enrichment workflow in post-processing mode...");
 
+    // Create a message ID for this analysis
+    let message_id = Uuid::new_v4();
+
     // Execute context enrichment
     let result = context_agent.enrich_context(
         session_id,
         user.id,
+        None, // chronicle_id
         &messages,
         EnrichmentMode::PostProcessing,
         user_dek.0.expose_secret(),
+        message_id, // Required message ID
     ).await;
 
     // Handle both success and expected AI failure gracefully
@@ -268,6 +280,7 @@ async fn test_context_enrichment_search_types() {
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
     let context_agent = ContextEnrichmentAgent::new(
         app_state,
@@ -286,13 +299,18 @@ async fn test_context_enrichment_search_types() {
 
     info!("Testing search type diversity...");
 
+    // Create a message ID for this analysis
+    let message_id = Uuid::new_v4();
+
     // Execute context enrichment
     let result = context_agent.enrich_context(
         session_id,
         user.id,
+        None, // chronicle_id
         &messages,
         EnrichmentMode::PreProcessing,
         user_dek.0.expose_secret(),
+        message_id, // Required message ID
     ).await;
 
     match result {
@@ -357,6 +375,7 @@ async fn test_context_enrichment_error_handling() {
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
     let context_agent = ContextEnrichmentAgent::new(
         app_state,
@@ -371,13 +390,18 @@ async fn test_context_enrichment_error_handling() {
 
     info!("Testing error handling with empty messages...");
 
+    // Create a message ID for this analysis
+    let message_id = Uuid::new_v4();
+
     // Execute context enrichment with empty messages
     let result = context_agent.enrich_context(
         session_id,
         user.id,
+        None, // chronicle_id
         &empty_messages,
         EnrichmentMode::PreProcessing,
         user_dek.0.expose_secret(),
+        message_id, // Required message ID
     ).await;
 
     // Should handle empty messages gracefully (either succeed with fallback or fail gracefully)
@@ -433,6 +457,7 @@ async fn test_context_enrichment_analysis_storage() {
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
     let context_agent = ContextEnrichmentAgent::new(
         app_state,
@@ -450,13 +475,18 @@ async fn test_context_enrichment_analysis_storage() {
 
     info!("Testing agent analysis storage...");
 
+    // Create a message ID for this analysis
+    let message_id = Uuid::new_v4();
+
     // Execute context enrichment
     let result = context_agent.enrich_context(
         session_id,
         user.id,
+        None, // chronicle_id
         &messages,
         EnrichmentMode::PreProcessing,
         user_dek.0.expose_secret(),
+        message_id, // Required message ID
     ).await;
 
     match result {
@@ -548,6 +578,7 @@ async fn test_context_enrichment_message_patterns() {
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
     let context_agent = ContextEnrichmentAgent::new(
         app_state,
@@ -588,12 +619,17 @@ async fn test_context_enrichment_message_patterns() {
         
         let session_id = Uuid::new_v4();
 
+        // Create a message ID for this analysis
+        let message_id = Uuid::new_v4();
+
         let result = context_agent.enrich_context(
             session_id,
             user.id,
+            None, // chronicle_id
             &messages,
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
+            message_id, // Required message ID
         ).await;
 
         match result {
