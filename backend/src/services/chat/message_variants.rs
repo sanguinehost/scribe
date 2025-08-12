@@ -61,16 +61,48 @@ pub async fn create_message_variant(
     // Create new variant with encryption outside the closure
     let new_variant = NewMessageVariant::new(message_id, next_index, content, user_id, dek)?;
 
-    // Insert into database
+    // Insert into database and update parent message status if needed
     let created_variant = conn
         .interact(move |conn| {
-            diesel::insert_into(message_variants::table)
-                .values(&new_variant)
-                .returning(MessageVariant::as_returning())
-                .get_result::<MessageVariant>(&mut *conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to create message variant: {e}"))
-                })
+            use crate::schema::chat_messages;
+            use crate::models::chats::MessageStatus;
+            
+            // Start a transaction to ensure atomicity
+            conn.transaction(|trans_conn| {
+                // First, check the parent message status
+                let parent_status: String = chat_messages::table
+                    .filter(chat_messages::id.eq(message_id))
+                    .select(chat_messages::status)
+                    .first::<String>(trans_conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to get parent message status: {e}"))
+                    })?;
+                
+                // If parent message has failed or partial status, update it to completed
+                // since we're creating a successful variant
+                if parent_status == MessageStatus::Failed.to_string() 
+                    || parent_status == MessageStatus::Partial.to_string() {
+                    diesel::update(chat_messages::table)
+                        .filter(chat_messages::id.eq(message_id))
+                        .set((
+                            chat_messages::status.eq(MessageStatus::Completed.to_string()),
+                            chat_messages::error_message.eq(None::<String>),
+                        ))
+                        .execute(trans_conn)
+                        .map_err(|e| {
+                            AppError::DatabaseQueryError(format!("Failed to update parent message status: {e}"))
+                        })?;
+                }
+                
+                // Now insert the variant
+                diesel::insert_into(message_variants::table)
+                    .values(&new_variant)
+                    .returning(MessageVariant::as_returning())
+                    .get_result::<MessageVariant>(trans_conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to create message variant: {e}"))
+                    })
+            })
         })
         .await??;
 
@@ -171,6 +203,56 @@ fn get_next_variant_index(conn: &mut PgConnection, message_id: Uuid) -> Result<i
         })?;
 
     Ok(max_index.map_or(0, |max| max + 1))
+}
+
+/// Get the active variant content for a message (non-failed/partial)
+/// Returns the latest variant content that's not in a failed state
+pub async fn get_active_variant_content(
+    state: Arc<AppState>,
+    message_id: Uuid,
+    user_id: Uuid,
+    dek: &SecretBox<Vec<u8>>,
+) -> Result<Option<String>, AppError> {
+    use crate::schema::chat_messages;
+    use crate::models::chats::MessageStatus;
+    
+    let conn = state.pool.get().await?;
+    
+    // First check the parent message status
+    let parent_status = conn
+        .interact(move |conn| {
+            chat_messages::table
+                .filter(chat_messages::id.eq(message_id))
+                .select(chat_messages::status)
+                .first::<String>(&mut *conn)
+                .optional()
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to get message status: {e}"))
+                })
+        })
+        .await??;
+    
+    // If parent message doesn't exist or is failed/partial, look for variants
+    match parent_status {
+        Some(status) if status == MessageStatus::Failed.to_string() 
+            || status == MessageStatus::Partial.to_string() => {
+            // Parent is failed/partial, get the latest variant
+            let variants = get_message_variants(state, message_id, user_id, dek).await?;
+            Ok(variants.last().map(|v| v.content.clone()))
+        },
+        Some(_) => {
+            // Parent is in good status, check if we have variants and return the latest
+            let variants = get_message_variants(state, message_id, user_id, dek).await?;
+            if variants.is_empty() {
+                // No variants, return None (caller should use original message)
+                Ok(None)
+            } else {
+                // Return the latest variant
+                Ok(variants.last().map(|v| v.content.clone()))
+            }
+        },
+        None => Ok(None),
+    }
 }
 
 /// Store the original message content as variant index 0 if no variants exist yet

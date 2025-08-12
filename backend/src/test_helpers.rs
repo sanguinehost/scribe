@@ -498,6 +498,10 @@ pub enum PipelineCall {
         event_id: Uuid,
         user_id: Uuid,
     },
+    DeleteChronicleEventsByChronicleId {
+        chronicle_id: Uuid,
+        user_id: Uuid,
+    },
 }
 
 // Updated MockEmbeddingPipelineService
@@ -723,6 +727,25 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         // Record the call
         self.calls.lock().unwrap().push(PipelineCall::DeleteChronicleEventChunks {
             event_id,
+            user_id,
+        });
+        Ok(())
+    }
+
+    async fn delete_chronicle_events_by_chronicle_id(
+        &self,
+        _state: Arc<AppState>,
+        chronicle_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        tracing::info!(
+            target: "mock_embedding_pipeline",
+            "MockEmbeddingPipelineService::delete_chronicle_events_by_chronicle_id called for chronicle_id: {}, user_id: {}",
+            chronicle_id, user_id
+        );
+        // Record the call
+        self.calls.lock().unwrap().push(PipelineCall::DeleteChronicleEventsByChronicleId {
+            chronicle_id,
             user_id,
         });
         Ok(())
@@ -2692,4 +2715,61 @@ pub async fn set_history_settings(
     // Ensure body is consumed to prevent issues, but we don't need to parse it here.
     let _ = response.bytes().await?;
     Ok(())
+}
+
+impl TestApp {
+    /// Create an AppState instance for testing
+    pub async fn create_app_state(&self) -> Arc<AppState> {
+        let encryption_service = Arc::new(crate::services::encryption_service::EncryptionService::new());
+        let lorebook_service = Arc::new(crate::services::lorebook::LorebookService::new(
+            self.db_pool.clone(),
+            encryption_service.clone(),
+            self.qdrant_service.clone(),
+        ));
+        
+        // Create auth_backend for this AppState
+        let auth_backend = Arc::new(crate::auth::user_store::Backend::new(self.db_pool.clone()));
+        
+        // Create email service for testing
+        let email_service = crate::services::email_service::create_email_service(
+            "development",
+            "http://localhost:3000".to_string(),
+            None,
+        )
+        .await
+        .expect("Failed to create email service for test");
+        
+        let services = crate::state::AppStateServices {
+            ai_client: self.ai_client.clone(),
+            embedding_client: self.mock_embedding_client.clone() as Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
+            qdrant_service: self.qdrant_service.clone(),
+            embedding_pipeline_service: self.mock_embedding_pipeline_service.clone() as Arc<dyn crate::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+            chat_override_service: Arc::new(crate::services::chat_override_service::ChatOverrideService::new(
+                self.db_pool.clone(),
+                encryption_service.clone()
+            )),
+            user_persona_service: Arc::new(crate::services::user_persona_service::UserPersonaService::new(
+                self.db_pool.clone(),
+                encryption_service.clone()
+            )),
+            token_counter: Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new(
+                crate::services::tokenizer_service::TokenizerService::new(&self.config.tokenizer_model_path).unwrap_or_else(|_| {
+                    panic!("Failed to create tokenizer for test")
+                }),
+                None,
+                "gemini-2.5-pro"
+            )),
+            encryption_service: encryption_service.clone(),
+            lorebook_service: lorebook_service.clone(),
+            auth_backend,
+            file_storage_service: Arc::new(crate::services::file_storage_service::FileStorageService::new("./test_uploads").unwrap()),
+            email_service,
+        };
+        
+        Arc::new(AppState::new(
+            self.db_pool.clone(),
+            self.config.clone(),
+            services,
+        ))
+    }
 }

@@ -26,6 +26,9 @@ export interface Message {
 	prompt_tokens?: number | null; // Token count for user messages
 	completion_tokens?: number | null; // Token count for AI responses
 	model_name?: string; // Model used for this specific message (optional for backward compatibility)
+	status?: string; // Message status: streaming, completed, failed, partial, pending
+	error_message?: string | null; // Error message if generation failed
+	superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
 }
 
 // Paginated messages response for infinite scroll
@@ -456,6 +459,8 @@ export interface ScribeChatMessage {
 	prompt_tokens?: number | null; // Token count for user messages
 	completion_tokens?: number | null; // Token count for AI responses
 	model_name?: string; // Model used for this specific message
+	status?: string; // Message status: streaming, completed, failed, partial, pending
+	superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
 }
 
 export type DocumentResponse = {
@@ -852,4 +857,22 @@ export interface TokenCountResponse {
 	is_estimate: boolean;
 	model_used: string;
 	counting_method: string;
+}
+
+// Agent context analysis types
+export interface AgentAnalysisResponse {
+	id: string;
+	chat_session_id: string;
+	analysis_type: string;
+	agent_reasoning: string | null;
+	planned_searches: any | null;
+	execution_log: any | null;
+	retrieved_context: string | null;
+	analysis_summary: string | null;
+	total_tokens_used: number | null;
+	execution_time_ms: number | null;
+	model_used: string | null;
+	created_at: string | null;
+	updated_at: string | null;
+	message_id: string | null;
 }

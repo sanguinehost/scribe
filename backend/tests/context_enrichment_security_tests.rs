@@ -290,7 +290,11 @@ async fn test_agent_analysis_storage_security() {
     .expect("Failed to interact with database")
     .expect("Failed to create chat sessions");
 
-    // Store agent analysis for each user
+    // Create message IDs for the analyses
+    let user1_message_id = Uuid::new_v4();
+    let user2_message_id = Uuid::new_v4();
+
+    // Store agent analysis for each user with required message_id
     let user1_analysis = NewAgentContextAnalysis::new_encrypted(
         user1_session_id,
         user1.id,
@@ -304,6 +308,7 @@ async fn test_agent_analysis_storage_security() {
         1500,
         "gemini-2.5-flash-lite",
         user1_dek,
+        user1_message_id, // Required message_id
     ).expect("Failed to create user1 analysis");
 
     let user2_analysis = NewAgentContextAnalysis::new_encrypted(
@@ -319,6 +324,7 @@ async fn test_agent_analysis_storage_security() {
         2500,
         "gemini-2.5-flash-lite",
         user2_dek,
+        user2_message_id, // Required message_id
     ).expect("Failed to create user2 analysis");
 
     // Store analyses in database

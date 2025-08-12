@@ -61,6 +61,7 @@ import type {
 	EventFilter,
 	TokenCountRequest,
 	TokenCountResponse,
+	AgentAnalysisResponse,
 	PaginatedMessagesResponse
 } from '$lib/types';
 import {
@@ -679,6 +680,24 @@ class ApiClient {
 			method: 'PUT',
 			body: JSON.stringify(settings)
 		});
+	}
+
+	async getAgentAnalysis(
+		sessionId: string,
+		analysisType?: 'pre_processing' | 'post_processing',
+		messageId?: string
+	): Promise<Result<AgentAnalysisResponse[], ApiError>> {
+		const params = new URLSearchParams();
+		if (analysisType) {
+			params.append('analysis_type', analysisType);
+		}
+		if (messageId) {
+			params.append('message_id', messageId);
+		}
+		const queryString = params.toString() ? `?${params.toString()}` : '';
+		return this.fetch<AgentAnalysisResponse[]>(
+			`/api/chat/${sessionId}/agent-analysis${queryString}`
+		);
 	}
 
 	// User Persona methods

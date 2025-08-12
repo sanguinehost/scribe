@@ -717,6 +717,8 @@ async fn process_first_message(
                                         user_dek_secret_box: user_dek_secret_box.clone(),
                                         model_name: created_session.model_name.clone(),
                                         raw_prompt_debug: None, // First message doesn't need raw prompt debug
+                                        status: crate::models::chats::MessageStatus::Completed,
+                                        error_message: None,
                                     })
                                     .await?;
                                     info!(session_id = %created_session.id, "Successfully called save_message for first_mes");

@@ -21,6 +21,7 @@
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
 	import ChronicleOptInDialog from './chronicle-opt-in-dialog.svelte';
+	import RegenerationModal, { type AnalysisMode } from './messages/regeneration-modal.svelte';
 	import { browser } from '$app/environment';
 
 	// Get reactive state from streaming service
@@ -65,6 +66,10 @@
 	let showChronicleOptIn = $state(false);
 	let pendingMessage = $state<string | null>(null);
 	let chroniclePreference: boolean | null = $state(null);
+	
+	// Regeneration modal state
+	let showRegenerationModal = $state(false);
+	let pendingRegenerationData = $state<{ userMessage: string; messageId: string } | null>(null);
 
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
@@ -152,7 +157,9 @@
 								prompt_tokens: msg.prompt_tokens,
 								completion_tokens: msg.completion_tokens,
 								model_name: msg.model_name,
-								backend_id: msg.backend_id
+								backend_id: msg.backend_id,
+								status: msg.status,
+								superseded_at: msg.superseded_at
 							}) as StreamingMessage
 					);
 				}
@@ -243,7 +250,9 @@
 						raw_prompt: rawMsg.raw_prompt,
 						prompt_tokens: rawMsg.prompt_tokens,
 						completion_tokens: rawMsg.completion_tokens,
-						model_name: rawMsg.model_name
+						model_name: rawMsg.model_name,
+						status: rawMsg.status,
+						superseded_at: rawMsg.superseded_at
 					})
 				);
 
@@ -280,7 +289,9 @@
 							prompt_tokens: msg.prompt_tokens,
 							completion_tokens: msg.completion_tokens,
 							model_name: msg.model_name,
-							backend_id: msg.backend_id
+							backend_id: msg.backend_id,
+							status: msg.status,
+							superseded_at: msg.superseded_at
 						})
 					);
 
@@ -687,19 +698,32 @@
 	// --- Save Agent Mode to Chat Settings ---
 	async function saveAgentMode(mode: typeof agentMode) {
 		if (!chat?.id) return;
+		
+		// Update local state immediately for UI responsiveness
+		const previousMode = agentMode;
+		agentMode = mode;
+		
 		try {
 			const result = await apiClient.updateChatSessionSettings(chat.id, {
 				agent_mode: mode
 			});
+			
 			if (result.isOk()) {
-				agentMode = mode;
+				// Show success feedback
+				const modeLabel = mode === 'disabled' ? 'Off' : 
+					mode === 'pre_processing' ? 'Pre-processing' : 'Post-processing';
+				toast.success(`Context enrichment: ${modeLabel}`);
 			} else {
+				// Revert on error
+				agentMode = previousMode;
 				console.error('Failed to save agent mode:', result.error);
-				toast.error('Failed to save context enrichment mode');
+				toast.error('Failed to update context enrichment mode');
 			}
 		} catch (error) {
+			// Revert on error
+			agentMode = previousMode;
 			console.error('Failed to save agent mode:', error);
-			toast.error('Failed to save context enrichment mode');
+			toast.error('Failed to update context enrichment mode');
 		}
 	}
 
@@ -1070,9 +1094,9 @@
 	}
 
 	// Regenerate AI response without adding a new user message - using StreamingService
-	async function regenerateResponse(_userMessageContent: string, _originalMessageId?: string) {
+	async function regenerateResponse(_userMessageContent: string, _originalMessageId?: string, analysisMode: AnalysisMode = 'existing') {
 		// DEBUG: Add stack trace to identify unwanted calls
-		console.log('🚨 regenerateResponse called for message:', _originalMessageId);
+		console.log('🚨 regenerateResponse called for message:', _originalMessageId, 'with analysis mode:', analysisMode);
 		console.log('🚨 regenerateResponse STACK TRACE:', new Error().stack);
 
 		if (!chat?.id || !user?.id) {
@@ -1110,7 +1134,8 @@
 				userMessage: lastUserMessage.content,
 				history: historyToSend.slice(0, -1), // Exclude the last user message since it's passed separately
 				model: currentModel || undefined,
-				agentMode: agentMode
+				agentMode: agentMode,
+				analysisMode: analysisMode // Pass the analysis mode for regeneration
 			});
 
 			// Update chat preview after successful regeneration
@@ -1200,9 +1225,9 @@
 			}
 		}
 
-		// Regenerate the response by calling the streaming logic directly
-		// Pass the original messageId so we can maintain variants
-		regenerateResponse(userMessage.content, messageId);
+		// Show the regeneration modal to let user choose analysis mode
+		pendingRegenerationData = { userMessage: userMessage.content, messageId };
+		showRegenerationModal = true;
 	}
 
 	function handleEditMessage(messageId: string) {
@@ -1372,9 +1397,27 @@
 			}
 		}
 
-		// Regenerate the response using the same logic as normal generation
-		// Use the existing regenerateResponse function
-		regenerateResponse(userMessage.content, messageId);
+		// Show the regeneration modal to let user choose analysis mode (for retry after error)
+		pendingRegenerationData = { userMessage: userMessage.content, messageId };
+		showRegenerationModal = true;
+	}
+
+	// Handle regeneration modal confirmation
+	function handleRegenerationConfirm(mode: AnalysisMode) {
+		if (!pendingRegenerationData) return;
+		
+		const { userMessage, messageId } = pendingRegenerationData;
+		regenerateResponse(userMessage, messageId, mode);
+		
+		// Clear pending data
+		pendingRegenerationData = null;
+		showRegenerationModal = false;
+	}
+	
+	// Handle regeneration modal cancel
+	function handleRegenerationCancel() {
+		pendingRegenerationData = null;
+		showRegenerationModal = false;
 	}
 
 	async function handleDeleteMessage(messageId: string) {
@@ -1656,3 +1699,10 @@
 
 <!-- Chronicle Opt-in Dialog -->
 <ChronicleOptInDialog bind:open={showChronicleOptIn} onConfirm={handleChronicleChoice} />
+
+<!-- Regeneration Options Modal -->
+<RegenerationModal 
+	bind:open={showRegenerationModal} 
+	onConfirm={handleRegenerationConfirm}
+	onCancel={handleRegenerationCancel}
+/>

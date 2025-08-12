@@ -233,10 +233,30 @@ async fn delete_chronicle(
 
     info!("Deleting chronicle {} for user {}", chronicle_id, user.id);
 
+    // First, clean up all chronicle event embeddings from Qdrant
+    // This must be done before deleting the chronicle from the database
+    // because the database CASCADE will delete the events
+    if let Err(e) = state
+        .embedding_pipeline_service
+        .delete_chronicle_events_by_chronicle_id(Arc::new(state.clone()), chronicle_id, user.id)
+        .await
+    {
+        warn!(
+            chronicle_id = %chronicle_id,
+            error = %e,
+            "Failed to delete chronicle event embeddings from Qdrant, but will proceed with chronicle deletion"
+        );
+        // We log the error but don't fail the request, as the database deletion is more important
+        // and we don't want to leave the user unable to delete their chronicle
+    } else {
+        info!(chronicle_id = %chronicle_id, "Successfully cleaned up chronicle event embeddings from Qdrant");
+    }
+
+    // Now delete the chronicle from the database (this will CASCADE delete all chronicle_events)
     let chronicle_service = ChronicleService::new(state.pool.clone());
     chronicle_service.delete_chronicle(user.id, chronicle_id).await?;
 
-    info!("Successfully deleted chronicle {}", chronicle_id);
+    info!("Successfully deleted chronicle {} and all associated data", chronicle_id);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -262,7 +282,7 @@ async fn create_event(
     info!("Creating event in chronicle {} for user {}: {}", chronicle_id, user.id, request.event_type);
 
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    let event = chronicle_service.create_event(user.id, chronicle_id, request, Some(&session_dek)).await?;
+    let mut event = chronicle_service.create_event(user.id, chronicle_id, request, Some(&session_dek)).await?;
 
     // Embed the chronicle event for semantic search
     if let Err(e) = state
@@ -276,14 +296,25 @@ async fn create_event(
         info!(event_id = %event.id, "Successfully embedded chronicle event for semantic search");
     }
 
+    // Decrypt event summary before returning to client
+    if event.has_encrypted_summary() {
+        event.summary = event.get_decrypted_summary(&session_dek.0)?;
+    }
+    // Also decrypt keywords if encrypted
+    if event.has_encrypted_keywords() {
+        let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
+        event.keywords = Some(decrypted_keywords.into_iter().map(Some).collect());
+    }
+
     info!("Successfully created event {}", event.id);
     Ok((StatusCode::CREATED, Json(event)))
 }
 
 /// List events for a chronicle with optional filtering
-#[instrument(skip(auth_session, state))]
+#[instrument(skip(auth_session, session_dek, state))]
 async fn list_events(
     auth_session: AuthSession<AuthBackend>,
+    session_dek: SessionDek,
     State(state): State<AppState>,
     Path(chronicle_id): Path<Uuid>,
     Query(query): Query<EventQuery>,
@@ -297,7 +328,19 @@ async fn list_events(
 
     let filter = EventFilter::from(query);
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    let events = chronicle_service.get_chronicle_events(user.id, chronicle_id, filter).await?;
+    let mut events = chronicle_service.get_chronicle_events(user.id, chronicle_id, filter).await?;
+
+    // Decrypt event summaries before returning
+    for event in &mut events {
+        if event.has_encrypted_summary() {
+            event.summary = event.get_decrypted_summary(&session_dek.0)?;
+        }
+        // Also decrypt keywords if encrypted
+        if event.has_encrypted_keywords() {
+            let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
+            event.keywords = Some(decrypted_keywords.into_iter().map(Some).collect());
+        }
+    }
 
     info!("Retrieved {} events for chronicle {}", events.len(), chronicle_id);
     Ok(Json(events))

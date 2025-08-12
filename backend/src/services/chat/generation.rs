@@ -552,6 +552,9 @@ pub async fn get_session_data_for_generation(
                     raw_prompt_ciphertext: None,
                     raw_prompt_nonce: None,
                     model_name: session_model_name_db.clone(), // Use session model for frontend-provided history
+                    status: "completed".to_string(), // Frontend-provided history is considered completed
+                    error_message: None,
+                    superseded_at: None,
                 }
             })
             .collect()
@@ -941,6 +944,9 @@ pub async fn get_session_data_for_generation(
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: session_model_name_db.clone(), // Use session model for character first message
+                status: "completed".to_string(), // First message is considered completed
+                error_message: None,
+                superseded_at: None,
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
@@ -1539,6 +1545,8 @@ pub async fn stream_ai_response_and_save_message(
                                 user_dek_secret_box: dek_ref_partial,
                                 model_name: service_model_name_clone_partial,
                                 raw_prompt_debug: None, // No raw prompt for partial/error saves
+                                status: crate::models::chats::MessageStatus::Partial,
+                                error_message: Some("Stream interrupted - partial content saved".to_string()),
                            }).await {
                                 Ok(saved_message) => {
                                     debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
@@ -1625,6 +1633,8 @@ pub async fn stream_ai_response_and_save_message(
                     user_dek_secret_box: dek_ref_full.clone(),
                     model_name: service_model_name_clone_full.clone(),
                     raw_prompt_debug: Some(&raw_prompt_debug),
+                    status: crate::models::chats::MessageStatus::Completed,
+                    error_message: None,
                 }).await {
                     Ok(saved_message) => {
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");

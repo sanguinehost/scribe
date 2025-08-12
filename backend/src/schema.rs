@@ -39,6 +39,13 @@ diesel::table! {
         model_used -> Nullable<Varchar>,
         created_at -> Nullable<Timestamptz>,
         updated_at -> Nullable<Timestamptz>,
+        message_id -> Uuid,
+        assistant_message_id -> Nullable<Uuid>,
+        #[max_length = 20]
+        status -> Varchar,
+        error_message -> Nullable<Text>,
+        retry_count -> Int4,
+        superseded_at -> Nullable<Timestamptz>,
     }
 }
 
@@ -250,6 +257,10 @@ diesel::table! {
         raw_prompt_nonce -> Nullable<Bytea>,
         #[max_length = 255]
         model_name -> Varchar,
+        #[max_length = 20]
+        status -> Varchar,
+        error_message -> Nullable<Text>,
+        superseded_at -> Nullable<Timestamptz>,
     }
 }
 
