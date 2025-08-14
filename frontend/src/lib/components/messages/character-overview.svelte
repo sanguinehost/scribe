@@ -422,6 +422,14 @@
 				// Show appropriate success message based on action
 				if (action === 'delete_chronicle') {
 					toast.success('Chat and chronicle deleted successfully');
+					// Notify other components that a chronicle was deleted
+					if (deletionAnalysis?.chronicle?.id) {
+						window.dispatchEvent(
+							new CustomEvent('chronicle-deleted', {
+								detail: { chronicleId: deletionAnalysis.chronicle.id }
+							})
+						);
+					}
 				} else if (action === 'disassociate') {
 					toast.success('Chat deleted, chronicle preserved');
 				} else {

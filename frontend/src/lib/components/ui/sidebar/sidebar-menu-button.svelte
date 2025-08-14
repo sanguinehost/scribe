@@ -78,7 +78,7 @@
 	{@render Button({})}
 {:else}
 	<Tooltip.Root>
-		<Tooltip.Trigger asChild>
+		<Tooltip.Trigger>
 			{#snippet child({ props })}
 				{@render Button({ props })}
 			{/snippet}

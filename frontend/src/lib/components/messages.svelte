@@ -264,8 +264,10 @@
 		bind:this={containerRef} 
 		class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(mounted && messages.length === 0) || settingsStore.isVisible ? '' : 'pt-4'}"
 		data-messages-container
-		use:infiniteScroll={{ threshold: 200, debounce: 300 }}
-		on:loadmore={() => onLoadMore?.()}
+		use:infiniteScroll={{ 
+			threshold: 200, 
+			debounce: 300
+		}}
 	>
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
 		{#if settingsStore.isVisible || settingsStore.isTransitioning}

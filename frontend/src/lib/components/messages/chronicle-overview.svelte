@@ -118,10 +118,10 @@
 			}
 		};
 		
-		window.addEventListener('chronicle-events-updated', handleEventsUpdated as EventListener);
+		window.addEventListener('chronicle-events-updated', handleEventsUpdated as unknown as EventListener);
 		
 		return () => {
-			window.removeEventListener('chronicle-events-updated', handleEventsUpdated as EventListener);
+			window.removeEventListener('chronicle-events-updated', handleEventsUpdated as unknown as EventListener);
 		};
 	});
 
@@ -285,6 +285,14 @@
 				toast.success('Chronicle deleted successfully');
 				// Refresh the chronicle store to update all components
 				await chronicleStore.refresh();
+				
+				// Notify other components that a chronicle was deleted
+				window.dispatchEvent(
+					new CustomEvent('chronicle-deleted', {
+						detail: { chronicleId: chronicleId }
+					})
+				);
+				
 				// Navigate back to chronicles list by showing the list view
 				selectedChronicleStore.showList();
 				goto('/');

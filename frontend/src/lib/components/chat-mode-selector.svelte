@@ -83,7 +83,7 @@
 </script>
 
 <Dialog bind:open {onOpenChange}>
-	<DialogTrigger asChild>
+	<DialogTrigger>
 		{#snippet child({ props })}
 			<Button {...props} variant="outline" class="w-full">
 				<span class="mr-2">💬</span>

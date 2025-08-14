@@ -89,9 +89,10 @@
 		showDeleteLorebook = false;
 	}
 
-	async function handleCreateEntry(data: CreateLorebookEntryPayload) {
-		if (onCreateEntry) {
-			const entry = await onCreateEntry(lorebook.id, data);
+	async function handleCreateEntry(data: CreateLorebookEntryPayload | UpdateLorebookEntryPayload) {
+		if (onCreateEntry && 'entry_title' in data) {
+			// This is a CreateLorebookEntryPayload (has required entry_title)
+			const entry = await onCreateEntry(lorebook.id, data as CreateLorebookEntryPayload);
 			if (entry) {
 				showCreateEntry = false;
 			}

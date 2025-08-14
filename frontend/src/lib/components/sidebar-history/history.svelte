@@ -114,7 +114,7 @@
 	async function handleDeleteChat() {
 		if (!chatIdToDelete) return;
 
-		const action = chatHasChronicle ? selectedAction : undefined;
+		const action = chatHasChronicle() ? selectedAction : undefined;
 
 		const deletePromise = (async () => {
 			// Use Scribe endpoint for deleting a chat with chronicle action
@@ -129,6 +129,16 @@
 			success: () => {
 				chatHistory.chats = chatHistory.chats.filter((chat) => chat.id !== chatIdToDelete);
 				chatHistory.refetch();
+				
+				// If we deleted a chronicle along with the chat, notify other components
+				if (action === 'delete_chronicle') {
+					window.dispatchEvent(
+						new CustomEvent('chronicle-deleted', {
+							detail: { chronicleId: deletionAnalysis?.chronicle?.id }
+						})
+					);
+				}
+				
 				return getSuccessMessage(action);
 			},
 			error: 'Failed to delete chat'
@@ -142,7 +152,7 @@
 	}
 
 	function getSuccessMessage(action?: ChronicleAction): string {
-		if (!action || !chatHasChronicle) return 'Chat deleted successfully';
+		if (!action || !chatHasChronicle()) return 'Chat deleted successfully';
 		
 		switch (action) {
 			case 'delete_chronicle':
@@ -219,7 +229,7 @@
 				<AlertDialogTitle>
 					{#if analysisLoading}
 						Analyzing chat...
-					{:else if chatHasChronicle}
+					{:else if chatHasChronicle()}
 						Delete chat with chronicle?
 					{:else}
 						Delete chat?
@@ -231,7 +241,7 @@
 							<div class="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"></div>
 							<span>Checking for associated chronicles...</span>
 						</div>
-					{:else if chatHasChronicle && deletionAnalysis?.chronicle}
+					{:else if chatHasChronicle() && deletionAnalysis?.chronicle}
 						<div class="space-y-4">
 							<div class="rounded-md bg-amber-50 dark:bg-amber-950 p-3">
 								<div class="font-medium text-amber-800 dark:text-amber-200 mb-2">

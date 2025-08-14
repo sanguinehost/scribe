@@ -2,6 +2,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import * as RadioGroup from '$lib/components/ui/radio-group';
+	import { RadioGroupItem } from '$lib/components/ui/radio-group';
 	import { Label } from '$lib/components/ui/label';
 	import { Zap, Brain, X } from 'lucide-svelte';
 
@@ -52,7 +53,7 @@
 		</Dialog.Header>
 
 		<div class="grid gap-4 py-4">
-			<RadioGroup bind:value={selectedMode} class="gap-4">
+			<RadioGroup.Root bind:value={selectedMode} class="gap-4">
 				<!-- Quick regeneration option -->
 				<div class="flex items-start space-x-3 rounded-lg border p-4 hover:bg-accent/50 transition-colors">
 					<RadioGroupItem value="existing" id="existing" class="mt-1" />
@@ -103,7 +104,7 @@
 						</p>
 					</Label>
 				</div>
-			</RadioGroup>
+			</RadioGroup.Root>
 		</div>
 
 		<Dialog.Footer>

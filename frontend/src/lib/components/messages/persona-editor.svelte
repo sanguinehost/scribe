@@ -4,7 +4,7 @@
 	import { toast } from 'svelte-sonner';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
-	import type { CreateUserPersonaRequest } from '$lib/api';
+	import type { CreateUserPersonaRequest } from '$lib/types';
 	import { apiClient } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
@@ -91,14 +91,16 @@
 	let newTag = $state('');
 
 	function addTag() {
-		if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
+		if (newTag.trim() && formData.tags && !formData.tags.includes(newTag.trim())) {
 			formData.tags = [...formData.tags, newTag.trim()];
 			newTag = '';
 		}
 	}
 
 	function removeTag(tagToRemove: string) {
-		formData.tags = formData.tags.filter((tag) => tag !== tagToRemove);
+		if (formData.tags) {
+			formData.tags = formData.tags.filter((tag: string) => tag !== tagToRemove);
+		}
 	}
 
 	function handleTagKeydown(event: KeyboardEvent) {
@@ -160,7 +162,7 @@
 					<div class="space-y-2">
 						<Label>Tags</Label>
 						<div class="mb-2 flex flex-wrap gap-2">
-							{#each formData.tags as tag}
+							{#each (formData.tags || []) as tag}
 								<Badge variant="secondary" class="flex items-center gap-1">
 									{tag}
 									<button

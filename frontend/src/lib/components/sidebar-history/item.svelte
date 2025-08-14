@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Chat } from '$lib/types';
+	import type { ScribeChatSession } from '$lib/types';
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -16,7 +16,7 @@
 		active,
 		ondelete
 	}: {
-		chat: Chat;
+		chat: ScribeChatSession;
 		active: boolean;
 		ondelete: (chatId: string) => void;
 	} = $props();

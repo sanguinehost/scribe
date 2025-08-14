@@ -1,11 +1,7 @@
 <script lang="ts">
-	import { Select as SelectPrimitive } from 'bits-ui';
 	import { cn } from '$lib/utils/shadcn.js';
 
-	type $$Props = SelectPrimitive.SeparatorProps;
-
-	let className: $$Props['class'] = undefined;
-	export { className as class };
+	let { class: className, ...restProps }: { class?: string; [key: string]: any } = $props();
 </script>
 
-<SelectPrimitive.Separator class={cn('-mx-1 my-1 h-px bg-muted', className)} {...$$restProps} />
+<div class={cn('-mx-1 my-1 h-px bg-muted', className)} {...restProps}></div>

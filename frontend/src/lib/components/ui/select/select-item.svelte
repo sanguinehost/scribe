@@ -4,7 +4,6 @@
 	import { cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = SelectPrimitive.ItemProps;
-	type $$Events = SelectPrimitive.ItemEvents;
 
 	let className: $$Props['class'] = undefined;
 	export let value: $$Props['value'];
@@ -22,17 +21,9 @@
 		className
 	)}
 	{...$$restProps}
-	on:click
-	on:keydown
-	on:focusin
-	on:focusout
-	on:pointerleave
-	on:pointermove
 >
 	<span class="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-		<SelectPrimitive.ItemIndicator>
-			<Check class="h-4 w-4" />
-		</SelectPrimitive.ItemIndicator>
+		<Check class="h-4 w-4" />
 	</span>
 	<slot>
 		{label || value}

@@ -206,8 +206,7 @@
 {#if !isFirstMessage(message)}
 	<RawPromptModal 
 		bind:open={showRawPromptModal}
-		messageId={message.backend_id || message.id} 
-		sessionId={message.session_id || ''} 
+		messageId={message.backend_id || message.id}
 	/>
 {/if}
 
