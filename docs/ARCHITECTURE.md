@@ -117,16 +117,18 @@ graph TD
     style GEMINI fill:#ffc,stroke:#333
 ```
 
-## Chronicle System (Optional Narrative Extraction)
+## Chronicle System (Optional Automatic Narrative Extraction)
 
-Scribe includes a chronicle system for extracting and storing narrative events from chat conversations:
+Scribe includes an optional chronicle system that can automatically extract and store narrative events from chat conversations:
 
-*   **Manual Extraction:** Chronicles are extracted via the `/api/chronicles/:id/re-chronicle` endpoint, not automatically during chat.
-*   **Simple Events:** Chronicle events store summaries of significant narrative moments.
-*   **Lorebook Integration:** The system can also extract world-building information into lorebook entries.
-*   **Future Enhancement:** Plans exist to simplify chronicles to text summaries with keywords for better search.
+*   **Opt-In Per Chat:** Chronicles are only created and updated if the user enables chronicling for a specific chat session. This is a per-chat setting controlled by the user.
+*   **Automatic Extraction:** When enabled for a chat, chronicles are automatically created and updated after each chat message via the narrative intelligence service.
+*   **AI-Powered Chronicle Naming:** When no chronicle exists for an enabled session, the system automatically creates one with an AI-generated name based on the conversation content.
+*   **Event Creation:** The system extracts significant narrative moments and creates chronicle events using AI analysis (only for enabled chats).
+*   **Lorebook Integration:** The system can also extract world-building information into lorebook entries automatically (only for enabled chats).
+*   **Legacy Re-chronicle:** The `/api/chronicles/:id/re-chronicle` endpoint exists for manual re-processing but is primarily for legacy/debugging use.
 
-Note: The agentic narrative extraction system exists but is not active in the main chat flow.
+The agentic narrative extraction system runs automatically in the main chat flow after each assistant response, but only for chat sessions where chronicles have been explicitly enabled by the user.
 
 ## Data Flow (Core Chat Loop Example - Assumes Authenticated User)
 

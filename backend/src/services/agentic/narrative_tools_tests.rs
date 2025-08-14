@@ -36,80 +36,9 @@ mod tests {
         assert!(output["suggested_categories"].as_array().unwrap().len() > 0);
     }
 
-    #[tokio::test]
-    async fn test_extract_temporal_events_tool() {
-        // Arrange
-        let mock_ai_client = Arc::new(MockAiClient::new_with_response(json!({
-            "events": [
-                {
-                    "event_type": "COMBAT",
-                    "summary": "Goblin horde defeated in battle",
-                    "details": "Major combat encounter with casualties"
-                }
-            ]
-        }).to_string()));
-        let tool = ExtractTemporalEventsTool::new(mock_ai_client);
-        
-        let params = json!({
-            "messages": [
-                {"role": "user", "content": "We defeated the goblin horde"},
-                {"role": "assistant", "content": "The battle was won, but at great cost"}
-            ]
-        });
+    // NOTE: test_extract_temporal_events_tool removed - tool was deleted as it only returned mock data
 
-        // Act
-        let result = tool.execute(&params).await;
-
-        // Assert
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        let events = output["events"].as_array().unwrap();
-        assert!(!events.is_empty());
-        
-        // Check first event structure
-        let first_event = &events[0];
-        assert!(first_event["event_type"].is_string());
-        assert!(first_event["summary"].is_string());
-    }
-
-    #[tokio::test]
-    async fn test_extract_world_concepts_tool() {
-        // Arrange
-        let mock_ai_client = Arc::new(MockAiClient::new_with_response(json!({
-            "concepts": [
-                {
-                    "name": "Archmage Zephyr",
-                    "category": "character",
-                    "content": "Head of the Crystal Tower, master of elemental magic",
-                    "keywords": "archmage, crystal tower, elemental magic"
-                }
-            ]
-        }).to_string()));
-        let tool = ExtractWorldConceptsTool::new(mock_ai_client);
-        
-        let params = json!({
-            "messages": [
-                {"role": "user", "content": "Tell me about the Archmage Zephyr"},
-                {"role": "assistant", "content": "Archmage Zephyr is the head of the Crystal Tower, master of elemental magic"}
-            ]
-        });
-
-        // Act
-        let result = tool.execute(&params).await;
-
-        // Assert
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        let concepts = output["concepts"].as_array().unwrap();
-        assert!(!concepts.is_empty());
-        
-        // Check first concept structure
-        let first_concept = &concepts[0];
-        assert!(first_concept["name"].is_string());
-        assert!(first_concept["category"].is_string());
-        assert!(first_concept["content"].is_string());
-        assert!(first_concept["keywords"].is_string());
-    }
+    // NOTE: test_extract_world_concepts_tool removed - tool was deleted as it only returned mock data
 
     #[tokio::test] 
     async fn test_tool_composability() {
@@ -152,17 +81,8 @@ mod tests {
         if significance_result["is_significant"].as_bool().unwrap() {
             let categories = significance_result["suggested_categories"].as_array().unwrap();
             
-            if categories.iter().any(|c| c.as_str() == Some("chronicle_events")) {
-                let events_tool = ExtractTemporalEventsTool::new(mock_ai_client.clone());
-                let events_result = events_tool.execute(&messages).await.unwrap();
-                assert!(!events_result["events"].as_array().unwrap().is_empty());
-            }
-            
-            if categories.iter().any(|c| c.as_str() == Some("lorebook_entries")) {
-                let concepts_tool = ExtractWorldConceptsTool::new(mock_ai_client.clone());
-                let concepts_result = concepts_tool.execute(&messages).await.unwrap();
-                assert!(!concepts_result["concepts"].as_array().unwrap().is_empty());
-            }
+            // NOTE: Step 2 extraction tools removed - were only returning mock data
+            // In the real single-agent system, context_enrichment_agent handles this directly
         }
     }
 
@@ -209,19 +129,10 @@ mod tests {
         // Step 2: Knowledge retrieval would happen here with SearchKnowledgeBaseTool
         // (currently has placeholder implementation)
         
-        // Step 3: Extract information (no DB operations)
-        let extract_events_tool = ExtractTemporalEventsTool::new(mock_ai_client.clone());
-        let extract_concepts_tool = ExtractWorldConceptsTool::new(mock_ai_client.clone());
+        // Step 3: NOTE - Extraction tools removed as they only returned mock data
+        // In the real system, context_enrichment_agent handles extraction directly
         
-        let events = extract_events_tool.execute(&json!({"messages": messages})).await.unwrap();
-        let concepts = extract_concepts_tool.execute(&json!({"messages": messages})).await.unwrap();
-        
-        // Step 4: Agent would decide what to create based on extracted data
-        // This demonstrates the atomic nature - extraction is separate from creation
-        assert!(!events["events"].as_array().unwrap().is_empty());
-        assert!(!concepts["concepts"].as_array().unwrap().is_empty());
-        
-        // The agent would then call CreateChronicleEventTool or CreateLorebookEntryTool
-        // based on its reasoning about the extracted data
+        // Step 4: The agent would call CreateChronicleEventTool or CreateLorebookEntryTool
+        // based on its reasoning about the conversation content
     }
 }

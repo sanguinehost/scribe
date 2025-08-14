@@ -13,8 +13,7 @@ use super::{
     agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig},
     narrative_tools::{
         CreateChronicleEventTool, CreateLorebookEntryTool,
-        AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
-        SearchKnowledgeBaseTool, UpdateLorebookEntryTool
+        AnalyzeTextSignificanceTool, SearchKnowledgeBaseTool, UpdateLorebookEntryTool
     },
     registry::ToolRegistry,
 };
@@ -110,12 +109,7 @@ impl AgenticNarrativeFactory {
         let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(ai_client.clone()));
         registry.add_tool(significance_tool);
 
-        // Extraction tools - for Step 3 (no DB operations)
-        let extract_events_tool = Arc::new(ExtractTemporalEventsTool::new(ai_client.clone()));
-        registry.add_tool(extract_events_tool);
-
-        let extract_concepts_tool = Arc::new(ExtractWorldConceptsTool::new(ai_client.clone()));
-        registry.add_tool(extract_concepts_tool);
+        // NOTE: Extraction tools removed - were only returning mock data and not used in single-agent system
 
         // Creation tools - atomic DB operations for Step 4
         let create_event_tool = Arc::new(CreateChronicleEventTool::new(
@@ -161,12 +155,7 @@ impl AgenticNarrativeFactory {
         let significance_tool = Arc::new(AnalyzeTextSignificanceTool::new(ai_client.clone()));
         registry.add_tool(significance_tool);
 
-        // Extraction tools - atomic operations for Step 2
-        let temporal_tool = Arc::new(ExtractTemporalEventsTool::new(ai_client.clone()));
-        registry.add_tool(temporal_tool);
-
-        let world_tool = Arc::new(ExtractWorldConceptsTool::new(ai_client.clone()));
-        registry.add_tool(world_tool);
+        // NOTE: Extraction tools removed - were only returning mock data and not used in single-agent system
 
         // Creation tools - atomic DB operations for Step 4
         let create_event_tool = Arc::new(CreateChronicleEventTool::new(
