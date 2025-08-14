@@ -280,40 +280,37 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // This preserves the full semantic context of each entry
         info!(%original_lorebook_entry_id, content_length = decrypted_content.len(), "Processing lorebook entry as atomic unit (no chunking)");
 
-        // Create a structured representation of the lorebook entry for better semantic matching
-        // This format helps the embedding model understand the different components
-        let mut structured_parts = Vec::new();
+        // Create embedding content with rich context for semantic matching
+        // while storing clean content for display in prompts
+        let mut embedding_parts = Vec::new();
         
-        // Add title with clear labeling
+        // Add title for embedding context
         if let Some(title) = &decrypted_title {
-            structured_parts.push(format!("== LOREBOOK ENTRY: {} ==", title.to_uppercase()));
-        } else {
-            structured_parts.push("== LOREBOOK ENTRY ==".to_string());
-        }
-        
-        // Add the main content with clear section marker
-        structured_parts.push("\n[CONTENT]".to_string());
-        structured_parts.push(decrypted_content.clone());
-        
-        // Add keywords as both a list and naturally integrated
-        if let Some(keywords) = &decrypted_keywords {
-            if !keywords.is_empty() {
-                // Add as tagged list for exact matching
-                structured_parts.push("\n[KEYWORDS]".to_string());
-                structured_parts.push(keywords.join(", "));
-                
-                // Also add in a more natural sentence form for semantic understanding
-                structured_parts.push("\n[TOPICS]".to_string());
-                structured_parts.push(format!("This entry relates to: {}", keywords.join(", ")));
+            if !title.trim().is_empty() {
+                embedding_parts.push(format!("Title: {}", title));
             }
         }
         
-        // Add metadata context for better filtering
-        if is_constant {
-            structured_parts.push("\n[TYPE: CONSTANT/ALWAYS ACTIVE]".to_string());
+        // Add the main content
+        embedding_parts.push(decrypted_content.clone());
+        
+        // Add keywords naturally for better semantic matching
+        if let Some(keywords) = &decrypted_keywords {
+            if !keywords.is_empty() {
+                embedding_parts.push(format!("Related topics: {}", keywords.join(", ")));
+            }
         }
         
-        let full_content = structured_parts.join("\n");
+        // Add metadata context for filtering
+        if is_constant {
+            embedding_parts.push("Always active entry".to_string());
+        }
+        
+        // Rich content for embedding
+        let full_content = embedding_parts.join("\n\n");
+        
+        // Clean content for display (just the main content without extra context)
+        let display_content = decrypted_content.clone();
 
         let task_type = "RETRIEVAL_DOCUMENT";
         let embedding_vector = match embedding_client
@@ -330,24 +327,24 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // Add a small delay to mitigate potential rate limiting
         sleep(Duration::from_millis(100)).await;
 
-        // Encrypt content if SessionDek is available
+        // Encrypt clean display content if SessionDek is available
         let (chunk_text_for_storage, encrypted_chunk_text, chunk_text_nonce) = 
             if let Some(ref dek) = session_dek {
-                // We have SessionDek, encrypt the content
-                match crate::crypto::encrypt_gcm(full_content.as_bytes(), dek) {
+                // We have SessionDek, encrypt the clean display content
+                match crate::crypto::encrypt_gcm(display_content.as_bytes(), dek) {
                     Ok((encrypted_content, content_nonce)) => {
                         info!("Successfully encrypted lorebook content for Qdrant storage");
                         ("[encrypted]".to_string(), Some(encrypted_content), Some(content_nonce))
                     }
                     Err(e) => {
                         error!("Failed to encrypt lorebook content: {}, falling back to plaintext", e);
-                        (full_content.clone(), None, None)
+                        (display_content.clone(), None, None)
                     }
                 }
             } else {
-                // No SessionDek, store plaintext (backward compatibility)
+                // No SessionDek, store clean display content as plaintext (backward compatibility)
                 warn!("No SessionDek available for lorebook entry, storing plaintext in Qdrant");
-                (full_content.clone(), None, None)
+                (display_content.clone(), None, None)
             };
         
         // Encrypt title if available and SessionDek is provided
