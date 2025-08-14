@@ -40,6 +40,22 @@ pub trait QdrantClientServiceTrait: Send + Sync {
         limit: u64,
         filter: Option<Filter>,
     ) -> Result<Vec<ScoredPoint>, AppError>;
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError>;
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        text_query: Option<String>,
+        text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError>;
     async fn retrieve_points(
         &self,
         filter: Option<Filter>,
@@ -292,16 +308,12 @@ impl QdrantClientService {
             }
         }
 
-        // Ensure payload indexes exist for group_id fields
-        for field_name in &["user_id", "lorebook_id"] {
+        // Ensure payload indexes exist for keyword fields
+        for field_name in &["user_id", "lorebook_id", "session_id", "chronicle_id"] {
             info!(
-                "Ensuring payload index exists for field '{}' in collection '{}'",
+                "Ensuring keyword index exists for field '{}' in collection '{}'",
                 field_name, self.collection_name
             );
-            // It's possible the index already exists. Qdrant's create_field_index
-            // is idempotent if the index already exists with the same parameters.
-            // If it exists with different parameters, it might error.
-            // We'll log errors but proceed, as the main goal is to *try* to create them.
             let result = self
                 .client
                 .create_field_index(CreateFieldIndexCollection {
@@ -339,6 +351,47 @@ impl QdrantClientService {
                 }
             }
         }
+        
+        // Ensure text indexes exist for searchable text fields
+        // These enable substring matching and full-text search
+        for field_name in &["chunk_text", "entry_title", "keywords", "event_text", "text"] {
+            info!(
+                "Ensuring text index exists for field '{}' in collection '{}'",
+                field_name, self.collection_name
+            );
+            
+            // Create text index with appropriate configuration for substring matching
+            let result = self
+                .client
+                .create_field_index(CreateFieldIndexCollection {
+                    collection_name: self.collection_name.clone(),
+                    wait: Some(true),
+                    field_name: (*field_name).to_string(),
+                    field_type: Some(FieldType::Text.into()), // Text type for full-text search
+                    field_index_params: None, // Default text index params (word tokenizer, lowercase)
+                    ordering: None,
+                })
+                .await;
+                
+            match result {
+                Ok(_) => info!(
+                    "Successfully ensured text index for field '{}'",
+                    field_name
+                ),
+                Err(e) => {
+                    let error_string = e.to_string();
+                    if error_string.contains("already exists")
+                        || error_string.contains("exists with different parameters")
+                    {
+                        warn!(error = %e, collection = %self.collection_name, field = %field_name, "Text index for field may already exist or have different params. Proceeding.");
+                    } else {
+                        // Text indexes are optional for basic functionality, so we log but continue
+                        error!(error = %e, collection = %self.collection_name, field = %field_name, "Failed to create text index for field. Text search may not work optimally for this field.");
+                    }
+                }
+            }
+        }
+        
         Ok(())
     }
 
@@ -375,7 +428,7 @@ impl QdrantClientService {
     // --- Search Operation ---
     #[instrument(
         skip(self, query_vector, filter),
-        fields(limit),
+        fields(limit, score_threshold),
         name = "qdrant_search_points"
     )]
     pub async fn search_points(
@@ -384,15 +437,31 @@ impl QdrantClientService {
         limit: u64,
         filter: Option<Filter>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
+        self.search_points_with_threshold(query_vector, limit, filter, None).await
+    }
+
+    // --- Search Operation with Score Threshold ---
+    #[instrument(
+        skip(self, query_vector, filter),
+        fields(limit, score_threshold),
+        name = "qdrant_search_points_with_threshold"
+    )]
+    pub async fn search_points_with_threshold(
+        &self,
+        query_vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
         info!(
             limit,
             filter_is_some = filter.is_some(),
+            score_threshold = ?score_threshold,
             collection = %self.collection_name,
-            "Searching points in Qdrant"
+            "Searching points in Qdrant with threshold"
         );
 
         // Build the base search request
-        // Remove unused `mut`
         let search_request = qdrant_client::qdrant::SearchPoints {
             collection_name: self.collection_name.clone(),
             vector: query_vector,
@@ -401,7 +470,7 @@ impl QdrantClientService {
             filter,                          // Use the passed-in filter directly
             // Initialize other fields as needed, using defaults or None
             offset: None,
-            score_threshold: None,
+            score_threshold,  // Use the provided score threshold
             params: None,
             vector_name: None,
             with_vectors: None,
@@ -427,6 +496,139 @@ impl QdrantClientService {
             "Qdrant search completed"
         );
         Ok(search_result.result)
+    }
+
+    // --- Hybrid Search Operation (combining vector and text search) ---
+    #[instrument(
+        skip(self, vector, text_query, filter),
+        fields(text_fields = ?text_fields, limit, score_threshold = ?score_threshold),
+        name = "qdrant_hybrid_search"
+    )]
+    pub async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        text_query: Option<String>,
+        text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        info!(
+            has_vector = vector.is_some(),
+            has_text_query = text_query.is_some(),
+            text_fields = ?text_fields,
+            limit,
+            score_threshold = ?score_threshold,
+            "Performing hybrid search in Qdrant"
+        );
+
+        // Build filter conditions for text search
+        let mut combined_filter = filter.clone();
+        
+        if let Some(query) = &text_query {
+            if !text_fields.is_empty() {
+                let query_lower = query.to_lowercase();
+                
+                // Create text matching conditions for each field
+                let mut text_conditions = Vec::new();
+                for field in &text_fields {
+                    // Use substring matching for flexible keyword search
+                    text_conditions.push(Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: field.clone(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Text(query_lower.clone())),
+                            }),
+                            range: None,
+                            geo_bounding_box: None,
+                            geo_radius: None,
+                            values_count: None,
+                            geo_polygon: None,
+                            datetime_range: None,
+                            is_empty: None,
+                            is_null: None,
+                        })),
+                    });
+                }
+                
+                // Combine text conditions with OR logic
+                let text_filter = if text_conditions.len() > 1 {
+                    Filter {
+                        should: text_conditions,
+                        must: vec![],
+                        must_not: vec![],
+                        min_should: None,
+                    }
+                } else if text_conditions.len() == 1 {
+                    Filter {
+                        must: text_conditions,
+                        should: vec![],
+                        must_not: vec![],
+                        min_should: None,
+                    }
+                } else {
+                    Filter {
+                        must: vec![],
+                        should: vec![],
+                        must_not: vec![],
+                        min_should: None,
+                    }
+                };
+                
+                // Combine with existing filter using AND logic
+                combined_filter = if let Some(existing_filter) = combined_filter {
+                    Some(Filter {
+                        must: vec![
+                            Condition {
+                                condition_one_of: Some(ConditionOneOf::Filter(existing_filter)),
+                            },
+                            Condition {
+                                condition_one_of: Some(ConditionOneOf::Filter(text_filter)),
+                            },
+                        ],
+                        should: vec![],
+                        must_not: vec![],
+                        min_should: None,
+                    })
+                } else {
+                    Some(text_filter)
+                };
+            }
+        }
+
+        // Perform search based on available inputs
+        let results = if let Some(vec) = vector {
+            // Vector search with optional text filtering
+            self.search_points_with_threshold(vec, limit, combined_filter, score_threshold).await?
+        } else if text_query.is_some() {
+            // Pure text search using scroll/retrieve
+            let retrieved = self.retrieve_points(combined_filter, limit as usize).await?;
+            
+            // Convert RetrievedPoint to ScoredPoint
+            retrieved
+                .into_iter()
+                .map(|rp| ScoredPoint {
+                    id: rp.id,
+                    version: 0,
+                    score: 1.0, // Text matches get a default score
+                    payload: rp.payload,
+                    vectors: rp.vectors,
+                    shard_key: rp.shard_key,
+                    order_value: rp.order_value,
+                })
+                .collect()
+        } else {
+            // No search criteria provided
+            return Err(AppError::VectorDbError(
+                "Hybrid search requires either vector or text query".to_string()
+            ));
+        };
+
+        info!(
+            found_points = results.len(),
+            "Hybrid search completed"
+        );
+        Ok(results)
     }
 
     // --- Retrieve Operation (using Scroll API) ---
@@ -566,6 +768,30 @@ impl QdrantClientServiceTrait for QdrantClientService {
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the implementation's method directly
         self.search_points(vector, limit, filter).await
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Use the implementation's method directly
+        self.search_points_with_threshold(vector, limit, filter, score_threshold).await
+    }
+
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        text_query: Option<String>,
+        text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Use the implementation's method directly
+        self.hybrid_search(vector, text_query, text_fields, limit, filter, score_threshold).await
     }
 
     async fn retrieve_points(

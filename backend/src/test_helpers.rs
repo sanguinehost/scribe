@@ -962,6 +962,34 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         })
     }
 
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Just delegate to search_points for the mock, ignoring threshold
+        self.search_points(vector, limit, filter).await
+    }
+
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        _text_query: Option<String>,
+        _text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // For mock, just use vector search if vector is provided, otherwise return empty
+        if let Some(v) = vector {
+            self.search_points(v, limit, filter).await
+        } else {
+            Ok(vec![])
+        }
+    }
+
     async fn retrieve_points(
         &self,
         _filter: Option<Filter>,

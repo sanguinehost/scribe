@@ -331,6 +331,12 @@ impl LorebookService {
                                 let user_id_for_embedding_task = current_user_id;
                                 let is_enabled_for_embedding_task = entry.is_enabled; // Should be true here
                                 let is_constant_for_embedding_task = entry.is_constant;
+                                
+                                // Clone the SessionDek for the async task
+                                let session_dek_for_embedding = user_dek.map(|dek| {
+                                    let dek_bytes = dek.expose_secret().clone();
+                                    secrecy::SecretBox::new(Box::new(dek_bytes))
+                                });
 
                                 tokio::spawn(async move {
                                     debug!(
@@ -346,6 +352,7 @@ impl LorebookService {
                                         decrypted_keywords: decrypted_keywords_for_embedding,
                                         is_enabled: is_enabled_for_embedding_task,
                                         is_constant: is_constant_for_embedding_task,
+                                        session_dek: session_dek_for_embedding,
                                     };
 
                                     if let Err(e) = embedding_pipeline_service_clone

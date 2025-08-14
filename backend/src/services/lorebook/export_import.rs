@@ -457,6 +457,12 @@ impl LorebookService {
                                 }
                             });
 
+                        // Clone the SessionDek for the async task
+                        let session_dek_for_embedding = user_dek.map(|dek| {
+                            let dek_bytes = dek.expose_secret().clone();
+                            secrecy::SecretBox::new(Box::new(dek_bytes))
+                        });
+                        
                         let params = crate::services::embeddings::LorebookEntryParams {
                             original_lorebook_entry_id: inserted_entry.id,
                             lorebook_id: inserted_entry.lorebook_id,
@@ -466,6 +472,7 @@ impl LorebookService {
                             decrypted_keywords,
                             is_enabled: inserted_entry.is_enabled,
                             is_constant: inserted_entry.is_constant,
+                            session_dek: session_dek_for_embedding,
                         };
 
                         // Spawn embedding generation in background to avoid blocking import
