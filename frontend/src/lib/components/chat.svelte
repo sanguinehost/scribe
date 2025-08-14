@@ -282,12 +282,12 @@
 							sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
 							content: msg.content,
 							displayedContent: msg.content,
-							created_at: msg.created_at,
+							created_at: msg.created_at || new Date().toISOString(),
 							isAnimating: false,
-							error: msg.error,
+							error: msg.error || undefined,
 							retryable: msg.retryable,
-							prompt_tokens: msg.prompt_tokens,
-							completion_tokens: msg.completion_tokens,
+							prompt_tokens: msg.prompt_tokens || undefined,
+							completion_tokens: msg.completion_tokens || undefined,
 							model_name: msg.model_name,
 							backend_id: msg.backend_id,
 							status: msg.status,
@@ -343,12 +343,12 @@
 							sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
 							content: msg.content,
 							displayedContent: msg.content,
-							created_at: msg.created_at,
+							created_at: msg.created_at || new Date().toISOString(),
 							isAnimating: false,
-							error: msg.error,
+							error: msg.error || undefined,
 							retryable: msg.retryable,
-							prompt_tokens: msg.prompt_tokens,
-							completion_tokens: msg.completion_tokens,
+							prompt_tokens: msg.prompt_tokens || undefined,
+							completion_tokens: msg.completion_tokens || undefined,
 							model_name: msg.model_name,
 							backend_id: msg.backend_id
 						})
@@ -464,7 +464,11 @@
 		lastStreamingMessages = streamingMessages;
 
 		// Sort messages by timestamp (oldest first) for proper chronological display
-		messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+		messages.sort((a, b) => {
+			const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+			const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+			return aTime - bTime;
+		});
 
 		// Only log when no messages are animating to avoid spam
 		const hasAnimatingMessages = streamingMessages.some((m) => m.isAnimating);

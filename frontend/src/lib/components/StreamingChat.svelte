@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { $effect } from 'svelte';
+  // Effects are now used inline with $effect syntax
   import { toast } from 'svelte-sonner';
   import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
   import { apiClient } from '$lib/api';
@@ -50,6 +50,7 @@
       const firstMessage: StreamingMessage = {
         id: `first-message-${chat.id}`,
         content: character.first_mes,
+        displayedContent: character.first_mes,
         sender: 'assistant',
         created_at: new Date().toISOString()
       };
@@ -115,9 +116,9 @@
     try {
       // Build history from current messages
       const history = streamingState.messages
-        .filter(msg => !msg.loading && !msg.error)
+        .filter(msg => !msg.isAnimating && !msg.error)
         .map(msg => ({
-          role: msg.sender === 'assistant' ? 'assistant' : 'user',
+          role: msg.sender === 'assistant' ? 'assistant' as const : 'user' as const,
           content: msg.content
         }));
 
@@ -170,15 +171,16 @@
 
       const history = streamingState.messages
         .slice(0, messageIndex)
-        .filter(msg => !msg.loading && !msg.error)
+        .filter(msg => !msg.isAnimating && !msg.error)
         .map(msg => ({
-          role: msg.sender === 'assistant' ? 'assistant' : 'user',
+          role: msg.sender === 'assistant' ? 'assistant' as const : 'user' as const,
           content: msg.content
         }));
 
       const model = await getCurrentChatModel();
 
-      await streamingService.retryMessage(messageId, chat.id, history, model || undefined);
+      // TODO: Implement retry functionality
+      toast.info('Retry functionality not yet implemented');
     } catch (error) {
       console.error('Failed to retry message:', error);
       toast.error('Failed to retry message. Please try again.');
@@ -197,7 +199,7 @@
   /**
    * Get placeholder text based on current state
    */
-  let placeholderText = $derived(() => {
+  let placeholderText = $derived.by(() => {
     if (isLoading) return "Generating response...";
     if (!chat?.id) return "No active chat session";
     return "Send a message...";
@@ -239,12 +241,12 @@
                   <!-- Message Content with Typewriter Effect -->
                   <TypewriterMessage 
                     {message} 
-                    showTypewriter={message.loading && message.content.length > 0}
+                    showTypewriter={message.isAnimating && message.content.length > 0}
                     className="text-foreground"
                   />
                   
                   <!-- Loading Indicator -->
-                  {#if message.loading && message.content.length === 0}
+                  {#if message.isAnimating && message.content.length === 0}
                     <div class="flex items-center space-x-2">
                       <div class="h-2 w-2 animate-pulse rounded-full bg-muted-foreground"></div>
                       <div class="h-2 w-2 animate-pulse rounded-full bg-muted-foreground" style="animation-delay: 0.2s"></div>
@@ -282,7 +284,7 @@
                 </div>
                 
                 <!-- Timestamp and Token Info -->
-                {#if !message.loading}
+                {#if !message.isAnimating}
                   <div class="flex items-center justify-between text-xs text-muted-foreground">
                     <span>{new Date(message.created_at).toLocaleTimeString()}</span>
                     {#if message.prompt_tokens || message.completion_tokens}

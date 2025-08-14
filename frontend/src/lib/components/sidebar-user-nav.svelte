@@ -36,13 +36,11 @@
 							: ''}"
 					>
 						{#if getIsAuthenticated() && getCurrentUser()}
-							<img
-								src={`https://avatar.vercel.sh/${getCurrentUser()?.email}`}
-								alt={getCurrentUser()?.email ?? 'User Avatar'}
-								width={24}
-								height={24}
-								class="rounded-full"
-							/>
+							<div class="flex h-6 w-6 items-center justify-center rounded-full bg-muted">
+								<span class="text-xs font-semibold">
+									{getCurrentUser()?.username?.charAt(0).toUpperCase() ?? 'U'}
+								</span>
+							</div>
 							<span class="truncate">{getCurrentUser()?.email}</span>
 							{#if getHasConnectionError()}
 								<span class="ml-auto text-xs text-orange-500">⚠</span>

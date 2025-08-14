@@ -116,10 +116,10 @@
 			await loadChronicles();
 		};
 		
-		window.addEventListener('chronicle-created', handleChronicleCreated as EventListener);
+		window.addEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
 		
 		return () => {
-			window.removeEventListener('chronicle-created', handleChronicleCreated as EventListener);
+			window.removeEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
 		};
 	});
 
@@ -209,7 +209,7 @@
 					globalUserSettings?.default_context_rag_budget ??
 					DEFAULT_CONTEXT_RAG_BUDGET,
 				agent_mode:
-					settings.agent_mode ?? 'disabled'
+					(settings.agent_mode as 'pre_processing' | 'post_processing' | 'disabled') ?? 'disabled'
 			};
 
 			// IMPORTANT: Update currentChronicleId from the fresh backend settings

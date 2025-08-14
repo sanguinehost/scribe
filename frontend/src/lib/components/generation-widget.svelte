@@ -36,7 +36,7 @@
 			});
 			
 			if (result.isOk()) {
-				const generatedText = result.value.generated_content;
+				const generatedText = result.value.content;
 				onGenerated(generatedText);
 				
 				const modeDescriptions = {

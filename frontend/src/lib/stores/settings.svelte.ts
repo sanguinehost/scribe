@@ -4,6 +4,7 @@ import { apiClient } from '$lib/api';
 export class SettingsStore {
 	isVisible = $state(false);
 	isTransitioning = $state(false);
+	viewMode = $state<'overview' | 'consolidated'>('overview');
 	typingSpeed = $state(30); // milliseconds between characters for streaming text
 
 	async loadTypingSpeed() {
@@ -45,6 +46,10 @@ export class SettingsStore {
 			this.isVisible = false;
 			this.isTransitioning = false;
 		}, 300); // Match fade out duration
+	}
+
+	setViewMode(mode: 'overview' | 'consolidated') {
+		this.viewMode = mode;
 	}
 
 	static fromContext(): SettingsStore {

@@ -4,7 +4,6 @@
 	import { cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = SelectPrimitive.TriggerProps;
-	type $$Events = SelectPrimitive.TriggerEvents;
 
 	let className: $$Props['class'] = undefined;
 	export { className as class };
@@ -16,11 +15,8 @@
 		className
 	)}
 	{...$$restProps}
-	let:builder
-	on:click
-	on:keydown
 >
-	<slot {builder} />
+	<slot />
 	<div>
 		<ChevronDown class="h-4 w-4 opacity-50" />
 	</div>

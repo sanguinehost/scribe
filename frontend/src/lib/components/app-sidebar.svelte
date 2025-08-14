@@ -132,6 +132,12 @@
 
 	function switchTab(tab: 'characters' | 'personas' | 'lorebooks' | 'chronicles') {
 		sidebarStore.setActiveTab(tab);
+		
+		// Refresh chronicles when switching to that tab
+		if (tab === 'chronicles' && chronicleListComp) {
+			chronicleListComp.refresh();
+		}
+		
 		// Don't clear selections when switching tabs - let users browse sidebar
 		// while maintaining their current view (character overview, chat, etc.)
 		// This prevents unnecessary navigation and content flickering

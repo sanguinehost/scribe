@@ -35,17 +35,24 @@
 		}
 	});
 
-	// Listen for chronicle creation events
+	// Listen for chronicle creation and deletion events
 	onMount(() => {
 		const handleChronicleCreated = async (event: CustomEvent) => {
 			console.log('[Chronicles List] New chronicle created, refreshing list');
 			await chronicleStore.loadChronicles();
 		};
 		
-		window.addEventListener('chronicle-created', handleChronicleCreated as EventListener);
+		const handleChronicleDeleted = async (event: CustomEvent) => {
+			console.log('[Chronicles List] Chronicle deleted, refreshing list');
+			await chronicleStore.loadChronicles();
+		};
+		
+		window.addEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
+		window.addEventListener('chronicle-deleted', handleChronicleDeleted as unknown as EventListener);
 		
 		return () => {
-			window.removeEventListener('chronicle-created', handleChronicleCreated as EventListener);
+			window.removeEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
+			window.removeEventListener('chronicle-deleted', handleChronicleDeleted as unknown as EventListener);
 		};
 	});
 
@@ -82,6 +89,13 @@
 				toast.success('Chronicle deleted successfully');
 				// Reload chronicles list
 				await chronicleStore.loadChronicles();
+				
+				// Notify other components that a chronicle was deleted
+				window.dispatchEvent(
+					new CustomEvent('chronicle-deleted', {
+						detail: { chronicleId: chronicleToDelete.id }
+					})
+				);
 			} else {
 				toast.error('Failed to delete chronicle', {
 					description: result.error.message

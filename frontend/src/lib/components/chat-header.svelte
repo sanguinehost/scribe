@@ -403,7 +403,7 @@
 
 	{#if !readonly && chat}
 		<div class="ml-auto">
-			<ModelSelector {chat} />
+			<ModelSelector {chat} class="" />
 		</div>
 	{/if}
 </header>

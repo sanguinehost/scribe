@@ -65,12 +65,15 @@ export interface Session {
 	expires_at: string;
 }
 
-// Placeholder for AuthUser type - Define based on expected fields from backend
+// AuthUser type - matches backend AuthResponse structure  
 export interface AuthUser {
-	id: string;
+	user_id: string; // UUID, primary field from backend AuthResponse
+	id: string; // Backwards compatibility - should map to user_id
 	username: string;
 	email: string;
-	// Add other auth-related fields as needed
+	role: string;
+	recovery_key: string | null;
+	default_persona_id: string | null;
 }
 
 // Backend AuthResponse type
@@ -91,6 +94,7 @@ export interface ScribeChatSession {
 	character_name?: string | null; // Added character_name
 	chat_mode: ChatMode; // NEW: Required chat mode field
 	player_chronicle_id?: string | null; // Chronicle association (backend field name: player_chronicle_id)
+	chronicle_id?: string | null; // Backwards compatibility alias for player_chronicle_id
 	user_id: string;
 	created_at: string;
 	updated_at: string;
@@ -129,26 +133,36 @@ export type MessageRole = 'User' | 'Assistant' | 'System';
 // Chat Mode type - matches backend ChatMode enum
 export type ChatMode = 'Character' | 'ScribeAssistant' | 'Rpg';
 
-// Placeholder for Lorebook type - Define based on expected fields from backend
+// Lorebook type - Define based on expected fields from backend
 export interface Lorebook {
 	id: string;
 	user_id: string;
 	name: string;
 	description?: string | null;
+	source_format?: string | null; // Format of the lorebook (e.g., "json", "yaml")
+	is_public?: boolean | null; // Visibility of the lorebook
 	created_at: string;
 	updated_at: string;
 }
 
-// Placeholder for LorebookEntry type - Define based on expected fields from backend
+// LorebookEntry type matching backend LorebookEntryResponse
 export interface LorebookEntry {
 	id: string;
 	lorebook_id: string;
 	user_id: string;
-	name: string;
+	entry_title: string; // Backend uses entry_title, not name
+	keys_text: string | null; // Backend field name
 	content: string;
-	keywords: string[];
+	comment: string | null;
+	is_enabled: boolean; // Backend uses is_enabled
+	is_constant: boolean;
+	insertion_order: number;
 	created_at: string;
 	updated_at: string;
+	// Backwards compatibility aliases
+	name?: string; // For compatibility, maps to entry_title
+	keywords?: string[]; // For compatibility, parsed from keys_text
+	enabled?: boolean; // For compatibility, maps to is_enabled
 }
 
 // Placeholder for CreateLorebookPayload type - Define based on expected fields for creating a lorebook
@@ -163,18 +177,33 @@ export interface UpdateLorebookPayload {
 	description?: string | null;
 }
 
-// Placeholder for CreateLorebookEntryPayload type - Define based on expected fields for creating a lorebook entry
+// CreateLorebookEntryPayload type - matches backend expectations
 export interface CreateLorebookEntryPayload {
-	name: string;
+	entry_title: string; // Backend field name
 	content: string;
-	keywords: string[];
+	keys_text: string; // Backend field name
+	comment?: string;
+	is_enabled?: boolean;
+	is_constant?: boolean;
+	insertion_order?: number;
+	// Backwards compatibility
+	name?: string; // Maps to entry_title (for compatibility)
+	keywords?: string[]; // Maps to keys_text (for compatibility)
 }
 
-// Placeholder for UpdateLorebookEntryPayload type - Define based on expected fields for updating a lorebook entry
+// UpdateLorebookEntryPayload type - matches backend expectations
 export interface UpdateLorebookEntryPayload {
-	name?: string;
+	entry_title?: string; // Backend field name
 	content?: string;
-	keywords?: string[];
+	keys_text?: string; // Backend field name
+	comment?: string;
+	is_enabled?: boolean; // Backend field name
+	is_constant?: boolean;
+	insertion_order?: number;
+	// Backwards compatibility
+	name?: string; // Maps to entry_title
+	keywords?: string[]; // Converts to keys_text
+	enabled?: boolean; // Maps to is_enabled
 }
 
 // Placeholder for LorebookUploadPayload type - Define based on expected fields for lorebook upload
@@ -638,13 +667,13 @@ export interface CharacterContext {
 	system_prompt?: string;
 	depth_prompt?: string;
 	alternate_greetings?: string[];
-	lorebook_entries?: LorebookEntry[];
+	lorebook_entries?: CharacterLorebookEntry[];
 	associated_persona?: string;
 	selectedLorebooks?: string[]; // Array of lorebook IDs to query for context (frontend-only)
 }
 
-// Backend LorebookEntry for character context
-export interface LorebookEntry {
+// Character generation LorebookEntry type (different from main LorebookEntry)
+export interface CharacterLorebookEntry {
 	id: string;
 	keys: string[];
 	content: string;

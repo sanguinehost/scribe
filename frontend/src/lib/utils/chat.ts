@@ -1,5 +1,5 @@
-import type { Document } from '$lib/types'; // Updated import path
-import type { ScribeChatMessage, MessageRole } from '$lib/types'; // Import Scribe types
+// Document type removed as it's not used in this utility
+import type { ScribeChatMessage, MessageRole, DocumentResponse } from '$lib/types'; // Import Scribe types
 
 // Define our own UIMessage interface to avoid depending on @ai-sdk/svelte
 interface UIMessage {
@@ -39,7 +39,7 @@ export function convertToUIMessages(messages: Array<ScribeChatMessage>): Array<U
 		role: mapScribeRoleToUIRole(message.message_type),
 		// Note: content will soon be deprecated in @ai-sdk/svelte
 		content: message.content, // Keep content for now, map to parts primarily
-		createdAt: new Date(message.created_at), // Convert ISO string to Date
+		createdAt: message.created_at ? new Date(message.created_at) : new Date(), // Convert ISO string to Date
 		// Attachments are not handled by Scribe backend/types yet
 		experimental_attachments: []
 	}));
@@ -52,11 +52,11 @@ export function getMostRecentUserMessage(messages: Array<ScribeChatMessage>) {
 	return userMessages.at(-1);
 }
 
-export function getDocumentTimestampByIndex(documents: Array<Document>, index: number) {
+export function getDocumentTimestampByIndex(documents: Array<DocumentResponse>, index: number) {
 	if (!documents) return new Date();
 	if (index > documents.length) return new Date();
 
-	return documents[index].createdAt;
+	return documents[index].created_at;
 }
 
 // Note: This function now expects ScribeChatMessage array

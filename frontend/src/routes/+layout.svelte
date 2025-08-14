@@ -29,12 +29,15 @@
 		// User data logging removed to prevent sensitive information exposure
 	});
 
-	onMount(async () => {
-		// initializeAuth will attempt to fetch the user if not already set by server data,
-		// or if we want to re-verify on client-side navigation to a page with this layout.
-		// It's designed to be safe to call even if already authenticated.
-		await initializeAuth();
-		// Initialization logging removed for production
+	onMount(() => {
+		// Initialize auth asynchronously without blocking mount
+		(async () => {
+			// initializeAuth will attempt to fetch the user if not already set by server data,
+			// or if we want to re-verify on client-side navigation to a page with this layout.
+			// It's designed to be safe to call even if already authenticated.
+			await initializeAuth();
+			// Initialization logging removed for production
+		})();
 
 		// Set up global listener for auth:invalidated events (for any legacy components)
 		const handleAuthInvalidated = () => {

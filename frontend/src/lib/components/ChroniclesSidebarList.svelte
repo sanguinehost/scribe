@@ -19,17 +19,24 @@
 		}
 	});
 
-	// Listen for chronicle creation events
+	// Listen for chronicle creation and deletion events
 	onMount(() => {
 		const handleChronicleCreated = async (event: CustomEvent) => {
 			console.log('[Chronicles Sidebar] New chronicle created, refreshing list');
 			await chronicleStore.loadChronicles();
 		};
 		
-		window.addEventListener('chronicle-created', handleChronicleCreated as EventListener);
+		const handleChronicleDeleted = async (event: CustomEvent) => {
+			console.log('[Chronicles Sidebar] Chronicle deleted, refreshing list');
+			await chronicleStore.loadChronicles();
+		};
+		
+		window.addEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
+		window.addEventListener('chronicle-deleted', handleChronicleDeleted as unknown as EventListener);
 		
 		return () => {
-			window.removeEventListener('chronicle-created', handleChronicleCreated as EventListener);
+			window.removeEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
+			window.removeEventListener('chronicle-deleted', handleChronicleDeleted as unknown as EventListener);
 		};
 	});
 

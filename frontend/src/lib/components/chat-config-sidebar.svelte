@@ -2,7 +2,7 @@
 	import { Button } from './ui/button';
 	import { createEventDispatcher } from 'svelte';
 	import type { ScribeChatSession } from '$lib/types';
-	import type { UserPersona } from '$lib/api';
+	import type { UserPersona } from '$lib/types';
 	import ChevronLeft from './icons/chevron-down.svelte';
 	import ChevronRight from './icons/chevron-up.svelte';
 	import ChatConfigPanel from './settings/ChatConfigPanel.svelte';

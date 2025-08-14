@@ -265,7 +265,8 @@
 			depth_prompt: '', // Character's Note
 			depth_prompt_depth: null,
 			depth_prompt_role: '',
-			talkativeness: 0.5
+			talkativeness: 0.5,
+			selectedLorebooks: [] as string[]
 		};
 		character = null;
 	}
@@ -479,7 +480,7 @@
 											<Checkbox
 												id={`lorebook-${lorebook.id}`}
 												checked={formData.selectedLorebooks.includes(lorebook.id)}
-												onclick={() => {
+												on:change={() => {
 													if (formData.selectedLorebooks.includes(lorebook.id)) {
 														formData.selectedLorebooks = formData.selectedLorebooks.filter(
 															(id) => id !== lorebook.id

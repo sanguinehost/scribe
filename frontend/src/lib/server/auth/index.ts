@@ -25,7 +25,7 @@ export function createSession(
 			const session: Session = {
 				id: sessionId,
 				user_id: userId,
-				expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)
+				expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString()
 			};
 
 			const result = await apiClient.createSession(session, fetchFn);
@@ -88,10 +88,12 @@ export function validateSessionToken(
 			const session: Session = {
 				id: backendResponse.session.id,
 				user_id: backendResponse.session.user_id,
-				expires_at: new Date(backendResponse.session.expires_at)
+				expires_at: typeof backendResponse.session.expires_at === 'string' 
+					? backendResponse.session.expires_at 
+					: backendResponse.session.expires_at.toISOString()
 			};
 
-			if (Date.now() >= session.expires_at.getTime()) {
+			if (Date.now() >= new Date(session.expires_at).getTime()) {
 				console.log(
 					`[${new Date().toISOString()}] validateSessionToken: Session ${session.id} expired, deleting`
 				);
