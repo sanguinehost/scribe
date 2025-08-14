@@ -876,3 +876,24 @@ export interface AgentAnalysisResponse {
 	updated_at: string | null;
 	message_id: string | null;
 }
+
+// Chat deletion analysis types
+export interface ChronicleAnalysis {
+	id: string;
+	name: string;
+	total_events: number;
+	events_from_this_chat: number;
+	other_chats_using_chronicle: number;
+	can_delete_chronicle: boolean;
+}
+
+export interface ChatDeletionAnalysisResponse {
+	has_chronicle: boolean;
+	chronicle?: ChronicleAnalysis;
+}
+
+export type ChronicleAction = 'delete_chronicle' | 'disassociate' | 'delete_events';
+
+export interface DeleteChatRequest {
+	chronicle_action?: ChronicleAction;
+}
