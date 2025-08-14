@@ -37,6 +37,5 @@ pub use tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 pub use persona_context::UserPersonaContext;
 pub use narrative_tools::{
     CreateChronicleEventTool, CreateLorebookEntryTool, 
-    AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
-    SearchKnowledgeBaseTool, UpdateLorebookEntryTool
+    AnalyzeTextSignificanceTool, SearchKnowledgeBaseTool, UpdateLorebookEntryTool
 };

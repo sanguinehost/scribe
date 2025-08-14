@@ -1,7 +1,10 @@
-//! Narrative Intelligence Service - Main orchestrator for the agentic narrative layer
+//! Narrative Intelligence Service - Main interface for the narrative context enrichment system
 //! 
-//! This service follows the "Everything as a Tool" principle and implements the 4-step
-//! agentic workflow: Triage → Retrieve → Plan → Execute
+//! This service integrates with the single-agent context enrichment system to provide
+//! optional automatic chronicle and lorebook extraction during chat conversations.
+//!
+//! Chronicles are opt-in per chat session - narrative processing only occurs when a user
+//! has explicitly enabled chronicling for that specific chat session.
 //!
 //! Design for scale: Currently handles 1:1 chat processing but architected to eventually
 //! handle thousands/millions of events via batch processing and event queues.
@@ -90,10 +93,11 @@ impl Default for NarrativeProcessingConfig {
 
 /// Main service for narrative intelligence processing
 /// 
-/// This service orchestrates the agentic workflow and integrates with the chat processing loop.
+/// This service integrates the single-agent context enrichment system with the chat processing loop.
+/// It only processes conversations where the user has explicitly enabled chronicles for that chat session.
 /// It's designed to be flexible and scalable for future high-volume event processing.
 pub struct NarrativeIntelligenceService {
-    /// The agentic narrative runner that executes the 4-step workflow
+    /// The context enrichment agent runner that processes narrative content
     narrative_runner: NarrativeAgentRunner,
     /// Configuration for processing behavior
     config: NarrativeProcessingConfig,
@@ -114,7 +118,7 @@ impl NarrativeIntelligenceService {
     ) -> Self {
         let config = config.unwrap_or_default();
         
-        // Create the agentic system using the factory
+        // Create the context enrichment system using the factory
         // For development setup, always use dev config regardless of enabled status
         let workflow_config = Some(AgenticNarrativeFactory::create_dev_config());
         
@@ -147,7 +151,7 @@ impl NarrativeIntelligenceService {
     ) -> Self {
         let config = config.unwrap_or_default();
         
-        // Create the agentic system using the factory
+        // Create the context enrichment system using the factory
         // Use appropriate config based on the intended use
         let workflow_config = if config.enabled {
             Some(AgenticNarrativeFactory::create_production_config())
@@ -174,7 +178,7 @@ impl NarrativeIntelligenceService {
 
     /// Main entry point for narrative processing during chat generation
     /// 
-    /// This is called from the chat processing loop and follows the flexible architecture:
+    /// This is called from the chat processing loop for chats with chronicle_id set (opt-in):
     /// - Handles 1:1 chat processing now
     /// - Can be extended for batch processing later
     /// - Non-blocking and error-resilient
@@ -216,7 +220,7 @@ impl NarrativeIntelligenceService {
         // Retrieve user's persona context for narrative intelligence
         let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
         
-        // Execute the agentic workflow
+        // Execute the context enrichment workflow
         match self.narrative_runner.process_narrative_event(
             user_id,
             session_id,
@@ -285,7 +289,7 @@ impl NarrativeIntelligenceService {
         // Retrieve user's persona context for narrative intelligence
         let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
         
-        // Execute the agentic workflow for this batch of messages
+        // Execute the context enrichment workflow for this batch of messages
         match self.narrative_runner.process_narrative_event(
             user_id,
             session_id,
@@ -329,7 +333,7 @@ impl NarrativeIntelligenceService {
 
     /// Future method for batch processing (game events, etc.)
     /// 
-    /// This demonstrates the scalable architecture - same tools, different orchestration
+    /// This demonstrates the scalable architecture - same context enrichment system, different orchestration
     #[allow(dead_code)]
     pub async fn process_event_batch(
         &self,
@@ -339,7 +343,7 @@ impl NarrativeIntelligenceService {
         // TODO: Implement for future game integration
         // This would:
         // 1. Batch events into chunks
-        // 2. Process each chunk through the same 4-step workflow
+        // 2. Process each chunk through the same context enrichment system
         // 3. Use async processing queues
         // 4. Return aggregated results
         
