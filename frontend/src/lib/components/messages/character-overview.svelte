@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { apiClient } from '$lib/api';
 	import { env } from '$env/dynamic/public';
-	import type { Character, ScribeChatSession, UserPersona } from '$lib/types';
+	import type { Character, ScribeChatSession, UserPersona, ChronicleAction, ChatDeletionAnalysisResponse } from '$lib/types';
 	import { getCurrentUser } from '$lib/auth.svelte';
 	import { toast } from 'svelte-sonner';
 	import DOMPurify from 'dompurify';
@@ -60,6 +60,9 @@
 	let deleteDialogOpen = $state(false);
 	let chatToDelete = $state<ScribeChatSession | null>(null);
 	let isDeletingChat = $state(false);
+	let deletionAnalysis = $state<ChatDeletionAnalysisResponse | null>(null);
+	let selectedAction = $state<ChronicleAction>('delete_events');
+	let analysisLoading = $state(false);
 
 	// Individual field editing states
 	let editingField = $state<string | null>(null);
@@ -366,15 +369,41 @@
 		goto(`/chat/${chatId}`);
 	}
 
-	function handleDeleteClick(e: MouseEvent, chat: ScribeChatSession) {
+	async function handleDeleteClick(e: MouseEvent, chat: ScribeChatSession) {
 		e.stopPropagation(); // Prevent triggering the chat selection
 		chatToDelete = chat;
+
+		// Reset previous state
+		deletionAnalysis = null;
+		selectedAction = 'delete_events';
 
 		// If shift key is held, skip confirmation
 		if (e.shiftKey) {
 			confirmDelete();
 		} else {
+			// Fetch deletion analysis first
+			analysisLoading = true;
 			deleteDialogOpen = true;
+			
+			try {
+				const result = await apiClient.getChatDeletionAnalysis(chat.id);
+				if (result.isOk()) {
+					deletionAnalysis = result.value;
+					if (deletionAnalysis.has_chronicle && deletionAnalysis.chronicle?.can_delete_chronicle) {
+						selectedAction = 'delete_events'; // Conservative default
+					} else {
+						selectedAction = 'delete_events';
+					}
+				} else {
+					// If analysis fails, fall back to simple deletion
+					deletionAnalysis = { has_chronicle: false };
+				}
+			} catch (error) {
+				console.error('Error fetching deletion analysis:', error);
+				deletionAnalysis = { has_chronicle: false };
+			} finally {
+				analysisLoading = false;
+			}
 		}
 	}
 
@@ -383,12 +412,21 @@
 
 		isDeletingChat = true;
 		try {
-			const result = await apiClient.deleteChatById(chatToDelete.id);
+			const action = deletionAnalysis?.has_chronicle ? selectedAction : undefined;
+			const result = await apiClient.deleteChatById(chatToDelete.id, action);
 			if (result.isOk()) {
 				// Remove the chat from both lists
 				chats = chats.filter((c) => c.id !== chatToDelete!.id);
 				allChats = allChats.filter((c) => c.id !== chatToDelete!.id);
-				toast.success('Chat deleted successfully');
+				
+				// Show appropriate success message based on action
+				if (action === 'delete_chronicle') {
+					toast.success('Chat and chronicle deleted successfully');
+				} else if (action === 'disassociate') {
+					toast.success('Chat deleted, chronicle preserved');
+				} else {
+					toast.success('Chat deleted successfully');
+				}
 			} else {
 				toast.error('Failed to delete chat', {
 					description: result.error.message
@@ -401,6 +439,8 @@
 			isDeletingChat = false;
 			deleteDialogOpen = false;
 			chatToDelete = null;
+			deletionAnalysis = null;
+			selectedAction = 'delete_events';
 		}
 	}
 
@@ -1159,27 +1199,129 @@
 
 <!-- Delete Confirmation Dialog -->
 <AlertDialog bind:open={deleteDialogOpen}>
-	<AlertDialogContent>
+	<AlertDialogContent class="max-w-lg">
 		<AlertDialogHeader>
 			<AlertDialogTitle>Delete Chat</AlertDialogTitle>
-			<AlertDialogDescription>
-				Are you sure you want to delete this chat? This action cannot be undone.
+			<AlertDialogDescription class="text-left">
 				{#if chatToDelete}
-					<br />
-					<strong class="mt-2 block"
+					<strong class="block mb-3"
 						>"{chatToDelete.title || `Chat with ${character?.name}`}"</strong
 					>
+				{/if}
+				
+				{#if analysisLoading}
+					<div class="flex items-center space-x-2 py-4">
+						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+						<span>Analyzing chronicle relationships...</span>
+					</div>
+				{:else if deletionAnalysis?.has_chronicle && deletionAnalysis?.chronicle}
+					<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-4">
+						<div class="flex items-center space-x-2 mb-2">
+							<span class="text-amber-600 dark:text-amber-400">📚</span>
+							<span class="font-medium text-amber-800 dark:text-amber-200">
+								Chronicle: "{deletionAnalysis.chronicle.name}"
+							</span>
+						</div>
+						<div class="text-sm text-amber-700 dark:text-amber-300 space-y-1">
+							<p>• {deletionAnalysis.chronicle.total_events} total events</p>
+							<p>• {deletionAnalysis.chronicle.events_from_this_chat} events from this chat</p>
+							{#if deletionAnalysis.chronicle.other_chats_using_chronicle > 0}
+								<p>• {deletionAnalysis.chronicle.other_chats_using_chronicle} other chats use this chronicle</p>
+							{/if}
+						</div>
+					</div>
+
+					<div class="space-y-3">
+						<p class="text-sm font-medium">What would you like to do?</p>
+						
+						<div class="space-y-2">
+							<label class="flex items-start space-x-3 cursor-pointer">
+								<input 
+									type="radio" 
+									bind:group={selectedAction} 
+									value="delete_events"
+									class="mt-1" 
+								/>
+								<div class="flex-1">
+									<div class="font-medium">Delete chat & its events</div>
+									<div class="text-xs text-gray-600 dark:text-gray-400">
+										Keep chronicle, remove {deletionAnalysis.chronicle.events_from_this_chat} events from this chat
+									</div>
+								</div>
+							</label>
+
+							<label class="flex items-start space-x-3 cursor-pointer">
+								<input 
+									type="radio" 
+									bind:group={selectedAction} 
+									value="disassociate"
+									class="mt-1" 
+								/>
+								<div class="flex-1">
+									<div class="font-medium">Keep chronicle & all events</div>
+									<div class="text-xs text-gray-600 dark:text-gray-400">
+										Only delete the chat, preserve all narrative history
+									</div>
+								</div>
+							</label>
+
+							{#if deletionAnalysis.chronicle.can_delete_chronicle}
+								<label class="flex items-start space-x-3 cursor-pointer">
+									<input 
+										type="radio" 
+										bind:group={selectedAction} 
+										value="delete_chronicle"
+										class="mt-1" 
+									/>
+									<div class="flex-1">
+										<div class="font-medium text-red-700 dark:text-red-400">Delete entire chronicle</div>
+										<div class="text-xs text-red-600 dark:text-red-500">
+											⚠️ Permanently delete all {deletionAnalysis.chronicle.total_events} events
+										</div>
+									</div>
+								</label>
+							{:else}
+								<div class="flex items-start space-x-3 opacity-50">
+									<input 
+										type="radio" 
+										disabled
+										class="mt-1" 
+									/>
+									<div class="flex-1">
+										<div class="font-medium text-gray-500">Delete entire chronicle</div>
+										<div class="text-xs text-gray-500">
+											Cannot delete - other chats use this chronicle
+										</div>
+									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{:else}
+					This action cannot be undone. This will permanently delete your chat and remove it from our servers.
 				{/if}
 			</AlertDialogDescription>
 		</AlertDialogHeader>
 		<AlertDialogFooter>
-			<AlertDialogCancel disabled={isDeletingChat}>Cancel</AlertDialogCancel>
-			<AlertDialogAction
-				onclick={confirmDelete}
-				disabled={isDeletingChat}
-				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+			<AlertDialogCancel disabled={isDeletingChat || analysisLoading}>Cancel</AlertDialogCancel>
+			<AlertDialogAction 
+				onclick={confirmDelete} 
+				disabled={isDeletingChat || analysisLoading}
+				class={selectedAction === 'delete_chronicle' ? "bg-red-600 hover:bg-red-700 focus:ring-red-600" : "bg-destructive text-destructive-foreground hover:bg-destructive/90"}
 			>
-				{isDeletingChat ? 'Deleting...' : 'Delete'}
+				{#if isDeletingChat}
+					Deleting...
+				{:else if analysisLoading}
+					Please wait...
+				{:else if selectedAction === 'delete_chronicle'}
+					Delete Chronicle
+				{:else if selectedAction === 'disassociate'}
+					Keep Chronicle
+				{:else if selectedAction === 'delete_events'}
+					Delete Chat & Events
+				{:else}
+					Delete Chat
+				{/if}
 			</AlertDialogAction>
 		</AlertDialogFooter>
 	</AlertDialogContent>

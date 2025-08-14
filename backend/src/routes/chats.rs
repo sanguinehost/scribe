@@ -52,6 +52,7 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
         .route("/create_session", post(create_chat_handler)) // More distinct path for POST
         .route("/fetch/:id", get(get_chat_by_id_handler))
         .route("/remove/:id", delete(delete_chat_handler))
+        .route("/:id/deletion-analysis", get(get_chat_deletion_analysis_handler))
         .route(
             "/by-character/:character_id",
             get(get_chats_by_character_handler),
@@ -377,6 +378,62 @@ pub async fn get_chat_by_id_handler(
     Ok(Json(chat))
 }
 
+/// Get deletion analysis for a chat (chronicle info)
+/// Returns analysis information to help user make informed deletion decisions
+/// 
+/// # Errors
+///
+/// Returns an error if:
+/// - Authentication fails
+/// - Chat not found or access denied
+/// - Database operation fails
+pub async fn get_chat_deletion_analysis_handler(
+    auth_session: CurrentAuthSession,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    // First verify the user owns this chat
+    let pool = state.pool.clone();
+    let chat = pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(id))
+                .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}")))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+    // Get chronicle analysis if this chat has one
+    let chronicle_service = crate::services::ChronicleService::new(state.pool.clone());
+    let chronicle_analysis = chronicle_service
+        .get_chat_deletion_analysis(user.id, id)
+        .await?;
+
+    let response = ChatDeletionAnalysisResponse {
+        has_chronicle: chronicle_analysis.is_some(),
+        chronicle: chronicle_analysis.map(|analysis| ChronicleAnalysisDto {
+            id: analysis.id,
+            name: analysis.name,
+            total_events: analysis.total_events,
+            events_from_this_chat: analysis.events_from_this_chat,
+            other_chats_using_chronicle: analysis.other_chats_using_chronicle,
+            can_delete_chronicle: analysis.can_delete_chronicle,
+        }),
+    };
+
+    Ok(Json(response))
+}
+
 // Delete a chat
 /// Deletes a chat session by ID.
 ///
@@ -390,6 +447,7 @@ pub async fn delete_chat_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Query(params): Query<DeleteChatQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -404,20 +462,99 @@ pub async fn delete_chat_handler(
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(id))
-                .select(Chat::as_select()) // Use SelectableHelper trait
+                .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
+                .select(Chat::as_select())
                 .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                .map_err(|e| AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}")))
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
-    if chat.user_id != user.id {
-        return Err(AppError::Forbidden(
-            "Access denied to delete chat session".to_string(),
-        ));
+    let chronicle_service = crate::services::ChronicleService::new(state.pool.clone());
+
+    // Handle chronicle deletion based on the requested strategy
+    if let Some(chronicle_id) = chat.player_chronicle_id {
+        info!(
+            chat_id = %id,
+            chronicle_id = %chronicle_id,
+            chronicle_action = %params.chronicle_action,
+            "Processing chat deletion with chronicle strategy"
+        );
+
+        match params.chronicle_action.as_str() {
+            "delete_chronicle" => {
+                info!("Strategy: Delete entire chronicle and all events");
+                
+                // Clean up ALL chronicle event embeddings (not just from this chat)
+                if let Err(e) = state
+                    .embedding_pipeline_service
+                    .delete_chronicle_events_by_chronicle_id(Arc::new(state.clone()), chronicle_id, user.id)
+                    .await
+                {
+                    error!(
+                        chronicle_id = %chronicle_id,
+                        error = %e,
+                        "Failed to clean up chronicle embeddings, but will proceed with deletion"
+                    );
+                }
+
+                // Delete the entire chronicle (will cascade to all events)
+                chronicle_service
+                    .delete_chronicle_completely(user.id, chronicle_id)
+                    .await?;
+                
+                info!("Chronicle {} deleted completely", chronicle_id);
+            }
+
+            "disassociate" => {
+                info!("Strategy: Disassociate chronicle events from chat (preserve events)");
+                
+                // First disassociate events from the chat (set chat_session_id to NULL)
+                let disassociated_count = chronicle_service
+                    .disassociate_events_from_chat(user.id, id)
+                    .await?;
+                
+                info!("Disassociated {} events from chat {}", disassociated_count, id);
+                
+                // Note: We don't clean up embeddings because events are preserved
+            }
+
+            "delete_events" | _ => {
+                info!("Strategy: Delete only events created by this chat (default)");
+                
+                // Clean up embeddings for events from this specific chat
+                match chronicle_service.get_events_for_chat_session(user.id, id).await {
+                    Ok(events) => {
+                        info!("Found {} chronicle events from this chat to clean up", events.len());
+                        
+                        for event in events {
+                            if let Err(e) = state
+                                .embedding_pipeline_service
+                                .delete_chronicle_event_chunks(Arc::new(state.clone()), event.id, user.id)
+                                .await
+                            {
+                                error!(
+                                    event_id = %event.id,
+                                    error = %e,
+                                    "Failed to clean up embeddings for chronicle event, continuing with deletion"
+                                );
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        error!(
+                            chat_id = %id,
+                            error = %e,
+                            "Failed to retrieve chronicle events for cleanup, continuing with deletion"
+                        );
+                    }
+                }
+                // Events will be cascade-deleted when chat is deleted due to foreign key constraint
+            }
+        }
     }
 
-    // Delete the chat (votes and messages will cascade due to foreign key constraints)
+    // Delete the chat (messages and other associated data will cascade)
     pool.get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
@@ -429,6 +566,7 @@ pub async fn delete_chat_handler(
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
+    info!("Successfully deleted chat session {} with strategy '{}'", id, params.chronicle_action);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1545,4 +1683,31 @@ pub async fn update_chat_settings_handler(
     .await?;
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+// DTOs for deletion analysis
+#[derive(Debug, Serialize)]
+pub struct ChronicleAnalysisDto {
+    pub id: Uuid,
+    pub name: String,
+    pub total_events: i32,
+    pub events_from_this_chat: i32,
+    pub other_chats_using_chronicle: i32,
+    pub can_delete_chronicle: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatDeletionAnalysisResponse {
+    pub has_chronicle: bool,
+    pub chronicle: Option<ChronicleAnalysisDto>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteChatQueryParams {
+    #[serde(default = "default_chronicle_action")]
+    pub chronicle_action: String, // "delete_chronicle" | "disassociate" | "delete_events"
+}
+
+fn default_chronicle_action() -> String {
+    "delete_events".to_string()
 }

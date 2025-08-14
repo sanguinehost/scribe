@@ -62,7 +62,9 @@ import type {
 	TokenCountRequest,
 	TokenCountResponse,
 	AgentAnalysisResponse,
-	PaginatedMessagesResponse
+	PaginatedMessagesResponse,
+	ChatDeletionAnalysisResponse,
+	ChronicleAction
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -541,8 +543,16 @@ class ApiClient {
 
 	// End Character methods
 
-	async deleteChatById(id: string): Promise<Result<void, ApiError>> {
-		return this.fetch<void>(`/api/chats/remove/${id}`, {
+	async getChatDeletionAnalysis(id: string): Promise<Result<ChatDeletionAnalysisResponse, ApiError>> {
+		return this.fetch<ChatDeletionAnalysisResponse>(`/api/chats/${id}/deletion-analysis`);
+	}
+
+	async deleteChatById(
+		id: string, 
+		chronicleAction?: ChronicleAction
+	): Promise<Result<void, ApiError>> {
+		const queryParams = chronicleAction ? `?chronicle_action=${chronicleAction}` : '';
+		return this.fetch<void>(`/api/chats/remove/${id}${queryParams}`, {
 			method: 'DELETE'
 		});
 	}
