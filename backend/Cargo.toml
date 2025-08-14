@@ -7,10 +7,6 @@ edition = "2024"
 name = "re_embed_chronicles"
 path = "src/bin/re_embed_chronicles.rs"
 
-[[bin]]
-name = "migrate_qdrant_encryption"
-path = "src/bin/migrate_qdrant_encryption.rs"
-
 [dependencies]
 axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Align with tonic and axum-login ^0.7.0, ADDED tokio feature
 axum-macros = "0.4.1" # Added for debug_handler
