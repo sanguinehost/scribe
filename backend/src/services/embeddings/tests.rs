@@ -1020,6 +1020,7 @@ mod tests {
             decrypted_keywords: Some(vec!["dragon".to_string(), "mythical".to_string()]),
             is_enabled: true,
             is_constant: false,
+            session_dek: None, // No SessionDek in tests for backward compatibility
         };
 
         TestLorebookParams {
@@ -1318,6 +1319,7 @@ mod tests {
             decrypted_keywords: None,
             is_enabled: true,
             is_constant: false,
+            session_dek: None, // No SessionDek in tests for backward compatibility
         };
 
         let result = state
@@ -1355,6 +1357,7 @@ mod tests {
             decrypted_keywords: None,
             is_enabled: true,
             is_constant: false,
+            session_dek: None, // No SessionDek in tests for backward compatibility
         };
 
         let result = state
@@ -1394,6 +1397,7 @@ mod tests {
             decrypted_keywords: None,
             is_enabled: true,
             is_constant: false,
+            session_dek: None, // No SessionDek in tests for backward compatibility
         };
 
         let result = state
@@ -1431,6 +1435,7 @@ mod tests {
             decrypted_keywords: None,
             is_enabled: true,
             is_constant: false,
+            session_dek: None, // No SessionDek in tests for backward compatibility
         };
 
         let result = state

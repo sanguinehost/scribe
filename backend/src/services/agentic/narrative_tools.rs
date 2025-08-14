@@ -675,27 +675,144 @@ impl SearchKnowledgeBaseTool {
         }
     }
     
-    /// Fetch lorebook IDs associated with a chat session
-    async fn get_session_lorebook_ids(&self, session_id: Uuid) -> Result<Vec<Uuid>, ToolError> {
-        use crate::schema::chat_session_lorebooks;
+    /// Fetch lorebook IDs associated with a chat session using comprehensive association logic
+    /// This includes direct chat-lorebook associations, character-inherited lorebooks, and overrides
+    async fn get_session_lorebook_ids(&self, session_id: Uuid, user_id: Uuid) -> Result<Vec<Uuid>, ToolError> {
+        use crate::schema::{
+            chat_sessions, chat_session_lorebooks, character_lorebooks, chat_character_lorebook_overrides
+        };
         use diesel::prelude::*;
         
         let conn = self.app_state.pool.get()
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to get DB connection: {}", e)))?;
             
-        let lorebook_ids = conn.interact(move |conn| {
-            chat_session_lorebooks::table
+        let associations_data = conn.interact(move |conn| {
+            // 1. Get chat session and character ID
+            let (session_found, character_id): (Uuid, Option<Uuid>) = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select((chat_sessions::id, chat_sessions::character_id))
+                .first::<(Uuid, Option<Uuid>)>(conn)
+                .optional()?
+                .ok_or_else(|| diesel::result::Error::NotFound)?;
+            
+            // 2. Get direct chat-lorebook associations
+            let chat_associations: Vec<Uuid> = chat_session_lorebooks::table
                 .filter(chat_session_lorebooks::chat_session_id.eq(session_id))
+                .filter(chat_session_lorebooks::user_id.eq(user_id))
                 .select(chat_session_lorebooks::lorebook_id)
-                .get_results::<Uuid>(conn)
+                .get_results::<Uuid>(conn)?;
+            
+            // 3. Get character-lorebook associations (if character exists)
+            let character_associations: Vec<Uuid> = if let Some(char_id) = character_id {
+                character_lorebooks::table
+                    .filter(character_lorebooks::character_id.eq(char_id))
+                    .filter(character_lorebooks::user_id.eq(user_id))
+                    .select(character_lorebooks::lorebook_id)
+                    .get_results::<Uuid>(conn)?
+            } else {
+                Vec::new()
+            };
+            
+            // 4. Get overrides for this chat session
+            let overrides: Vec<(Uuid, String)> = chat_character_lorebook_overrides::table
+                .filter(chat_character_lorebook_overrides::chat_session_id.eq(session_id))
+                .filter(chat_character_lorebook_overrides::user_id.eq(user_id))
+                .select((chat_character_lorebook_overrides::lorebook_id, chat_character_lorebook_overrides::action))
+                .get_results::<(Uuid, String)>(conn)?;
+            
+            Ok::<_, diesel::result::Error>((chat_associations, character_associations, overrides))
         })
         .await
         .map_err(|e| ToolError::ExecutionFailed(format!("Failed to interact with DB: {}", e)))?
         .map_err(|e| ToolError::ExecutionFailed(format!("Failed to query lorebook associations: {}", e)))?;
         
-        debug!("Found {} lorebooks associated with session {}", lorebook_ids.len(), session_id);
-        Ok(lorebook_ids)
+        let (chat_associations, character_associations, overrides) = associations_data;
+        
+        // 5. Build final effective lorebook list
+        let override_map: std::collections::HashMap<Uuid, String> = overrides.into_iter().collect();
+        let mut effective_lorebooks = std::collections::HashSet::new();
+        
+        // Add direct chat associations (these always take precedence)
+        for lorebook_id in &chat_associations {
+            effective_lorebooks.insert(*lorebook_id);
+        }
+        
+        // Add character associations, but only if not overridden by "disable" and not already present as chat association
+        for lorebook_id in &character_associations {
+            if !effective_lorebooks.contains(lorebook_id) {
+                // Check if this character lorebook is disabled by override
+                if let Some(action) = override_map.get(lorebook_id) {
+                    if action == "disable" {
+                        debug!("Character lorebook {} disabled by override for session {}", lorebook_id, session_id);
+                        continue; // Skip this lorebook
+                    }
+                }
+                effective_lorebooks.insert(*lorebook_id);
+            }
+        }
+        
+        let final_lorebook_ids: Vec<Uuid> = effective_lorebooks.into_iter().collect();
+        
+        debug!(
+            "Lorebook associations for session {}: {} direct, {} character, {} effective (after overrides)",
+            session_id, chat_associations.len(), character_associations.len(), final_lorebook_ids.len()
+        );
+        
+        Ok(final_lorebook_ids)
+    }
+    
+    /// Fetch all chat session IDs in a chronicle
+    async fn get_chronicle_session_ids(&self, chronicle_id: Uuid) -> Result<Vec<Uuid>, ToolError> {
+        use crate::schema::chat_sessions;
+        use diesel::prelude::*;
+        
+        let conn = self.app_state.pool.get()
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to get DB connection: {}", e)))?;
+            
+        let session_ids = conn.interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::player_chronicle_id.eq(chronicle_id))
+                .select(chat_sessions::id)
+                .get_results::<Uuid>(conn)
+        })
+        .await
+        .map_err(|e| ToolError::ExecutionFailed(format!("Failed to interact with DB: {}", e)))?
+        .map_err(|e| ToolError::ExecutionFailed(format!("Failed to query chronicle sessions: {}", e)))?;
+        
+        debug!("Found {} sessions in chronicle {}", session_ids.len(), chronicle_id);
+        Ok(session_ids)
+    }
+    
+    /// Fetch all lorebook IDs associated with a chronicle using comprehensive association logic
+    /// This fetches all sessions in the chronicle, then all lorebooks for those sessions including character-inherited ones
+    async fn get_chronicle_lorebook_ids(&self, chronicle_id: Uuid, user_id: Uuid) -> Result<Vec<Uuid>, ToolError> {
+        // First get all sessions in this chronicle
+        let session_ids = self.get_chronicle_session_ids(chronicle_id).await?;
+        
+        if session_ids.is_empty() {
+            debug!("No sessions found in chronicle {}, returning empty lorebook list", chronicle_id);
+            return Ok(Vec::new());
+        }
+        
+        let session_count = session_ids.len();
+        
+        // Get comprehensive lorebook associations for each session in the chronicle
+        let mut all_lorebook_ids = std::collections::HashSet::new();
+        for session_id in &session_ids {
+            let session_lorebooks = self.get_session_lorebook_ids(*session_id, user_id).await?;
+            for lorebook_id in session_lorebooks {
+                all_lorebook_ids.insert(lorebook_id);
+            }
+        }
+        
+        let final_lorebook_ids: Vec<Uuid> = all_lorebook_ids.into_iter().collect();
+        
+        info!("Chronicle {} has {} sessions with {} unique lorebooks (comprehensive associations)", 
+              chronicle_id, session_count, final_lorebook_ids.len());
+        Ok(final_lorebook_ids)
     }
 }
 
@@ -741,6 +858,10 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 "session_id": {
                     "type": "string", 
                     "description": "Optional: Session ID to filter results to only this specific session (used when no chronicle exists)"
+                },
+                "session_dek": {
+                    "type": "string",
+                    "description": "INTERNAL: Hex-encoded session DEK for decrypting encrypted content in search results"
                 }
             },
             "required": ["query", "user_id"]
@@ -749,6 +870,9 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
     async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
         debug!("Executing search_knowledge_base tool with params: {}", params);
+        
+        // Log all received parameters for debugging
+        info!("SearchKnowledgeBaseTool received params: {}", serde_json::to_string_pretty(params).unwrap_or_else(|_| params.to_string()));
 
         let query = params.get("query")
             .and_then(|v| v.as_str())
@@ -780,8 +904,32 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok());
 
+        // Extract session_dek for decryption (optional for backward compatibility)
+        let session_dek_opt = params.get("session_dek")
+            .and_then(|v| v.as_str())
+            .and_then(|hex_str| hex::decode(hex_str).ok())
+            .map(|bytes| {
+                let secret = secrecy::SecretBox::new(Box::new(bytes));
+                crate::auth::session_dek::SessionDek(secret)
+            });
+        
+        if session_dek_opt.is_some() {
+            debug!("SessionDek provided for search result decryption");
+        } else {
+            warn!("No SessionDek provided - encrypted search results will not be decrypted");
+        }
+
         info!("Vector searching knowledge base for '{}' (type: {}, limit: {}) for user {}, chronicle: {:?}, session: {:?}", 
               query, search_type, limit, user_id, chronicle_id_opt, session_id_opt);
+        
+        // Critical debug: Log which scope we're using
+        if let Some(session_id) = session_id_opt {
+            info!("SEARCH SCOPE: Using session-scoped search for session_id: {}", session_id);
+        } else if let Some(chronicle_id) = chronicle_id_opt {
+            info!("SEARCH SCOPE: Using chronicle-scoped search for chronicle_id: {}", chronicle_id);
+        } else {
+            info!("SEARCH SCOPE: Using user-scoped search only (no session or chronicle specified)");
+        }
 
         // Use the existing embeddings infrastructure for vector search
         let query_embedding = match self.embedding_client
@@ -821,8 +969,8 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             
             if includes_lorebooks {
                 // Fetch lorebook IDs associated with this session
-                let lorebook_ids = self.get_session_lorebook_ids(session_id).await?;
-                debug!("Session {} has {} associated lorebooks", session_id, lorebook_ids.len());
+                let lorebook_ids = self.get_session_lorebook_ids(session_id, user_id).await?;
+                info!("Session {} has {} associated lorebooks: {:?}", session_id, lorebook_ids.len(), lorebook_ids);
                 
                 // Build conditions for different content types
                 let mut should_conditions = Vec::new();
@@ -858,36 +1006,35 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 
                 // Add condition for lorebook entries (if we have associated lorebooks)
                 if !lorebook_ids.is_empty() {
-                    // Create OR condition for all lorebook IDs
-                    let lorebook_id_conditions: Vec<Condition> = lorebook_ids.iter().map(|lb_id| {
-                        Condition {
-                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
-                                key: "lorebook_id".to_string(),
-                                r#match: Some(Match {
-                                    match_value: Some(MatchValue::Keyword(lb_id.to_string())),
-                                }),
+                    // Create a separate condition for each lorebook ID combined with source_type
+                    // This way each complete condition is in the should clause
+                    for lb_id in &lorebook_ids {
+                        should_conditions.push(Condition {
+                            condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                                must: vec![
+                                    Condition {
+                                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                            key: "source_type".to_string(),
+                                            r#match: Some(Match {
+                                                match_value: Some(MatchValue::Keyword("lorebook_entry".to_string())),
+                                            }),
+                                            ..Default::default()
+                                        })),
+                                    },
+                                    Condition {
+                                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                            key: "lorebook_id".to_string(),
+                                            r#match: Some(Match {
+                                                match_value: Some(MatchValue::Keyword(lb_id.to_string())),
+                                            }),
+                                            ..Default::default()
+                                        })),
+                                    },
+                                ],
                                 ..Default::default()
                             })),
-                        }
-                    }).collect();
-                    
-                    should_conditions.push(Condition {
-                        condition_one_of: Some(ConditionOneOf::Filter(Filter {
-                            must: vec![
-                                Condition {
-                                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
-                                        key: "source_type".to_string(),
-                                        r#match: Some(Match {
-                                            match_value: Some(MatchValue::Keyword("lorebook_entry".to_string())),
-                                        }),
-                                        ..Default::default()
-                                    })),
-                                },
-                            ],
-                            should: lorebook_id_conditions, // Any of the associated lorebook IDs
-                            ..Default::default()
-                        })),
-                    });
+                        });
+                    }
                 }
                 
                 // Add condition for chronicle events (if searching all)
@@ -936,25 +1083,75 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 }
             }
         } else if let Some(chronicle_id) = chronicle_id_opt {
-            // Chronicle-scoped search: Similar logic but with chronicle filter
+            // Chronicle-scoped search: Search chronicle events AND lorebooks from all sessions in the chronicle
             debug!("Building chronicle-scoped search filter for chronicle: {}", chronicle_id);
             
-            // For chronicle scope, we search across all sessions in the chronicle
-            // This is simpler since chronicle events have chronicle_id
-            Filter {
-                must: vec![
-                    user_condition,
-                    Condition {
+            // Get all lorebook IDs from all sessions in this chronicle
+            let chronicle_lorebook_ids = match self.get_chronicle_lorebook_ids(chronicle_id, user_id).await {
+                Ok(ids) => ids,
+                Err(e) => {
+                    warn!("Failed to fetch chronicle lorebook IDs: {:?}", e);
+                    vec![]
+                }
+            };
+            
+            debug!("Found {} lorebooks in chronicle {}", chronicle_lorebook_ids.len(), chronicle_id);
+            
+            if chronicle_lorebook_ids.is_empty() {
+                // No lorebooks in chronicle sessions, just search chronicle events
+                Filter {
+                    must: vec![
+                        user_condition,
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "chronicle_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(chronicle_id.to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                    ],
+                    ..Default::default()
+                }
+            } else {
+                // Search both chronicle events AND lorebook entries from chronicle sessions
+                let lorebook_conditions: Vec<Condition> = chronicle_lorebook_ids
+                    .iter()
+                    .map(|lorebook_id| Condition {
                         condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
-                            key: "chronicle_id".to_string(),
+                            key: "lorebook_id".to_string(),
                             r#match: Some(Match {
-                                match_value: Some(MatchValue::Keyword(chronicle_id.to_string())),
+                                match_value: Some(MatchValue::Keyword(lorebook_id.to_string())),
                             }),
                             ..Default::default()
                         })),
-                    },
-                ],
-                ..Default::default()
+                    })
+                    .collect();
+                
+                Filter {
+                    must: vec![user_condition.clone()],
+                    should: vec![
+                        // Include chronicle events
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "chronicle_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(chronicle_id.to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                        // Include lorebook entries from all sessions in the chronicle
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                                should: lorebook_conditions,
+                                ..Default::default()
+                            })),
+                        },
+                    ],
+                    ..Default::default()
+                }
             }
         } else {
             // No specific scope - search all user's data
@@ -965,16 +1162,91 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             }
         };
 
-        // Perform vector search using Qdrant with appropriate filters
-        let search_results = match self.qdrant_service
-            .search_points(
-                query_embedding,
-                limit,
-                Some(search_filter), // SECURITY + SCOPE: Filter by user, session, or chronicle
-            )
-            .await
+        // Use a score threshold to filter out low-relevance results
+        // Different thresholds for different search types to optimize results
+        let score_threshold = match search_type {
+            "lorebooks" => Some(0.45), // Slightly lower for lorebooks as they may have broader content
+            "chronicles" => Some(0.5), // Medium threshold for chronicle events
+            _ => Some(0.4), // Lower threshold for "all" to cast a wider net
+        };
+        
+        info!("Using score threshold: {:?} for search type: {}", score_threshold, search_type);
+
+        // Determine if we should use hybrid search
+        // Use hybrid search for short queries or queries that look like keywords
+        let use_hybrid = query.split_whitespace().count() <= 3 || 
+                        query.len() <= 20 ||
+                        query.chars().all(|c| c.is_alphanumeric() || c.is_whitespace());
+
+        // Log the filter we're about to use
+        info!("Built search filter: {:#?}", search_filter);
+        
+        // Perform search using either hybrid or pure vector search
+        let search_results = if use_hybrid {
+            info!("Using hybrid search for keyword-like query: {}", query);
+            
+            // Define which text fields to search based on content type
+            let text_fields = match search_type {
+                "lorebooks" => vec![
+                    "chunk_text".to_string(),
+                    "entry_title".to_string(),
+                    "keywords".to_string(),
+                ],
+                "chronicles" => vec![
+                    "event_text".to_string(),
+                    "chronicle_name".to_string(),
+                ],
+                _ => vec![
+                    "text".to_string(),
+                    "chunk_text".to_string(),
+                    "event_text".to_string(),
+                    "entry_title".to_string(),
+                    "keywords".to_string(),
+                ],
+            };
+            
+            self.qdrant_service
+                .hybrid_search(
+                    Some(query_embedding),  // Use vector search as primary
+                    Some(query.to_string()), // Also do text matching
+                    text_fields,
+                    limit * 2, // Get more candidates initially
+                    Some(search_filter),
+                    score_threshold,
+                )
+                .await
+        } else {
+            info!("Using pure vector search for complex query");
+            self.qdrant_service
+                .search_points_with_threshold(
+                    query_embedding,
+                    limit * 2, // Get more candidates initially for better filtering
+                    Some(search_filter), // SECURITY + SCOPE: Filter by user, session, or chronicle
+                    score_threshold,
+                )
+                .await
+        };
+
+        let search_results = match search_results
         {
-            Ok(search_results) => search_results,
+            Ok(mut results) => {
+                // Log score distribution for debugging
+                if !results.is_empty() {
+                    let scores: Vec<f32> = results.iter().map(|r| r.score).collect();
+                    let min_score = scores.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.0);
+                    let max_score = scores.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.0);
+                    let avg_score = scores.iter().sum::<f32>() / scores.len() as f32;
+                    
+                    info!(
+                        "Search results - Count: {}, Min score: {:.3}, Max score: {:.3}, Avg score: {:.3}",
+                        results.len(), min_score, max_score, avg_score
+                    );
+                }
+                
+                // Limit to requested number after getting more candidates
+                results.truncate(limit as usize);
+                results
+            },
             Err(e) => {
                 error!("Vector search failed: {}", e);
                 return Err(ToolError::ExecutionFailed(format!("Vector search failed: {}", e)));
@@ -1001,13 +1273,83 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 
                 let should_include = matches!(search_type, "all" | "lorebooks");
                 if should_include {
+                    // Decrypt content if encrypted fields are present
+                    let content = if let (Some(ref encrypted_chunk), Some(ref nonce)) = 
+                        (lorebook_meta.encrypted_chunk_text.as_ref(), lorebook_meta.chunk_text_nonce.as_ref()) {
+                        // We have encrypted content
+                        if let Some(ref session_dek) = session_dek_opt {
+                            // We have the DEK to decrypt
+                            match crate::crypto::decrypt_gcm(encrypted_chunk, nonce, &session_dek.0) {
+                                Ok(decrypted_secret) => {
+                                    let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                    String::from_utf8_lossy(decrypted_bytes).to_string()
+                                }
+                                Err(e) => {
+                                    warn!("Failed to decrypt lorebook content: {}", e);
+                                    // Fall back to plaintext field if available
+                                    if lorebook_meta.chunk_text != "[encrypted]" {
+                                        lorebook_meta.chunk_text.clone()
+                                    } else {
+                                        "[decryption failed]".to_string()
+                                    }
+                                }
+                            }
+                        } else {
+                            // No DEK available, return placeholder or plaintext
+                            if lorebook_meta.chunk_text != "[encrypted]" {
+                                lorebook_meta.chunk_text.clone()
+                            } else {
+                                "[encrypted - no DEK available]".to_string()
+                            }
+                        }
+                    } else {
+                        // Legacy plaintext mode
+                        lorebook_meta.chunk_text.clone()
+                    };
+                    
+                    let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = 
+                        (lorebook_meta.encrypted_title.as_ref(), lorebook_meta.title_nonce.as_ref()) {
+                        // We have encrypted title
+                        if let Some(ref session_dek) = session_dek_opt {
+                            match crate::crypto::decrypt_gcm(encrypted_title, title_nonce, &session_dek.0) {
+                                Ok(decrypted_secret) => {
+                                    let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                    let decrypted_title = String::from_utf8_lossy(decrypted_bytes).to_string();
+                                    // Handle empty decrypted titles
+                                    if decrypted_title.trim().is_empty() {
+                                        "Untitled".to_string()
+                                    } else {
+                                        decrypted_title
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to decrypt lorebook title: {}", e);
+                                    // Handle empty fallback titles
+                                    lorebook_meta.entry_title.clone()
+                                        .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                                        .unwrap_or_else(|| "[decryption failed]".to_string())
+                                }
+                            }
+                        } else {
+                            // Handle empty fallback titles
+                            lorebook_meta.entry_title.clone()
+                                .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                                .unwrap_or_else(|| "[encrypted - no DEK]".to_string())
+                        }
+                    } else {
+                        // Handle empty unencrypted titles - this is the main fix for the issue
+                        lorebook_meta.entry_title.clone()
+                            .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                            .unwrap_or_else(|| "Untitled".to_string())
+                    };
+                    
                     results.push(json!({
                         "type": "lorebook_entry",
                         "id": lorebook_meta.original_lorebook_entry_id,
-                        "title": lorebook_meta.entry_title.clone().unwrap_or_else(|| "Untitled".to_string()),
-                        "content": lorebook_meta.chunk_text.clone(),
+                        "title": title,
+                        "content": content.clone(),
                         "relevance_score": scored_point.score,
-                        "snippet": lorebook_meta.chunk_text.chars().take(200).collect::<String>(),
+                        "snippet": content.chars().take(200).collect::<String>(),
                         "keywords": lorebook_meta.keywords
                     }));
                 }
@@ -1023,13 +1365,47 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 
                 let should_include = matches!(search_type, "all");
                 if should_include {
+                    // Decrypt content if encrypted fields are present
+                    let content = if let (Some(ref encrypted_text), Some(ref nonce)) = 
+                        (chat_meta.encrypted_text.as_ref(), chat_meta.text_nonce.as_ref()) {
+                        // We have encrypted content
+                        if let Some(ref session_dek) = session_dek_opt {
+                            // We have the DEK to decrypt
+                            match crate::crypto::decrypt_gcm(encrypted_text, nonce, &session_dek.0) {
+                                Ok(decrypted_secret) => {
+                                    let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                    String::from_utf8_lossy(decrypted_bytes).to_string()
+                                }
+                                Err(e) => {
+                                    warn!("Failed to decrypt chat message: {}", e);
+                                    // Fall back to plaintext field if available
+                                    if chat_meta.text != "[encrypted]" {
+                                        chat_meta.text.clone()
+                                    } else {
+                                        "[decryption failed]".to_string()
+                                    }
+                                }
+                            }
+                        } else {
+                            // No DEK available, return placeholder or plaintext
+                            if chat_meta.text != "[encrypted]" {
+                                chat_meta.text.clone()
+                            } else {
+                                "[encrypted - no DEK available]".to_string()
+                            }
+                        }
+                    } else {
+                        // Legacy plaintext mode
+                        chat_meta.text.clone()
+                    };
+                    
                     results.push(json!({
                         "type": "chat_message",
                         "id": chat_meta.message_id,
                         "title": format!("Chat from {}", chat_meta.session_id),
-                        "content": chat_meta.text.clone(),
+                        "content": content.clone(),
                         "relevance_score": scored_point.score,
-                        "snippet": chat_meta.text.chars().take(200).collect::<String>(),
+                        "snippet": content.chars().take(200).collect::<String>(),
                         "speaker": chat_meta.speaker
                     }));
                 }
@@ -1045,16 +1421,70 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 
                 let should_include = matches!(search_type, "all" | "chronicles");
                 if should_include {
+                    // Extract and decrypt chronicle event content
+                    let content = if let (Some(encrypted_chunk_text), Some(chunk_text_nonce)) = 
+                        (payload_map.get("encrypted_chunk_text"), payload_map.get("chunk_text_nonce")) {
+                        // We have encrypted content - need to extract bytes from Qdrant format
+                        let encrypted_bytes = encrypted_chunk_text.as_list()
+                            .and_then(|list| {
+                                let bytes: Option<Vec<u8>> = list.iter()
+                                    .map(|v| v.as_integer().map(|i| i as u8))
+                                    .collect();
+                                bytes
+                            });
+                        let nonce_bytes = chunk_text_nonce.as_list()
+                            .and_then(|list| {
+                                let bytes: Option<Vec<u8>> = list.iter()
+                                    .map(|v| v.as_integer().map(|i| i as u8))
+                                    .collect();
+                                bytes
+                            });
+                        
+                        if let (Some(encrypted), Some(nonce), Some(ref session_dek)) = 
+                            (encrypted_bytes, nonce_bytes, session_dek_opt.as_ref()) {
+                            // Decrypt the content
+                            match crate::crypto::decrypt_gcm(&encrypted, &nonce, &session_dek.0) {
+                                Ok(decrypted_secret) => {
+                                    let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                    String::from_utf8_lossy(decrypted_bytes).to_string()
+                                }
+                                Err(e) => {
+                                    warn!("Failed to decrypt chronicle event content: {}", e);
+                                    // Fall back to plaintext chunk_text if available
+                                    payload_map.get("chunk_text")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_else(|| "[decryption failed]".to_string())
+                                }
+                            }
+                        } else {
+                            // No DEK or invalid encrypted data, try plaintext
+                            payload_map.get("chunk_text")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| "[encrypted - no DEK available]".to_string())
+                        }
+                    } else {
+                        // Legacy plaintext mode - get chunk_text directly
+                        payload_map.get("chunk_text")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| {
+                                // Fallback formatting if no chunk_text
+                                format!("Event type: {}, Chronicle: {}, Created: {}", 
+                                       chronicle_meta.event_type, 
+                                       chronicle_meta.chronicle_id,
+                                       chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S"))
+                            })
+                    };
+                    
                     let result = json!({
                         "type": "chronicle_event", 
                         "id": chronicle_meta.event_id,
                         "title": format!("Chronicle Event: {}", chronicle_meta.event_type),
-                        "content": format!("Event type: {}, Chronicle: {}, Created: {}", 
-                                         chronicle_meta.event_type, 
-                                         chronicle_meta.chronicle_id,
-                                         chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S")),
+                        "content": content.clone(),
                         "relevance_score": scored_point.score,
-                        "snippet": format!("Event type: {}", chronicle_meta.event_type),
+                        "snippet": content.chars().take(200).collect::<String>(),
                         "event_type": chronicle_meta.event_type,
                         "chronicle_id": chronicle_meta.chronicle_id.to_string(),
                         "created_at": chronicle_meta.created_at.to_rfc3339()

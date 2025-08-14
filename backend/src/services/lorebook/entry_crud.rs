@@ -279,6 +279,12 @@ AppError::InternalServerErrorGeneric(format!(
 
         let is_enabled_for_embedding = new_entry_db.is_enabled; // Use value from payload/defaults
         let is_constant_for_embedding = new_entry_db.is_constant; // Use value from payload/defaults
+        
+        // Clone the SessionDek for the async task
+        let session_dek_for_embedding = user_dek.map(|dek| {
+            let dek_bytes = dek.expose_secret().clone();
+            secrecy::SecretBox::new(Box::new(dek_bytes))
+        });
 
         tokio::spawn(async move {
             debug!("Spawning task to process and embed lorebook entry: [REDACTED_UUID]");
@@ -292,6 +298,7 @@ AppError::InternalServerErrorGeneric(format!(
                 decrypted_keywords: decrypted_keywords_for_embedding,
                 is_enabled: is_enabled_for_embedding,
                 is_constant: is_constant_for_embedding,
+                session_dek: session_dek_for_embedding,
             };
 
             if let Err(e) = embedding_pipeline_service
@@ -1002,6 +1009,12 @@ AppError::InternalServerErrorGeneric(format!(
             });
         let is_enabled_for_embedding = updated_db_entry.is_enabled;
         let is_constant_for_embedding = updated_db_entry.is_constant;
+        
+        // Clone the SessionDek for the async task
+        let session_dek_for_embedding = user_dek.map(|dek| {
+            let dek_bytes = dek.expose_secret().clone();
+            secrecy::SecretBox::new(Box::new(dek_bytes))
+        });
 
         tokio::spawn(async move {
             debug!("Spawning task to re-process and embed updated lorebook entry: [REDACTED_UUID]");
@@ -1015,6 +1028,7 @@ AppError::InternalServerErrorGeneric(format!(
                 decrypted_keywords: keywords_for_embedding,
                 is_enabled: is_enabled_for_embedding,
                 is_constant: is_constant_for_embedding,
+                session_dek: session_dek_for_embedding,
             };
 
             if let Err(_e) = embedding_pipeline_service

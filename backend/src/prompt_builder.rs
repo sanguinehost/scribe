@@ -745,6 +745,7 @@ async fn build_final_prompt_strings(
     token_counter: &HybridTokenCounter,
     model_name: &str,
     agent_context: Option<&str>,
+    user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Rebuild the meta system prompt based on final RAG items after truncation
     let has_final_rag_items = !calculation.rag_items_with_tokens.is_empty();
@@ -977,16 +978,85 @@ async fn build_final_prompt_strings(
                         .unwrap();
                     }
                     crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) => {
+                        // Decrypt content if encrypted fields are present
+                        let content = if let (Some(ref encrypted_chunk), Some(ref nonce)) = 
+                            (lorebook_meta.encrypted_chunk_text.as_ref(), lorebook_meta.chunk_text_nonce.as_ref()) {
+                            // We have encrypted content
+                            if let Some(ref session_dek) = user_dek {
+                                // We have the DEK to decrypt
+                                match crate::crypto::decrypt_gcm(encrypted_chunk, nonce, session_dek) {
+                                    Ok(decrypted_secret) => {
+                                        let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                        String::from_utf8_lossy(decrypted_bytes).to_string()
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to decrypt lorebook content: {}", e);
+                                        // Fall back to plaintext field if available
+                                        if lorebook_meta.chunk_text != "[encrypted]" {
+                                            lorebook_meta.chunk_text.clone()
+                                        } else {
+                                            "[decryption failed]".to_string()
+                                        }
+                                    }
+                                }
+                            } else {
+                                // No DEK available, return placeholder or plaintext
+                                if lorebook_meta.chunk_text != "[encrypted]" {
+                                    lorebook_meta.chunk_text.clone()
+                                } else {
+                                    "[encrypted - no DEK available]".to_string()
+                                }
+                            }
+                        } else {
+                            // Legacy plaintext mode
+                            lorebook_meta.chunk_text.clone()
+                        };
+                        
+                        // Decrypt title if encrypted fields are present
+                        let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = 
+                            (lorebook_meta.encrypted_title.as_ref(), lorebook_meta.title_nonce.as_ref()) {
+                            // We have encrypted title
+                            if let Some(ref session_dek) = user_dek {
+                                match crate::crypto::decrypt_gcm(encrypted_title, title_nonce, session_dek) {
+                                    Ok(decrypted_secret) => {
+                                        let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                        let decrypted_title = String::from_utf8_lossy(decrypted_bytes).to_string();
+                                        // Handle empty decrypted titles
+                                        if decrypted_title.trim().is_empty() {
+                                            "Untitled".to_string()
+                                        } else {
+                                            decrypted_title
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to decrypt lorebook title: {}", e);
+                                        // Handle empty fallback titles
+                                        lorebook_meta.entry_title.clone()
+                                            .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                                            .unwrap_or_else(|| "[decryption failed]".to_string())
+                                    }
+                                }
+                            } else {
+                                // Handle empty fallback titles
+                                lorebook_meta.entry_title.clone()
+                                    .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                                    .unwrap_or_else(|| "[encrypted - no DEK]".to_string())
+                            }
+                        } else {
+                            // Handle empty unencrypted titles
+                            lorebook_meta.entry_title.clone()
+                                .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                                .unwrap_or_else(|| "Untitled".to_string())
+                        };
+
                         write!(rag_context_for_user_message, "<lorebook_entry").unwrap();
 
-                        if let Some(title) = &lorebook_meta.entry_title {
-                            write!(
-                                rag_context_for_user_message,
-                                " title=\"{}\"",
-                                escape_xml(title)
-                            )
-                            .unwrap();
-                        }
+                        write!(
+                            rag_context_for_user_message,
+                            " title=\"{}\"",
+                            escape_xml(&title)
+                        )
+                        .unwrap();
 
                         if let Some(keywords) = &lorebook_meta.keywords {
                             if !keywords.is_empty() {
@@ -1003,7 +1073,7 @@ async fn build_final_prompt_strings(
                         writeln!(
                             rag_context_for_user_message,
                             ">{}</lorebook_entry>",
-                            escape_xml(rag_item.text.trim())
+                            escape_xml(content.trim())
                         )
                         .unwrap();
                     }
@@ -1070,6 +1140,7 @@ pub async fn build_final_llm_prompt(
         &params.token_counter,
         &params.model_name,
         params.agent_context.as_deref(),
+        params.user_dek,
     )
     .await?;
 

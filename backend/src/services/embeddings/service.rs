@@ -178,6 +178,12 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
 
             // 2b. Prepare metadata
             let speaker_str = format!("{:?}", message.message_type);
+            
+            // TODO: When SessionDek is available, encrypt the content here
+            // For now, we store plaintext for backward compatibility
+            // Future implementation:
+            // let (encrypted_text, text_nonce) = encrypt_gcm(chunk.content.as_bytes(), &session_dek)?;
+            
             let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
                 session_id: message.session_id,
@@ -185,8 +191,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 user_id: message.user_id, // Added user_id from the message
                 speaker: speaker_str,
                 timestamp: message.created_at,
-                text: chunk.content.clone(), // Store original chunk text from the TextChunk struct
+                text: chunk.content.clone(), // Store original chunk text (will be "[encrypted]" when encryption is enabled)
                 source_type: "chat_message".to_string(),
+                // Encryption fields - will be populated when SessionDek is available
+                encrypted_text: None, // Will store encrypted_text
+                text_nonce: None, // Will store text_nonce
             };
 
             // 2c. Create Qdrant point
@@ -239,6 +248,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             decrypted_keywords,
             is_enabled,
             is_constant,
+            session_dek,
         } = params;
         info!("Starting embedding process for lorebook entry");
         let embedding_client = state.embedding_client.clone();
@@ -270,23 +280,40 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // This preserves the full semantic context of each entry
         info!(%original_lorebook_entry_id, content_length = decrypted_content.len(), "Processing lorebook entry as atomic unit (no chunking)");
 
-        // Create a structured representation of the lorebook entry
-        let combined_content = if let Some(title) = &decrypted_title {
-            format!("Title: {}\n\nContent: {}", title, decrypted_content)
+        // Create a structured representation of the lorebook entry for better semantic matching
+        // This format helps the embedding model understand the different components
+        let mut structured_parts = Vec::new();
+        
+        // Add title with clear labeling
+        if let Some(title) = &decrypted_title {
+            structured_parts.push(format!("== LOREBOOK ENTRY: {} ==", title.to_uppercase()));
         } else {
-            decrypted_content.clone()
-        };
-
-        // Add keywords to the content for better semantic matching
-        let full_content = if let Some(keywords) = &decrypted_keywords {
+            structured_parts.push("== LOREBOOK ENTRY ==".to_string());
+        }
+        
+        // Add the main content with clear section marker
+        structured_parts.push("\n[CONTENT]".to_string());
+        structured_parts.push(decrypted_content.clone());
+        
+        // Add keywords as both a list and naturally integrated
+        if let Some(keywords) = &decrypted_keywords {
             if !keywords.is_empty() {
-                format!("{}\n\nKeywords: {}", combined_content, keywords.join(", "))
-            } else {
-                combined_content
+                // Add as tagged list for exact matching
+                structured_parts.push("\n[KEYWORDS]".to_string());
+                structured_parts.push(keywords.join(", "));
+                
+                // Also add in a more natural sentence form for semantic understanding
+                structured_parts.push("\n[TOPICS]".to_string());
+                structured_parts.push(format!("This entry relates to: {}", keywords.join(", ")));
             }
-        } else {
-            combined_content
-        };
+        }
+        
+        // Add metadata context for better filtering
+        if is_constant {
+            structured_parts.push("\n[TYPE: CONSTANT/ALWAYS ACTIVE]".to_string());
+        }
+        
+        let full_content = structured_parts.join("\n");
 
         let task_type = "RETRIEVAL_DOCUMENT";
         let embedding_vector = match embedding_client
@@ -303,16 +330,57 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // Add a small delay to mitigate potential rate limiting
         sleep(Duration::from_millis(100)).await;
 
+        // Encrypt content if SessionDek is available
+        let (chunk_text_for_storage, encrypted_chunk_text, chunk_text_nonce) = 
+            if let Some(ref dek) = session_dek {
+                // We have SessionDek, encrypt the content
+                match crate::crypto::encrypt_gcm(full_content.as_bytes(), dek) {
+                    Ok((encrypted_content, content_nonce)) => {
+                        info!("Successfully encrypted lorebook content for Qdrant storage");
+                        ("[encrypted]".to_string(), Some(encrypted_content), Some(content_nonce))
+                    }
+                    Err(e) => {
+                        error!("Failed to encrypt lorebook content: {}, falling back to plaintext", e);
+                        (full_content.clone(), None, None)
+                    }
+                }
+            } else {
+                // No SessionDek, store plaintext (backward compatibility)
+                warn!("No SessionDek available for lorebook entry, storing plaintext in Qdrant");
+                (full_content.clone(), None, None)
+            };
+        
+        // Encrypt title if available and SessionDek is provided
+        let (title_for_storage, encrypted_title, title_nonce) = 
+            if let (Some(title), Some(dek)) = (&decrypted_title, &session_dek) {
+                match crate::crypto::encrypt_gcm(title.as_bytes(), dek) {
+                    Ok((enc_title, nonce)) => {
+                        (Some("[encrypted]".to_string()), Some(enc_title), Some(nonce))
+                    }
+                    Err(e) => {
+                        error!("Failed to encrypt lorebook title: {}, falling back to plaintext", e);
+                        (Some(title.clone()), None, None)
+                    }
+                }
+            } else {
+                (decrypted_title.clone(), None, None)
+            };
+        
         let metadata = LorebookChunkMetadata {
             original_lorebook_entry_id,
             lorebook_id,
             user_id,
-            chunk_text: full_content.clone(), // Store full content
-            entry_title: decrypted_title.clone(),
-            keywords: decrypted_keywords.clone(),
+            chunk_text: chunk_text_for_storage,
+            entry_title: title_for_storage,
+            keywords: decrypted_keywords.clone(), // Keywords not encrypted for search purposes
             is_enabled,
             is_constant,
             source_type: "lorebook_entry".to_string(),
+            // Encryption fields
+            encrypted_chunk_text,
+            chunk_text_nonce,
+            encrypted_title,
+            title_nonce,
         };
 
         let point_id = Uuid::new_v4(); // Unique ID for the atomic lorebook entry
@@ -987,7 +1055,44 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }
         };
         
-        // Create a JSON representation of the full chronicle event data
+        // Create a structured text representation for better semantic understanding
+        // Rather than just JSON, we create a more natural text format
+        let mut structured_parts = Vec::new();
+        
+        // Add clear header for the event type
+        structured_parts.push(format!("== CHRONICLE EVENT: {} ==", event.event_type.to_uppercase()));
+        
+        // Add temporal context
+        structured_parts.push(format!("\n[WHEN] {}", event.timestamp_iso8601.format("%B %d, %Y at %H:%M")));
+        
+        // Add the main summary content
+        structured_parts.push("\n[EVENT SUMMARY]".to_string());
+        structured_parts.push(decrypted_summary.clone());
+        
+        // Add keywords for better matching
+        let keywords = if let Some(dek) = session_dek {
+            event.get_decrypted_keywords(&dek.0).unwrap_or_else(|_| event.get_keywords())
+        } else {
+            event.get_keywords()
+        };
+        
+        if !keywords.is_empty() {
+            structured_parts.push("\n[KEYWORDS]".to_string());
+            structured_parts.push(keywords.join(", "));
+            
+            // Add in natural form too
+            structured_parts.push(format!("\nThis event involves: {}", keywords.join(", ")));
+        }
+        
+        // Add source context
+        if !event.source.is_empty() && event.source != "unknown" {
+            structured_parts.push(format!("\n[SOURCE] {}", event.source));
+        }
+        
+        // Combine into a cohesive text
+        let content_to_embed = structured_parts.join("\n");
+        
+        // Also keep the JSON for exact data storage in metadata
         let mut event_json = serde_json::json!({
             "event_type": event.event_type,
             "summary": decrypted_summary,
@@ -996,27 +1101,33 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             "event_id": event.id.to_string(),
         });
         
-        // Add keywords if available
-        let keywords = if let Some(dek) = session_dek {
-            event.get_decrypted_keywords(&dek.0).unwrap_or_else(|_| event.get_keywords())
-        } else {
-            event.get_keywords()
-        };
-        
         if !keywords.is_empty() {
             event_json["keywords"] = serde_json::json!(keywords);
         }
         
-        // Add chat session ID if available
         if let Some(chat_session_id) = event.chat_session_id {
             event_json["chat_session_id"] = serde_json::Value::String(chat_session_id.to_string());
         }
         
-        // Serialize the JSON to string for storage
-        let content_to_embed = serde_json::to_string(&event_json).map_err(|e| {
-            error!(error = %e, event_id = %event.id, "Failed to serialize chronicle event to JSON");
-            AppError::SerializationError(format!("Chronicle event serialization failed: {e}"))
-        })?;
+        // Encrypt content if SessionDek is available
+        let (chunk_text_for_storage, encrypted_chunk_text, chunk_text_nonce) = 
+            if let Some(dek) = session_dek {
+                // We have SessionDek, encrypt the content
+                match crate::crypto::encrypt_gcm(content_to_embed.as_bytes(), &dek.0) {
+                    Ok((encrypted_content, content_nonce)) => {
+                        info!(event_id = %event.id, "Successfully encrypted chronicle event content for Qdrant storage");
+                        ("[encrypted]".to_string(), Some(encrypted_content), Some(content_nonce))
+                    }
+                    Err(e) => {
+                        error!(event_id = %event.id, error = %e, "Failed to encrypt chronicle event content, falling back to plaintext");
+                        (content_to_embed.clone(), None, None)
+                    }
+                }
+            } else {
+                // No SessionDek, store plaintext (backward compatibility)
+                warn!(event_id = %event.id, "No SessionDek available for chronicle event, storing plaintext in Qdrant");
+                (content_to_embed.clone(), None, None)
+            };
         
         // Chronicle events are stored atomically as single units, not chunked
         // This preserves the full JSON structure and semantic integrity
@@ -1048,18 +1159,32 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
 
         // 2c. Create Qdrant point with proper metadata structure
         let point_id = Uuid::new_v4(); // Unique ID for the atomic chronicle event
+        
+        // Build the metadata JSON
+        let mut metadata_json = serde_json::json!({
+            "event_id": metadata.event_id.to_string(),
+            "event_type": metadata.event_type,
+            "chronicle_id": metadata.chronicle_id.to_string(),
+            "created_at": metadata.created_at.to_rfc3339(),
+            "user_id": event.user_id.to_string(),
+            "source_type": "chronicle_event",
+            "chunk_text": chunk_text_for_storage, // Either "[encrypted]" or plaintext for backward compat
+            "event_json": event_json, // Store JSON for exact data retrieval
+            "keywords": keywords, // Store keywords for potential keyword search
+        });
+        
+        // Add encrypted fields if available
+        if let Some(ref encrypted_content) = encrypted_chunk_text {
+            metadata_json["encrypted_chunk_text"] = serde_json::json!(encrypted_content);
+        }
+        if let Some(ref nonce) = chunk_text_nonce {
+            metadata_json["chunk_text_nonce"] = serde_json::json!(nonce);
+        }
+        
         let point = match create_qdrant_point(
             point_id,
             embedding_vector,
-            Some(serde_json::json!({
-                "event_id": metadata.event_id.to_string(),
-                "event_type": metadata.event_type,
-                "chronicle_id": metadata.chronicle_id.to_string(),
-                "created_at": metadata.created_at.to_rfc3339(),
-                "user_id": event.user_id.to_string(),
-                "source_type": "chronicle_event",
-                "chunk_text": content_to_embed.clone(), // Store full JSON content
-            })),
+            Some(metadata_json),
         ) {
             Ok(p) => p,
             Err(e) => {

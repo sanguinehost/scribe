@@ -8,7 +8,6 @@ use secrecy::ExposeSecret;
 
 use crate::{
     auth::session_dek::SessionDek,
-    crypto::decrypt_gcm,
     errors::AppError,
     llm::AiClient,
     models::{
@@ -517,8 +516,10 @@ IMPORTANT RULES:
                                 }
                             }
                             
-                            // Add session_dek for both lorebook and chronicle event creation (encryption required!)
-                            if (action.tool_name == "create_lorebook_entry" || action.tool_name == "create_chronicle_event") && !obj.contains_key("session_dek") {
+                            // Add session_dek for tools that need encryption/decryption
+                            if (action.tool_name == "create_lorebook_entry" || 
+                                action.tool_name == "create_chronicle_event" ||
+                                action.tool_name == "search_knowledge_base") && !obj.contains_key("session_dek") {
                                 let session_dek_hex = hex::encode(session_dek.0.expose_secret());
                                 obj.insert("session_dek".to_string(), serde_json::Value::String(session_dek_hex));
                             }
@@ -533,7 +534,9 @@ IMPORTANT RULES:
                                 }
                             }
                             
-                            if action.tool_name == "create_lorebook_entry" || action.tool_name == "create_chronicle_event" {
+                            if action.tool_name == "create_lorebook_entry" || 
+                               action.tool_name == "create_chronicle_event" ||
+                               action.tool_name == "search_knowledge_base" {
                                 let session_dek_hex = hex::encode(session_dek.0.expose_secret());
                                 obj.insert("session_dek".to_string(), serde_json::Value::String(session_dek_hex));
                             }
@@ -853,49 +856,12 @@ RULES:
         
         // For simplification, include all messages (token limiting can be added later if needed)
         for message in messages {
-            // Try to get message content, with robust error handling
-            let content = if let (Some(encrypted), Some(nonce)) = (&message.raw_prompt_ciphertext, &message.raw_prompt_nonce) {
-                // Try to decrypt using session DEK
-                match decrypt_gcm(encrypted, nonce, &session_dek.0) {
-                    Ok(decrypted) => {
-                        // Try to convert to UTF-8
-                        match String::from_utf8(decrypted.expose_secret().clone()) {
-                            Ok(text) => text,
-                            Err(_) => {
-                                // If decrypted content isn't valid UTF-8, fall back to unencrypted
-                                warn!("Decrypted message content is not valid UTF-8, falling back to unencrypted content");
-                                match String::from_utf8(message.content.clone()) {
-                                    Ok(text) => text,
-                                    Err(_) => {
-                                        warn!("Both encrypted and unencrypted content failed UTF-8 decoding, using placeholder");
-                                        "[Content could not be decoded]".to_string()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Decryption failed, fall back to unencrypted content
-                        warn!("Failed to decrypt message content ({}), falling back to unencrypted", e);
-                        match String::from_utf8(message.content.clone()) {
-                            Ok(text) => text,
-                            Err(_) => {
-                                warn!("Unencrypted content also failed UTF-8 decoding, using placeholder");
-                                "[Content could not be decoded]".to_string()
-                            }
-                        }
-                    }
-                }
-            } else {
-                // No encryption data, try unencrypted content
-                match String::from_utf8(message.content.clone()) {
-                    Ok(text) => text,
-                    Err(_) => {
-                        warn!("Unencrypted message content is not valid UTF-8, using placeholder");
-                        "[Content could not be decoded]".to_string()
-                    }
-                }
-            };
+            // Use the proper decryption method - consistent with build_conversation_text
+            let content = message.decrypt_content_field(&session_dek.0)
+                .unwrap_or_else(|e| {
+                    warn!("Failed to decrypt message {}: {}", message.id, e);
+                    "[Failed to decrypt message]".to_string()
+                });
 
             let role = match message.message_type {
                 MessageRole::User => "User",
