@@ -474,9 +474,6 @@ mod agentic_chronicle_tests {
         );
 
         // Verify no chronicles were created due to the error
-        // TODO: Currently this test fails because chronicles are auto-created BEFORE the AI call
-        // in agent_runner.rs lines 116-173. We should refactor to only create chronicles AFTER
-        // successful AI responses to avoid orphaned empty chronicles.
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
         let chronicles = chronicle_service.get_user_chronicles(user_id).await.unwrap();
         assert!(chronicles.is_empty(), "Should not have created chronicles when errors occur");
