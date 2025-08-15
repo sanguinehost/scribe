@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use secrecy::ExposeSecret;
+use hex;
 
 use crate::{
     auth::session_dek::SessionDek,
@@ -200,6 +201,61 @@ RULES:
                     .collect::<Vec<String>>()
             });
 
+        // Parse and execute actions from the AI response
+        let mut actions_taken = vec![];
+        let mut additional_results = vec![];
+
+        if let Some(actions) = response["actions"].as_array() {
+            debug!("Found {} actions to execute from AI response", actions.len());
+            
+            for action in actions {
+                if let (Some(tool_name), Some(parameters)) = 
+                    (action["tool_name"].as_str(), action.get("parameters")) {
+                    
+                    debug!("Attempting to execute tool: {}", tool_name);
+                    
+                    // Try to execute the tool
+                    if let Ok(tool) = self.tool_registry.get_tool(tool_name) {
+                        let mut enriched_params = parameters.clone();
+                        
+                        // Add required context for tools that need them
+                        if tool_name == "create_lorebook_entry" || tool_name == "create_chronicle_event" {
+                            if let serde_json::Value::Object(ref mut obj) = enriched_params {
+                                // Add user_id if not present
+                                if !obj.contains_key("user_id") {
+                                    obj.insert("user_id".to_string(), json!(user_id.to_string()));
+                                }
+                                
+                                // Add session_dek for encryption
+                                if !obj.contains_key("session_dek") {
+                                    let session_dek_hex = hex::encode(session_dek.0.expose_secret());
+                                    obj.insert("session_dek".to_string(), json!(session_dek_hex));
+                                }
+                            }
+                        }
+                        
+                        // Execute the tool
+                        match tool.execute(&enriched_params).await {
+                            Ok(result) => {
+                                info!("Successfully executed tool: {}", tool_name);
+                                actions_taken.push(PlannedAction {
+                                    tool_name: tool_name.to_string(),
+                                    parameters: enriched_params,
+                                    reasoning: action["reasoning"].as_str().unwrap_or("").to_string(),
+                                });
+                                additional_results.push(result);
+                            }
+                            Err(e) => {
+                                warn!("Failed to execute tool {}: {}", tool_name, e);
+                            }
+                        }
+                    } else {
+                        warn!("Tool not found in registry: {}", tool_name);
+                    }
+                }
+            }
+        }
+
         // Auto-create chronicle if needed (AFTER successful AI response)
         if chronicle_id.is_none() {
             info!("No chronicle found, auto-creating for chat session {}", chat_session_id);
@@ -250,7 +306,15 @@ RULES:
 
         info!("Successfully created chronicle event {} for chat session {}", event.id, chat_session_id);
 
-        // Return a simple result
+        // Combine chronicle event result with additional tool results
+        let mut all_results = vec![json!({
+            "success": true,
+            "event_id": event.id,
+            "message": "Chronicle event created successfully"
+        })];
+        all_results.extend(additional_results);
+
+        // Return the result with executed actions
         Ok(NarrativeWorkflowResult {
             triage_result: TriageResult {
                 is_significant: true,
@@ -258,12 +322,8 @@ RULES:
                 event_type: "NARRATIVE.EVENT".to_string(),
                 confidence: 1.0,
             },
-            actions_taken: vec![],
-            execution_results: vec![json!({
-                "success": true,
-                "event_id": event.id,
-                "message": "Chronicle event created successfully"
-            })],
+            actions_taken,
+            execution_results: all_results,
             cost_estimate: 0.0,
         })
     }
