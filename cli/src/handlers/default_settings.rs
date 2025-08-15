@@ -55,6 +55,7 @@ impl DefaultSettings {
             history_management_limit: None,
             model_name: Some(self.model_name.clone()),
             chronicle_id: None, // Not relevant for CLI
+            agent_mode: None, // Not used in CLI default settings
         }
     }
 }

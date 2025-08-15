@@ -453,6 +453,9 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         speaker: "user".to_string(),
         timestamp: Utc::now(),
         text: "This is relevant chunk 1.".to_string(),
+        encrypted_text: Some(b"encrypted_chunk_1".to_vec()),
+        text_nonce: Some(b"nonce1234567890ab".to_vec()),
+        chronicle_id: None,
         source_type: "chat_message".to_string(),
     };
     let mock_metadata2 = ChatMessageChunkMetadata {
@@ -462,6 +465,9 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         speaker: "ai".to_string(),
         timestamp: Utc::now(),
         text: "This is relevant chunk 2, slightly longer.".to_string(),
+        encrypted_text: Some(b"encrypted_chunk_2".to_vec()),
+        text_nonce: Some(b"nonce1234567890cd".to_vec()),
+        chronicle_id: None,
         source_type: "chat_message".to_string(),
     };
     let mock_chunks = vec![
@@ -510,6 +516,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         history,
         model: Some("gemini/mock-model".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     // Check session one last time before making chat generate request
@@ -1043,6 +1050,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         history,
         model: Some("gemini/mock-model".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let client = reqwest::Client::new(); // Initialize client
@@ -1561,6 +1569,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         }],
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
     // client is from login_user_via_api
     let response = client
@@ -1892,6 +1901,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         }],
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
     // client is from login_user_via_api
     let response = client
@@ -2223,6 +2233,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         }],
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
     // client is from login_user_via_api
     let response = client
@@ -2580,6 +2591,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         }],
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
     // client is from login_user_via_api
     let response = client
@@ -2911,6 +2923,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         }],
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
     // client is from login_user_via_api
     let response = client
@@ -3380,6 +3393,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         }],
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
     // client_b is from login_user_via_api
     let response = client_b
@@ -3413,6 +3427,7 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
         history: vec![],
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let client = reqwest::Client::new();
@@ -3572,6 +3587,7 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         }],
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let response = client

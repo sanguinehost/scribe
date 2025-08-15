@@ -198,6 +198,7 @@ async fn assert_rag_response(
         history,
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let request = Request::builder()

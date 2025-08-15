@@ -228,6 +228,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         }
     }
 

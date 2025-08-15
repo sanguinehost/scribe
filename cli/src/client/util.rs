@@ -277,6 +277,9 @@ pub(super) async fn handle_non_streaming_chat_response(
                     raw_prompt_ciphertext: None,
                     raw_prompt_nonce: None,
                     model_name: "gemini-2.5-flash".to_string(),
+                    status: "completed".to_string(),
+                    error_message: None,
+                    superseded_at: None,
                 });
             }
 
@@ -301,6 +304,9 @@ pub(super) async fn handle_non_streaming_chat_response(
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-flash".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         });
     }
 
@@ -323,6 +329,9 @@ pub(super) async fn handle_non_streaming_chat_response(
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-flash".to_string(),
+                status: "completed".to_string(),
+                error_message: None,
+                superseded_at: None,
             })
         }
         Err(e) => {

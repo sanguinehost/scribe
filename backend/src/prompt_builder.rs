@@ -1601,11 +1601,14 @@ mod tests {
                 metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
                     message_id: uuid::Uuid::new_v4(),
                     session_id: uuid::Uuid::new_v4(),
+                    chronicle_id: None,
                     user_id: uuid::Uuid::new_v4(),
                     speaker: "user".to_string(),
                     timestamp: chrono::Utc::now(),
                     text: "Some context".to_string(),
                     source_type: "chat".to_string(),
+                    encrypted_text: None,
+                    text_nonce: None,
                 }),
                 score: 0.9,
             };

@@ -6,18 +6,18 @@ Sanguine Scribe's agent system focuses on **pragmatic intelligence** rather than
 
 ## Core Principles
 
-1. **Lightning-Fast Responses** - Users get immediate feedback, no waiting for complex processing
+1. **Fast Responses** - Users get immediate feedback, no waiting for complex processing
 2. **Smart Context Search** - Find relevant information when users reference past events
 3. **Simple Chronicles** - Text summaries with keywords, not complex JSON structures
 4. **Incremental Enhancement** - Start simple, add intelligence where it provides value
 
 ## Architecture
 
-### 1. Lightning Path (Immediate Response)
+### 1. Primary Chat Flow (Immediate Response)
 The primary chat flow remains fast and simple:
 - User sends message → Backend processes → AI generates response → User sees response
 - No blocking on chronicle extraction or complex analysis
-- All enrichment happens asynchronously in the background
+- All enrichment happens asynchronously in the background (if using post-processing mode)
 
 ### 2. Background Context Enrichment
 After sending the response, optionally process in background:
@@ -66,8 +66,8 @@ ChronicleEvent {
 - Simplify prompts to generate text summaries
 - Keep the working tool infrastructure
 
-### Phase 2: Add Lightning Path
-- Implement fast response with optional background processing
+### Phase 2: Add Optional Background Processing
+- Implement fast response with optional background processing modes (pre-processing or post-processing)
 - Add simple keyword extraction from summaries
 - Keep chronicle extraction manual until proven valuable
 

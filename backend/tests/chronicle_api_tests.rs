@@ -315,7 +315,9 @@ mod api_tests {
             event_type: "EXPLORATION".to_string(),
             summary: "The party enters the mysterious misty forest".to_string(),
             source: EventSource::UserAdded,
-            event_data: Some(event_data.clone()),
+            keywords: None,
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         let create_event_response = test_app.router
@@ -338,7 +340,6 @@ mod api_tests {
         assert_eq!(created_event.event_type, create_event_request.event_type);
         assert_eq!(created_event.summary, create_event_request.summary);
         assert_eq!(created_event.source, EventSource::UserAdded.to_string());
-        assert_eq!(created_event.event_data, Some(event_data));
         assert_eq!(created_event.chronicle_id, chronicle.id);
 
         // Test: Get Chronicle Events
@@ -482,7 +483,9 @@ mod api_tests {
             event_type: "UNAUTHORIZED_EVENT".to_string(),
             summary: "This should not be allowed".to_string(),
             source: EventSource::UserAdded,
-            event_data: None,
+            keywords: None,
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         let unauthorized_event_response = test_app.router
@@ -581,7 +584,9 @@ mod api_tests {
             event_type: "TEST".to_string(),
             summary: "Test event".to_string(),
             source: EventSource::UserAdded,
-            event_data: None,
+            keywords: None,
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         let event_response = test_app.router

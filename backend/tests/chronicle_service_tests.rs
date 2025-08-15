@@ -59,24 +59,20 @@ mod unit_tests {
     }
 
     #[tokio::test]
-    async fn test_create_event_request_with_data() {
-        let event_data = json!({
-            "location": "Tavern",
-            "characters": ["Hero", "Bartender"],
-            "importance": "high"
-        });
-
+    async fn test_create_event_request_with_keywords() {
         let request = CreateEventRequest {
             event_type: "CHARACTER_INTERACTION".to_string(),
-            summary: "Hero meets the mysterious bartender".to_string(),
+            summary: "Hero meets the mysterious bartender at the tavern".to_string(),
             source: EventSource::AiExtracted,
-            event_data: Some(event_data.clone()),
+            keywords: Some(vec!["Hero".to_string(), "Bartender".to_string(), "tavern".to_string()]),
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         assert_eq!(request.event_type, "CHARACTER_INTERACTION");
         assert_eq!(request.source, EventSource::AiExtracted);
-        assert!(request.event_data.is_some());
-        assert_eq!(request.event_data.unwrap(), event_data);
+        assert!(request.keywords.is_some());
+        assert_eq!(request.keywords.as_ref().unwrap().len(), 3);
     }
 }
 
@@ -268,9 +264,11 @@ mod integration_tests {
 
         let create_event_request = CreateEventRequest {
             event_type: "SCENE_START".to_string(),
-            summary: "The adventure begins in a quiet village".to_string(),
+            summary: "The adventure begins in a quiet village with mysterious fog".to_string(),
             source: EventSource::UserAdded,
-            event_data: Some(event_data.clone()),
+            keywords: Some(vec!["village".to_string(), "fog".to_string()]),
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         let created_event = chronicle_service
@@ -281,7 +279,6 @@ mod integration_tests {
         assert_eq!(created_event.event_type, create_event_request.event_type);
         assert_eq!(created_event.summary, create_event_request.summary);
         assert_eq!(created_event.source, EventSource::UserAdded.to_string());
-        assert_eq!(created_event.event_data, Some(event_data));
         assert_eq!(created_event.chronicle_id, chronicle.id);
         assert_eq!(created_event.user_id, user.id);
 
@@ -290,7 +287,9 @@ mod integration_tests {
             event_type: "COMBAT_ENCOUNTER".to_string(),
             summary: "Fought off bandits on the road".to_string(),
             source: EventSource::AiExtracted,
-            event_data: None,
+            keywords: Some(vec!["combat".to_string(), "bandits".to_string()]),
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         let event2 = chronicle_service
@@ -388,7 +387,9 @@ mod integration_tests {
                 event_type: "TEST_EVENT".to_string(),
                 summary: format!("Test event {}", i),
                 source: EventSource::UserAdded,
-                event_data: None,
+                keywords: None,
+                timestamp_iso8601: None,
+                chat_session_id: None,
             };
 
             chronicle_service
@@ -489,7 +490,9 @@ mod integration_tests {
             event_type: "TEST".to_string(),
             summary: "Test event".to_string(),
             source: EventSource::UserAdded,
-            event_data: None,
+            keywords: None,
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         let result = chronicle_service
@@ -525,7 +528,9 @@ mod integration_tests {
             event_type: "TEST_EVENT".to_string(),
             summary: "Event to be cascade deleted".to_string(),
             source: EventSource::UserAdded,
-            event_data: None,
+            keywords: None,
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         let event = chronicle_service
@@ -576,12 +581,11 @@ mod integration_tests {
         // Test: Create Event with Encryption (SessionDek provided)
         let encrypted_event_request = CreateEventRequest {
             event_type: "ENCRYPTED_EVENT".to_string(),
-            summary: "This is a secret summary that should be encrypted".to_string(),
+            summary: "This is a secret summary with sensitive information about the hidden cave".to_string(),
             source: EventSource::UserAdded,
-            event_data: Some(json!({
-                "secret_info": "This contains sensitive information",
-                "location": "Hidden Cave"
-            })),
+            keywords: Some(vec!["secret".to_string(), "hidden cave".to_string()]),
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         let encrypted_event = chronicle_service
@@ -605,7 +609,9 @@ mod integration_tests {
             event_type: "UNENCRYPTED_EVENT".to_string(),
             summary: "This is a public summary".to_string(),
             source: EventSource::UserAdded,
-            event_data: None,
+            keywords: None,
+            timestamp_iso8601: None,
+            chat_session_id: None,
         };
 
         let unencrypted_event = chronicle_service

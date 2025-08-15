@@ -1,6 +1,6 @@
 use scribe_backend::vector_db::qdrant_client::{
     QdrantClientService, QdrantClientServiceTrait, ScoredPoint, PointId, Value, 
-    Filter, Condition, FieldCondition, Match, ConditionOneOf, value::Kind, r#match::MatchValue
+    Filter, Condition, FieldCondition, Match, ConditionOneOf, Kind, MatchValue
 };
 use scribe_backend::config::Config;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ async fn test_hybrid_search_functionality() {
     // Create config for Qdrant
     let mut config = Config::default();
     config.qdrant_url = Some("http://localhost:6334".to_string());
-    config.embedding_dimension = Some(768);
+    config.embedding_dimension = 768;
     
     let config = Arc::new(config);
     
@@ -119,7 +119,7 @@ fn create_test_point(
     keywords: Vec<&str>,
     vector: Vec<f32>,
 ) -> qdrant_client::qdrant::PointStruct {
-    use qdrant_client::qdrant::{PointStruct, Vectors, vectors::VectorsOptions};
+    use qdrant_client::qdrant::{PointStruct, Vectors, vectors::VectorsOptions, Vector};
     
     let mut payload = HashMap::new();
     payload.insert(
@@ -149,7 +149,12 @@ fn create_test_point(
         id: Some(PointId::from(id.to_string())),
         payload,
         vectors: Some(Vectors {
-            vectors_options: Some(VectorsOptions::Vector(vector)),
+            vectors_options: Some(VectorsOptions::Vector(Vector { 
+                data: vector,
+                indices: None,
+                vector: None, 
+                vectors_count: None,
+            })),
         }),
     }
 }

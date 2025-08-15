@@ -531,6 +531,10 @@ mod get_session_data_for_generation_tests {
                         is_enabled: true,
                         is_constant: false,
                         source_type: "lorebook_entry".to_string(),
+                        encrypted_chunk_text: None,
+                        chunk_text_nonce: None,
+                        encrypted_title: None,
+                        title_nonce: None,
                     },
                 ),
             },
@@ -548,6 +552,10 @@ mod get_session_data_for_generation_tests {
                         is_enabled: true,
                         is_constant: false,
                         source_type: "lorebook_entry".to_string(),
+                        encrypted_chunk_text: None,
+                        chunk_text_nonce: None,
+                        encrypted_title: None,
+                        title_nonce: None,
                     },
                 ),
             },
@@ -717,6 +725,7 @@ mod get_session_data_for_generation_tests {
             _,                    // 19: history_management_limit
             _,                    // 20: user_persona_name
             _,                    // 21: player_chronicle_id
+            _,                    // 22: agent_mode
         ) = result.unwrap();
 
         assert_eq!(
@@ -892,6 +901,7 @@ mod get_session_data_for_generation_tests {
             _,                    // 19: history_management_limit
             _,                    // 20: user_persona_name
             _,                    // 21: player_chronicle_id
+            _,                    // 22: agent_mode
         ) = result.unwrap();
 
         assert_eq!(
@@ -1184,6 +1194,7 @@ mod get_session_data_for_generation_tests {
             _,                    // 19: history_management_limit
             _,                    // 20: user_persona_name
             _,                    // 21: player_chronicle_id
+            _,                    // 22: agent_mode
         ) = result.unwrap();
 
         // Token counts with Gemma for "Okay then." (3) and "See you." (2) = 5. Budget is 8.
@@ -1554,6 +1565,10 @@ mod get_session_data_for_generation_tests {
                     is_enabled: true,
                     is_constant: false,
                     source_type: "lorebook_entry".to_string(),
+                    encrypted_chunk_text: None,
+                    chunk_text_nonce: None,
+                    encrypted_title: None,
+                    title_nonce: None,
                 },
             ),
         };
@@ -1601,6 +1616,7 @@ mod get_session_data_for_generation_tests {
             _,                                // 19: history_management_limit
             _,                                // 20: user_persona_name
             _,                                // 21: player_chronicle_id
+            _,                                // 22: agent_mode
         ) = result.unwrap();
 
         // Verify actual_recent_history_tokens is what we set up (around 140)
@@ -1883,6 +1899,7 @@ mod get_session_data_for_generation_tests {
                     scribe_backend::services::embeddings::ChatMessageChunkMetadata {
                         message_id: msg_id, // Use the ID we generated for this message
                         session_id: setup.session_id,
+                        chronicle_id: None,
                         user_id: setup.user_id,
                         speaker: role.to_string(), // Changed from role
                         timestamp: created_at_val, // Changed from created_at
@@ -1890,6 +1907,8 @@ mod get_session_data_for_generation_tests {
                         source_type: "chat_message".to_string(),
                         text: (*content).to_string(), // Changed from chunk_text
                                                       // original_message_id: msg_id, // Removed, covered by message_id
+                        encrypted_text: None,
+                        text_nonce: None,
                     },
                 ),
             });
@@ -2018,6 +2037,7 @@ mod get_session_data_for_generation_tests {
             _,                    // 19: history_management_limit
             _,                    // 20: user_persona_name
             _,                    // 21: player_chronicle_id
+            _,                    // 22: agent_mode
         ) = result.unwrap();
 
         assert_eq!(

@@ -159,6 +159,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
     let context_agent = ContextEnrichmentAgent::new(
         app_state,
@@ -529,6 +530,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
     let context_agent = ContextEnrichmentAgent::new(
         app_state,

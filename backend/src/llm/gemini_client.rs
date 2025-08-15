@@ -317,8 +317,7 @@ mod tests {
         let client_wrapper =
             build_gemini_client(&api_key, base_url).expect("Failed to build Gemini client wrapper");
         let models_to_test = vec![
-            "gemini-2.5-pro-preview-06-05",
-            "gemini-2.5-flash",
+            "gemini-2.5-flash", // Remove preview model due to strict rate limits
         ];
         let max_retries = 3; // Define a maximum number of retries
 

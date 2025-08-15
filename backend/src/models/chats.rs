@@ -2101,6 +2101,7 @@ mod tests {
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
             player_chronicle_id: None,
+            agent_mode: Some("disabled".to_string()),
         }
     }
 
@@ -2160,6 +2161,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         }
     }
 
@@ -2343,6 +2347,7 @@ mod tests {
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             chronicle_id: None,
+            agent_mode: Some("disabled".to_string()),
         }
     }
 
@@ -2396,6 +2401,7 @@ mod tests {
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             chronicle_id: None,
+            agent_mode: Some("disabled".to_string()),
         }
     }
 

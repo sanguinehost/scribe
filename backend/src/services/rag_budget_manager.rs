@@ -284,6 +284,7 @@ mod tests {
             event_id: Uuid::new_v4(),
             event_type: "plot.twist.revealed".to_string(),
             chronicle_id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
             created_at: Utc::now() - chrono::Duration::hours(1), // 1 hour ago
         };
         

@@ -165,25 +165,22 @@ async fn test_agent_analysis_error_handling() {
 
     assert!(active_analysis.is_none(), "Superseded analysis should not be returned");
 
-    // Test 7: Create a new successful analysis to replace the failed one
-    let new_analysis_id = Uuid::new_v4();
-    
+    // Test 7: Update the superseded analysis to be successful and active again
+    // Since there can only be one record per (session_id, analysis_type), we update the existing one
     let conn = test_app.db_pool.get().await.unwrap();
     conn.interact(move |conn| {
-        use scribe_backend::schema::agent_context_analysis;
+        use scribe_backend::schema::agent_context_analysis::dsl;
         
-        diesel::insert_into(agent_context_analysis::table)
-            .values((
-                agent_context_analysis::id.eq(new_analysis_id),
-                agent_context_analysis::chat_session_id.eq(session_id),
-                agent_context_analysis::user_id.eq(user_id),
-                agent_context_analysis::analysis_type.eq(AnalysisType::PreProcessing.to_string()),
-                agent_context_analysis::message_id.eq(message_id),
-                agent_context_analysis::status.eq(AnalysisStatus::Success.to_string()),
-                agent_context_analysis::retry_count.eq(1), // This was a retry
-                agent_context_analysis::analysis_summary.eq(Some("Test successful analysis".to_string())),
-                agent_context_analysis::created_at.eq(diesel::dsl::now),
-                agent_context_analysis::updated_at.eq(diesel::dsl::now),
+        // Update the existing superseded analysis to be successful and active
+        diesel::update(dsl::agent_context_analysis)
+            .filter(dsl::chat_session_id.eq(session_id))
+            .filter(dsl::analysis_type.eq(AnalysisType::PreProcessing.to_string()))
+            .set((
+                dsl::status.eq(AnalysisStatus::Success.to_string()),
+                dsl::retry_count.eq(1),
+                dsl::analysis_summary.eq(Some("Test successful analysis".to_string())),
+                dsl::superseded_at.eq::<Option<chrono::DateTime<chrono::Utc>>>(None), // Make it active again
+                dsl::updated_at.eq(diesel::dsl::now),
             ))
             .execute(conn)
     })
@@ -206,7 +203,8 @@ async fn test_agent_analysis_error_handling() {
 
     assert!(new_active_analysis.is_some());
     let analysis = new_active_analysis.unwrap();
-    assert_eq!(analysis.id, new_analysis_id);
+    assert_eq!(analysis.id, analysis_id); // It's the same record, just updated
     assert_eq!(analysis.status, "success");
     assert_eq!(analysis.retry_count, 1);
+    assert!(analysis.superseded_at.is_none()); // Should be active (not superseded)
 }

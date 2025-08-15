@@ -9,7 +9,7 @@ use uuid::Uuid;
 async fn test_search_improvements_with_keyword_matching() {
     // Set up test environment with mock services
     let app = spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let mut guard = TestDataGuard::new(app.db_pool.clone());
     
     // Create test user and session
     let (user, _) = guard.create_test_user("test_user", "password").await;
@@ -40,8 +40,8 @@ async fn test_search_improvements_with_keyword_matching() {
     // Associate lorebook with session
     guard.associate_lorebook_with_session(&session, &lorebook).await;
     
-    // Embed the lorebook entries
-    let embedding_service = app.state.embedding_service.clone();
+    // Embed the lorebook entries (using app services directly)
+    let embedding_service = app.mock_embedding_pipeline_service.clone();
     for entry in [&entry1, &entry2] {
         let params = scribe_backend::services::embeddings::LorebookEntryParams {
             original_lorebook_entry_id: entry.id,

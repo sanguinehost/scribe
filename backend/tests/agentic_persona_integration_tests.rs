@@ -150,6 +150,9 @@ fn create_lucas_roleplay_messages(user_id: Uuid, session_id: Uuid, session_dek: 
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         });
     }
     
@@ -170,6 +173,47 @@ async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResul
         .await?;
     
     Ok(chronicle.id)
+}
+
+// Helper to create AppState for tests
+async fn create_test_app_state(test_app: &TestApp, lorebook_service: Arc<scribe_backend::services::LorebookService>) -> Arc<scribe_backend::state::AppState> {
+    let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
+    
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        chat_override_service: Arc::new(scribe_backend::services::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        )),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+                panic!("Failed to create tokenizer for test")
+            }),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: encryption_service.clone(),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(scribe_backend::services::FileStorageService::new("test_files").unwrap()),
+        email_service: scribe_backend::services::email_service::create_email_service(&"development".to_string(), "http://localhost:3000".to_string(), None).await.unwrap(),
+    };
+
+    let app_state = scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services
+    );
+    
+    // Skip setting narrative intelligence service to avoid circular dependency in tests
+    Arc::new(app_state)
 }
 
 #[tokio::test]
@@ -222,16 +266,19 @@ async fn test_persona_context_missing_in_events() {
     let mock_ai_client = Arc::new(scribe_backend::test_helpers::MockAiClient::new_with_response(mock_response.to_string()));
     
     // Create the agentic narrative system
+    let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone(),
+        test_app.qdrant_service.clone(),
+    ));
+    let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
     let agentic_system = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
         Arc::new(ChronicleService::new(test_app.db_pool.clone())),
-        Arc::new(scribe_backend::services::LorebookService::new(
-            test_app.db_pool.clone(),
-            encryption_service.clone(),
-            test_app.qdrant_service.clone(),
-        )),
+        lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state,
         Some(AgenticNarrativeFactory::create_dev_config()),
     );
     
@@ -316,8 +363,16 @@ async fn test_create_chronicle_event_tool_without_persona() {
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
     
     // Test the CreateChronicleEventTool directly
+    let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
+    let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone(),
+        test_app.qdrant_service.clone(),
+    ));
+    let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
     let create_event_tool = CreateChronicleEventTool::new(
-        Arc::new(ChronicleService::new(test_app.db_pool.clone()))
+        Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        app_state,
     );
     
     // Hex-encode the session_dek for the tool parameter
