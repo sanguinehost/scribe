@@ -90,6 +90,37 @@ async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResul
     Ok(chronicle.id)
 }
 
+/// Helper function to create a chat session in the database for testing
+async fn create_test_chat_session(
+    db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
+    user_id: Uuid,
+    session_id: Uuid,
+) -> AnyhowResult<()> {
+    let conn = db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
+    
+    conn.interact(move |conn| {
+        use scribe_backend::schema::chat_sessions;
+        
+        diesel::insert_into(chat_sessions::table)
+            .values((
+                chat_sessions::id.eq(session_id),
+                chat_sessions::user_id.eq(user_id),
+                chat_sessions::model_name.eq("gemini-2.5-pro"),
+                chat_sessions::history_management_strategy.eq("sliding_window"),
+                chat_sessions::history_management_limit.eq(50),
+                chat_sessions::created_at.eq(diesel::dsl::now),
+                chat_sessions::updated_at.eq(diesel::dsl::now),
+            ))
+            .execute(conn)
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to interact with database: {}", e))?
+    .map_err(|e| anyhow::anyhow!("Failed to insert chat session: {}", e))?;
+    
+    Ok(())
+}
+
 /// Helper to create duplicate Everest cleansing messages
 fn create_duplicate_everest_messages(user_id: Uuid, session_id: Uuid, session_dek: &SessionDek) -> AnyhowResult<Vec<ChatMessage>> {
     // These messages describe essentially the same Mount Everest cleansing action
@@ -258,7 +289,8 @@ async fn test_search_knowledge_base_tool_functionality() {
     let search_params = json!({
         "query": "Mount Everest cleansing pollution",
         "search_type": "chronicle_events",
-        "limit": 10
+        "limit": 10,
+        "user_id": user_id.to_string()
     });
     
     let search_result = search_tool.execute(&search_params).await.unwrap();
@@ -292,6 +324,11 @@ async fn test_deduplication_failure_multiple_everest_events() {
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
     let session_id = Uuid::new_v4();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
+    
+    // Create chat session in database (required for foreign key constraint)
+    create_test_chat_session(&test_app.db_pool, user_id, session_id)
+        .await
+        .expect("Failed to create test chat session");
     
     // Create existing events that should prevent duplicates
     create_existing_everest_events(user_id, chronicle_id, &test_app).await.unwrap();
