@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::ignored_unit_patterns)]
 use chrono::Utc;
+use secrecy::{SecretBox, ExposeSecret};
 use mockall::predicate::*;
 use qdrant_client::qdrant::{PointId, Value, point_id::PointIdOptions};
 use scribe_backend::{
@@ -247,6 +248,9 @@ async fn test_process_and_embed_message_integration() {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
     };
 
     let embedding_dimension = 768;
@@ -306,6 +310,9 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
     };
 
     // Configure mock embedding client to always return an error
@@ -1393,6 +1400,10 @@ async fn test_rag_context_injection_with_qdrant() {
 
     // Set up test data
     let user_id = Uuid::new_v4(); // Consistent user_id for all data
+    // Create a mock session_dek for the test
+    let session_dek = scribe_backend::auth::session_dek::SessionDek(
+        secrecy::SecretBox::new(Box::new(b"test_session_key_32_bytes_long!!".to_vec()))
+    );
     let chat_session_id = Uuid::new_v4();
     let chat_message_id = Uuid::new_v4();
     let chat_message_content = "This is a test chat message about dragons for RAG.";
@@ -1416,6 +1427,9 @@ async fn test_rag_context_injection_with_qdrant() {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
     };
 
     // Configure mock embedding client for a sequence of calls
@@ -1509,6 +1523,7 @@ async fn test_rag_context_injection_with_qdrant() {
         decrypted_keywords: None, // No keywords for this test
         is_enabled: true,         // is_enabled
         is_constant: false,       // is_constant
+        session_dek: Some(SecretBox::new(Box::new(session_dek.0.expose_secret().to_vec()))),
     };
 
     let process_lore_result = app_state_for_rag
@@ -1867,6 +1882,9 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
     };
 
     let content_a2 = "User A Session 2 confidential cat strategies";
@@ -1884,6 +1902,9 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
     };
 
     let content_b1 = "User B Session 1 private alien agenda";
@@ -1901,6 +1922,9 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
     };
 
     // 4. Configure Mock Embeddings (one for each message chunk, one for each query)
@@ -2173,6 +2197,14 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     // 2. Define User IDs and Lorebook IDs
     let user_c_id = Uuid::new_v4();
     let user_d_id = Uuid::new_v4();
+    
+    // Create mock session_deks for the users
+    let user_c_session_dek = scribe_backend::auth::session_dek::SessionDek(
+        secrecy::SecretBox::new(Box::new(b"test_user_c_key_32_bytes_long!".to_vec()))
+    );
+    let user_d_session_dek = scribe_backend::auth::session_dek::SessionDek(
+        secrecy::SecretBox::new(Box::new(b"test_user_d_key_32_bytes_long!".to_vec()))
+    );
 
     let lorebook_c1_id = Uuid::new_v4(); // User C's first lorebook
     let lorebook_c2_id = Uuid::new_v4(); // User C's second lorebook
@@ -2221,6 +2253,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
+        session_dek: Some(SecretBox::new(Box::new(user_c_session_dek.0.expose_secret().to_vec()))),
     };
 
     app_state
@@ -2237,6 +2270,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
+        session_dek: Some(SecretBox::new(Box::new(user_c_session_dek.0.expose_secret().to_vec()))),
     };
 
     app_state
@@ -2253,6 +2287,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
+        session_dek: Some(SecretBox::new(Box::new(user_d_session_dek.0.expose_secret().to_vec()))),
     };
 
     app_state

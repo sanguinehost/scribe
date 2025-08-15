@@ -1106,6 +1106,7 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
         player_chronicle_id: None, // Not used in CLI tests
+        agent_mode: None,
     }
 }
 
@@ -1160,5 +1161,8 @@ pub fn mock_chat_message(
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-flash".to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
     }
 }

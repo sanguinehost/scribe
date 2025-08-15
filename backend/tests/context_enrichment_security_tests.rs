@@ -20,6 +20,52 @@ use std::sync::Arc;
 use tracing::info;
 use uuid::Uuid;
 
+// Helper function to create AppState from TestApp
+async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp) -> Arc<scribe_backend::state::AppState> {
+    let encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let lorebook_service = Arc::new(scribe_backend::services::lorebook::LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone(),
+        test_app.qdrant_service.clone(),
+    ));
+    
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        chat_override_service: Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone()
+        )),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+                panic!("Failed to create tokenizer for test")
+            }),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: encryption_service.clone(),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
+        email_service: scribe_backend::services::email_service::create_email_service(&"development".to_string(), "http://localhost:3000".to_string(), None).await.unwrap(),
+    };
+    
+    let app_state = scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services
+    );
+    
+    // Skip setting narrative intelligence service to avoid circular dependency in tests
+    Arc::new(app_state)
+}
+
 /// Test that SearchKnowledgeBaseTool properly isolates user data
 #[tokio::test]
 async fn test_search_knowledge_base_user_isolation() {
@@ -61,9 +107,11 @@ async fn test_search_knowledge_base_user_isolation() {
     // The tool should reject invalid user_id and only accept proper UUID strings
 
     // Create SearchKnowledgeBaseTool
+    let app_state = create_test_app_state(&test_app).await;
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
 
     // SECURITY TEST: Test that the tool requires user_id parameter and validates it
@@ -134,9 +182,11 @@ async fn test_context_enrichment_agent_security() {
 
     // SECURITY TEST: For now, let's just verify that SearchKnowledgeBaseTool requires user_id
     // This is the core security test - other components depend on this fundamental security
+    let app_state = create_test_app_state(&test_app).await;
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
 
     // Test that SearchKnowledgeBaseTool requires user_id parameter
@@ -167,9 +217,11 @@ async fn test_context_enrichment_agent_security() {
 async fn test_malicious_user_id_injection() {
     let test_app = spawn_app(false, false, false).await;
 
+    let app_state = create_test_app_state(&test_app).await;
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
 
     // Test various malicious user_id inputs
@@ -431,9 +483,12 @@ async fn test_search_tool_injection_protection() {
     .expect("Failed to create user");
     guard.add_user(user.id);
 
+    // Create AppState for the search tool
+    let app_state = create_test_app_state(&test_app).await;
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
 
     // Test various injection attempts in search query
@@ -501,9 +556,12 @@ async fn test_search_tool_ssrf_protection() {
     .expect("Failed to create user");
     guard.add_user(user.id);
 
+    // Create AppState for the search tool
+    let app_state = create_test_app_state(&test_app).await;
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     ));
 
     // Test SSRF attack vectors

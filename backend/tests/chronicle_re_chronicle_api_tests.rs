@@ -324,6 +324,8 @@ async fn create_chat_session_with_messages(
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
         };
 
         conn.interact(move |conn| {

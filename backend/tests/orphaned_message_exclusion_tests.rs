@@ -247,7 +247,7 @@ async fn test_frontend_history_vs_database_history() {
         frontend_call_count
     );
 
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
         result_frontend;
 
     // Should have 2 messages from frontend history (excluding current message)
@@ -388,7 +388,7 @@ async fn test_orphaned_message_exclusion_scenario() {
     let calls = test_app.mock_embedding_pipeline_service.get_calls();
     println!("RAG calls made in frontend mode: {}", calls.len());
 
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = result;
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = result;
 
     // Should have exactly 3 messages from frontend history (excluding current message)
     assert_eq!(

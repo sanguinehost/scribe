@@ -98,6 +98,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+        test_app.create_app_state().await,
         None, // Use default config
     );
 
@@ -116,6 +117,9 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -130,6 +134,9 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         },
     ];
 
@@ -213,6 +220,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+        test_app.create_app_state().await,
         None, // Use default config
     );
 
@@ -237,6 +245,9 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         },
     ];
 
@@ -308,6 +319,7 @@ async fn test_dual_mode_extraction_comparison() {
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+        test_app.create_app_state().await,
         None, // Use default config
     );
 
@@ -332,6 +344,9 @@ async fn test_dual_mode_extraction_comparison() {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -346,6 +361,9 @@ async fn test_dual_mode_extraction_comparison() {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         },
     ];
 
@@ -407,6 +425,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone() as Arc<dyn EmbeddingClient + Send + Sync>,
+        test_app.create_app_state().await,
         None, // Use default config
     );
 
@@ -431,6 +450,9 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         },
     ];
 

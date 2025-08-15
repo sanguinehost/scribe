@@ -81,6 +81,9 @@ fn create_chat_message(
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: model_name.to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
     }
 }
 

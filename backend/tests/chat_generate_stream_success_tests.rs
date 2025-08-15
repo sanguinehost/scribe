@@ -198,6 +198,7 @@ async fn send_chat_request(
         }],
         model: Some("test-model".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let chat_request = Request::builder()
@@ -521,7 +522,7 @@ async fn test_first_mes_included_in_history() {
     .expect("Failed to get session data for generation");
 
     // Extract the managed history from the generation data
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
         generation_data;
 
     // Assert that the history contains the character's first_mes

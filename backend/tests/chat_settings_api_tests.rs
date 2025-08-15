@@ -846,6 +846,7 @@ async fn update_chat_settings_success_full() {
         gemini_thinking_budget: Some(60_i32),
         gemini_enable_code_execution: Some(false),
         chronicle_id: None,
+        agent_mode: None,
     };
 
     let request = Request::builder()
@@ -936,6 +937,7 @@ async fn update_chat_settings_success_partial() {
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         chronicle_id: None,
+        agent_mode: None,
     };
 
     let request = Request::builder()
@@ -1047,6 +1049,7 @@ async fn update_chat_settings_forbidden() {
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         chronicle_id: None,
+        agent_mode: None,
     };
 
     // User2 tries to update user1's chat session settings
@@ -1113,6 +1116,7 @@ async fn update_chat_settings_not_found() {
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         chronicle_id: None,
+        agent_mode: None,
     };
 
     let request = Request::builder()
@@ -1166,6 +1170,7 @@ async fn update_chat_settings_unauthorized() {
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         chronicle_id: None,
+        agent_mode: None,
     };
 
     let request = Request::builder()
@@ -1295,6 +1300,7 @@ async fn debug_system_prompt_encryption_decryption() {
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         chronicle_id: None,
+        agent_mode: None,
     };
 
     println!(
@@ -1522,6 +1528,7 @@ async fn test_actual_api_route_for_system_prompt() {
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         chronicle_id: None,
+        agent_mode: None,
     };
 
     println!(
@@ -1661,6 +1668,7 @@ async fn test_chat_chronicle_association() {
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         chronicle_id: Some(chronicle_uuid),
+        agent_mode: None,
     };
 
     let update_request = Request::builder()
@@ -1716,6 +1724,7 @@ async fn test_chat_chronicle_association() {
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         chronicle_id: None, // This should clear the association
+        agent_mode: None,
     };
 
     let remove_request = Request::builder()

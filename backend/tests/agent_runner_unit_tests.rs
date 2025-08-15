@@ -12,6 +12,7 @@ use scribe_backend::{
     test_helpers::{TestDataGuard, MockAiClient},
     auth::session_dek::SessionDek,
 };
+use diesel::prelude::*;
 use uuid::Uuid;
 use chrono::Utc;
 use secrecy::SecretBox;
@@ -77,10 +78,44 @@ fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         });
     }
     
     messages
+}
+
+/// Helper function to create a chat session in the database for testing
+async fn create_test_chat_session(
+    db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
+    user_id: Uuid,
+    session_id: Uuid,
+) -> anyhow::Result<()> {
+    let conn = db_pool.get().await
+        .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
+    
+    conn.interact(move |conn| {
+        use scribe_backend::schema::chat_sessions;
+        
+        diesel::insert_into(chat_sessions::table)
+            .values((
+                chat_sessions::id.eq(session_id),
+                chat_sessions::user_id.eq(user_id),
+                chat_sessions::model_name.eq("gemini-2.5-pro"),
+                chat_sessions::history_management_strategy.eq("sliding_window"),
+                chat_sessions::history_management_limit.eq(50),
+                chat_sessions::created_at.eq(diesel::dsl::now),
+                chat_sessions::updated_at.eq(diesel::dsl::now),
+            ))
+            .execute(conn)
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to interact with database: {}", e))?
+    .map_err(|e| anyhow::anyhow!("Failed to insert chat session: {}", e))?;
+    
+    Ok(())
 }
 
 mod agent_runner_conversation_tests {
@@ -99,6 +134,11 @@ mod agent_runner_conversation_tests {
         ).await.expect("Failed to create test user");
         let user_id = user.id;
         let chat_session_id = Uuid::new_v4();
+
+        // Create chat session in database
+        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+            .await
+            .expect("Failed to create test chat session");
 
         // Create agent runner with proper mock response
         let mock_response = serde_json::json!({
@@ -160,6 +200,11 @@ mod agent_runner_conversation_tests {
         let user_id = user.id;
         let chat_session_id = Uuid::new_v4();
 
+        // Create chat session in database
+        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+            .await
+            .expect("Failed to create test chat session");
+
         // Create messages with different roles including System messages
         let mut messages = vec![
             ChatMessage {
@@ -175,6 +220,9 @@ mod agent_runner_conversation_tests {
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
+                status: "completed".to_string(),
+                error_message: None,
+                superseded_at: None,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -189,6 +237,9 @@ mod agent_runner_conversation_tests {
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
+                status: "completed".to_string(),
+                error_message: None,
+                superseded_at: None,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -203,6 +254,9 @@ mod agent_runner_conversation_tests {
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
+                status: "completed".to_string(),
+                error_message: None,
+                superseded_at: None,
             },
         ];
 
@@ -259,6 +313,11 @@ mod agent_runner_conversation_tests {
         let user_id = user.id;
         let chat_session_id = Uuid::new_v4();
 
+        // Create chat session in database
+        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+            .await
+            .expect("Failed to create test chat session");
+
         // Create messages with HTML entities that need sanitization
         let messages = vec![
             ChatMessage {
@@ -274,6 +333,9 @@ mod agent_runner_conversation_tests {
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
+                status: "completed".to_string(),
+                error_message: None,
+                superseded_at: None,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -288,6 +350,9 @@ mod agent_runner_conversation_tests {
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
+                status: "completed".to_string(),
+                error_message: None,
+                superseded_at: None,
             },
         ];
 
@@ -408,10 +473,16 @@ mod agent_runner_duplicate_prevention_tests {
         
         let messages = create_executive_suite_conversation_messages(&session_dek).await;
         
+        // Create first chat session for the test
+        let first_session_id = Uuid::new_v4();
+        create_test_chat_session(&test_app.db_pool, user_id, first_session_id)
+            .await
+            .expect("Failed to create first test chat session");
+        
         // First run - should create chronicle events for this conversation
         let first_result = agent_runner.process_narrative_event(
             user_id,
-            Uuid::new_v4(), // chat_session_id
+            first_session_id,
             Some(chronicle_id),
             &messages,
             &session_dek,
@@ -448,9 +519,15 @@ mod agent_runner_duplicate_prevention_tests {
             None,
         );
         
+        // Create second chat session for the test
+        let second_session_id = Uuid::new_v4();
+        create_test_chat_session(&test_app.db_pool, user_id, second_session_id)
+            .await
+            .expect("Failed to create second test chat session");
+        
         let second_result = second_agent_runner.process_narrative_event(
             user_id,
-            Uuid::new_v4(), // different chat_session_id
+            second_session_id,
             Some(chronicle_id),
             &similar_messages,
             &session_dek,
@@ -543,6 +620,9 @@ mod agent_runner_duplicate_prevention_tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         }
     }
 }

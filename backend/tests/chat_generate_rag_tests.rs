@@ -375,6 +375,7 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
         }],
         model: Some("test-embed-trigger-model".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let request = Request::builder()
@@ -519,6 +520,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         }],
         model: None,
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let request = Request::builder()
@@ -767,11 +769,14 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         // Changed to ChatMessageChunkMetadata
         message_id: Uuid::new_v4(),
         session_id: session.id,
+        chronicle_id: None,
         user_id: user.id,                 // Added user_id
         speaker: "Assistant".to_string(), // Assuming speaker is not encrypted
         timestamp: Utc::now(),
-        text: mock_chunk_text.clone(), // Use String directly
+        text: mock_chunk_text.clone(), // Use String directly (deprecated but still needed)
         source_type: "chat_message".to_string(),
+        encrypted_text: None,
+        text_nonce: None,
     };
     let mock_retrieved_chunk = RetrievedChunk {
         score: 0.95,
@@ -811,6 +816,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         }],
         model: None,
         query_text_for_rag: Some(query_text.to_string()),
+        analysis_mode: None,
     };
 
     let request = Request::builder()
@@ -1181,6 +1187,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         }],
         model: Some("test-rag-err-model".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let request = Request::builder()
@@ -1527,6 +1534,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         }],
         model: Some("test-embed-trigger-model".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     // Ensure responses are queued for the retrieve_relevant_chunks calls (system prompt + user message)
@@ -1659,6 +1667,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         }],
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let request = Request::builder()
@@ -1796,6 +1805,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         }],
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let request = Request::builder()
@@ -1922,6 +1932,7 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         }],
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     let request = Request::builder()
@@ -2090,6 +2101,7 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
         }],
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
+        analysis_mode: None,
     };
 
     // Ensure responses are queued for this specific /generate call (system prompt + user message)

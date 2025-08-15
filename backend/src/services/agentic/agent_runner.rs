@@ -114,6 +114,9 @@ impl NarrativeAgentRunner {
         );
 
         // Auto-create and link chronicle if needed
+        // TODO: This creates chronicles BEFORE AI processing, which means we get orphaned
+        // empty chronicles when AI calls fail. Consider moving chronicle creation AFTER
+        // successful AI response to avoid this issue.
         if chronicle_id.is_none() {
             info!("Checking database for existing chronicle link for chat session {}", chat_session_id);
             
@@ -1591,6 +1594,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         }
     }
     

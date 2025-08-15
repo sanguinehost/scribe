@@ -49,7 +49,9 @@ async fn test_simple_deduplication() {
         event_type: "SPIRITUAL.CLEANSING.LOCATION".to_string(),
         summary: "Lucas performed a cleansing ritual".to_string(),
         source: EventSource::AiExtracted,
-        event_data: Some(event_data),
+        keywords: None,
+        timestamp_iso8601: None,
+        chat_session_id: None,
     };
     
     let first_event = chronicle_service

@@ -14,7 +14,7 @@ use scribe_backend::{
     services::{
         agentic::{
             AgenticNarrativeFactory,
-            AnalyzeTextSignificanceTool, ExtractTemporalEventsTool, ExtractWorldConceptsTool,
+            AnalyzeTextSignificanceTool,
             CreateChronicleEventTool, SearchKnowledgeBaseTool, ScribeTool,
         },
         ChronicleService, LorebookService,
@@ -114,6 +114,9 @@ fn create_roleplay_messages(user_id: Uuid, session_id: Uuid, session_dek: &Sessi
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         });
     }
     
@@ -269,24 +272,56 @@ async fn test_agentic_tools_with_mock_ai() {
     assert!(triage_result.get("confidence").is_some());
     println!("✅ Triage tool working: {:?}", triage_result);
     
-    // Test 2: Extract Temporal Events Tool with real AI  
-    let events_tool = ExtractTemporalEventsTool::new(test_app.ai_client.clone());
-    let events_result = events_tool.execute(&messages).await.unwrap();
+    // Test 2: Create Chronicle Event Tool  
+    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let lorebook_service = Arc::new(LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone(),
+        test_app.qdrant_service.clone(),
+    ));
     
-    assert!(events_result.get("events").is_some());
-    println!("✅ Events extraction tool working: {:?}", events_result);
+    // Create test AppState for tools that need it
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        chat_override_service: Arc::new(scribe_backend::services::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        )),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+                panic!("Failed to create tokenizer for test")
+            }),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: encryption_service.clone(),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(scribe_backend::services::FileStorageService::new("test_files").unwrap()),
+        email_service: scribe_backend::services::email_service::create_email_service(&"development".to_string(), "http://localhost:3000".to_string(), None).await.unwrap(),
+    };
+    let app_state = Arc::new(scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services
+    ));
     
-    // Test 3: Extract World Concepts Tool with real AI
-    let concepts_tool = ExtractWorldConceptsTool::new(test_app.ai_client.clone());
-    let concepts_result = concepts_tool.execute(&messages).await.unwrap();
+    let create_event_tool = CreateChronicleEventTool::new(chronicle_service.clone(), app_state.clone());
+    println!("✅ Create Chronicle Event tool created successfully");
     
-    assert!(concepts_result.get("concepts").is_some());
-    println!("✅ Concepts extraction tool working: {:?}", concepts_result);
-    
-    // Test 4: Search Knowledge Base Tool 
+    // Test 3: Search Knowledge Base Tool 
     let search_tool = SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state.clone(),
     );
     
     let search_params = json!({
@@ -299,10 +334,8 @@ async fn test_agentic_tools_with_mock_ai() {
     assert!(search_result.get("results").is_some());
     println!("✅ Knowledge search tool working: {:?}", search_result);
     
-    // Test 5: Create Chronicle Event Tool
-    let create_event_tool = CreateChronicleEventTool::new(
-        Arc::new(ChronicleService::new(test_app.db_pool.clone()))
-    );
+    // Test 5: Create Chronicle Event Tool (using already created one)
+    // let create_event_tool already created above
     
     // Hex-encode the session_dek for the tool parameter
     let session_dek_hex = hex::encode(session_dek.0.expose_secret());

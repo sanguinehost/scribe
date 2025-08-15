@@ -131,6 +131,9 @@ fn create_duplicate_everest_messages(user_id: Uuid, session_id: Uuid, session_de
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         });
     }
     
@@ -145,23 +148,19 @@ async fn create_existing_everest_events(user_id: Uuid, chronicle_id: Uuid, test_
     let existing_events = vec![
         CreateEventRequest {
             event_type: "ENVIRONMENTAL_CLEANSING".to_string(),
-            summary: "The user performed a powerful act of cleansing, removing all human pollution and remains from Mount Everest".to_string(),
-            event_data: Some(json!({
-                "location": "Mount Everest, Himalayas",
-                "action": "cleansing",
-                "target": "human pollution"
-            })),
+            summary: "The user performed a powerful act of cleansing, removing all human pollution and remains from Mount Everest in the Himalayas".to_string(),
             source: EventSource::AiExtracted,
+            keywords: Some(vec!["cleansing".to_string(), "Mount Everest".to_string(), "pollution".to_string()]),
+            timestamp_iso8601: None,
+            chat_session_id: None,
         },
         CreateEventRequest {
             event_type: "COSMIC_INTERVENTION".to_string(), 
-            summary: "The user, now enlightened and possessing vast cosmic powers, descended upon Mount Everest and cleansed it entirely".to_string(),
-            event_data: Some(json!({
-                "location": "Mount Everest", 
-                "method": "cosmic powers",
-                "result": "pristine state"
-            })),
+            summary: "The user, now enlightened and possessing vast cosmic powers, descended upon Mount Everest and cleansed it to a pristine state".to_string(),
             source: EventSource::AiExtracted,
+            keywords: Some(vec!["cosmic powers".to_string(), "Mount Everest".to_string(), "pristine".to_string()]),
+            timestamp_iso8601: None,
+            chat_session_id: None,
         },
     ];
     
@@ -172,6 +171,65 @@ async fn create_existing_everest_events(user_id: Uuid, chronicle_id: Uuid, test_
     }
     
     Ok(())
+}
+
+// Helper to create AppState for tests
+async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::AppState> {
+    let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
+    let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone(),
+        test_app.qdrant_service.clone(),
+    ));
+    
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        chat_override_service: Arc::new(scribe_backend::services::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        )),
+        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
+                panic!("Failed to create tokenizer for test")
+            }),
+            None,
+            "gemini-2.5-pro"
+        )),
+        encryption_service: encryption_service.clone(),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
+        file_storage_service: Arc::new(scribe_backend::services::FileStorageService::new("test_files").unwrap()),
+        email_service: scribe_backend::services::email_service::create_email_service(&"development".to_string(), "http://localhost:3000".to_string(), None).await.unwrap(),
+    };
+
+    let mut app_state = scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services
+    );
+    
+    let app_state_arc = Arc::new(app_state);
+    
+    // Add narrative intelligence service after AppState construction to break circular dependency
+    let narrative_intelligence_service = Arc::new(scribe_backend::services::NarrativeIntelligenceService::new(
+        test_app.ai_client.clone(),
+        Arc::new(scribe_backend::services::ChronicleService::new(test_app.db_pool.clone())),
+        lorebook_service,
+        app_state_arc.clone(),
+        None, // No config for tests
+    ));
+    
+    // Skip setting narrative intelligence service to avoid circular dependency in tests
+    // app_state.set_narrative_intelligence_service(narrative_intelligence_service);
+    
+    app_state_arc
 }
 
 #[tokio::test]
@@ -189,10 +247,12 @@ async fn test_search_knowledge_base_tool_functionality() {
     // Wait a bit for events to be indexed (if using vector search)
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     
-    // Test the search tool
+    // Test the search tool  
+    let app_state = create_test_app_state(test_app.clone()).await;
     let search_tool = SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state,
     );
     
     let search_params = json!({
@@ -257,16 +317,19 @@ async fn test_deduplication_failure_multiple_everest_events() {
 
     // Create the agentic narrative system
     let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
+    let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone(),
+        test_app.qdrant_service.clone(),
+    ));
+    let app_state = create_test_app_state(test_app.clone()).await;
     let agentic_system = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
         Arc::new(ChronicleService::new(test_app.db_pool.clone())),
-        Arc::new(scribe_backend::services::LorebookService::new(
-            test_app.db_pool.clone(),
-            encryption_service.clone(),
-            test_app.qdrant_service.clone(),
-        )),
+        lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
+        app_state,
         Some(AgenticNarrativeFactory::create_dev_config()),
     );
     

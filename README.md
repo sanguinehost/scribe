@@ -10,7 +10,7 @@
 ## ✨ Features
 
 - 🔒 **End-to-end encryption** - Your character data and chat history are encrypted on our servers, though AI processing requires sending messages to external APIs (Gemini)
-- 🚀 **Lightning-fast responses** with intelligent background context enrichment
+- 🚀 **Fast responses** with intelligent background context enrichment
 - 🧠 **Smart context management** - Chronicle system automatically tracks narrative history
 - 🎮 **Game-ready architecture** - Built for future RPG, dating sim, and interactive fiction integration
 - 📚 **Advanced lorebook system** - Rich world-building with vector search
@@ -32,7 +32,7 @@
 
 **Key Innovations for Character Roleplay:**
 - **Server-Side Encryption**: Client-side password-derived keys encrypt your data on our servers (note: AI processing requires sending messages to Gemini API)
-- **Lightning Path**: Instant character responses with background context enrichment
+- **Context Enrichment**: Character responses with optional background context enrichment modes
 - **Chronicle System**: Automatic extraction and indexing of character interactions and story beats
 - **Context Enrichment Agent**: Smart retrieval of relevant character history and personality traits
 - **Hybrid Search**: Combines keyword and semantic search for accurate character context

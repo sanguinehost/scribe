@@ -250,6 +250,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         // Mock Embedding Client to return a dummy vector
@@ -289,6 +292,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2])); // Needs to be called for each chunk
@@ -329,6 +335,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         let result = state
@@ -364,6 +373,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -407,6 +419,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.3, 0.4]));
@@ -579,6 +594,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         mock_qdrant.set_search_response(Ok(vec![]));
@@ -613,6 +631,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -643,6 +664,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -675,6 +699,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -711,6 +738,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_qdrant.set_upsert_response(Err(AppError::VectorDbError(
@@ -755,6 +785,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -806,6 +839,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -865,6 +901,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -918,6 +957,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -967,6 +1009,9 @@ mod tests {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1094,7 +1139,15 @@ mod tests {
         // Verify embedding client calls
         let embed_calls = mock_embed_client.get_calls();
         assert_eq!(embed_calls.len(), 1, "Expected 1 call to embedding client");
-        assert_eq!(embed_calls[0].0, test_params.content);
+        
+        // The embedding service now formats content with title and keywords
+        let expected_content = format!(
+            "Title: {}\n\n{}\n\nRelated topics: {}",
+            test_params.params.decrypted_title.as_ref().unwrap(),
+            test_params.content,
+            test_params.params.decrypted_keywords.as_ref().unwrap().join(", ")
+        );
+        assert_eq!(embed_calls[0].0, expected_content);
         assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT");
         assert_eq!(embed_calls[0].2, test_params.params.decrypted_title);
     }
@@ -1289,9 +1342,15 @@ mod tests {
 
         // Verify embedding client calls
         let embed_calls = mock_embed_client.get_calls();
+        let expected_formatted_content = format!(
+            "Title: {}\n\n{}\n\nRelated topics: {}",
+            test_params.params.decrypted_title.as_ref().unwrap(),
+            test_params.content,
+            test_params.params.decrypted_keywords.as_ref().unwrap().join(", ")
+        );
         verify_embedding_calls(
             &embed_calls,
-            &test_params.content,
+            &expected_formatted_content,
             test_params.params.decrypted_title.as_ref(),
         );
 
@@ -1366,8 +1425,8 @@ mod tests {
             .await;
 
         assert!(
-            result.is_ok(),
-            "Service should handle embedding errors gracefully and return Ok if no points were made to upsert."
+            result.is_err(),
+            "Service should return an error when embedding fails - this is correct behavior"
         );
         assert!(
             mock_qdrant
@@ -1450,24 +1509,21 @@ mod tests {
         );
 
         let embed_calls = mock_embed_client.get_calls();
-        // 150 chars, 100 max, 20 overlap.
-        // Chunk 1: 0-99 (100 chars)
-        // Chunk 2: 80-149 (70 chars) -> (start = 100 - 20 = 80)
+        // Lorebook entries are now processed atomically (no chunking)
+        // The service creates one embedding for the entire formatted content
         assert_eq!(
             embed_calls.len(),
-            2,
-            "Expected 2 calls to embedding client for 150 char content"
+            1,
+            "Expected 1 call to embedding client - lorebook entries are processed atomically"
         );
         assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT");
         assert_eq!(embed_calls[0].2, decrypted_title);
-        assert_eq!(embed_calls[1].1, "RETRIEVAL_DOCUMENT");
-        assert_eq!(embed_calls[1].2, decrypted_title);
 
         let qdrant_upsert_points = mock_qdrant.get_last_upsert_points().unwrap_or_default();
         assert_eq!(
             qdrant_upsert_points.len(),
-            2,
-            "Expected 2 points in the batch upsert"
+            1,
+            "Expected 1 point in the batch upsert - atomic processing"
         );
     }
 
