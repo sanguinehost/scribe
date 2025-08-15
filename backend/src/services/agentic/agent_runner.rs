@@ -113,10 +113,7 @@ impl NarrativeAgentRunner {
             messages.len()
         );
 
-        // Auto-create and link chronicle if needed
-        // TODO: This creates chronicles BEFORE AI processing, which means we get orphaned
-        // empty chronicles when AI calls fail. Consider moving chronicle creation AFTER
-        // successful AI response to avoid this issue.
+        // Check for existing chronicle first
         if chronicle_id.is_none() {
             info!("Checking database for existing chronicle link for chat session {}", chat_session_id);
             
@@ -128,57 +125,8 @@ impl NarrativeAgentRunner {
                 info!("Found existing chronicle {} linked to chat session {}", 
                       existing_chronicle_id, chat_session_id);
                 chronicle_id = Some(existing_chronicle_id);
-            } else {
-                info!("No chronicle found, auto-creating for chat session {}", chat_session_id);
-                
-                // Get the character name from the chat session
-                let character_name = self.get_character_name_for_session(chat_session_id).await.ok().flatten();
-                
-                // Generate a chronicle name
-                let chronicle_name = self.generate_chronicle_name_from_messages(messages, session_dek, character_name).await?;
-                let chronicle_description = format!(
-                    "Automatically created chronicle for chat session on {}",
-                    chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
-                );
-                
-                let chronicle_request = CreateChronicleRequest {
-                    name: chronicle_name,
-                    description: Some(chronicle_description),
-                };
-                
-                match self.chronicle_service.create_chronicle(user_id, chronicle_request).await {
-                    Ok(created_chronicle) => {
-                        chronicle_id = Some(created_chronicle.id);
-                        info!("Auto-created chronicle '{}': {}", created_chronicle.name, created_chronicle.id);
-                        
-                        // Link the chat session to the chronicle
-                        if let Err(e) = self.chronicle_service.link_chat_session(user_id, chat_session_id, created_chronicle.id).await {
-                            error!("Failed to link chronicle {} to chat session {}: {}", created_chronicle.id, chat_session_id, e);
-                        }
-                    },
-                    Err(e) => {
-                        error!("Failed to auto-create chronicle: {}", e);
-                        // Return early if we can't create a chronicle
-                        return Ok(NarrativeWorkflowResult {
-                            triage_result: TriageResult {
-                                is_significant: true,
-                                summary: "Failed to create chronicle".to_string(),
-                                event_type: "ERROR".to_string(),
-                                confidence: 0.0,
-                            },
-                            actions_taken: vec![],
-                            execution_results: vec![],
-                            cost_estimate: 0.0,
-                        });
-                    }
-                }
             }
         }
-
-        // We must have a chronicle_id at this point
-        let chronicle_id = chronicle_id.ok_or_else(|| {
-            AppError::InternalServerErrorGeneric("Chronicle ID not available".to_string())
-        })?;
 
         // Build conversation context
         let conversation = self.build_conversation_context_with_token_limit(
@@ -187,10 +135,14 @@ impl NarrativeAgentRunner {
             50000 // Token budget for context
         ).await?;
 
-        // Get recent chronicle events for deduplication
-        let previous_chronicles = match self.get_recent_chronicle_events_simple(chronicle_id).await {
-            Ok(events) => events,
-            Err(_) => "No previous chronicles found.".to_string()
+        // Get recent chronicle events for deduplication (if we have a chronicle)
+        let previous_chronicles = if let Some(existing_chronicle_id) = chronicle_id {
+            match self.get_recent_chronicle_events_simple(existing_chronicle_id).await {
+                Ok(events) => events,
+                Err(_) => "No previous chronicles found.".to_string()
+            }
+        } else {
+            "No previous chronicles found.".to_string()
         };
 
         // Build persona context if available
@@ -247,6 +199,40 @@ RULES:
                     .map(|s| s.to_string())
                     .collect::<Vec<String>>()
             });
+
+        // Auto-create chronicle if needed (AFTER successful AI response)
+        if chronicle_id.is_none() {
+            info!("No chronicle found, auto-creating for chat session {}", chat_session_id);
+            
+            // Get the character name from the chat session
+            let character_name = self.get_character_name_for_session(chat_session_id).await.ok().flatten();
+            
+            // Generate a chronicle name
+            let chronicle_name = self.generate_chronicle_name_from_messages(messages, session_dek, character_name).await?;
+            let chronicle_description = format!(
+                "Automatically created chronicle for chat session on {}",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
+            );
+            
+            let chronicle_request = CreateChronicleRequest {
+                name: chronicle_name,
+                description: Some(chronicle_description),
+            };
+            
+            let created_chronicle = self.chronicle_service.create_chronicle(user_id, chronicle_request).await?;
+            chronicle_id = Some(created_chronicle.id);
+            info!("Auto-created chronicle '{}': {}", created_chronicle.name, created_chronicle.id);
+            
+            // Link the chat session to the chronicle
+            if let Err(e) = self.chronicle_service.link_chat_session(user_id, chat_session_id, created_chronicle.id).await {
+                error!("Failed to link chronicle {} to chat session {}: {}", created_chronicle.id, chat_session_id, e);
+            }
+        }
+
+        // We must have a chronicle_id at this point
+        let chronicle_id = chronicle_id.ok_or_else(|| {
+            AppError::InternalServerErrorGeneric("Chronicle ID not available after creation".to_string())
+        })?;
 
         // Create the chronicle event directly
         let event_request = CreateEventRequest {
