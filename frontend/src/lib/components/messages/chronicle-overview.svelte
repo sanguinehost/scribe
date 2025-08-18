@@ -117,11 +117,17 @@
 				await loadEvents();
 			}
 		};
-		
-		window.addEventListener('chronicle-events-updated', handleEventsUpdated as unknown as EventListener);
-		
+
+		window.addEventListener(
+			'chronicle-events-updated',
+			handleEventsUpdated as unknown as EventListener
+		);
+
 		return () => {
-			window.removeEventListener('chronicle-events-updated', handleEventsUpdated as unknown as EventListener);
+			window.removeEventListener(
+				'chronicle-events-updated',
+				handleEventsUpdated as unknown as EventListener
+			);
 		};
 	});
 
@@ -205,8 +211,8 @@
 			// Parse keywords from comma-separated string
 			const keywords = eventKeywords
 				.split(',')
-				.map(k => k.trim())
-				.filter(k => k.length > 0);
+				.map((k) => k.trim())
+				.filter((k) => k.length > 0);
 
 			// Parse timestamp if provided
 			let timestamp = undefined;
@@ -285,14 +291,14 @@
 				toast.success('Chronicle deleted successfully');
 				// Refresh the chronicle store to update all components
 				await chronicleStore.refresh();
-				
+
 				// Notify other components that a chronicle was deleted
 				window.dispatchEvent(
 					new CustomEvent('chronicle-deleted', {
 						detail: { chronicleId: chronicleId }
 					})
 				);
-				
+
 				// Navigate back to chronicles list by showing the list view
 				selectedChronicleStore.showList();
 				goto('/');
@@ -595,11 +601,7 @@
 				<Label for="event-timestamp">
 					Story Date/Time <span class="text-muted-foreground">(optional)</span>
 				</Label>
-				<Input
-					id="event-timestamp"
-					type="datetime-local"
-					bind:value={eventTimestamp}
-				/>
+				<Input id="event-timestamp" type="datetime-local" bind:value={eventTimestamp} />
 				<p class="text-xs text-muted-foreground">
 					When this event happened in your story world's timeline
 				</p>
@@ -623,11 +625,7 @@
 				<Label for="event-type">
 					Event Type <span class="text-muted-foreground">(advanced)</span>
 				</Label>
-				<Input
-					id="event-type"
-					bind:value={eventType}
-					placeholder="NARRATIVE.EVENT"
-				/>
+				<Input id="event-type" bind:value={eventType} placeholder="NARRATIVE.EVENT" />
 			</div>
 		</div>
 
@@ -639,10 +637,7 @@
 			>
 				Cancel
 			</Button>
-			<Button
-				onclick={createEvent}
-				disabled={isCreatingEvent || !eventSummary.trim()}
-			>
+			<Button onclick={createEvent} disabled={isCreatingEvent || !eventSummary.trim()}>
 				{isCreatingEvent ? 'Creating...' : 'Create Event'}
 			</Button>
 		</DialogFooter>

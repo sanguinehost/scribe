@@ -63,7 +63,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 				const isProduction = process.env.NODE_ENV === 'production' || env.PUBLIC_API_URL;
 				const authUrl = isProduction ? `${env.PUBLIC_API_URL?.trim()}/api/auth/me` : '/api/auth/me';
 				console.log(`[${timestamp}] handle: Validating session at ${authUrl}`);
-				
+
 				const response = await event.fetch(authUrl, {
 					headers: {
 						Cookie: `id=${sessionCookie}`

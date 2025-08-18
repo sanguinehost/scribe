@@ -16,7 +16,7 @@
 	// Cycle through modes: disabled → pre_processing → post_processing → disabled
 	function cycleMode() {
 		if (disabled) return;
-		
+
 		const modes: EnrichmentMode[] = ['disabled', 'pre_processing', 'post_processing'];
 		const currentIndex = modes.indexOf(value);
 		const nextIndex = (currentIndex + 1) % modes.length;
@@ -24,23 +24,25 @@
 	}
 
 	// Get visual properties based on current mode
-	const modeConfig = $derived({
-		disabled: {
-			variant: 'ghost' as const,
-			className: 'text-muted-foreground',
-			title: 'Context Enrichment: Off - Click to enable pre-processing'
-		},
-		pre_processing: {
-			variant: 'ghost' as const,
-			className: 'text-blue-500 hover:text-blue-600',
-			title: 'Context Enrichment: Pre-processing - Searching context before response'
-		},
-		post_processing: {
-			variant: 'ghost' as const,
-			className: 'text-green-500 hover:text-green-600',
-			title: 'Context Enrichment: Post-processing - Enriching context after response'
-		}
-	}[value]);
+	const modeConfig = $derived(
+		{
+			disabled: {
+				variant: 'ghost' as const,
+				className: 'text-muted-foreground',
+				title: 'Context Enrichment: Off - Click to enable pre-processing'
+			},
+			pre_processing: {
+				variant: 'ghost' as const,
+				className: 'text-blue-500 hover:text-blue-600',
+				title: 'Context Enrichment: Pre-processing - Searching context before response'
+			},
+			post_processing: {
+				variant: 'ghost' as const,
+				className: 'text-green-500 hover:text-green-600',
+				title: 'Context Enrichment: Post-processing - Enriching context after response'
+			}
+		}[value]
+	);
 </script>
 
 <Button

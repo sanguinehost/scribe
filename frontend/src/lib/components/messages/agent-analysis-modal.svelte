@@ -36,12 +36,12 @@
 		try {
 			// Pass the messageId to fetch analysis specific to this message
 			const result = await apiClient.getAgentAnalysis(sessionId, undefined, messageId);
-			
+
 			if (result.isOk()) {
 				const analyses = result.value;
 				if (analyses && analyses.length > 0) {
 					// Find analysis for this specific message, preferring pre_processing
-					agentAnalysis = analyses.find(a => a.analysis_type === 'pre_processing') || analyses[0];
+					agentAnalysis = analyses.find((a) => a.analysis_type === 'pre_processing') || analyses[0];
 				} else {
 					error = 'No agent analysis performed for this message';
 				}
@@ -116,10 +116,10 @@
 			</div>
 			{#if agentAnalysis}
 				<div class="flex items-center gap-2">
-					<Button 
-						variant="outline" 
-						size="sm" 
-						onclick={() => copyToClipboard(JSON.stringify(agentAnalysis, null, 2))} 
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => copyToClipboard(JSON.stringify(agentAnalysis, null, 2))}
 						class="gap-2"
 					>
 						<Copy size={14} />
@@ -129,7 +129,7 @@
 			{/if}
 		</Dialog.Header>
 
-		<div class="mt-4 flex-1 overflow-y-auto min-h-0">
+		<div class="mt-4 min-h-0 flex-1 overflow-y-auto">
 			{#if isLoading}
 				<div class="flex items-center justify-center py-12">
 					<div class="flex items-center gap-3 text-muted-foreground">
@@ -165,7 +165,9 @@
 							<div>
 								<span class="text-muted-foreground">Mode:</span>
 								<span class="ml-2 font-medium">
-									{agentAnalysis.analysis_type === 'pre_processing' ? 'Pre-processing' : 'Post-processing'}
+									{agentAnalysis.analysis_type === 'pre_processing'
+										? 'Pre-processing'
+										: 'Post-processing'}
 								</span>
 							</div>
 							{#if agentAnalysis.model_used}
@@ -183,7 +185,9 @@
 							{#if agentAnalysis.execution_time_ms}
 								<div>
 									<span class="text-muted-foreground">Execution Time:</span>
-									<span class="ml-2 font-medium">{formatDuration(agentAnalysis.execution_time_ms)}</span>
+									<span class="ml-2 font-medium"
+										>{formatDuration(agentAnalysis.execution_time_ms)}</span
+									>
 								</div>
 							{/if}
 						</div>
@@ -212,7 +216,9 @@
 										<div class="mb-1 flex items-center justify-between">
 											<span class="text-sm font-medium">Search {i + 1}</span>
 											{#if search.search_type}
-												<span class="rounded bg-muted px-2 py-0.5 text-xs">{search.search_type}</span>
+												<span class="rounded bg-muted px-2 py-0.5 text-xs"
+													>{search.search_type}</span
+												>
 											{/if}
 										</div>
 										<div class="text-sm">
@@ -259,29 +265,33 @@
 													{#if step.duration_ms}<span>{formatDuration(step.duration_ms)}</span>{/if}
 												</div>
 											</div>
-											
+
 											<!-- Step thought -->
 											{#if step.thought}
 												<div class="mb-2 rounded bg-muted/30 p-2">
 													<p class="text-sm italic">"{step.thought}"</p>
 												</div>
 											{/if}
-											
+
 											<!-- Tool call if present -->
 											{#if step.tool_call}
 												<details class="text-sm">
-													<summary class="cursor-pointer text-muted-foreground hover:text-foreground">
+													<summary
+														class="cursor-pointer text-muted-foreground hover:text-foreground"
+													>
 														Tool Call: {step.tool_call.tool_name}
 													</summary>
 													<pre class="mt-2 overflow-x-auto rounded bg-muted/20 p-2 text-xs">
 {JSON.stringify(step.tool_call.parameters, null, 2)}</pre>
 												</details>
 											{/if}
-											
+
 											<!-- Results if present -->
 											{#if step.result}
 												<details class="mt-2 text-sm">
-													<summary class="cursor-pointer text-muted-foreground hover:text-foreground">
+													<summary
+														class="cursor-pointer text-muted-foreground hover:text-foreground"
+													>
 														Results
 													</summary>
 													<pre class="mt-2 overflow-x-auto rounded bg-muted/20 p-2 text-xs">
@@ -311,7 +321,7 @@
 							</div>
 						</div>
 					{/if}
-					
+
 					<!-- Final Summary -->
 					{#if agentAnalysis.analysis_summary}
 						<div class="rounded-lg border bg-primary/5 p-4">

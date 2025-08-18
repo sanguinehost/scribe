@@ -4,7 +4,7 @@ import { redirect } from '@sveltejs/kit';
 
 export async function load({ cookies, locals }) {
 	const { user } = locals;
-	
+
 	// Redirect to signin if not authenticated - this protects all chat routes including "/"
 	if (!user) {
 		redirect(307, '/signin');

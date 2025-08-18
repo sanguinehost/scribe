@@ -12,7 +12,7 @@ interface InfiniteScrollEvent {
 /**
  * Svelte action for detecting when user scrolls near the top of a container
  * and dispatching a 'loadmore' event to trigger loading of older messages.
- * 
+ *
  * Usage:
  * <div use:infiniteScroll={{ threshold: 100 }} on:loadmore={handleLoadMore}>
  *   <!-- messages -->

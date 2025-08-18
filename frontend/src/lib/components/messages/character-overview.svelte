@@ -2,7 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { apiClient } from '$lib/api';
 	import { env } from '$env/dynamic/public';
-	import type { Character, ScribeChatSession, UserPersona, ChronicleAction, ChatDeletionAnalysisResponse } from '$lib/types';
+	import type {
+		Character,
+		ScribeChatSession,
+		UserPersona,
+		ChronicleAction,
+		ChatDeletionAnalysisResponse
+	} from '$lib/types';
 	import { getCurrentUser } from '$lib/auth.svelte';
 	import { toast } from 'svelte-sonner';
 	import DOMPurify from 'dompurify';
@@ -10,11 +16,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import {
-		Card,
-		CardHeader,
-		CardContent
-	} from '$lib/components/ui/card';
+	import { Card, CardHeader, CardContent } from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import {
@@ -77,12 +79,10 @@
 	let popoutFieldLabel = $state('');
 	let popoutContent = $state('');
 
-
 	// Full-screen states
 	let descriptionFullScreen = $state(false);
 	let scenarioFullScreen = $state(false);
 	let personalityFullScreen = $state(false);
-
 
 	// User persona for template substitution
 	let currentUserPersona = $state<UserPersona | null>(null);
@@ -384,7 +384,7 @@
 			// Fetch deletion analysis first
 			analysisLoading = true;
 			deleteDialogOpen = true;
-			
+
 			try {
 				const result = await apiClient.getChatDeletionAnalysis(chat.id);
 				if (result.isOk()) {
@@ -418,7 +418,7 @@
 				// Remove the chat from both lists
 				chats = chats.filter((c) => c.id !== chatToDelete!.id);
 				allChats = allChats.filter((c) => c.id !== chatToDelete!.id);
-				
+
 				// Show appropriate success message based on action
 				if (action === 'delete_chronicle') {
 					toast.success('Chat and chronicle deleted successfully');
@@ -451,7 +451,6 @@
 			selectedAction = 'delete_events';
 		}
 	}
-
 
 	function getMostRecentChat(): ScribeChatSession | null {
 		if (allChats.length === 0) return null;
@@ -502,9 +501,9 @@
 	});
 </script>
 
-<div class="mx-auto max-w-7xl px-4 h-[90vh] flex flex-col gap-6">
+<div class="mx-auto flex h-[90vh] max-w-7xl flex-col gap-6 px-4">
 	<div
-		class="flex-1 min-h-0 flex flex-col gap-6"
+		class="flex min-h-0 flex-1 flex-col gap-6"
 		style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
 	>
 		<!-- Compact Character Header -->
@@ -612,7 +611,12 @@
 								title="View character's chronicles"
 							>
 								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+									/>
 								</svg>
 								Chronicles
 							</Button>
@@ -633,15 +637,15 @@
 			</Card>
 
 			<!-- Two-Column Layout -->
-			<div class="grid grid-cols-1 gap-6 md:grid-cols-5 flex-1 min-h-0">
+			<div class="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-5">
 				<!-- Left Column: Recent Chats & Character Details (2/5 width) -->
 				<div class="flex flex-col gap-4 md:col-span-2 md:min-h-0">
 					<!-- Recent Chats -->
-					<Card class="shadow-sm flex flex-col md:flex-1 md:min-h-0">
+					<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
 						<CardHeader class="pb-3">
 							<h3 class="text-lg font-semibold">Recent Chats</h3>
 						</CardHeader>
-						<CardContent class="pt-0 flex-1 overflow-y-auto">
+						<CardContent class="flex-1 overflow-y-auto pt-0">
 							{#if isLoadingChats}
 								<div class="space-y-2">
 									{#each Array(3) as _}
@@ -698,7 +702,7 @@
 
 					{#if character}
 						<!-- Scenario Section -->
-						<Card class="shadow-sm flex flex-col md:flex-1 md:min-h-0">
+						<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
 							<CardHeader class="pb-3">
 								<div class="flex items-center justify-between">
 									<h3 class="text-lg font-semibold">Scenario</h3>
@@ -712,7 +716,12 @@
 												title="View full screen"
 											>
 												<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+													/>
 												</svg>
 											</Button>
 										{/if}
@@ -728,7 +737,7 @@
 									</div>
 								</div>
 							</CardHeader>
-							<CardContent class="pt-0 flex-1 overflow-y-auto">
+							<CardContent class="flex-1 overflow-y-auto pt-0">
 								{#if editingField === 'scenario'}
 									<div class="space-y-3">
 										<div class="flex gap-2">
@@ -772,17 +781,11 @@
 										{#if containsHtml(character.scenario)}
 											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 											{@html sanitizeHtml(
-												substituteTemplateVariables(
-													character.scenario,
-													character.name
-												)
+												substituteTemplateVariables(character.scenario, character.name)
 											)}
 										{:else}
 											<MarkdownRenderer
-												md={substituteTemplateVariables(
-													character.scenario,
-													character.name
-												)}
+												md={substituteTemplateVariables(character.scenario, character.name)}
 											/>
 										{/if}
 									</div>
@@ -804,7 +807,7 @@
 						</Card>
 
 						<!-- Personality Section -->
-						<Card class="shadow-sm flex flex-col md:flex-1 md:min-h-0">
+						<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
 							<CardHeader class="pb-3">
 								<div class="flex items-center justify-between">
 									<h3 class="text-lg font-semibold">Personality</h3>
@@ -818,7 +821,12 @@
 												title="View full screen"
 											>
 												<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+													/>
 												</svg>
 											</Button>
 										{/if}
@@ -834,7 +842,7 @@
 									</div>
 								</div>
 							</CardHeader>
-							<CardContent class="pt-0 flex-1 overflow-y-auto">
+							<CardContent class="flex-1 overflow-y-auto pt-0">
 								{#if editingField === 'personality'}
 									<div class="space-y-3">
 										<div class="flex gap-2">
@@ -878,17 +886,11 @@
 										{#if containsHtml(character.personality)}
 											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 											{@html sanitizeHtml(
-												substituteTemplateVariables(
-													character.personality,
-													character.name
-												)
+												substituteTemplateVariables(character.personality, character.name)
 											)}
 										{:else}
 											<MarkdownRenderer
-												md={substituteTemplateVariables(
-													character.personality,
-													character.name
-												)}
+												md={substituteTemplateVariables(character.personality, character.name)}
 											/>
 										{/if}
 									</div>
@@ -914,7 +916,7 @@
 				<!-- Right Column: Character Description (3/5 width) -->
 				<div class="flex flex-col gap-4 md:col-span-3 md:min-h-0">
 					{#if character.description || editingField === 'description'}
-						<Card class="shadow-sm flex flex-col md:flex-1 md:min-h-0">
+						<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
 							<CardHeader class="pb-3">
 								<div class="flex items-center justify-between">
 									<h3 class="text-lg font-semibold">Description</h3>
@@ -928,7 +930,12 @@
 												title="View full screen"
 											>
 												<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+													/>
 												</svg>
 											</Button>
 										{/if}
@@ -944,16 +951,15 @@
 									</div>
 								</div>
 							</CardHeader>
-							<CardContent class="pt-0 flex-1 overflow-y-auto">
+							<CardContent class="flex-1 overflow-y-auto pt-0">
 								{#if editingField !== 'description'}
-									<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground pb-6">
+									<div
+										class="prose prose-sm dark:prose-invert max-w-none pb-6 [&_*]:!text-foreground"
+									>
 										{#if containsHtml(character.description)}
 											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 											{@html sanitizeHtml(
-												substituteTemplateVariables(
-													character.description || '',
-													character.name
-												)
+												substituteTemplateVariables(character.description || '', character.name)
 											)}
 										{:else}
 											<MarkdownRenderer
@@ -1023,7 +1029,7 @@
 					{/if}
 				</div>
 			</div>
-{/if}
+		{/if}
 	</div>
 </div>
 
@@ -1042,8 +1048,8 @@
 		aria-modal="true"
 		aria-labelledby="description-title"
 	>
-		<div class="w-full max-w-4xl max-h-[90vh] overflow-auto bg-background rounded-lg shadow-lg">
-			<div class="sticky top-0 bg-background border-b p-4 flex items-center justify-between">
+		<div class="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-lg bg-background shadow-lg">
+			<div class="sticky top-0 flex items-center justify-between border-b bg-background p-4">
 				<h2 id="description-title" class="text-xl font-semibold">
 					{character.name} - Description
 				</h2>
@@ -1054,7 +1060,12 @@
 					class="h-8 w-8 p-0"
 				>
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M6 18L18 6M6 6l12 12"
+						/>
 					</svg>
 				</Button>
 			</div>
@@ -1062,9 +1073,7 @@
 				<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
 					{#if containsHtml(character.description)}
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						{@html sanitizeHtml(
-							substituteTemplateVariables(character.description, character.name)
-						)}
+						{@html sanitizeHtml(substituteTemplateVariables(character.description, character.name))}
 					{:else}
 						<MarkdownRenderer
 							md={substituteTemplateVariables(character.description || '', character.name)}
@@ -1091,8 +1100,8 @@
 		aria-modal="true"
 		aria-labelledby="scenario-title"
 	>
-		<div class="w-full max-w-4xl max-h-[90vh] overflow-auto bg-background rounded-lg shadow-lg">
-			<div class="sticky top-0 bg-background border-b p-4 flex items-center justify-between">
+		<div class="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-lg bg-background shadow-lg">
+			<div class="sticky top-0 flex items-center justify-between border-b bg-background p-4">
 				<h2 id="scenario-title" class="text-xl font-semibold">
 					{character.name} - Scenario
 				</h2>
@@ -1103,7 +1112,12 @@
 					class="h-8 w-8 p-0"
 				>
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M6 18L18 6M6 6l12 12"
+						/>
 					</svg>
 				</Button>
 			</div>
@@ -1111,9 +1125,7 @@
 				<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
 					{#if containsHtml(character.scenario)}
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						{@html sanitizeHtml(
-							substituteTemplateVariables(character.scenario, character.name)
-						)}
+						{@html sanitizeHtml(substituteTemplateVariables(character.scenario, character.name))}
 					{:else}
 						<MarkdownRenderer
 							md={substituteTemplateVariables(character.scenario || '', character.name)}
@@ -1140,8 +1152,8 @@
 		aria-modal="true"
 		aria-labelledby="personality-title"
 	>
-		<div class="w-full max-w-4xl max-h-[90vh] overflow-auto bg-background rounded-lg shadow-lg">
-			<div class="sticky top-0 bg-background border-b p-4 flex items-center justify-between">
+		<div class="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-lg bg-background shadow-lg">
+			<div class="sticky top-0 flex items-center justify-between border-b bg-background p-4">
 				<h2 id="personality-title" class="text-xl font-semibold">
 					{character.name} - Personality
 				</h2>
@@ -1152,7 +1164,12 @@
 					class="h-8 w-8 p-0"
 				>
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M6 18L18 6M6 6l12 12"
+						/>
 					</svg>
 				</Button>
 			</div>
@@ -1160,9 +1177,7 @@
 				<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
 					{#if containsHtml(character.personality)}
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						{@html sanitizeHtml(
-							substituteTemplateVariables(character.personality, character.name)
-						)}
+						{@html sanitizeHtml(substituteTemplateVariables(character.personality, character.name))}
 					{:else}
 						<MarkdownRenderer
 							md={substituteTemplateVariables(character.personality || '', character.name)}
@@ -1212,59 +1227,59 @@
 			<AlertDialogTitle>Delete Chat</AlertDialogTitle>
 			<AlertDialogDescription class="text-left">
 				{#if chatToDelete}
-					<strong class="block mb-3"
+					<strong class="mb-3 block"
 						>"{chatToDelete.title || `Chat with ${character?.name}`}"</strong
 					>
 				{/if}
-				
+
 				{#if analysisLoading}
 					<div class="flex items-center space-x-2 py-4">
-						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+						<div class="h-4 w-4 animate-spin rounded-full border-b-2 border-blue-600"></div>
 						<span>Analyzing chronicle relationships...</span>
 					</div>
 				{:else if deletionAnalysis?.has_chronicle && deletionAnalysis?.chronicle}
-					<div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-4">
-						<div class="flex items-center space-x-2 mb-2">
+					<div
+						class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30"
+					>
+						<div class="mb-2 flex items-center space-x-2">
 							<span class="text-amber-600 dark:text-amber-400">📚</span>
 							<span class="font-medium text-amber-800 dark:text-amber-200">
 								Chronicle: "{deletionAnalysis.chronicle.name}"
 							</span>
 						</div>
-						<div class="text-sm text-amber-700 dark:text-amber-300 space-y-1">
+						<div class="space-y-1 text-sm text-amber-700 dark:text-amber-300">
 							<p>• {deletionAnalysis.chronicle.total_events} total events</p>
 							<p>• {deletionAnalysis.chronicle.events_from_this_chat} events from this chat</p>
 							{#if deletionAnalysis.chronicle.other_chats_using_chronicle > 0}
-								<p>• {deletionAnalysis.chronicle.other_chats_using_chronicle} other chats use this chronicle</p>
+								<p>
+									• {deletionAnalysis.chronicle.other_chats_using_chronicle} other chats use this chronicle
+								</p>
 							{/if}
 						</div>
 					</div>
 
 					<div class="space-y-3">
 						<p class="text-sm font-medium">What would you like to do?</p>
-						
+
 						<div class="space-y-2">
-							<label class="flex items-start space-x-3 cursor-pointer">
-								<input 
-									type="radio" 
-									bind:group={selectedAction} 
+							<label class="flex cursor-pointer items-start space-x-3">
+								<input
+									type="radio"
+									bind:group={selectedAction}
 									value="delete_events"
-									class="mt-1" 
+									class="mt-1"
 								/>
 								<div class="flex-1">
 									<div class="font-medium">Delete chat & its events</div>
 									<div class="text-xs text-gray-600 dark:text-gray-400">
-										Keep chronicle, remove {deletionAnalysis.chronicle.events_from_this_chat} events from this chat
+										Keep chronicle, remove {deletionAnalysis.chronicle.events_from_this_chat} events
+										from this chat
 									</div>
 								</div>
 							</label>
 
-							<label class="flex items-start space-x-3 cursor-pointer">
-								<input 
-									type="radio" 
-									bind:group={selectedAction} 
-									value="disassociate"
-									class="mt-1" 
-								/>
+							<label class="flex cursor-pointer items-start space-x-3">
+								<input type="radio" bind:group={selectedAction} value="disassociate" class="mt-1" />
 								<div class="flex-1">
 									<div class="font-medium">Keep chronicle & all events</div>
 									<div class="text-xs text-gray-600 dark:text-gray-400">
@@ -1274,15 +1289,17 @@
 							</label>
 
 							{#if deletionAnalysis.chronicle.can_delete_chronicle}
-								<label class="flex items-start space-x-3 cursor-pointer">
-									<input 
-										type="radio" 
-										bind:group={selectedAction} 
+								<label class="flex cursor-pointer items-start space-x-3">
+									<input
+										type="radio"
+										bind:group={selectedAction}
 										value="delete_chronicle"
-										class="mt-1" 
+										class="mt-1"
 									/>
 									<div class="flex-1">
-										<div class="font-medium text-red-700 dark:text-red-400">Delete entire chronicle</div>
+										<div class="font-medium text-red-700 dark:text-red-400">
+											Delete entire chronicle
+										</div>
 										<div class="text-xs text-red-600 dark:text-red-500">
 											⚠️ Permanently delete all {deletionAnalysis.chronicle.total_events} events
 										</div>
@@ -1290,11 +1307,7 @@
 								</label>
 							{:else}
 								<div class="flex items-start space-x-3 opacity-50">
-									<input 
-										type="radio" 
-										disabled
-										class="mt-1" 
-									/>
+									<input type="radio" disabled class="mt-1" />
 									<div class="flex-1">
 										<div class="font-medium text-gray-500">Delete entire chronicle</div>
 										<div class="text-xs text-gray-500">
@@ -1306,16 +1319,19 @@
 						</div>
 					</div>
 				{:else}
-					This action cannot be undone. This will permanently delete your chat and remove it from our servers.
+					This action cannot be undone. This will permanently delete your chat and remove it from
+					our servers.
 				{/if}
 			</AlertDialogDescription>
 		</AlertDialogHeader>
 		<AlertDialogFooter>
 			<AlertDialogCancel disabled={isDeletingChat || analysisLoading}>Cancel</AlertDialogCancel>
-			<AlertDialogAction 
-				onclick={confirmDelete} 
+			<AlertDialogAction
+				onclick={confirmDelete}
 				disabled={isDeletingChat || analysisLoading}
-				class={selectedAction === 'delete_chronicle' ? "bg-red-600 hover:bg-red-700 focus:ring-red-600" : "bg-destructive text-destructive-foreground hover:bg-destructive/90"}
+				class={selectedAction === 'delete_chronicle'
+					? 'bg-red-600 hover:bg-red-700 focus:ring-red-600'
+					: 'bg-destructive text-destructive-foreground hover:bg-destructive/90'}
 			>
 				{#if isDeletingChat}
 					Deleting...

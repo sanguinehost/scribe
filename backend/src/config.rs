@@ -25,6 +25,7 @@ pub struct Config {
 
     // Qdrant Config
     pub qdrant_url: Option<String>,
+    pub qdrant_api_key: Option<String>,
     #[serde(default = "default_qdrant_collection_name")]
     pub qdrant_collection_name: String,
     #[serde(default = "default_embedding_dimension")]
@@ -101,6 +102,10 @@ impl std::fmt::Debug for Config {
             .field(
                 "qdrant_url",
                 &self.qdrant_url.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "qdrant_api_key",
+                &self.qdrant_api_key.as_ref().map(|_| "[REDACTED]"),
             )
             .field("qdrant_collection_name", &self.qdrant_collection_name)
             .field("embedding_dimension", &self.embedding_dimension)
@@ -241,6 +246,7 @@ impl Default for Config {
             environment: None,
             cookie_domain: None,
             qdrant_url: None,
+            qdrant_api_key: None,
             qdrant_collection_name: default_qdrant_collection_name(),
             embedding_dimension: default_embedding_dimension(),
             qdrant_distance_metric: default_qdrant_distance_metric(), // Added

@@ -57,7 +57,7 @@
 
 		try {
 			const result = await apiClient.uploadCharacter(selectedFile);
-			
+
 			if (result.isOk()) {
 				console.log('Character upload successful:', result.value);
 				dispatch('uploadSuccess', { character: result.value }); // Notify parent component with character data

@@ -85,7 +85,10 @@ pub struct SesEmailService {
 impl SesEmailService {
     /// Create a new SES email service
     pub async fn new(base_url: String, from_email: String) -> Result<Self, EmailError> {
-        let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
+        let config = aws_config::defaults(BehaviorVersion::latest())
+            .region("ap-southeast-2") // SES deployed in Sydney region
+            .load()
+            .await;
 
         let client = SesClient::new(&config);
 

@@ -493,7 +493,8 @@
 									bind:value={settings.typing_speed}
 								/>
 								<p class="text-xs text-muted-foreground">
-									Milliseconds between characters (lower = faster). Common values: 10 (very fast), 30 (default), 50 (slow)
+									Milliseconds between characters (lower = faster). Common values: 10 (very fast),
+									30 (default), 50 (slow)
 								</p>
 							</div>
 						</CardContent>

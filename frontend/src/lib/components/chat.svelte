@@ -66,7 +66,7 @@
 	let showChronicleOptIn = $state(false);
 	let pendingMessage = $state<string | null>(null);
 	let chroniclePreference: boolean | null = $state(null);
-	
+
 	// Regeneration modal state
 	let showRegenerationModal = $state(false);
 	let pendingRegenerationData = $state<{ userMessage: string; messageId: string } | null>(null);
@@ -702,20 +702,24 @@
 	// --- Save Agent Mode to Chat Settings ---
 	async function saveAgentMode(mode: typeof agentMode) {
 		if (!chat?.id) return;
-		
+
 		// Update local state immediately for UI responsiveness
 		const previousMode = agentMode;
 		agentMode = mode;
-		
+
 		try {
 			const result = await apiClient.updateChatSessionSettings(chat.id, {
 				agent_mode: mode
 			});
-			
+
 			if (result.isOk()) {
 				// Show success feedback
-				const modeLabel = mode === 'disabled' ? 'Off' : 
-					mode === 'pre_processing' ? 'Pre-processing' : 'Post-processing';
+				const modeLabel =
+					mode === 'disabled'
+						? 'Off'
+						: mode === 'pre_processing'
+							? 'Pre-processing'
+							: 'Post-processing';
 				toast.success(`Context enrichment: ${modeLabel}`);
 			} else {
 				// Revert on error
@@ -1098,9 +1102,18 @@
 	}
 
 	// Regenerate AI response without adding a new user message - using StreamingService
-	async function regenerateResponse(_userMessageContent: string, _originalMessageId?: string, analysisMode: AnalysisMode = 'existing') {
+	async function regenerateResponse(
+		_userMessageContent: string,
+		_originalMessageId?: string,
+		analysisMode: AnalysisMode = 'existing'
+	) {
 		// DEBUG: Add stack trace to identify unwanted calls
-		console.log('🚨 regenerateResponse called for message:', _originalMessageId, 'with analysis mode:', analysisMode);
+		console.log(
+			'🚨 regenerateResponse called for message:',
+			_originalMessageId,
+			'with analysis mode:',
+			analysisMode
+		);
 		console.log('🚨 regenerateResponse STACK TRACE:', new Error().stack);
 
 		if (!chat?.id || !user?.id) {
@@ -1409,15 +1422,15 @@
 	// Handle regeneration modal confirmation
 	function handleRegenerationConfirm(mode: AnalysisMode) {
 		if (!pendingRegenerationData) return;
-		
+
 		const { userMessage, messageId } = pendingRegenerationData;
 		regenerateResponse(userMessage, messageId, mode);
-		
+
 		// Clear pending data
 		pendingRegenerationData = null;
 		showRegenerationModal = false;
 	}
-	
+
 	// Handle regeneration modal cancel
 	function handleRegenerationCancel() {
 		pendingRegenerationData = null;
@@ -1705,8 +1718,8 @@
 <ChronicleOptInDialog bind:open={showChronicleOptIn} onConfirm={handleChronicleChoice} />
 
 <!-- Regeneration Options Modal -->
-<RegenerationModal 
-	bind:open={showRegenerationModal} 
+<RegenerationModal
+	bind:open={showRegenerationModal}
 	onConfirm={handleRegenerationConfirm}
 	onCancel={handleRegenerationCancel}
 />

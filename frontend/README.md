@@ -54,7 +54,7 @@ PUBLIC_VERCEL_ANALYTICS_ID=your-analytics-id
 # Start development server with hot reload
 pnpm run dev
 
-# Open browser automatically  
+# Open browser automatically
 pnpm run dev --open
 ```
 
@@ -118,7 +118,7 @@ pnpm run check --watch  # Watch mode type checking
 pnpm run lint           # ESLint
 pnpm run format         # Prettier formatting
 
-# Testing  
+# Testing
 pnpm run test           # Run tests
 pnpm run test:ui        # Tests with UI
 pnpm run test:coverage  # Coverage report
@@ -172,11 +172,11 @@ import { expect, test } from 'vitest';
 import ChatHeader from './chat-header.svelte';
 
 test('displays character name', () => {
-  render(ChatHeader, {
-    props: { character: { name: 'Test Character' } }
-  });
-  
-  expect(screen.getByText('Test Character')).toBeInTheDocument();
+	render(ChatHeader, {
+		props: { character: { name: 'Test Character' } }
+	});
+
+	expect(screen.getByText('Test Character')).toBeInTheDocument();
 });
 ```
 
@@ -251,19 +251,19 @@ Create reusable components in `src/lib/components/`:
 ```svelte
 <!-- src/lib/components/my-component.svelte -->
 <script lang="ts">
-  interface Props {
-    title: string;
-    optional?: boolean;
-  }
-  
-  let { title, optional = false }: Props = $props();
+	interface Props {
+		title: string;
+		optional?: boolean;
+	}
+
+	let { title, optional = false }: Props = $props();
 </script>
 
-<div class="p-4 border rounded">
-  <h2 class="text-xl font-bold">{title}</h2>
-  {#if optional}
-    <p>Optional content</p>
-  {/if}
+<div class="rounded border p-4">
+	<h2 class="text-xl font-bold">{title}</h2>
+	{#if optional}
+		<p>Optional content</p>
+	{/if}
 </div>
 ```
 
@@ -283,7 +283,7 @@ let doubled = $derived(count * 2);
 
 // Effects
 $effect(() => {
-  console.log('Count changed:', count);
+	console.log('Count changed:', count);
 });
 ```
 
@@ -299,7 +299,7 @@ const characters = await apiClient.get('/characters');
 
 // Send message
 await apiClient.post('/chats/123/messages', {
-  content: 'Hello world'
+	content: 'Hello world'
 });
 ```
 
@@ -310,14 +310,14 @@ We use Tailwind CSS with custom configuration:
 ```typescript
 // tailwind.config.ts
 export default {
-  content: ['./src/**/*.{html,js,svelte,ts}'],
-  theme: {
-    extend: {
-      colors: {
-        // Custom colors
-      }
-    }
-  }
+	content: ['./src/**/*.{html,js,svelte,ts}'],
+	theme: {
+		extend: {
+			colors: {
+				// Custom colors
+			}
+		}
+	}
 };
 ```
 
@@ -325,19 +325,15 @@ export default {
 
 ```svelte
 <!-- Use Tailwind utilities -->
-<button class="bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded text-white">
-  Click me
-</button>
+<button class="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600"> Click me </button>
 
 <!-- Custom component styles -->
-<div class="chat-bubble">
-  Content
-</div>
+<div class="chat-bubble">Content</div>
 
 <style>
-  .chat-bubble {
-    @apply bg-gray-100 rounded-lg p-3;
-  }
+	.chat-bubble {
+		@apply rounded-lg bg-gray-100 p-3;
+	}
 </style>
 ```
 
@@ -401,7 +397,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for development guidelines.
 ### Pull Request Checklist
 
 - [ ] Tests pass (`pnpm test`)
-- [ ] Types check (`pnpm check`) 
+- [ ] Types check (`pnpm check`)
 - [ ] Code is formatted (`pnpm format`)
 - [ ] No lint errors (`pnpm lint`)
 - [ ] Components are accessible

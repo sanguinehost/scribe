@@ -6,7 +6,13 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Label } from '$lib/components/ui/label';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { ScrollText, ArrowLeft, Save } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import type { CreateChronicleRequest } from '$lib/types';
@@ -69,7 +75,7 @@
 			<ArrowLeft class="h-4 w-4" />
 			Back to Chronicles
 		</Button>
-		
+
 		<div class="flex items-center gap-3">
 			<ScrollText class="h-8 w-8 text-muted-foreground" />
 			<div>
@@ -84,9 +90,7 @@
 	<Card>
 		<CardHeader>
 			<CardTitle>Chronicle Details</CardTitle>
-			<CardDescription>
-				Enter the basic information for your new chronicle
-			</CardDescription>
+			<CardDescription>Enter the basic information for your new chronicle</CardDescription>
 		</CardHeader>
 		<CardContent class="space-y-6">
 			<div class="space-y-2">
@@ -100,7 +104,8 @@
 					class="text-base"
 				/>
 				<p class="text-xs text-muted-foreground">
-					A descriptive name for your chronicle (e.g., "The Dragon's Quest", "Cyberpunk 2077 Campaign")
+					A descriptive name for your chronicle (e.g., "The Dragon's Quest", "Cyberpunk 2077
+					Campaign")
 				</p>
 			</div>
 
@@ -121,11 +126,7 @@
 			</div>
 
 			<div class="flex gap-3 pt-4">
-				<Button
-					onclick={handleCreate}
-					disabled={isCreating || !name.trim()}
-					class="gap-2"
-				>
+				<Button onclick={handleCreate} disabled={isCreating || !name.trim()} class="gap-2">
 					{#if isCreating}
 						Creating...
 					{:else}
@@ -133,9 +134,7 @@
 						Create Chronicle
 					{/if}
 				</Button>
-				<Button variant="outline" onclick={handleGoBack} disabled={isCreating}>
-					Cancel
-				</Button>
+				<Button variant="outline" onclick={handleGoBack} disabled={isCreating}>Cancel</Button>
 			</div>
 
 			<div class="rounded-md border border-muted bg-muted/20 p-4">

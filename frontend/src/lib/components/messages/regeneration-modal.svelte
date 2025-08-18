@@ -55,7 +55,9 @@
 		<div class="grid gap-4 py-4">
 			<RadioGroup.Root bind:value={selectedMode} class="gap-4">
 				<!-- Quick regeneration option -->
-				<div class="flex items-start space-x-3 rounded-lg border p-4 hover:bg-accent/50 transition-colors">
+				<div
+					class="flex items-start space-x-3 rounded-lg border p-4 transition-colors hover:bg-accent/50"
+				>
 					<RadioGroupItem value="existing" id="existing" class="mt-1" />
 					<Label for="existing" class="flex-1 cursor-pointer">
 						<div class="flex items-center gap-2 font-medium">
@@ -65,14 +67,14 @@
 						<p class="mt-1 text-sm text-muted-foreground">
 							Generate new response using existing context analysis
 						</p>
-						<p class="mt-1 text-xs text-muted-foreground/70">
-							Fastest option (~2-3s)
-						</p>
+						<p class="mt-1 text-xs text-muted-foreground/70">Fastest option (~2-3s)</p>
 					</Label>
 				</div>
 
 				<!-- Fresh analysis option -->
-				<div class="flex items-start space-x-3 rounded-lg border p-4 hover:bg-accent/50 transition-colors">
+				<div
+					class="flex items-start space-x-3 rounded-lg border p-4 transition-colors hover:bg-accent/50"
+				>
 					<RadioGroupItem value="refresh" id="refresh" class="mt-1" />
 					<Label for="refresh" class="flex-1 cursor-pointer">
 						<div class="flex items-center gap-2 font-medium">
@@ -82,14 +84,14 @@
 						<p class="mt-1 text-sm text-muted-foreground">
 							Re-analyze context before generating response
 						</p>
-						<p class="mt-1 text-xs text-muted-foreground/70">
-							More thorough but slower (~5-7s)
-						</p>
+						<p class="mt-1 text-xs text-muted-foreground/70">More thorough but slower (~5-7s)</p>
 					</Label>
 				</div>
 
 				<!-- Skip analysis option -->
-				<div class="flex items-start space-x-3 rounded-lg border p-4 hover:bg-accent/50 transition-colors">
+				<div
+					class="flex items-start space-x-3 rounded-lg border p-4 transition-colors hover:bg-accent/50"
+				>
 					<RadioGroupItem value="skip" id="skip" class="mt-1" />
 					<Label for="skip" class="flex-1 cursor-pointer">
 						<div class="flex items-center gap-2 font-medium">
@@ -108,12 +110,8 @@
 		</div>
 
 		<Dialog.Footer>
-			<Button variant="outline" onclick={handleCancel}>
-				Cancel
-			</Button>
-			<Button onclick={handleConfirm}>
-				Regenerate
-			</Button>
+			<Button variant="outline" onclick={handleCancel}>Cancel</Button>
+			<Button onclick={handleConfirm}>Regenerate</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

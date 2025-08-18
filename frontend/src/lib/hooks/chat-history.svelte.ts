@@ -57,7 +57,7 @@ export class ChatHistory {
 
 		try {
 			const result = await apiClient.updateChatVisibility(chatId, newVisibility);
-			
+
 			if (result.isErr()) {
 				throw new Error(result.error.message || 'Failed to update visibility');
 			}

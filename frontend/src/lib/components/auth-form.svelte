@@ -78,7 +78,11 @@
 
 <form method="POST" class="flex flex-col gap-4 px-4 sm:px-16" use:enhance={enhanceCallback}>
 	<div class="flex flex-col gap-2">
-		<label for={identifierName} class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-zinc-600 dark:text-zinc-400">{identifierLabel}</label>
+		<label
+			for={identifierName}
+			class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+			>{identifierLabel}</label
+		>
 
 		<Input
 			id={identifierName}
@@ -95,7 +99,11 @@
 
 	{#if authType === 'register'}
 		<div class="flex flex-col gap-2">
-			<label for="username" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-zinc-600 dark:text-zinc-400">Username</label>
+			<label
+				for="username"
+				class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+				>Username</label
+			>
 			<Input
 				id="username"
 				name="username"
@@ -110,7 +118,11 @@
 	{/if}
 
 	<div class="flex flex-col gap-2">
-		<label for="password" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-zinc-600 dark:text-zinc-400">Password</label>
+		<label
+			for="password"
+			class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+			>Password</label
+		>
 
 		<Input
 			id="password"

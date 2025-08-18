@@ -36,7 +36,7 @@ class ChronicleStore {
 
 	// Find a chronicle by ID
 	getChronicleById(id: string): PlayerChronicleWithCounts | undefined {
-		return this.chronicles.find(c => c.id === id);
+		return this.chronicles.find((c) => c.id === id);
 	}
 }
 

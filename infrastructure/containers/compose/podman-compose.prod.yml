@@ -1,0 +1,59 @@
+# Production environment overrides for Podman Compose
+# Use with: podman-compose -f podman-compose.yml -f podman-compose.prod.yml up
+
+version: '3.8'
+
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../configs/postgres/postgresql-prod.conf:/etc/postgresql/postgresql.conf:ro,Z
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    
+  qdrant:
+    environment:
+      QDRANT__SERVICE__ENABLE_TLS: "false"
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-dev_api_key_12345}
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # Backend service for production
+  backend:
+    image: ${BACKEND_IMAGE:-localhost/scribe-backend:latest}
+    container_name: scribe_backend
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}"
+      QDRANT_URL: "http://qdrant:6334"
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-dev_api_key_12345}
+      RUST_LOG: ${RUST_LOG:-info}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      FROM_EMAIL: ${FROM_EMAIL}
+      COOKIE_SIGNING_KEY: ${COOKIE_SIGNING_KEY}
+      RUSTLS_NATIVE_CERTS: "1"
+      SSL_CERT_DIR: "/etc/ssl/certs"
+    depends_on:
+      - postgres
+      - qdrant
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"

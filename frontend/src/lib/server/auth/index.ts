@@ -88,9 +88,10 @@ export function validateSessionToken(
 			const session: Session = {
 				id: backendResponse.session.id,
 				user_id: backendResponse.session.user_id,
-				expires_at: typeof backendResponse.session.expires_at === 'string' 
-					? backendResponse.session.expires_at 
-					: backendResponse.session.expires_at.toISOString()
+				expires_at:
+					typeof backendResponse.session.expires_at === 'string'
+						? backendResponse.session.expires_at
+						: backendResponse.session.expires_at.toISOString()
 			};
 
 			if (Date.now() >= new Date(session.expires_at).getTime()) {

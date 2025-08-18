@@ -172,88 +172,88 @@
 </script>
 
 <div class="w-full px-4">
-<div
-	class="relative mx-auto max-w-6xl"
-	style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
->
-	<!-- Show error state or not found state immediately -->
-	{#if error}
-		<div class="py-12 text-center">
-			<h2 class="mb-4 text-2xl font-bold text-destructive">Error</h2>
-			<p class="mb-4 text-muted-foreground">{error}</p>
-			<button onclick={handleBack} class="text-primary hover:underline">
-				← Back to Lorebooks
-			</button>
-		</div>
-	{:else if !isLoading && !lorebook}
-		<div class="py-12 text-center">
-			<h2 class="mb-4 text-2xl font-bold text-muted-foreground">Lorebook Not Found</h2>
-			<button onclick={handleBack} class="text-primary hover:underline">
-				← Back to Lorebooks
-			</button>
-		</div>
-	{:else}
-		<!-- Show lorebook content (or skeleton while loading) -->
-		{#if lorebook}
-			<LorebookDetailView
-				{lorebook}
-				entries={lorebookStore.entries}
-				isLoading={lorebookStore.isLoadingEntries}
-				onBack={handleBack}
-				onUpdateLorebook={handleUpdateLorebook}
-				onDeleteLorebook={handleDeleteLorebook}
-				onExportLorebook={handleExportLorebook}
-				onCreateEntry={handleCreateEntry}
-				onUpdateEntry={handleUpdateEntry}
-				onDeleteEntry={handleDeleteEntry}
-				onToggleEntry={handleToggleEntry}
-			/>
+	<div
+		class="relative mx-auto max-w-6xl"
+		style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
+	>
+		<!-- Show error state or not found state immediately -->
+		{#if error}
+			<div class="py-12 text-center">
+				<h2 class="mb-4 text-2xl font-bold text-destructive">Error</h2>
+				<p class="mb-4 text-muted-foreground">{error}</p>
+				<button onclick={handleBack} class="text-primary hover:underline">
+					← Back to Lorebooks
+				</button>
+			</div>
+		{:else if !isLoading && !lorebook}
+			<div class="py-12 text-center">
+				<h2 class="mb-4 text-2xl font-bold text-muted-foreground">Lorebook Not Found</h2>
+				<button onclick={handleBack} class="text-primary hover:underline">
+					← Back to Lorebooks
+				</button>
+			</div>
 		{:else}
-			<!-- Loading skeleton that matches the layout -->
-			<div class="space-y-6">
-				<!-- Header skeleton -->
-				<div class="flex items-center justify-between">
-					<div class="space-y-2">
-						<div class="h-8 w-64 animate-pulse rounded bg-muted"></div>
-						<div class="h-4 w-96 animate-pulse rounded bg-muted"></div>
-					</div>
-					<div class="flex gap-2">
-						<div class="h-9 w-20 animate-pulse rounded bg-muted"></div>
-						<div class="h-9 w-20 animate-pulse rounded bg-muted"></div>
-						<div class="h-9 w-20 animate-pulse rounded bg-muted"></div>
-					</div>
-				</div>
-
-				<!-- Content skeleton -->
-				<div class="space-y-4">
-					{#each Array(3) as _}
-						<div class="space-y-3 rounded-lg border p-4">
-							<div class="h-5 w-48 animate-pulse rounded bg-muted"></div>
-							<div class="h-4 w-full animate-pulse rounded bg-muted"></div>
-							<div class="h-4 w-3/4 animate-pulse rounded bg-muted"></div>
+			<!-- Show lorebook content (or skeleton while loading) -->
+			{#if lorebook}
+				<LorebookDetailView
+					{lorebook}
+					entries={lorebookStore.entries}
+					isLoading={lorebookStore.isLoadingEntries}
+					onBack={handleBack}
+					onUpdateLorebook={handleUpdateLorebook}
+					onDeleteLorebook={handleDeleteLorebook}
+					onExportLorebook={handleExportLorebook}
+					onCreateEntry={handleCreateEntry}
+					onUpdateEntry={handleUpdateEntry}
+					onDeleteEntry={handleDeleteEntry}
+					onToggleEntry={handleToggleEntry}
+				/>
+			{:else}
+				<!-- Loading skeleton that matches the layout -->
+				<div class="space-y-6">
+					<!-- Header skeleton -->
+					<div class="flex items-center justify-between">
+						<div class="space-y-2">
+							<div class="h-8 w-64 animate-pulse rounded bg-muted"></div>
+							<div class="h-4 w-96 animate-pulse rounded bg-muted"></div>
 						</div>
-					{/each}
+						<div class="flex gap-2">
+							<div class="h-9 w-20 animate-pulse rounded bg-muted"></div>
+							<div class="h-9 w-20 animate-pulse rounded bg-muted"></div>
+							<div class="h-9 w-20 animate-pulse rounded bg-muted"></div>
+						</div>
+					</div>
+
+					<!-- Content skeleton -->
+					<div class="space-y-4">
+						{#each Array(3) as _}
+							<div class="space-y-3 rounded-lg border p-4">
+								<div class="h-5 w-48 animate-pulse rounded bg-muted"></div>
+								<div class="h-4 w-full animate-pulse rounded bg-muted"></div>
+								<div class="h-4 w-3/4 animate-pulse rounded bg-muted"></div>
+							</div>
+						{/each}
+					</div>
 				</div>
-			</div>
-		{/if}
+			{/if}
 
-		<!-- Loading overlay -->
-		{#if isLoading}
-			<div
-				class="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
-			>
+			<!-- Loading overlay -->
+			{#if isLoading}
 				<div
-					class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
-				></div>
-			</div>
+					class="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+				>
+					<div
+						class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
+					></div>
+				</div>
+			{/if}
 		{/if}
-	{/if}
 
-	<!-- Export Format Dialog -->
-	<ExportDialog
-		bind:open={showExportDialog}
-		onClose={() => (showExportDialog = false)}
-		onExport={handleExportFormat}
-	/>
-</div>
+		<!-- Export Format Dialog -->
+		<ExportDialog
+			bind:open={showExportDialog}
+			onClose={() => (showExportDialog = false)}
+			onExport={handleExportFormat}
+		/>
+	</div>
 </div>

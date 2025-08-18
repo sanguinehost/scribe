@@ -84,12 +84,12 @@
 	// In production, we need to prepend the API URL if it's not already included
 	const avatarSrc = $derived.by(() => {
 		if (!character.avatar) return null;
-		
+
 		// If avatar already has a full URL, use it as-is
 		if (character.avatar.startsWith('http://') || character.avatar.startsWith('https://')) {
 			return `${character.avatar}?width=56&height=56`;
 		}
-		
+
 		// Otherwise, prepend the API URL
 		// Use env variable for API URL in production
 		const apiBaseUrl = (env.PUBLIC_API_URL || '').trim();

@@ -30,10 +30,10 @@
 
 		try {
 			isExpanding = true;
-			
+
 			// Call the backend API to expand the text using the user's persona
 			const result = await apiClient.expandText(chatId, value.trim());
-			
+
 			if (result.isOk()) {
 				const expandedText = result.value.expanded_text;
 				onExpand(expandedText);
@@ -58,10 +58,10 @@
 
 		try {
 			isImpersonating = true;
-			
+
 			// Call the backend API to generate a full user response based on chat context
 			const result = await apiClient.impersonate(chatId);
-			
+
 			if (result.isOk()) {
 				const response = result.value.generated_response;
 				onImpersonate(response);
@@ -97,7 +97,8 @@
 					fill="none"
 					viewBox="0 0 24 24"
 				>
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+					></circle>
 					<path
 						class="opacity-75"
 						fill="currentColor"
@@ -127,7 +128,8 @@
 					fill="none"
 					viewBox="0 0 24 24"
 				>
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+					></circle>
 					<path
 						class="opacity-75"
 						fill="currentColor"

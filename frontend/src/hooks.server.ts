@@ -17,11 +17,13 @@ export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
 
 	// Check if this is an API request (either to production backend or local proxy)
 	const isProductionAPI = env.PUBLIC_API_URL && request.url.startsWith(env.PUBLIC_API_URL);
-	const isLocalAPI = !env.PUBLIC_API_URL && (request.url.includes('localhost:8080') || request.url.startsWith(event.url.origin + '/api'));
-	
+	const isLocalAPI =
+		!env.PUBLIC_API_URL &&
+		(request.url.includes('localhost:8080') || request.url.startsWith(event.url.origin + '/api'));
+
 	if (isProductionAPI || isLocalAPI) {
 		console.log(`[${new Date().toISOString()}] handleFetch: Forwarding cookies to API`);
-		
+
 		// Get cookies from the original request
 		const cookies = event.request.headers.get('cookie');
 		if (cookies) {
@@ -33,7 +35,7 @@ export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
 	}
 
 	const response = await fetch(request);
-	
+
 	// Log response details
 	console.log(`[${new Date().toISOString()}] handleFetch: Response received`, {
 		url: request.url,
@@ -45,24 +47,32 @@ export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
 	// Forward Set-Cookie headers from API responses to the browser
 	if (isProductionAPI || isLocalAPI) {
 		const setCookieHeaders = response.headers.getSetCookie?.() || [];
-		console.log(`[${new Date().toISOString()}] handleFetch: Processing ${setCookieHeaders.length} Set-Cookie headers`);
-		console.log(`[${new Date().toISOString()}] handleFetch: Raw response headers:`, Object.fromEntries(response.headers.entries()));
-		
+		console.log(
+			`[${new Date().toISOString()}] handleFetch: Processing ${setCookieHeaders.length} Set-Cookie headers`
+		);
+		console.log(
+			`[${new Date().toISOString()}] handleFetch: Raw response headers:`,
+			Object.fromEntries(response.headers.entries())
+		);
+
 		for (const cookieHeader of setCookieHeaders) {
-			console.log(`[${new Date().toISOString()}] handleFetch: Raw cookie header:`, JSON.stringify(cookieHeader));
-			
+			console.log(
+				`[${new Date().toISOString()}] handleFetch: Raw cookie header:`,
+				JSON.stringify(cookieHeader)
+			);
+
 			// Parse cookie header: "name=value; Domain=...; Path=...; etc"
-			const [nameValue, ...attributes] = cookieHeader.split(';').map(s => s.trim());
+			const [nameValue, ...attributes] = cookieHeader.split(';').map((s) => s.trim());
 			const [name, value] = nameValue.split('=', 2);
-			
+
 			if (name && value !== undefined) {
 				// Parse cookie attributes
 				const cookieOptions: any = {};
-				
+
 				for (const attr of attributes) {
 					const [key, val] = attr.split('=', 2);
 					const lowerKey = key.toLowerCase();
-					
+
 					switch (lowerKey) {
 						case 'domain':
 							// In local development, don't set domain attribute to allow localhost cookies
@@ -101,9 +111,12 @@ export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
 							break;
 					}
 				}
-				
+
 				// Set the cookie on the browser via SvelteKit
-				console.log(`[${new Date().toISOString()}] handleFetch: Setting cookie "${name}" with options:`, cookieOptions);
+				console.log(
+					`[${new Date().toISOString()}] handleFetch: Setting cookie "${name}" with options:`,
+					cookieOptions
+				);
 				event.cookies.set(name, value, cookieOptions);
 			}
 		}

@@ -162,7 +162,7 @@
 					<div class="space-y-2">
 						<Label>Tags</Label>
 						<div class="mb-2 flex flex-wrap gap-2">
-							{#each (formData.tags || []) as tag}
+							{#each formData.tags || [] as tag}
 								<Badge variant="secondary" class="flex items-center gap-1">
 									{tag}
 									<button

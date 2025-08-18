@@ -110,76 +110,76 @@
 </script>
 
 <div class="w-full px-4">
-<div class="relative mx-auto max-w-6xl">
-	<LorebookList
-		lorebooks={lorebookStore.lorebooks}
-		isLoading={lorebookStore.isLoading}
-		onCreateNew={handleCreateNew}
-		onUpload={() => (showImportDialog = true)}
-		onSelectLorebook={handleSelectLorebook}
-		onEditLorebook={handleEditLorebook}
-		onDeleteLorebook={handleDeleteLorebook}
-		onExportLorebook={handleExportLorebook}
-	/>
+	<div class="relative mx-auto max-w-6xl">
+		<LorebookList
+			lorebooks={lorebookStore.lorebooks}
+			isLoading={lorebookStore.isLoading}
+			onCreateNew={handleCreateNew}
+			onUpload={() => (showImportDialog = true)}
+			onSelectLorebook={handleSelectLorebook}
+			onEditLorebook={handleEditLorebook}
+			onDeleteLorebook={handleDeleteLorebook}
+			onExportLorebook={handleExportLorebook}
+		/>
 
-	<!-- Loading overlay for initial load -->
-	{#if lorebookStore.isLoading && lorebookStore.lorebooks.length === 0}
-		<div
-			class="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
-		>
+		<!-- Loading overlay for initial load -->
+		{#if lorebookStore.isLoading && lorebookStore.lorebooks.length === 0}
 			<div
-				class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
-			></div>
-		</div>
-	{/if}
-
-	<!-- Create Lorebook Dialog -->
-	<Dialog bind:open={showCreateDialog}>
-		<DialogContent>
-			<DialogHeader>
-				<DialogTitle>Create New Lorebook</DialogTitle>
-			</DialogHeader>
-			<LorebookForm
-				isLoading={lorebookStore.isLoading}
-				onSubmit={handleCreateSubmit}
-				onCancel={() => (showCreateDialog = false)}
-			/>
-		</DialogContent>
-	</Dialog>
-
-	<!-- Delete Confirmation Dialog -->
-	<Dialog bind:open={showDeleteDialog}>
-		<DialogContent>
-			<DialogHeader>
-				<DialogTitle>Delete Lorebook</DialogTitle>
-			</DialogHeader>
-			<div class="py-4">
-				<p class="text-sm text-muted-foreground">
-					Are you sure you want to delete this lorebook? This action cannot be undone and will
-					delete all entries in this lorebook.
-				</p>
-				{#if deletingLorebook}
-					<p class="mt-2 text-sm font-semibold">"{deletingLorebook.name}"</p>
-				{/if}
+				class="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+			>
+				<div
+					class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
+				></div>
 			</div>
+		{/if}
 
-			<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
-				<Button variant="outline" onclick={cancelDelete}>Cancel</Button>
-				<Button variant="destructive" onclick={confirmDelete}>Delete Lorebook</Button>
-			</div>
-		</DialogContent>
-	</Dialog>
+		<!-- Create Lorebook Dialog -->
+		<Dialog bind:open={showCreateDialog}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>Create New Lorebook</DialogTitle>
+				</DialogHeader>
+				<LorebookForm
+					isLoading={lorebookStore.isLoading}
+					onSubmit={handleCreateSubmit}
+					onCancel={() => (showCreateDialog = false)}
+				/>
+			</DialogContent>
+		</Dialog>
 
-	<!-- Export Format Dialog -->
-	<ExportDialog
-		bind:open={showExportDialog}
-		onClose={() => {
-			showExportDialog = false;
-			exportingLorebook = null;
-		}}
-		onExport={handleExportFormat}
-	/>
-</div>
+		<!-- Delete Confirmation Dialog -->
+		<Dialog bind:open={showDeleteDialog}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>Delete Lorebook</DialogTitle>
+				</DialogHeader>
+				<div class="py-4">
+					<p class="text-sm text-muted-foreground">
+						Are you sure you want to delete this lorebook? This action cannot be undone and will
+						delete all entries in this lorebook.
+					</p>
+					{#if deletingLorebook}
+						<p class="mt-2 text-sm font-semibold">"{deletingLorebook.name}"</p>
+					{/if}
+				</div>
+
+				<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
+					<Button variant="outline" onclick={cancelDelete}>Cancel</Button>
+					<Button variant="destructive" onclick={confirmDelete}>Delete Lorebook</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+
+		<!-- Export Format Dialog -->
+		<ExportDialog
+			bind:open={showExportDialog}
+			onClose={() => {
+				showExportDialog = false;
+				exportingLorebook = null;
+			}}
+			onExport={handleExportFormat}
+		/>
+	</div>
 </div>
 
 <ImportLorebookDialog
