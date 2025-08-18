@@ -16,7 +16,7 @@
 </script>
 
 <div class="mx-auto max-w-3xl">
-	<div class="flex max-w-xl flex-col gap-8 rounded-xl p-6 text-center leading-relaxed mx-auto">
+	<div class="mx-auto flex max-w-xl flex-col gap-8 rounded-xl p-6 text-center leading-relaxed">
 		<p class="flex flex-row items-center justify-center gap-4">
 			<!-- Settings icon -->
 			<svg

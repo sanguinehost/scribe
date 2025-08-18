@@ -27,7 +27,7 @@
 	import { writable } from 'svelte/store';
 	import { createEventDispatcher, onMount } from 'svelte';
 
-const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
+	const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 
 	export let open = false;
 
@@ -213,9 +213,10 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 			system_prompt: formData.system_prompt,
 			depth_prompt: formData.depth_prompt,
 			tags: formData.tags,
-			alternate_greetings: excludeGreetingIndex !== undefined 
-				? formData.alternate_greetings.filter((_, i) => i !== excludeGreetingIndex)
-				: formData.alternate_greetings,
+			alternate_greetings:
+				excludeGreetingIndex !== undefined
+					? formData.alternate_greetings.filter((_, i) => i !== excludeGreetingIndex)
+					: formData.alternate_greetings,
 			selectedLorebooks: formData.selectedLorebooks // Pass selected lorebook IDs
 		};
 	}
@@ -423,7 +424,7 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 											checked={formData.selectedLorebooks.includes(lorebook.id)}
 											on:change={(event) => {
 												const isChecked = event.detail;
-												
+
 												if (isChecked) {
 													formData.selectedLorebooks = [...formData.selectedLorebooks, lorebook.id];
 												} else {
@@ -445,7 +446,6 @@ const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 						<p class="text-sm text-muted-foreground">
 							Select multiple lorebooks to provide additional context for this character.
 						</p>
-						
 					</div>
 
 					<div class="grid gap-2">

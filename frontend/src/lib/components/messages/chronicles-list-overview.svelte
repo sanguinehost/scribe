@@ -5,7 +5,13 @@
 	import { apiClient } from '$lib/api';
 	import type { PlayerChronicleWithCounts } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import {
 		AlertDialog,
@@ -41,18 +47,30 @@
 			console.log('[Chronicles List] New chronicle created, refreshing list');
 			await chronicleStore.loadChronicles();
 		};
-		
+
 		const handleChronicleDeleted = async (event: CustomEvent) => {
 			console.log('[Chronicles List] Chronicle deleted, refreshing list');
 			await chronicleStore.loadChronicles();
 		};
-		
-		window.addEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
-		window.addEventListener('chronicle-deleted', handleChronicleDeleted as unknown as EventListener);
-		
+
+		window.addEventListener(
+			'chronicle-created',
+			handleChronicleCreated as unknown as EventListener
+		);
+		window.addEventListener(
+			'chronicle-deleted',
+			handleChronicleDeleted as unknown as EventListener
+		);
+
 		return () => {
-			window.removeEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
-			window.removeEventListener('chronicle-deleted', handleChronicleDeleted as unknown as EventListener);
+			window.removeEventListener(
+				'chronicle-created',
+				handleChronicleCreated as unknown as EventListener
+			);
+			window.removeEventListener(
+				'chronicle-deleted',
+				handleChronicleDeleted as unknown as EventListener
+			);
 		};
 	});
 
@@ -81,7 +99,7 @@
 
 	async function confirmDeleteChronicle() {
 		if (!chronicleToDelete) return;
-		
+
 		isDeletingChronicle = true;
 		try {
 			const result = await apiClient.deleteChronicle(chronicleToDelete.id);
@@ -89,7 +107,7 @@
 				toast.success('Chronicle deleted successfully');
 				// Reload chronicles list
 				await chronicleStore.loadChronicles();
-				
+
 				// Notify other components that a chronicle was deleted
 				window.dispatchEvent(
 					new CustomEvent('chronicle-deleted', {
@@ -114,9 +132,7 @@
 		<div class="flex items-center justify-between">
 			<div>
 				<h1 class="text-3xl font-bold">Chronicles</h1>
-				<p class="mt-2 text-muted-foreground">
-					Manage your story chronicles and their events
-				</p>
+				<p class="mt-2 text-muted-foreground">Manage your story chronicles and their events</p>
 			</div>
 			<Button onclick={handleCreateNew} class="gap-2">
 				<Plus class="h-4 w-4" />
@@ -150,11 +166,7 @@
 					<h3 class="mb-2 text-lg font-semibold">Failed to load chronicles</h3>
 					<p class="text-sm">{chronicleStore.error}</p>
 				</div>
-				<Button
-					variant="outline"
-					onclick={() => chronicleStore.loadChronicles()}
-					class="mt-4"
-				>
+				<Button variant="outline" onclick={() => chronicleStore.loadChronicles()} class="mt-4">
 					Try Again
 				</Button>
 			</CardContent>
@@ -182,10 +194,7 @@
 						out:slideAndFade={{ y: -20, duration: 200 }}
 					>
 						<Card class="relative overflow-hidden transition-colors hover:bg-muted/50">
-							<button
-								class="w-full text-left"
-								onclick={() => handleSelectChronicle(chronicle.id)}
-							>
+							<button class="w-full text-left" onclick={() => handleSelectChronicle(chronicle.id)}>
 								<CardHeader>
 									<div class="flex items-start gap-3">
 										<ScrollText class="mt-1 h-5 w-5 text-muted-foreground" />
@@ -220,7 +229,7 @@
 							<Button
 								variant="ghost"
 								size="icon"
-								class="absolute top-2 right-2 h-8 w-8 opacity-60 hover:opacity-100"
+								class="absolute right-2 top-2 h-8 w-8 opacity-60 hover:opacity-100"
 								onclick={(e) => handleDeleteChronicleClick(e, chronicle)}
 								title="Delete chronicle"
 							>
@@ -240,7 +249,8 @@
 		<AlertDialogHeader>
 			<AlertDialogTitle>Delete Chronicle</AlertDialogTitle>
 			<AlertDialogDescription>
-				Are you sure you want to delete this chronicle? This action cannot be undone and will permanently delete all events associated with this chronicle.
+				Are you sure you want to delete this chronicle? This action cannot be undone and will
+				permanently delete all events associated with this chronicle.
 				{#if chronicleToDelete}
 					<div class="mt-4 rounded-md bg-muted p-3">
 						<div class="font-medium">{chronicleToDelete.name}</div>

@@ -10,7 +10,6 @@ The deployment creates a complete, production-ready AWS infrastructure:
 - **Application Load Balancer**: With SSL/TLS certificates and WAF protection
 - **ECS Fargate**: Containerized backend services (Rust API + Qdrant vector DB)
 - **RDS PostgreSQL**: Managed database with automated backups
-- **ElastiCache Redis**: In-memory caching layer
 - **Secrets Manager**: Secure credential storage
 - **CloudWatch**: Monitoring, logging, and alerting
 - **ECR Repositories**: Container image storage
@@ -235,7 +234,7 @@ TRUNCATE TABLE users; # Clear users table (careful!)
 
 ### Access Monitoring Dashboard
 - CloudWatch Dashboard URL is provided in deployment outputs
-- Monitor ALB, ECS, RDS, and Redis metrics
+- Monitor ALB, ECS, and RDS metrics
 
 ### View Logs
 ```bash
@@ -331,7 +330,6 @@ Modify variables in `terraform.tfvars`:
 ```hcl
 # Increase instance sizes
 db_instance_class = "db.t4g.small"
-redis_node_type = "cache.t4g.small"
 
 # Increase ECS resources
 backend_cpu = 512      # 0.5 vCPU

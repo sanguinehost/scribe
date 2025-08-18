@@ -1,0 +1,90 @@
+# Build stage
+FROM rust:1.87-slim AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libpq-dev \
+    cmake \
+    g++ \
+    build-essential \
+    libc6-dev \
+    clang \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy workspace manifests
+COPY Cargo.toml Cargo.lock ./
+COPY backend/Cargo.toml ./backend/
+COPY cli/Cargo.toml ./cli/
+
+# Copy backend source code
+COPY backend/src ./backend/src
+COPY cli/src ./cli/src
+
+# Copy diesel migrations
+COPY backend/migrations ./backend/migrations
+
+# Copy diesel.toml
+COPY backend/diesel.toml ./backend/
+
+# Copy tokenizer resources
+COPY backend/resources ./backend/resources
+
+# Build the application
+RUN cargo build --release --bin scribe-backend
+
+# Runtime stage - Using Debian for broader compatibility
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN useradd -m -u 1001 -s /bin/bash app
+
+WORKDIR /app
+
+# Copy the binary from builder
+COPY --from=builder --chown=1001:1001 /app/target/release/scribe-backend /app/scribe-backend
+
+# Copy migrations (needed for runtime migration checks)  
+COPY --from=builder --chown=1001:1001 /app/backend/migrations /app/migrations
+
+# Create backend directory structure and copy resources
+RUN mkdir -p /app/backend/resources
+COPY --from=builder --chown=1001:1001 /app/backend/resources /app/backend/resources
+
+# Copy CA certificate and add to system trust store
+COPY --chown=root:root .certs/cert.pem /usr/local/share/ca-certificates/scribe-ca.crt
+RUN update-ca-certificates
+
+# Copy TLS certificates for the backend server
+RUN mkdir -p /app/.certs
+COPY --chown=1001:1001 .certs/cert.pem /app/.certs/
+COPY --chown=1001:1001 .certs/key.pem /app/.certs/
+
+# Switch to app user
+USER 1001
+
+# Expose port
+EXPOSE 8080
+
+# Set environment variables
+ENV RUST_LOG=info
+ENV RUST_BACKTRACE=1
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Run the binary
+CMD ["./scribe-backend"]

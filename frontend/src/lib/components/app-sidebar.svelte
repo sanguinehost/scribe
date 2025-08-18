@@ -132,12 +132,12 @@
 
 	function switchTab(tab: 'characters' | 'personas' | 'lorebooks' | 'chronicles') {
 		sidebarStore.setActiveTab(tab);
-		
+
 		// Refresh chronicles when switching to that tab
 		if (tab === 'chronicles' && chronicleListComp) {
 			chronicleListComp.refresh();
 		}
-		
+
 		// Don't clear selections when switching tabs - let users browse sidebar
 		// while maintaining their current view (character overview, chat, etc.)
 		// This prevents unnecessary navigation and content flickering
@@ -146,21 +146,21 @@
 	async function openSettings() {
 		// Set transitioning state immediately to prevent Overview from showing
 		settingsStore.isTransitioning = true;
-		
+
 		// Clear all selections when opening settings
 		selectedCharacterStore.clear();
 		selectedPersonaStore.clear();
 		selectedLorebookStore.clear();
 		selectedChronicleStore.clear();
-		
+
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
 			await goto('/', { replaceState: true });
 			// Small delay to ensure navigation completes smoothly
-			await new Promise(resolve => setTimeout(resolve, 50));
+			await new Promise((resolve) => setTimeout(resolve, 50));
 		}
-		
+
 		settingsStore.show();
 		context.setOpenMobile(false); // Close mobile sidebar if open
 	}
@@ -299,10 +299,10 @@
 	<SidebarContent class="p-0">
 		<!-- Tab Navigation -->
 		<Tooltip.Provider>
-			<div class="flex border-b min-w-0">
+			<div class="flex min-w-0 border-b">
 				<Tooltip.Root>
-					<Tooltip.Trigger 
-						class="flex-1 flex items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+					<Tooltip.Trigger
+						class="flex flex-1 items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
 						'characters'
 							? 'border-b-2 border-primary bg-background text-foreground'
 							: 'text-muted-foreground hover:text-foreground'}"
@@ -316,8 +316,8 @@
 				</Tooltip.Root>
 
 				<Tooltip.Root>
-					<Tooltip.Trigger 
-						class="flex-1 flex items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+					<Tooltip.Trigger
+						class="flex flex-1 items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
 						'personas'
 							? 'border-b-2 border-primary bg-background text-foreground'
 							: 'text-muted-foreground hover:text-foreground'}"
@@ -331,8 +331,8 @@
 				</Tooltip.Root>
 
 				<Tooltip.Root>
-					<Tooltip.Trigger 
-						class="flex-1 flex items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+					<Tooltip.Trigger
+						class="flex flex-1 items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
 						'lorebooks'
 							? 'border-b-2 border-primary bg-background text-foreground'
 							: 'text-muted-foreground hover:text-foreground'}"
@@ -346,8 +346,8 @@
 				</Tooltip.Root>
 
 				<Tooltip.Root>
-					<Tooltip.Trigger 
-						class="flex-1 flex items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+					<Tooltip.Trigger
+						class="flex flex-1 items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
 						'chronicles'
 							? 'border-b-2 border-primary bg-background text-foreground'
 							: 'text-muted-foreground hover:text-foreground'}"

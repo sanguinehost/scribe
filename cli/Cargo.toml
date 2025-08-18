@@ -29,7 +29,7 @@ tokio-stream = "0.1" # Removed incorrect features
 dirs = "5.0.1" # For locating config directory
 
 # Added missing dependencies for handlers
-genai = { path = "/home/socol/Workspace/rust-genai" }
+genai = { git = "https://github.com/sanguinehost/rust-genai", rev = "cbb1c69" }
 qdrant-client = "1.10.0"
 
 # Added for JSON handling with backend

@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: docker.io/postgres:16
+    container_name: scribe_postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-devuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-devpassword}
+      POSTGRES_DB: ${DB_NAME:-sanguine_scribe_dev}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../configs/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro,Z
+      - ${CERT_PATH:-../../../.certs}:/var/lib/postgresql/certs:ro,Z
+      - ${CERT_PATH:-../../../.certs}/ca.crt:/var/lib/postgresql/ca.crt:ro,Z
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c ssl=on -c ssl_cert_file=/var/lib/postgresql/certs/cert.pem -c ssl_key_file=/var/lib/postgresql/certs/key.pem
+    restart: unless-stopped
+    shm_size: 256m
+    security_opt:
+      - label=disable  # Podman-specific for SELinux
+
+  qdrant:
+    image: docker.io/qdrant/qdrant:v1.14.0
+    container_name: scribe_qdrant
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    environment:
+      QDRANT__SERVICE__ENABLE_TLS: "${QDRANT_TLS_ENABLED:-true}"
+      QDRANT__TLS__CERT: "/qdrant_certs/cert.pem"
+      QDRANT__TLS__KEY: "/qdrant_certs/key.pem"
+    volumes:
+      - qdrant_data:/qdrant/storage
+      - ${CERT_PATH:-../../../.certs}:/qdrant_certs:ro,Z  # :Z for SELinux context
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    security_opt:
+      - label=disable
+
+volumes:
+  postgres_data:
+  qdrant_data:

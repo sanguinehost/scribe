@@ -50,18 +50,20 @@
 				if ('statusCode' in result.error && result.error.statusCode === 404) {
 					// Message not found - likely still being saved
 					retryCount++;
-					if (retryCount <= 5) { // Max 5 retries
+					if (retryCount <= 5) {
+						// Max 5 retries
 						const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 8000); // Exponential backoff, max 8s
 						error = `Message still processing, retrying in ${Math.ceil(delay / 1000)}s... (${retryCount}/5)`;
-						
+
 						// Clear any existing timeout
 						if (retryTimeout) {
 							clearTimeout(retryTimeout);
 						}
-						
+
 						// Schedule retry
 						retryTimeout = setTimeout(() => {
-							if (open) { // Only retry if modal is still open
+							if (open) {
+								// Only retry if modal is still open
 								isLoading = true; // Ensure loading state is maintained
 								fetchRawPrompt();
 							}
@@ -135,7 +137,7 @@
 			</div>
 		</Dialog.Header>
 
-		<div class="mt-4 flex-1 overflow-y-auto min-h-0">
+		<div class="mt-4 min-h-0 flex-1 overflow-y-auto">
 			{#if isLoading}
 				<div class="flex items-center justify-center py-12">
 					<div class="flex items-center gap-3 text-muted-foreground">

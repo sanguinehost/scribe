@@ -67,7 +67,7 @@ use futures::TryStreamExt;
 use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse, StreamEnd};
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse, StreamEnd, ToolCall};
 // use http_body_util::BodyExt; // Removed unused import
 use mime; // Added for mime::APPLICATION_JSON
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
@@ -285,14 +285,14 @@ impl AiClient for MockAiClient {
                                         content: chunk.content.clone(),
                                     })
                                 }
-                                // ChatStreamEvent::ToolCall(tool_call) => { // Commented out as ToolCall is not expected from Gemini Streamer
-                                //     // Assuming genai::chat::ToolCall is effectively cloneable by its fields
-                                //     ChatStreamEvent::ToolCall(genai::chat::ToolCall {
-                                //         call_id: tool_call.call_id.clone(),
-                                //         fn_name: tool_call.fn_name.clone(),
-                                //         fn_arguments: tool_call.fn_arguments.clone(),
-                                //     })
-                                // }
+                                ChatStreamEvent::ToolCall(tool_call) => {
+                                    // Assuming ToolCall is effectively cloneable by its fields
+                                    ChatStreamEvent::ToolCall(ToolCall {
+                                        call_id: tool_call.call_id.clone(),
+                                        fn_name: tool_call.fn_name.clone(),
+                                        fn_arguments: tool_call.fn_arguments.clone(),
+                                    })
+                                }
                                 ChatStreamEvent::End(_end_event) => {
                                     ChatStreamEvent::End(StreamEnd::default())
                                 } // StreamEnd is not Clone, use Default

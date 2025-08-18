@@ -65,7 +65,7 @@ export interface Session {
 	expires_at: string;
 }
 
-// AuthUser type - matches backend AuthResponse structure  
+// AuthUser type - matches backend AuthResponse structure
 export interface AuthUser {
 	user_id: string; // UUID, primary field from backend AuthResponse
 	id: string; // Backwards compatibility - should map to user_id
@@ -838,9 +838,9 @@ export interface ChronicleEvent {
 	event_type: string;
 	summary: string;
 	source: EventSource;
-	keywords?: string[] | null;  // New simplified field
-	timestamp_iso8601: string;   // Story timeline timestamp
-	chat_session_id?: string | null;  // Link to originating chat
+	keywords?: string[] | null; // New simplified field
+	timestamp_iso8601: string; // Story timeline timestamp
+	chat_session_id?: string | null; // Link to originating chat
 	created_at: string;
 	updated_at: string;
 }
@@ -868,7 +868,13 @@ export interface EventFilter {
 	offset?: number | null;
 }
 
-export type EventOrderBy = 'created_at_asc' | 'created_at_desc' | 'updated_at_asc' | 'updated_at_desc' | 'timestamp_asc' | 'timestamp_desc';
+export type EventOrderBy =
+	| 'created_at_asc'
+	| 'created_at_desc'
+	| 'updated_at_asc'
+	| 'updated_at_desc'
+	| 'timestamp_asc'
+	| 'timestamp_desc';
 
 // Token counting types
 export interface TokenCountRequest {

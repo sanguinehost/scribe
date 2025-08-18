@@ -8,7 +8,7 @@
 </script>
 
 <!-- Show on mobile always, and on desktop only when sidebar is closed -->
-<div class="{sidebar.state === 'collapsed' ? '' : 'md:hidden'}">
+<div class={sidebar.state === 'collapsed' ? '' : 'md:hidden'}>
 	<TooltipProvider>
 		<Tooltip>
 			<TooltipTrigger>

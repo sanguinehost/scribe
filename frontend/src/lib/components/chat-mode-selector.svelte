@@ -94,9 +94,7 @@
 	<DialogContent class="sm:max-w-md">
 		<DialogHeader>
 			<DialogTitle>Choose Chat Mode</DialogTitle>
-			<DialogDescription>
-				Select the type of conversation you'd like to start
-			</DialogDescription>
+			<DialogDescription>Select the type of conversation you'd like to start</DialogDescription>
 		</DialogHeader>
 
 		{#if !selectedMode}
@@ -104,8 +102,8 @@
 			<div class="grid gap-3">
 				{#each chatModes as { mode, icon }}
 					{@const strategy = createChatModeStrategy(mode)}
-					<Card 
-						class="cursor-pointer transition-colors hover:bg-muted/50 border-2 border-transparent hover:border-primary/20"
+					<Card
+						class="cursor-pointer border-2 border-transparent transition-colors hover:border-primary/20 hover:bg-muted/50"
 						onclick={() => selectMode(mode)}
 					>
 						<CardHeader class="pb-2">
@@ -126,9 +124,9 @@
 			<!-- Chat Configuration -->
 			{@const strategy = createChatModeStrategy(selectedMode)}
 			<div class="space-y-4">
-				<div class="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+				<div class="flex items-center gap-2 rounded-lg bg-muted/50 p-3">
 					<span class="text-lg">
-						{chatModes.find(m => m.mode === selectedMode)?.icon}
+						{chatModes.find((m) => m.mode === selectedMode)?.icon}
 					</span>
 					<div>
 						<h4 class="font-medium">{strategy.getDisplayName()}</h4>
@@ -147,13 +145,8 @@
 			</div>
 
 			<DialogFooter class="gap-2">
-				<Button 
-					variant="outline" 
-					onclick={() => selectedMode = null}
-				>
-					Back
-				</Button>
-				<Button 
+				<Button variant="outline" onclick={() => (selectedMode = null)}>Back</Button>
+				<Button
 					onclick={createChat}
 					disabled={isCreating || !customTitle.trim()}
 					class="min-w-[120px]"

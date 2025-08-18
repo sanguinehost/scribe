@@ -1,0 +1,64 @@
+# Qdrant Configuration
+# Production-ready configuration for vector database
+
+service:
+  # Host and port settings
+  host: "0.0.0.0"
+  http_port: 6333
+  grpc_port: 6334
+  
+  # Enable CORS for web access
+  enable_cors: true
+  cors_origins: ["*"]
+  
+  # API key for authentication (set via environment variable)
+  # api_key: ${QDRANT_API_KEY}
+  
+  # Maximum request size (32MB)
+  max_request_size_mb: 32
+  
+  # Maximum workers for handling requests
+  max_workers: 0  # Use all available cores
+
+# TLS Configuration
+tls:
+  # Enable TLS (configured via environment variables)
+  # cert: "/qdrant_certs/cert.pem"
+  # key: "/qdrant_certs/key.pem"
+
+# Storage configuration
+storage:
+  # Storage path
+  storage_path: "/qdrant/storage"
+  
+  # Snapshot configuration
+  snapshots_path: "/qdrant/snapshots"
+  
+  # Performance settings
+  hnsw_config:
+    # Memory usage optimization
+    m: 16                    # Number of bi-directional links for every new node
+    ef_construct: 100        # Size of the dynamic candidate list
+    full_scan_threshold: 10000  # Threshold for switching to full scan
+    max_indexing_threads: 0  # Use all available threads
+    
+  # Optimistic concurrency control
+  wal_config:
+    wal_capacity_mb: 32
+    wal_segments_ahead: 0
+
+# Collection configuration defaults
+cluster:
+  # Disable clustering for single-node setup
+  enabled: false
+
+# Logging configuration
+log_level: INFO
+
+# Telemetry (disable for privacy)
+telemetry_disabled: true
+
+# Performance tuning
+performance:
+  # Memory pool settings
+  max_optimization_threads: 0  # Use all available cores

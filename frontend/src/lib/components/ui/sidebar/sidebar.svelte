@@ -68,11 +68,11 @@
 					: 'group-data-[collapsible=icon]:w-[var(--sidebar-width-icon)]'
 			)}
 		></div>
-		
+
 		<!-- Hover trigger zone when sidebar is collapsed -->
 		{#if sidebar.state === 'collapsed'}
 			<div
-				class="fixed left-0 top-0 z-50 h-svh w-2 bg-border/30 hover:bg-primary/20 hover:w-3 cursor-pointer transition-all duration-200"
+				class="fixed left-0 top-0 z-50 h-svh w-2 cursor-pointer bg-border/30 transition-all duration-200 hover:w-3 hover:bg-primary/20"
 				onmouseenter={() => sidebar.setOpenByHover(true)}
 				role="button"
 				tabindex="0"

@@ -76,7 +76,7 @@
 
 	// Track message count for performance optimization
 	let lastMessageCount = 0;
-	
+
 	$effect(() => {
 		if (!loading && messages.length !== lastMessageCount) {
 			lastMessageCount = messages.length;
@@ -150,22 +150,22 @@
 
 		const observer = new MutationObserver((mutations) => {
 			if (!endRef || scrollLock.locked) return;
-			
+
 			// Don't auto-scroll during streaming to allow user to freely scroll
-			const hasAnimatingMessages = messages.some(m => m.loading || (m as any).isAnimating);
+			const hasAnimatingMessages = messages.some((m) => m.loading || (m as any).isAnimating);
 			if (hasAnimatingMessages) return;
-			
+
 			// Don't auto-scroll during infinite scroll loading or when suppressed
 			if (isLoadingMore || suppressAutoScroll) return;
-			
+
 			// Only scroll for meaningful content changes, not button state changes
-			const shouldScroll = mutations.some(mutation => {
+			const shouldScroll = mutations.some((mutation) => {
 				// Allow childList changes (new messages)
 				if (mutation.type === 'childList') return true;
-				
+
 				// Allow text content changes (message content updates)
 				if (mutation.type === 'characterData') return true;
-				
+
 				// For attribute changes, only scroll if it's not a UI state change
 				if (mutation.type === 'attributes') {
 					const target = mutation.target as Element;
@@ -178,9 +178,11 @@
 						return false;
 					}
 					// Ignore class changes on elements with message action classes
-					if (target.classList?.contains('opacity-0') || 
+					if (
+						target.classList?.contains('opacity-0') ||
 						target.classList?.contains('opacity-100') ||
-						target.closest('.group')) {
+						target.closest('.group')
+					) {
 						return false;
 					}
 					// Ignore attribute changes on interactive UI elements
@@ -189,10 +191,10 @@
 					}
 					return true;
 				}
-				
+
 				return false;
 			});
-			
+
 			// Only auto-scroll if we have actual chat messages and meaningful changes occurred
 			if (shouldScroll && messages.length > 0) {
 				endRef.scrollIntoView({ behavior: 'instant', block: 'end' });
@@ -249,7 +251,13 @@
 		// Only on initial load (when message count is 20 or less = initial batch)
 		const isNewChat = chat && new Date().getTime() - new Date(chat.created_at).getTime() < 5000;
 		const isInitialLoad = messages.length <= 20;
-		if (messages.length > 0 && !isNewChat && !isLoadingMore && !suppressAutoScroll && isInitialLoad) {
+		if (
+			messages.length > 0 &&
+			!isNewChat &&
+			!isLoadingMore &&
+			!suppressAutoScroll &&
+			isInitialLoad
+		) {
 			setTimeout(() => {
 				if (endRef) {
 					endRef.scrollIntoView({ behavior: 'smooth' });
@@ -260,26 +268,30 @@
 </script>
 
 <Tooltip.Provider>
-	<div 
-		bind:this={containerRef} 
-		class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(mounted && messages.length === 0) || settingsStore.isVisible ? '' : 'pt-4'}"
+	<div
+		bind:this={containerRef}
+		class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(mounted &&
+			messages.length === 0) ||
+		settingsStore.isVisible
+			? ''
+			: 'pt-4'}"
 		data-messages-container
-		use:infiniteScroll={{ 
-			threshold: 200, 
+		use:infiniteScroll={{
+			threshold: 200,
 			debounce: 300
 		}}
 	>
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
 		{#if settingsStore.isVisible || settingsStore.isTransitioning}
-			<div class="relative flex-1 flex items-center justify-center">
-				<div 
-					class="w-full settings-content-view" 
+			<div class="relative flex flex-1 items-center justify-center">
+				<div
+					class="settings-content-view w-full"
 					class:active={settingsStore.isVisible}
 					class:inactive={!settingsStore.isVisible}
 				>
-					<div 
+					<div
 						class="settings-view-content"
-						in:fade={{ duration: 400 }} 
+						in:fade={{ duration: 400 }}
 						out:fade={{ duration: 300 }}
 					>
 						<Settings />
@@ -290,7 +302,7 @@
 
 		<!-- Empty Chat Placeholders (only if chat is empty AND settings are NOT visible AND not transitioning) -->
 		{#if mounted && messages.length === 0 && !settingsStore.isVisible && !settingsStore.isTransitioning}
-			<div class="relative flex-1 flex">
+			<div class="relative flex flex-1">
 				<!-- Apply same smooth transition approach as sidebar -->
 				<div
 					class="main-content-view"
@@ -303,10 +315,8 @@
 				</div>
 				<div
 					class="main-content-view"
-					class:active={selectedChronicleStore.selectedChronicleId &&
-						!selectedCharacterId}
-					class:inactive={!selectedChronicleStore.selectedChronicleId ||
-						selectedCharacterId}
+					class:active={selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
+					class:inactive={!selectedChronicleStore.selectedChronicleId || selectedCharacterId}
 				>
 					{#if selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
 						<ChronicleOverview chronicleId={selectedChronicleStore.selectedChronicleId} />
@@ -466,12 +476,16 @@
 				/>
 			{:else}
 				{@const variants = messageVariants?.get(message.id)}
-				{@const currentIndex = currentVariantIndex?.get(message.id) ?? ((variants?.length ?? 0) > 0 ? (variants?.length ?? 1) - 1 : 0)}
+				{@const currentIndex =
+					currentVariantIndex?.get(message.id) ??
+					((variants?.length ?? 0) > 0 ? (variants?.length ?? 1) - 1 : 0)}
 				{@const hasVariants = (variants?.length ?? 0) > 0 || currentIndex > 0}
-				{@const variantInfo = hasVariants ? { current: currentIndex, total: (variants?.length ?? 1) - 1 } : null}
-				
-				<Message 
-					{message} 
+				{@const variantInfo = hasVariants
+					? { current: currentIndex, total: (variants?.length ?? 1) - 1 }
+					: null}
+
+				<Message
+					{message}
 					{readonly}
 					{loading}
 					{user}

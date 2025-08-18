@@ -58,7 +58,6 @@ graph TD
                     Fargate_Task_Q["Qdrant Task"]
                 end
                 RDS_Postgres["RDS PostgreSQL"]
-                ElastiCache_Redis["ElastiCache for Redis"]
                 EFS_Qdrant["EFS for Qdrant"]
             end
         end
@@ -89,7 +88,6 @@ graph TD
 
     Fargate_Task_BE -- Uses --> RDS_Postgres
     Fargate_Task_BE -- Uses --> Fargate_Task_Q
-    Fargate_Task_BE -- Uses --> ElastiCache_Redis
     Fargate_Task_BE -- Reads secrets from --> SecretsManager
     Fargate_Task_BE -- Outbound to Internet via --> NAT_GW
 

@@ -81,12 +81,19 @@ impl QdrantClientService {
         info!("Connecting to Qdrant at URL: {}", qdrant_url);
 
         // Build the Qdrant client with timeout configuration
-        // Note: Add API key handling if required for Qdrant Cloud or secured instances
         // Use the new Qdrant struct and its builder pattern
         let mut builder = Qdrant::from_url(qdrant_url);
 
         // Set timeout for operations (30 seconds for better reliability in tests)
         builder = builder.timeout(std::time::Duration::from_secs(30));
+
+        // Add API key authentication if configured
+        if let Some(api_key) = &config.qdrant_api_key {
+            info!("Using API key authentication for Qdrant");
+            builder = builder.api_key(api_key.clone());
+        } else {
+            info!("No API key configured for Qdrant - using unauthenticated connection");
+        }
 
         // Build the client
         let qdrant_client = builder.build().map_err(|e| {
@@ -179,12 +186,12 @@ impl QdrantClientService {
             info!("Collection '{}' already exists.", self.collection_name);
             // Ensure existing collection has the correct HNSW settings
             let target_hnsw_config = HnswConfigDiff {
-                m: Some(0),
-                payload_m: Some(16),
+                m: Some(16),         // Enable HNSW with 16 connections per point
+                payload_m: Some(16), // Enable payload indexing
                 ..Default::default()
             };
             info!(
-                "Updating HNSW config for existing collection '{}': m=0, payload_m=16",
+                "Updating HNSW config for existing collection '{}': m=16, payload_m=16",
                 self.collection_name
             );
             self.client
@@ -213,7 +220,7 @@ impl QdrantClientService {
             // Use the create_collection method on the new client
             // Pass the CreateCollection struct directly by value
             let target_hnsw_config = HnswConfigDiff {
-                m: Some(0),          // Disable global HNSW
+                m: Some(16),         // Enable global HNSW with 16 connections
                 payload_m: Some(16), // Enable per-group HNSW
                 ..Default::default()
             };

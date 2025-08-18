@@ -14,7 +14,14 @@
 		mode?: 'standalone' | 'inline'; // standalone for character editor, inline for chat
 	};
 
-	let { fieldName, fieldValue, characterContext, onGenerated, disabled = false, mode = 'standalone' }: Props = $props();
+	let {
+		fieldName,
+		fieldValue,
+		characterContext,
+		onGenerated,
+		disabled = false,
+		mode = 'standalone'
+	}: Props = $props();
 
 	let isGenerating = $state(false);
 
@@ -26,7 +33,7 @@
 
 		try {
 			isGenerating = true;
-			
+
 			// Use the character field generation API
 			const result = await apiClient.generateCharacterField({
 				field_name: fieldName,
@@ -34,18 +41,18 @@
 				character_context: characterContext,
 				generation_mode: generationMode
 			});
-			
+
 			if (result.isOk()) {
 				const generatedText = result.value.content;
 				onGenerated(generatedText);
-				
+
 				const modeDescriptions = {
 					create: 'generated',
 					enhance: 'enhanced',
 					rewrite: 'rewritten',
 					expand: 'expanded'
 				};
-				
+
 				toast.success(`${fieldName} ${modeDescriptions[generationMode]} successfully`);
 			} else {
 				console.error('Failed to generate content:', result.error);
@@ -86,7 +93,8 @@
 						fill="none"
 						viewBox="0 0 24 24"
 					>
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
 						<path
 							class="opacity-75"
 							fill="currentColor"
@@ -111,12 +119,13 @@
 			>
 				{#if isGenerating}
 					<svg
-						class="h-3.5 w-3.5 animate-spin mr-1"
+						class="mr-1 h-3.5 w-3.5 animate-spin"
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
 					>
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
 						<path
 							class="opacity-75"
 							fill="currentColor"
@@ -142,12 +151,13 @@
 			>
 				{#if isGenerating}
 					<svg
-						class="h-3.5 w-3.5 animate-spin mr-1"
+						class="mr-1 h-3.5 w-3.5 animate-spin"
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
 					>
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
 						<path
 							class="opacity-75"
 							fill="currentColor"
@@ -173,12 +183,13 @@
 			>
 				{#if isGenerating}
 					<svg
-						class="h-3.5 w-3.5 animate-spin mr-1"
+						class="mr-1 h-3.5 w-3.5 animate-spin"
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
 					>
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
 						<path
 							class="opacity-75"
 							fill="currentColor"
@@ -204,12 +215,13 @@
 			>
 				{#if isGenerating}
 					<svg
-						class="h-3.5 w-3.5 animate-spin mr-1"
+						class="mr-1 h-3.5 w-3.5 animate-spin"
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
 					>
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
 						<path
 							class="opacity-75"
 							fill="currentColor"

@@ -21,9 +21,9 @@
 
 	// Gemini pricing (per 1M tokens) - Updated with correct official pricing
 	const GEMINI_PRICING = {
-		'gemini-2.5-flash': { input: 0.30, output: 2.50 },
-		'gemini-2.5-pro': { input: 1.25, output: 10.00 }, // For prompts <= 200k tokens
-		'gemini-2.5-flash-lite-preview': { input: 0.10, output: 0.40 }
+		'gemini-2.5-flash': { input: 0.3, output: 2.5 },
+		'gemini-2.5-pro': { input: 1.25, output: 10.0 }, // For prompts <= 200k tokens
+		'gemini-2.5-flash-lite-preview': { input: 0.1, output: 0.4 }
 	};
 
 	const totalTokens = $derived((promptTokens || 0) + (completionTokens || 0));
@@ -81,7 +81,7 @@
 		<span class="font-medium">{formatTokens(totalTokens)} total</span>
 
 		{#if showCost && totalCost() > 0}
-			<Badge variant="outline" class="text-xs font-mono">
+			<Badge variant="outline" class="font-mono text-xs">
 				{formatCost(totalCost())}
 			</Badge>
 		{/if}

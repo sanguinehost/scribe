@@ -35,7 +35,7 @@
 		onImpersonate,
 		agentMode = 'disabled',
 		onAgentModeChange,
-		placeholder = "Send a message...", // Default placeholder
+		placeholder = 'Send a message...', // Default placeholder
 		class: c
 	}: Props = $props();
 

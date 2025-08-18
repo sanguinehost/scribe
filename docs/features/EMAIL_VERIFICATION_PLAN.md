@@ -76,7 +76,7 @@ sequenceDiagram
 
 1.  **Add `tower-governor` Crate**: We will add the `tower-governor` crate to the backend's dependencies to handle rate limiting.
 2.  **Configure Rate Limiting Middleware**: A new middleware layer will be created to apply rate limiting rules.
-    *   **Strategy**: We will use a simple in-memory store for the initial implementation, which is sufficient for a single-node deployment. The configuration will be designed to easily switch to a Redis-backed store when we move to a multi-node setup in Phase 2, leveraging the existing ElastiCache for Redis from the hosting plan.
+    *   **Strategy**: We will use a simple in-memory store for the initial implementation, which is sufficient for a single-node deployment. The configuration can be designed to easily switch to a distributed store when we move to a multi-node setup in Phase 2.
     *   **Rules**:
         *   `POST /api/auth/register`: Limit to 5 requests per minute per IP address.
         *   `POST /api/auth/verify-email`: Limit to 10 requests per minute per IP address.

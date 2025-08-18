@@ -11,12 +11,7 @@
 	import TokenUsageDisplay from '../token-usage-display.svelte';
 	import TypewriterMessage from '../TypewriterMessage.svelte';
 	import { fly } from 'svelte/transition';
-	import type {
-		ScribeChatMessage,
-		User,
-		ScribeCharacter,
-		ScribeChatSession
-	} from '$lib/types'; // Import User and ScribeCharacter
+	import type { ScribeChatMessage, User, ScribeCharacter, ScribeChatSession } from '$lib/types'; // Import User and ScribeCharacter
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
 	import { env } from '$env/dynamic/public';
 	import { getLock } from '$lib/hooks/lock';
@@ -61,22 +56,26 @@
 
 	// Component lifecycle tracking (reduced logging)
 	let componentId = `preview-${message.id}-${Math.random().toString(36).substr(2, 9)}`;
-	console.log(`🆕 COMPONENT MOUNT: ${componentId} - Message ${message.id.slice(-8)} (${message.message_type}) loading: ${message.loading}`);
-	
+	console.log(
+		`🆕 COMPONENT MOUNT: ${componentId} - Message ${message.id.slice(-8)} (${message.message_type}) loading: ${message.loading}`
+	);
+
 	// Track component destruction to catch unnecessary unmounting
 	$effect(() => {
 		return () => {
-			console.log(`❌ COMPONENT UNMOUNT: ${componentId} - Message ${message.id.slice(-8)} destroyed`);
+			console.log(
+				`❌ COMPONENT UNMOUNT: ${componentId} - Message ${message.id.slice(-8)} destroyed`
+			);
 		};
 	});
 
 	// Edit mode state
 	let isEditing = $state(false);
 	let editedContent = $state('');
-	
+
 	// Get scroll lock during component initialization
 	const scrollLock = getLock('messages-scroll');
-	
+
 	// Get streaming state to check for typewriter animation - using the one defined at top
 
 	// Function to get initials for fallback avatar
@@ -88,10 +87,10 @@
 	function startEditing() {
 		// Lock scrolling before making DOM changes
 		scrollLock.locked = true;
-		
+
 		isEditing = true;
 		editedContent = message.content;
-		
+
 		// Unlock after DOM has settled
 		setTimeout(() => {
 			scrollLock.locked = false;
@@ -101,10 +100,10 @@
 	function cancelEditing() {
 		// Lock scrolling before making DOM changes
 		scrollLock.locked = true;
-		
+
 		isEditing = false;
 		editedContent = '';
-		
+
 		// Unlock after DOM has settled
 		setTimeout(() => {
 			scrollLock.locked = false;
@@ -115,13 +114,13 @@
 		if (editedContent.trim() && editedContent.trim() !== message.content) {
 			onSaveEditedMessage?.(message.id, editedContent.trim());
 		}
-		
+
 		// Lock scrolling before making DOM changes
 		scrollLock.locked = true;
-		
+
 		isEditing = false;
 		editedContent = '';
-		
+
 		// Unlock after DOM has settled
 		setTimeout(() => {
 			scrollLock.locked = false;
@@ -141,12 +140,12 @@
 	// Create properly formatted avatar URL for character
 	const characterAvatarSrc = $derived.by(() => {
 		if (!character?.avatar) return null;
-		
+
 		// If avatar already has a full URL, use it as-is
 		if (character.avatar.startsWith('http://') || character.avatar.startsWith('https://')) {
 			return character.avatar;
 		}
-		
+
 		// Otherwise, prepend the API URL
 		const apiBaseUrl = (env.PUBLIC_API_URL || '').trim();
 		return `${apiBaseUrl}${character.avatar}`;
@@ -165,22 +164,6 @@
 	// NOTE: Edit mode was removed as it depended on the Vercel SDK's message.parts structure.
 	// let mode = $state<'view' | 'edit'>('view');
 </script>
-
-<style>
-	.loading-spinner {
-		width: 16px;
-		height: 16px;
-		border: 2px solid transparent;
-		border-top: 2px solid currentColor;
-		border-radius: 50%;
-		animation: spin 1s linear infinite;
-	}
-
-	@keyframes spin {
-		0% { transform: rotate(0deg); }
-		100% { transform: rotate(360deg); }
-	}
-</style>
 
 <div
 	class="group/message mx-auto w-full max-w-3xl px-4"
@@ -235,7 +218,7 @@
 			<!-- {#if message.experimental_attachments && message.experimental_attachments.length > 0} ... {/if} -->
 
 			<!-- Render message content directly -->
-			<div class="relative group">
+			<div class="group relative">
 				{#if isEditing && message.message_type === 'User'}
 					<!-- Edit mode for user messages -->
 					<div class="space-y-3">
@@ -246,14 +229,8 @@
 							class="min-h-[80px] resize-none focus:ring-2 focus:ring-primary"
 							autofocus
 						/>
-						<div class="flex gap-2 justify-end">
-							<Button
-								variant="outline"
-								size="sm"
-								onclick={cancelEditing}
-							>
-								Cancel
-							</Button>
+						<div class="flex justify-end gap-2">
+							<Button variant="outline" size="sm" onclick={cancelEditing}>Cancel</Button>
 							<Button
 								size="sm"
 								onclick={saveEdit}
@@ -267,7 +244,7 @@
 					<!-- Normal message display -->
 					<div
 						class={cn(
-							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8 relative group',
+							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 group relative w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8',
 							{
 								'border-primary/10 bg-primary/10': message.message_type === 'User',
 								'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20': message.error
@@ -276,17 +253,21 @@
 					>
 						{#if message.error}
 							<!-- Error state display -->
-							<div class="flex items-start gap-3 mb-3">
-								<div class="flex-shrink-0 text-red-500 mt-1">
-									<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+							<div class="mb-3 flex items-start gap-3">
+								<div class="mt-1 flex-shrink-0 text-red-500">
+									<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+										<path
+											fill-rule="evenodd"
+											d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"
+											clip-rule="evenodd"
+										/>
 									</svg>
 								</div>
 								<div class="flex-1">
-									<p class="text-red-700 dark:text-red-300 font-medium text-sm">
+									<p class="text-sm font-medium text-red-700 dark:text-red-300">
 										Generation failed
 									</p>
-									<p class="text-red-600 dark:text-red-400 text-sm mt-1">
+									<p class="mt-1 text-sm text-red-600 dark:text-red-400">
 										{message.error}
 									</p>
 									{#if message.retryable && onRetryFailedMessage}
@@ -296,8 +277,18 @@
 											class="mt-2 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950/30"
 											onclick={() => onRetryFailedMessage?.(message.id)}
 										>
-											<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+											<svg
+												class="mr-2 h-4 w-4"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+												/>
 											</svg>
 											Retry
 										</Button>
@@ -306,8 +297,8 @@
 							</div>
 							{#if message.content}
 								<!-- Show partial content if any was generated before the error -->
-								<div class="border-t border-red-200 dark:border-red-800 pt-3 mt-3">
-									<p class="text-xs text-red-600 dark:text-red-400 mb-2">Partial response:</p>
+								<div class="mt-3 border-t border-red-200 pt-3 dark:border-red-800">
+									<p class="mb-2 text-xs text-red-600 dark:text-red-400">Partial response:</p>
 									<Markdown md={message.content} />
 								</div>
 							{/if}
@@ -322,7 +313,9 @@
 								/>
 							{:else}
 								<!-- All other messages (including User messages) use regular markdown -->
-								<div class="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words">
+								<div
+									class="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
+								>
 									<Markdown md={message.content} />
 								</div>
 							{/if}
@@ -334,41 +327,54 @@
 				{#if message.message_type === 'Assistant'}
 					{@const model = message.model_name || chat?.model_name || 'gemini-2.5-pro'}
 					{@const pricing = {
-						'gemini-2.5-flash': { input: 0.30, output: 2.50 },
-						'gemini-2.5-pro': { input: 1.25, output: 10.00 },
-						'gemini-2.5-flash-lite-preview': { input: 0.10, output: 0.40 }
-					}[model] || { input: 1.25, output: 10.00 }}
-					{@const inputCost = (message.prompt_tokens || 0) / 1_000_000 * pricing.input}
-					{@const outputCost = (message.completion_tokens || 0) / 1_000_000 * pricing.output}
+						'gemini-2.5-flash': { input: 0.3, output: 2.5 },
+						'gemini-2.5-pro': { input: 1.25, output: 10.0 },
+						'gemini-2.5-flash-lite-preview': { input: 0.1, output: 0.4 }
+					}[model] || { input: 1.25, output: 10.0 }}
+					{@const inputCost = ((message.prompt_tokens || 0) / 1_000_000) * pricing.input}
+					{@const outputCost = ((message.completion_tokens || 0) / 1_000_000) * pricing.output}
 					{@const totalCost = inputCost + outputCost}
-					{@const formatCost = (cost: number) => cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`}
+					{@const formatCost = (cost: number) =>
+						cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`}
 					{@const hasTokens = !!(message.prompt_tokens || message.completion_tokens)}
 					{@const isCompleted = !message.loading && !(message as any).isAnimating}
-					
+
 					<!-- Always render container, control visibility with opacity -->
-					<div 
-						class="absolute top-2 right-2 transition-opacity duration-200 {isCompleted && hasTokens ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'}"
-						title={isCompleted && hasTokens ? `Model: ${model}${'\n'}Input: ${message.prompt_tokens || 0} tokens (${formatCost(inputCost)})${'\n'}Output: ${message.completion_tokens || 0} tokens (${formatCost(outputCost)})${'\n'}Total cost: ${formatCost(totalCost)}` : (message.loading || (message as any).isAnimating) ? 'Generating...' : 'Tokens loading...'}
+					<div
+						class="absolute right-2 top-2 transition-opacity duration-200 {isCompleted && hasTokens
+							? 'opacity-0 group-hover:opacity-100'
+							: 'opacity-0'}"
+						title={isCompleted && hasTokens
+							? `Model: ${model}${'\n'}Input: ${message.prompt_tokens || 0} tokens (${formatCost(inputCost)})${'\n'}Output: ${message.completion_tokens || 0} tokens (${formatCost(outputCost)})${'\n'}Total cost: ${formatCost(totalCost)}`
+							: message.loading || (message as any).isAnimating
+								? 'Generating...'
+								: 'Tokens loading...'}
 					>
-						<div class="flex items-center gap-1 px-2 py-1 bg-background/90 backdrop-blur-sm border border-border rounded-md text-xs text-muted-foreground shadow-sm">
+						<div
+							class="flex items-center gap-1 rounded-md border border-border bg-background/90 px-2 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
+						>
 							{#if isCompleted && hasTokens}
 								{#if message.prompt_tokens && message.prompt_tokens > 0}
 									<span class="text-blue-600 dark:text-blue-400">
-										↑{message.prompt_tokens >= 1000 ? `${(message.prompt_tokens / 1000).toFixed(1)}k` : message.prompt_tokens}
+										↑{message.prompt_tokens >= 1000
+											? `${(message.prompt_tokens / 1000).toFixed(1)}k`
+											: message.prompt_tokens}
 									</span>
 								{/if}
 								{#if message.completion_tokens && message.completion_tokens > 0}
 									<span class="text-green-600 dark:text-green-400">
-										↓{message.completion_tokens >= 1000 ? `${(message.completion_tokens / 1000).toFixed(1)}k` : message.completion_tokens}
+										↓{message.completion_tokens >= 1000
+											? `${(message.completion_tokens / 1000).toFixed(1)}k`
+											: message.completion_tokens}
 									</span>
 								{/if}
-								<span class="text-amber-600 dark:text-amber-400 font-mono text-[10px]">
+								<span class="font-mono text-[10px] text-amber-600 dark:text-amber-400">
 									{formatCost(totalCost)}
 								</span>
 							{:else}
 								<!-- Placeholder content to maintain layout during loading/waiting -->
-								<span class="text-muted-foreground/30 text-[10px]">
-									{(message.loading || (message as any).isAnimating) ? '⋯' : '•••'}
+								<span class="text-[10px] text-muted-foreground/30">
+									{message.loading || (message as any).isAnimating ? '⋯' : '•••'}
 								</span>
 							{/if}
 						</div>
@@ -378,10 +384,12 @@
 				<!-- Modern message actions - always reserve space, show when ready -->
 				{#if !isEditing}
 					{@const isLoadingOrAnimating = message.loading || (message as any).isAnimating}
-					<div class="absolute bottom-2 right-2 transition-opacity duration-200"
-						 class:opacity-0={isLoadingOrAnimating || readonly}
-						 class:group-hover:opacity-100={!isLoadingOrAnimating && !readonly}
-						 class:pointer-events-none={isLoadingOrAnimating || readonly}>
+					<div
+						class="absolute bottom-2 right-2 transition-opacity duration-200"
+						class:opacity-0={isLoadingOrAnimating || readonly}
+						class:group-hover:opacity-100={!isLoadingOrAnimating && !readonly}
+						class:pointer-events-none={isLoadingOrAnimating || readonly}
+					>
 						<MessageActions
 							{message}
 							{readonly}
@@ -403,7 +411,26 @@
 					</div>
 				{/if}
 			</div>
-
 		</div>
 	</div>
 </div>
+
+<style>
+	.loading-spinner {
+		width: 16px;
+		height: 16px;
+		border: 2px solid transparent;
+		border-top: 2px solid currentColor;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		0% {
+			transform: rotate(0deg);
+		}
+		100% {
+			transform: rotate(360deg);
+		}
+	}
+</style>

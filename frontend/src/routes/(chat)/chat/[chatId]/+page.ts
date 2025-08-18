@@ -31,11 +31,11 @@ export async function load({ params: { chatId }, parent }) {
 			console.error('Failed to fetch messages:', messagesResult.error);
 			error(500, 'Failed to load chat messages');
 		}
-		
+
 		// Handle both old array format and new paginated format
 		let messagesResponseJson: Message[];
 		let initialCursor: string | null = null;
-		
+
 		if (Array.isArray(messagesResult.value)) {
 			// Old format: array of messages
 			messagesResponseJson = messagesResult.value;
@@ -47,7 +47,7 @@ export async function load({ params: { chatId }, parent }) {
 			console.error('Unexpected response format from getMessagesByChatId');
 			error(500, 'Invalid response format from server');
 		}
-		
+
 		const messages: ScribeChatMessage[] = messagesResponseJson.map(
 			(rawMsg): ScribeChatMessage => ({
 				id: rawMsg.id, // For existing messages, use backend ID as main ID
@@ -55,10 +55,16 @@ export async function load({ params: { chatId }, parent }) {
 				session_id: rawMsg.session_id,
 				message_type: rawMsg.message_type,
 				content:
-					rawMsg.parts && rawMsg.parts.length > 0 && 'text' in rawMsg.parts[0] && typeof rawMsg.parts[0].text === 'string'
+					rawMsg.parts &&
+					rawMsg.parts.length > 0 &&
+					'text' in rawMsg.parts[0] &&
+					typeof rawMsg.parts[0].text === 'string'
 						? rawMsg.parts[0].text
 						: '',
-				created_at: typeof rawMsg.created_at === 'string' ? rawMsg.created_at : rawMsg.created_at.toISOString(),
+				created_at:
+					typeof rawMsg.created_at === 'string'
+						? rawMsg.created_at
+						: rawMsg.created_at.toISOString(),
 				user_id: '', // ScribeChatMessage doesn't need user_id in the same way
 				loading: false, // Messages from API are never loading
 				raw_prompt: rawMsg.raw_prompt,

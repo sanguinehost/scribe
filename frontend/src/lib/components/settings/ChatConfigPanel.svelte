@@ -10,7 +10,11 @@
 	import { Badge } from '../ui/badge';
 	import { Checkbox } from '../ui/checkbox';
 	import { toast } from 'svelte-sonner';
-	import type { ScribeChatSession, EnhancedChatSessionLorebookAssociation, PlayerChronicleWithCounts } from '$lib/types';
+	import type {
+		ScribeChatSession,
+		EnhancedChatSessionLorebookAssociation,
+		PlayerChronicleWithCounts
+	} from '$lib/types';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { apiClient } from '$lib/api';
 	import type {
@@ -115,11 +119,17 @@
 			console.log('[Chat Config] New chronicle created, refreshing chronicles');
 			await loadChronicles();
 		};
-		
-		window.addEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
-		
+
+		window.addEventListener(
+			'chronicle-created',
+			handleChronicleCreated as unknown as EventListener
+		);
+
 		return () => {
-			window.removeEventListener('chronicle-created', handleChronicleCreated as unknown as EventListener);
+			window.removeEventListener(
+				'chronicle-created',
+				handleChronicleCreated as unknown as EventListener
+			);
 		};
 	});
 
@@ -238,7 +248,7 @@
 			console.log('Throttling global settings load request');
 			return;
 		}
-		
+
 		lastGlobalSettingsLoad = now;
 		isLoading = true;
 		try {
@@ -248,7 +258,10 @@
 			} else {
 				console.error('Failed to load global user settings:', userSettingsResult.error);
 				// Don't show error toast if rate limited, as it's expected
-				if ('statusCode' in userSettingsResult.error && userSettingsResult.error.statusCode !== 429) {
+				if (
+					'statusCode' in userSettingsResult.error &&
+					userSettingsResult.error.statusCode !== 429
+				) {
 					toast.error('Failed to load global settings');
 				} else if (!('statusCode' in userSettingsResult.error)) {
 					// Show error for non-response errors (client/network errors)
@@ -664,18 +677,24 @@
 										{/each}
 									</select>
 									<p class="text-xs text-muted-foreground">
-										Link this chat to a chronicle to organize related conversations and make them available for RAG queries.
+										Link this chat to a chronicle to organize related conversations and make them
+										available for RAG queries.
 									</p>
 									{#if currentChronicleId}
-										{@const linkedChronicle = availableChronicles.find(c => c.id === currentChronicleId)}
+										{@const linkedChronicle = availableChronicles.find(
+											(c) => c.id === currentChronicleId
+										)}
 										{#if linkedChronicle}
 											<div class="rounded-md bg-muted p-3">
-												<div class="font-medium text-sm">{linkedChronicle.name}</div>
+												<div class="text-sm font-medium">{linkedChronicle.name}</div>
 												{#if linkedChronicle.description}
-													<div class="text-xs text-muted-foreground mt-1">{linkedChronicle.description}</div>
+													<div class="mt-1 text-xs text-muted-foreground">
+														{linkedChronicle.description}
+													</div>
 												{/if}
-												<div class="text-xs text-muted-foreground mt-2">
-													{linkedChronicle.event_count} events • {linkedChronicle.chat_session_count} chats
+												<div class="mt-2 text-xs text-muted-foreground">
+													{linkedChronicle.event_count} events • {linkedChronicle.chat_session_count}
+													chats
 												</div>
 											</div>
 										{/if}

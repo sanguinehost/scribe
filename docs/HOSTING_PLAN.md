@@ -11,7 +11,6 @@ The hosting strategy is designed to be scalable, secure, and cost-effective, par
     *   **API:** Rust application running on AWS Fargate.
     *   **Relational Database:** Amazon RDS for PostgreSQL.
     *   **Vector Database:** Qdrant running on AWS Fargate with Amazon EFS for persistence.
-    *   **Caching:** Amazon ElastiCache for Redis.
 *   **External Integrations:** Stripe (for payments) and an OAuth2 provider.
 
 ## 2. Architecture Diagram
@@ -46,7 +45,6 @@ graph TD
             end
 
             RDS_Postgres[RDS: PostgreSQL]
-            ElastiCache_Redis[ElastiCache: Redis]
             EFS_Qdrant[EFS for Qdrant Data]
         end
 
@@ -72,7 +70,6 @@ graph TD
 
     Fargate_Task_BE1 -- interacts --> RDS_Postgres
     Fargate_Task_BE1 -- interacts --> Fargate_Task_Q1
-    Fargate_Task_BE1 -- interacts --> ElastiCache_Redis
     Fargate_Task_BE1 -- HTTPS via NAT_GW --> Stripe
     Fargate_Task_BE1 -- HTTPS via NAT_GW --> OAuth_Provider
 
@@ -121,15 +118,6 @@ graph TD
     *   *Consideration:* Monitor EFS performance. If bottlenecks arise for Qdrant's I/O patterns, migrating Qdrant to EC2 with EBS volumes is a fallback.
 *   **Scalability:** Start with a single task; scale as needed.
 
-### 3.5. Caching (Amazon ElastiCache)
-*   **Service:** Amazon ElastiCache for Redis.
-*   **Instance Sizing:** Start small (e.g., `cache.t4g.micro` or `cache.t3.micro`).
-*   **Use Cases:**
-    *   Session caching (for `axum-login`).
-    *   API response caching.
-    *   Caching results from Qdrant.
-    *   Application-level caching of pre-computed data or aggregations.
-*   **Security:** Encryption at rest and in transit. Network access restricted.
 
 ### 3.6. Networking (AWS VPC)
 *   **VPC:** Custom Virtual Private Cloud.
@@ -174,7 +162,6 @@ graph TD
 
 ### Phase 2: Scaling, Caching & Operational Maturity
 *   **Goal:** Enhance performance, scalability, and operational efficiency.
-*   **Caching:** Integrate Amazon ElastiCache for Redis.
 *   **Autoscaling:** Configure autoscaling for Fargate services (Backend & Qdrant) based on CloudWatch metrics.
 *   **Database Scaling:** Monitor RDS performance; consider read replicas if DB load increases significantly.
 *   **CI/CD Backend:** Implement robust GitHub Actions pipeline for automated build, test, and deployment of backend services.

@@ -66,22 +66,30 @@
 	<div class="flex w-full max-w-md flex-col gap-12 overflow-hidden rounded-2xl">
 		<div class="flex flex-col items-center justify-center gap-4 px-4 text-center sm:px-16">
 			<div class="flex flex-col items-center gap-3">
-				<div class="h-12 w-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+				<div
+					class="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500"
+				>
 					<svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+						></path>
 					</svg>
 				</div>
-				<h1 class="text-2xl font-bold dark:text-zinc-50 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+				<h1
+					class="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-2xl font-bold text-transparent dark:text-zinc-50"
+				>
 					Sanguine Scribe
 				</h1>
 			</div>
 			<div class="flex flex-col gap-2">
 				<h3 class="text-xl font-semibold dark:text-zinc-50">{signInSignUp}</h3>
 				<p class="text-sm text-gray-500 dark:text-zinc-400">
-					{authType === 'register' 
-						? 'Create your account to start writing with AI' 
-						: 'Welcome back! Sign in to continue your creative journey'
-					}
+					{authType === 'register'
+						? 'Create your account to start writing with AI'
+						: 'Welcome back! Sign in to continue your creative journey'}
 				</p>
 			</div>
 		</div>
