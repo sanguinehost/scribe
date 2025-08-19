@@ -219,17 +219,34 @@ impl Config {
     /// Returns `anyhow::Error` if environment variable parsing fails,
     /// such as when required variables are missing or have invalid formats.
     pub fn load() -> Result<Self, anyhow::Error> {
-        // In a real scenario, load from config file (e.g., config.toml)
-        // or environment variables using libraries like `config` or `dotenvy` + `envy`.
-        // For now, return a default placeholder.
-        // Ok(Config { // Renamed
-        //     placeholder: "default_value".to_string(),
-        // })
-        // Example loading with envy (requires adding envy crate)
-        // envy::from_env::<Config>().map_err(anyhow::Error::from)
-        // Ok(Config::default()) // Return default for now
         // Load config from environment variables using envy
-        envy::from_env::<Self>().map_err(anyhow::Error::from)
+        let mut config = envy::from_env::<Self>().map_err(anyhow::Error::from)?;
+        
+        // Apply environment-specific defaults after loading
+        config.apply_environment_defaults();
+        
+        Ok(config)
+    }
+    
+    /// Apply environment-specific defaults based on the detected or configured environment
+    pub fn apply_environment_defaults(&mut self) {
+        let environment = self.environment.as_deref().unwrap_or("local");
+        
+        // Set environment-specific defaults for Qdrant URL if not already set
+        if self.qdrant_url.is_none() {
+            self.qdrant_url = Some(match environment {
+                "staging" => "https://qdrant.staging.local:6334".to_string(),
+                "production" => "https://qdrant.production.local:6334".to_string(), 
+                "container" => "https://qdrant:6334".to_string(),
+                "local" | _ => "https://localhost:6334".to_string(),
+            });
+        }
+        
+        // Set environment-specific cookie security defaults
+        if environment == "local" && self.session_cookie_secure {
+            // For local development, default to non-secure cookies for easier testing
+            self.session_cookie_secure = false;
+        }
     }
 }
 

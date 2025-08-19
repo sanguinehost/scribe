@@ -521,49 +521,71 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
     let addr_str = format!("0.0.0.0:{port}");
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 
-    // Check if we're in a cloud environment (staging/production)
-    let environment = config.environment.as_deref().unwrap_or("development");
+    // Load TLS configuration based on environment
+    let environment = config.environment.as_deref().unwrap_or("local");
+    
+    let tls_config = match environment {
+        "staging" | "production" => {
+            // For AWS cloud environments, load certificates from environment variables
+            tracing::info!(
+                "AWS environment detected ({}), loading certificates from Secrets Manager",
+                environment
+            );
+            load_cloud_certificate()
+                .await
+                .context("Failed to load certificate for AWS cloud deployment")?
+        },
+        "container" => {
+            // For containerized development, try environment variables first, then files
+            tracing::info!("Container environment detected, loading certificates");
+            
+            // Try loading from environment variables first (preferred for containers)
+            if let (Ok(cert_pem), Ok(key_pem)) = (env::var("TLS_CERT_PEM"), env::var("TLS_KEY_PEM")) {
+                tracing::info!("Loading TLS certificates from environment variables for container");
+                RustlsConfig::from_pem(cert_pem.into_bytes(), key_pem.into_bytes())
+                    .await
+                    .context("Failed to create RustlsConfig from container environment variables")?
+            } else {
+                // Fallback to mounted certificate files in container
+                tracing::info!("Loading TLS certificates from mounted files in container");
+                let cert_path = PathBuf::from("/app/certs/cert.pem");
+                let key_path = PathBuf::from("/app/certs/key.pem");
+                
+                RustlsConfig::from_pem_file(cert_path, key_path)
+                    .await
+                    .context("Failed to load TLS certificates from container files. Ensure certificates are mounted to /app/certs/")?
+            }
+        },
+        "local" | _ => {
+            // For local development, use certificates from .certs directory
+            tracing::info!("Local environment detected, loading certificates from .certs directory");
+            
+            let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let project_root = manifest_dir
+                .parent()
+                .context("Failed to get project root from manifest dir")?;
 
-    if environment == "staging" || environment == "production" {
-        // For cloud environments, load certificates for end-to-end encryption
-        tracing::info!(
-            "Cloud environment detected ({}), loading certificates for end-to-end encryption",
-            environment
-        );
+            let cert_path = project_root.join(".certs/cert.pem");
+            let key_path = project_root.join(".certs/key.pem");
 
-        let tls_config = load_cloud_certificate()
-            .await
-            .context("Failed to load certificate for cloud deployment")?;
+            tracing::info!(
+                cert_path = %cert_path.display(), 
+                key_path = %key_path.display(), 
+                "Loading TLS certificates for local development"
+            );
 
-        tracing::info!("Starting HTTPS server with TLS certificates on {}", addr);
+            RustlsConfig::from_pem_file(cert_path, key_path)
+                .await
+                .context("Failed to load TLS certificate/key for local development. Run 'scripts/init-certs.sh local init' to generate certificates.")?
+        }
+    };
 
-        axum_server::bind_rustls(addr, tls_config)
-            .serve(app.into_make_service())
-            .await
-            .context("HTTPS server failed to start")?;
-    } else {
-        // For local development, use certificates from .certs directory
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let project_root = manifest_dir
-            .parent()
-            .context("Failed to get project root from manifest dir")?;
+    tracing::info!("Starting HTTPS server with TLS certificates on {} (environment: {})", addr, environment);
 
-        let cert_path = project_root.join(".certs/cert.pem");
-        let key_path = project_root.join(".certs/key.pem");
-
-        tracing::info!(cert_path = %cert_path.display(), key_path = %key_path.display(), "Loading TLS certificates for local development");
-
-        let tls_config = RustlsConfig::from_pem_file(cert_path, key_path)
-            .await
-            .context("Failed to load TLS certificate/key for local development. Run 'scripts/dev_certs.sh' to generate certificates.")?;
-
-        tracing::info!("Starting HTTPS server with local certificates on {}", addr);
-
-        axum_server::bind_rustls(addr, tls_config)
-            .serve(app.into_make_service())
-            .await
-            .context("HTTPS server failed to start")?;
-    }
+    axum_server::bind_rustls(addr, tls_config)
+        .serve(app.into_make_service())
+        .await
+        .context("HTTPS server failed to start")?;
 
     Ok(())
 }

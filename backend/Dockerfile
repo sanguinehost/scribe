@@ -57,8 +57,9 @@ COPY --from=builder /app/migrations /app/migrations
 # Copy resources (tokenizers)
 COPY --from=builder /app/resources /app/resources
 
-# Change ownership to app user
-RUN chown -R app:app /app
+# Create certificate directory with proper permissions
+RUN mkdir -p /app/certs && \
+    chown -R app:app /app
 
 # Switch to app user
 USER app
@@ -66,13 +67,18 @@ USER app
 # Expose port
 EXPOSE 8080
 
-# Set environment variables
+# Set environment variables for container deployment
 ENV RUST_LOG=info
 ENV RUST_BACKTRACE=1
+ENV ENVIRONMENT=container
 
-# Health check
+# TLS certificates can be provided via:
+# 1. Environment variables: TLS_CERT_PEM and TLS_KEY_PEM (preferred)
+# 2. Mounted files: /app/certs/cert.pem and /app/certs/key.pem
+
+# Health check (use HTTP for internal health, HTTPS will be available on port 8080)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f -k https://localhost:8080/health || curl -f http://localhost:8080/health || exit 1
 
 # Run the binary
 CMD ["./backend"]

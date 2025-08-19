@@ -1,8 +1,6 @@
-# DEPRECATED: Use podman-compose.local.yml instead
-# This file is kept for backward compatibility
-# 
-# For local development (backend with cargo): use podman-compose.local.yml
-# For container development (all containerized): use podman-compose.container.yml
+# Local development environment overrides for Podman Compose  
+# For running backend locally with cargo while using containerized postgres/qdrant
+# Use with: podman-compose -f podman-compose.yml -f podman-compose.local.yml up postgres qdrant
 
 version: '3.8'
 
