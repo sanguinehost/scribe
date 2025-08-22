@@ -1470,7 +1470,10 @@ pub async fn delete_message_handler(
                 .filter(chat_messages::id.eq(id))
                 .select(Message::as_select())
                 .first::<Message>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                .map_err(|e| match e {
+                    diesel::result::Error::NotFound => AppError::NotFound("Message not found".to_string()),
+                    _ => AppError::DatabaseQueryError(e.to_string()),
+                })
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
