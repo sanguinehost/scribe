@@ -5,13 +5,35 @@ import path from 'path';
 
 // Get the directory of the current file (vite.config.ts)
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
-// Construct absolute paths to the certs in the parent directory
-const keyPath = path.resolve(__dirname, '../.certs/frontend-key.pem');
-const certPath = path.resolve(__dirname, '../.certs/cert.pem');
 
-// Check if we're in a development environment and certs exist
+// Check if we're in a development environment
 const isDev = process.env.NODE_ENV !== 'production';
-const certsExist = isDev && fs.existsSync(keyPath) && fs.existsSync(certPath);
+
+// Try .certs-dev/ first (for local development), then fall back to .certs/ (for containers)
+const devKeyPath = path.resolve(__dirname, '../.certs-dev/key.pem');
+const devCertPath = path.resolve(__dirname, '../.certs-dev/cert.pem');
+const containerKeyPath = path.resolve(__dirname, '../.certs/key.pem');
+const containerCertPath = path.resolve(__dirname, '../.certs/cert.pem');
+
+// Check which certificate directory exists and is accessible
+let keyPath: string;
+let certPath: string;
+let certsExist = false;
+
+if (isDev) {
+	// Try .certs-dev/ first (local development)
+	if (fs.existsSync(devKeyPath) && fs.existsSync(devCertPath)) {
+		keyPath = devKeyPath;
+		certPath = devCertPath;
+		certsExist = true;
+	}
+	// Fall back to .certs/ (container development)
+	else if (fs.existsSync(containerKeyPath) && fs.existsSync(containerCertPath)) {
+		keyPath = containerKeyPath;
+		certPath = containerCertPath;
+		certsExist = true;
+	}
+}
 
 export default defineConfig({
 	plugins: [sveltekit()],
@@ -19,8 +41,8 @@ export default defineConfig({
 		host: true, // Listen on all network interfaces
 		...(certsExist && {
 			https: {
-				key: fs.readFileSync(keyPath),
-				cert: fs.readFileSync(certPath)
+				key: fs.readFileSync(keyPath!),
+				cert: fs.readFileSync(certPath!)
 			}
 		}),
 		proxy: {
