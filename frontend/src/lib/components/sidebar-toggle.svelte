@@ -1,5 +1,5 @@
 <script>
-	import SidebarLeftIcon from './icons/sidebar-left.svelte';
+	import ChevronRightIcon from './icons/chevron-right.svelte';
 	import { Button } from './ui/button';
 	import { useSidebar } from './ui/sidebar';
 	import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from './ui/tooltip';
@@ -18,10 +18,11 @@
 						onclick={() => {
 							sidebar.toggle();
 						}}
-						variant="outline"
-						class="h-fit px-2"
+						variant="ghost"
+						size="icon"
+						class="h-8 w-8"
 					>
-						<SidebarLeftIcon />
+						<ChevronRightIcon size={16} />
 					</Button>
 				{/snippet}
 			</TooltipTrigger>

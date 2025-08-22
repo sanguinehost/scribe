@@ -9,7 +9,7 @@
 		SidebarMenu
 	} from './ui/sidebar';
 	import ChevronLeft from './icons/chevron-left.svelte';
-	import { Users, UserCircle, BookOpen, ScrollText } from 'lucide-svelte';
+	import { Users, UserCircle, BookOpen, ScrollText, Sun, Moon } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -27,8 +27,10 @@
 	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
 	import { SidebarStore } from '$lib/stores/sidebar.svelte';
 	import { getCurrentUser, getIsAuthenticated } from '$lib/auth.svelte';
+	import { getTheme } from '@sejohnson/svelte-themes';
 
 	const context = useSidebar();
+	const theme = getTheme();
 	const settingsStore = SettingsStore.fromContext(); // Initialize SettingsStore
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
@@ -141,6 +143,10 @@
 		// Don't clear selections when switching tabs - let users browse sidebar
 		// while maintaining their current view (character overview, chat, etc.)
 		// This prevents unnecessary navigation and content flickering
+	}
+
+	function toggleTheme() {
+		theme.selectedTheme = theme.resolvedTheme === 'light' ? 'dark' : 'light';
 	}
 
 	async function openSettings() {
@@ -412,10 +418,24 @@
 		</div>
 	</SidebarContent>
 	<SidebarFooter class="flex flex-col gap-2">
-		<Button variant="ghost" class="w-full justify-start" onclick={openSettings}>
-			<SettingsIcon size={16} class="mr-2" />
-			Settings
-		</Button>
+		<div class="flex gap-2">
+			<Button variant="ghost" class="flex-1 justify-start" onclick={openSettings}>
+				<SettingsIcon size={16} class="mr-2" />
+				Settings
+			</Button>
+			<Button
+				variant="ghost"
+				size="icon"
+				onclick={toggleTheme}
+				title={theme.resolvedTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+			>
+				{#if theme.resolvedTheme === 'light'}
+					<Moon size={16} />
+				{:else}
+					<Sun size={16} />
+				{/if}
+			</Button>
+		</div>
 		{#if getIsAuthenticated() && getCurrentUser()}
 			<SidebarUserNav />
 		{/if}

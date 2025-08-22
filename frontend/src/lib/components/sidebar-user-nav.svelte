@@ -9,12 +9,10 @@
 		DropdownMenuTrigger
 	} from './ui/dropdown-menu';
 	import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from './ui/sidebar';
-	import { getTheme } from '@sejohnson/svelte-themes';
 	import { getCurrentUser, getIsAuthenticated, getHasConnectionError } from '$lib/auth.svelte';
 	import { apiClient } from '$lib/api';
 	import { performLogout } from '$lib/auth.svelte';
 	import { goto } from '$app/navigation';
-	const theme = getTheme();
 
 	async function handleSignOut() {
 		// Use comprehensive logout that clears both state and cookies immediately
@@ -69,14 +67,6 @@
 				{/if}
 				<!-- Show controls if we have user data OR connection issues (user might want to clear session) -->
 				{#if getCurrentUser() || getHasConnectionError()}
-					<DropdownMenuItem
-						class="cursor-pointer"
-						onSelect={() =>
-							(theme.selectedTheme = theme.resolvedTheme === 'light' ? 'dark' : 'light')}
-					>
-						Toggle {theme.resolvedTheme === 'light' ? 'dark' : 'light'} mode
-					</DropdownMenuItem>
-					<DropdownMenuSeparator />
 					<DropdownMenuItem class="cursor-pointer" onSelect={handleSignOut}>
 						{#if getHasConnectionError()}
 							Clear session & sign out
