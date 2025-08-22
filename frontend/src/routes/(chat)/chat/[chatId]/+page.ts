@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { apiClient } from '$lib/api';
 import type {
 	ScribeChatMessage,
@@ -17,8 +17,14 @@ export async function load({ params: { chatId }, parent }) {
 		// Fetch chat session details
 		const chatResult = await apiClient.getChatById(chatId);
 		if (chatResult.isErr()) {
-			if ('statusCode' in chatResult.error && chatResult.error.statusCode === 404) {
-				error(404, 'Chat not found');
+			if ('statusCode' in chatResult.error) {
+				if (chatResult.error.statusCode === 404) {
+					error(404, 'Chat not found');
+				}
+				if (chatResult.error.statusCode === 401) {
+					// Authentication failed (likely DEK missing after server restart)
+					redirect(307, '/signin');
+				}
 			}
 			console.error('Failed to fetch chat:', chatResult.error);
 			error(500, 'Failed to load chat details');
@@ -28,6 +34,10 @@ export async function load({ params: { chatId }, parent }) {
 		// Fetch initial batch of chat messages (first page)
 		const messagesResult = await apiClient.getMessagesByChatId(chatId, { limit: 20 });
 		if (messagesResult.isErr()) {
+			if ('statusCode' in messagesResult.error && messagesResult.error.statusCode === 401) {
+				// Authentication failed (likely DEK missing after server restart)
+				redirect(307, '/signin');
+			}
 			console.error('Failed to fetch messages:', messagesResult.error);
 			error(500, 'Failed to load chat messages');
 		}

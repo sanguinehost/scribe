@@ -44,6 +44,9 @@ pub enum AppError {
     #[error("Unauthorized: {0}")]
     Unauthorized(String), // General unauthorized access
 
+    #[error("Data Encryption Key not available. Please sign in again.")]
+    DekMissing, // Specific error for missing DEK after server restart
+
     #[error("Forbidden: {0}")]
     Forbidden(String), // Access denied despite authentication
 
@@ -331,6 +334,7 @@ impl AppError {
                 | Self::InvalidInput(_)
                 | Self::InvalidCredentials
                 | Self::Unauthorized(_)
+                | Self::DekMissing
                 | Self::Forbidden(_)
                 | Self::NotFound(_)
                 | Self::UserNotFound
@@ -378,6 +382,7 @@ impl AppError {
                 | Self::InvalidInput(_)
                 | Self::InvalidCredentials
                 | Self::Unauthorized(_)
+                | Self::DekMissing
                 | Self::Forbidden(_)
                 | Self::NotFound(_)
                 | Self::UserNotFound
@@ -402,6 +407,10 @@ impl AppError {
                 (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
             }
             Self::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
+            Self::DekMissing => (
+                StatusCode::UNAUTHORIZED, 
+                "Data Encryption Key not available. Please sign in again.".to_string()
+            ),
             Self::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             Self::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()),
@@ -1496,5 +1505,14 @@ mod tests {
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
         assert_eq!(body["error"], "A session operation failed.");
+    }
+
+    #[tokio::test]
+    async fn test_dek_missing_error_response() {
+        let app_error = AppError::DekMissing;
+        let response = app_error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = get_body_json(response).await;
+        assert_eq!(body["error"], "Data Encryption Key not available. Please sign in again.");
     }
 }

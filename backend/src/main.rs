@@ -557,16 +557,21 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
             }
         },
         "local" | _ => {
-            // For local development, use certificates from .certs directory
-            tracing::info!("Local environment detected, loading certificates from .certs directory");
-            
-            let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            let project_root = manifest_dir
-                .parent()
-                .context("Failed to get project root from manifest dir")?;
+            // For local development, support environment variable override for certificate paths
+            let (cert_path, key_path) = if let (Ok(cert_env), Ok(key_env)) = (env::var("TLS_CERT_PATH"), env::var("TLS_KEY_PATH")) {
+                tracing::info!("Using TLS certificate paths from environment variables");
+                (PathBuf::from(cert_env), PathBuf::from(key_env))
+            } else {
+                // Default to .certs directory
+                tracing::info!("Local environment detected, loading certificates from .certs directory");
+                
+                let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                let project_root = manifest_dir
+                    .parent()
+                    .context("Failed to get project root from manifest dir")?;
 
-            let cert_path = project_root.join(".certs/cert.pem");
-            let key_path = project_root.join(".certs/key.pem");
+                (project_root.join(".certs/cert.pem"), project_root.join(".certs/key.pem"))
+            };
 
             tracing::info!(
                 cert_path = %cert_path.display(), 
@@ -576,7 +581,7 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
 
             RustlsConfig::from_pem_file(cert_path, key_path)
                 .await
-                .context("Failed to load TLS certificate/key for local development. Run 'scripts/init-certs.sh local init' to generate certificates.")?
+                .context("Failed to load TLS certificate/key for local development. Run 'scripts/dev-certs-local.sh' or 'scripts/init-certs.sh local init' to generate certificates.")?
         }
     };
 
