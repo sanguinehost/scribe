@@ -139,7 +139,8 @@ class ApiClient {
 					let isDekMissingError = false;
 					try {
 						const errorResponse = await response.clone().json();
-						isDekMissingError = errorResponse.error && 
+						isDekMissingError =
+							errorResponse.error &&
 							errorResponse.error.includes('Data Encryption Key not available');
 					} catch {
 						// If we can't parse the error, fall back to general handling
