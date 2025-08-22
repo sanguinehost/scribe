@@ -1,36 +1,47 @@
+# Docker Compose compatibility layer for Sanguine Scribe
+# This file provides Docker compatibility while directing users to modern Podman workflow
+#
+# Modern approaches (recommended):
+#   1. Development: ./scripts/podman-dev.sh
+#   2. Systemd services: ./scripts/quadlet-dev.sh  
+#   3. Docker compatibility: Use this file
+#
+# For production and advanced setups, see: infrastructure/containers/compose/
+
+version: '3.8'
+
 services:
   postgres:
-    image: postgres:16 # Use a specific version for stability
+    image: postgres:16
     container_name: scribe_postgres
     environment:
       POSTGRES_USER: devuser
-      POSTGRES_PASSWORD: devpassword # CHANGE THIS in a real production env!
+      POSTGRES_PASSWORD: devpassword
       POSTGRES_DB: sanguine_scribe_dev
     ports:
-      - "5432:5432" # Map host port 5432 to container port 5432
+      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data # Persistent volume for data
-      - ./postgres-custom.conf:/etc/postgresql/postgresql.conf
-    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/containers/configs/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./.certs:/var/lib/postgresql/certs:ro
+      - ./.certs/cert.pem:/var/lib/postgresql/ca.crt:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c ssl=on -c ssl_cert_file=/var/lib/postgresql/certs/cert.pem -c ssl_key_file=/var/lib/postgresql/certs/key.pem
     restart: unless-stopped
     shm_size: 256m
 
   qdrant:
-    # image: qdrant/qdrant:latest
     image: qdrant/qdrant:v1.14.0
     container_name: scribe_qdrant
     ports:
-      - "6333:6333" # HTTP/HTTPS REST API port
-      - "6334:6334" # gRPC port
+      - "6333:6333"
+      - "6334:6334"
     environment:
       QDRANT__SERVICE__ENABLE_TLS: "true"
       QDRANT__TLS__CERT: "/qdrant_certs/cert.pem"
       QDRANT__TLS__KEY: "/qdrant_certs/key.pem"
-      # Optional: Add API key for development if needed
-      # QDRANT__SERVICE__API_KEY: your-dev-api-key
     volumes:
-      - qdrant_data:/qdrant/storage # Persistent volume for data
-      - ./.certs:/qdrant_certs:ro # Mount host .certs dir for TLS
+      - qdrant_data:/qdrant/storage
+      - ./.certs:/qdrant_certs:ro
     restart: unless-stopped
     ulimits:
       nofile:
@@ -39,4 +50,4 @@ services:
 
 volumes:
   postgres_data:
-  qdrant_data: 
+  qdrant_data:

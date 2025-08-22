@@ -85,9 +85,7 @@ where
                     "SessionDek extractor: DEK not found in user object. User may need to log in again."
                 );
 
-                Err(AppError::Unauthorized(
-                    "DEK not found. Please log in again.".to_string(),
-                ))
+                Err(AppError::DekMissing)
             },
             |dek_wrapper| {
                 tracing::warn!(target: "auth_debug", "SessionDek: Found DEK in user object for user_id: {}", user_id);

@@ -135,11 +135,27 @@ class ApiClient {
 			if (!response.ok) {
 				// Handle 401 Unauthorized specifically
 				if (response.status === 401) {
+					// Check if this is a DEK missing error (specific message indicating server restart)
+					let isDekMissingError = false;
+					try {
+						const errorResponse = await response.clone().json();
+						isDekMissingError = errorResponse.error && 
+							errorResponse.error.includes('Data Encryption Key not available');
+					} catch {
+						// If we can't parse the error, fall back to general handling
+					}
+
 					// Only update auth store and redirect if we're in the browser
 					if (browser) {
-						console.log(
-							`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Session expired, performing comprehensive logout.`
-						);
+						if (isDekMissingError) {
+							console.log(
+								`[${new Date().toISOString()}] ApiClient.fetch: 401 DEK Missing. Server likely restarted, performing comprehensive logout.`
+							);
+						} else {
+							console.log(
+								`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Session expired, performing comprehensive logout.`
+							);
+						}
 						// Use comprehensive logout that clears both state and cookies
 						await performLogout('expired', true);
 					} else {

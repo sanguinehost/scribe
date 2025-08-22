@@ -3,6 +3,10 @@
 .DS_Store
 *.log
 
+# TLS Certificates
+.certs-dev/
+# Note: .certs/ is gitignored for container use, .certs-dev/ is local dev only
+
 # Rust / Cargo
 **/target/
 Cargo.lock # Typically included, but can be excluded in libraries if needed
