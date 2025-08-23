@@ -3,10 +3,11 @@
 # Utility script for managing local development TLS certificates using mkcert
 
 COMMAND=$1
-PROJECT_ROOT="$(dirname "$0")/.."
+PROJECT_ROOT="$(dirname "$0")/../.."
 CERT_DIR="$PROJECT_ROOT/.certs"
 KEY_FILE="$CERT_DIR/key.pem"
 CERT_FILE="$CERT_DIR/cert.pem"
+CA_FILE="$CERT_DIR/ca.pem"
 
 # Function to print usage
 usage() {
@@ -41,16 +42,30 @@ case "$COMMAND" in
 
     echo "Generating certificate and key files in $CERT_DIR..."
     mkdir -p "$CERT_DIR"
-    if ! mkcert -key-file "$KEY_FILE" -cert-file "$CERT_FILE" localhost 127.0.0.1 ::1; then
+    if ! mkcert -key-file "$KEY_FILE" -cert-file "$CERT_FILE" localhost 127.0.0.1 ::1 qdrant postgres backend; then
         echo "Error: Failed to generate certificates with mkcert." >&2
         # Clean up potentially partially created files
         rm -f "$KEY_FILE" "$CERT_FILE"
         exit 1
     fi
 
+    # Copy the mkcert CA certificate for container/deployment use
+    echo "Copying mkcert CA certificate..."
+    CA_ROOT="$(mkcert -CAROOT)"
+    CA_CERT_SOURCE="$CA_ROOT/rootCA.pem"
+    
+    if [ -f "$CA_CERT_SOURCE" ]; then
+        cp "$CA_CERT_SOURCE" "$CA_FILE"
+        echo "mkcert CA certificate copied to $CA_FILE"
+    else
+        echo "Warning: mkcert CA certificate not found at $CA_CERT_SOURCE" >&2
+        echo "Container deployments may have trust issues" >&2
+    fi
+
     echo "Successfully generated certificate files:"
     echo "  Key file : $KEY_FILE"
     echo "  Cert file: $CERT_FILE"
+    echo "  CA file  : $CA_FILE"
     echo ""
     echo "Configure your servers (Vite, Axum) to use these files for HTTPS."
     ;;
@@ -61,6 +76,11 @@ case "$COMMAND" in
         echo "Certificate files found:"
         echo "  Key file : $KEY_FILE"
         echo "  Cert file: $CERT_FILE"
+        if [ -f "$CA_FILE" ]; then
+            echo "  CA file  : $CA_FILE"
+        else
+            echo "  CA file  : Missing (run generate to create)"
+        fi
         # Optionally add openssl check if available
         if command -v openssl &> /dev/null; then
             echo "  Subject   : $(openssl x509 -in "$CERT_FILE" -noout -subject -nameopt RFC2253 | sed 's/subject=//')"

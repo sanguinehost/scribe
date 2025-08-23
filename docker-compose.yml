@@ -24,7 +24,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/containers/configs/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
       - ./.certs:/var/lib/postgresql/certs:ro
-      - ./.certs/cert.pem:/var/lib/postgresql/ca.crt:ro
     command: postgres -c config_file=/etc/postgresql/postgresql.conf -c ssl=on -c ssl_cert_file=/var/lib/postgresql/certs/cert.pem -c ssl_key_file=/var/lib/postgresql/certs/key.pem
     restart: unless-stopped
     shm_size: 256m

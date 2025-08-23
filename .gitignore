@@ -44,14 +44,12 @@ tarpaulin-report.json
 .claude
 CLAUDE.md
 
-# Certificates
+# Certificates (all service-specific certificate directories)
 .certs/
-
-# Uploads
-uploads/
-
-# Uploads
-uploads/
+.certs-postgres/
+.certs-qdrant/
+.certs-backend/
+.container-certs/
 
 # Uploads
 uploads/

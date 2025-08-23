@@ -63,14 +63,16 @@ COPY --from=builder --chown=1001:1001 /app/backend/migrations /app/migrations
 RUN mkdir -p /app/backend/resources
 COPY --from=builder --chown=1001:1001 /app/backend/resources /app/backend/resources
 
-# Copy CA certificate and add to system trust store
-COPY --chown=root:root .certs/cert.pem /usr/local/share/ca-certificates/scribe-ca.crt
+# Copy CA certificate and add to system trust store for inter-service TLS trust
+COPY --chown=root:root .certs-backend/ca.pem /usr/local/share/ca-certificates/scribe-ca.crt
 RUN update-ca-certificates
 
 # Copy TLS certificates for the backend server
-RUN mkdir -p /app/.certs
-COPY --chown=1001:1001 .certs/cert.pem /app/.certs/
-COPY --chown=1001:1001 .certs/key.pem /app/.certs/
+RUN mkdir -p /app/certs
+COPY --chown=1001:1001 .certs-backend/cert.pem /app/certs/cert.pem
+COPY --chown=1001:1001 .certs-backend/key.pem /app/certs/key.pem
+# Set proper permissions
+RUN chmod 644 /app/certs/cert.pem && chmod 600 /app/certs/key.pem
 
 # Switch to app user
 USER 1001

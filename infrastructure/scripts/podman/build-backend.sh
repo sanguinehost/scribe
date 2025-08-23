@@ -100,7 +100,7 @@ fi
 SCRIPT_DIR="$(dirname "$0")"
 PROJECT_ROOT="$(realpath "$SCRIPT_DIR/../../..")"
 CONTAINERFILE="$PROJECT_ROOT/infrastructure/containers/backend/Containerfile"
-BUILD_CONTEXT="$PROJECT_ROOT/backend"
+BUILD_CONTEXT="$PROJECT_ROOT"
 
 # Validate paths
 if [ ! -f "$CONTAINERFILE" ]; then
