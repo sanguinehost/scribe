@@ -1,0 +1,39 @@
+# Docker build context exclusions
+# Certificate directories with permission issues (exclude these)
+.certs-postgres/
+.certs-qdrant/
+.certs/
+.certs-aws/
+
+# Allow backend certificates as they're needed for container build
+# .certs-backend/ - DO NOT EXCLUDE
+
+# Build artifacts
+target/
+dist/
+node_modules/
+
+# Git and development files
+.git/
+.gitignore
+*.md
+README*
+
+# Environment files (except example)
+.env*
+!.env.example
+
+# Logs and temporary files
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+coverage/
+.nyc_output/

@@ -10,7 +10,6 @@ pub mod email_service;
 pub mod embeddings;
 pub mod encryption_service;
 pub mod extraction_dispatcher;
-pub mod file_storage_service;
 pub mod gemini_token_client;
 pub mod history_manager;
 pub mod hybrid_token_counter;
@@ -34,7 +33,6 @@ pub use chronicle_deduplication_service::{ChronicleDeduplicationService, Dedupli
 pub use chronicle_service::ChronicleService;
 pub use email_service::{EmailService, create_email_service};
 pub use encryption_service::EncryptionService;
-pub use file_storage_service::FileStorageService;
 pub use lorebook::LorebookService;
 pub use narrative_intelligence_service::{NarrativeIntelligenceService, NarrativeProcessingResult, NarrativeProcessingConfig};
 pub use user_persona_service::UserPersonaService;

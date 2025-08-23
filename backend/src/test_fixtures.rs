@@ -4,7 +4,6 @@ use crate::{
     llm::{AiClient, EmbeddingClient},
     services::{
         email_service::{EmailService, create_email_service},
-        file_storage_service::FileStorageService,
     },
     state::{AppState, DbPool},
     state_builder::AppStateServicesBuilder,
@@ -85,13 +84,6 @@ impl TestFixtures {
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
     }
 
-    /// Create a test file storage service
-    pub fn test_file_storage_service() -> Arc<FileStorageService> {
-        Arc::new(
-            FileStorageService::new("./test_uploads")
-                .expect("Failed to create test file storage service"),
-        )
-    }
 
     /// Create a test auth backend
     pub fn test_auth_backend(pool: DbPool) -> Arc<AuthBackend> {

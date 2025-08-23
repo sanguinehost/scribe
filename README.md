@@ -55,7 +55,7 @@ cp .env.example .env
 # Edit .env with your API keys (especially GEMINI_API_KEY)
 
 # Generate certificates and start PostgreSQL + Qdrant containers
-./scripts/certs/generate.sh
+./scripts/certs/manage.sh local init
 ./scripts/podman-dev.sh up
 
 # In another terminal, start the backend locally
@@ -82,7 +82,7 @@ cp .env.example .env
 # Edit .env with your API keys
 
 # Generate certificates, build backend image, then deploy everything in containers
-./scripts/certs/generate.sh
+./scripts/certs/manage.sh container init
 ./infrastructure/scripts/podman/build-backend.sh
 podman-compose -f infrastructure/containers/compose/podman-compose.container.yml up -d
 

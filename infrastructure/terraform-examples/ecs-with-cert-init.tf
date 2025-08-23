@@ -368,7 +368,7 @@ resource "aws_cloudwatch_log_group" "qdrant_log_group" {
 resource "null_resource" "build_cert_init_image" {
   triggers = {
     dockerfile_hash = filemd5("${path.module}/../../../infrastructure/containers/cert-init/Dockerfile")
-    script_hash     = filemd5("${path.module}/../../../infrastructure/containers/cert-init/setup-certs.sh")
+    script_hash     = filemd5("${path.module}/../../../infrastructure/containers/cert-init/manage.sh")
   }
 
   provisioner "local-exec" {

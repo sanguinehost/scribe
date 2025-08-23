@@ -70,7 +70,7 @@ check_deps() {
 ensure_certs() {
     if [[ ! -f "$CERTS_DIR/cert.pem" || ! -f "$CERTS_DIR/key.pem" ]]; then
         echo "TLS certificates not found. Generating..."
-        "$PROJECT_ROOT/scripts/certs/generate.sh" generate
+        "$PROJECT_ROOT/scripts/certs/manage.sh" local init
     fi
 }
 
@@ -153,7 +153,7 @@ case "$COMMAND" in
         
     certs)
         echo "Generating TLS certificates..."
-        "$PROJECT_ROOT/scripts/certs/generate.sh" generate
+        "$PROJECT_ROOT/scripts/certs/manage.sh" local init
         ;;
         
     help|--help|-h)

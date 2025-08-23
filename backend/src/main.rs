@@ -57,7 +57,6 @@ use scribe_backend::services::embeddings::{
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
 };
 use scribe_backend::services::encryption_service::EncryptionService;
-use scribe_backend::services::file_storage_service::FileStorageService; // Added
 use scribe_backend::services::gemini_token_client::GeminiTokenClient; // Added
 use scribe_backend::services::hybrid_token_counter::HybridTokenCounter; // Added
 use scribe_backend::services::lorebook::LorebookService;
@@ -246,18 +245,6 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
-    // --- Initialize File Storage Service ---
-    let file_storage_service = Arc::new(
-        FileStorageService::new(&config.upload_storage_path)
-            .context("Failed to initialize file storage service")?,
-    );
-
-    // Initialize storage directories
-    file_storage_service
-        .init()
-        .await
-        .context("Failed to initialize file storage directories")?;
-
     // --- Initialize Narrative Intelligence Service ---
     // Note: Will be initialized after AppState is created due to circular dependency
 
@@ -272,7 +259,6 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         encryption_service,
         lorebook_service,
         auth_backend,
-        file_storage_service,
         email_service: {
             // Create email service based on environment
             let app_env = config.environment.as_deref().unwrap_or("development");
