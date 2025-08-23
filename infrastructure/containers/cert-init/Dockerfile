@@ -15,9 +15,9 @@ RUN apk add --no-cache \
 # Create certificate directory
 RUN mkdir -p /shared/certs
 
-# Copy certificate setup script
-COPY setup-certs.sh /usr/local/bin/setup-certs.sh
-RUN chmod +x /usr/local/bin/setup-certs.sh
+# Copy unified certificate management script
+COPY manage.sh /usr/local/bin/manage.sh
+RUN chmod +x /usr/local/bin/manage.sh
 
 # Create non-root user for security
 RUN adduser -D -s /bin/bash certuser && \
@@ -36,5 +36,5 @@ ENV CERT_DIR=/shared/certs
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD test -f /shared/certs/cert.pem && test -f /shared/certs/key.pem || exit 1
 
-# Run the certificate setup script
-CMD ["/usr/local/bin/setup-certs.sh"]
+# Run the certificate setup script in AWS mode
+CMD ["/usr/local/bin/manage.sh", "aws", "init"]

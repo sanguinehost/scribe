@@ -23,7 +23,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/containers/configs/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-      - ./.certs:/var/lib/postgresql/certs:ro
+      - ${POSTGRES_CERT_PATH:-./.certs-postgres}:/var/lib/postgresql/certs:ro
     command: postgres -c config_file=/etc/postgresql/postgresql.conf -c ssl=on -c ssl_cert_file=/var/lib/postgresql/certs/cert.pem -c ssl_key_file=/var/lib/postgresql/certs/key.pem
     restart: unless-stopped
     shm_size: 256m
@@ -40,12 +40,35 @@ services:
       QDRANT__TLS__KEY: "/qdrant_certs/key.pem"
     volumes:
       - qdrant_data:/qdrant/storage
-      - ./.certs:/qdrant_certs:ro
+      - ${QDRANT_CERT_PATH:-./.certs-qdrant}:/qdrant_certs:ro
     restart: unless-stopped
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
+
+  # Backend service for containerized development
+  backend:
+    image: localhost/scribe-backend:latest
+    container_name: scribe_backend_dev
+    env_file:
+      - .env
+    environment:
+      # Override container-specific settings
+      - DATABASE_URL=postgresql://devuser:devpassword@postgres:5432/sanguine_scribe_dev
+      - QDRANT_URL=https://qdrant:6334
+      - ENVIRONMENT=container
+      - RUST_LOG=debug
+      - PORT=8080
+      - COOKIE_DOMAIN=localhost
+      - COOKIE_SECURE=true
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - qdrant
+    # No volumes needed - certificates are embedded in the container image
+    restart: unless-stopped
 
 volumes:
   postgres_data:

@@ -142,7 +142,7 @@ show_status() {
 # Generate certificates
 generate_certs() {
     echo -e "${BLUE}=== Generating TLS Certificates ===${NC}"
-    "$PROJECT_ROOT/scripts/certs/generate.sh" generate
+    "$PROJECT_ROOT/scripts/certs/manage.sh" local init
 }
 
 # Main command routing

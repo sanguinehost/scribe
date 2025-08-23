@@ -61,9 +61,6 @@ pub struct Config {
     #[serde(default = "default_min_tail_messages_to_preserve")]
     pub min_tail_messages_to_preserve: usize,
 
-    // File Storage Config
-    #[serde(default = "default_upload_storage_path")]
-    pub upload_storage_path: String,
 
     // Frontend URL
     #[serde(default = "default_frontend_base_url")]
@@ -125,7 +122,6 @@ impl std::fmt::Debug for Config {
                 &self.context_recent_history_token_budget,
             )
             .field("context_rag_token_budget", &self.context_rag_token_budget)
-            .field("upload_storage_path", &self.upload_storage_path)
             .field("frontend_base_url", &self.frontend_base_url)
             .field("app_env", &self.app_env)
             .field(
@@ -192,9 +188,6 @@ const fn default_context_rag_token_budget() -> usize {
 }
 const fn default_min_tail_messages_to_preserve() -> usize {
     8 // Preserve last 8 messages to maintain conversation continuity
-}
-fn default_upload_storage_path() -> String {
-    "./uploads".to_string()
 }
 
 fn default_frontend_base_url() -> String {
@@ -277,7 +270,6 @@ impl Default for Config {
             context_recent_history_token_budget: default_context_recent_history_token_budget(),
             context_rag_token_budget: default_context_rag_token_budget(),
             min_tail_messages_to_preserve: default_min_tail_messages_to_preserve(),
-            upload_storage_path: default_upload_storage_path(),
             frontend_base_url: default_frontend_base_url(),
             app_env: default_app_env(),
             from_email: None,

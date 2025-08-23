@@ -20,7 +20,6 @@ use crate::auth::user_store::Backend as AuthBackend; // Added for shared AuthBac
 use crate::services::EmailService; // For email service
 use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
 use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
-use crate::services::file_storage_service::FileStorageService; // Added for FileStorageService
 use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
 use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
@@ -44,7 +43,6 @@ pub struct AppStateServices {
     pub encryption_service: Arc<EncryptionService>,
     pub lorebook_service: Arc<LorebookService>,
     pub auth_backend: Arc<AuthBackend>,
-    pub file_storage_service: Arc<FileStorageService>,
     pub email_service: Arc<dyn EmailService + Send + Sync>,
 }
 
@@ -72,7 +70,6 @@ pub struct AppState {
     pub encryption_service: Arc<EncryptionService>, // Added for lorebook and other encryption needs
     pub lorebook_service: Arc<LorebookService>,     // Added for LorebookService
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
-    pub file_storage_service: Arc<FileStorageService>, // Added for file storage
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
     pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
 }
@@ -97,7 +94,6 @@ impl fmt::Debug for AppState {
             .field("encryption_service", &"<Arc<EncryptionService>>") // Added
             .field("lorebook_service", &"<Arc<LorebookService>>") // Added for LorebookService
             .field("auth_backend", &"<Arc<AuthBackend>>") // Added
-            .field("file_storage_service", &"<Arc<FileStorageService>>") // Added
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
             .field("narrative_intelligence_service", &"<Option<Arc<NarrativeIntelligenceService>>>") // Added for agentic narrative processing
             .finish()
@@ -122,7 +118,6 @@ impl AppState {
             encryption_service: services.encryption_service,
             lorebook_service: services.lorebook_service,
             auth_backend: services.auth_backend,
-            file_storage_service: services.file_storage_service,
             email_service: services.email_service,
             narrative_intelligence_service: None, // Will be set later after AppState is fully constructed
         }

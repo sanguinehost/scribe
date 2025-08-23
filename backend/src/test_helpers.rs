@@ -36,7 +36,6 @@ use crate::{
     services::chat_override_service::ChatOverrideService, // <<< ENSURED IMPORT
     services::chronicle_service::ChronicleService,        // <<< ADDED THIS IMPORT
     services::encryption_service::EncryptionService,      // <<< ENSURED IMPORT
-    services::file_storage_service::FileStorageService,   // <<< ADDED THIS IMPORT
     services::gemini_token_client::GeminiTokenClient,
     services::hybrid_token_counter::HybridTokenCounter,
     services::narrative_intelligence_service::NarrativeIntelligenceService, // <<< ADDED THIS IMPORT
@@ -1197,7 +1196,6 @@ impl TestAppStateBuilder {
             encryption_service,
             lorebook_service,
             auth_backend: self.auth_backend,
-            file_storage_service: Arc::new(FileStorageService::new("./test_uploads").unwrap()),
             email_service: crate::services::email_service::create_email_service(
                 "development",
                 "http://localhost:3000".to_string(),
@@ -2790,7 +2788,6 @@ impl TestApp {
             encryption_service: encryption_service.clone(),
             lorebook_service: lorebook_service.clone(),
             auth_backend,
-            file_storage_service: Arc::new(crate::services::file_storage_service::FileStorageService::new("./test_uploads").unwrap()),
             email_service,
         };
         

@@ -8,7 +8,6 @@ use crate::{
         email_service::{EmailService, create_email_service},
         embeddings::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait},
         encryption_service::EncryptionService,
-        file_storage_service::FileStorageService,
         gemini_token_client::GeminiTokenClient,
         hybrid_token_counter::HybridTokenCounter,
         lorebook::LorebookService,
@@ -39,7 +38,6 @@ pub struct AppStateServicesBuilder {
     encryption_service: Option<Arc<EncryptionService>>,
     lorebook_service: Option<Arc<LorebookService>>,
     auth_backend: Option<Arc<AuthBackend>>,
-    file_storage_service: Option<Arc<FileStorageService>>,
     email_service: Option<Arc<dyn EmailService + Send + Sync>>,
 }
 
@@ -59,7 +57,6 @@ impl AppStateServicesBuilder {
             encryption_service: None,
             lorebook_service: None,
             auth_backend: None,
-            file_storage_service: None,
             email_service: None,
         }
     }
@@ -120,10 +117,6 @@ impl AppStateServicesBuilder {
         self
     }
 
-    pub fn with_file_storage_service(mut self, service: Arc<FileStorageService>) -> Self {
-        self.file_storage_service = Some(service);
-        self
-    }
 
     pub fn with_email_service(mut self, service: Arc<dyn EmailService + Send + Sync>) -> Self {
         self.email_service = Some(service);
@@ -147,13 +140,6 @@ impl AppStateServicesBuilder {
             .auth_backend
             .unwrap_or_else(|| Arc::new(AuthBackend::new(self.db_pool.clone())));
 
-        // Get or create file storage service
-        let file_storage_service = self.file_storage_service.unwrap_or_else(|| {
-            Arc::new(
-                FileStorageService::new(&self.config.upload_storage_path)
-                    .expect("Failed to create file storage service"),
-            )
-        });
 
         // Get or create email service
         let email_service = match self.email_service {
@@ -248,7 +234,6 @@ impl AppStateServicesBuilder {
             encryption_service,
             lorebook_service,
             auth_backend,
-            file_storage_service,
             email_service,
             // narrative_intelligence_service will be added after AppState is built
         })
@@ -353,12 +338,6 @@ impl AppStateBuilder {
         }
     }
 
-    pub fn with_file_storage_service(self, service: Arc<FileStorageService>) -> Self {
-        Self {
-            services_builder: self.services_builder.with_file_storage_service(service),
-            ..self
-        }
-    }
 
     pub fn with_email_service(self, service: Arc<dyn EmailService + Send + Sync>) -> Self {
         Self {
