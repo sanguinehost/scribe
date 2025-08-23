@@ -13,8 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../configs/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro,Z
-      - ${CERT_PATH:-../../../.certs}:/var/lib/postgresql/certs:ro,Z
-      - ${CERT_PATH:-../../../.certs}/ca.crt:/var/lib/postgresql/ca.crt:ro,Z
+      - ${POSTGRES_CERT_PATH:-../../../.certs-postgres}:/var/lib/postgresql/certs:ro,z
     command: postgres -c config_file=/etc/postgresql/postgresql.conf -c ssl=on -c ssl_cert_file=/var/lib/postgresql/certs/cert.pem -c ssl_key_file=/var/lib/postgresql/certs/key.pem
     restart: unless-stopped
     shm_size: 256m
@@ -33,7 +32,7 @@ services:
       QDRANT__TLS__KEY: "/qdrant_certs/key.pem"
     volumes:
       - qdrant_data:/qdrant/storage
-      - ${CERT_PATH:-../../../.certs}:/qdrant_certs:ro,Z  # :Z for SELinux context
+      - ${QDRANT_CERT_PATH:-../../../.certs-qdrant}:/qdrant_certs:ro,z  # :z for SELinux relabeling
     restart: unless-stopped
     ulimits:
       nofile:

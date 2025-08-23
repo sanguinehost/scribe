@@ -570,7 +570,7 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
                     .parent()
                     .context("Failed to get project root from manifest dir")?;
 
-                (project_root.join(".certs/cert.pem"), project_root.join(".certs/key.pem"))
+                (project_root.join(".certs-backend/cert.pem"), project_root.join(".certs-backend/key.pem"))
             };
 
             tracing::info!(

@@ -40,43 +40,84 @@
 
 ## 🚀 Quick Start
 
-### Option 1: Docker Compose (Recommended)
+### Option 1: Hybrid Local Development (Recommended)
 
 **Prerequisites:**
-- Docker or Podman with Docker Compose support
+- Rust 1.75+ and Cargo
+- Node.js 18+ and pnpm
+- Podman or Docker
+- mkcert for local certificates
+
+```bash
+git clone https://github.com/sanguinehost/scribe.git
+cd scribe
+cp .env.example .env
+# Edit .env with your API keys (especially GEMINI_API_KEY)
+
+# Generate certificates and start PostgreSQL + Qdrant containers
+./scripts/certs/generate.sh
+./scripts/podman-dev.sh up
+
+# In another terminal, start the backend locally
+cd backend && cargo run --bin scribe-backend
+
+# In a third terminal, start the frontend
+cd frontend && pnpm install && pnpm dev
+```
+
+Visit `https://localhost:5173` to start chatting with full TLS!
+
+**Benefits:** Fast backend rebuilds during development, easier debugging, full container isolation for databases.
+
+### Option 2: Full Container Stack
+
+**Prerequisites:**
+- Podman or Docker with compose support
+- Rust 1.75+ and Cargo (to build backend image)
 
 ```bash
 git clone https://github.com/sanguinehost/scribe.git
 cd scribe
 cp .env.example .env
 # Edit .env with your API keys
-docker compose up -d
+
+# Generate certificates, build backend image, then deploy everything in containers
+./scripts/certs/generate.sh
+./infrastructure/scripts/podman/build-backend.sh
+podman-compose -f infrastructure/containers/compose/podman-compose.container.yml up -d
+
+# In another terminal, start the frontend
+cd frontend && pnpm install && pnpm dev
 ```
 
-Visit `http://localhost:3000` to start chatting!
+Visit `https://localhost:8080` (backend) and `https://localhost:5173` (frontend) to start chatting!
 
-**Using Podman (Secure Alternative):**
-```bash
-# Install podman-compose if not already installed
-pip install podman-compose
-# Use podman-compose instead of docker compose
-podman-compose up -d
-```
+**Benefits:** Complete containerized environment, matches production more closely, easier to clean up.
 
-### Option 2: Manual Setup
+### Option 3: Systemd Quadlets (Linux)
 
-For manual setup without Docker:
+**Prerequisites:**
+- Podman 4.4+ with systemd integration
+- systemd user services enabled
 
 ```bash
 git clone https://github.com/sanguinehost/scribe.git
 cd scribe
-# Setup PostgreSQL and Qdrant manually
-# Follow detailed setup in docs/QUICKSTART.md
+cp .env.example .env
+# Edit .env with your API keys
+
+# Deploy as systemd services
+./scripts/deploy/quadlet.sh start
 ```
 
-### Option 3: Cloud Deploy
+### Option 4: Cloud Deploy
 
-[![Deploy with Terraform](https://img.shields.io/badge/Deploy%20with-Terraform-623CE4)](https://github.com/sanguinehost/scribe/tree/main/terraform)
+[![Deploy with Terraform](https://img.shields.io/badge/Deploy%20with-Terraform-623CE4)](https://github.com/sanguinehost/scribe/tree/main/infrastructure/terraform)
+
+```bash
+# Deploy to AWS with Terraform
+./scripts/deploy/aws.sh deploy staging
+```
 
 [![Deploy Frontend on Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/sanguinehost/scribe/tree/main/frontend)
 

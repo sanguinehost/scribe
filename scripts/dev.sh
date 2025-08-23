@@ -60,6 +60,12 @@ QUICK COMMANDS:
   ./scripts/dev.sh status         # Show all container status
   ./scripts/dev.sh help           # Show this help
 
+NEW UNIFIED DEPLOYMENT SCRIPTS:
+  ./scripts/deploy/local.sh       # Local development (containers + cargo run)
+  ./scripts/deploy/container.sh   # Full container stack
+  ./scripts/deploy/quadlet.sh     # Systemd quadlet management
+  ./scripts/deploy/aws.sh         # AWS ECS deployment
+
 INDIVIDUAL TOOLS (also available):
   ./scripts/podman-dev.sh         # Modern Podman workflow
   ./scripts/quadlet-dev.sh        # Systemd Quadlet management
@@ -136,7 +142,7 @@ show_status() {
 # Generate certificates
 generate_certs() {
     echo -e "${BLUE}=== Generating TLS Certificates ===${NC}"
-    "$PROJECT_ROOT/scripts/dev_certs.sh" generate
+    "$PROJECT_ROOT/scripts/certs/generate.sh" generate
 }
 
 # Main command routing

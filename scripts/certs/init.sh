@@ -5,7 +5,7 @@ set -euo pipefail
 # Handles certificate setup for different deployment environments
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CERTS_DIR="$PROJECT_ROOT/.certs"
 
 # Colors for output
@@ -81,12 +81,12 @@ init_local_certs() {
         exit 1
     fi
     
-    # Use the existing dev_certs.sh script
-    if [[ -f "$SCRIPT_DIR/dev_certs.sh" ]]; then
-        log_info "Using existing dev_certs.sh script..."
-        "$SCRIPT_DIR/dev_certs.sh" generate
+    # Use the certificate generation script
+    if [[ -f "$SCRIPT_DIR/generate.sh" ]]; then
+        log_info "Using certificate generation script..."
+        "$SCRIPT_DIR/generate.sh" generate
     else
-        log_error "dev_certs.sh script not found!"
+        log_error "Certificate generation script not found!"
         exit 1
     fi
     
@@ -113,21 +113,69 @@ init_container_certs() {
         init_local_certs
     fi
     
-    # Create container-friendly certificate directory
-    CONTAINER_CERTS_DIR="$PROJECT_ROOT/.container-certs"
-    mkdir -p "$CONTAINER_CERTS_DIR"
+    # Create service-specific certificate directories
+    POSTGRES_CERTS_DIR="$PROJECT_ROOT/.certs-postgres"
+    QDRANT_CERTS_DIR="$PROJECT_ROOT/.certs-qdrant"
+    BACKEND_CERTS_DIR="$PROJECT_ROOT/.certs-backend"
     
-    # Copy certificates with container-friendly permissions
+    log_info "Creating service-specific certificate directories..."
+    mkdir -p "$POSTGRES_CERTS_DIR" "$QDRANT_CERTS_DIR" "$BACKEND_CERTS_DIR"
+    
+    # Copy certificates to each service directory
     if [[ -f "$CERTS_DIR/cert.pem" ]] && [[ -f "$CERTS_DIR/key.pem" ]]; then
-        cp "$CERTS_DIR/cert.pem" "$CONTAINER_CERTS_DIR/cert.pem"
-        cp "$CERTS_DIR/key.pem" "$CONTAINER_CERTS_DIR/key.pem"
+        # PostgreSQL certificates (needs specific UID/permissions)
+        cp "$CERTS_DIR/cert.pem" "$POSTGRES_CERTS_DIR/cert.pem"
+        cp "$CERTS_DIR/key.pem" "$POSTGRES_CERTS_DIR/key.pem"
+        # Copy CA certificate if it exists
+        if [[ -f "$CERTS_DIR/ca.pem" ]]; then
+            cp "$CERTS_DIR/ca.pem" "$POSTGRES_CERTS_DIR/ca.pem"
+        fi
         
-        # Set permissions that work in containers
-        chmod 644 "$CONTAINER_CERTS_DIR/cert.pem"
-        chmod 644 "$CONTAINER_CERTS_DIR/key.pem"
+        # Set PostgreSQL permissions using podman unshare for correct UID mapping
+        log_info "Setting PostgreSQL certificate permissions (UID 999)..."
+        podman unshare chown -R 999:999 "$POSTGRES_CERTS_DIR"
+        podman unshare chmod 644 "$POSTGRES_CERTS_DIR/cert.pem"
+        podman unshare chmod 600 "$POSTGRES_CERTS_DIR/key.pem"
+        if [[ -f "$POSTGRES_CERTS_DIR/ca.pem" ]]; then
+            podman unshare chmod 644 "$POSTGRES_CERTS_DIR/ca.pem"
+        fi
         
-        log_success "Container certificates prepared"
-        log_info "Container certificates location: $CONTAINER_CERTS_DIR"
+        # Qdrant certificates (more permissive)
+        cp "$CERTS_DIR/cert.pem" "$QDRANT_CERTS_DIR/cert.pem"
+        cp "$CERTS_DIR/key.pem" "$QDRANT_CERTS_DIR/key.pem"
+        # Copy CA certificate if it exists
+        if [[ -f "$CERTS_DIR/ca.pem" ]]; then
+            cp "$CERTS_DIR/ca.pem" "$QDRANT_CERTS_DIR/ca.pem"
+        fi
+        chmod 644 "$QDRANT_CERTS_DIR/cert.pem"
+        chmod 644 "$QDRANT_CERTS_DIR/key.pem"
+        if [[ -f "$QDRANT_CERTS_DIR/ca.pem" ]]; then
+            chmod 644 "$QDRANT_CERTS_DIR/ca.pem"
+        fi
+        
+        # Backend certificates (user ownership)
+        cp "$CERTS_DIR/cert.pem" "$BACKEND_CERTS_DIR/cert.pem"
+        cp "$CERTS_DIR/key.pem" "$BACKEND_CERTS_DIR/key.pem"
+        # Copy CA certificate if it exists
+        if [[ -f "$CERTS_DIR/ca.pem" ]]; then
+            cp "$CERTS_DIR/ca.pem" "$BACKEND_CERTS_DIR/ca.pem"
+        fi
+        chmod 644 "$BACKEND_CERTS_DIR/cert.pem"
+        chmod 600 "$BACKEND_CERTS_DIR/key.pem"
+        if [[ -f "$BACKEND_CERTS_DIR/ca.pem" ]]; then
+            chmod 644 "$BACKEND_CERTS_DIR/ca.pem"
+        fi
+        
+        log_success "Service-specific certificates prepared"
+        log_info "PostgreSQL certificates: $POSTGRES_CERTS_DIR (UID 999, mode 600 key)"
+        log_info "Qdrant certificates: $QDRANT_CERTS_DIR (permissive)"
+        log_info "Backend certificates: $BACKEND_CERTS_DIR (user ownership)"
+        
+        if [[ -f "$CERTS_DIR/ca.pem" ]]; then
+            log_success "CA certificate included for container trust"
+        else
+            log_warning "CA certificate not found - containers may have trust issues"
+        fi
     else
         log_error "Source certificates not found!"
         exit 1
