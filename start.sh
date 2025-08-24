@@ -51,6 +51,7 @@ SKIP_BUILD=false
 CLEAN=false
 NO_CACHE=false
 START_FRONTEND=false
+SKIP_ENV_CHECK=false
 HELP=false
 QUIET=false
 
@@ -80,6 +81,10 @@ parse_args() {
                 ;;
             --frontend)
                 START_FRONTEND=true
+                shift
+                ;;
+            --skip-env-check)
+                SKIP_ENV_CHECK=true
                 shift
                 ;;
             --quiet|-q)
@@ -119,6 +124,7 @@ OPTIONS:
     --clean                      Clean start: remove volumes and regenerate certificates
     --no-cache                   Force rebuild container images without cache
     --frontend                   Also start frontend development server
+    --skip-env-check             Skip .env file generation (for CI/automation)
     --quiet, -q                  Minimal output
     --help, -h                   Show this help message
 
@@ -202,14 +208,30 @@ check_prerequisites() {
     
     # Check if .env exists
     if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
-        if [[ -f "$PROJECT_ROOT/.env.example" ]]; then
-            log_warn ".env file not found, copying from .env.example"
-            cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
-            log_info "Please edit .env with your API keys (especially GEMINI_API_KEY)"
-        else
-            log_error ".env.example not found. Cannot create .env file."
+        if $SKIP_ENV_CHECK; then
+            log_error ".env file not found and --skip-env-check was specified"
+            log_info "Either create a .env file manually or run without --skip-env-check"
             exit 1
         fi
+        
+        echo
+        log_warn ".env file not found."
+        echo -n "Would you like to generate one now? [Y/n]: "
+        read -r generate_choice
+        
+        if [[ "$generate_choice" == "n" || "$generate_choice" == "N" ]]; then
+            log_info "Skipping .env generation. You'll need to create one manually."
+            log_info "You can run: scripts/utils/generate-env.sh"
+            exit 1
+        fi
+        
+        echo
+        log_info "Starting environment setup wizard..."
+        if ! "$PROJECT_ROOT/scripts/utils/generate-env.sh"; then
+            log_error "Environment generation failed or was cancelled"
+            exit 1
+        fi
+        echo
     fi
     
     # Check for required tools based on runtime
