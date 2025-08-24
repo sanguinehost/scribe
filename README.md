@@ -40,61 +40,73 @@
 
 ## 🚀 Quick Start
 
-### Option 1: Hybrid Local Development (Recommended)
+### One-Command Setup (Recommended)
 
 **Prerequisites:**
-- Rust 1.75+ and Cargo
-- Node.js 18+ and pnpm
 - Podman or Docker
 - mkcert for local certificates
+- Rust 1.75+ and Cargo (for local development)
+- Node.js 18+ and pnpm (optional, for frontend)
 
 ```bash
 git clone https://github.com/sanguinehost/scribe.git
 cd scribe
-cp .env.example .env
-# Edit .env with your API keys (especially GEMINI_API_KEY)
 
-# Generate certificates and start PostgreSQL + Qdrant containers
-./scripts/certs/manage.sh local init
-./scripts/podman-dev.sh up
+# One command to rule them all! 🎯
+./start.sh
 
-# In another terminal, start the backend locally
-cd backend && cargo run --bin scribe-backend
+# In another terminal, start the backend
+cargo run --bin scribe-backend
 
-# In a third terminal, start the frontend
-cd frontend && pnpm install && pnpm dev
+# Optional: Start frontend too
+./start.sh --frontend
 ```
 
 Visit `https://localhost:5173` to start chatting with full TLS!
 
-**Benefits:** Fast backend rebuilds during development, easier debugging, full container isolation for databases.
+**What start.sh does:**
+- 🔍 Auto-detects your container runtime (Podman preferred, Docker fallback)
+- 🔒 Generates TLS certificates if missing
+- 🐘 Starts PostgreSQL and Qdrant containers
+- ✅ Runs health checks to ensure everything is ready
+- 📋 Shows you exactly what to do next
 
-### Option 2: Full Container Stack
+### Alternative: Full Container Stack
 
-**Prerequisites:**
-- Podman or Docker with compose support
-- Rust 1.75+ and Cargo (to build backend image)
+For testing complete containerized deployments:
 
 ```bash
 git clone https://github.com/sanguinehost/scribe.git
 cd scribe
-cp .env.example .env
-# Edit .env with your API keys
 
-# Generate certificates, build backend image, then deploy everything in containers
-./scripts/certs/manage.sh container init
-./infrastructure/scripts/podman/build-backend.sh
-podman-compose -f infrastructure/containers/compose/podman-compose.container.yml up -d
-
-# In another terminal, start the frontend
-cd frontend && pnpm install && pnpm dev
+# Run everything in containers (including backend)
+./start.sh --mode=container --frontend
 ```
 
 Visit `https://localhost:8080` (backend) and `https://localhost:5173` (frontend) to start chatting!
 
-**Benefits:** Complete containerized environment, matches production more closely, easier to clean up.
+**Benefits:** Complete containerization, matches production environment closely.
 
-### Option 3: Systemd Quadlets (Linux)
+### Manual Setup (Advanced)
+
+For full control over the setup process:
+
+```bash
+# Generate certificates manually
+./scripts/certs/manage.sh local init
+
+# Start services with specific runtime
+./scripts/podman-dev.sh up    # or
+./scripts/docker-dev.sh       # for Docker users
+
+# Build and run backend
+cd backend && cargo run --bin scribe-backend
+
+# Start frontend
+cd frontend && pnpm install && pnpm dev
+```
+
+### Systemd Quadlets (Linux)
 
 **Prerequisites:**
 - Podman 4.4+ with systemd integration
