@@ -1185,6 +1185,13 @@ impl TestAppStateBuilder {
         // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
         // due to circular dependency (service needs AppState, but AppState is built from services)
 
+        // Create AI client factory for testing
+        let ai_client_factory = Arc::new(crate::services::ai_client_factory::AiClientFactory::new(
+            self.db_pool.clone(),
+            self.config.clone(),
+            self.ai_client.clone(), // Use test AI client as fallback
+        ));
+
         let services = AppStateServices {
             ai_client: self.ai_client,
             embedding_client: self.embedding_client,
@@ -1202,6 +1209,9 @@ impl TestAppStateBuilder {
                 None,
             )
             .await?,
+            ai_client_factory,
+            #[cfg(feature = "local-llm")]
+            llamacpp_server_manager: None, // Not used in tests
             // narrative_intelligence_service will be added after AppState is built
         };
 
@@ -2712,6 +2722,7 @@ pub async fn set_history_settings(
         seed: None,
         stop_sequences: None,
         model_name: None,
+        model_provider: None,
         gemini_enable_code_execution: None,
         gemini_thinking_budget: None,
         chronicle_id: None,
@@ -2764,6 +2775,13 @@ impl TestApp {
         )
         .await
         .expect("Failed to create email service for test");
+
+        // Create AI client factory for testing
+        let ai_client_factory = Arc::new(crate::services::ai_client_factory::AiClientFactory::new(
+            self.db_pool.clone(),
+            self.config.clone(),
+            self.ai_client.clone(), // Use test AI client as fallback
+        ));
         
         let services = crate::state::AppStateServices {
             ai_client: self.ai_client.clone(),
@@ -2789,6 +2807,9 @@ impl TestApp {
             lorebook_service: lorebook_service.clone(),
             auth_backend,
             email_service,
+            ai_client_factory,
+            #[cfg(feature = "local-llm")]
+            llamacpp_server_manager: None, // Not used in tests
         };
         
         Arc::new(AppState::new(

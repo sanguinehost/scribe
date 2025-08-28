@@ -31,6 +31,7 @@ use scribe_backend::routes::{
     chats,
     chronicles,
     documents::document_routes,
+    llm_routes::llm_router,        // Added for LLM management routes
     lorebook_routes::lorebook_routes, // Added for lorebook routes
     user_persona_routes::user_personas_router, // Added for user persona routes
     user_settings_routes::user_settings_routes,
@@ -51,6 +52,7 @@ use rustls::crypto::ring;
 use scribe_backend::config::Config; // Import Config instead
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
+use scribe_backend::services::ai_client_factory::AiClientFactory;
 use scribe_backend::services::chat_override_service::ChatOverrideService;
 use scribe_backend::services::chronicle_service::ChronicleService;
 use scribe_backend::services::embeddings::{
@@ -188,6 +190,8 @@ fn setup_database_pool(config: &Config) -> PgPool {
 
 // Initialize all services
 async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppStateServices> {
+    #[cfg(feature = "local-llm")]
+    let mut llamacpp_server_manager: Option<Arc<scribe_backend::llm::llamacpp::LlamaCppServerManager>> = None;
     // --- Initialize GenAI Client Asynchronously ---
     let api_key = config
         .gemini_api_key
@@ -245,10 +249,70 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
+    // --- Initialize AI Client Factory ---
+    let ai_client_factory = Arc::new(AiClientFactory::new(
+        pool.clone(),
+        config.clone(),
+        ai_client_arc.clone(), // Use Gemini as fallback client
+    ));
+
+    // --- Initialize Local LLM Server (if feature enabled) ---
+    #[cfg(feature = "local-llm")]
+    {
+        use scribe_backend::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
+        use tracing::{info, warn};
+        
+        info!("Initializing local LLM server...");
+        let llm_config = LlamaCppConfig::from_env();
+        
+        if llm_config.enabled {
+            match ModelManager::new(llm_config.clone()).await {
+                Ok(model_manager) => {
+                    let model_manager_arc = Arc::new(model_manager);
+                    
+                    // Check if there are any downloaded models
+                    let downloaded_models = model_manager_arc.list_models().await.unwrap_or_default();
+                    
+                    if downloaded_models.is_empty() {
+                        info!("No models downloaded yet. Local LLM UI will be available for model downloads.");
+                        info!("Server will start automatically after first model download.");
+                    } else {
+                        // Try to start server with existing models
+                        match LlamaCppServerManager::new(llm_config, model_manager_arc).await {
+                            Ok(server_manager) => {
+                                let server_manager_arc: Arc<LlamaCppServerManager> = Arc::new(server_manager);
+                                match server_manager_arc.start().await {
+                                    Ok(_) => {
+                                        info!("Local LLM server started successfully with {} models", downloaded_models.len());
+                                        // Store the server manager to prevent it from being dropped
+                                        llamacpp_server_manager = Some(server_manager_arc);
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to start local LLM server: {}. UI will still be available for management.", e);
+                                        // Still store the manager for UI management even if server failed to start
+                                        llamacpp_server_manager = Some(server_manager_arc);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to initialize local LLM server manager: {}. UI will still be available for management.", e);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to initialize model manager: {}. Local LLM features will be unavailable.", e);
+                }
+            }
+        } else {
+            info!("Local LLM disabled in configuration");
+        }
+    }
+
     // --- Initialize Narrative Intelligence Service ---
     // Note: Will be initialized after AppState is created due to circular dependency
 
-    Ok(AppStateServices {
+    let mut services = AppStateServices {
         ai_client: ai_client_arc,
         embedding_client: embedding_client_arc,
         qdrant_service,
@@ -269,7 +333,12 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
             )
             .await?
         },
-    })
+        ai_client_factory,
+        #[cfg(feature = "local-llm")]
+        llamacpp_server_manager: llamacpp_server_manager,
+    };
+    
+    Ok(services)
 }
 
 // Setup tokenizer service
@@ -436,6 +505,7 @@ fn build_router(
         .nest("/chats", chats::chat_routes())
         .nest("/chronicles", chronicles::create_chronicles_router(app_state.clone()))
         .nest("/documents", document_routes())
+        .nest("/llm", llm_router()) // LLM management routes
         .nest("/personas", user_personas_router(app_state.clone()))
         .nest("/user-settings", user_settings_routes(app_state.clone()))
         .nest("/", lorebook_routes())

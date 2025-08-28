@@ -42,6 +42,7 @@ pub async fn handle_stream_test_action<H: IoHandler, C: HttpClient>(
         history_management_strategy: None,
         history_management_limit: None,
         model_name: Some(current_model.to_string()), // Use the current model
+            model_provider: None, // Will be determined by backend based on model
         chronicle_id: None, // Not relevant for CLI
         agent_mode: None, // Not used in CLI
     };

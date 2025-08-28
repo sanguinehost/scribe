@@ -81,6 +81,7 @@ struct ChatSessionUpdateBuilder {
     history_management_strategy: DatabaseUpdate<String>,
     history_management_limit: DatabaseUpdate<i32>,
     model_name: DatabaseUpdate<String>,
+    model_provider: DatabaseUpdate<String>,
     gemini_thinking_budget: DatabaseUpdate<i32>,
     gemini_enable_code_execution: DatabaseUpdate<bool>,
     player_chronicle_id: DatabaseUpdate<Option<Uuid>>,
@@ -137,6 +138,10 @@ impl ChatSessionUpdateBuilder {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
             },
+            model_provider: match self.model_provider {
+                DatabaseUpdate::SetValue(v) => Some(v),
+                _ => None,
+            },
             gemini_thinking_budget: match self.gemini_thinking_budget {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
@@ -177,6 +182,7 @@ impl ChatSessionUpdateBuilder {
             || !matches!(self.history_management_strategy, DatabaseUpdate::NoChange)
             || !matches!(self.history_management_limit, DatabaseUpdate::NoChange)
             || !matches!(self.model_name, DatabaseUpdate::NoChange)
+            || !matches!(self.model_provider, DatabaseUpdate::NoChange)
             || !matches!(self.gemini_thinking_budget, DatabaseUpdate::NoChange)
             || !matches!(self.gemini_enable_code_execution, DatabaseUpdate::NoChange)
             || !matches!(self.player_chronicle_id, DatabaseUpdate::NoChange)
@@ -206,6 +212,7 @@ struct ChatSessionUpdateChangeset {
     history_management_strategy: Option<String>,
     history_management_limit: Option<i32>,
     model_name: Option<String>,
+    model_provider: Option<String>,
     gemini_thinking_budget: Option<i32>,
     gemini_enable_code_execution: Option<bool>,
     player_chronicle_id: Option<Option<Uuid>>,
@@ -468,6 +475,9 @@ fn apply_payload_to_builder(
     }
     if let Some(model) = payload.model_name {
         update_builder.model_name = DatabaseUpdate::SetValue(model);
+    }
+    if let Some(provider) = payload.model_provider {
+        update_builder.model_provider = DatabaseUpdate::SetValue(provider);
     }
     if let Some(gem_budget) = payload.gemini_thinking_budget {
         update_builder.gemini_thinking_budget = DatabaseUpdate::SetValue(gem_budget);

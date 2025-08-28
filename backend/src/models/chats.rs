@@ -1673,6 +1673,8 @@ pub struct UpdateChatSettingsRequest {
     pub history_management_limit: Option<i32>,
     // Model Name
     pub model_name: Option<String>,
+    // Model Provider (local, gemini, etc.)
+    pub model_provider: Option<String>,
     // Gemini-specific options
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
@@ -2398,6 +2400,7 @@ mod tests {
             history_management_strategy: Some("sliding_window_tokens".to_string()),
             history_management_limit: Some(2000),
             model_name: Some("gemini-2.5-pro".to_string()),
+            model_provider: Some("gemini".to_string()),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             chronicle_id: None,

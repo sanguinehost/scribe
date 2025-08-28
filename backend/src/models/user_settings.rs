@@ -36,6 +36,11 @@ pub struct UserSettings {
     pub theme: Option<String>,
     pub notifications_enabled: Option<bool>,
 
+    // Local LLM Settings
+    pub preferred_local_model: Option<String>,
+    pub local_llm_enabled: Option<bool>,
+    pub local_model_preferences: Option<serde_json::Value>,
+
     // Timestamps
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -44,6 +49,7 @@ pub struct UserSettings {
 
 #[derive(Insertable, Debug)]
 #[diesel(table_name = user_settings)]
+#[diesel(treat_none_as_null = true)]
 pub struct NewUserSettings {
     pub user_id: Uuid,
 
@@ -71,6 +77,9 @@ pub struct NewUserSettings {
     pub theme: Option<String>,
     pub notifications_enabled: Option<bool>,
     pub typing_speed: Option<i32>,
+    pub preferred_local_model: Option<String>,
+    pub local_llm_enabled: Option<bool>,
+    pub local_model_preferences: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -99,6 +108,9 @@ pub struct UpdateUserSettingsRequest {
     pub theme: Option<String>,
     pub notifications_enabled: Option<bool>,
     pub typing_speed: Option<i32>,
+    pub preferred_local_model: Option<String>,
+    pub local_llm_enabled: Option<bool>,
+    pub local_model_preferences: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)] // Added Deserialize
@@ -127,6 +139,9 @@ pub struct UserSettingsResponse {
     pub theme: Option<String>,
     pub notifications_enabled: Option<bool>,
     pub typing_speed: Option<i32>,
+    pub preferred_local_model: Option<String>,
+    pub local_llm_enabled: Option<bool>,
+    pub local_model_preferences: Option<serde_json::Value>,
 
     // Timestamps
     pub created_at: DateTime<Utc>,
@@ -153,6 +168,9 @@ impl From<UserSettings> for UserSettingsResponse {
             theme: settings.theme,
             notifications_enabled: settings.notifications_enabled,
             typing_speed: settings.typing_speed,
+            preferred_local_model: settings.preferred_local_model,
+            local_llm_enabled: settings.local_llm_enabled,
+            local_model_preferences: settings.local_model_preferences,
             created_at: settings.created_at,
             updated_at: settings.updated_at,
         }

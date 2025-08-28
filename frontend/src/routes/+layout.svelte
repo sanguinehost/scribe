@@ -3,6 +3,7 @@
 	import { ThemeProvider } from '@sejohnson/svelte-themes';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
+	import { ENABLE_LOCAL_LLM } from '$lib/utils/features';
 	import {
 		initializeAuth,
 		setAuthenticated,
@@ -19,6 +20,35 @@
 	// Initialize settings store
 	const settingsStore = new SettingsStore();
 	SettingsStore.toContext(settingsStore);
+
+	// Initialize LLM store for local model management (conditionally)
+	if (ENABLE_LOCAL_LLM) {
+		// Initialize the global singleton store immediately without context
+		import('$lib/stores/llm.svelte')
+			.then(({ initGlobalLlmStore }) => {
+				try {
+					initGlobalLlmStore();
+				} catch (error) {
+					console.warn('LlmStore initialization failed:', error);
+				}
+			})
+			.catch((error) => {
+				console.warn('LlmStore module load failed:', error);
+			});
+			
+		// Initialize model lifecycle store for local model management
+		import('$lib/stores/modelLifecycle.svelte')
+			.then(({ initGlobalModelLifecycleStore }) => {
+				try {
+					initGlobalModelLifecycleStore();
+				} catch (error) {
+					console.warn('ModelLifecycleStore initialization failed:', error);
+				}
+			})
+			.catch((error) => {
+				console.warn('ModelLifecycleStore module load failed:', error);
+			});
+	}
 
 	// Initialize new auth store with server data if available, then run client-side initialization.
 	// This $effect runs when `data.user` changes or on component initialization.
@@ -78,11 +108,43 @@
 			});
 			// Force session revalidation now that connection is restored
 			initializeAuth(true);
+
+			// Retry LLM store check after connection is restored
+			if (ENABLE_LOCAL_LLM) {
+				import('$lib/stores/llm.svelte')
+					.then(({ getGlobalLlmStore }) => {
+						const store = getGlobalLlmStore();
+						if (store) {
+							store.retryAfterAuth();
+						}
+					})
+					.catch((e) => {
+						console.warn('Failed to retry LlmStore after connection restored:', e);
+					});
+			}
+		};
+
+		// Set up listener for authentication success to retry LLM store
+		const handleAuthSuccess = () => {
+			console.log('Authentication successful, retrying LlmStore...');
+			if (ENABLE_LOCAL_LLM) {
+				import('$lib/stores/llm.svelte')
+					.then(({ getGlobalLlmStore }) => {
+						const store = getGlobalLlmStore();
+						if (store) {
+							store.retryAfterAuth();
+						}
+					})
+					.catch((e) => {
+						console.warn('Failed to retry LlmStore after auth success:', e);
+					});
+			}
 		};
 
 		window.addEventListener('auth:connection-error', handleConnectionError);
 		window.addEventListener('auth:session-expired', handleSessionExpired);
 		window.addEventListener('auth:connection-restored', handleConnectionRestored);
+		window.addEventListener('auth:success', handleAuthSuccess);
 
 		// Set up periodic auth check to detect session expiry during active use
 		const periodicAuthCheck = setInterval(
@@ -101,6 +163,7 @@
 			window.removeEventListener('auth:connection-error', handleConnectionError);
 			window.removeEventListener('auth:session-expired', handleSessionExpired);
 			window.removeEventListener('auth:connection-restored', handleConnectionRestored);
+			window.removeEventListener('auth:success', handleAuthSuccess);
 			clearInterval(periodicAuthCheck);
 		};
 	});

@@ -31,6 +31,40 @@ export interface Message {
 	superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
 }
 
+// Model capabilities interface
+export interface ModelCapabilities {
+	context_window_size: number;
+	max_output_tokens: number;
+	provider: string;
+	is_local: boolean;
+	is_available: boolean;
+	metadata: Record<string, string>;
+}
+
+// Recommended context settings from backend
+export interface RecommendedContextSettings {
+	total_token_limit: number;
+	recent_history_budget: number;
+	rag_budget: number;
+}
+
+// Enhanced model info with capabilities
+export interface ModelInfo {
+	id: string;
+	name: string;
+	description: string;
+	isLocal: boolean;
+	capabilities?: ModelCapabilities;
+	recommended_settings?: RecommendedContextSettings;
+	// Local model management properties (optional for cloud models)
+	filename?: string;
+	size_gb?: number;
+	vram_required?: number;
+	compatible?: boolean;
+	downloaded?: boolean;
+	active?: boolean;
+}
+
 // Paginated messages response for infinite scroll
 export interface PaginatedMessagesResponse {
 	messages: Message[];
@@ -541,6 +575,7 @@ export interface UpdateChatSessionSettingsRequest {
 	visibility?: VisibilityType | null;
 	active_custom_persona_id?: string | null;
 	model_name?: string | null;
+	model_provider?: string | null;
 	gemini_thinking_budget?: number | null;
 	gemini_enable_code_execution?: boolean | null;
 	context_total_token_limit?: number | null;
@@ -552,6 +587,7 @@ export interface UpdateChatSessionSettingsRequest {
 export interface ChatSessionSettingsResponse {
 	// Required fields matching backend ChatSettingsResponse
 	model_name: string;
+	model_provider?: string | null;
 	history_management_strategy: string;
 	history_management_limit: number;
 	// Optional fields
@@ -599,6 +635,10 @@ export interface UpdateUserSettingsRequest {
 	theme?: string | null;
 	notifications_enabled?: boolean | null;
 	typing_speed?: number | null;
+
+	// Local LLM Preferences
+	local_llm_enabled?: boolean | null;
+	preferred_local_model?: string | null;
 }
 
 export interface UserSettingsResponse {
@@ -626,6 +666,10 @@ export interface UserSettingsResponse {
 	theme?: string | null;
 	notifications_enabled?: boolean | null;
 	typing_speed?: number | null;
+
+	// Local LLM Preferences
+	local_llm_enabled?: boolean | null;
+	preferred_local_model?: string | null;
 
 	// Timestamps
 	created_at: string;
@@ -931,4 +975,77 @@ export type ChronicleAction = 'delete_chronicle' | 'disassociate' | 'delete_even
 
 export interface DeleteChatRequest {
 	chronicle_action?: ChronicleAction;
+}
+
+// LLM Management Types for Local Model Support
+
+export interface LlmInfoResponse {
+	local_llm_enabled: boolean; // Feature is available
+	server_running: boolean; // Server is actually running
+	hardware: any; // Hardware capabilities as JSON
+	models: LocalModelInfo[];
+	download_progress?: DownloadProgressInfo | null;
+}
+
+export interface LocalModelInfo {
+	id: string;
+	name: string;
+	filename: string;
+	size_gb: number;
+	vram_required: number;
+	compatible: boolean;
+	downloaded: boolean;
+	active: boolean;
+	description: string;
+}
+
+export interface DownloadProgressInfo {
+	model_id: string;
+	total_bytes: number;
+	downloaded_bytes: number;
+	percentage: number;
+	speed_bytes_per_sec?: number | null;
+}
+
+export interface DownloadModelRequest {
+	model_id: string;
+}
+
+export interface DownloadModelResponse {
+	success: boolean;
+	message: string;
+	download_id?: string | null;
+}
+
+export interface ModelRecommendation {
+	model_name: string;
+	priority_score: number;
+	performance_estimate: 'Low' | 'Medium' | 'High';
+	reasons: string[];
+	estimated_download_time?: number | null; // Duration in seconds
+	disk_space_required: number;
+}
+
+export interface ModelActionResponse {
+	success: boolean;
+	message: string;
+	active_model?: string;
+}
+
+export interface HardwareCapabilities {
+	total_ram_gb: number;
+	available_ram_gb: number;
+	cpu_cores: number;
+	cpu_arch: string;
+	gpu_info: GpuInfo[];
+	has_cuda: boolean;
+	has_metal: boolean;
+	os: string;
+}
+
+export interface GpuInfo {
+	name: string;
+	vram_gb?: number | null;
+	cuda_capable: boolean;
+	device_id: number;
 }

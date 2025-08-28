@@ -1,6 +1,7 @@
 import { Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
+import { ENABLE_LOCAL_LLM } from '$lib/utils/features';
 import type {
 	User,
 	Message,
@@ -64,7 +65,15 @@ import type {
 	AgentAnalysisResponse,
 	PaginatedMessagesResponse,
 	ChatDeletionAnalysisResponse,
-	ChronicleAction
+	ChronicleAction,
+	LlmInfoResponse,
+	ModelInfo,
+	DownloadProgressInfo,
+	DownloadModelRequest,
+	DownloadModelResponse,
+	ModelRecommendation,
+	ModelActionResponse,
+	HardwareCapabilities
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -1224,6 +1233,99 @@ class ApiClient {
 		return this.fetch<TokenCountResponse>('/api/chat/count-tokens', {
 			method: 'POST',
 			body: JSON.stringify(request)
+		});
+	}
+
+	// ============================================================================
+	// LLM Management Methods (Local Models)
+	// ============================================================================
+	// These methods are conditionally included based on ENABLE_LOCAL_LLM feature flag
+
+	// Get LLM system information and available models
+	async getLlmInfo(): Promise<Result<LlmInfoResponse, ApiError>> {
+		if (!ENABLE_LOCAL_LLM) {
+			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
+		}
+		return this.fetch<LlmInfoResponse>('/api/llm/info');
+	}
+
+	// Get smart model recommendations based on hardware
+	async getModelRecommendations(): Promise<Result<ModelRecommendation[], ApiError>> {
+		if (!ENABLE_LOCAL_LLM) {
+			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
+		}
+		return this.fetch<ModelRecommendation[]>('/api/llm/recommendations');
+	}
+
+	// Get the best single model recommendation
+	async getBestRecommendation(): Promise<Result<ModelRecommendation | null, ApiError>> {
+		if (!ENABLE_LOCAL_LLM) {
+			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
+		}
+		return this.fetch<ModelRecommendation | null>('/api/llm/recommendations/best');
+	}
+
+	// Download a specific model
+	async downloadModel(modelId: string): Promise<Result<DownloadModelResponse, ApiError>> {
+		if (!ENABLE_LOCAL_LLM) {
+			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
+		}
+		const request: DownloadModelRequest = { model_id: modelId };
+		return this.fetch<DownloadModelResponse>('/api/llm/models/download', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	// Delete a downloaded model
+	async deleteModel(modelId: string): Promise<Result<ModelActionResponse, ApiError>> {
+		if (!ENABLE_LOCAL_LLM) {
+			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
+		}
+		return this.fetch<ModelActionResponse>(`/api/llm/models/${modelId}`, {
+			method: 'DELETE'
+		});
+	}
+
+	// Activate/switch to a different model
+	async activateModel(modelId: string): Promise<Result<ModelActionResponse, ApiError>> {
+		if (!ENABLE_LOCAL_LLM) {
+			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
+		}
+		return this.fetch<ModelActionResponse>(`/api/llm/models/${modelId}/activate`, {
+			method: 'POST'
+		});
+	}
+
+	// Download and activate the best recommended model
+	async downloadBestModel(): Promise<Result<ModelActionResponse, ApiError>> {
+		if (!ENABLE_LOCAL_LLM) {
+			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
+		}
+		return this.fetch<ModelActionResponse>('/api/llm/download/best', {
+			method: 'POST'
+		});
+	}
+
+	/**
+	 * Get all available models with their capabilities
+	 */
+	async getAllModels(): Promise<Result<Record<string, any>, ApiError>> {
+		return this.fetch<Record<string, any>>('/api/llm/models/all');
+	}
+
+	// Create an EventSource for download progress (Server-Sent Events)
+	createDownloadProgressStream(): EventSource | null {
+		if (!ENABLE_LOCAL_LLM) {
+			return null; // Feature not enabled
+		}
+		if (typeof EventSource === 'undefined') {
+			return null; // SSE not supported (e.g., server-side rendering)
+		}
+
+		const url = `${this.baseUrl}/api/llm/download/progress`;
+		return new EventSource(url, {
+			withCredentials: true // Include cookies for authentication
 		});
 	}
 }

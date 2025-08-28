@@ -8,6 +8,8 @@
 	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { SidebarStore } from '$lib/stores/sidebar.svelte';
+	import { LLMStore } from '$lib/stores/llm.svelte';
+	import { ModelLifecycleStore } from '$lib/stores/modelLifecycle.svelte';
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
 
@@ -29,12 +31,23 @@
 	const selectedChronicleStore = new SelectedChronicleStore();
 	selectedChronicleStore.setInContext();
 
-	const settingsStore = SettingsStore.toContext(new SettingsStore());
+	const _settingsStore = SettingsStore.toContext(new SettingsStore());
 
-	const sidebarStore = SidebarStore.toContext(new SidebarStore());
+	const _sidebarStore = SidebarStore.toContext(new SidebarStore());
+
+	// Initialize LlmStore for chat components
+	const _llmStore = LLMStore.toContext(new LLMStore());
+
+	// Initialize ModelLifecycleStore for chat components
+	const _modelLifecycleStore = ModelLifecycleStore.toContext(new ModelLifecycleStore());
 
 	// Show toast notification if chat loading failed during SSR/initial load
 	onMount(() => {
+		// Fetch models for chat components
+		_llmStore.fetchModels().catch((error) => {
+			console.warn('Failed to fetch models in chat layout:', error);
+		});
+
 		if (data.chatsError) {
 			toast.error('Could not load chat history.', {
 				description: 'The server might be restarting. Please try refreshing the page.',

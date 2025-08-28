@@ -7,6 +7,8 @@
 	import ChatHeader from './chat-header.svelte';
 	import MultimodalInput from './multimodal-input.svelte';
 	import type { User, ScribeCharacter, ScribeChatSession } from '$lib/types';
+	import { ModelLifecycleStore } from '$lib/stores/modelLifecycle.svelte';
+	import { LLMStore } from '$lib/stores/llm.svelte';
 
 	// Props
 	let {
@@ -25,6 +27,10 @@
 
 	// Get reactive state from streaming service
 	const streamingState = streamingService.getState();
+
+	// Get store instances
+	const modelLifecycleStore = ModelLifecycleStore.fromContext();
+	const llmStore = LLMStore.fromContext();
 
 	// Local component state
 	let chatInput = $state(initialChatInputValue);
@@ -123,6 +129,24 @@
 
 			// Get current model
 			const model = await getCurrentChatModel();
+
+			// Auto-activate local model if needed
+			if (model) {
+				const modelInfo = llmStore.models.find(m => m.id === model);
+				if (modelInfo?.isLocal && modelInfo.downloaded && !modelLifecycleStore.isModelActive(model)) {
+					toast.info('Starting local model...');
+					const success = await modelLifecycleStore.activateModel(model);
+					if (!success) {
+						toast.error('Failed to start local model. Please try again.');
+						return;
+					}
+				}
+				
+				// Reset inactivity timer for any message sent (local or cloud)
+				if (modelInfo?.isLocal) {
+					modelLifecycleStore.resetInactivityTimer();
+				}
+			}
 
 			// Connect and start streaming
 			await streamingService.connect({

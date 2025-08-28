@@ -47,30 +47,7 @@ type GeminiStreamResult = Result<
 type ScribeEventStream =
     std::pin::Pin<Box<dyn Stream<Item = Result<ScribeSseEvent, AppError>> + Send>>;
 
-// Complex tuple type for session data
-type SessionDataTuple = (
-    String,                      // history_management_strategy
-    i32,                         // history_management_limit
-    Option<Uuid>,                // session_character_id
-    Option<BigDecimal>,          // temperature
-    Option<i32>,                 // max_output_tokens
-    Option<BigDecimal>,          // frequency_penalty
-    Option<BigDecimal>,          // presence_penalty
-    Option<i32>,                 // top_k
-    Option<BigDecimal>,          // top_p
-    Option<i32>,                 // seed
-    Option<Vec<Option<String>>>, // stop_sequences
-    String,                      // model_name
-    Option<i32>,                 // gemini_thinking_budget
-    Option<bool>,                // gemini_enable_code_execution
-    Vec<DbChatMessage>,          // messages
-    Character,                   // character
-    Vec<ChatCharacterOverride>,  // overrides
-    Option<String>,              // effective_system_prompt
-    Option<String>,              // raw_character_system_prompt
-    Option<Uuid>,                // player_chronicle_id
-    Option<String>,              // agent_mode
-);
+// Type alias already defined in types.rs as GenerationDataWithUnsavedUserMessage
 
 // These functions/types will be in sibling modules
 use super::{
@@ -224,6 +201,7 @@ pub async fn get_session_data_for_generation(
         session_seed_db,
         _session_stop_sequences_db,
         session_model_name_db,
+        session_model_provider_db,
         session_gemini_thinking_budget_db,
         session_gemini_enable_code_execution_db,
         existing_messages_db_raw, // Raw, potentially encrypted messages
@@ -233,7 +211,7 @@ pub async fn get_session_data_for_generation(
         raw_character_system_prompt,   // This is the raw system_prompt from the character itself
         player_chronicle_id_from_session, // The chronicle ID for RAG retrieval
         agent_mode_from_session, // The agent mode for context enrichment
-    ): SessionDataTuple = {
+    ) = {
         let conn = state
             .pool
             .get()
@@ -244,6 +222,8 @@ pub async fn get_session_data_for_generation(
         let frontend_history_for_interact = frontend_history.clone(); // Clone for closure
 
         conn.interact(move |conn_interaction| {
+            // Split into two queries to respect Diesel's tuple size limitation
+            // Query 1: Basic session settings (15 fields)
             let (
                 hist_strat,
                 hist_limit,
@@ -259,10 +239,7 @@ pub async fn get_session_data_for_generation(
                 seed_val,
                 stop_seqs,
                 model_n,
-                gem_think_budget,
-                gem_enable_code_exec,
-                player_chronicle_id,
-                agent_mode,
+                model_prov,
             ) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
@@ -281,10 +258,7 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::seed,
                     chat_sessions::stop_sequences,
                     chat_sessions::model_name,
-                    chat_sessions::gemini_thinking_budget,
-                    chat_sessions::gemini_enable_code_execution,
-                    chat_sessions::player_chronicle_id,
-                    chat_sessions::agent_mode,
+                    chat_sessions::model_provider,
                 ))
                 .first::<(
                     String,
@@ -301,6 +275,33 @@ pub async fn get_session_data_for_generation(
                     Option<i32>,
                     Option<Vec<Option<String>>>,
                     String,
+                    Option<String>,
+                )>(conn_interaction)
+                .map_err(|e| match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {session_id}: {e}"
+                    )),
+                })?;
+
+            // Query 2: Additional session fields (4 fields)
+            let (
+                gem_think_budget,
+                gem_enable_code_exec,
+                player_chronicle_id,
+                agent_mode,
+            ) = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select((
+                    chat_sessions::gemini_thinking_budget,
+                    chat_sessions::gemini_enable_code_execution,
+                    chat_sessions::player_chronicle_id,
+                    chat_sessions::agent_mode,
+                ))
+                .first::<(
                     Option<i32>,
                     Option<bool>,
                     Option<Uuid>,
@@ -444,6 +445,7 @@ pub async fn get_session_data_for_generation(
                 seed_val,
                 stop_seqs,
                 model_n,
+                model_prov,
                 gem_think_budget,
                 gem_enable_code_exec,
                 messages_raw_db,
@@ -973,7 +975,7 @@ pub async fn get_session_data_for_generation(
         managed_recent_history, // 0: managed_db_history (Vec<DbChatMessage> -> Vec<ChatMessage> in type alias)
         final_effective_system_prompt, // 1: system_prompt (Option<String>)
         active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search (Option<Vec<Uuid>>)
-        session_character_id_db, // 3: session_character_id (Uuid)
+        session_character_id_db, // 3: session_character_id (Option<Uuid>)
         raw_character_system_prompt, // 4: raw_character_system_prompt (Option<String>)
         session_temperature_db, // 5: temperature (Option<BigDecimal>)
         session_max_output_tokens_db, // 6: max_output_tokens (Option<i32>)
@@ -983,19 +985,20 @@ pub async fn get_session_data_for_generation(
         session_top_p_db,       // 10: top_p (Option<BigDecimal>)
         session_seed_db,        // 11: seed (Option<i32>) - MOVED
         session_model_name_db,  // 12: model_name (String) - MOVED
+        session_model_provider_db, // 13: model_provider (Option<String>) - NEW
         // -- Gemini Specific Options --
-        session_gemini_thinking_budget_db, // 13: gemini_thinking_budget (Option<i32>) - MOVED
-        session_gemini_enable_code_execution_db, // 14: gemini_enable_code_execution (Option<bool>) - MOVED
-        user_db_message_to_save, // 15: The user message struct (DbInsertableChatMessage) - MOVED
+        session_gemini_thinking_budget_db, // 14: gemini_thinking_budget (Option<i32>) - MOVED
+        session_gemini_enable_code_execution_db, // 15: gemini_enable_code_execution (Option<bool>) - MOVED
+        user_db_message_to_save, // 16: The user message struct (DbInsertableChatMessage) - MOVED
         // -- RAG Context & Recent History Tokens --
-        actual_recent_history_tokens, // 16: actual_recent_history_tokens (usize) - MOVED
-        rag_context_items,            // 17: rag_context_items (Vec<RetrievedChunk>) - MOVED
+        actual_recent_history_tokens, // 17: actual_recent_history_tokens (usize) - MOVED
+        rag_context_items,            // 18: rag_context_items (Vec<RetrievedChunk>) - MOVED
         // History Management Settings
-        history_management_strategy_db_val, // 18: history_management_strategy (String) - MOVED
-        history_management_limit_db_val,    // 19: history_management_limit (i32) - MOVED
-        user_persona_name,                  // 20: user_persona_name (Option<String>) - NEW
-        player_chronicle_id_from_session,   // 21: player_chronicle_id (Option<Uuid>) - NEW
-        agent_mode_from_session,            // 22: agent_mode (Option<String>) - NEW
+        history_management_strategy_db_val, // 19: history_management_strategy (String) - MOVED
+        history_management_limit_db_val,    // 20: history_management_limit (i32) - MOVED
+        user_persona_name,                  // 21: user_persona_name (Option<String>) - NEW
+        player_chronicle_id_from_session,   // 22: player_chronicle_id (Option<Uuid>) - NEW
+        agent_mode_from_session,            // 23: agent_mode (Option<String>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.
@@ -1014,6 +1017,7 @@ pub struct StreamAiParams {
     pub stop_sequences: Option<Vec<String>>, // New parameter
     pub seed: Option<i32>,                   // Mark as unused for now
     pub model_name: String,
+    pub model_provider: Option<String>,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub request_thinking: bool,                    // New parameter
@@ -1068,9 +1072,11 @@ fn is_safety_filter_error(error_str: &str) -> bool {
 pub struct ExecChatWithRetryParams {
     pub state: Arc<AppState>,
     pub model_name: String,
+    pub model_provider: Option<String>,
     pub chat_request: genai::chat::ChatRequest,
     pub chat_options: Option<genai::chat::ChatOptions>,
     pub session_id: Uuid,
+    pub user_id: Uuid, // Added for per-user AI client selection
     pub character_name: Option<String>, // For prefill generation
 }
 
@@ -1086,6 +1092,17 @@ pub async fn exec_chat_with_retry(
 ) -> Result<genai::chat::ChatResponse, AppError> {
     const MAX_RETRIES: u8 = 2;
     let mut retry_count = 0;
+
+    // Get the appropriate AI client based on model provider
+    let ai_client = params
+        .state
+        .ai_client_factory
+        .get_client_for_provider(
+            params.user_id,
+            params.model_provider.as_deref(),
+            Some(&params.model_name),
+        )
+        .await?;
 
     // Store original system prompt for retry attempts
     let original_system_prompt = params.chat_request.system.clone();
@@ -1132,9 +1149,7 @@ pub async fn exec_chat_with_retry(
 
         info!(session_id = %params.session_id, retry_count, "Attempting non-streaming AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
 
-        match params
-            .state
-            .ai_client
+        match ai_client
             .exec_chat(
                 &params.model_name,
                 attempt_chat_request,
@@ -1230,6 +1245,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             stop_sequences: params.stop_sequences.clone(),
             seed: params.seed,
             model_name: params.model_name.clone(),
+            model_provider: params.model_provider.clone(),
             gemini_thinking_budget: params.gemini_thinking_budget,
             gemini_enable_code_execution: params.gemini_enable_code_execution,
             request_thinking: params.request_thinking,
@@ -1295,6 +1311,7 @@ pub async fn stream_ai_response_and_save_message(
         stop_sequences,
         seed: _,
         model_name,
+        model_provider,
         gemini_thinking_budget,
         gemini_enable_code_execution,
         request_thinking,
@@ -1309,6 +1326,12 @@ pub async fn stream_ai_response_and_save_message(
         "stream_ai_response_and_save_message received system_prompt argument"
     );
     info!(%request_thinking, "Initiating AI stream and message saving process");
+
+    // Get the appropriate AI client based on model provider
+    let ai_client = state
+        .ai_client_factory
+        .get_client_for_provider(user_id, model_provider.as_deref(), Some(&model_name))
+        .await?;
 
     // Log the system_prompt that will be used
     debug!(
@@ -1405,8 +1428,7 @@ pub async fn stream_ai_response_and_save_message(
     // Temporary debug: log the raw prompt length to see if it's being built correctly
     tracing::debug!("Raw prompt debug built, length: {}", raw_prompt_debug.len());
 
-    let genai_stream_result: GeminiStreamResult = state
-        .ai_client
+    let genai_stream_result: GeminiStreamResult = ai_client
         .stream_chat(&model_name, chat_request, Some(genai_chat_options))
         .await;
 

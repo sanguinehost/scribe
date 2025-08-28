@@ -198,17 +198,17 @@ mod tests {
         ));
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 
-        let file_storage_service = Arc::new(
-            crate::services::file_storage_service::FileStorageService::new("./test_uploads")
-                .expect("Failed to create test file storage service"),
-        );
-
         // Create chronicle service for narrative intelligence
         let chronicle_service = Arc::new(crate::services::chronicle_service::ChronicleService::new(
             pool.clone(),
         ));
 
         // First create services without narrative intelligence service
+        let ai_client_factory = Arc::new(crate::services::ai_client_factory::AiClientFactory::new(
+            ai_client.clone(),
+            None, // No local LLM client for tests
+        ));
+        
         let services = AppStateServices {
             ai_client: ai_client.clone(),
             embedding_client: mock_embed_client.clone(),
@@ -220,10 +220,12 @@ mod tests {
             encryption_service,
             lorebook_service: lorebook_service.clone(),
             auth_backend,
-            file_storage_service,
             email_service: Arc::new(crate::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
             )),
+            ai_client_factory,
+            #[cfg(feature = "local-llm")]
+            llamacpp_server_manager: None,
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));

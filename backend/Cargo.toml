@@ -3,9 +3,17 @@ name = "scribe-backend"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+local-llm = ["dep:sysinfo", "dep:nix", "dep:which", "dep:tempfile"]
+production = []  # Explicitly excludes local-llm code
+
 [[bin]]
 name = "re_embed_chronicles"
 path = "src/bin/re_embed_chronicles.rs"
+
+[build-dependencies]
+# Build dependencies are only needed for local-llm feature
 
 [dependencies]
 axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Align with tonic and axum-login ^0.7.0, ADDED tokio feature
@@ -56,7 +64,7 @@ mime = "0.3.17"
 password-auth = { version = "1.0.0", features = ["argon2"] }
 hex = "0.4.3"
 
-genai = { git = "https://github.com/sanguinehost/rust-genai", rev = "cbb1c69" }
+genai = { git = "https://github.com/sanguinehost/rust-genai", rev = "4685b80" }
 
 reqwest = { version = "0.12.15", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }
@@ -102,6 +110,12 @@ utf8_iter = "1.0.0" # Corrected crate name (underscore vs hyphen)
 rustls-pemfile = "2.1.2"
 tokio-rustls = "0.26.0"
 rcgen = "0.13.1"  # For generating self-signed certificates
+
+# Local LLM dependencies (only with feature flag)
+sysinfo = { version = "0.30", optional = true }  # For hardware detection
+nix = { version = "0.29", features = ["signal"], optional = true }  # For Unix process management
+which = { version = "7.0", optional = true }  # For finding executables in PATH
+tempfile = { version = "3.19.1", optional = true }  # For temporary files in model management
 clap = { version = "4.5.26", features = ["derive"] }
 
 tokio-stream = "0.1"

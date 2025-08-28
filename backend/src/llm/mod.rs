@@ -11,8 +11,24 @@ pub type ChatStream = Pin<Box<dyn Stream<Item = ChatStreamItem> + Send>>;
 
 pub mod gemini_client;
 pub mod gemini_embedding_client;
+pub mod model_registry;
+
+// LlamaCpp integration (feature-gated)
+#[cfg(feature = "local-llm")]
+pub mod llamacpp;
+
 // Import the public request struct for use in the trait
 pub use gemini_embedding_client::BatchEmbeddingContentRequest;
+
+// Re-export LlamaCpp types when feature is enabled
+#[cfg(feature = "local-llm")]
+pub use llamacpp::{
+    LlamaCppClient, LlamaCppConfig, LocalLlmError,
+    ModelManager, ModelSelection, HardwareCapabilities
+};
+
+// Re-export model registry types
+pub use model_registry::{ModelCapabilities, ModelRegistry, RecommendedContextSettings};
 
 /// Trait defining the interface for AI client operations.
 #[async_trait]

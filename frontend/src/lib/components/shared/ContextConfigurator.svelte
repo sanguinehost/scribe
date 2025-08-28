@@ -4,24 +4,45 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 
+	import { llmStore } from '$lib/stores/llm.svelte';
+	import { onMount } from 'svelte';
+
 	let {
 		total_token_limit = $bindable(),
 		recent_history_budget = $bindable(),
 		rag_budget = $bindable(),
 		title = 'Context Window Management',
-		description = 'Configure token allocation for context processing.'
+		description = 'Configure token allocation for context processing.',
+		selectedModelId = undefined
 	} = $props<{
 		total_token_limit: number;
 		recent_history_budget: number;
 		rag_budget: number;
 		title?: string;
 		description?: string;
+		selectedModelId?: string;
 	}>();
+
+	// Get dynamic max context size based on selected model
+	const maxContextSize = $derived(() => {
+		if (selectedModelId) {
+			const maxSize = llmStore.getMaxContextSize(selectedModelId);
+			if (maxSize) return maxSize;
+		}
+		// Fallback to conservative default
+		return 200000;
+	});
+
+	// Load model capabilities on mount
+	onMount(() => {
+		llmStore.fetchModels();
+	});
 
 	// Constraint validation
 	$effect(() => {
-		// Ensure budgets don't exceed total
-		const max_allowed = total_token_limit;
+		// Ensure budgets don't exceed total and don't exceed model capabilities
+		const model_max = maxContextSize();
+		const max_allowed = Math.min(total_token_limit, model_max);
 
 		// Clamp recent history budget
 		if (recent_history_budget > max_allowed) {
@@ -83,6 +104,35 @@
 			rag: Math.floor(total * rag_ratio)
 		};
 	}
+
+	// Generate dynamic preset buttons based on model capabilities
+	const presetButtons = $derived(() => {
+		const modelMax = maxContextSize();
+		const presets = [4000, 8000, 16000, 32000, 64000, 128000, 200000, 1000000];
+
+		// Filter presets to only show those within model capabilities
+		return presets
+			.filter((preset) => preset <= modelMax)
+			.map((preset) => ({
+				value: preset,
+				label: preset >= 1000000 ? `${preset / 1000000}M` : `${preset / 1000}K`,
+				title: getPresetTitle(preset)
+			}));
+	});
+
+	function getPresetTitle(preset: number): string {
+		const titleMap: Record<number, string> = {
+			4000: 'Ultra-low cost, minimal context',
+			8000: 'Low cost, basic conversations',
+			16000: 'Budget-friendly, moderate context',
+			32000: 'Balanced cost/performance',
+			64000: 'Good for medium conversations',
+			128000: 'Large context for complex tasks',
+			200000: 'Optimal balance (many models)',
+			1000000: 'Maximum context (expensive)'
+		};
+		return titleMap[preset] || 'Custom context size';
+	}
 </script>
 
 <Card>
@@ -96,130 +146,40 @@
 				<div class="flex items-center justify-between">
 					<Label for="total-context-limit">Total Context Window (tokens)</Label>
 					<div class="flex flex-wrap gap-1">
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 px-2 text-xs"
-							title="Ultra-low cost, minimal context"
-							onclick={() => {
-								total_token_limit = 4000;
-								const budgets = calculatePresetBudgets(4000);
-								recent_history_budget = budgets.history;
-								rag_budget = budgets.rag;
-							}}
-						>
-							4K
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 px-2 text-xs"
-							title="Low cost, basic conversations"
-							onclick={() => {
-								total_token_limit = 8000;
-								const budgets = calculatePresetBudgets(8000);
-								recent_history_budget = budgets.history;
-								rag_budget = budgets.rag;
-							}}
-						>
-							8K
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 px-2 text-xs"
-							title="Budget-friendly, moderate context"
-							onclick={() => {
-								total_token_limit = 16000;
-								const budgets = calculatePresetBudgets(16000);
-								recent_history_budget = budgets.history;
-								rag_budget = budgets.rag;
-							}}
-						>
-							16K
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 px-2 text-xs"
-							title="Balanced cost/performance"
-							onclick={() => {
-								total_token_limit = 32000;
-								const budgets = calculatePresetBudgets(32000);
-								recent_history_budget = budgets.history;
-								rag_budget = budgets.rag;
-							}}
-						>
-							32K
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 px-2 text-xs"
-							title="Good for medium conversations"
-							onclick={() => {
-								total_token_limit = 64000;
-								const budgets = calculatePresetBudgets(64000);
-								recent_history_budget = budgets.history;
-								rag_budget = budgets.rag;
-							}}
-						>
-							64K
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 px-2 text-xs"
-							title="Large context for complex tasks"
-							onclick={() => {
-								total_token_limit = 128000;
-								const budgets = calculatePresetBudgets(128000);
-								recent_history_budget = budgets.history;
-								rag_budget = budgets.rag;
-							}}
-						>
-							128K
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 px-2 text-xs"
-							title="Gemini cost threshold (optimal)"
-							onclick={() => {
-								total_token_limit = 200000;
-								const budgets = calculatePresetBudgets(200000);
-								recent_history_budget = budgets.history;
-								rag_budget = budgets.rag;
-							}}
-						>
-							200K
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 px-2 text-xs"
-							title="Maximum context (expensive)"
-							onclick={() => {
-								total_token_limit = 1000000;
-								const budgets = calculatePresetBudgets(1000000);
-								recent_history_budget = budgets.history;
-								rag_budget = budgets.rag;
-							}}
-						>
-							1M
-						</Button>
+						{#each presetButtons() as preset}
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-6 px-2 text-xs"
+								title={preset.title}
+								onclick={() => {
+									total_token_limit = preset.value;
+									const budgets = calculatePresetBudgets(preset.value);
+									recent_history_budget = budgets.history;
+									rag_budget = budgets.rag;
+								}}
+							>
+								{preset.label}
+							</Button>
+						{/each}
 					</div>
 				</div>
 				<Input
 					id="total-context-limit"
 					type="number"
 					min={4000}
-					max={2000000}
+					max={maxContextSize()}
 					step={1000}
 					bind:value={total_token_limit}
 				/>
 				<p class="text-xs text-muted-foreground">
 					Maximum tokens the model can process. Higher = more context but slower/costlier.
+					{#if selectedModelId}
+						{@const capabilities = llmStore.getModelCapabilities(selectedModelId)}
+						{#if capabilities}
+							<br />Current model: {capabilities.context_window_size.toLocaleString()} tokens max
+						{/if}
+					{/if}
 				</p>
 			</div>
 

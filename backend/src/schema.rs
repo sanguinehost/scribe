@@ -317,6 +317,8 @@ diesel::table! {
         player_chronicle_id -> Nullable<Uuid>,
         #[max_length = 20]
         agent_mode -> Nullable<Varchar>,
+        #[max_length = 50]
+        model_provider -> Nullable<Varchar>,
     }
 }
 
@@ -573,6 +575,10 @@ diesel::table! {
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         typing_speed -> Nullable<Int4>,
+        #[max_length = 255]
+        preferred_local_model -> Nullable<Varchar>,
+        local_llm_enabled -> Nullable<Bool>,
+        local_model_preferences -> Nullable<Jsonb>,
     }
 }
 

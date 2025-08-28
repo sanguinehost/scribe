@@ -279,18 +279,19 @@ pub async fn generate_chat_response(
         gen_top_p,                   // 10: Option<BigDecimal> (was 9)
         gen_seed,                    // 11: Option<i32> (was 13)
         gen_model_name_from_service, // 12: String (was 15)
-        gen_gemini_thinking_budget,  // 13: Option<i32> (was 16)
-        gen_gemini_enable_code_execution, // 14: Option<bool> (was 17)
-        user_message_struct_to_save, // 15: DbInsertableChatMessage (was 18)
+        gen_model_provider_from_service, // 13: Option<String> (NEW)
+        gen_gemini_thinking_budget,  // 14: Option<i32> (was 16)
+        gen_gemini_enable_code_execution, // 15: Option<bool> (was 17)
+        user_message_struct_to_save, // 16: DbInsertableChatMessage (was 18)
         // -- New RAG related fields --
-        _actual_recent_history_tokens_from_service, // 16: usize (NEW) - Handled by prompt_builder (was 19)
-        rag_context_items_from_service, // 17: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
+        _actual_recent_history_tokens_from_service, // 17: usize (NEW) - Handled by prompt_builder (was 19)
+        rag_context_items_from_service, // 18: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
         // -- Original history management settings --
-        _hist_management_strategy, // 18: String (was 21)
-        _hist_management_limit,    // 19: i32 (was 22)
-        user_persona_name,         // 20: Option<String> (NEW)
-        player_chronicle_id,       // 21: Option<Uuid> (NEW) - Add this field
-        agent_mode,                // 22: Option<String> (NEW) - Agent mode for context enrichment
+        _hist_management_strategy, // 19: String (was 21)
+        _hist_management_limit,    // 20: i32 (was 22)
+        user_persona_name,         // 21: Option<String> (NEW)
+        player_chronicle_id,       // 22: Option<Uuid> (NEW) - Add this field
+        agent_mode,                // 23: Option<String> (NEW) - Agent mode for context enrichment
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -664,6 +665,7 @@ pub async fn generate_chat_response(
                     stop_sequences: None,
                     seed: gen_seed,
                     model_name: model_to_use.clone(),
+                    model_provider: gen_model_provider_from_service,
                     gemini_thinking_budget: gen_gemini_thinking_budget,
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
@@ -996,9 +998,11 @@ pub async fn generate_chat_response(
                 chat::generation::ExecChatWithRetryParams {
                     state: state_arc.clone(),
                     model_name: model_to_use.clone(),
+                    model_provider: gen_model_provider_from_service,
                     chat_request,
                     chat_options: Some(chat_options),
                     session_id,
+                    user_id: user_id_value,
                     character_name: Some(character_db_model.name.clone()),
                 },
             )
@@ -1242,6 +1246,7 @@ pub async fn generate_chat_response(
                     stop_sequences: None,
                     seed: gen_seed,
                     model_name: model_to_use.clone(),
+                    model_provider: gen_model_provider_from_service,
                     gemini_thinking_budget: gen_gemini_thinking_budget,
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
@@ -1750,6 +1755,7 @@ pub async fn generate_suggested_actions(
         _gen_top_p,
         _gen_seed,
         _gen_model_name_from_service, // We use a fixed model for suggestions
+        _gen_model_provider_from_service, // Model provider field
         _gen_gemini_thinking_budget,
         _gen_gemini_enable_code_execution,
         _user_message_struct_to_save, // Not saving a user message here
@@ -2296,6 +2302,7 @@ pub async fn expand_text_handler(
                     chat_sessions::history_management_strategy,
                     chat_sessions::history_management_limit,
                     chat_sessions::model_name,
+                    chat_sessions::model_provider,
                     chat_sessions::temperature,
                     chat_sessions::max_output_tokens,
                     chat_sessions::frequency_penalty,
@@ -2310,6 +2317,7 @@ pub async fn expand_text_handler(
                     String,
                     i32,
                     String,
+                    Option<String>,
                     Option<bigdecimal::BigDecimal>,
                     Option<i32>,
                     Option<bigdecimal::BigDecimal>,
@@ -2378,17 +2386,18 @@ pub async fn expand_text_handler(
         user_id,
         incoming_genai_messages: genai_messages,
         system_prompt: Some(expansion_system_prompt),
-        temperature: session_data.3,
-        max_output_tokens: session_data.4,
-        frequency_penalty: session_data.5,
-        presence_penalty: session_data.6,
-        top_k: session_data.7,
-        top_p: session_data.8,
+        temperature: session_data.4,
+        max_output_tokens: session_data.5,
+        frequency_penalty: session_data.6,
+        presence_penalty: session_data.7,
+        top_k: session_data.8,
+        top_p: session_data.9,
         stop_sequences: session_data
-            .9
+            .10
             .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
-        seed: session_data.10,
+        seed: session_data.11,
         model_name: session_data.2,
+        model_provider: session_data.3,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
@@ -2614,6 +2623,7 @@ pub async fn impersonate_handler(
                     chat_sessions::history_management_strategy,
                     chat_sessions::history_management_limit,
                     chat_sessions::model_name,
+                    chat_sessions::model_provider,
                     chat_sessions::temperature,
                     chat_sessions::max_output_tokens,
                     chat_sessions::frequency_penalty,
@@ -2628,6 +2638,7 @@ pub async fn impersonate_handler(
                     String,
                     i32,
                     String,
+                    Option<String>,
                     Option<bigdecimal::BigDecimal>,
                     Option<i32>,
                     Option<bigdecimal::BigDecimal>,
@@ -2683,17 +2694,18 @@ pub async fn impersonate_handler(
         user_id,
         incoming_genai_messages: genai_messages,
         system_prompt: Some(impersonation_system_prompt),
-        temperature: session_data.3,
-        max_output_tokens: session_data.4,
-        frequency_penalty: session_data.5,
-        presence_penalty: session_data.6,
-        top_k: session_data.7,
-        top_p: session_data.8,
+        temperature: session_data.4,
+        max_output_tokens: session_data.5,
+        frequency_penalty: session_data.6,
+        presence_penalty: session_data.7,
+        top_k: session_data.8,
+        top_p: session_data.9,
         stop_sequences: session_data
-            .9
+            .10
             .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
-        seed: session_data.10,
+        seed: session_data.11,
         model_name: session_data.2,
+        model_provider: session_data.3,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
