@@ -226,6 +226,10 @@ mod tests {
             ai_client_factory,
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None,
+            #[cfg(feature = "local-llm")]
+            security_audit_logger: None,
+            #[cfg(feature = "local-llm")]
+            model_integrity_verifier: None,
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));

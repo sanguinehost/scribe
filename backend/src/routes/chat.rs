@@ -669,7 +669,7 @@ pub async fn generate_chat_response(
                     gemini_thinking_budget: gen_gemini_thinking_budget,
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
-                    user_dek: Some(dek_for_stream_service),
+                    user_dek: dek_for_stream_service,
                     character_name: Some(character_db_model.name.clone()),
                     player_chronicle_id,
                 },
@@ -1004,6 +1004,7 @@ pub async fn generate_chat_response(
                     session_id,
                     user_id: user_id_value,
                     character_name: Some(character_db_model.name.clone()),
+                    user_dek: session_dek_arc.clone(),
                 },
             )
             .await
@@ -1250,7 +1251,7 @@ pub async fn generate_chat_response(
                     gemini_thinking_budget: gen_gemini_thinking_budget,
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
-                    user_dek: Some(dek_for_fallback_stream_service),
+                    user_dek: dek_for_fallback_stream_service,
                     character_name: Some(character_db_model.name.clone()),
                     player_chronicle_id,
                 },
@@ -2401,7 +2402,7 @@ pub async fn expand_text_handler(
         gemini_thinking_budget: None,
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
-        user_dek: Some(user_dek_arc),
+        user_dek: user_dek_arc,
         character_name: None, // Text expansion doesn't have a character
         player_chronicle_id: None, // Text expansion doesn't involve chronicle processing
     };
@@ -2709,7 +2710,7 @@ pub async fn impersonate_handler(
         gemini_thinking_budget: None,
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
-        user_dek: Some(user_dek_arc),
+        user_dek: user_dek_arc,
         character_name: None, // Impersonation doesn't have a character
         player_chronicle_id: None, // Impersonation doesn't involve chronicle processing
     };

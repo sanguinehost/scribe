@@ -40,6 +40,7 @@ argon2 = { version = "0.5.3", features = ["std"] } # Ensure std feature for hash
 secrecy = { version = "0.10.3", features = ["serde"] } # alloc feature removed as it's not standard
 aes-gcm = "0.10.3" # For AES-GCM encryption
 ring = "0.17.8" # Add ring
+sha2 = "0.10.8" # For SHA-256 hashing in integrity checks
 zip = "4.0.0"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }

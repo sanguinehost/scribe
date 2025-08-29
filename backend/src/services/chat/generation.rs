@@ -1021,7 +1021,7 @@ pub struct StreamAiParams {
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub request_thinking: bool,                    // New parameter
-    pub user_dek: Option<Arc<SecretBox<Vec<u8>>>>, // Changed to Option<Arc<SecretBox>>
+    pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
     pub character_name: Option<String>,            // For prefill generation
     pub player_chronicle_id: Option<Uuid>,        // For narrative processing
 }
@@ -1078,6 +1078,7 @@ pub struct ExecChatWithRetryParams {
     pub session_id: Uuid,
     pub user_id: Uuid, // Added for per-user AI client selection
     pub character_name: Option<String>, // For prefill generation
+    pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
 }
 
 /// Executes non-streaming AI chat with retry mechanism for safety filter blocks.
@@ -1093,14 +1094,18 @@ pub async fn exec_chat_with_retry(
     const MAX_RETRIES: u8 = 2;
     let mut retry_count = 0;
 
-    // Get the appropriate AI client based on model provider
+    // Get the secure AI client - user_dek is mandatory for security  
+    let dek_bytes = params.user_dek.expose_secret().clone();
+    let session_dek = crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)));
     let ai_client = params
         .state
         .ai_client_factory
-        .get_client_for_provider(
+        .get_secure_client_for_provider(
             params.user_id,
             params.model_provider.as_deref(),
             Some(&params.model_name),
+            Some(&session_dek),
+            &params.state,
         )
         .await?;
 
@@ -1328,9 +1333,18 @@ pub async fn stream_ai_response_and_save_message(
     info!(%request_thinking, "Initiating AI stream and message saving process");
 
     // Get the appropriate AI client based on model provider
+    // Always use secure client - user_dek is mandatory for security
+    let dek_bytes = user_dek.expose_secret().clone();
+    let session_dek = crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)));
     let ai_client = state
         .ai_client_factory
-        .get_client_for_provider(user_id, model_provider.as_deref(), Some(&model_name))
+        .get_secure_client_for_provider(
+            user_id, 
+            model_provider.as_deref(), 
+            Some(&model_name),
+            Some(&session_dek),
+            &state,
+        )
         .await?;
 
     // Log the system_prompt that will be used
@@ -1554,7 +1568,7 @@ pub async fn stream_ai_response_and_save_message(
                             trace!(session_id = %error_session_id_clone, "No partial content to save after stream error (chat_service)");
                         } else {
                             trace!(session_id = %error_session_id_clone, "Attempting to save partial AI response after stream error (chat_service)");
-                            let dek_ref_partial = user_dek_arc_clone_partial.clone();
+                            let dek_ref_partial = Some(user_dek_arc_clone_partial.clone());
                             match save_message(SaveMessageParams {
                                 state: state_for_partial_save,
                                 session_id: error_session_id_clone,
@@ -1641,7 +1655,7 @@ pub async fn stream_ai_response_and_save_message(
                 info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Entering tokio::spawn block for message save and narrative processing");
                 
                 let dek_ref_full = user_dek_arc_clone_full.clone();
-                info!(session_id = %full_session_id_clone, dek_available = dek_ref_full.is_some(), "NARRATIVE_DEBUG: About to save message");
+                info!(session_id = %full_session_id_clone, dek_available = true, "NARRATIVE_DEBUG: About to save message");
                 
                 match save_message(SaveMessageParams {
                     state: state_for_full_save.clone(),
@@ -1652,7 +1666,7 @@ pub async fn stream_ai_response_and_save_message(
                     role_str: Some("assistant".to_string()),
                     parts: Some(serde_json::json!([{"text": accumulated_content_clone}])),
                     attachments: None,
-                    user_dek_secret_box: dek_ref_full.clone(),
+                    user_dek_secret_box: Some(dek_ref_full.clone()),
                     model_name: service_model_name_clone_full.clone(),
                     raw_prompt_debug: Some(&raw_prompt_debug),
                     status: crate::models::chats::MessageStatus::Completed,
@@ -1683,12 +1697,12 @@ pub async fn stream_ai_response_and_save_message(
                         // Process narrative intelligence now that the assistant message has been saved
                         info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to check DEK availability for narrative processing");
                         
-                        if let Some(dek_arc) = &dek_ref_full {
-                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: DEK available, starting narrative intelligence processing");
-                            
-                            // Convert user_dek_secret_box to SessionDek for narrative processing
-                            let secret_bytes = dek_arc.expose_secret().clone();
-                            let session_dek_for_narrative = crate::auth::session_dek::SessionDek(secrecy::SecretBox::new(Box::new(secret_bytes)));
+                        // Always have DEK available for narrative processing
+                        info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: DEK available, starting narrative intelligence processing");
+                        
+                        // Convert user_dek_secret_box to SessionDek for narrative processing
+                        let secret_bytes = dek_ref_full.expose_secret().clone();
+                        let session_dek_for_narrative = crate::auth::session_dek::SessionDek(secrecy::SecretBox::new(Box::new(secret_bytes)));
                             
                             // Retrieve the latest messages from the database for narrative analysis
                             // This ensures we're analyzing the complete conversation including the just-saved assistant response
@@ -1742,9 +1756,6 @@ pub async fn stream_ai_response_and_save_message(
                                     error!(session_id = %full_session_id_clone, error = %e, "NARRATIVE_DEBUG: Failed to process narrative intelligence context after message save");
                                 }
                             }
-                        } else {
-                            warn!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Skipping narrative intelligence processing: no user DEK available for decryption");
-                        }
                         
                         info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Completed narrative processing attempt");
                     }

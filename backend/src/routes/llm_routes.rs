@@ -2,7 +2,7 @@
 // API routes for local LLM management
 
 use crate::{
-    auth::user_store::Backend as AuthBackend,
+    auth::{user_store::Backend as AuthBackend, SessionDek},
     errors::AppError,
     models::user_settings::{UpdateUserSettingsRequest, UserSettingsResponse},
     services::user_settings_service::UserSettingsService,
@@ -21,8 +21,9 @@ use tracing::{info, warn};
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{hardware::detect_hardware, ModelManager, LlamaCppClient};
+use std::sync::Arc;
 #[cfg(feature = "local-llm")]
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 #[cfg(feature = "local-llm")]
 use tokio_stream::wrappers::UnboundedReceiverStream;
 #[cfg(feature = "local-llm")]
@@ -172,7 +173,12 @@ pub fn llm_router() -> Router<AppState> {
 
 /// GET /api/llm/info - Get LLM system information
 #[cfg(feature = "local-llm")]
-async fn get_llm_info() -> Result<Json<LlmInfoResponse>, StatusCode> {
+async fn get_llm_info(
+    auth_session: AuthSession<AuthBackend>,
+) -> Result<Json<LlmInfoResponse>, StatusCode> {
+    // Verify user is authenticated
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
+    
     info!("Getting LLM system information");
     
     // Detect hardware capabilities
@@ -616,54 +622,69 @@ async fn download_best_model(
 }
 
 /// GET /api/llm/status - Check if local LLM is available
-async fn get_llm_status() -> Json<LlmStatusResponse> {
+async fn get_llm_status(
+    auth_session: AuthSession<AuthBackend>,
+) -> Result<Json<LlmStatusResponse>, StatusCode> {
+    // Verify user is authenticated
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
+    
     #[cfg(feature = "local-llm")]
     {
         // Try to detect hardware to see if local LLM could work
         match detect_hardware() {
-            Ok(_hardware) => Json(LlmStatusResponse {
+            Ok(_hardware) => Ok(Json(LlmStatusResponse {
                 local_llm_available: true,
                 error: None,
-            }),
-            Err(e) => Json(LlmStatusResponse {
+            })),
+            Err(e) => Ok(Json(LlmStatusResponse {
                 local_llm_available: false,
                 error: Some(format!("Hardware detection failed: {}", e)),
-            }),
+            })),
         }
     }
     
     #[cfg(not(feature = "local-llm"))]
     {
-        Json(LlmStatusResponse {
+        Ok(Json(LlmStatusResponse {
             local_llm_available: false,
             error: Some("Local LLM feature not compiled".to_string()),
-        })
+        }))
     }
 }
 
-/// POST /api/llm/test - Test LLM with a sample prompt
+/// POST /api/llm/test - Test LLM with a sample prompt (using secure wrapper)
 #[cfg(feature = "local-llm")]
 async fn test_llm(
     State(app_state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
+    session_dek: SessionDek,
     Json(request): Json<TestLlmRequest>,
 ) -> Result<Json<TestLlmResponse>, StatusCode> {
-    info!("Testing LLM with prompt: {}", request.prompt);
+    info!("Testing LLM with prompt: {} (secure)", request.prompt);
     
     let user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
     
-    // For now, we'll test with a basic LlamaCpp client
-    // TODO: In Phase 2, this should use the AiClientFactory
-    use crate::llm::AiClient;
-    let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let client = crate::llm::llamacpp::LlamaCppClient::new(config)
-        .await
-        .map_err(|e| {
-            error!("Failed to create LlamaCpp client: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    // Use the secure AI client factory to get a properly wrapped client
+    let secure_client = match app_state.ai_client_factory.get_secure_client_for_provider(
+        user.id,
+        None, // Use default provider
+        request.model_id.as_deref(), 
+        Some(&session_dek),
+        &Arc::new(app_state.clone()),
+    ).await {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Failed to get secure AI client for user {}: {}", user.id, e);
+            return Ok(Json(TestLlmResponse {
+                success: false,
+                response: None,
+                model_used: request.model_id.unwrap_or_else(|| "default".to_string()),
+                error: Some(format!("Failed to create secure client: {}", e)),
+            }));
+        }
+    };
     
-    // Create a simple chat request using the AiClient trait
+    // Create a simple chat request
     use genai::chat::{ChatRequest, ChatMessage, ChatRole, MessageContent};
     let chat_request = ChatRequest {
         messages: vec![ChatMessage {
@@ -675,7 +696,7 @@ async fn test_llm(
     };
     
     let model_name = request.model_id.as_deref().unwrap_or("default");
-    match client.exec_chat(model_name, chat_request, None).await {
+    match secure_client.exec_chat(model_name, chat_request, None).await {
         Ok(response) => {
             let model_used = request.model_id.unwrap_or_else(|| "default".to_string());
             let response_text = response.contents.first()
@@ -684,6 +705,8 @@ async fn test_llm(
                     _ => None,
                 })
                 .unwrap_or_else(|| "No response content".to_string());
+                
+            info!("Secure LLM test completed successfully for user {}", user.id);
             Ok(Json(TestLlmResponse {
                 success: true,
                 response: Some(response_text),
@@ -692,6 +715,7 @@ async fn test_llm(
             }))
         }
         Err(e) => {
+            warn!("Secure LLM test failed for user {}: {}", user.id, e);
             let model_used = request.model_id.unwrap_or_else(|| "default".to_string());
             Ok(Json(TestLlmResponse {
                 success: false,
@@ -916,7 +940,12 @@ async fn get_current_model(
 }
 
 /// GET /api/llm/models/all - Get all available models with capabilities
-async fn get_all_models() -> Result<Json<serde_json::Value>, StatusCode> {
+async fn get_all_models(
+    auth_session: AuthSession<AuthBackend>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // Verify user is authenticated
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
+    
     use crate::llm::ModelRegistry;
     
     info!("Getting all available models");
@@ -980,7 +1009,12 @@ async fn get_all_models() -> Result<Json<serde_json::Value>, StatusCode> {
 }
 
 /// GET /api/llm/models/:model_id/capabilities - Get specific model capabilities
-async fn get_model_capabilities(Path(model_id): Path<String>) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn get_model_capabilities(
+    auth_session: AuthSession<AuthBackend>,
+    Path(model_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // Verify user is authenticated
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
     use crate::llm::ModelRegistry;
     
     info!("Getting capabilities for model: {}", model_id);

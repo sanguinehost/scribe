@@ -826,6 +826,9 @@ mod tests {
             timeout_seconds: 30,
             max_retries: 2,
             health_check_interval_seconds: 10,
+            enable_tool_calling: false,
+            parallel_requests: Some(1),
+            chat_template: None,
         }
     }
     
@@ -835,8 +838,12 @@ mod tests {
                 ChatMessage {
                     role: ChatRole::User,
                     content: MessageContent::Text("Hello, how are you?".to_string()),
+                    options: Default::default(),
                 }
             ],
+            system: None,
+            tools: None,
+            ..Default::default()
         }
     }
     

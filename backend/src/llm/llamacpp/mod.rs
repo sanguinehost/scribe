@@ -26,6 +26,15 @@ pub mod hardware;
 pub mod metrics;
 
 #[cfg(feature = "local-llm")]
+pub mod encryption;
+
+#[cfg(feature = "local-llm")]
+pub mod audit;
+
+#[cfg(feature = "local-llm")]
+pub mod integrity;
+
+#[cfg(feature = "local-llm")]
 pub use client::LlamaCppClient;
 
 #[cfg(feature = "local-llm")]
@@ -51,6 +60,24 @@ pub use hardware::{HardwareCapabilities, HardwareRequirements, detect_hardware};
 
 #[cfg(feature = "local-llm")]
 pub use metrics::{PerformanceMetrics, MetricsCollector, LlamaCppMetrics};
+
+#[cfg(feature = "local-llm")]
+pub use encryption::{
+    LlmEncryptionService, LlmEncryptionError, EncryptedLlmData, 
+    LlmDataType, StreamingEncryptionHandler
+};
+
+#[cfg(feature = "local-llm")]
+pub use audit::{
+    SecurityAuditLogger, SecurityEvent, SecurityEventType, SecurityEventSeverity,
+    SecurityEventFilter, SecurityMetrics
+};
+
+#[cfg(feature = "local-llm")]
+pub use integrity::{
+    ModelIntegrityVerifier, ModelMetadata, QuarantineStatus, SecureModelRegistry,
+    IntegrityError, VerificationRecord, VerificationType, VerificationResult
+};
 
 #[cfg(feature = "local-llm")]
 use crate::errors::AppError;
@@ -90,7 +117,7 @@ impl Default for LlamaCppConfig {
             model_url: Some("https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q4_K_M.gguf".to_string()),
             server_host: "127.0.0.1".to_string(),
             server_port: 11435,
-            context_size: 8192,
+            context_size: 32768, // More reasonable default, can be overridden by LLAMACPP_CONTEXT_SIZE
             gpu_layers: Some(999), // All layers to GPU by default
             threads: None, // Auto-detect
             timeout_seconds: 120,

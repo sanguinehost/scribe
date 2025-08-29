@@ -313,12 +313,24 @@ impl ResourceLimiter {
         }
     }
 
-    /// Check if a request is allowed for the given user
+    /// Check if a request is allowed for the given user (legacy method)
     pub fn check_request_allowed(
         &mut self,
         user_id: &str,
         tokens: usize,
         context_length: usize,
+    ) -> Result<(), SecurityError> {
+        // Use the default max_context_length for backward compatibility
+        self.check_request_allowed_with_limit(user_id, tokens, context_length, self.max_context_length)
+    }
+
+    /// Check if a request is allowed for the given user with dynamic context limit
+    pub fn check_request_allowed_with_limit(
+        &mut self,
+        user_id: &str,
+        tokens: usize,
+        context_length: usize,
+        user_context_limit: usize,
     ) -> Result<(), SecurityError> {
         // Check token limit
         if tokens > self.max_tokens_per_request {
@@ -329,12 +341,15 @@ impl ResourceLimiter {
             });
         }
 
-        // Check context length
-        if context_length > self.max_context_length {
+        // Use the minimum of user's configured limit and security max
+        let effective_context_limit = std::cmp::min(user_context_limit, self.max_context_length);
+
+        // Check context length against effective limit
+        if context_length > effective_context_limit {
             return Err(SecurityError::ResourceLimitExceeded {
                 resource: "context_length".to_string(),
                 current: context_length as u64,
-                limit: self.max_context_length as u64,
+                limit: effective_context_limit as u64,
             });
         }
 

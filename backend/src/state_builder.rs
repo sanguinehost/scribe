@@ -21,6 +21,9 @@ use crate::{
 };
 use std::sync::Arc;
 
+#[cfg(feature = "local-llm")]
+use crate::llm::llamacpp::{SecurityAuditLogger, ModelIntegrityVerifier, integrity::TrustedSources};
+
 /// Builder for creating AppStateServices with sensible defaults and optional overrides
 pub struct AppStateServicesBuilder {
     // Required dependencies
@@ -245,6 +248,10 @@ impl AppStateServicesBuilder {
             ai_client_factory,
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Will be set in main.rs if local LLM is enabled
+            #[cfg(feature = "local-llm")]
+            security_audit_logger: Some(Arc::new(SecurityAuditLogger::new(10000))), // 10K events max
+            #[cfg(feature = "local-llm")]
+            model_integrity_verifier: Some(Arc::new(ModelIntegrityVerifier::new(Some(TrustedSources::default())))),
             // narrative_intelligence_service will be added after AppState is built
         };
         

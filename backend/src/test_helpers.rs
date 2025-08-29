@@ -94,6 +94,13 @@ use tower_sessions::{
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid; // Added for CryptoProvider
 
+#[cfg(feature = "local-llm")]
+use crate::llm::llamacpp::{LlamaCppServerManager, ModelManager, LlamaCppConfig};
+#[cfg(feature = "local-llm")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "local-llm")]
+use std::sync::Arc as StdArc;
+
 // Type aliases for complex test types
 type EmbeddingResponse = Arc<Mutex<Option<Result<Vec<f32>, AppError>>>>;
 type EmbeddingResponseSequence = Arc<Mutex<VecDeque<Result<Vec<f32>, AppError>>>>;
@@ -1212,6 +1219,10 @@ impl TestAppStateBuilder {
             ai_client_factory,
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
+            #[cfg(feature = "local-llm")]
+            security_audit_logger: None, // Not used in tests
+            #[cfg(feature = "local-llm")]
+            model_integrity_verifier: None, // Not used in tests
             // narrative_intelligence_service will be added after AppState is built
         };
 
@@ -2810,6 +2821,10 @@ impl TestApp {
             ai_client_factory,
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
+            #[cfg(feature = "local-llm")]
+            security_audit_logger: None, // Not used in tests
+            #[cfg(feature = "local-llm")]
+            model_integrity_verifier: None, // Not used in tests
         };
         
         Arc::new(AppState::new(
@@ -2817,5 +2832,327 @@ impl TestApp {
             self.config.clone(),
             services,
         ))
+    }
+}
+
+// --- LLM Server Test Helpers ---
+
+#[cfg(feature = "local-llm")]
+pub mod llm_server {
+    use std::process::{Child, Command, Stdio};
+    use std::time::{Duration, Instant};
+    use tokio::time::sleep;
+    use tracing::{debug, info, warn, error};
+
+    /// Configuration for the LLM test server
+    #[derive(Debug, Clone)]
+    pub struct LlmServerConfig {
+        pub model_path: String,
+        pub host: String,
+        pub port: u16,
+        pub context_size: u32,
+        pub gpu_layers: u32,
+        pub threads: u8,
+        pub timeout_seconds: u32,
+    }
+
+    impl Default for LlmServerConfig {
+        fn default() -> Self {
+            Self {
+                model_path: "/home/socol/Workspace/sanguine-scribe/models/gpt-oss-20b-Q4_K_M.gguf".to_string(),
+                host: "127.0.0.1".to_string(),
+                port: 11435,
+                context_size: 131072, // 128K tokens
+                gpu_layers: 999, // Try to use all GPU layers
+                threads: 8,
+                timeout_seconds: 30,
+            }
+        }
+    }
+
+    /// RAII guard for automatic LLM server cleanup
+    pub struct LlmServerTestGuard {
+        process: Option<Child>,
+        config: LlmServerConfig,
+    }
+
+    impl LlmServerTestGuard {
+        /// Start a new LLM server instance for testing
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if:
+        /// - The llama-server executable cannot be found
+        /// - The server fails to start
+        /// - The server doesn't respond within the timeout period
+        pub async fn start() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+            let config = LlmServerConfig::default();
+            Self::start_with_config(config).await
+        }
+
+        /// Start LLM server with custom configuration
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if:
+        /// - The llama-server executable cannot be found
+        /// - The server fails to start
+        /// - The server doesn't respond within the timeout period
+        pub async fn start_with_config(config: LlmServerConfig) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+            // Check if model file exists
+            if !std::path::Path::new(&config.model_path).exists() {
+                return Err(format!("Model file not found: {}", config.model_path).into());
+            }
+
+            info!("Starting LLM server with model: {}", config.model_path);
+
+            // First, try to stop any existing server on the port
+            let _ = stop_server_on_port(config.port).await;
+
+            // Start the llama-server process
+            let mut command = Command::new("/home/socol/Workspace/llama.cpp/build/bin/llama-server");
+            command
+                .arg("--model")
+                .arg(&config.model_path)
+                .arg("--host")
+                .arg(&config.host)
+                .arg("--port")
+                .arg(&config.port.to_string())
+                .arg("--ctx-size")
+                .arg(&config.context_size.to_string())
+                .arg("--n-gpu-layers")
+                .arg(&config.gpu_layers.to_string())
+                .arg("--threads")
+                .arg(&config.threads.to_string())
+                .arg("--log-disable")  // Disable verbose logging during tests
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+
+            debug!("Starting llama-server with command: {:?}", command);
+
+            let mut process = command.spawn()
+                .map_err(|e| format!("Failed to spawn llama-server: {}. Make sure /home/socol/Workspace/llama.cpp/build/bin/llama-server exists and is executable", e))?;
+
+            // Wait for the server to be ready
+            let server_url = format!("http://{}:{}", config.host, config.port);
+            let start_time = Instant::now();
+            let timeout = Duration::from_secs(config.timeout_seconds as u64);
+
+            info!("Waiting for LLM server to be ready at {}...", server_url);
+
+            while start_time.elapsed() < timeout {
+                // Check if process is still running
+                match process.try_wait() {
+                    Ok(Some(status)) => {
+                        return Err(format!("LLM server process exited early with status: {}", status).into());
+                    }
+                    Ok(None) => {
+                        // Process is still running, continue checking
+                    }
+                    Err(e) => {
+                        return Err(format!("Failed to check process status: {}", e).into());
+                    }
+                }
+
+                // Try to connect to the server
+                if let Ok(response) = reqwest::get(&format!("{}/health", server_url)).await {
+                    if response.status().is_success() {
+                        info!("LLM server is ready at {}", server_url);
+                        return Ok(Self {
+                            process: Some(process),
+                            config,
+                        });
+                    }
+                }
+
+                // Wait a bit before trying again
+                sleep(Duration::from_millis(500)).await;
+            }
+
+            // Timeout reached, kill the process
+            if let Err(e) = process.kill() {
+                warn!("Failed to kill LLM server process after timeout: {}", e);
+            }
+            
+            Err(format!("LLM server failed to start within {} seconds", config.timeout_seconds).into())
+        }
+
+        /// Get the server URL
+        pub fn server_url(&self) -> String {
+            format!("http://{}:{}", self.config.host, self.config.port)
+        }
+
+        /// Get the server configuration
+        pub fn config(&self) -> &LlmServerConfig {
+            &self.config
+        }
+    }
+
+    impl Drop for LlmServerTestGuard {
+        fn drop(&mut self) {
+            if let Some(mut process) = self.process.take() {
+                info!("Stopping LLM server...");
+                
+                // Try graceful shutdown first
+                if let Err(e) = process.kill() {
+                    warn!("Failed to terminate LLM server gracefully: {}", e);
+                    
+                    // Force kill if graceful shutdown fails
+                    if let Err(e) = process.kill() {
+                        error!("Failed to kill LLM server process: {}", e);
+                    }
+                }
+                
+                // Wait for process to exit (with timeout)
+                let start_time = Instant::now();
+                let timeout = Duration::from_secs(5);
+                
+                while start_time.elapsed() < timeout {
+                    match process.try_wait() {
+                        Ok(Some(_)) => {
+                            info!("LLM server stopped successfully");
+                            return;
+                        }
+                        Ok(None) => {
+                            std::thread::sleep(Duration::from_millis(100));
+                        }
+                        Err(e) => {
+                            warn!("Error checking process status during shutdown: {}", e);
+                            break;
+                        }
+                    }
+                }
+                
+                warn!("LLM server did not stop within timeout, may still be running");
+            }
+        }
+    }
+
+    /// Start a test LLM server with default configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the server fails to start
+    pub async fn start_test_llm_server() -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
+        LlmServerTestGuard::start().await
+    }
+
+    /// Stop any LLM server running on the specified port
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the process lookup or termination fails
+    pub async fn stop_server_on_port(port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Try to find and kill any process using the port
+        let output = Command::new("lsof")
+            .arg("-ti")
+            .arg(format!(":{}", port))
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() && !output.stdout.is_empty() => {
+                let pid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    info!("Found process {} using port {}, attempting to terminate", pid, port);
+                    
+                    // Try SIGTERM first
+                    let kill_result = Command::new("kill")
+                        .arg(pid.to_string())
+                        .output();
+                    
+                    match kill_result {
+                        Ok(output) if output.status.success() => {
+                            info!("Successfully terminated process {} on port {}", pid, port);
+                            
+                            // Give it a moment to shut down
+                            sleep(Duration::from_millis(1000)).await;
+                        }
+                        _ => {
+                            warn!("Failed to terminate process {} gracefully, trying SIGKILL", pid);
+                            
+                            // Force kill
+                            let _ = Command::new("kill")
+                                .arg("-9")
+                                .arg(pid.to_string())
+                                .output();
+                            
+                            sleep(Duration::from_millis(1000)).await;
+                        }
+                    }
+                }
+            }
+            _ => {
+                debug!("No process found using port {}", port);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if LLM server is running on the specified port
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the health check fails
+    pub async fn is_llm_server_running(host: &str, port: u16) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let health_url = format!("http://{}:{}/health", host, port);
+        
+        match reqwest::get(&health_url).await {
+            Ok(response) => Ok(response.status().is_success()),
+            Err(_) => Ok(false),
+        }
+    }
+
+    /// Ensure LLM server is running, start it if needed
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the server cannot be started
+    pub async fn ensure_llm_server_running() -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
+        let config = LlmServerConfig::default();
+        
+        if is_llm_server_running(&config.host, config.port).await? {
+            info!("LLM server is already running at {}:{}", config.host, config.port);
+            Ok(None) // Server is already running, no guard needed
+        } else {
+            info!("LLM server is not running, starting it...");
+            let guard = LlmServerTestGuard::start().await?;
+            Ok(Some(guard))
+        }
+    }
+}
+
+#[cfg(not(feature = "local-llm"))]
+pub mod llm_server {
+    //! Placeholder module when local-llm feature is not enabled
+    use std::fmt;
+    
+    #[derive(Debug)]
+    pub struct LlmServerTestGuard;
+    
+    impl LlmServerTestGuard {
+        pub async fn start() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+            Err("local-llm feature not enabled".into())
+        }
+        
+        pub fn server_url(&self) -> String {
+            "http://localhost:11435".to_string()
+        }
+    }
+    
+    pub async fn start_test_llm_server() -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
+        LlmServerTestGuard::start().await
+    }
+    
+    pub async fn stop_server_on_port(_port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
+    
+    pub async fn is_llm_server_running(_host: &str, _port: u16) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(false)
+    }
+    
+    pub async fn ensure_llm_server_running() -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
+        Err("local-llm feature not enabled".into())
     }
 }

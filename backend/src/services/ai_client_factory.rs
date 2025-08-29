@@ -2,19 +2,23 @@
 // Factory for creating appropriate AI clients based on user preferences
 
 use crate::{
+    auth::SessionDek,
     config::Config,
     errors::AppError,
     llm::AiClient,
     models::user_settings::UserSettingsResponse,
     services::user_settings_service::UserSettingsService,
-    state::DbPool,
+    state::{AppState, DbPool},
 };
 use std::sync::Arc;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 #[cfg(feature = "local-llm")]
-use crate::llm::llamacpp::{LlamaCppClient, LlamaCppConfig};
+use crate::{
+    llm::llamacpp::{LlamaCppClient, LlamaCppConfig},
+    services::secure_llm_service::SecureLlmService,
+};
 
 /// Factory for creating AI clients based on user preferences
 pub struct AiClientFactory {
@@ -37,7 +41,57 @@ impl AiClientFactory {
         }
     }
 
-    /// Get the appropriate AI client based on provider type
+    /// Get the appropriate AI client based on provider type with security wrapping
+    /// Returns the correct client for the specified provider (local, gemini, etc.)
+    /// For local LLMs, wraps with SecureLlmService if session_dek is provided
+    pub async fn get_secure_client_for_provider(
+        &self,
+        user_id: Uuid,
+        provider: Option<&str>,
+        model_name: Option<&str>,
+        session_dek: Option<&SessionDek>,
+        app_state: &Arc<AppState>,
+    ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
+        info!(%user_id, provider = ?provider, model_name = ?model_name, has_session_dek = session_dek.is_some(), "🔍 DEBUG: get_secure_client_for_provider called with params");
+        let provider = provider.unwrap_or("gemini"); // Default to gemini if no provider specified
+        
+        match provider {
+            "local" | "llamacpp" => {
+                #[cfg(feature = "local-llm")]
+                {
+                    match self.create_secure_local_llm_client_for_model(user_id, model_name, session_dek, app_state).await {
+                        Ok(client) => {
+                            info!(%user_id, model_name = ?model_name, "Created secure local LLM client for user");
+                            Ok(client)
+                        }
+                        Err(e) => {
+                            warn!(
+                                %user_id,
+                                error = ?e,
+                                "Failed to create secure local LLM client, falling back to default"
+                            );
+                            Ok(self.fallback_client.clone())
+                        }
+                    }
+                }
+
+                #[cfg(not(feature = "local-llm"))]
+                {
+                    warn!(
+                        %user_id,
+                        "Local LLM requested but feature not compiled, using fallback client"
+                    );
+                    Ok(self.fallback_client.clone())
+                }
+            }
+            "gemini" | _ => {
+                info!(%user_id, provider, "Using Gemini client (no security wrapping needed)");
+                Ok(self.fallback_client.clone())
+            }
+        }
+    }
+
+    /// Get the appropriate AI client based on provider type (legacy method without security)
     /// Returns the correct client for the specified provider (local, gemini, etc.)
     pub async fn get_client_for_provider(
         &self,
@@ -181,6 +235,62 @@ impl AiClientFactory {
             ))?;
 
         Ok(Arc::new(client))
+    }
+
+    /// Create a secure local LLM client for a specific model (wrapped with security controls)
+    #[cfg(feature = "local-llm")]
+    async fn create_secure_local_llm_client_for_model(
+        &self,
+        user_id: Uuid,
+        model_name: Option<&str>,
+        session_dek: Option<&SessionDek>,
+        app_state: &Arc<AppState>,
+    ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
+        // Get user settings for preferences
+        let user_settings = UserSettingsService::get_user_settings(
+            &self.pool,
+            user_id,
+            &self.config,
+        ).await.ok(); // It's OK if user settings don't exist, we'll use defaults
+
+        // Get base config from environment
+        let mut config = LlamaCppConfig::from_env();
+
+        // Override with specific model if provided
+        if let Some(model) = model_name {
+            config.model_path = format!("models/{}", model);
+        } else if let Some(settings) = &user_settings {
+            // Fall back to user's preferred model if available
+            if let Some(preferred_model) = &settings.preferred_local_model {
+                config.model_path = preferred_model.clone();
+            }
+        }
+
+        // Apply user-specific model preferences from JSONB field
+        if let Some(settings) = &user_settings {
+            if let Some(model_preferences) = &settings.local_model_preferences {
+                self.apply_model_preferences(&mut config, model_preferences)?;
+            }
+        }
+
+        // Create the underlying LlamaCpp client
+        let llamacpp_client = LlamaCppClient::new(config).await
+            .map_err(|e| AppError::InternalServerErrorGeneric(
+                format!("Failed to create LlamaCpp client: {}", e)
+            ))?;
+
+        // Wrap with SecureLlmService if session_dek is provided
+        if let Some(session_dek) = session_dek {
+            info!(%user_id, "Wrapping LlamaCpp client with SecureLlmService for enhanced security");
+            let secure_service = SecureLlmService::new(
+                Arc::new(llamacpp_client), 
+                app_state.clone()
+            );
+            Ok(Arc::new(secure_service))
+        } else {
+            info!(%user_id, "No SessionDek provided, using bare LlamaCpp client");
+            Ok(Arc::new(llamacpp_client))
+        }
     }
 
     /// Create a local LLM client based on user settings (legacy method)

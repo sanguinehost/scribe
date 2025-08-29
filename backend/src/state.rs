@@ -27,6 +27,8 @@ use crate::services::ai_client_factory::AiClientFactory;
 use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::LlamaCppServerManager; // Added for local LLM server management
+#[cfg(feature = "local-llm")]
+use crate::llm::llamacpp::{SecurityAuditLogger, ModelIntegrityVerifier}; // Added for LLM security
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
@@ -50,6 +52,10 @@ pub struct AppStateServices {
     pub ai_client_factory: Arc<AiClientFactory>,
     #[cfg(feature = "local-llm")]
     pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
+    #[cfg(feature = "local-llm")]
+    pub security_audit_logger: Option<Arc<SecurityAuditLogger>>, // Added for LLM security auditing
+    #[cfg(feature = "local-llm")]
+    pub model_integrity_verifier: Option<Arc<ModelIntegrityVerifier>>, // Added for model integrity verification
 }
 
 // --- Shared application state ---
@@ -81,6 +87,10 @@ pub struct AppState {
     pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
     #[cfg(feature = "local-llm")]
     pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
+    #[cfg(feature = "local-llm")]
+    pub security_audit_logger: Option<Arc<SecurityAuditLogger>>, // Added for LLM security auditing
+    #[cfg(feature = "local-llm")]
+    pub model_integrity_verifier: Option<Arc<ModelIntegrityVerifier>>, // Added for model integrity verification
 }
 
 // Manual Debug implementation for AppState
@@ -110,7 +120,9 @@ impl fmt::Debug for AppState {
         
         #[cfg(feature = "local-llm")]
         {
-            debug_struct.field("llamacpp_server_manager", &"<Option<Arc<LlamaCppServerManager>>>");
+            debug_struct.field("llamacpp_server_manager", &"<Option<Arc<LlamaCppServerManager>>>")
+                       .field("security_audit_logger", &"<Option<Arc<SecurityAuditLogger>>>")
+                       .field("model_integrity_verifier", &"<Option<Arc<ModelIntegrityVerifier>>>");
         }
         
         debug_struct.finish()
@@ -140,6 +152,10 @@ impl AppState {
             narrative_intelligence_service: None, // Will be set later after AppState is fully constructed
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: services.llamacpp_server_manager,
+            #[cfg(feature = "local-llm")]
+            security_audit_logger: services.security_audit_logger,
+            #[cfg(feature = "local-llm")]
+            model_integrity_verifier: services.model_integrity_verifier,
         }
     }
 

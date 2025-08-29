@@ -336,6 +336,10 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         ai_client_factory,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: llamacpp_server_manager,
+        #[cfg(feature = "local-llm")]
+        security_audit_logger: None, // Will be set by the builder if needed
+        #[cfg(feature = "local-llm")]
+        model_integrity_verifier: None, // Will be set by the builder if needed
     };
     
     Ok(services)
