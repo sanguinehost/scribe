@@ -105,6 +105,14 @@
 		};
 	}
 
+	// Apply a preset value to all budget settings
+	function applyPreset(value: number) {
+		total_token_limit = value;
+		const budgets = calculatePresetBudgets(value);
+		recent_history_budget = budgets.history;
+		rag_budget = budgets.rag;
+	}
+
 	// Generate dynamic preset buttons based on model capabilities
 	const presetButtons = $derived(() => {
 		const modelMax = maxContextSize();
@@ -152,12 +160,7 @@
 								size="sm"
 								class="h-6 px-2 text-xs"
 								title={preset.title}
-								onclick={() => {
-									total_token_limit = preset.value;
-									const budgets = calculatePresetBudgets(preset.value);
-									recent_history_budget = budgets.history;
-									rag_budget = budgets.rag;
-								}}
+								onclick={() => applyPreset(preset.value)}
 							>
 								{preset.label}
 							</Button>
