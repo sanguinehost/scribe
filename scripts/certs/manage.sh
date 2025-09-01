@@ -127,8 +127,8 @@ BACKEND_CERTS_DIR="$PROJECT_ROOT/.certs-backend"
 # Local Development Mode
 #############################################
 
-generate_local_certs() {
-    log_info "Generating certificates for local development..."
+generate_service_specific_certs() {
+    log_info "Generating service-specific certificates..."
     
     # Check if mkcert is available
     if ! command -v mkcert &> /dev/null; then
@@ -144,49 +144,112 @@ generate_local_certs() {
         exit 1
     fi
 
-    log_info "Generating certificate and key files..."
-    mkdir -p "$MAIN_CERTS_DIR"
+    # Create all certificate directories
+    log_info "Creating certificate directories..."
+    mkdir -p "$MAIN_CERTS_DIR" "$POSTGRES_CERTS_DIR" "$QDRANT_CERTS_DIR" "$BACKEND_CERTS_DIR"
     
-    local key_file="$MAIN_CERTS_DIR/key.pem"
-    local cert_file="$MAIN_CERTS_DIR/cert.pem"
-    local ca_file="$MAIN_CERTS_DIR/ca.pem"
-    
-    if ! mkcert -key-file "$key_file" -cert-file "$cert_file" \
-        localhost 127.0.0.1 ::1 qdrant postgres backend; then
-        log_error "Failed to generate certificates with mkcert."
-        rm -f "$key_file" "$cert_file"
-        exit 1
-    fi
-
-    # Copy the mkcert CA certificate
-    log_info "Copying mkcert CA certificate..."
+    # Get CA certificate location for copying to all directories
     local ca_root="$(mkcert -CAROOT)"
     local ca_cert_source="$ca_root/rootCA.pem"
     
+    # Generate backend certificate (both in main dir and backend-specific dir)
+    log_info "Generating backend certificate..."
+    local backend_key="$BACKEND_CERTS_DIR/key.pem"
+    local backend_cert="$BACKEND_CERTS_DIR/cert.pem"
+    local backend_ca="$BACKEND_CERTS_DIR/ca.pem"
+    
+    if ! mkcert -key-file "$backend_key" -cert-file "$backend_cert" \
+        localhost 127.0.0.1 ::1 backend; then
+        log_error "Failed to generate backend certificate."
+        exit 1
+    fi
+    
+    # Also create copies in the main certs dir for backward compatibility
+    cp "$backend_cert" "$MAIN_CERTS_DIR/cert.pem"
+    cp "$backend_key" "$MAIN_CERTS_DIR/key.pem"
+    
+    # Generate PostgreSQL certificate
+    log_info "Generating PostgreSQL certificate..."
+    local postgres_key="$POSTGRES_CERTS_DIR/key.pem"
+    local postgres_cert="$POSTGRES_CERTS_DIR/cert.pem"
+    local postgres_ca="$POSTGRES_CERTS_DIR/ca.pem"
+    
+    if ! mkcert -key-file "$postgres_key" -cert-file "$postgres_cert" \
+        localhost 127.0.0.1 ::1 postgres; then
+        log_error "Failed to generate PostgreSQL certificate."
+        exit 1
+    fi
+    
+    # Generate Qdrant certificate
+    log_info "Generating Qdrant certificate..."
+    local qdrant_key="$QDRANT_CERTS_DIR/key.pem"
+    local qdrant_cert="$QDRANT_CERTS_DIR/cert.pem"
+    local qdrant_ca="$QDRANT_CERTS_DIR/ca.pem"
+    
+    if ! mkcert -key-file "$qdrant_key" -cert-file "$qdrant_cert" \
+        localhost 127.0.0.1 ::1 qdrant; then
+        log_error "Failed to generate Qdrant certificate."
+        exit 1
+    fi
+
+    # Copy CA certificate to all directories
     if [[ -f "$ca_cert_source" ]]; then
-        cp "$ca_cert_source" "$ca_file"
-        log_success "mkcert CA certificate copied to $ca_file"
+        log_info "Copying CA certificate to all service directories..."
+        cp "$ca_cert_source" "$backend_ca"
+        cp "$ca_cert_source" "$postgres_ca"
+        cp "$ca_cert_source" "$qdrant_ca"
+        # Also copy to main dir for backward compatibility
+        cp "$ca_cert_source" "$MAIN_CERTS_DIR/ca.pem"
+        log_success "CA certificates copied"
     else
         log_warning "mkcert CA certificate not found - containers may have trust issues"
     fi
     
-    # Set proper permissions
-    chmod 755 "$MAIN_CERTS_DIR"
-    chmod 644 "$cert_file"
-    chmod 600 "$key_file"
-    [[ -f "$ca_file" ]] && chmod 644 "$ca_file"
+    # Set proper permissions for all certificates
+    log_info "Setting certificate permissions..."
     
-    log_success "Local certificates generated:"
-    log_info "  Certificate: $cert_file"
-    log_info "  Private key: $key_file"
-    [[ -f "$ca_file" ]] && log_info "  CA certificate: $ca_file"
+    # Backend certificates (user permissions)
+    chmod 755 "$MAIN_CERTS_DIR"
+    chmod 755 "$BACKEND_CERTS_DIR"
+    chmod 644 "$backend_cert"
+    chmod 600 "$backend_key"
+    [[ -f "$backend_ca" ]] && chmod 644 "$backend_ca"
+    # Also set permissions for main dir copies
+    chmod 644 "$MAIN_CERTS_DIR/cert.pem"
+    chmod 600 "$MAIN_CERTS_DIR/key.pem"
+    [[ -f "$MAIN_CERTS_DIR/ca.pem" ]] && chmod 644 "$MAIN_CERTS_DIR/ca.pem"
+    
+    # PostgreSQL certificates (user permissions, will be changed to container UID later)
+    chmod 755 "$POSTGRES_CERTS_DIR"
+    chmod 644 "$postgres_cert"
+    chmod 600 "$postgres_key"
+    [[ -f "$postgres_ca" ]] && chmod 644 "$postgres_ca"
+    
+    # Qdrant certificates (permissive permissions)
+    chmod 755 "$QDRANT_CERTS_DIR"
+    chmod 644 "$qdrant_cert"
+    chmod 644 "$qdrant_key"
+    [[ -f "$qdrant_ca" ]] && chmod 644 "$qdrant_ca"
+    
+    log_success "Service-specific certificates generated:"
+    log_info "  Backend: $backend_cert, $backend_key"
+    log_info "  PostgreSQL: $postgres_cert, $postgres_key"
+    log_info "  Qdrant: $qdrant_cert, $qdrant_key"
 }
 
 init_local_mode() {
     log_info "Initializing certificates for local development mode..."
     log_info "Mode: Local backend + containerized PostgreSQL/Qdrant"
     
-    generate_local_certs
+    generate_service_specific_certs
+    
+    # Apply PostgreSQL-specific permissions for container UID
+    log_info "Applying PostgreSQL container permissions..."
+    if command -v podman &> /dev/null; then
+        podman unshare chown -R 999:999 "$POSTGRES_CERTS_DIR"
+        podman unshare chmod 600 "$POSTGRES_CERTS_DIR/key.pem"
+    fi
+    
     log_success "Local development certificates ready"
     log_info "Use these certificates in your Rust backend configuration"
 }
@@ -221,7 +284,7 @@ copy_certificates_to_service_dirs() {
     apply_service_permissions "$runtime"
 }
 
-apply_service_permissions() {
+apply_container_permissions() {
     local runtime="$1"
     
     log_info "Applying service-specific permissions for $runtime runtime..."
@@ -285,7 +348,8 @@ init_container_mode() {
         exit 1
     fi
     
-    copy_certificates_to_service_dirs "$runtime"
+    generate_service_specific_certs
+    apply_container_permissions "$runtime"
     
     log_success "Container development certificates ready"
     if [[ -f "$MAIN_CERTS_DIR/ca.pem" ]]; then

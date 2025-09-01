@@ -781,6 +781,9 @@ pub async fn create_session_and_maybe_first_message(
             theme: Some("system".to_string()),
             notifications_enabled: Some(true),
             typing_speed: Some(30),
+            preferred_local_model: None,
+            local_llm_enabled: Some(false),
+            local_model_preferences: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }

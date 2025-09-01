@@ -18,7 +18,7 @@ interface LorebookStore {
 }
 
 function createLorebookStore() {
-	let state = $state<LorebookStore>({
+	const state = $state<LorebookStore>({
 		lorebooks: [],
 		selectedLorebook: null,
 		entries: [],

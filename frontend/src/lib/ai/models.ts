@@ -9,9 +9,10 @@ interface ChatModel {
 	id: string;
 	name: string;
 	description: string;
+	isLocal?: boolean; // Flag to indicate if this is a local model
 }
 
-export const chatModels: Array<ChatModel> = [
+export const cloudModels: Array<ChatModel> = [
 	{
 		id: 'gemini-2.5-pro',
 		name: 'Gemini 2.5 Pro',
@@ -28,3 +29,20 @@ export const chatModels: Array<ChatModel> = [
 		description: 'Ultra-fast and cost-effective model for summarization'
 	}
 ];
+
+// Backward compatibility - same as cloudModels for now
+export const chatModels: Array<ChatModel> = cloudModels;
+
+// Function to get all available models (cloud + local)
+export function getAllAvailableModels(
+	localModels: Array<{ id: string; name: string; description?: string }> = []
+): Array<ChatModel> {
+	const localChatModels: Array<ChatModel> = localModels.map((model) => ({
+		id: model.id,
+		name: model.name,
+		description: model.description || 'Local model',
+		isLocal: true
+	}));
+
+	return [...cloudModels, ...localChatModels];
+}

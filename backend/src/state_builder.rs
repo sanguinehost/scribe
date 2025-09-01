@@ -21,6 +21,9 @@ use crate::{
 };
 use std::sync::Arc;
 
+#[cfg(feature = "local-llm")]
+use crate::llm::llamacpp::{SecurityAuditLogger, ModelIntegrityVerifier, integrity::TrustedSources};
+
 /// Builder for creating AppStateServices with sensible defaults and optional overrides
 pub struct AppStateServicesBuilder {
     // Required dependencies
@@ -196,6 +199,13 @@ impl AppStateServicesBuilder {
 
         // For required external services, we need them to be provided
         let ai_client = self.ai_client.expect("AI client must be provided");
+        
+        // Create AI client factory
+        let ai_client_factory = Arc::new(crate::services::ai_client_factory::AiClientFactory::new(
+            self.db_pool.clone(),
+            self.config.clone(),
+            ai_client.clone(), // Use the provided AI client as fallback
+        ));
 
         let embedding_client = self
             .embedding_client
@@ -223,7 +233,7 @@ impl AppStateServicesBuilder {
         // due to circular dependency (service needs AppState, but AppState is built from services)
         // We'll create a placeholder for now and set it properly after AppState construction
 
-        Ok(AppStateServices {
+        let mut services = AppStateServices {
             ai_client,
             embedding_client,
             qdrant_service,
@@ -235,8 +245,17 @@ impl AppStateServicesBuilder {
             lorebook_service,
             auth_backend,
             email_service,
+            ai_client_factory,
+            #[cfg(feature = "local-llm")]
+            llamacpp_server_manager: None, // Will be set in main.rs if local LLM is enabled
+            #[cfg(feature = "local-llm")]
+            security_audit_logger: Some(Arc::new(SecurityAuditLogger::new(10000))), // 10K events max
+            #[cfg(feature = "local-llm")]
+            model_integrity_verifier: Some(Arc::new(ModelIntegrityVerifier::new(Some(TrustedSources::default())))),
             // narrative_intelligence_service will be added after AppState is built
-        })
+        };
+        
+        Ok(services)
     }
 }
 

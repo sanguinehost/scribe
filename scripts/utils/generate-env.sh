@@ -84,8 +84,8 @@ generate_session_secret() {
 }
 
 generate_cookie_signing_key() {
-    # Generate 64 hex characters (32 bytes)
-    openssl rand -hex 32
+    # Generate 128 hex characters (64 bytes)
+    openssl rand -hex 64
 }
 
 # Validate Gemini API key format
@@ -188,7 +188,7 @@ ENCRYPTION_KEY="$encryption_key"
 # Session secret for cookie signing - Securely generated
 SESSION_SECRET="$session_secret"
 
-# Cookie signing key (64 hex characters) - Securely generated
+# Cookie signing key (128 hex characters) - Securely generated
 COOKIE_SIGNING_KEY="$cookie_signing_key"
 
 # =============================================================================
@@ -306,7 +306,7 @@ show_completion_info() {
     echo "   ✓ Securely generated JWT secret"
     echo "   ✓ Securely generated encryption key (32 chars)"
     echo "   ✓ Securely generated session secret"  
-    echo "   ✓ Securely generated cookie signing key (64 hex chars)"
+    echo "   ✓ Securely generated cookie signing key (128 hex chars)"
     echo "   ✓ Local development defaults"
     echo
     log_info "Next steps:"

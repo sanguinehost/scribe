@@ -2,7 +2,9 @@
 
 ## Overview
 
-Scribe adopts a modern client-server architecture designed for performance, maintainability, and extensibility. It separates concerns between the frontend user interface, the backend business logic, data storage, and external AI services. HTTPS is used for secure communication between client and server.
+Scribe adopts a modern client-server architecture designed for performance, maintainability, and extensibility. It separates concerns between the frontend user interface, the backend business logic, data storage, and AI services (both external and local). HTTPS is used for secure communication between client and server.
+
+The system implements a hybrid AI architecture that can seamlessly switch between cloud-based AI services (Google Gemini) and local AI models (llama.cpp) based on user preferences, privacy requirements, and resource availability.
 
 ## Components
 
@@ -24,10 +26,10 @@ Scribe adopts a modern client-server architecture designed for performance, main
         *   Managing the server-side encryption lifecycle: deriving Key Encryption Keys (KEKs) from user passwords, decrypting user Data Encryption Keys (DEKs) into session memory, using DEKs to encrypt/decrypt user data (chat messages, character details) before database persistence/after retrieval, and storing encrypted data with nonces. Also handles user roles and account status. (See `docs/ENCRYPTION_ARCHITECTURE.md`).
         *   Implementing core business logic (prompt assembly, context management).
         *   Interacting with databases (PostgreSQL for primary data and sessions, Qdrant for vectors).
-        *   Communicating with external AI APIs (initially Google Gemini).
+        *   Routing AI requests through the AI Client Factory to appropriate providers (Google Gemini API or local llama.cpp models based on user preferences and availability).
         *   Parsing character card data.
         *   Processing chat history for the RAG system (chunking, embedding decrypted content).
-    *   **Key Modules:** API route handlers (e.g., `routes/chats.rs`, `routes/characters.rs`), Authentication layer (`auth/mod.rs`, `axum-login`), Cryptography utilities (`crypto.rs`), Encryption Service (`services/encryption_service.rs`), Core logic services (e.g., `ChatService`, `CharacterService`), Database services (Diesel for PostgreSQL, Qdrant client), AI client services, Character parser, Context processor.
+    *   **Key Modules:** API route handlers (e.g., `routes/chats.rs`, `routes/characters.rs`, `routes/llm_routes.rs`), Authentication layer (`auth/mod.rs`, `axum-login`), Cryptography utilities (`crypto.rs`), Encryption Service (`services/encryption_service.rs`), Core logic services (e.g., `ChatService`, `CharacterService`), Database services (Diesel for PostgreSQL, Qdrant client), AI client services (`services/ai_client_factory.rs`, `llm/` module), Character parser, Context processor.
 
 3.  **Databases:**
     *   **PostgreSQL:**
@@ -41,6 +43,11 @@ Scribe adopts a modern client-server architecture designed for performance, main
     *   **Google Gemini API:**
         *   **Purpose:** Provides large language models for text generation and text embedding.
         *   **Interaction:** Via dedicated Rust client making authenticated HTTP requests.
+    *   **Local LLM (llama.cpp):** *(Optional - enabled with `local-llm` feature)*
+        *   **Purpose:** Self-hosted large language models for privacy-focused AI generation with no API costs.
+        *   **Interaction:** Via LlamaCpp server process managed by `LlamaCppServerManager`, accessed through `LlamaCppClient`.
+        *   **Architecture:** Hybrid AI provider system with automatic fallback to Gemini API when local resources unavailable.
+        *   **Documentation:** See `docs/LOCAL_LLM_ARCHITECTURE.md` for complete architectural details.
 
 ## Architecture Diagram
 
@@ -67,6 +74,8 @@ graph TD
         DB_SERVICE["PostgreSQL Service (Diesel)"]
         VECTOR_SERVICE["Qdrant Service"]
         GEMINI_CLIENT["Gemini API Client"]
+        AI_CLIENT_FACTORY["AI Client Factory"]
+        LOCAL_LLM["Local LLM Stack (LlamaCpp)"]
         CHAR_PARSER["Character Card Parser"]
         CONTEXT_PROCESSOR["Context Processor (Chunking, Embedding)"]
 
@@ -83,8 +92,11 @@ graph TD
 
         CORE_LOGIC -- Uses --> DB_SERVICE
         CORE_LOGIC -- Uses --> VECTOR_SERVICE
-        CORE_LOGIC -- Uses --> GEMINI_CLIENT
+        CORE_LOGIC -- Uses --> AI_CLIENT_FACTORY
         CORE_LOGIC -- Uses --> ENCRYPTION_SVC
+        
+        AI_CLIENT_FACTORY -- Routes to --> GEMINI_CLIENT
+        AI_CLIENT_FACTORY -- Routes to --> LOCAL_LLM
         %% For data encryption/decryption
         ENCRYPTION_SVC -- Uses --> CRYPTO
 

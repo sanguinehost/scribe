@@ -9,6 +9,7 @@
 	import { Checkbox } from '../ui/checkbox';
 	import { toast } from 'svelte-sonner';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
+	import { ENABLE_LOCAL_LLM } from '$lib/utils/features';
 	import { chatModels, DEFAULT_CHAT_MODEL } from '$lib/ai/models';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
 	import ChevronDown from '../icons/chevron-down.svelte';
@@ -17,6 +18,23 @@
 	import type { UserSettingsResponse, UpdateUserSettingsRequest } from '$lib/types';
 
 	const settingsStore = SettingsStore.fromContext();
+
+	// Conditionally get LlmStore if feature is enabled
+	let llmStore = $state<any>(null);
+
+	if (ENABLE_LOCAL_LLM) {
+		// Use dynamic import with immediate store access
+		import('$lib/stores/llm.svelte')
+			.then(({ getGlobalLlmStore }) => {
+				llmStore = getGlobalLlmStore();
+			})
+			.catch((e) => {
+				console.warn('LlmStore not available', e);
+			});
+	}
+
+	// Make llmStore reactive
+	const llmStoreReactive = $derived(llmStore);
 
 	// Tab state
 	let activeTab = $state('generation');
@@ -48,7 +66,11 @@
 		auto_save_chats: true,
 		theme: 'system',
 		notifications_enabled: true,
-		typing_speed: 30 // milliseconds between characters for streaming text
+		typing_speed: 30, // milliseconds between characters for streaming text
+
+		// Local LLM Preferences (only relevant if feature is available)
+		local_llm_enabled: false,
+		preferred_local_model: null as string | null
 	});
 
 	// Expandable sections state
@@ -88,7 +110,11 @@
 				auto_save_chats: settings.auto_save_chats,
 				theme: settings.theme || null,
 				notifications_enabled: settings.notifications_enabled,
-				typing_speed: settings.typing_speed
+				typing_speed: settings.typing_speed,
+
+				// Local LLM Preferences
+				local_llm_enabled: settings.local_llm_enabled,
+				preferred_local_model: settings.preferred_local_model || null
 			};
 
 			const result = await apiClient.updateUserSettings(updateRequest);
@@ -143,7 +169,11 @@
 					auto_save_chats: userSettings.auto_save_chats ?? true,
 					theme: userSettings.theme || 'system',
 					notifications_enabled: userSettings.notifications_enabled ?? true,
-					typing_speed: userSettings.typing_speed ?? 30
+					typing_speed: userSettings.typing_speed ?? 30,
+
+					// Local LLM Preferences
+					local_llm_enabled: userSettings.local_llm_enabled ?? false,
+					preferred_local_model: userSettings.preferred_local_model || null
 				};
 			} else {
 				console.error('Failed to load user settings:', userSettingsResult.error);
@@ -174,7 +204,9 @@
 			auto_save_chats: true,
 			theme: 'system',
 			notifications_enabled: true,
-			typing_speed: 30
+			typing_speed: 30,
+			local_llm_enabled: false,
+			preferred_local_model: null
 		};
 		toast.info('Settings reset to system defaults');
 	}
@@ -184,11 +216,15 @@
 		loadSettings();
 	});
 
-	const tabs = [
+	// Dynamic tabs based on feature flags and runtime availability
+	const tabs = $derived([
 		{ id: 'generation', label: 'Generation', icon: '🎛️' },
 		{ id: 'context', label: 'Context', icon: '🧠' },
+		...(ENABLE_LOCAL_LLM && llmStoreReactive?.localLlmFeatureAvailable
+			? [{ id: 'models', label: 'Local Models', icon: '💾' }]
+			: []),
 		{ id: 'application', label: 'Application', icon: '⚙️' }
-	];
+	]);
 </script>
 
 <div class="mx-auto max-w-4xl md:mt-8">
@@ -445,6 +481,13 @@
 					/>
 				{/if}
 
+				<!-- Models Tab (Local LLM) -->
+				{#if activeTab === 'models' && ENABLE_LOCAL_LLM}
+					{#await import('$lib/components/models/ModelManager.svelte') then { default: ModelManager }}
+						<ModelManager />
+					{/await}
+				{/if}
+
 				<!-- Application Tab -->
 				{#if activeTab === 'application'}
 					<Card>
@@ -497,6 +540,46 @@
 									30 (default), 50 (slow)
 								</p>
 							</div>
+
+							{#if ENABLE_LOCAL_LLM && llmStoreReactive?.localLlmFeatureAvailable}
+								<Separator />
+
+								<div class="flex items-center space-x-2">
+									<Checkbox id="local-llm" bind:checked={settings.local_llm_enabled} />
+									<Label for="local-llm">Enable Local LLM</Label>
+								</div>
+								<p class="text-xs text-muted-foreground">
+									Use local models when available instead of cloud API
+								</p>
+
+								{#if settings.local_llm_enabled && llmStoreReactive?.downloadedModels?.length > 0}
+									<div class="space-y-2">
+										<Label for="preferred-model">Preferred Local Model</Label>
+										<select
+											id="preferred-model"
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											bind:value={settings.preferred_local_model}
+										>
+											<option value={null}>Auto-select best model</option>
+											{#each llmStoreReactive.downloadedModels as model}
+												<option value={model.id}>{model.name}</option>
+											{/each}
+										</select>
+										<p class="text-xs text-muted-foreground">
+											Choose a specific model or let the system pick automatically
+										</p>
+									</div>
+								{/if}
+
+								{#if settings.local_llm_enabled && llmStoreReactive?.downloadedModels?.length === 0}
+									<div class="rounded-lg border border-dashed p-4 text-center">
+										<p class="text-sm text-muted-foreground">
+											No local models downloaded. Visit the <strong>Local Models</strong> tab to download
+											models.
+										</p>
+									</div>
+								{/if}
+							{/if}
 						</CardContent>
 					</Card>
 				{/if}

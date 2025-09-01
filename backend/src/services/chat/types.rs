@@ -30,19 +30,20 @@ pub type GenerationDataWithUnsavedUserMessage = (
     Option<BigDecimal>, // 10: top_p (was 9)
     Option<i32>,    // 11: seed (was 13)
     String,         // 12: model_name (Fetched from DB) (was 15)
+    Option<String>, // 13: model_provider (NEW - provider type for AI client routing)
     // -- Gemini Specific Options --
-    Option<i32>,             // 13: gemini_thinking_budget (was 16)
-    Option<bool>,            // 14: gemini_enable_code_execution (was 17)
-    DbInsertableChatMessage, // 15: The user message struct, ready to be saved (was 18)
+    Option<i32>,             // 14: gemini_thinking_budget (was 16)
+    Option<bool>,            // 15: gemini_enable_code_execution (was 17)
+    DbInsertableChatMessage, // 16: The user message struct, ready to be saved (was 18)
     // -- RAG Context & Recent History Tokens --
-    usize,               // 16: actual_recent_history_tokens (NEW) (was 19)
-    Vec<RetrievedChunk>, // 17: rag_context_items (NEW) (was 20)
+    usize,               // 17: actual_recent_history_tokens (NEW) (was 19)
+    Vec<RetrievedChunk>, // 18: rag_context_items (NEW) (was 20)
     // History Management Settings (still returned for potential future use/logging)
-    String,         // 18: history_management_strategy (was 21)
-    i32,            // 19: history_management_limit (was 22)
-    Option<String>, // 20: user_persona_name (NEW - for template substitution)
-    Option<Uuid>,   // 21: player_chronicle_id (NEW - for narrative processing)
-    Option<String>, // 22: agent_mode (NEW - for context enrichment)
+    String,         // 19: history_management_strategy (was 21)
+    i32,            // 20: history_management_limit (was 22)
+    Option<String>, // 21: user_persona_name (NEW - for template substitution)
+    Option<Uuid>,   // 22: player_chronicle_id (NEW - for narrative processing)
+    Option<String>, // 23: agent_mode (NEW - for context enrichment)
 );
 
 /// Structured chunk with integrity checking for reliable streaming

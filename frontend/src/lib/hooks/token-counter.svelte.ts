@@ -11,7 +11,7 @@ interface TokenCountState {
  * Hook for counting tokens using the backend hybrid token counter
  */
 export function useTokenCounter() {
-	let state = $state<TokenCountState>({
+	const state = $state<TokenCountState>({
 		loading: false,
 		data: null,
 		error: null

@@ -56,3 +56,6 @@ uploads/
 
 # Certs generated for cloud deployment
 .internal-certs
+
+# Downloaded LLM models (GGUF files)
+models/

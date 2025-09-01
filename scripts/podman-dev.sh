@@ -95,7 +95,7 @@ case "$COMMAND" in
             up -d postgres qdrant
         
         echo "Waiting for database to initialize..."
-        sleep 5
+        sleep 30
         
         echo "Running database migrations..."
         if command -v diesel &>/dev/null; then

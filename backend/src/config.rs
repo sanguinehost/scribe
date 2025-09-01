@@ -74,6 +74,10 @@ pub struct Config {
     // Narrative Feature Flags
     #[serde(default)]
     pub narrative_flags: NarrativeFeatureFlags,
+    
+    // Security Configuration
+    #[serde(default)]
+    pub security: SecurityConfig,
 }
 
 impl std::fmt::Debug for Config {
@@ -198,6 +202,74 @@ fn default_app_env() -> String {
     "development".to_string()
 }
 
+/// Security configuration for LLM operations
+#[derive(Debug, Clone, Deserialize)]
+pub struct SecurityConfig {
+    #[serde(default = "default_max_context_tokens")]
+    pub max_context_tokens: usize,
+    #[serde(default = "default_max_requests_per_minute")]
+    pub max_requests_per_minute: u32,
+    #[serde(default = "default_max_requests_per_hour")]
+    pub max_requests_per_hour: u32,
+    #[serde(default = "default_max_concurrent_requests")]
+    pub max_concurrent_requests: u32,
+    #[serde(default = "default_audit_retention_hours")]
+    pub audit_retention_hours: u64,
+    #[serde(default = "default_prompt_max_length")]
+    pub prompt_max_length: usize,
+    #[serde(default = "default_response_max_length")]
+    pub response_max_length: usize,
+    #[serde(default = "default_security_logging_enabled")]
+    pub security_logging_enabled: bool,
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            max_context_tokens: default_max_context_tokens(),
+            max_requests_per_minute: default_max_requests_per_minute(),
+            max_requests_per_hour: default_max_requests_per_hour(),
+            max_concurrent_requests: default_max_concurrent_requests(),
+            audit_retention_hours: default_audit_retention_hours(),
+            prompt_max_length: default_prompt_max_length(),
+            response_max_length: default_response_max_length(),
+            security_logging_enabled: default_security_logging_enabled(),
+        }
+    }
+}
+
+fn default_max_context_tokens() -> usize {
+    1048576 // 1M tokens to support full range (4k to 1M) for all models including Gemini
+}
+
+fn default_max_requests_per_minute() -> u32 {
+    10 // 10 requests per minute per user
+}
+
+fn default_max_requests_per_hour() -> u32 {
+    100 // 100 requests per hour per user
+}
+
+fn default_max_concurrent_requests() -> u32 {
+    3 // 3 concurrent requests per user
+}
+
+fn default_audit_retention_hours() -> u64 {
+    168 // 1 week retention
+}
+
+fn default_prompt_max_length() -> usize {
+    8192 // 8KB max prompt
+}
+
+fn default_response_max_length() -> usize {
+    8192 // 8KB max response
+}
+
+fn default_security_logging_enabled() -> bool {
+    true // Security logging enabled by default
+}
+
 impl Config {
     /// Loads configuration from environment variables.
     ///
@@ -274,6 +346,7 @@ impl Default for Config {
             app_env: default_app_env(),
             from_email: None,
             narrative_flags: NarrativeFeatureFlags::default(),
+            security: SecurityConfig::default(),
         }
     }
 }

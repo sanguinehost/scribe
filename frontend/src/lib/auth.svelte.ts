@@ -57,6 +57,11 @@ export function setAuthenticated(user: User): void {
 	hasShownConnectionError = false;
 	hasShownSessionInvalidated = false;
 
+	// Dispatch auth success event for other parts of the app
+	if (browser) {
+		window.dispatchEvent(new CustomEvent('auth:success'));
+	}
+
 	// User authentication logging removed for production
 }
 
