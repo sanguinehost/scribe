@@ -33,16 +33,16 @@
 		return 200000;
 	});
 
+	// Calculate max allowed tokens (derived from model and total limit)
+	const max_allowed = $derived(() => Math.min(total_token_limit, maxContextSize));
+
 	// Load model capabilities on mount
 	onMount(() => {
 		llmStore.fetchModels();
 	});
 
-	// Constraint validation
+	// Constraint validation - only runs when dependencies change
 	$effect(() => {
-		// Ensure budgets don't exceed total and don't exceed model capabilities
-		const model_max = maxContextSize();
-		const max_allowed = Math.min(total_token_limit, model_max);
 
 		// Clamp recent history budget
 		if (recent_history_budget > max_allowed) {
