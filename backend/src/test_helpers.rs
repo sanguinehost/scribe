@@ -1217,6 +1217,7 @@ impl TestAppStateBuilder {
             )
             .await?,
             ai_client_factory,
+            rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(10, 100)), // Test rate limiter
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
             #[cfg(feature = "local-llm")]
@@ -2819,6 +2820,7 @@ impl TestApp {
             auth_backend,
             email_service,
             ai_client_factory,
+            rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(10, 100)), // Test rate limiter
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
             #[cfg(feature = "local-llm")]

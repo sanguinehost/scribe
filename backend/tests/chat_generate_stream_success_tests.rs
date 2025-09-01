@@ -472,10 +472,13 @@ async fn test_first_mes_included_in_history() {
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let file_storage_service = Arc::new(
-        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service"),
-    );
+
+    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.ai_client.clone(),
+    ));
+    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -488,12 +491,19 @@ async fn test_first_mes_included_in_history() {
         encryption_service: encryption_service.clone(),
         lorebook_service,
         auth_backend,
-        file_storage_service,
         email_service: Arc::new(
             scribe_backend::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
             ),
         ),
+        ai_client_factory,
+        rate_limiter,
+        #[cfg(feature = "local-llm")]
+        llamacpp_server_manager: None,
+        #[cfg(feature = "local-llm")]
+        security_audit_logger: None,
+        #[cfg(feature = "local-llm")]
+        model_integrity_verifier: None,
     };
 
     let state_for_service =
@@ -522,7 +532,7 @@ async fn test_first_mes_included_in_history() {
     .expect("Failed to get session data for generation");
 
     // Extract the managed history from the generation data
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
         generation_data;
 
     // Assert that the history contains the character's first_mes

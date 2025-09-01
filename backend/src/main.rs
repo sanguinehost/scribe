@@ -326,6 +326,10 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
             .await?
         },
         ai_client_factory,
+        rate_limiter: Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(
+            config.security.max_requests_per_minute,
+            config.security.max_requests_per_hour,
+        )),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: llamacpp_server_manager,
         #[cfg(feature = "local-llm")]
@@ -497,7 +501,12 @@ fn build_router(
             "/characters",
             characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         ) // 10MB limit for character uploads
-        .nest("/chat", chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024))) // 50MB limit for chat history
+        .nest("/chat", chat_routes(app_state.clone())
+            .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit for chat history
+            .layer(axum::middleware::from_fn_with_state(
+                app_state.clone(),
+                scribe_backend::middleware::llm_security::llm_security_middleware,
+            )))
         .nest("/chats", chats::chat_routes())
         .nest("/chronicles", chronicles::create_chronicles_router(app_state.clone()))
         .nest("/documents", document_routes())
@@ -560,6 +569,7 @@ fn build_router(
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
         .with_state(app_state)
+        .layer(axum_middleware::from_fn(scribe_backend::middleware::security_headers_middleware))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),

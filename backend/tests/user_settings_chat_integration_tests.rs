@@ -121,6 +121,9 @@ async fn test_chat_session_uses_user_default_model() {
         theme: None,
         notifications_enabled: None,
         typing_speed: None,
+        preferred_local_model: None,
+        local_llm_enabled: None,
+        local_model_preferences: None,
     };
 
     // Insert user settings in database using interact
@@ -189,10 +192,12 @@ async fn test_chat_session_uses_user_default_model() {
         encryption_service.clone(),
         qdrant_service.clone(),
     ));
-    let file_storage_service = Arc::new(
-        scribe_backend::services::file_storage_service::FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service"),
-    );
+    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
+        db_pool.clone(),
+        config.clone(),
+        ai_client.clone(),
+    ));
+    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let app_services = AppStateServices {
         ai_client,
@@ -205,12 +210,19 @@ async fn test_chat_session_uses_user_default_model() {
         encryption_service,
         lorebook_service,
         auth_backend,
-        file_storage_service,
         email_service: Arc::new(
             scribe_backend::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
             ),
         ),
+        ai_client_factory,
+        rate_limiter,
+        #[cfg(feature = "local-llm")]
+        llamacpp_server_manager: None,
+        #[cfg(feature = "local-llm")]
+        security_audit_logger: None,
+        #[cfg(feature = "local-llm")]
+        model_integrity_verifier: None,
     };
 
     let app_state_for_session = Arc::new(AppState::new(db_pool, config, app_services));

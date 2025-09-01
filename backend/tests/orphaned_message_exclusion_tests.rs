@@ -11,9 +11,9 @@ use scribe_backend::schema::{
 use scribe_backend::services::chat::generation::get_session_data_for_generation;
 use scribe_backend::services::{
     chat_override_service::ChatOverrideService, email_service::LoggingEmailService,
-    encryption_service::EncryptionService, file_storage_service::FileStorageService,
-    hybrid_token_counter::HybridTokenCounter, lorebook::LorebookService,
-    tokenizer_service::TokenizerService, user_persona_service::UserPersonaService,
+    encryption_service::EncryptionService, hybrid_token_counter::HybridTokenCounter, 
+    lorebook::LorebookService, tokenizer_service::TokenizerService, 
+    user_persona_service::UserPersonaService,
 };
 use scribe_backend::state::{AppState, AppStateServices};
 use scribe_backend::test_helpers;
@@ -148,13 +148,15 @@ async fn test_frontend_history_vs_database_history() {
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let file_storage_service = Arc::new(
-        FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service"),
-    );
     let email_service = Arc::new(LoggingEmailService::new(
         "http://localhost:3000".to_string(),
     ));
+    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.ai_client.clone(),
+    ));
+    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -167,8 +169,15 @@ async fn test_frontend_history_vs_database_history() {
         encryption_service,
         lorebook_service,
         auth_backend,
-        file_storage_service,
         email_service,
+        ai_client_factory,
+        rate_limiter,
+        #[cfg(feature = "local-llm")]
+        llamacpp_server_manager: None,
+        #[cfg(feature = "local-llm")]
+        security_audit_logger: None,
+        #[cfg(feature = "local-llm")]
+        model_integrity_verifier: None,
     };
 
     let state = AppState::new(test_app.db_pool.clone(), test_app.config.clone(), services);
@@ -247,7 +256,7 @@ async fn test_frontend_history_vs_database_history() {
         frontend_call_count
     );
 
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
         result_frontend;
 
     // Should have 2 messages from frontend history (excluding current message)
@@ -316,13 +325,15 @@ async fn test_orphaned_message_exclusion_scenario() {
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let file_storage_service = Arc::new(
-        FileStorageService::new("./test_uploads")
-            .expect("Failed to create test file storage service"),
-    );
     let email_service = Arc::new(LoggingEmailService::new(
         "http://localhost:3000".to_string(),
     ));
+    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        test_app.ai_client.clone(),
+    ));
+    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -335,8 +346,15 @@ async fn test_orphaned_message_exclusion_scenario() {
         encryption_service,
         lorebook_service,
         auth_backend,
-        file_storage_service,
         email_service,
+        ai_client_factory,
+        rate_limiter,
+        #[cfg(feature = "local-llm")]
+        llamacpp_server_manager: None,
+        #[cfg(feature = "local-llm")]
+        security_audit_logger: None,
+        #[cfg(feature = "local-llm")]
+        model_integrity_verifier: None,
     };
 
     let state = AppState::new(test_app.db_pool.clone(), test_app.config.clone(), services);
@@ -388,7 +406,7 @@ async fn test_orphaned_message_exclusion_scenario() {
     let calls = test_app.mock_embedding_pipeline_service.get_calls();
     println!("RAG calls made in frontend mode: {}", calls.len());
 
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = result;
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = result;
 
     // Should have exactly 3 messages from frontend history (excluding current message)
     assert_eq!(

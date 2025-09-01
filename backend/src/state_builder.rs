@@ -18,6 +18,7 @@ use crate::{
     state::{AppState, AppStateServices, DbPool},
     text_processing::chunking::ChunkConfig,
     vector_db::qdrant_client::QdrantClientServiceTrait,
+    middleware::llm_security::LlmRateLimiter,
 };
 use std::sync::Arc;
 
@@ -42,6 +43,7 @@ pub struct AppStateServicesBuilder {
     lorebook_service: Option<Arc<LorebookService>>,
     auth_backend: Option<Arc<AuthBackend>>,
     email_service: Option<Arc<dyn EmailService + Send + Sync>>,
+    rate_limiter: Option<Arc<LlmRateLimiter>>,
 }
 
 impl AppStateServicesBuilder {
@@ -61,6 +63,7 @@ impl AppStateServicesBuilder {
             lorebook_service: None,
             auth_backend: None,
             email_service: None,
+            rate_limiter: None,
         }
     }
 
@@ -229,6 +232,14 @@ impl AppStateServicesBuilder {
             self.db_pool.clone(),
         ));
 
+        // Get or create rate limiter
+        let rate_limiter = self.rate_limiter.unwrap_or_else(|| {
+            Arc::new(LlmRateLimiter::new(
+                self.config.security.max_requests_per_minute,
+                self.config.security.max_requests_per_hour,
+            ))
+        });
+
         // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
         // due to circular dependency (service needs AppState, but AppState is built from services)
         // We'll create a placeholder for now and set it properly after AppState construction
@@ -246,6 +257,7 @@ impl AppStateServicesBuilder {
             auth_backend,
             email_service,
             ai_client_factory,
+            rate_limiter,
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Will be set in main.rs if local LLM is enabled
             #[cfg(feature = "local-llm")]

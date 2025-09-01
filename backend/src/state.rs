@@ -25,6 +25,7 @@ use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::ai_client_factory::AiClientFactory;
 use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
+use crate::middleware::llm_security::LlmRateLimiter; // Added for rate limiting
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::LlamaCppServerManager; // Added for local LLM server management
 #[cfg(feature = "local-llm")]
@@ -50,6 +51,7 @@ pub struct AppStateServices {
     pub auth_backend: Arc<AuthBackend>,
     pub email_service: Arc<dyn EmailService + Send + Sync>,
     pub ai_client_factory: Arc<AiClientFactory>,
+    pub rate_limiter: Arc<LlmRateLimiter>,
     #[cfg(feature = "local-llm")]
     pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
     #[cfg(feature = "local-llm")]
@@ -84,6 +86,7 @@ pub struct AppState {
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
     pub ai_client_factory: Arc<AiClientFactory>, // Added for dynamic AI client selection
+    pub rate_limiter: Arc<LlmRateLimiter>, // Added for rate limiting
     pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
     #[cfg(feature = "local-llm")]
     pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
@@ -116,6 +119,7 @@ impl fmt::Debug for AppState {
             .field("auth_backend", &"<Arc<AuthBackend>>") // Added
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
             .field("ai_client_factory", &"<Arc<AiClientFactory>>") // Added for AI client factory
+            .field("rate_limiter", &"<Arc<LlmRateLimiter>>") // Added for rate limiting
             .field("narrative_intelligence_service", &"<Option<Arc<NarrativeIntelligenceService>>>"); // Added for agentic narrative processing
         
         #[cfg(feature = "local-llm")]
@@ -149,6 +153,7 @@ impl AppState {
             auth_backend: services.auth_backend,
             email_service: services.email_service,
             ai_client_factory: services.ai_client_factory,
+            rate_limiter: services.rate_limiter,
             narrative_intelligence_service: None, // Will be set later after AppState is fully constructed
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: services.llamacpp_server_manager,

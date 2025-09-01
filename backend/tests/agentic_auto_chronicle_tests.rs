@@ -49,8 +49,19 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp,
         encryption_service: Arc::new(scribe_backend::services::EncryptionService::new()),
         lorebook_service: lorebook_service.clone(),
         auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
-        file_storage_service: Arc::new(scribe_backend::services::file_storage_service::FileStorageService::new("test_files").unwrap()),
         email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
+        ai_client_factory: Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        )),
+        rate_limiter: Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100)),
+        #[cfg(feature = "local-llm")]
+        llamacpp_server_manager: None,
+        #[cfg(feature = "local-llm")]
+        security_audit_logger: None,
+        #[cfg(feature = "local-llm")]
+        model_integrity_verifier: None,
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),

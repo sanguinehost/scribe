@@ -716,16 +716,17 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _model_name, // 12: model_name
-            _,
-            _,
-            _user_msg_struct,     // 15: DbInsertableChatMessage
-            actual_recent_tokens, // 16: actual_recent_history_tokens
-            rag_items,            // 17: rag_context_items
-            _,                    // 18: history_management_strategy
-            _,                    // 19: history_management_limit
-            _,                    // 20: user_persona_name
-            _,                    // 21: player_chronicle_id
-            _,                    // 22: agent_mode
+            _,           // 13: model_provider (NEW)
+            _,           // 14: gemini_thinking_budget
+            _,           // 15: gemini_enable_code_execution
+            _user_msg_struct,     // 16: DbInsertableChatMessage
+            actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
+            rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
+            _,                    // 19: history_management_strategy
+            _,                    // 20: history_management_limit
+            _,                    // 21: user_persona_name
+            _,                    // 22: player_chronicle_id
+            _,                    // 23: agent_mode
         ) = result.unwrap();
 
         assert_eq!(
@@ -892,16 +893,17 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _model_name, // 12: model_name
-            _,
-            _,
-            _user_msg_struct,     // 15: DbInsertableChatMessage
-            actual_recent_tokens, // 16: actual_recent_history_tokens
-            rag_items,            // 17: rag_context_items
-            _,                    // 18: history_management_strategy
-            _,                    // 19: history_management_limit
-            _,                    // 20: user_persona_name
-            _,                    // 21: player_chronicle_id
-            _,                    // 22: agent_mode
+            _,           // 13: model_provider (NEW)
+            _,           // 14: gemini_thinking_budget
+            _,           // 15: gemini_enable_code_execution
+            _user_msg_struct,     // 16: DbInsertableChatMessage
+            actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
+            rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
+            _,                    // 19: history_management_strategy
+            _,                    // 20: history_management_limit
+            _,                    // 21: user_persona_name
+            _,                    // 22: player_chronicle_id
+            _,                    // 23: agent_mode
         ) = result.unwrap();
 
         assert_eq!(
@@ -1185,16 +1187,17 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _model_name, // 12: model_name
-            _,
-            _,
-            _user_msg_struct,     // 15: DbInsertableChatMessage
-            actual_recent_tokens, // 16: actual_recent_history_tokens
-            rag_items,            // 17: rag_context_items
-            _,                    // 18: history_management_strategy
-            _,                    // 19: history_management_limit
-            _,                    // 20: user_persona_name
-            _,                    // 21: player_chronicle_id
-            _,                    // 22: agent_mode
+            _,           // 13: model_provider (NEW)
+            _,           // 14: gemini_thinking_budget
+            _,           // 15: gemini_enable_code_execution
+            _user_msg_struct,     // 16: DbInsertableChatMessage
+            actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
+            rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
+            _,                    // 19: history_management_strategy
+            _,                    // 20: history_management_limit
+            _,                    // 21: user_persona_name
+            _,                    // 22: player_chronicle_id
+            _,                    // 23: agent_mode
         ) = result.unwrap();
 
         // Token counts with Gemma for "Okay then." (3) and "See you." (2) = 5. Budget is 8.
@@ -1606,17 +1609,18 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
-            _model_name, // 12: model_name
-            _,
-            _,
-            _user_msg_struct,                 // 15: DbInsertableChatMessage
-            actual_recent_tokens_from_result, // 16: actual_recent_history_tokens
-            rag_items,                        // 17: rag_context_items
-            _,                                // 18: history_management_strategy
-            _,                                // 19: history_management_limit
-            _,                                // 20: user_persona_name
-            _,                                // 21: player_chronicle_id
-            _,                                // 22: agent_mode
+            _model_name,                      // 12: model_name
+            _,                                // 13: model_provider (NEW)
+            _,                                // 14: gemini_thinking_budget
+            _,                                // 15: gemini_enable_code_execution
+            _user_msg_struct,                 // 16: DbInsertableChatMessage
+            actual_recent_tokens_from_result, // 17: actual_recent_history_tokens (usize)
+            rag_items,                        // 18: rag_context_items (Vec<RetrievedChunk>)
+            _,                                // 19: history_management_strategy
+            _,                                // 20: history_management_limit
+            _,                                // 21: user_persona_name
+            _,                                // 22: player_chronicle_id
+            _,                                // 23: agent_mode
         ) = result.unwrap();
 
         // Verify actual_recent_history_tokens is what we set up (around 140)
@@ -2028,16 +2032,17 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _model_name, // 12: model_name
-            _,
-            _,
-            _user_msg_struct,     // 15: DbInsertableChatMessage
-            actual_recent_tokens, // 16: actual_recent_history_tokens
-            rag_items,            // 17: rag_context_items
-            _,                    // 18: history_management_strategy
-            _,                    // 19: history_management_limit
-            _,                    // 20: user_persona_name
-            _,                    // 21: player_chronicle_id
-            _,                    // 22: agent_mode
+            _,           // 13: model_provider (NEW)
+            _,           // 14: gemini_thinking_budget
+            _,           // 15: gemini_enable_code_execution
+            _user_msg_struct,     // 16: DbInsertableChatMessage
+            actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
+            rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
+            _,                    // 19: history_management_strategy
+            _,                    // 20: history_management_limit
+            _,                    // 21: user_persona_name
+            _,                    // 22: player_chronicle_id
+            _,                    // 23: agent_mode
         ) = result.unwrap();
 
         assert_eq!(

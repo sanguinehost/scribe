@@ -205,8 +205,9 @@ mod tests {
 
         // First create services without narrative intelligence service
         let ai_client_factory = Arc::new(crate::services::ai_client_factory::AiClientFactory::new(
+            pool.clone(),
+            config.clone(),
             ai_client.clone(),
-            None, // No local LLM client for tests
         ));
         
         let services = AppStateServices {
@@ -230,6 +231,7 @@ mod tests {
             security_audit_logger: None,
             #[cfg(feature = "local-llm")]
             model_integrity_verifier: None,
+            rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(10, 100)), // Test rate limiter
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));
