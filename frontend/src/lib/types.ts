@@ -1026,6 +1026,29 @@ export interface ModelRecommendation {
 	disk_space_required: number;
 }
 
+export interface GroupedModelInfo {
+	base_model_id: string;
+	base_model_name: string;
+	description: string;
+	parameter_count: string;
+	context_window: number;
+	huggingface_repo: string;
+	variants: ModelVariantInfo[];
+}
+
+export interface ModelVariantInfo {
+	id: string;
+	quantization: string;
+	filename: string;
+	size_gb: number;
+	vram_required: number;
+	compatible: boolean;
+	downloaded: boolean;
+	active: boolean;
+	recommended: boolean;
+	quality_level: string; // Very Compact, Compact, Balanced, Good Quality, etc.
+}
+
 export interface ModelActionResponse {
 	success: boolean;
 	message: string;

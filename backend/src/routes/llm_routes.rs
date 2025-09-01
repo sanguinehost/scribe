@@ -9,7 +9,7 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{Json, Response, Sse, sse::Event},
     routing::{delete, get, post, put},
@@ -17,7 +17,7 @@ use axum::{
 };
 use axum_login::AuthSession;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{hardware::detect_hardware, ModelManager, LlamaCppClient};
@@ -57,6 +57,33 @@ pub struct ModelInfo {
     pub max_output_tokens: u32,
     pub provider: String,
     pub is_local: bool,
+}
+
+#[cfg(feature = "local-llm")]
+#[derive(Debug, Serialize)]
+pub struct GroupedModelInfo {
+    pub base_model_id: String,
+    pub base_model_name: String,
+    pub description: String,
+    pub parameter_count: String,
+    pub context_window: u32,
+    pub huggingface_repo: String,
+    pub variants: Vec<ModelVariantInfo>,
+}
+
+#[cfg(feature = "local-llm")]
+#[derive(Debug, Serialize)]
+pub struct ModelVariantInfo {
+    pub id: String,
+    pub quantization: String,
+    pub filename: String,
+    pub size_gb: f32,
+    pub vram_required: f32,
+    pub compatible: bool,
+    pub downloaded: bool,
+    pub active: bool,
+    pub recommended: bool, // For smart recommendations
+    pub quality_level: String, // Very Compact, Compact, Balanced, Good Quality, etc.
 }
 
 #[cfg(feature = "local-llm")]
@@ -140,9 +167,11 @@ pub fn llm_router() -> Router<AppState> {
             .route("/models/:model_id/activate", post(activate_model))
             .route("/models/deactivate", post(deactivate_model))
             .route("/download/progress", get(download_progress_stream))
+            .route("/download/status/:model_id", get(get_download_status))
             .route("/recommendations", get(get_model_recommendations))
             .route("/recommendations/best", get(get_best_recommendation))
             .route("/download/best", post(download_best_model))
+            .route("/models/grouped", get(get_grouped_models))
             .route("/status", get(get_llm_status))
             .route("/test", post(test_llm))
             .route("/preferences", get(get_user_preferences))
@@ -245,46 +274,239 @@ async fn get_model_info_list_with_manager(
     hardware: &crate::llm::llamacpp::hardware::HardwareCapabilities,
     model_manager: &ModelManager
 ) -> Result<Vec<ModelInfo>, crate::llm::llamacpp::LocalLlmError> {
-    // Get the model status from ModelManager which checks actual file existence
+    use crate::llm::llamacpp::hardware::ModelSelection;
+    
+    // Start with ALL available models from ModelSelection
+    let all_variants = ModelSelection::all_models();
+    debug!("ModelSelection::all_models() returned {} variants", all_variants.len());
+    
+    // Get the actual status from ModelManager for downloaded models
     let model_statuses = model_manager.list_models().await?;
+    let active_model = model_manager.get_active_model();
+    debug!("ModelManager found {} downloaded models", model_statuses.len());
     
     let mut models = Vec::new();
     
-    for model_status in model_statuses {
-        // Generate model ID from filename (remove .gguf extension)
-        let model_id = model_status.name.strip_suffix(".gguf").unwrap_or(&model_status.name).to_string();
+    for variant in all_variants {
+        let filename = variant.filename();
+        let model_id = variant.model_id();
         
-        let size_gb = model_status.size_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0 * 1024.0);
+        // Find corresponding status from ModelManager (if downloaded)
+        let model_status = model_statuses.iter()
+            .find(|status| status.name == filename);
         
-        // Try to get model variant to get capabilities
-        use crate::llm::llamacpp::hardware::ModelSelection;
-        let model_variant = ModelSelection::all_models().into_iter()
-            .find(|variant| variant.filename() == model_status.name);
-            
-        let (context_window_size, max_output_tokens, description) = if let Some(variant) = model_variant {
-            (variant.context_window_size(), variant.max_output_tokens(), variant.description().to_string())
+        // Determine actual status
+        let (downloaded, active, actual_size_gb) = if let Some(status) = model_status {
+            let actual_size = if let Some(actual_bytes) = status.size_bytes {
+                actual_bytes as f32 / (1024.0 * 1024.0 * 1024.0)
+            } else {
+                variant.download_size_gb()
+            };
+            (status.is_downloaded, status.is_active, actual_size)
         } else {
-            (131072, 8192, "Local model".to_string()) // Default values
+            (false, false, variant.download_size_gb())
         };
-
+        
+        // Check if this is the active model
+        let is_active = active || (active_model.as_ref().map_or(false, |am| am.contains(&filename)));
+        
         models.push(ModelInfo {
             id: model_id,
-            name: model_status.name.clone(),
-            filename: model_status.name,
-            size_gb,
-            vram_required: 0.0, // TODO: Get this from model variant requirements
-            compatible: model_status.hardware_compatible,
-            downloaded: model_status.is_downloaded, // Now using actual status!
-            active: model_status.is_active, // Now using actual status!
-            description,
-            context_window_size,
-            max_output_tokens,
+            name: variant.base_model_name().to_string(),
+            filename,
+            size_gb: actual_size_gb,
+            vram_required: variant.requirements.min_vram_gb.unwrap_or(0.0),
+            compatible: is_model_compatible(hardware, &variant),
+            downloaded,
+            active: is_active,
+            description: format!("{} ({})", 
+                variant.base_model.description, 
+                variant.quantization.quality_description()
+            ),
+            context_window_size: variant.context_window_size(),
+            max_output_tokens: variant.max_output_tokens(),
             provider: "llamacpp".to_string(),
             is_local: true,
         });
     }
     
+    debug!("Returning {} models to frontend", models.len());
     Ok(models)
+}
+
+/// Check if a model is compatible with the current hardware
+#[cfg(feature = "local-llm")]
+fn is_model_compatible(
+    hardware: &crate::llm::llamacpp::hardware::HardwareCapabilities, 
+    model: &crate::llm::llamacpp::hardware::ModelSelection
+) -> bool {
+    let requirements = &model.requirements;
+    
+    // Check RAM requirements
+    if hardware.available_ram_gb < requirements.min_ram_gb {
+        return false;
+    }
+    
+    // Check VRAM requirements if the model needs GPU
+    if let Some(min_vram) = requirements.min_vram_gb {
+        let has_sufficient_vram = hardware.gpu_info.iter().any(|gpu| {
+            gpu.vram_gb.map_or(false, |vram| vram >= min_vram)
+        });
+        if !has_sufficient_vram {
+            return false;
+        }
+    }
+    
+    // Check CPU cores
+    if hardware.cpu_cores < requirements.min_cpu_cores {
+        return false;
+    }
+    
+    // Check CUDA requirement
+    if requirements.requires_cuda && !hardware.has_cuda {
+        return false;
+    }
+    
+    true
+}
+
+/// Build grouped model information
+#[cfg(feature = "local-llm")]
+async fn build_grouped_models(
+    hardware: &crate::llm::llamacpp::hardware::HardwareCapabilities,
+    model_manager: &ModelManager,
+    recommendations: &[crate::llm::llamacpp::model_manager::ModelRecommendation],
+) -> Result<Vec<GroupedModelInfo>, crate::llm::llamacpp::LocalLlmError> {
+    use crate::llm::llamacpp::hardware::{ModelSelection, BaseModel};
+    use std::collections::HashMap;
+    
+    // Get all model variants
+    let all_variants = ModelSelection::all_models();
+    let model_statuses = model_manager.list_models().await?;
+    let active_model = model_manager.get_active_model();
+    
+    // Create a lookup for recommendations
+    let rec_lookup: HashMap<String, &crate::llm::llamacpp::model_manager::ModelRecommendation> = 
+        recommendations.iter().map(|r| (r.model_name.clone(), r)).collect();
+    
+    // Group variants by base model
+    let mut base_models: HashMap<String, BaseModel> = HashMap::new();
+    let mut grouped_variants: HashMap<String, Vec<ModelVariantInfo>> = HashMap::new();
+    
+    for variant in all_variants {
+        let base_model_name = variant.base_model.name.clone();
+        base_models.insert(base_model_name.clone(), variant.base_model.clone());
+        
+        // Find corresponding model status
+        let filename = variant.filename();
+        let model_status = model_statuses.iter().find(|s| s.name == filename);
+        
+        let (size_gb, downloaded) = if let Some(status) = model_status {
+            let size_gb = if let Some(actual_bytes) = status.size_bytes {
+                actual_bytes as f32 / (1024.0 * 1024.0 * 1024.0)
+            } else {
+                variant.download_size_gb()
+            };
+            (size_gb, status.is_downloaded)
+        } else {
+            (variant.download_size_gb(), false)
+        };
+        
+        // Calculate hardware compatibility correctly
+        let compatible = is_model_compatible(hardware, &variant);
+        
+        let is_active = active_model.as_ref().map_or(false, |active| active == &filename);
+        let is_recommended = rec_lookup.contains_key(&filename);
+        
+        let variant_info = ModelVariantInfo {
+            id: filename.strip_suffix(".gguf").unwrap_or(&filename).to_string(),
+            quantization: format!("{:?}", variant.quantization),
+            filename,
+            size_gb,
+            vram_required: variant.requirements().min_vram_gb.unwrap_or(0.0),
+            compatible,
+            downloaded,
+            active: is_active,
+            recommended: is_recommended,
+            quality_level: variant.quantization.quality_description().to_string(),
+        };
+        
+        grouped_variants.entry(base_model_name).or_insert_with(Vec::new).push(variant_info);
+    }
+    
+    // Build final grouped models, sort variants by quality
+    let mut result = Vec::new();
+    for (base_name, base_model) in base_models {
+        if let Some(mut variants) = grouped_variants.remove(&base_name) {
+            // Sort variants by quality (best first) and recommendation
+            variants.sort_by(|a, b| {
+                // Recommended variants first
+                match (a.recommended, b.recommended) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => {
+                        // Then by quality (based on file suffix parsing)
+                        let a_quality = quality_rank(&a.quantization);
+                        let b_quality = quality_rank(&b.quantization);
+                        a_quality.cmp(&b_quality)
+                    }
+                }
+            });
+            
+            result.push(GroupedModelInfo {
+                base_model_id: base_name.clone(),
+                base_model_name: base_model.name,
+                description: base_model.description,
+                parameter_count: base_model.parameter_count,
+                context_window: base_model.context_window,
+                huggingface_repo: base_model.huggingface_repo,
+                variants,
+            });
+        }
+    }
+    
+    // Sort base models by parameter count (largest first)
+    result.sort_by(|a, b| {
+        let a_params = extract_param_number(&a.parameter_count);
+        let b_params = extract_param_number(&b.parameter_count);
+        b_params.partial_cmp(&a_params).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    
+    Ok(result)
+}
+
+/// Extract parameter count for sorting
+#[cfg(feature = "local-llm")]
+fn extract_param_number(param_str: &str) -> f32 {
+    if param_str.contains("70B") { 70.0 }
+    else if param_str.contains("30B") { 30.0 }
+    else if param_str.contains("27B") { 27.0 }
+    else if param_str.contains("20B") { 20.0 }
+    else if param_str.contains("14B") { 14.0 }
+    else if param_str.contains("8B") { 8.0 }
+    else if param_str.contains("7B") { 7.0 }
+    else if param_str.contains("3B") { 3.0 }
+    else if param_str.contains("1B") { 1.0 }
+    else { 0.0 }
+}
+
+/// Get quality rank for sorting (lower is better quality)
+#[cfg(feature = "local-llm")]
+fn quality_rank(quantization: &str) -> u8 {
+    match quantization {
+        s if s.contains("Q8_0") => 0,
+        s if s.contains("Q6_K") => 1,
+        s if s.contains("Q5_K_M") => 2,
+        s if s.contains("Q5_K_S") => 3,
+        s if s.contains("Q5_0") => 4,
+        s if s.contains("Q4_K_M") => 5,
+        s if s.contains("Q4_K_S") => 6,
+        s if s.contains("Q4_0") => 7,
+        s if s.contains("Q3_K_M") => 8,
+        s if s.contains("Q3_K_S") => 9,
+        s if s.contains("Q2_K") => 10,
+        _ => 99,
+    }
 }
 
 /// Helper function to get model information list (legacy - kept for compatibility)
@@ -313,7 +535,7 @@ async fn get_model_info_list(hardware: &crate::llm::llamacpp::hardware::Hardware
         let compatible = ram_ok && cpu_ok && gpu_ok;
         
         // Generate model ID from filename (remove .gguf extension)
-        let model_id = filename.strip_suffix(".gguf").unwrap_or(filename).to_string();
+        let model_id = filename.strip_suffix(".gguf").unwrap_or(&filename).to_string();
         
         let size_gb = model_variant.download_size_bytes() as f32 / (1024.0 * 1024.0 * 1024.0);
         let vram_required = requirements.min_vram_gb.unwrap_or(0.0);
@@ -358,7 +580,8 @@ async fn download_model(
     let model_variant = crate::llm::llamacpp::hardware::ModelSelection::all_models()
         .into_iter()
         .find(|m| {
-            let model_id = m.filename().strip_suffix(".gguf").unwrap_or(m.filename());
+            let filename = m.filename();
+            let model_id = filename.strip_suffix(".gguf").unwrap_or(&filename);
             model_id == request.model_id
         })
         .ok_or_else(|| {
@@ -498,6 +721,57 @@ async fn deactivate_model(
     }
 }
 
+/// GET /api/llm/download/status/:model_id - Check download status for a specific model
+#[cfg(feature = "local-llm")]
+async fn get_download_status(
+    Path(model_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    info!("Checking download status for model: {}", model_id);
+    
+    // Get model manager
+    let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
+    let model_manager = ModelManager::new(config).await
+        .map_err(|e| {
+            error!("Failed to create model manager: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    // Find the requested model variant
+    let model_variant = crate::llm::llamacpp::hardware::ModelSelection::all_models()
+        .into_iter()
+        .find(|m| {
+            let filename = m.filename();
+            let variant_id = filename.strip_suffix(".gguf").unwrap_or(&filename);
+            variant_id == model_id
+        })
+        .ok_or_else(|| {
+            error!("Model variant not found: {}", model_id);
+            StatusCode::NOT_FOUND
+        })?;
+    
+    let filename = model_variant.filename();
+    let models_dir = std::path::Path::new("models"); // Use same logic as model_manager
+    let model_path = models_dir.join(&filename);
+    let temp_path = model_path.with_extension("tmp");
+    
+    let status = if model_path.exists() {
+        "completed"
+    } else if temp_path.exists() {
+        "downloading"
+    } else {
+        "not_started"
+    };
+    
+    info!("Download status for {}: {}", model_id, status);
+    
+    Ok(Json(serde_json::json!({
+        "model_id": model_id,
+        "status": status,
+        "model_path": model_path.to_string_lossy(),
+        "temp_path": temp_path.to_string_lossy()
+    })))
+}
+
 /// GET /api/llm/download/progress - Server-Sent Events for download progress
 #[cfg(feature = "local-llm")]
 async fn download_progress_stream() -> Sse<impl futures::Stream<Item = Result<Event, axum::Error>>> {
@@ -589,6 +863,99 @@ async fn get_best_recommendation(
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+/// GET /api/llm/models/grouped - Get models grouped by base model
+#[cfg(feature = "local-llm")]
+async fn get_grouped_models(
+    auth_session: AuthSession<AuthBackend>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Vec<GroupedModelInfo>>, StatusCode> {
+    // Verify user is authenticated
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
+    
+    info!("Getting grouped models");
+    
+    // Detect hardware capabilities
+    let hardware = detect_hardware()
+        .map_err(|e| {
+            error!("Failed to detect hardware: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    // Create ModelManager to get accurate model status
+    let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
+    let model_manager = ModelManager::new(config).await
+        .map_err(|e| {
+            error!("Failed to create ModelManager: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    // Get recommendations for scoring
+    let recommendations = model_manager.recommend_models().await
+        .map_err(|e| {
+            error!("Failed to get recommendations: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    // Build grouped models
+    let mut grouped_models = build_grouped_models(&hardware, &model_manager, &recommendations).await
+        .map_err(|e| {
+            error!("Failed to build grouped models: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    info!("get_grouped_models: Built {} model groups", grouped_models.len());
+    for group in &grouped_models {
+        info!("  Group: {} ({} variants)", group.base_model_name, group.variants.len());
+        for variant in &group.variants {
+            if variant.id.contains("gpt-oss-20b") {
+                info!("    GPT-OSS-20B variant: id={}, downloaded={}, compatible={}, filename={}", 
+                      variant.id, variant.downloaded, variant.compatible, variant.filename);
+            } else {
+                debug!("    Variant: id={}, downloaded={}, compatible={}", 
+                       variant.id, variant.downloaded, variant.compatible);
+            }
+        }
+    }
+    
+    // Apply filters based on query parameters
+    let show_incompatible = params.get("show_incompatible").map_or(true, |v| v == "true"); // Default to true
+    let only_downloaded = params.get("only_downloaded").map_or(false, |v| v == "true");
+    let only_recommended = params.get("only_recommended").map_or(false, |v| v == "true");
+    
+    info!("get_grouped_models: Applying filters - show_incompatible={}, only_downloaded={}, only_recommended={}", 
+          show_incompatible, only_downloaded, only_recommended);
+    
+    // Only filter if specific filters are requested
+    if only_downloaded || only_recommended || !show_incompatible {
+        for group in &mut grouped_models {
+            let original_count = group.variants.len();
+            group.variants.retain(|variant| {
+                let compatible_check = show_incompatible || variant.compatible;
+                let downloaded_check = !only_downloaded || variant.downloaded;
+                let recommended_check = !only_recommended || variant.recommended;
+                
+                compatible_check && downloaded_check && recommended_check
+            });
+            
+            if group.variants.len() != original_count {
+                info!("  Group {} filtered: {} -> {} variants", 
+                      group.base_model_name, original_count, group.variants.len());
+            }
+        }
+        
+        // Remove groups with no variants
+        let original_group_count = grouped_models.len();
+        grouped_models.retain(|group| !group.variants.is_empty());
+        
+        if grouped_models.len() != original_group_count {
+            info!("  Removed empty groups: {} -> {}", original_group_count, grouped_models.len());
+        }
+    }
+    
+    info!("get_grouped_models: Returning {} model groups", grouped_models.len());
+    Ok(Json(grouped_models))
 }
 
 /// POST /api/llm/download/best - Download and activate the best recommended model
@@ -952,7 +1319,30 @@ async fn get_all_models(
     
     let mut registry = ModelRegistry::new();
     
-    // Update local model availability based on actual download status
+    // First, populate the registry with ALL available models from ModelSelection
+    #[cfg(feature = "local-llm")]
+    {
+        use crate::llm::llamacpp::hardware::ModelSelection;
+        
+        for model_variant in ModelSelection::all_models() {
+            let model_id = model_variant.model_id();
+            
+            // Add model to registry with default availability (not downloaded)
+            registry.set_model_availability(&model_id, false);
+            
+            // Add metadata from ModelSelection
+            registry.set_model_metadata(&model_id, "size_gb", &model_variant.download_size_gb().to_string());
+            registry.set_model_metadata(&model_id, "vram_required", &model_variant.requirements.min_vram_gb.unwrap_or(0.0).to_string());
+            registry.set_model_metadata(&model_id, "filename", &model_variant.filename());
+            registry.set_model_metadata(&model_id, "download_url", &model_variant.download_url());
+            registry.set_model_metadata(&model_id, "description", &format!("{} ({})", 
+                model_variant.base_model.description, 
+                model_variant.quantization.quality_description()
+            ));
+        }
+    }
+    
+    // Now update local model availability based on actual download status
     #[cfg(feature = "local-llm")]
     {
         let config = crate::llm::llamacpp::LlamaCppConfig::from_env();

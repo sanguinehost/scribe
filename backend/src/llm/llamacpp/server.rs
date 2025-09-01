@@ -91,11 +91,27 @@ impl ServerConfig {
     
     /// Build command line arguments for server
     pub fn build_args(&self) -> Vec<String> {
+        self.build_args_with_model(true)
+    }
+    
+    /// Build command line arguments for server, optionally with model
+    pub fn build_args_with_model(&self, include_model: bool) -> Vec<String> {
+        let model_path = if include_model { Some(self.model_path.as_path()) } else { None };
+        self.build_args_with_model_path(model_path)
+    }
+    
+    /// Build command line arguments for server with specific model path
+    pub fn build_args_with_model_path(&self, model_path: Option<&std::path::Path>) -> Vec<String> {
         let mut args = Vec::new();
         
-        // Model path
-        args.push("--model".to_string());
-        args.push(self.model_path.to_string_lossy().to_string());
+        // Model path (only if provided)
+        if let Some(path) = model_path {
+            args.push("--model".to_string());
+            args.push(path.to_string_lossy().to_string());
+            info!("Using model path: {}", path.display());
+        } else {
+            info!("Starting server without model (model will need to be loaded via API)");
+        }
         
         // Network settings
         args.push("--host".to_string());
@@ -201,9 +217,15 @@ impl LlamaCppServerManager {
         debug!("Existing server cleanup completed");
     }
     
-    /// Start the LlamaCpp server
+    /// Start the LlamaCpp server with optional model
     #[instrument(skip(self))]
     pub async fn start(&self) -> Result<(), LocalLlmError> {
+        self.start_with_model(None).await
+    }
+
+    /// Start the LlamaCpp server with a specific model
+    #[instrument(skip(self))]
+    pub async fn start_with_model(&self, model_name: Option<&str>) -> Result<(), LocalLlmError> {
         // Kill any existing llama-server processes to prevent port conflicts
         self.kill_existing_servers().await;
         
@@ -217,18 +239,32 @@ impl LlamaCppServerManager {
         *state = ServerState::Starting;
         drop(state);
         
-        info!("Starting LlamaCpp server on {}:{}", self.server_config.host, self.server_config.port);
+        // If a model is specified, activate it first
+        if let Some(model_name) = model_name {
+            info!("Activating model before server start: {}", model_name);
+            self.model_manager.activate_model(model_name).await?;
+        }
         
-        // Ensure model is available
-        let model_path = self.model_manager.get_model_path(None).await?;
-        let mut server_config = self.server_config.clone();
-        server_config.model_path = model_path;
+        info!("Starting LlamaCpp server on {}:{}", self.server_config.host, self.server_config.port);
         
         // Find llamacpp executable
         let executable = self.find_llamacpp_executable().await?;
         
-        // Build command arguments
-        let args = server_config.build_args();
+        // Build command arguments WITH the active model path
+        let active_model_path = if let Some(active_model) = self.model_manager.get_active_model() {
+            // Get the full path to the active model
+            match self.model_manager.get_model_path(Some(&active_model)).await {
+                Ok(path) => Some(path),
+                Err(e) => {
+                    error!("Failed to get path for active model {}: {}", active_model, e);
+                    return Err(LocalLlmError::ModelNotFound(format!("Active model path not found: {}", e)));
+                }
+            }
+        } else {
+            None
+        };
+        
+        let args = self.server_config.build_args_with_model_path(active_model_path.as_deref());
         debug!("Server command: {} {}", executable.display(), args.join(" "));
         
         // Start server process

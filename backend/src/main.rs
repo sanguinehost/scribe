@@ -275,28 +275,20 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
                     
                     if downloaded_models.is_empty() {
                         info!("No models downloaded yet. Local LLM UI will be available for model downloads.");
-                        info!("Server will start automatically after first model download.");
                     } else {
-                        // Try to start server with existing models
-                        match LlamaCppServerManager::new(llm_config, model_manager_arc).await {
-                            Ok(server_manager) => {
-                                let server_manager_arc: Arc<LlamaCppServerManager> = Arc::new(server_manager);
-                                match server_manager_arc.start().await {
-                                    Ok(_) => {
-                                        info!("Local LLM server started successfully with {} models", downloaded_models.len());
-                                        // Store the server manager to prevent it from being dropped
-                                        llamacpp_server_manager = Some(server_manager_arc);
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to start local LLM server: {}. UI will still be available for management.", e);
-                                        // Still store the manager for UI management even if server failed to start
-                                        llamacpp_server_manager = Some(server_manager_arc);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Failed to initialize local LLM server manager: {}. UI will still be available for management.", e);
-                            }
+                        info!("Found {} downloaded models. Server will start on-demand when a model is activated.", downloaded_models.len());
+                    }
+                    
+                    // Create server manager but don't start it - it will start on-demand
+                    match LlamaCppServerManager::new(llm_config, model_manager_arc).await {
+                        Ok(server_manager) => {
+                            let server_manager_arc: Arc<LlamaCppServerManager> = Arc::new(server_manager);
+                            info!("Local LLM server manager initialized. Server will start when a model is activated.");
+                            // Store the server manager for UI management
+                            llamacpp_server_manager = Some(server_manager_arc);
+                        }
+                        Err(e) => {
+                            warn!("Failed to initialize local LLM server manager: {}. Local LLM features will be unavailable.", e);
                         }
                     }
                 }

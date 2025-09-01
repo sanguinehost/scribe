@@ -8,6 +8,7 @@ use crate::llm::llamacpp::{
     ModelManager, HardwareCapabilities, detect_hardware, PerformanceMetrics,
     LlamaCppServerManager
 };
+use crate::llm::llamacpp::server::ServerState;
 use crate::errors::AppError;
 
 use async_trait::async_trait;
@@ -135,7 +136,7 @@ struct LlamaCppUsage {
 impl LlamaCppClient {
     /// Create a new LlamaCpp client
     pub async fn new(config: LlamaCppConfig) -> Result<Self, LocalLlmError> {
-        info!("Initializing LlamaCpp client");
+        info!("Initializing LlamaCpp client (server will start on-demand)");
         
         // Detect hardware capabilities
         let hardware_info = detect_hardware()
@@ -170,12 +171,8 @@ impl LlamaCppClient {
         // Initialize resilience layer
         let resilience = Arc::new(LlamaCppResilience::new(config.clone()));
         
-        // Initialize server manager and start the server
+        // Initialize server manager but DON'T start the server - it will start on-demand
         let server_manager = Arc::new(LlamaCppServerManager::new(config.clone(), model_manager.clone()).await?);
-        
-        info!("Starting LlamaCpp server...");
-        server_manager.start().await
-            .map_err(|e| LocalLlmError::ServerUnavailable(format!("Failed to start server: {}", e)))?;
         
         let client = Self {
             config: Arc::new(config),
@@ -189,11 +186,55 @@ impl LlamaCppClient {
             hardware_info: Arc::new(RwLock::new(Some(hardware_info))),
         };
         
-        // Start health monitoring
-        client.start_health_monitoring().await;
-        
-        info!("LlamaCpp client initialization completed successfully");
+        info!("LlamaCpp client initialization completed (server ready to start on-demand)");
         Ok(client)
+    }
+    
+    /// Ensure server is started with the specified model
+    /// This is called before making requests to start the server on-demand
+    async fn ensure_server_started_with_model(&self, model_name: &str) -> Result<(), LocalLlmError> {
+        // Check current server state
+        let server_info = self.server_manager.get_server_info().await;
+        
+        match server_info.state {
+            ServerState::Running => {
+                // Server is running, check if the correct model is loaded
+                if let Some(current_model) = &server_info.model_loaded {
+                    if current_model == model_name || current_model.contains(model_name) {
+                        info!("Server already running with correct model: {}", current_model);
+                        return Ok(());
+                    } else {
+                        info!("Server running with different model ({}), switching to {}", current_model, model_name);
+                        // Need to restart with the new model
+                        self.server_manager.stop().await?;
+                    }
+                } else {
+                    info!("Server running but no model loaded, restarting with model: {}", model_name);
+                    self.server_manager.stop().await?;
+                }
+            }
+            ServerState::Stopped => {
+                info!("Server stopped, starting with model: {}", model_name);
+            }
+            ServerState::Error(ref error) => {
+                warn!("Server in error state ({}), restarting with model: {}", error, model_name);
+                let _ = self.server_manager.stop().await; // Try to clean up
+            }
+            _ => {
+                info!("Server in state {:?}, waiting and then starting with model: {}", server_info.state, model_name);
+                // Wait a moment for current operation to complete
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        }
+        
+        // Start server with the specified model
+        info!("Starting server with model: {}", model_name);
+        self.server_manager.start_with_model(Some(model_name)).await?;
+        
+        // Start health monitoring if not already started
+        self.start_health_monitoring().await;
+        
+        Ok(())
     }
     
     /// Start background health monitoring
@@ -678,6 +719,10 @@ impl AiClient for LlamaCppClient {
         
         debug!("Starting LlamaCpp chat execution for model: {}", model_name);
         
+        // Ensure server is started with the correct model
+        self.ensure_server_started_with_model(model_name).await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to start server with model {}: {}", model_name, e)))?;
+        
         // Check if server is healthy
         let health_status = self.health_checker.check_health().await
             .map_err(|e| LocalLlmError::ServerUnavailable(format!("Health check failed: {}", e)))?;
@@ -743,6 +788,10 @@ impl AiClient for LlamaCppClient {
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
         debug!("Starting LlamaCpp streaming chat for model: {}", model_name);
+        
+        // Ensure server is started with the correct model
+        self.ensure_server_started_with_model(model_name).await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to start server with model {}: {}", model_name, e)))?;
         
         // Check if server is healthy
         let health_status = self.health_checker.check_health().await

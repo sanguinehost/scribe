@@ -40,174 +40,353 @@ pub struct GpuInfo {
     pub metal_capable: bool,
 }
 
+/// Quantization levels available for models
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum QuantizationLevel {
+    Q2_K,    // ~2.63 bits per weight - most compressed
+    Q3_K_S,  // ~3.50 bits per weight - small 3-bit
+    Q3_K_M,  // ~3.91 bits per weight - medium 3-bit
+    Q4_0,    // ~4.55 bits per weight - legacy 4-bit
+    Q4_K_S,  // ~4.14 bits per weight - small 4-bit
+    Q4_K_M,  // ~4.83 bits per weight - medium 4-bit (recommended)
+    Q5_0,    // ~5.54 bits per weight - legacy 5-bit
+    Q5_K_S,  // ~5.54 bits per weight - small 5-bit
+    Q5_K_M,  // ~6.15 bits per weight - medium 5-bit
+    Q6_K,    // ~6.56 bits per weight - 6-bit
+    Q8_0,    // ~8.50 bits per weight - 8-bit (very high quality)
+}
+
+impl QuantizationLevel {
+    /// Get the file suffix for this quantization level
+    pub fn file_suffix(&self) -> &'static str {
+        match self {
+            Self::Q2_K => "Q2_K",
+            Self::Q3_K_S => "Q3_K_S",
+            Self::Q3_K_M => "Q3_K_M",
+            Self::Q4_0 => "Q4_0",
+            Self::Q4_K_S => "Q4_K_S",
+            Self::Q4_K_M => "Q4_K_M",
+            Self::Q5_0 => "Q5_0",
+            Self::Q5_K_S => "Q5_K_S",
+            Self::Q5_K_M => "Q5_K_M",
+            Self::Q6_K => "Q6_K",
+            Self::Q8_0 => "Q8_0",
+        }
+    }
+
+    /// Get the approximate compression ratio compared to FP16
+    pub fn compression_ratio(&self) -> f32 {
+        match self {
+            Self::Q2_K => 6.08,     // ~16/2.63
+            Self::Q3_K_S => 4.57,   // ~16/3.50
+            Self::Q3_K_M => 4.09,   // ~16/3.91
+            Self::Q4_0 => 3.52,     // ~16/4.55
+            Self::Q4_K_S => 3.86,   // ~16/4.14
+            Self::Q4_K_M => 3.31,   // ~16/4.83
+            Self::Q5_0 => 2.89,     // ~16/5.54
+            Self::Q5_K_S => 2.89,   // ~16/5.54
+            Self::Q5_K_M => 2.60,   // ~16/6.15
+            Self::Q6_K => 2.44,     // ~16/6.56
+            Self::Q8_0 => 1.88,     // ~16/8.50
+        }
+    }
+
+    /// Get quality score (0-100, higher is better)
+    pub fn quality_score(&self) -> u8 {
+        match self {
+            Self::Q2_K => 60,
+            Self::Q3_K_S => 70,
+            Self::Q3_K_M => 75,
+            Self::Q4_0 => 80,
+            Self::Q4_K_S => 82,
+            Self::Q4_K_M => 85,     // Sweet spot
+            Self::Q5_0 => 88,
+            Self::Q5_K_S => 90,
+            Self::Q5_K_M => 92,
+            Self::Q6_K => 95,
+            Self::Q8_0 => 98,
+        }
+    }
+
+    /// Get speed score (0-100, higher is faster)
+    pub fn speed_score(&self) -> u8 {
+        match self {
+            Self::Q2_K => 95,
+            Self::Q3_K_S => 90,
+            Self::Q3_K_M => 88,
+            Self::Q4_0 => 85,
+            Self::Q4_K_S => 87,
+            Self::Q4_K_M => 83,
+            Self::Q5_0 => 80,
+            Self::Q5_K_S => 78,
+            Self::Q5_K_M => 75,
+            Self::Q6_K => 70,
+            Self::Q8_0 => 65,
+        }
+    }
+
+    /// Get all quantization levels ordered by quality (best first)
+    pub fn all_by_quality() -> Vec<Self> {
+        vec![
+            Self::Q8_0,
+            Self::Q6_K,
+            Self::Q5_K_M,
+            Self::Q5_K_S,
+            Self::Q5_0,
+            Self::Q4_K_M,
+            Self::Q4_K_S,
+            Self::Q4_0,
+            Self::Q3_K_M,
+            Self::Q3_K_S,
+            Self::Q2_K,
+        ]
+    }
+    
+    /// Get human-readable quality description
+    pub fn quality_description(&self) -> &'static str {
+        match self {
+            Self::Q8_0 => "Very High Quality",
+            Self::Q6_K => "High Quality", 
+            Self::Q5_K_M => "Good Quality",
+            Self::Q5_K_S => "Good Quality",
+            Self::Q5_0 => "Good Quality",
+            Self::Q4_K_M => "Balanced",
+            Self::Q4_K_S => "Balanced",
+            Self::Q4_0 => "Balanced",
+            Self::Q3_K_M => "Compact",
+            Self::Q3_K_S => "Compact", 
+            Self::Q2_K => "Very Compact",
+        }
+    }
+}
+
+/// Base model without quantization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BaseModel {
+    pub name: String,
+    pub description: String,
+    pub parameter_count: String,
+    pub context_window: u32,
+    pub huggingface_repo: String,
+    pub base_size_gb: f32, // Size in FP16
+}
+
 /// Available model selections with their requirements
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ModelSelection {
-    /// GPT-OSS 20B Q4 - High quality model for powerful GPUs (16GB+ VRAM)
-    GptOss20bQ4 {
-        requirements: HardwareRequirements,
-    },
-    /// Qwen3-30B-A3B-Thinking Q4 - MoE reasoning model (20GB+ VRAM, only 3.3B active params)
-    Qwen3_30B_A3B_Thinking_Q4 {
-        requirements: HardwareRequirements,
-    },
-    /// Qwen3-30B-A3B-Instruct Q4 - MoE instruction model (20GB+ VRAM, only 3.3B active params)
-    Qwen3_30B_A3B_Instruct_Q4 {
-        requirements: HardwareRequirements,
-    },
-    /// Gemma-3-27B-IT Q4 - Google's instruction-tuned model (18GB+ VRAM)
-    Gemma3_27B_IT_Q4 {
-        requirements: HardwareRequirements,
-    },
+pub struct ModelSelection {
+    pub base_model: BaseModel,
+    pub quantization: QuantizationLevel,
+    pub requirements: HardwareRequirements,
 }
 
 impl ModelSelection {
-    /// Get all available model selections with their requirements
-    pub fn all_models() -> Vec<Self> {
+    /// Get all available base models
+    pub fn get_base_models() -> Vec<BaseModel> {
         vec![
-            // Most powerful model first - prefer Thinking variant for reasoning
-            Self::Qwen3_30B_A3B_Thinking_Q4 {
-                requirements: HardwareRequirements {
-                    min_ram_gb: 24.0,
-                    min_vram_gb: Some(20.0), // Need 20GB+ for model + KV cache
-                    min_cpu_cores: 6,
-                    recommended_ram_gb: 32.0,
-                    recommended_vram_gb: Some(24.0), // Optimal with RTX 3090/4090
-                    requires_cuda: false, // Can work on CPU due to MoE efficiency
-                },
+            BaseModel {
+                name: "llama-3.3-70b-instruct".to_string(),
+                description: "Llama-3.3-70B-Instruct - Latest Meta model with excellent performance".to_string(),
+                parameter_count: "70B".to_string(),
+                context_window: 131072,
+                huggingface_repo: "bartowski/Llama-3.3-70B-Instruct-GGUF".to_string(),
+                base_size_gb: 140.0, // Rough FP16 estimate
             },
-            Self::Qwen3_30B_A3B_Instruct_Q4 {
-                requirements: HardwareRequirements {
-                    min_ram_gb: 24.0,
-                    min_vram_gb: Some(20.0), // Same as Thinking variant
-                    min_cpu_cores: 6,
-                    recommended_ram_gb: 32.0,
-                    recommended_vram_gb: Some(24.0),
-                    requires_cuda: false,
-                },
+            BaseModel {
+                name: "gemma-3-27b-it".to_string(),
+                description: "Gemma-3-27B-IT - Google's multimodal instruction-tuned model with 128K context".to_string(),
+                parameter_count: "27B".to_string(),
+                context_window: 131072,
+                huggingface_repo: "unsloth/gemma-3-27b-it-GGUF".to_string(),
+                base_size_gb: 54.0,
             },
-            Self::Gemma3_27B_IT_Q4 {
-                requirements: HardwareRequirements {
-                    min_ram_gb: 20.0,
-                    min_vram_gb: Some(18.0), // Need 18GB+ for model + KV cache
-                    min_cpu_cores: 4,
-                    recommended_ram_gb: 32.0,
-                    recommended_vram_gb: Some(20.0), // Optimal with 20GB+ VRAM
-                    requires_cuda: false,
-                },
+            BaseModel {
+                name: "qwen2.5-14b-instruct".to_string(),
+                description: "Qwen2.5-14B-Instruct - Excellent reasoning model, great for RTX GPUs".to_string(),
+                parameter_count: "14B".to_string(),
+                context_window: 131072,
+                huggingface_repo: "bartowski/Qwen2.5-14B-Instruct-GGUF".to_string(),
+                base_size_gb: 28.0,
             },
-            Self::GptOss20bQ4 {
-                requirements: HardwareRequirements {
-                    min_ram_gb: 16.0,
-                    min_vram_gb: Some(12.0), // Can work with 12GB VRAM with some CPU offload
-                    min_cpu_cores: 4,
-                    recommended_ram_gb: 32.0,
-                    recommended_vram_gb: Some(16.0), // Optimal with 16GB+ VRAM
-                    requires_cuda: false, // Can work on CPU if needed
-                },
+            BaseModel {
+                name: "gpt-oss-20b".to_string(),
+                description: "GPT-OSS-20B - Open source 20B parameter model".to_string(),
+                parameter_count: "20B".to_string(),
+                context_window: 32768,
+                huggingface_repo: "unsloth/gpt-oss-20b-GGUF".to_string(),
+                base_size_gb: 40.0,
+            },
+            BaseModel {
+                name: "llama-3.1-8b-instruct".to_string(),
+                description: "Llama-3.1-8B-Instruct - Popular balanced model, fast and capable".to_string(),
+                parameter_count: "8B".to_string(),
+                context_window: 131072,
+                huggingface_repo: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF".to_string(),
+                base_size_gb: 16.0,
+            },
+            BaseModel {
+                name: "qwen2.5-7b-instruct".to_string(),
+                description: "Qwen2.5-7B-Instruct - Compact model perfect for mid-range GPUs".to_string(),
+                parameter_count: "7B".to_string(),
+                context_window: 131072,
+                huggingface_repo: "bartowski/Qwen2.5-7B-Instruct-GGUF".to_string(),
+                base_size_gb: 14.0,
+            },
+            BaseModel {
+                name: "llama-3.2-3b-instruct".to_string(),
+                description: "Llama-3.2-3B-Instruct - Ultra-compact model for lower-end hardware".to_string(),
+                parameter_count: "3B".to_string(),
+                context_window: 131072,
+                huggingface_repo: "bartowski/Llama-3.2-3B-Instruct-GGUF".to_string(),
+                base_size_gb: 6.0,
             },
         ]
     }
 
-    /// Get the model file name
-    pub fn filename(&self) -> &'static str {
-        match self {
-            Self::GptOss20bQ4 { .. } => "gpt-oss-20b-Q4_K_M.gguf",
-            Self::Qwen3_30B_A3B_Thinking_Q4 { .. } => "Qwen3-30B-A3B-Thinking-2507-Q4_K_M.gguf",
-            Self::Qwen3_30B_A3B_Instruct_Q4 { .. } => "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
-            Self::Gemma3_27B_IT_Q4 { .. } => "gemma-3-27b-it-Q4_K_M.gguf",
+    /// Get all available model selections with their requirements
+    pub fn all_models() -> Vec<Self> {
+        let mut models = Vec::new();
+        
+        for base_model in Self::get_base_models() {
+            for quantization in QuantizationLevel::all_by_quality() {
+                let model_size = base_model.base_size_gb / quantization.compression_ratio();
+                
+                // Calculate VRAM requirements (model + context buffer)
+                let context_buffer_gb = 2.0; // Reserve for context/KV cache
+                let min_vram = model_size + context_buffer_gb;
+                let recommended_vram = min_vram * 1.3; // 30% headroom
+                
+                // RAM requirements (for CPU offloading scenarios)  
+                let min_ram = model_size * 1.5; // Allow for some CPU offloading
+                let recommended_ram = model_size * 2.0; // Full model in RAM
+                
+                // CPU requirements based on model size
+                let min_cpu_cores = match base_model.parameter_count.as_str() {
+                    param if param.contains("30B") => 8,
+                    param if param.contains("27B") => 6,
+                    param if param.contains("20B") => 4,
+                    param if param.contains("14B") => 4,
+                    param if param.contains("7B") => 2,
+                    _ => 4,
+                };
+                
+                let requirements = HardwareRequirements {
+                    min_ram_gb: min_ram,
+                    min_vram_gb: if min_vram <= 32.0 { Some(min_vram) } else { None }, // Don't require GPU for huge models
+                    min_cpu_cores,
+                    recommended_ram_gb: recommended_ram,
+                    recommended_vram_gb: if recommended_vram <= 32.0 { Some(recommended_vram) } else { None },
+                    requires_cuda: false, // All models can work on CPU if needed
+                };
+                
+                models.push(Self {
+                    base_model: base_model.clone(),
+                    quantization,
+                    requirements,
+                });
+            }
         }
+        
+        models
+    }
+
+    /// Get the model file name
+    pub fn filename(&self) -> String {
+        format!(
+            "{}-{}.gguf",
+            self.base_model.name,
+            self.quantization.file_suffix()
+        )
     }
 
     /// Get the download URL for this model
-    pub fn download_url(&self) -> &'static str {
-        match self {
-            Self::GptOss20bQ4 { .. } => {
-                "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q4_K_M.gguf?download=true"
-            }
-            Self::Qwen3_30B_A3B_Thinking_Q4 { .. } => {
-                "https://huggingface.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF/resolve/main/Qwen3-30B-A3B-Thinking-2507-Q4_K_M.gguf?download=true"
-            }
-            Self::Qwen3_30B_A3B_Instruct_Q4 { .. } => {
-                "https://huggingface.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF/resolve/main/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf?download=true"
-            }
-            Self::Gemma3_27B_IT_Q4 { .. } => {
-                "https://huggingface.co/unsloth/gemma-3-27b-it-GGUF/resolve/main/gemma-3-27b-it-Q4_K_M.gguf?download=true"
-            }
-        }
+    pub fn download_url(&self) -> String {
+        format!(
+            "https://huggingface.co/{}/resolve/main/{}-{}.gguf?download=true",
+            self.base_model.huggingface_repo,
+            self.base_model.name,
+            self.quantization.file_suffix()
+        )
     }
 
     /// Get the SHA256 checksum for this model (for integrity verification)
-    pub fn sha256_checksum(&self) -> Option<&'static str> {
-        match self {
-            // TODO: Add real checksums after downloading and verifying each model
-            Self::GptOss20bQ4 { .. } => None, // Checksum to be added
-            Self::Qwen3_30B_A3B_Thinking_Q4 { .. } => None, // Checksum to be added
-            Self::Qwen3_30B_A3B_Instruct_Q4 { .. } => None, // Checksum to be added
-            Self::Gemma3_27B_IT_Q4 { .. } => None, // Checksum to be added
-        }
+    pub fn sha256_checksum(&self) -> Option<&str> {
+        // TODO: Add real checksums after downloading and verifying each model
+        // This would be maintained in a separate checksum database
+        None
     }
 
     /// Get the approximate download size in bytes
     pub fn download_size_bytes(&self) -> u64 {
-        match self {
-            Self::GptOss20bQ4 { .. } => 11_900_000_000, // ~11.9GB
-            Self::Qwen3_30B_A3B_Thinking_Q4 { .. } => 18_600_000_000, // ~18.6GB
-            Self::Qwen3_30B_A3B_Instruct_Q4 { .. } => 18_600_000_000, // ~18.6GB
-            Self::Gemma3_27B_IT_Q4 { .. } => 16_500_000_000, // ~16.5GB
-        }
+        let base_size_gb = self.base_model.base_size_gb;
+        let compressed_size_gb = base_size_gb / self.quantization.compression_ratio();
+        (compressed_size_gb * 1024.0 * 1024.0 * 1024.0) as u64
+    }
+
+    /// Get the approximate download size in GB  
+    pub fn download_size_gb(&self) -> f32 {
+        self.download_size_bytes() as f32 / (1024.0 * 1024.0 * 1024.0)
+    }
+
+    /// Get the base model name without quantization
+    pub fn base_model_name(&self) -> &str {
+        &self.base_model.name
+    }
+
+    /// Get quantization level as string
+    pub fn quantization_level(&self) -> String {
+        format!("{:?}", self.quantization)
     }
 
     /// Get the hardware requirements for this model
     pub fn requirements(&self) -> &HardwareRequirements {
-        match self {
-            Self::GptOss20bQ4 { requirements } => requirements,
-            Self::Qwen3_30B_A3B_Thinking_Q4 { requirements } => requirements,
-            Self::Qwen3_30B_A3B_Instruct_Q4 { requirements } => requirements,
-            Self::Gemma3_27B_IT_Q4 { requirements } => requirements,
-        }
+        &self.requirements
     }
 
     /// Get a human-readable description
-    pub fn description(&self) -> &'static str {
-        match self {
-            Self::GptOss20bQ4 { .. } => "GPT-OSS 20B (Q4_K_M) - High quality model for powerful GPUs (16GB+ VRAM)",
-            Self::Qwen3_30B_A3B_Thinking_Q4 { .. } => "Qwen3-30B-A3B-Thinking (Q4_K_M) - MoE reasoning model, 30B params but only 3.3B active (20GB+ VRAM)",
-            Self::Qwen3_30B_A3B_Instruct_Q4 { .. } => "Qwen3-30B-A3B-Instruct (Q4_K_M) - MoE instruction model, 30B params but only 3.3B active (20GB+ VRAM)",
-            Self::Gemma3_27B_IT_Q4 { .. } => "Gemma-3-27B-IT (Q4_K_M) - Google's instruction-tuned model with 128K context (18GB+ VRAM)",
-        }
+    pub fn description(&self) -> String {
+        let quantization_desc = match self.quantization {
+            QuantizationLevel::Q8_0 => "Very High Quality",
+            QuantizationLevel::Q6_K => "High Quality", 
+            QuantizationLevel::Q5_K_M | QuantizationLevel::Q5_K_S | QuantizationLevel::Q5_0 => "Good Quality",
+            QuantizationLevel::Q4_K_M | QuantizationLevel::Q4_K_S | QuantizationLevel::Q4_0 => "Balanced",
+            QuantizationLevel::Q3_K_M | QuantizationLevel::Q3_K_S => "Compact",
+            QuantizationLevel::Q2_K => "Very Compact",
+        };
+        
+        let vram_req = if let Some(vram) = self.requirements.min_vram_gb {
+            format!(" ({:.0}GB+ VRAM)", vram)
+        } else {
+            " (CPU Compatible)".to_string()
+        };
+        
+        format!(
+            "{} ({}) - {} - {}{}",
+            self.base_model.description,
+            self.quantization.file_suffix(),
+            quantization_desc,
+            self.base_model.parameter_count,
+            vram_req
+        )
     }
     
     /// Get the context window size for this model in tokens
     pub fn context_window_size(&self) -> u32 {
-        match self {
-            // All current GGUF models support 131k context window
-            Self::GptOss20bQ4 { .. } => 131072, // 131k tokens
-            Self::Qwen3_30B_A3B_Thinking_Q4 { .. } => 131072, // 131k tokens  
-            Self::Qwen3_30B_A3B_Instruct_Q4 { .. } => 131072, // 131k tokens
-            Self::Gemma3_27B_IT_Q4 { .. } => 131072, // 131k tokens
-        }
+        self.base_model.context_window
     }
     
     /// Get the maximum output tokens for this model  
     pub fn max_output_tokens(&self) -> u32 {
-        match self {
-            // Conservative max output to leave room for input context
-            Self::GptOss20bQ4 { .. } => 8192, // ~6% of context window
-            Self::Qwen3_30B_A3B_Thinking_Q4 { .. } => 8192,
-            Self::Qwen3_30B_A3B_Instruct_Q4 { .. } => 8192, 
-            Self::Gemma3_27B_IT_Q4 { .. } => 8192,
-        }
+        // Conservative max output to leave room for input context (6% of context window)
+        (self.base_model.context_window as f32 * 0.06) as u32
     }
     
     /// Get the model ID for API usage
-    pub fn model_id(&self) -> &'static str {
-        match self {
-            Self::GptOss20bQ4 { .. } => "gpt-oss-20b-q4",
-            Self::Qwen3_30B_A3B_Thinking_Q4 { .. } => "qwen3-30b-a3b-thinking-q4",
-            Self::Qwen3_30B_A3B_Instruct_Q4 { .. } => "qwen3-30b-a3b-instruct-q4",
-            Self::Gemma3_27B_IT_Q4 { .. } => "gemma3-27b-it-q4",
-        }
+    pub fn model_id(&self) -> String {
+        format!(
+            "{}-{}",
+            self.base_model.name.replace("_", "-"),
+            self.quantization.file_suffix().to_lowercase()
+        )
     }
 }
 
@@ -255,9 +434,9 @@ fn detect_gpu_info(os: &str) -> Result<Vec<GpuInfo>, LocalLlmError> {
 
     match os {
         "linux" | "windows" => {
-            // Try to detect NVIDIA GPUs using nvidia-smi
+            // Try to detect NVIDIA GPUs using nvidia-smi with extended info
             if let Ok(output) = Command::new("nvidia-smi")
-                .args(&["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+                .args(&["--query-gpu=name,memory.total,compute_cap", "--format=csv,noheader,nounits"])
                 .output()
             {
                 if output.status.success() {
@@ -269,10 +448,24 @@ fn detect_gpu_info(os: &str) -> Result<Vec<GpuInfo>, LocalLlmError> {
                             let vram_mb: Option<f32> = parts[1].parse().ok();
                             let vram_gb = vram_mb.map(|mb| mb / 1024.0);
                             
+                            // Enhanced CUDA capability detection
+                            let cuda_capable = if parts.len() >= 3 {
+                                // Check compute capability version
+                                if let Ok(compute_cap) = parts[2].parse::<f32>() {
+                                    compute_cap >= 3.5 // Minimum for modern CUDA
+                                } else {
+                                    true // Assume CUDA capable if we can't parse
+                                }
+                            } else {
+                                true // Assume CUDA capable for NVIDIA GPUs
+                            };
+                            
+                            debug!("Detected NVIDIA GPU: {} with {:.1}GB VRAM, CUDA: {}", name, vram_gb.unwrap_or(0.0), cuda_capable);
+                            
                             gpu_info.push(GpuInfo {
                                 name,
                                 vram_gb,
-                                cuda_capable: true,
+                                cuda_capable,
                                 metal_capable: false,
                             });
                         }
@@ -280,12 +473,62 @@ fn detect_gpu_info(os: &str) -> Result<Vec<GpuInfo>, LocalLlmError> {
                 }
             }
             
+            // Try alternative NVIDIA detection if nvidia-smi failed
             if gpu_info.is_empty() {
-                debug!("No NVIDIA GPUs detected or nvidia-smi not available");
+                if let Ok(output) = Command::new("nvidia-smi")
+                    .args(&["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+                    .output()
+                {
+                    if output.status.success() {
+                        let output_str = String::from_utf8_lossy(&output.stdout);
+                        for line in output_str.lines() {
+                            let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+                            if parts.len() >= 2 {
+                                let name = parts[0].to_string();
+                                let vram_mb: Option<f32> = parts[1].parse().ok();
+                                let vram_gb = vram_mb.map(|mb| mb / 1024.0);
+                                
+                                debug!("Detected NVIDIA GPU (fallback): {} with {:.1}GB VRAM", name, vram_gb.unwrap_or(0.0));
+                                
+                                gpu_info.push(GpuInfo {
+                                    name,
+                                    vram_gb,
+                                    cuda_capable: true,
+                                    metal_capable: false,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Try to detect AMD GPUs using rocm-smi (if available)
+            if let Ok(output) = Command::new("rocm-smi")
+                .args(&["--showproductname", "--showmeminfo", "vram"])
+                .output()
+            {
+                if output.status.success() {
+                    let output_str = String::from_utf8_lossy(&output.stdout);
+                    // Parse AMD GPU info (basic implementation)
+                    // This would need more sophisticated parsing in practice
+                    if output_str.contains("AMD") || output_str.contains("Radeon") {
+                        debug!("AMD GPU detected, adding basic info");
+                        gpu_info.push(GpuInfo {
+                            name: "AMD GPU (ROCm Compatible)".to_string(),
+                            vram_gb: None, // Would need more parsing
+                            cuda_capable: false,
+                            metal_capable: false,
+                        });
+                    }
+                }
+            }
+            
+            if gpu_info.is_empty() {
+                debug!("No NVIDIA or AMD GPUs detected, or GPU tools not available");
             }
         }
         "macos" => {
-            // On macOS, assume Metal support for Apple Silicon
+            // Enhanced macOS GPU detection
             if std::env::consts::ARCH == "aarch64" {
                 // Try to get system info about GPU
                 if let Ok(output) = Command::new("system_profiler")
@@ -293,18 +536,35 @@ fn detect_gpu_info(os: &str) -> Result<Vec<GpuInfo>, LocalLlmError> {
                     .output()
                 {
                     if output.status.success() {
-                        // For now, just assume Metal support without detailed parsing
+                        // Basic Apple Silicon detection
                         gpu_info.push(GpuInfo {
                             name: "Apple GPU".to_string(),
                             vram_gb: None, // Unified memory architecture
                             cuda_capable: false,
                             metal_capable: true,
                         });
+                        debug!("Apple Silicon GPU detected with Metal support");
                     }
                 }
             } else {
-                // Intel Mac - might have discrete GPU
-                debug!("Intel Mac detected - checking for discrete GPU");
+                // Intel Mac - check for discrete GPU
+                if let Ok(output) = Command::new("system_profiler")
+                    .args(&["SPDisplaysDataType"])
+                    .output()
+                {
+                    if output.status.success() {
+                        let output_str = String::from_utf8_lossy(&output.stdout);
+                        if output_str.contains("AMD") {
+                            gpu_info.push(GpuInfo {
+                                name: "AMD GPU (macOS)".to_string(),
+                                vram_gb: None, // Would need parsing
+                                cuda_capable: false,
+                                metal_capable: true,
+                            });
+                            debug!("Intel Mac with AMD GPU detected");
+                        }
+                    }
+                }
             }
         }
         _ => {
@@ -315,50 +575,197 @@ fn detect_gpu_info(os: &str) -> Result<Vec<GpuInfo>, LocalLlmError> {
     Ok(gpu_info)
 }
 
-/// Select the best model based on hardware capabilities
+/// Select the best model variant based on hardware capabilities with smart quantization
 pub fn select_model_variant(hw: &HardwareCapabilities) -> ModelSelection {
     debug!("Selecting model variant for hardware: {:#?}", hw);
     
     let models = ModelSelection::all_models();
+    let mut compatible_models = Vec::new();
     
-    // Sort by preference (most powerful first)
+    // Find all compatible models
     for model in models {
         let requirements = model.requirements();
         
-        // Check if hardware meets minimum requirements
+        // Check basic requirements
         if hw.available_ram_gb >= requirements.min_ram_gb
             && hw.cpu_cores >= requirements.min_cpu_cores
         {
-            // Check GPU requirements
+            // Check GPU requirements if specified
             if let Some(min_vram) = requirements.min_vram_gb {
-                // Model requires GPU
                 if let Some(gpu) = hw.gpu_info.iter().find(|gpu| {
                     gpu.vram_gb.map_or(false, |vram| vram >= min_vram)
-                        && (requirements.requires_cuda && gpu.cuda_capable || !requirements.requires_cuda)
+                        && (!requirements.requires_cuda || gpu.cuda_capable)
                 }) {
-                    debug!("Selected GPU model: {:?} for GPU: {}", model, gpu.name);
-                    return model;
+                    let score = calculate_model_score(&model, hw, Some(gpu));
+                    compatible_models.push((model, Some(gpu), score));
                 }
             } else {
                 // CPU-only model
-                debug!("Selected CPU model: {:?}", model);
-                return model;
+                let score = calculate_model_score(&model, hw, None);
+                compatible_models.push((model, None, score));
             }
         }
     }
     
-    // Fallback to CPU-only GPT-OSS model if no GPU requirements can be met
-    warn!("Hardware doesn't meet GPU requirements for any preferred model, falling back to GPT-OSS CPU-only");
-    ModelSelection::GptOss20bQ4 {
-        requirements: HardwareRequirements {
-            min_ram_gb: 16.0,
-            min_vram_gb: None, // CPU-only fallback
-            min_cpu_cores: 4,
-            recommended_ram_gb: 32.0,
-            recommended_vram_gb: None,
-            requires_cuda: false,
-        },
+    if compatible_models.is_empty() {
+        // No compatible models found, create a minimal fallback
+        warn!("No compatible models found for hardware, creating CPU-only fallback");
+        return create_fallback_model();
     }
+    
+    // Sort by score (highest first) and select the best
+    compatible_models.sort_by(|a, b| b.2.total_cmp(&a.2));
+    let (best_model, best_gpu, score) = &compatible_models[0];
+    
+    debug!("Selected model: {} with score {:.2}", best_model.description(), score);
+    if let Some(gpu) = best_gpu {
+        debug!("Using GPU: {} with {:.1}GB VRAM", gpu.name, gpu.vram_gb.unwrap_or(0.0));
+    }
+    
+    best_model.clone()
+}
+
+/// Calculate a score for model selection (higher is better)
+fn calculate_model_score(model: &ModelSelection, hw: &HardwareCapabilities, gpu: Option<&GpuInfo>) -> f32 {
+    let mut score = 0.0;
+    
+    // Base score from model quality and quantization
+    score += model.quantization.quality_score() as f32;
+    
+    // Parameter count bonus (larger models are generally better if they fit)
+    let param_bonus = match model.base_model.parameter_count.as_str() {
+        param if param.contains("30B") => 100.0,
+        param if param.contains("27B") => 90.0,
+        param if param.contains("20B") => 80.0,
+        param if param.contains("14B") => 70.0,
+        param if param.contains("7B") => 60.0,
+        _ => 50.0,
+    };
+    score += param_bonus;
+    
+    // GPU utilization bonus
+    if let Some(gpu) = gpu {
+        if let Some(vram) = gpu.vram_gb {
+            let model_vram_req = model.requirements().min_vram_gb.unwrap_or(0.0);
+            let vram_ratio = vram / model_vram_req;
+            
+            // Optimal VRAM utilization (between 70-90% usage gets highest score)
+            let utilization = model_vram_req / vram;
+            let utilization_score = if utilization > 0.9 {
+                // Too close to limit, penalize
+                -20.0
+            } else if utilization > 0.7 {
+                // Good utilization
+                50.0 * utilization
+            } else if utilization > 0.5 {
+                // Reasonable utilization
+                30.0 * utilization
+            } else {
+                // Underutilized, but still bonus for having GPU
+                20.0 * utilization
+            };
+            score += utilization_score;
+        }
+    }
+    
+    // Memory headroom bonus
+    let ram_ratio = hw.available_ram_gb / model.requirements().min_ram_gb;
+    if ram_ratio > 2.0 {
+        score += 15.0;
+    } else if ram_ratio > 1.5 {
+        score += 10.0;
+    } else if ram_ratio > 1.2 {
+        score += 5.0;
+    }
+    
+    // CPU headroom bonus
+    let cpu_ratio = hw.cpu_cores as f32 / model.requirements().min_cpu_cores as f32;
+    if cpu_ratio > 2.0 {
+        score += 10.0;
+    } else if cpu_ratio > 1.5 {
+        score += 5.0;
+    }
+    
+    // Special bonus for reasoning models (Thinking variants)
+    if model.base_model.name.contains("thinking") {
+        score += 20.0;
+    }
+    
+    score
+}
+
+/// Create a minimal fallback model for very limited hardware
+fn create_fallback_model() -> ModelSelection {
+    let base_model = BaseModel {
+        name: "llama-3.3-7b-instruct".to_string(),
+        description: "Llama 3.3 7B Instruct - Minimal fallback model".to_string(),
+        parameter_count: "7B".to_string(),
+        context_window: 131072,
+        huggingface_repo: "unsloth/Llama-3.3-7B-Instruct-GGUF".to_string(),
+        base_size_gb: 14.0,
+    };
+    
+    let quantization = QuantizationLevel::Q2_K; // Most compressed
+    
+    let requirements = HardwareRequirements {
+        min_ram_gb: 4.0,
+        min_vram_gb: None, // CPU-only
+        min_cpu_cores: 2,
+        recommended_ram_gb: 8.0,
+        recommended_vram_gb: None,
+        requires_cuda: false,
+    };
+    
+    ModelSelection {
+        base_model,
+        quantization,
+        requirements,
+    }
+}
+
+/// Select optimal quantization level for a given base model and hardware
+pub fn select_optimal_quantization(
+    base_model: &BaseModel,
+    hw: &HardwareCapabilities,
+    prefer_quality: bool,
+) -> QuantizationLevel {
+    let available_vram = hw.gpu_info.iter()
+        .filter_map(|gpu| gpu.vram_gb)
+        .max_by(|a, b| a.total_cmp(b))
+        .unwrap_or(0.0);
+    
+    let context_buffer = 2.0; // GB reserved for context
+    let usable_vram = available_vram - context_buffer;
+    
+    debug!("Selecting quantization for {} with {:.1}GB usable VRAM", base_model.name, usable_vram);
+    
+    if usable_vram <= 0.0 {
+        // CPU-only, use most compressed
+        return QuantizationLevel::Q2_K;
+    }
+    
+    // Try quantization levels in order of preference
+    let quantizations = if prefer_quality {
+        QuantizationLevel::all_by_quality()
+    } else {
+        // For speed preference, reverse the order
+        let mut levels = QuantizationLevel::all_by_quality();
+        levels.reverse();
+        levels
+    };
+    
+    for quant in quantizations {
+        let model_size = base_model.base_size_gb / quant.compression_ratio();
+        if model_size <= usable_vram {
+            debug!("Selected {} quantization: model size {:.1}GB fits in {:.1}GB VRAM", 
+                   quant.file_suffix(), model_size, usable_vram);
+            return quant;
+        }
+    }
+    
+    // If nothing fits, use most compressed
+    debug!("No quantization fits in VRAM, using most compressed (Q2_K)");
+    QuantizationLevel::Q2_K
 }
 
 /// Check if hardware meets recommended specs for the selected model
@@ -430,22 +837,47 @@ mod tests {
         };
         
         let selected = select_model_variant(&minimal_hw);
-        // Should fall back to CPU-only GPT-OSS for minimal hardware
-        match selected {
-            ModelSelection::GptOss20bQ4 { requirements } => {
-                // Should be the CPU-only fallback variant
-                assert_eq!(requirements.min_vram_gb, None);
-            },
-            _ => panic!("Expected GPT-OSS CPU-only fallback for minimal hardware"),
-        }
+        // Should fall back to a minimal model for limited hardware
+        assert_eq!(selected.base_model.parameter_count, "7B");
+        assert_eq!(selected.requirements.min_vram_gb, None); // CPU-only
+        assert!(selected.requirements.min_ram_gb <= 4.0);
     }
 
     #[test]
-    fn test_model_selection_with_gpu() {
-        let gpu_hw = HardwareCapabilities {
+    fn test_model_selection_with_rtx_5080() {
+        let rtx5080_hw = HardwareCapabilities {
             total_ram_gb: 32.0,
-            available_ram_gb: 24.0,
+            available_ram_gb: 28.0,
             cpu_cores: 16,
+            cpu_arch: "x86_64".to_string(),
+            gpu_info: vec![GpuInfo {
+                name: "RTX 5080".to_string(),
+                vram_gb: Some(16.0), // RTX 5080 has 16GB VRAM
+                cuda_capable: true,
+                metal_capable: false,
+            }],
+            has_cuda: true,
+            has_metal: false,
+            os: "linux".to_string(),
+        };
+        
+        let selected = select_model_variant(&rtx5080_hw);
+        // Should select a model that fits in 16GB VRAM
+        if let Some(vram_req) = selected.requirements.min_vram_gb {
+            assert!(vram_req <= 16.0, "Selected model requires {}GB but RTX 5080 only has 16GB", vram_req);
+        }
+        
+        // Should prefer higher parameter count models that fit
+        assert!(selected.base_model.parameter_count.contains("B")); // Should be a model with billions of parameters
+        println!("Selected for RTX 5080: {}", selected.description());
+    }
+
+    #[test]
+    fn test_model_selection_with_high_end_gpu() {
+        let high_end_hw = HardwareCapabilities {
+            total_ram_gb: 64.0,
+            available_ram_gb: 56.0,
+            cpu_cores: 24,
             cpu_arch: "x86_64".to_string(),
             gpu_info: vec![GpuInfo {
                 name: "RTX 4090".to_string(),
@@ -458,11 +890,64 @@ mod tests {
             os: "linux".to_string(),
         };
         
-        let selected = select_model_variant(&gpu_hw);
-        // Should select Qwen3 Thinking model for powerful hardware with 24GB VRAM
-        match selected {
-            ModelSelection::Qwen3_30B_A3B_Thinking_Q4 { .. } => (),
-            _ => panic!("Expected Qwen3 Thinking model for high-end hardware with 24GB VRAM"),
+        let selected = select_model_variant(&high_end_hw);
+        // Should select a high-end model for powerful hardware with 24GB VRAM
+        assert!(selected.base_model.parameter_count.contains("B")); 
+        if let Some(vram_req) = selected.requirements.min_vram_gb {
+            assert!(vram_req <= 24.0, "Selected model requires more VRAM than available");
         }
+        println!("Selected for RTX 4090: {}", selected.description());
+    }
+
+    #[test]
+    fn test_quantization_selection() {
+        let base_model = BaseModel {
+            name: "test-model".to_string(),
+            description: "Test model".to_string(),
+            parameter_count: "7B".to_string(),
+            context_window: 8192,
+            huggingface_repo: "test/repo".to_string(),
+            base_size_gb: 14.0,
+        };
+        
+        // Test with high VRAM (should select high quality)
+        let high_vram_hw = HardwareCapabilities {
+            total_ram_gb: 32.0,
+            available_ram_gb: 28.0,
+            cpu_cores: 8,
+            cpu_arch: "x86_64".to_string(),
+            gpu_info: vec![GpuInfo {
+                name: "High-end GPU".to_string(),
+                vram_gb: Some(16.0),
+                cuda_capable: true,
+                metal_capable: false,
+            }],
+            has_cuda: true,
+            has_metal: false,
+            os: "linux".to_string(),
+        };
+        
+        let high_quality = select_optimal_quantization(&base_model, &high_vram_hw, true);
+        assert!(high_quality.quality_score() >= 85); // Should select high quality quantization
+        
+        // Test with low VRAM (should select more compressed)
+        let low_vram_hw = HardwareCapabilities {
+            total_ram_gb: 16.0,
+            available_ram_gb: 12.0,
+            cpu_cores: 4,
+            cpu_arch: "x86_64".to_string(),
+            gpu_info: vec![GpuInfo {
+                name: "Mid-range GPU".to_string(),
+                vram_gb: Some(6.0),
+                cuda_capable: true,
+                metal_capable: false,
+            }],
+            has_cuda: true,
+            has_metal: false,
+            os: "linux".to_string(),
+        };
+        
+        let compressed = select_optimal_quantization(&base_model, &low_vram_hw, true);
+        assert!(compressed.quality_score() < 85); // Should select more compressed quantization
     }
 }

@@ -181,6 +181,9 @@ pub enum LocalLlmError {
     #[error("Model loading failed: {0}")]
     ModelLoadFailed(String),
     
+    #[error("Model not found: {0}")]
+    ModelNotFound(String),
+    
     #[error("Insufficient resources (RAM: {ram_gb}GB, VRAM: {vram_gb}GB required)")]
     InsufficientResources { ram_gb: f32, vram_gb: f32 },
     

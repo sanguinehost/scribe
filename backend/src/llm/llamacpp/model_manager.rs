@@ -71,8 +71,16 @@ impl ModelManager {
         info!("Initializing model manager (lazy mode)");
         
         let models_dir = {
-            let relative_path = Path::new(&config.model_path).parent()
-                .unwrap_or(Path::new("models"));
+            let model_path = Path::new(&config.model_path);
+            let parent_dir = model_path.parent().unwrap_or(Path::new("models"));
+            
+            // Handle the specific case where the path is "../models/filename.gguf"
+            // Convert "../models" to just "models" to make it relative to current directory
+            let relative_path = if parent_dir == Path::new("../models") {
+                Path::new("models")
+            } else {
+                parent_dir
+            };
             
             // Ensure we have an absolute path
             if relative_path.is_absolute() {
@@ -89,7 +97,11 @@ impl ModelManager {
             .map_err(|e| LocalLlmError::ModelLoadFailed(format!("Failed to create models directory: {}", e)))?;
         
         let http_client = HttpClient::builder()
-            .timeout(std::time::Duration::from_secs(300)) // 5 minutes for downloads
+            .timeout(std::time::Duration::from_secs(600)) // 10 minutes total timeout for large files
+            .connect_timeout(std::time::Duration::from_secs(30)) // 30 seconds to establish connection
+            .pool_idle_timeout(Some(std::time::Duration::from_secs(90))) // Keep connections alive
+            .tcp_keepalive(Some(std::time::Duration::from_secs(60))) // TCP keepalive for long downloads
+            .user_agent("SanguineScribe/1.0") // Identify ourselves properly
             .build()
             .map_err(|e| LocalLlmError::ModelDownloadFailed(format!("HTTP client error: {}", e)))?;
         
@@ -304,7 +316,7 @@ impl ModelManager {
     pub async fn download_model(&self, model: &ModelSelection) -> Result<PathBuf, LocalLlmError> {
         let model_filename = model.filename();
         let download_url = model.download_url();
-        let local_path = self.models_dir.join(model_filename);
+        let local_path = self.models_dir.join(&model_filename);
         
         info!("Starting download of {} from {}", model_filename, download_url);
         
@@ -318,7 +330,7 @@ impl ModelManager {
         let temp_path = local_path.with_extension("tmp");
         
         // Start HTTP request
-        let response = self.http_client.get(download_url).send().await
+        let response = self.http_client.get(&download_url).send().await
             .map_err(|e| LocalLlmError::ModelDownloadFailed(format!("HTTP request failed: {}", e)))?;
         
         if !response.status().is_success() {
@@ -335,19 +347,70 @@ impl ModelManager {
         let mut file = fs::File::create(&temp_path).await
             .map_err(|e| LocalLlmError::ModelDownloadFailed(format!("Failed to create file: {}", e)))?;
         
-        // Download with progress tracking
+        // Download with progress tracking and retry logic
         let mut downloaded = 0u64;
         let mut stream = response.bytes_stream();
         let start_time = std::time::Instant::now();
+        let mut consecutive_errors = 0u32;
+        const MAX_CONSECUTIVE_ERRORS: u32 = 3;
         
-        while let Some(chunk) = futures::StreamExt::next(&mut stream).await {
-            let chunk = chunk
-                .map_err(|e| LocalLlmError::ModelDownloadFailed(format!("Download chunk error: {}", e)))?;
-            
-            file.write_all(&chunk).await
-                .map_err(|e| LocalLlmError::ModelDownloadFailed(format!("Write error: {}", e)))?;
-            
-            downloaded += chunk.len() as u64;
+        loop {
+            let chunk_result = tokio::time::timeout(
+                tokio::time::Duration::from_secs(30), // 30 second timeout per chunk
+                futures::StreamExt::next(&mut stream)
+            ).await;
+
+            match chunk_result {
+                Ok(Some(chunk_result)) => {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            // Reset error counter on successful chunk
+                            consecutive_errors = 0;
+                            
+                            // Write chunk to file with flushing
+                            file.write_all(&chunk).await
+                                .map_err(|e| LocalLlmError::ModelDownloadFailed(format!("Write error: {}", e)))?;
+                            file.flush().await
+                                .map_err(|e| LocalLlmError::ModelDownloadFailed(format!("Flush error: {}", e)))?;
+                            
+                            downloaded += chunk.len() as u64;
+                        }
+                        Err(e) => {
+                            consecutive_errors += 1;
+                            warn!("Download chunk error (attempt {}/{}): {}", consecutive_errors, MAX_CONSECUTIVE_ERRORS, e);
+                            
+                            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                                return Err(LocalLlmError::ModelDownloadFailed(
+                                    format!("Too many consecutive chunk errors: {}", e)
+                                ));
+                            }
+                            
+                            // Wait a bit before trying next chunk
+                            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                            continue;
+                        }
+                    }
+                }
+                Ok(None) => {
+                    // Stream ended normally
+                    break;
+                }
+                Err(_) => {
+                    // Chunk timeout
+                    consecutive_errors += 1;
+                    warn!("Download chunk timeout (attempt {}/{})", consecutive_errors, MAX_CONSECUTIVE_ERRORS);
+                    
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                        return Err(LocalLlmError::ModelDownloadFailed(
+                            "Too many consecutive chunk timeouts".to_string()
+                        ));
+                    }
+                    
+                    // Wait a bit before trying next chunk
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
             
             // Update progress
             if total_size > 0 {
@@ -391,11 +454,142 @@ impl ModelManager {
         let active_model = self.active_model.read().await.clone();
         let mut models = Vec::new();
         
+        info!("ModelManager::list_models: Starting model enumeration");
+        info!("ModelManager: models_dir = {:?}", self.models_dir);
+        info!("ModelManager: active_model = {:?}", active_model);
+        
+        // List all actual files in models directory for comparison
+        info!("ModelManager: About to read directory: {:?}", self.models_dir);
+        info!("ModelManager: Directory exists: {}", self.models_dir.exists());
+        info!("ModelManager: Directory is_dir: {}", self.models_dir.is_dir());
+        
+        match fs::read_dir(&self.models_dir).await {
+            Ok(mut entries) => {
+                info!("ModelManager: Successfully opened directory for reading");
+                info!("ModelManager: Files found in models directory:");
+                let mut found_any = false;
+                let mut count = 0;
+                
+                loop {
+                    match entries.next_entry().await {
+                        Ok(Some(entry)) => {
+                            count += 1;
+                            if let Some(filename) = entry.file_name().to_str() {
+                                found_any = true;
+                                info!("  - {} ({})", filename, if filename.ends_with(".gguf") { "GGUF" } else { "other" });
+                                
+                                // Extra debug for GGUF files
+                                if filename.ends_with(".gguf") {
+                                    let file_path = entry.path();
+                                    if let Ok(metadata) = fs::metadata(&file_path).await {
+                                        info!("    File size: {} bytes", metadata.len());
+                                        info!("    File permissions: {:?}", metadata.permissions());
+                                    }
+                                }
+                            } else {
+                                info!("  - [unreadable filename]");
+                            }
+                        }
+                        Ok(None) => {
+                            info!("ModelManager: Finished reading directory, processed {} entries", count);
+                            break;
+                        }
+                        Err(e) => {
+                            error!("ModelManager: Error reading directory entry: {}", e);
+                            break;
+                        }
+                    }
+                }
+                
+                if !found_any {
+                    warn!("ModelManager: No files found in models directory after reading {} entries!", count);
+                }
+            }
+            Err(e) => {
+                error!("ModelManager: Failed to read models directory {:?}: {}", self.models_dir, e);
+                
+                // Try synchronous fallback for debugging
+                info!("ModelManager: Attempting synchronous fallback directory read");
+                match std::fs::read_dir(&self.models_dir) {
+                    Ok(entries) => {
+                        info!("ModelManager: Synchronous directory read succeeded!");
+                        for (i, entry) in entries.enumerate() {
+                            match entry {
+                                Ok(entry) => {
+                                    if let Some(filename) = entry.file_name().to_str() {
+                                        info!("  Sync entry {}: {} ({})", i, filename, 
+                                             if filename.ends_with(".gguf") { "GGUF" } else { "other" });
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("  Sync entry {} error: {}", i, e);
+                                }
+                            }
+                        }
+                    }
+                    Err(sync_e) => {
+                        error!("ModelManager: Both async and sync directory reads failed!");
+                        error!("  Async error: {}", e);
+                        error!("  Sync error: {}", sync_e);
+                        
+                        // Try one more approach - check if we can list with ls command
+                        use std::process::Command;
+                        match Command::new("ls").args(["-la", &self.models_dir.to_string_lossy()]).output() {
+                            Ok(output) => {
+                                let stdout = String::from_utf8_lossy(&output.stdout);
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                info!("ModelManager: Command 'ls -la' output:");
+                                info!("  stdout: {}", stdout);
+                                if !stderr.is_empty() {
+                                    warn!("  stderr: {}", stderr);
+                                }
+                            }
+                            Err(cmd_e) => {
+                                error!("ModelManager: Even 'ls' command failed: {}", cmd_e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         for model_variant in ModelSelection::all_models() {
             let filename = model_variant.filename();
-            let path = self.models_dir.join(filename);
+            let path = self.models_dir.join(&filename);
             let is_downloaded = path.exists();
-            let is_active = active_model.as_ref().map_or(false, |active| active == filename);
+            let is_active = active_model.as_ref().map_or(false, |active| active == &filename);
+            
+            // Enhanced debug logging for all models
+            debug!("ModelManager: Checking model variant:");
+            debug!("  - Base model: {}", model_variant.base_model.name);
+            debug!("  - Quantization: {:?}", model_variant.quantization);
+            debug!("  - Expected filename: {}", filename);
+            debug!("  - Full path: {:?}", path);
+            debug!("  - File exists: {}", is_downloaded);
+            debug!("  - Is active: {}", is_active);
+            
+            // Extra logging for the problematic model
+            if filename.contains("gpt-oss-20b") {
+                info!("ModelManager: GPT-OSS-20B model details:");
+                info!("  - filename: {}", filename);
+                info!("  - path: {:?}", path);
+                info!("  - exists: {}", is_downloaded);
+                info!("  - is_active: {}", is_active);
+                
+                // Check if any similar files exist with different naming
+                if !is_downloaded {
+                    if let Ok(entries) = fs::read_dir(&self.models_dir).await {
+                        let mut dir_entries = entries;
+                        while let Some(entry) = dir_entries.next_entry().await.unwrap_or(None) {
+                            if let Some(entry_filename) = entry.file_name().to_str() {
+                                if entry_filename.contains("gpt-oss") || entry_filename.contains("20b") {
+                                    info!("  - Found similar file: {}", entry_filename);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             
             // Check hardware compatibility
             let requirements = model_variant.requirements();
@@ -418,7 +612,7 @@ impl ModelManager {
             };
             
             models.push(ModelStatus {
-                name: filename.to_string(),
+                name: filename,
                 path,
                 size_bytes,
                 is_downloaded,
@@ -564,16 +758,47 @@ impl ModelManager {
     
     /// Get estimated disk space required for all models
     pub fn get_total_disk_space_required() -> u64 {
-        // Rough estimates based on typical model sizes
-        // This could be made more accurate by checking actual model sizes
+        // Calculate space required for all available models
         ModelSelection::all_models().iter().map(|model| {
-            match model {
-                ModelSelection::GptOss20bQ4 { .. } => 12_000_000_000, // ~12GB
-                ModelSelection::Qwen3_30B_A3B_Thinking_Q4 { .. } => 19_000_000_000, // ~19GB
-                ModelSelection::Qwen3_30B_A3B_Instruct_Q4 { .. } => 19_000_000_000, // ~19GB
-                ModelSelection::Gemma3_27B_IT_Q4 { .. } => 17_000_000_000, // ~17GB
-            }
+            model.download_size_bytes()
         }).sum()
+    }
+
+    /// Activate a specific model by name
+    pub async fn activate_model(&self, model_name: &str) -> Result<(), LocalLlmError> {
+        info!("Activating model: {}", model_name);
+        
+        // Normalize the model name - handle different formats
+        let normalized_name = if model_name.ends_with(".gguf") {
+            model_name.to_string()
+        } else {
+            // Try to match against existing files first
+            let models = self.list_models().await?;
+            if let Some(existing_model) = models.iter().find(|m| 
+                m.name.to_lowercase().contains(&model_name.to_lowercase()) || 
+                model_name.to_lowercase().contains(&m.name.to_lowercase().replace(".gguf", ""))
+            ) {
+                existing_model.name.clone()
+            } else {
+                // Fall back to adding .gguf extension
+                format!("{}.gguf", model_name)
+            }
+        };
+        
+        // Check if the model file exists
+        let model_path = self.models_dir.join(&normalized_name);
+        if !model_path.exists() {
+            return Err(LocalLlmError::ModelNotFound(
+                format!("Model file not found: {}", model_path.display())
+            ));
+        }
+        
+        // Set as active model
+        let mut active_model = self.active_model.write().await;
+        *active_model = Some(normalized_name.clone());
+        
+        info!("Model activated successfully: {}", normalized_name);
+        Ok(())
     }
 }
 

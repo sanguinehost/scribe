@@ -73,6 +73,8 @@ import type {
 	DownloadModelResponse,
 	ModelRecommendation,
 	ModelActionResponse,
+	GroupedModelInfo,
+	ModelVariantInfo,
 	HardwareCapabilities
 } from '$lib/types';
 import {
@@ -1305,6 +1307,34 @@ class ApiClient {
 		return this.fetch<ModelActionResponse>('/api/llm/download/best', {
 			method: 'POST'
 		});
+	}
+
+	// Get models grouped by base model with variants
+	async getGroupedModels(filters?: {
+		show_incompatible?: boolean;
+		only_downloaded?: boolean;
+		only_recommended?: boolean;
+	}): Promise<Result<GroupedModelInfo[], ApiError>> {
+		if (!ENABLE_LOCAL_LLM) {
+			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
+		}
+
+		// Build query parameters
+		const params = new URLSearchParams();
+		if (filters) {
+			if (filters.show_incompatible !== undefined) {
+				params.append('show_incompatible', filters.show_incompatible.toString());
+			}
+			if (filters.only_downloaded !== undefined) {
+				params.append('only_downloaded', filters.only_downloaded.toString());
+			}
+			if (filters.only_recommended !== undefined) {
+				params.append('only_recommended', filters.only_recommended.toString());
+			}
+		}
+
+		const url = `/api/llm/models/grouped${params.toString() ? `?${params.toString()}` : ''}`;
+		return this.fetch<GroupedModelInfo[]>(url);
 	}
 
 	/**
