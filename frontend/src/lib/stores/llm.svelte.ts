@@ -596,10 +596,9 @@ export class LLMStore {
 					}
 					
 					// Do one final refresh to ensure UI is fully updated
-					if (shouldRefresh || !shouldRefresh) { // Always refresh on completion
-						await this.fetchModels(true);
-						await this.fetchGroupedModels(true);
-					}
+					// Always refresh on completion
+					await this.fetchModels(true);
+					await this.fetchGroupedModels(true);
 					
 					console.log(`🎉 Download process complete for ${modelId}`);
 					return;
