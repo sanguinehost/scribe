@@ -49,6 +49,12 @@ export class LLMStore {
 		downloadProgress: {},
 		hardwareCapabilities: null
 	});
+
+	// Polling configuration constants
+	private static readonly MAX_POLL_ATTEMPTS = 40; // 5 minutes with 7.5 second intervals
+	private static readonly POLL_INTERVAL_MS = 7500; // Poll every 7.5 seconds to reduce load
+	private static readonly INITIAL_POLL_DELAY_MS = 3000; // Wait 3 seconds before first poll
+	private static readonly MAX_NO_PROGRESS_ATTEMPTS = 6; // ~45 seconds of no progress
 	
 	private progressEventSource: EventSource | null = null;
 
@@ -549,19 +555,18 @@ export class LLMStore {
 	 * Poll for download completion by checking model status
 	 */
 	private async pollDownloadCompletion(modelId: string): Promise<void> {
-		const maxAttempts = 40; // 5 minutes with 7.5 second intervals
 		let attempts = 0;
 		let consecutiveNoProgressAttempts = 0;
 		let lastRefreshAttempt = 0;
 		
 		const poll = async (): Promise<void> => {
 			attempts++;
-			console.log(`Polling download status for ${modelId} (attempt ${attempts}/${maxAttempts})`);
+			console.log(`Polling download status for ${modelId} (attempt ${attempts}/${LLMStore.MAX_POLL_ATTEMPTS})`);
 			
 			try {
 				// Only refresh every 3rd attempt (every ~22 seconds) to reduce UI thrashing
 				// Always refresh on first attempt and when we're close to completion
-				const shouldRefresh = attempts === 1 || attempts % 3 === 0 || attempts > maxAttempts - 5;
+				const shouldRefresh = attempts === 1 || attempts % 3 === 0 || attempts > LLMStore.MAX_POLL_ATTEMPTS - 5;
 				
 				if (shouldRefresh) {
 					console.log(`Refreshing models for ${modelId} (refresh ${++lastRefreshAttempt})`);
@@ -617,7 +622,7 @@ export class LLMStore {
 				}
 				
 				// If we haven't seen progress for too long, assume failure
-				if (consecutiveNoProgressAttempts >= 6) { // ~45 seconds of no progress
+				if (consecutiveNoProgressAttempts >= LLMStore.MAX_NO_PROGRESS_ATTEMPTS) {
 					console.error(`Download appears to have failed for ${modelId} - no model found for too long`);
 					this.state.downloadingModels.delete(modelId);
 					// Clean up download progress on failure
@@ -629,10 +634,10 @@ export class LLMStore {
 				}
 				
 				// Continue polling if not completed and under max attempts
-				if (attempts < maxAttempts) {
-					setTimeout(poll, 7500); // Poll every 7.5 seconds to reduce load
+				if (attempts < LLMStore.MAX_POLL_ATTEMPTS) {
+					setTimeout(poll, LLMStore.POLL_INTERVAL_MS);
 				} else {
-					console.warn(`Download polling timed out for ${modelId} after ${maxAttempts} attempts`);
+					console.warn(`Download polling timed out for ${modelId} after ${LLMStore.MAX_POLL_ATTEMPTS} attempts`);
 					this.state.downloadingModels.delete(modelId);
 					// Clean up download progress on timeout
 					if (this.state.downloadProgress[modelId]) {
@@ -652,7 +657,7 @@ export class LLMStore {
 		};
 		
 		// Start polling after initial delay
-		setTimeout(poll, 3000); // Wait 3 seconds before first poll
+		setTimeout(poll, LLMStore.INITIAL_POLL_DELAY_MS);
 	}
 
 	/**
