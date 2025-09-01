@@ -16,8 +16,8 @@
 - 📚 **Advanced lorebook system** - Rich world-building with vector search
 - 🎭 **Character compatibility** - Full V2/V3 character card support
 - 🌐 **Self-hostable** - Deploy your own instance with complete data sovereignty
-- 🔗 **Federation ready** - Connect multiple instances (coming soon)
-- 🤖 **Google AI integration** - Gemini API with planned Gemma 3 on-device support
+- 🔗 **Federation ready** - Architecture supports multi-instance connectivity (long-term)
+- 🤖 **Google AI integration** - Gemini API with local LLM support (experimental)
 
 ## 🏗️ Architecture
 
@@ -165,38 +165,57 @@ Chronicle system tracks character interactions and story developments without ma
 | **Self-Hostable** | ✅ Full control | ✅ Local only | ❌ SaaS only |
 | **Context Management** | 🚀 Automatic | 📝 Manual | 🤖 Black box |
 | **Game Integration** | 🎮 Designed for RPGs/dating sims | ❌ No | ❌ No |
-| **AI Models** | 🤖 Gemini + Gemma 3 | 🌐 All major APIs | 🏠 Proprietary only |
+| **AI Models** | 🤖 Gemini + Local (experimental) | 🌐 All major APIs | 🏠 Proprietary only |
 | **Performance** | ⚡ Fast server, AI-limited | 🐌 Can be slow | ⚡ Fast |
 | **Open Source** | ✅ MIT License | ✅ AGPL | ❌ Proprietary |
-| **Federation** | 🔜 Coming soon | ❌ No | ❌ No |
+| **Federation** | 🎯 Long-term roadmap | ❌ No | ❌ No |
 
 ## 🏃‍♂️ Roadmap
 
-### Phase 1: Alpha Release (Current)
+### Phase 1: Alpha Release ✅ (Complete)
 - [x] Core chat functionality
-- [x] Character and persona management
+- [x] Character and persona management  
 - [x] Chronicle system with automatic event extraction
 - [x] Lorebook with semantic search
 - [x] End-to-end encryption
 - [x] Gemini API integration
-- [ ] Gemma 3 on-device inference
+- [x] Local LLM support (architectural foundation complete, experimental)
 
-### Phase 2: Federation & Scaling
-- [ ] Multi-instance federation
-- [ ] Advanced character gallery
-- [ ] Real-time collaborative sessions
-- [ ] Mobile app
-- [ ] Plugin system
+### Phase 2: Production Ready 🎯 (Current Priority)
+**Making Sanguine Scribe ready for commercial hosting and real users**
 
-### Phase 3: Game Integration & Advanced Features
-- [ ] Unity/Unreal Engine SDK for game integration
-- [ ] Dating simulator UI components and mechanics
-- [ ] RPG character stat tracking and combat integration
-- [ ] Voice chat integration with character voices
-- [ ] Image generation for character avatars and scenes
-- [ ] Advanced prompt engineering tools
-- [ ] Community marketplace
-- [ ] Optional data sharing pipeline for open source model training (chat-by-chat opt-in)
+- [ ] **Payment & Subscriptions** - Stripe integration, tiered plans, usage tracking
+- [ ] **Character Gallery** - Public character sharing, ratings, categories, search
+- [ ] **Administration Dashboard** - User management, analytics, system monitoring
+- [ ] **Performance Optimization** - Caching, CDN, database optimization
+- [ ] **Security Hardening** - Rate limiting, DDoS protection, audit logging
+- [ ] **Email System** - Verification, notifications, password recovery
+- [ ] **Mobile-Responsive UI** - Touch-friendly interface, PWA support
+- [ ] **Content Moderation** - Automated filtering, reporting system
+- [ ] **API Rate Limiting** - Fair usage policies, quota management
+- [ ] **Backup & Recovery** - Automated backups, disaster recovery
+
+### Phase 3: Advanced Features & Scaling 🚀
+**After establishing a stable user base and revenue**
+
+- [ ] **Multi-instance Federation** - Connect different Sanguine Scribe instances
+- [ ] **Real-time Collaborative Sessions** - Multiple users in one chat
+- [ ] **Advanced Local LLM Support** - Better models, easier setup (if demand exists)
+- [ ] **Voice Integration** - Character voices, speech-to-text
+- [ ] **Image Generation** - Character avatars, scene generation
+- [ ] **Mobile Apps** - Native iOS/Android applications
+- [ ] **Plugin System** - Third-party integrations and extensions
+- [ ] **Advanced Analytics** - User behavior insights, A/B testing
+
+### Phase 4: Game Integration & Ecosystem 🎮
+**Long-term vision for interactive entertainment**
+
+- [ ] **Unity/Unreal SDKs** - Game engine integration
+- [ ] **Dating Sim Components** - Relationship mechanics, stats
+- [ ] **RPG Integration** - Character stats, combat systems  
+- [ ] **Community Marketplace** - User-generated content monetization
+- [ ] **Developer APIs** - Third-party game integration
+- [ ] **Optional Data Sharing** - Opt-in training data contribution (privacy-first)
 
 ## 🤝 Contributing
 
