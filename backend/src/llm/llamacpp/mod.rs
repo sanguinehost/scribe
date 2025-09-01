@@ -56,7 +56,7 @@ pub use fallback::{FallbackStrategy, LlamaCppResilience};
 pub use security::{PromptSanitizer, OutputValidator, ResourceLimiter};
 
 #[cfg(feature = "local-llm")]
-pub use hardware::{HardwareCapabilities, HardwareRequirements, detect_hardware};
+pub use hardware::{HardwareCapabilities, HardwareRequirements, ContextSizeConfig, detect_hardware, calculate_optimal_context_size};
 
 #[cfg(feature = "local-llm")]
 pub use metrics::{PerformanceMetrics, MetricsCollector, LlamaCppMetrics};
@@ -168,6 +168,49 @@ impl LlamaCppConfig {
         }
         
         config
+    }
+    
+    /// Create config with adaptive context sizing based on model and hardware
+    pub fn with_adaptive_context(mut self, model: &hardware::ModelSelection) -> Result<(Self, ContextSizeConfig), LocalLlmError> {
+        let hardware = detect_hardware()
+            .map_err(|e| LocalLlmError::HardwareDetectionFailed(e.to_string()))?;
+        
+        let context_config = calculate_optimal_context_size(model, &hardware);
+        
+        // Update config with adaptive values
+        self.context_size = context_config.optimal_context_size;
+        self.gpu_layers = context_config.optimal_gpu_layers;
+        
+        // Log the adaptive configuration
+        if let Some(ref warning) = context_config.memory_warning {
+            tracing::warn!("Adaptive context configuration: {}", warning);
+        }
+        
+        tracing::info!(
+            "Adaptive context configured: context_size={}, gpu_layers={:?}",
+            self.context_size,
+            self.gpu_layers
+        );
+        
+        Ok((self, context_config))
+    }
+    
+    /// Check if adaptive context sizing should be used
+    pub fn should_use_adaptive_context(&self) -> bool {
+        // Use adaptive context if:
+        // 1. Environment variable is set to enable it
+        // 2. Context size is at default or very large (suggests it wasn't manually tuned)
+        // 3. GPU layers is set to auto (999) suggesting auto-configuration is desired
+        
+        use std::env;
+        
+        // Check explicit environment variable
+        if let Ok(val) = env::var("LLAMACPP_ADAPTIVE_CONTEXT") {
+            return val.parse().unwrap_or(true);
+        }
+        
+        // Auto-enable if config looks like defaults that could benefit from adaptation
+        self.context_size >= 32768 && self.gpu_layers == Some(999)
     }
 }
 

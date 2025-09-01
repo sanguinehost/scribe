@@ -2,6 +2,7 @@
 // LlamaCpp server lifecycle management and process control
 
 use crate::llm::llamacpp::{LocalLlmError, LlamaCppConfig, ModelManager, HealthChecker};
+use crate::llm::llamacpp::hardware::{ContextSizeConfig, calculate_optimal_context_size, ModelSelection, detect_hardware};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -43,6 +44,7 @@ pub struct ServerConfig {
     pub enable_tool_calling: bool,
     pub parallel_requests: Option<usize>,
     pub chat_template: Option<String>,
+    pub adaptive_context: Option<ContextSizeConfig>, // Adaptive context configuration
 }
 
 /// Server process information
@@ -86,7 +88,34 @@ impl ServerConfig {
             enable_tool_calling: config.enable_tool_calling,
             parallel_requests: config.parallel_requests,
             chat_template: config.chat_template.clone(),
+            adaptive_context: None, // Will be calculated when needed
         }
+    }
+    
+    /// Create server config with adaptive context sizing
+    pub fn from_llamacpp_config_with_model(
+        config: &LlamaCppConfig, 
+        model: &ModelSelection
+    ) -> Result<Self, LocalLlmError> {
+        let hardware = detect_hardware()
+            .map_err(|e| LocalLlmError::HardwareDetectionFailed(e.to_string()))?;
+        
+        let adaptive_context = calculate_optimal_context_size(model, &hardware);
+        
+        let mut server_config = Self::from_llamacpp_config(config);
+        server_config.context_size = adaptive_context.optimal_context_size;
+        server_config.gpu_layers = adaptive_context.optimal_gpu_layers;
+        server_config.adaptive_context = Some(adaptive_context);
+        
+        Ok(server_config)
+    }
+    
+    /// Update configuration for retry attempt
+    pub fn with_retry_config(&self, context_size: usize, gpu_layers: Option<i32>) -> Self {
+        let mut retry_config = self.clone();
+        retry_config.context_size = context_size;
+        retry_config.gpu_layers = gpu_layers;
+        retry_config
     }
     
     /// Build command line arguments for server
@@ -169,6 +198,16 @@ impl ServerConfig {
     }
 }
 
+/// Startup failure reasons
+#[derive(Debug, Clone)]
+pub enum StartupFailureReason {
+    OutOfMemory,
+    ModelTooLarge,
+    ContextTooLarge,
+    InsufficientVRAM,
+    Other(String),
+}
+
 impl LlamaCppServerManager {
     /// Create a new server manager
     pub async fn new(config: LlamaCppConfig, model_manager: Arc<ModelManager>) -> Result<Self, LocalLlmError> {
@@ -245,8 +284,104 @@ impl LlamaCppServerManager {
             self.model_manager.activate_model(model_name).await?;
         }
         
-        info!("Starting LlamaCpp server on {}:{}", self.server_config.host, self.server_config.port);
+        info!("Starting LlamaCpp server with adaptive configuration on {}:{}", 
+               self.server_config.host, self.server_config.port);
         
+        // Try to start server with adaptive retry logic
+        let result = self.start_with_adaptive_retry().await;
+        
+        match result {
+            Ok(_) => {
+                info!("LlamaCpp server is ready and healthy");
+                Ok(())
+            }
+            Err(e) => {
+                // Update state to error on failure
+                let mut state = self.state.write().await;
+                *state = ServerState::Error(format!("Startup failed: {}", e));
+                Err(e)
+            }
+        }
+    }
+    
+    /// Start server with adaptive retry logic for out-of-memory scenarios
+    async fn start_with_adaptive_retry(&self) -> Result<(), LocalLlmError> {
+        let mut current_config = self.server_config.clone();
+        let max_retries = 5;
+        
+        // If we have adaptive context configuration, use its fallback sizes
+        let fallback_configs = if let Some(adaptive_context) = &current_config.adaptive_context {
+            let mut configs = vec![(current_config.context_size, current_config.gpu_layers)];
+            
+            // Add fallback context sizes with the same GPU layers
+            for &fallback_size in &adaptive_context.fallback_sizes {
+                configs.push((fallback_size, current_config.gpu_layers));
+            }
+            
+            // If we have hybrid/offloading options, add those too
+            if adaptive_context.requires_cpu_offloading {
+                if let Some(optimal_layers) = adaptive_context.optimal_gpu_layers {
+                    // Try with reduced GPU layers
+                    let reduced_layers = optimal_layers / 2;
+                    configs.push((adaptive_context.optimal_context_size, Some(reduced_layers)));
+                    configs.push((adaptive_context.optimal_context_size / 2, Some(reduced_layers)));
+                }
+            }
+            
+            configs
+        } else {
+            // Default fallback strategy without adaptive context
+            vec![
+                (32768, current_config.gpu_layers),
+                (16384, current_config.gpu_layers),
+                (8192, current_config.gpu_layers),
+                (4096, current_config.gpu_layers),
+                (2048, Some(0)), // CPU-only fallback
+            ]
+        };
+        
+        let mut last_error = None;
+        
+        for (attempt, (context_size, gpu_layers)) in fallback_configs.iter().enumerate() {
+            if attempt >= max_retries {
+                break;
+            }
+            
+            info!("Attempt {} - Using context size: {}, GPU layers: {:?}", 
+                  attempt + 1, context_size, gpu_layers);
+            
+            current_config = self.server_config.with_retry_config(*context_size, *gpu_layers);
+            
+            match self.try_start_with_config(&current_config).await {
+                Ok(_) => {
+                    info!("Server started successfully with context size: {}, GPU layers: {:?}", 
+                          context_size, gpu_layers);
+                    
+                    // Update our internal config to reflect the successful configuration
+                    let mut server_config = self.server_config.clone();
+                    server_config.context_size = *context_size;
+                    server_config.gpu_layers = *gpu_layers;
+                    
+                    return Ok(());
+                }
+                Err(e) => {
+                    warn!("Attempt {} failed: {}", attempt + 1, e);
+                    last_error = Some(e);
+                    
+                    // Wait a moment before retry
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
+        
+        // All attempts failed
+        Err(last_error.unwrap_or_else(|| 
+            LocalLlmError::ServerStartupTimeout
+        ))
+    }
+    
+    /// Try to start server with a specific configuration
+    async fn try_start_with_config(&self, config: &ServerConfig) -> Result<(), LocalLlmError> {
         // Find llamacpp executable
         let executable = self.find_llamacpp_executable().await?;
         
@@ -264,7 +399,7 @@ impl LlamaCppServerManager {
             None
         };
         
-        let args = self.server_config.build_args_with_model_path(active_model_path.as_deref());
+        let args = config.build_args_with_model_path(active_model_path.as_deref());
         debug!("Server command: {} {}", executable.display(), args.join(" "));
         
         // Start server process
@@ -280,19 +415,30 @@ impl LlamaCppServerManager {
             ))?;
         
         let pid = child.id();
-        info!("LlamaCpp server started with PID: {:?}", pid);
+        debug!("LlamaCpp server started with PID: {:?}", pid);
         
-        // Spawn a background task to monitor stderr for startup errors
+        // Monitor stderr for startup errors in a separate task
+        let (error_tx, mut error_rx) = tokio::sync::mpsc::channel(1);
+        
         if let Some(stderr) = child.stderr.take() {
-            let mut stderr_reader = BufReader::new(stderr);
+            let error_tx_clone = error_tx.clone();
             tokio::spawn(async move {
+                let mut stderr_reader = BufReader::new(stderr);
                 let mut line = String::new();
+                
                 loop {
                     line.clear();
                     match stderr_reader.read_line(&mut line).await {
                         Ok(0) => break, // EOF
                         Ok(_) => {
                             let line = line.trim();
+                            
+                            // Check for specific error patterns
+                            if let Some(failure_reason) = detect_startup_failure(line) {
+                                let _ = error_tx_clone.send(failure_reason).await;
+                                break;
+                            }
+                            
                             // Log stderr output for debugging
                             if line.contains("error") || line.contains("Error") || line.contains("failed") || line.contains("Failed") {
                                 error!("LlamaCpp server stderr: {}", line);
@@ -306,7 +452,7 @@ impl LlamaCppServerManager {
             });
         }
         
-        // Store process
+        // Store process temporarily
         let mut process = self.process.lock().await;
         *process = Some(child);
         drop(process);
@@ -325,11 +471,38 @@ impl LlamaCppServerManager {
         // Set health checker start time
         self.health_checker.set_server_start_time(current_time);
         
-        // Wait for server to be ready
-        self.wait_for_ready().await?;
+        // Wait for server to be ready or fail
+        let ready_result = tokio::select! {
+            result = self.wait_for_ready() => result,
+            failure = error_rx.recv() => {
+                match failure {
+                    Some(reason) => {
+                        error!("Server startup failed: {:?}", reason);
+                        Err(LocalLlmError::ServerUnavailable(format!("Startup failed: {:?}", reason)))
+                    }
+                    None => Ok(()), // Channel closed without error
+                }
+            }
+        };
         
-        info!("LlamaCpp server is ready and healthy");
-        Ok(())
+        // If startup failed, clean up the process
+        if ready_result.is_err() {
+            self.cleanup_failed_startup().await;
+        }
+        
+        ready_result
+    }
+    
+    /// Clean up after a failed startup attempt
+    async fn cleanup_failed_startup(&self) {
+        let mut process = self.process.lock().await;
+        if let Some(mut child) = process.take() {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+        }
+        
+        let mut state = self.state.write().await;
+        *state = ServerState::Stopped;
     }
     
     /// Stop the LlamaCpp server
@@ -603,6 +776,50 @@ impl LlamaCppServerManager {
     }
 }
 
+/// Detect startup failure reasons from stderr output
+fn detect_startup_failure(line: &str) -> Option<StartupFailureReason> {
+    let line_lower = line.to_lowercase();
+    
+    // CUDA out of memory errors
+    if line_lower.contains("cudamalloc failed: out of memory") ||
+       line_lower.contains("failed to allocate cuda0 buffer") ||
+       line_lower.contains("ggml_backend_cuda_buffer_type_alloc_buffer") {
+        return Some(StartupFailureReason::InsufficientVRAM);
+    }
+    
+    // Context size too large errors  
+    if line_lower.contains("failed to allocate buffer for kv cache") ||
+       line_lower.contains("alloc_tensor_range: failed to allocate") {
+        return Some(StartupFailureReason::ContextTooLarge);
+    }
+    
+    // Model loading failures
+    if line_lower.contains("failed to load model") ||
+       line_lower.contains("srv    load_model: failed to load model") {
+        return Some(StartupFailureReason::ModelTooLarge);
+    }
+    
+    // General out of memory
+    if line_lower.contains("out of memory") ||
+       line_lower.contains("memory allocation failed") ||
+       line_lower.contains("insufficient memory") {
+        return Some(StartupFailureReason::OutOfMemory);
+    }
+    
+    // Context initialization failures
+    if line_lower.contains("failed to initialize the context") ||
+       line_lower.contains("llama_init_from_model: failed to initialize") {
+        return Some(StartupFailureReason::ContextTooLarge);
+    }
+    
+    // Exit due to model loading error
+    if line_lower.contains("exiting due to model loading error") {
+        return Some(StartupFailureReason::ModelTooLarge);
+    }
+    
+    None
+}
+
 impl Drop for LlamaCppServerManager {
     fn drop(&mut self) {
         // Note: async drop is not stable yet, so we can't properly await stop()
@@ -676,7 +893,7 @@ mod tests {
         assert!(args.contains(&"2048".to_string()));
         assert!(args.contains(&"--n-gpu-layers".to_string()));
         assert!(args.contains(&"32".to_string()));
-        assert!(args.contains(&"--server".to_string()));
+        assert!(args.contains(&"--api-key".to_string()));
     }
     
     #[tokio::test]

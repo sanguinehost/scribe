@@ -785,6 +785,246 @@ pub fn check_recommended_specs(hw: &HardwareCapabilities, model: &ModelSelection
     ram_ok && gpu_ok
 }
 
+/// Context size configuration for adaptive sizing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSizeConfig {
+    pub optimal_context_size: usize,
+    pub fallback_sizes: Vec<usize>, // In descending order of preference
+    pub requires_cpu_offloading: bool,
+    pub optimal_gpu_layers: Option<i32>,
+    pub memory_warning: Option<String>,
+}
+
+impl Default for ContextSizeConfig {
+    fn default() -> Self {
+        Self {
+            optimal_context_size: 32768,
+            fallback_sizes: vec![16384, 8192, 4096, 2048],
+            requires_cpu_offloading: false,
+            optimal_gpu_layers: Some(999), // All layers to GPU by default
+            memory_warning: None,
+        }
+    }
+}
+
+/// Calculate optimal context size based on model and hardware capabilities
+pub fn calculate_optimal_context_size(
+    model: &ModelSelection, 
+    hw: &HardwareCapabilities
+) -> ContextSizeConfig {
+    debug!("Calculating optimal context size for model: {}", model.base_model_name());
+    
+    // Get the best GPU for this model
+    let best_gpu = hw.gpu_info.iter()
+        .filter(|gpu| gpu.cuda_capable) // Only consider CUDA GPUs for now
+        .filter_map(|gpu| gpu.vram_gb.map(|vram| (gpu, vram)))
+        .max_by_key(|(_, vram)| (*vram * 1000.0) as u64)
+        .map(|(gpu, _)| gpu);
+    
+    if let Some(gpu) = best_gpu {
+        calculate_gpu_context_config(model, gpu, hw)
+    } else {
+        // CPU-only fallback
+        calculate_cpu_context_config(model, hw)
+    }
+}
+
+/// Calculate context configuration for GPU usage
+fn calculate_gpu_context_config(
+    model: &ModelSelection,
+    gpu: &GpuInfo, 
+    hw: &HardwareCapabilities
+) -> ContextSizeConfig {
+    let available_vram = gpu.vram_gb.unwrap_or(0.0);
+    let model_size_gb = model.download_size_gb();
+    
+    debug!("GPU config calculation - Available VRAM: {:.1}GB, Model size: {:.1}GB", 
+           available_vram, model_size_gb);
+    
+    // Reserve memory for system and other processes
+    let system_reserve_gb = 1.5; // Reserve 1.5GB for system
+    let safety_margin_gb = 0.5;  // Additional safety margin
+    let usable_vram = available_vram - system_reserve_gb - safety_margin_gb;
+    
+    if model_size_gb > usable_vram {
+        // Model won't fit in GPU, use CPU-only configuration
+        debug!("Model too large for GPU, using CPU configuration");
+        return calculate_cpu_context_config(model, hw);
+    }
+    
+    // Calculate available memory for KV cache
+    let kv_cache_budget = usable_vram - model_size_gb;
+    debug!("KV cache budget: {:.1}GB", kv_cache_budget);
+    
+    if kv_cache_budget < 0.5 {
+        // Very tight on memory, use CPU offloading
+        debug!("Very tight VRAM budget, enabling CPU offloading");
+        return calculate_hybrid_context_config(model, gpu, hw);
+    }
+    
+    // Context size calculation based on model architecture
+    // KV cache size ≈ 2 * n_layers * n_heads * head_dim * seq_len * precision_bytes / 1024³
+    // For simplicity, use empirical formulas based on known model sizes
+    
+    let context_sizes = vec![32768, 16384, 8192, 4096, 2048];
+    let mut optimal_context = 2048; // Conservative default
+    let mut fallback_sizes = Vec::new();
+    
+    for &ctx_size in &context_sizes {
+        let estimated_kv_cache = estimate_kv_cache_size_gb(model, ctx_size);
+        debug!("Context size {} estimated KV cache: {:.2}GB", ctx_size, estimated_kv_cache);
+        
+        if estimated_kv_cache <= kv_cache_budget {
+            if optimal_context == 2048 {
+                // First size that fits
+                optimal_context = ctx_size;
+            }
+        } else {
+            // This size is too large, add smaller sizes to fallbacks
+            fallback_sizes.push(ctx_size / 2);
+        }
+    }
+    
+    // Add smaller fallback sizes
+    let mut current_size = optimal_context;
+    while current_size >= 1024 {
+        current_size /= 2;
+        if current_size >= 1024 {
+            fallback_sizes.push(current_size);
+        }
+    }
+    
+    // Remove duplicates and sort descending
+    fallback_sizes.sort_by(|a, b| b.cmp(a));
+    fallback_sizes.dedup();
+    
+    let memory_warning = if kv_cache_budget < 2.0 {
+        Some(format!(
+            "Limited VRAM budget ({:.1}GB available for context). Consider using a smaller model for larger contexts.",
+            kv_cache_budget
+        ))
+    } else {
+        None
+    };
+    
+    ContextSizeConfig {
+        optimal_context_size: optimal_context,
+        fallback_sizes,
+        requires_cpu_offloading: false,
+        optimal_gpu_layers: Some(999), // All layers on GPU
+        memory_warning,
+    }
+}
+
+/// Calculate context configuration for CPU-only usage
+fn calculate_cpu_context_config(model: &ModelSelection, hw: &HardwareCapabilities) -> ContextSizeConfig {
+    debug!("Calculating CPU-only context configuration");
+    
+    let model_size_gb = model.download_size_gb();
+    let safety_margin = 2.0; // Reserve 2GB for system
+    let available_for_context = (hw.available_ram_gb - model_size_gb - safety_margin).max(0.0);
+    
+    // For CPU, context memory usage is lower since we don't need to store KV cache in contiguous GPU memory
+    let optimal_context = if available_for_context > 8.0 {
+        32768 // Plenty of RAM
+    } else if available_for_context > 4.0 {
+        16384 // Decent RAM
+    } else if available_for_context > 2.0 {
+        8192  // Limited RAM
+    } else {
+        4096  // Very limited RAM
+    };
+    
+    let memory_warning = if available_for_context < 4.0 {
+        Some("Running on CPU with limited RAM. Performance will be slow.".to_string())
+    } else {
+        Some("Running on CPU. Consider upgrading GPU for better performance.".to_string())
+    };
+    
+    ContextSizeConfig {
+        optimal_context_size: optimal_context,
+        fallback_sizes: vec![16384, 8192, 4096, 2048, 1024],
+        requires_cpu_offloading: false, // Already CPU-only
+        optimal_gpu_layers: Some(0), // No GPU layers
+        memory_warning,
+    }
+}
+
+/// Calculate hybrid GPU+CPU configuration when VRAM is very limited
+fn calculate_hybrid_context_config(
+    model: &ModelSelection,
+    gpu: &GpuInfo,
+    hw: &HardwareCapabilities
+) -> ContextSizeConfig {
+    debug!("Calculating hybrid GPU+CPU context configuration");
+    
+    let available_vram = gpu.vram_gb.unwrap_or(0.0);
+    let model_size_gb = model.download_size_gb();
+    
+    // Calculate how many layers we can fit on GPU
+    // Rough estimate: each layer is about 1/60th of the model for a typical transformer
+    let layers_estimate = 60; // Typical for most models
+    let layer_size_gb = model_size_gb / layers_estimate as f32;
+    let system_reserve = 2.0; // More conservative for hybrid setup
+    let usable_vram = available_vram - system_reserve;
+    let gpu_layers = ((usable_vram / layer_size_gb) as i32).max(1).min(layers_estimate);
+    
+    debug!("Hybrid config: Using {} GPU layers out of ~{}", gpu_layers, layers_estimate);
+    
+    // With hybrid setup, we can use more context since some compute is on CPU
+    let optimal_context = if hw.available_ram_gb > 16.0 {
+        16384 // Good RAM for CPU portion
+    } else if hw.available_ram_gb > 8.0 {
+        8192  // Decent RAM
+    } else {
+        4096  // Limited RAM
+    };
+    
+    ContextSizeConfig {
+        optimal_context_size: optimal_context,
+        fallback_sizes: vec![8192, 4096, 2048, 1024],
+        requires_cpu_offloading: true,
+        optimal_gpu_layers: Some(gpu_layers),
+        memory_warning: Some(format!(
+            "Using hybrid GPU+CPU setup with {} GPU layers due to VRAM constraints.",
+            gpu_layers
+        )),
+    }
+}
+
+/// Estimate KV cache memory usage in GB for a given model and context size
+fn estimate_kv_cache_size_gb(model: &ModelSelection, context_size: usize) -> f32 {
+    // Rough estimation based on model parameter count and context size
+    // KV cache ≈ 2 * n_layers * hidden_size * context_length * precision_bytes
+    
+    let param_multiplier = match model.base_model.parameter_count.as_str() {
+        p if p.contains("3B") => 0.8,   // Small models
+        p if p.contains("7B") => 1.0,   // Base multiplier
+        p if p.contains("13B") => 1.4,
+        p if p.contains("20B") => 1.8,
+        p if p.contains("27B") => 2.0,
+        p if p.contains("30B") => 2.2,
+        p if p.contains("70B") => 3.5,
+        _ => 1.0, // Default
+    };
+    
+    // Base KV cache size formula (empirically derived)
+    // This accounts for key and value tensors stored in memory
+    let base_kv_cache_gb = (context_size as f32 * param_multiplier * 2.0) / (1024.0 * 1024.0);
+    
+    // Add quantization factor (lower precision = less memory)
+    let quant_factor = match model.quantization {
+        QuantizationLevel::Q2_K => 0.3,
+        QuantizationLevel::Q3_K_S | QuantizationLevel::Q3_K_M => 0.4,
+        QuantizationLevel::Q4_0 | QuantizationLevel::Q4_K_S | QuantizationLevel::Q4_K_M => 0.5,
+        QuantizationLevel::Q5_0 | QuantizationLevel::Q5_K_S | QuantizationLevel::Q5_K_M => 0.6,
+        QuantizationLevel::Q6_K => 0.7,
+        QuantizationLevel::Q8_0 => 0.8,
+    };
+    
+    base_kv_cache_gb * quant_factor
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -949,5 +1189,144 @@ mod tests {
         
         let compressed = select_optimal_quantization(&base_model, &low_vram_hw, true);
         assert!(compressed.quality_score() < 85); // Should select more compressed quantization
+    }
+
+    #[test]
+    fn test_adaptive_context_size_calculation() {
+        // Create a test model
+        let test_model = ModelSelection {
+            base_model: BaseModel {
+                name: "test-27b".to_string(),
+                description: "Test 27B model".to_string(),
+                parameter_count: "27B".to_string(),
+                context_window: 131072,
+                huggingface_repo: "test/repo".to_string(),
+                base_size_gb: 54.0,
+            },
+            quantization: QuantizationLevel::Q3_K_M,
+            requirements: HardwareRequirements {
+                min_ram_gb: 16.0,
+                min_vram_gb: Some(14.0),
+                min_cpu_cores: 4,
+                recommended_ram_gb: 32.0,
+                recommended_vram_gb: Some(18.0),
+                requires_cuda: false,
+            },
+        };
+        
+        // Test with RTX 5080 (16GB VRAM) - should trigger adaptive sizing
+        let rtx5080_hw = HardwareCapabilities {
+            total_ram_gb: 32.0,
+            available_ram_gb: 28.0,
+            cpu_cores: 16,
+            cpu_arch: "x86_64".to_string(),
+            gpu_info: vec![GpuInfo {
+                name: "RTX 5080".to_string(),
+                vram_gb: Some(16.0),
+                cuda_capable: true,
+                metal_capable: false,
+            }],
+            has_cuda: true,
+            has_metal: false,
+            os: "linux".to_string(),
+        };
+        
+        let context_config = calculate_optimal_context_size(&test_model, &rtx5080_hw);
+        
+        // Should calculate an appropriate context size for the available VRAM
+        assert!(context_config.optimal_context_size > 0);
+        assert!(context_config.optimal_context_size <= 32768); // Should be reasonable
+        assert!(!context_config.fallback_sizes.is_empty()); // Should have fallback options
+        
+        // Should prefer GPU if possible
+        if let Some(gpu_layers) = context_config.optimal_gpu_layers {
+            assert!(gpu_layers > 0, "Should prefer GPU when CUDA is available");
+        }
+        
+        println!("RTX 5080 context config: {:#?}", context_config);
+    }
+
+    #[test]
+    fn test_context_size_cpu_fallback() {
+        let test_model = ModelSelection {
+            base_model: BaseModel {
+                name: "test-7b".to_string(),
+                description: "Test 7B model".to_string(),
+                parameter_count: "7B".to_string(),
+                context_window: 32768,
+                huggingface_repo: "test/repo".to_string(),
+                base_size_gb: 14.0,
+            },
+            quantization: QuantizationLevel::Q4_K_M,
+            requirements: HardwareRequirements {
+                min_ram_gb: 8.0,
+                min_vram_gb: Some(6.0),
+                min_cpu_cores: 2,
+                recommended_ram_gb: 16.0,
+                recommended_vram_gb: Some(8.0),
+                requires_cuda: false,
+            },
+        };
+        
+        // Test with CPU-only hardware (no GPU)
+        let cpu_only_hw = HardwareCapabilities {
+            total_ram_gb: 16.0,
+            available_ram_gb: 12.0,
+            cpu_cores: 8,
+            cpu_arch: "x86_64".to_string(),
+            gpu_info: vec![],
+            has_cuda: false,
+            has_metal: false,
+            os: "linux".to_string(),
+        };
+        
+        let context_config = calculate_optimal_context_size(&test_model, &cpu_only_hw);
+        
+        // Should configure for CPU-only usage
+        assert_eq!(context_config.optimal_gpu_layers, Some(0)); // No GPU layers
+        assert!(!context_config.requires_cpu_offloading); // Already CPU-only
+        assert!(context_config.memory_warning.is_some()); // Should warn about CPU usage
+        
+        println!("CPU-only context config: {:#?}", context_config);
+    }
+
+    #[test]
+    fn test_kv_cache_estimation() {
+        let test_model = ModelSelection {
+            base_model: BaseModel {
+                name: "test-7b".to_string(),
+                description: "Test model".to_string(),
+                parameter_count: "7B".to_string(),
+                context_window: 32768,
+                huggingface_repo: "test/repo".to_string(),
+                base_size_gb: 14.0,
+            },
+            quantization: QuantizationLevel::Q4_K_M,
+            requirements: HardwareRequirements {
+                min_ram_gb: 8.0,
+                min_vram_gb: Some(6.0),
+                min_cpu_cores: 2,
+                recommended_ram_gb: 16.0,
+                recommended_vram_gb: Some(8.0),
+                requires_cuda: false,
+            },
+        };
+        
+        // Test KV cache size estimation
+        let kv_cache_32k = estimate_kv_cache_size_gb(&test_model, 32768);
+        let kv_cache_16k = estimate_kv_cache_size_gb(&test_model, 16384);
+        let kv_cache_8k = estimate_kv_cache_size_gb(&test_model, 8192);
+        
+        // KV cache should scale with context size
+        assert!(kv_cache_32k > kv_cache_16k);
+        assert!(kv_cache_16k > kv_cache_8k);
+        assert!(kv_cache_8k > 0.0);
+        
+        // Should be reasonable values (not too large or too small)
+        assert!(kv_cache_32k < 10.0, "KV cache estimate seems too large: {:.2}GB", kv_cache_32k);
+        assert!(kv_cache_8k > 0.01, "KV cache estimate seems too small: {:.2}GB", kv_cache_8k);
+        
+        println!("KV cache estimates - 32K: {:.2}GB, 16K: {:.2}GB, 8K: {:.2}GB", 
+                 kv_cache_32k, kv_cache_16k, kv_cache_8k);
     }
 }

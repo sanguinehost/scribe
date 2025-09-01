@@ -2,7 +2,7 @@
 // Model downloading, caching, and lifecycle management
 
 use crate::llm::llamacpp::{LocalLlmError, LlamaCppConfig};
-use crate::llm::llamacpp::hardware::{ModelSelection, HardwareCapabilities, detect_hardware, select_model_variant};
+use crate::llm::llamacpp::hardware::{ModelSelection, HardwareCapabilities, detect_hardware, select_model_variant, ContextSizeConfig, calculate_optimal_context_size};
 
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,7 @@ pub struct ModelManager {
     http_client: HttpClient,
     models_dir: PathBuf,
     active_model: Arc<RwLock<Option<String>>>,
+    active_context_config: Arc<RwLock<Option<ContextSizeConfig>>>,
     download_progress: Arc<RwLock<Option<ProgressCallback>>>,
 }
 
@@ -35,6 +36,7 @@ pub struct ModelStatus {
     pub is_downloaded: bool,
     pub is_active: bool,
     pub hardware_compatible: bool,
+    pub context_requirements: Option<ContextSizeConfig>,
 }
 
 /// Model download progress
@@ -110,6 +112,7 @@ impl ModelManager {
             http_client,
             models_dir,
             active_model: Arc::new(RwLock::new(None)),
+            active_context_config: Arc::new(RwLock::new(None)),
             download_progress: Arc::new(RwLock::new(None)),
         };
         
@@ -611,6 +614,13 @@ impl ModelManager {
                 None
             };
             
+            // Calculate context requirements if hardware compatible
+            let context_requirements = if hardware_compatible {
+                Some(calculate_optimal_context_size(&model_variant, &hardware))
+            } else {
+                None
+            };
+            
             models.push(ModelStatus {
                 name: filename,
                 path,
@@ -618,6 +628,7 @@ impl ModelManager {
                 is_downloaded,
                 is_active,
                 hardware_compatible,
+                context_requirements,
             });
         }
         
@@ -633,6 +644,39 @@ impl ModelManager {
     /// Get the currently active model name (async version)
     pub async fn get_active_model_async(&self) -> Option<String> {
         self.active_model.read().await.clone()
+    }
+    
+    /// Get the current context configuration for the active model
+    pub async fn get_active_context_config(&self) -> Option<ContextSizeConfig> {
+        self.active_context_config.read().await.clone()
+    }
+    
+    /// Get adaptive configuration for the currently active model
+    /// This returns a LlamaCppConfig with adaptive context settings applied
+    pub async fn get_adaptive_config(&self) -> Result<LlamaCppConfig, LocalLlmError> {
+        let active_model_name = self.get_active_model_async().await
+            .ok_or_else(|| LocalLlmError::ModelLoadFailed("No active model set".to_string()))?;
+        
+        let context_config = self.get_active_context_config().await
+            .ok_or_else(|| LocalLlmError::ModelLoadFailed("No context configuration available".to_string()))?;
+        
+        // Create a new config based on the current one but with adaptive settings
+        let mut adaptive_config = self.config.clone();
+        adaptive_config.context_size = context_config.optimal_context_size;
+        adaptive_config.gpu_layers = context_config.optimal_gpu_layers;
+        
+        // Update model path to point to the active model
+        let model_path = self.get_model_path(Some(&active_model_name)).await?;
+        adaptive_config.model_path = model_path.to_string_lossy().to_string();
+        
+        info!(
+            "Generated adaptive config for {}: context_size={}, gpu_layers={:?}",
+            active_model_name,
+            adaptive_config.context_size,
+            adaptive_config.gpu_layers
+        );
+        
+        Ok(adaptive_config)
     }
     
     /// Switch to a different model
@@ -691,9 +735,25 @@ impl ModelManager {
             }
         }
         
-        // Set as active model
+        // Calculate adaptive context configuration
+        let context_config = calculate_optimal_context_size(&model_variant, &hardware);
+        
+        if let Some(ref warning) = context_config.memory_warning {
+            warn!("Context configuration warning for {}: {}", model_filename, warning);
+        }
+        
+        info!(
+            "Adaptive context for {}: size={}, gpu_layers={:?}",
+            model_filename,
+            context_config.optimal_context_size,
+            context_config.optimal_gpu_layers
+        );
+        
+        // Set as active model and store context configuration
         let mut active = self.active_model.write().await;
+        let mut context = self.active_context_config.write().await;
         *active = Some(model_filename.to_string());
+        *context = Some(context_config);
         
         info!("Successfully switched to model: {}", model_filename);
         Ok(())
@@ -793,9 +853,37 @@ impl ModelManager {
             ));
         }
         
-        // Set as active model
+        // Find the model variant for context calculation
+        let model_variant = ModelSelection::all_models()
+            .into_iter()
+            .find(|m| m.filename() == normalized_name)
+            .ok_or_else(|| LocalLlmError::ModelNotFound(
+                format!("Unknown model variant: {}", normalized_name)
+            ))?;
+        
+        // Detect hardware for context calculation
+        let hardware = detect_hardware()
+            .map_err(|e| LocalLlmError::HardwareDetectionFailed(e.to_string()))?;
+        
+        // Calculate adaptive context configuration
+        let context_config = calculate_optimal_context_size(&model_variant, &hardware);
+        
+        if let Some(ref warning) = context_config.memory_warning {
+            warn!("Context configuration warning for {}: {}", normalized_name, warning);
+        }
+        
+        info!(
+            "Adaptive context for {}: size={}, gpu_layers={:?}",
+            normalized_name,
+            context_config.optimal_context_size,
+            context_config.optimal_gpu_layers
+        );
+        
+        // Set as active model and store context configuration
         let mut active_model = self.active_model.write().await;
+        let mut context = self.active_context_config.write().await;
         *active_model = Some(normalized_name.clone());
+        *context = Some(context_config);
         
         info!("Model activated successfully: {}", normalized_name);
         Ok(())
@@ -811,6 +899,7 @@ impl ModelManager {
             http_client: HttpClient::new(),
             models_dir: PathBuf::from("test_models"),
             active_model: Arc::new(RwLock::new(Some("test-model.gguf".to_string()))),
+            active_context_config: Arc::new(RwLock::new(None)),
             download_progress: Arc::new(RwLock::new(None)),
         }
     }
