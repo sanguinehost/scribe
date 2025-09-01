@@ -19,10 +19,12 @@
 
 	function handleEnable() {
 		onConfirm(true, rememberChoice);
+		open = false;
 	}
 
 	function handleSkip() {
 		onConfirm(false, rememberChoice);
+		open = false;
 	}
 </script>
 
