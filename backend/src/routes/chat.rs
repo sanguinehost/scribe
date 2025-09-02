@@ -25,14 +25,14 @@ use crate::models::chats::{
 use crate::prompt_builder;
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
-use crate::services::chat;
-use crate::services::chat::types::ScribeSseEvent;
-use crate::services::hybrid_token_counter::CountingMode;
+use crate::services::ChronicleService;
 use crate::services::agentic::{
     context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
     narrative_tools::SearchKnowledgeBaseTool,
 };
-use crate::services::ChronicleService;
+use crate::services::chat;
+use crate::services::chat::types::ScribeSseEvent;
+use crate::services::hybrid_token_counter::CountingMode;
 use secrecy::ExposeSecret; // Added for ExposeSecret
 // RetrievedMetadata is no longer directly used in this file for RAG string construction
 // use crate::services::embedding_pipeline::RetrievedMetadata;
@@ -149,10 +149,7 @@ pub async fn create_chat_session_handler(
     let user_id = user.id;
     tracing::Span::current().record("user_id", tracing::field::display(user_id));
     if let Some(character_id) = payload.character_id {
-        tracing::Span::current().record(
-            "character_id",
-            tracing::field::display(character_id),
-        );
+        tracing::Span::current().record("character_id", tracing::field::display(character_id));
     }
     if let Some(persona_id) = payload.active_custom_persona_id {
         tracing::Span::current().record(
@@ -321,7 +318,10 @@ pub async fn generate_chat_response(
 
     // Fetch Character model from DB (only for character-based chats)
     let char_id = session_character_id.ok_or_else(|| {
-        AppError::BadRequest("Character-based generation endpoints not supported for non-character chat modes".to_string())
+        AppError::BadRequest(
+            "Character-based generation endpoints not supported for non-character chat modes"
+                .to_string(),
+        )
     })?;
     let character_db_model = state_arc
         .pool
@@ -346,12 +346,14 @@ pub async fn generate_chat_response(
             if e_db == diesel::result::Error::NotFound {
                 error!(character_id = %char_id, %user_id_value, "Character not found for user");
                 AppError::NotFound(format!(
-                    "Character {} not found for user {}", char_id, user_id_value
+                    "Character {} not found for user {}",
+                    char_id, user_id_value
                 ))
             } else {
                 error!(error = %e_db, character_id = %char_id, "Failed to query character");
                 AppError::DatabaseQueryError(format!(
-                    "Failed to query character {}: {}", char_id, e_db
+                    "Failed to query character {}: {}",
+                    char_id, e_db
                 ))
             }
         })?;
@@ -416,34 +418,43 @@ pub async fn generate_chat_response(
         let pool = state_arc.pool.clone();
         let conn = pool.get().await?;
         let session_id_for_cleanup = session_id;
-        
-        if let Err(e) = conn.interact(move |conn| {
-            // Supersede messages that are failed or partial in this session
-            // We use a timestamp from 1 minute ago to avoid superseding very recent messages
-            let cutoff_time = chrono::Utc::now() - chrono::Duration::seconds(60);
-            crate::models::chats::ChatMessage::supersede_failed_messages(conn, session_id_for_cleanup, cutoff_time)
-        }).await? {
+
+        if let Err(e) = conn
+            .interact(move |conn| {
+                // Supersede messages that are failed or partial in this session
+                // We use a timestamp from 1 minute ago to avoid superseding very recent messages
+                let cutoff_time = chrono::Utc::now() - chrono::Duration::seconds(60);
+                crate::models::chats::ChatMessage::supersede_failed_messages(
+                    conn,
+                    session_id_for_cleanup,
+                    cutoff_time,
+                )
+            })
+            .await?
+        {
             // Log the error but don't fail the request - cleanup is not critical
             warn!(error = ?e, session_id = %session_id, "Failed to supersede old failed/partial messages, continuing anyway");
         }
     }
 
     // Save the user message first to get its ID for agent analysis association
-    let saved_user_message = match chat::message_handling::save_message(chat::message_handling::SaveMessageParams {
-        state: state_arc.clone(),
-        session_id,
-        user_id: user_id_value,
-        message_type_enum: MessageRole::User,
-        content: &current_user_content_text,
-        role_str: user_message_struct_to_save.role.clone(),
-        parts: user_message_struct_to_save.parts.clone(),
-        attachments: user_message_struct_to_save.attachments.clone(),
-        user_dek_secret_box: Some(session_dek_arc.clone()),
-        model_name: model_to_use.clone(),
-        raw_prompt_debug: None, // User messages don't need raw prompt debug
-        status: crate::models::chats::MessageStatus::Completed,
-        error_message: None,
-    })
+    let saved_user_message = match chat::message_handling::save_message(
+        chat::message_handling::SaveMessageParams {
+            state: state_arc.clone(),
+            session_id,
+            user_id: user_id_value,
+            message_type_enum: MessageRole::User,
+            content: &current_user_content_text,
+            role_str: user_message_struct_to_save.role.clone(),
+            parts: user_message_struct_to_save.parts.clone(),
+            attachments: user_message_struct_to_save.attachments.clone(),
+            user_dek_secret_box: Some(session_dek_arc.clone()),
+            model_name: model_to_use.clone(),
+            raw_prompt_debug: None, // User messages don't need raw prompt debug
+            status: crate::models::chats::MessageStatus::Completed,
+            error_message: None,
+        },
+    )
     .await
     {
         Ok(saved_msg) => {
@@ -464,41 +475,46 @@ pub async fn generate_chat_response(
     // Handle the analysis_mode parameter from frontend for variant regeneration
     let should_skip_analysis = payload.analysis_mode.as_deref() == Some("skip");
     let should_refresh_analysis = payload.analysis_mode.as_deref() == Some("refresh");
-    
+
     let (agent_context, pre_processing_analysis_id) = if should_skip_analysis {
         info!(%session_id, "Skipping agent analysis as requested (analysis_mode=skip)");
         (None, None)
     } else if let Some(mode) = &agent_mode {
         if mode == "pre_processing" {
             info!(%session_id, refresh = should_refresh_analysis, "Pre-processing agent mode enabled - checking for existing or running new analysis");
-            
+
             // If refresh is requested, supersede existing analyses first
             if should_refresh_analysis {
                 info!(%session_id, "Refresh requested - superseding existing analyses");
-                let conn = state_arc.pool.get()
+                let conn = state_arc
+                    .pool
+                    .get()
                     .await
                     .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                
-                let _ = conn.interact(move |conn| {
-                    AgentContextAnalysis::supersede_failed_analyses(
-                        conn,
-                        session_id,
-                        AnalysisType::PreProcessing,
-                    )
-                })
-                .await
-                .map_err(|e| {
-                    warn!(%session_id, error = ?e, "Failed to supersede existing analyses");
-                    AppError::InternalServerErrorGeneric(e.to_string())
-                });
+
+                let _ = conn
+                    .interact(move |conn| {
+                        AgentContextAnalysis::supersede_failed_analyses(
+                            conn,
+                            session_id,
+                            AnalysisType::PreProcessing,
+                        )
+                    })
+                    .await
+                    .map_err(|e| {
+                        warn!(%session_id, error = ?e, "Failed to supersede existing analyses");
+                        AppError::InternalServerErrorGeneric(e.to_string())
+                    });
             }
-            
+
             // Check if we have an existing analysis (unless refresh was requested)
             let existing_analysis = if !should_refresh_analysis {
-                let conn = state_arc.pool.get()
+                let conn = state_arc
+                    .pool
+                    .get()
                     .await
                     .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                
+
                 conn.interact(move |conn| {
                     AgentContextAnalysis::get_for_session(
                         conn,
@@ -507,12 +523,11 @@ pub async fn generate_chat_response(
                     )
                 })
                 .await
-                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-                ?  // Double ? to unwrap both Results
+                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?? // Double ? to unwrap both Results
             } else {
                 None
             };
-            
+
             match existing_analysis {
                 Some(analysis) if !should_refresh_analysis => {
                     // Use the model's built-in decryption method
@@ -530,24 +545,22 @@ pub async fn generate_chat_response(
                 _ => {
                     // No existing analysis or refresh requested, run the agent
                     info!(%session_id, "No existing pre-processing analysis found, running agent");
-                    
+
                     // Create the agent with dependencies
                     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
                         state_arc.qdrant_service.clone(),
                         state_arc.embedding_client.clone(),
                         state_arc.clone(),
                     ));
-                    
-                    let chronicle_service = Arc::new(ChronicleService::new(
-                        state_arc.pool.clone(),
-                    ));
-                    
+
+                    let chronicle_service = Arc::new(ChronicleService::new(state_arc.pool.clone()));
+
                     let agent = ContextEnrichmentAgent::new(
                         state_arc.clone(),
                         search_tool,
                         chronicle_service,
                     );
-                    
+
                     // Prepare messages for the agent (last 10 messages)
                     let recent_messages: Vec<(String, String)> = gen_ai_recent_history
                         .iter()
@@ -565,21 +578,25 @@ pub async fn generate_chat_response(
                             (role, content)
                         })
                         .collect();
-                    
+
                     // Add the current user message
                     let mut messages_for_agent = recent_messages;
-                    messages_for_agent.push(("User".to_string(), current_user_content_text.clone()));
-                    
+                    messages_for_agent
+                        .push(("User".to_string(), current_user_content_text.clone()));
+
                     // Run the agent with the user message ID
-                    match agent.enrich_context(
-                        session_id,
-                        user_id_value,
-                        player_chronicle_id,  // Pass chronicle_id for scoped search
-                        &messages_for_agent,
-                        EnrichmentMode::PreProcessing,
-                        session_dek_arc.expose_secret(),
-                        user_message_id,  // Pass the user message ID for association (REQUIRED)
-                    ).await {
+                    match agent
+                        .enrich_context(
+                            session_id,
+                            user_id_value,
+                            player_chronicle_id, // Pass chronicle_id for scoped search
+                            &messages_for_agent,
+                            EnrichmentMode::PreProcessing,
+                            session_dek_arc.expose_secret(),
+                            user_message_id, // Pass the user message ID for association (REQUIRED)
+                        )
+                        .await
+                    {
                         Ok(result) => {
                             info!(%session_id, tokens_used = result.total_tokens_used, 
                                   "Pre-processing agent completed successfully");
@@ -601,7 +618,7 @@ pub async fn generate_chat_response(
 
     // Clone gen_ai_recent_history before moving it, as we'll need it later for post-processing
     let gen_ai_recent_history_for_agent = gen_ai_recent_history.clone();
-    
+
     // Call the new prompt builder
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
@@ -616,7 +633,7 @@ pub async fn generate_chat_response(
             model_name: model_to_use.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
             user_persona_name,                 // Pass user persona name for template substitution
-            agent_context,                      // Pass agent context if available
+            agent_context,                     // Pass agent context if available
         })
         .await
         {
@@ -678,12 +695,12 @@ pub async fn generate_chat_response(
             {
                 Ok(service_stream) => {
                     debug!(%session_id, "Successfully obtained stream from chat_service::stream_ai_response_and_save_message");
-                    
+
                     // Clone data needed for the stream
                     let pre_processing_analysis_id_clone = pre_processing_analysis_id.clone();
                     let state_for_update = state_arc.clone();
                     let session_id_for_update = session_id.clone();
-                    
+
                     let final_stream = async_stream::stream! {
                         let mut content_produced = false;
                         let mut error_from_service_stream = false;
@@ -717,17 +734,17 @@ pub async fn generate_chat_response(
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
                                                 assistant_message_id = Some(msg_uuid);
-                                                
+
                                                 // Update pre-processing analysis with assistant message ID if we have one
                                                 if let Some(analysis_id) = pre_processing_analysis_id_clone {
-                                                    debug!(session_id = %session_id_for_update, %analysis_id, 
-                                                           assistant_message_id = %msg_uuid, 
+                                                    debug!(session_id = %session_id_for_update, %analysis_id,
+                                                           assistant_message_id = %msg_uuid,
                                                            "Updating pre-processing analysis with assistant message ID (streaming)");
-                                                    
+
                                                     // Clone for the async task
                                                     let state_clone = state_for_update.clone();
                                                     let session_id_clone = session_id_for_update.clone();
-                                                    
+
                                                     // Spawn a task to update the analysis
                                                     tokio::spawn(async move {
                                                         let conn = state_clone.pool.get().await;
@@ -740,18 +757,18 @@ pub async fn generate_chat_response(
                                                                 )
                                                             })
                                                             .await;
-                                                            
+
                                                             match update_result {
                                                                 Ok(Ok(())) => {
-                                                                    debug!(session_id = %session_id_clone, 
+                                                                    debug!(session_id = %session_id_clone,
                                                                            "Successfully updated pre-processing analysis with assistant message ID");
                                                                 }
                                                                 Ok(Err(e)) => {
-                                                                    warn!(session_id = %session_id_clone, error = ?e, 
+                                                                    warn!(session_id = %session_id_clone, error = ?e,
                                                                           "Failed to update analysis with assistant message ID");
                                                                 }
                                                                 Err(e) => {
-                                                                    warn!(session_id = %session_id_clone, error = ?e, 
+                                                                    warn!(session_id = %session_id_clone, error = ?e,
                                                                           "Failed to interact with DB for analysis update");
                                                                 }
                                                             }
@@ -782,11 +799,11 @@ pub async fn generate_chat_response(
                                     // Only run post-processing if we have a valid assistant message ID
                                     if let Some(assistant_msg_id) = assistant_message_id {
                                         info!(%session_id, ?assistant_msg_id, "Post-processing agent mode enabled - will run in background");
-                                        
+
                                         // Note: We should check the assistant message status before running post-processing
                                         // but in streaming mode, the message is saved after streaming completes successfully,
                                         // so it should have status=completed. Failed streams won't reach this point.
-                                        
+
                                         // Clone necessary data for the background task
                                         let session_id_clone = session_id;
                                         let user_id_clone = user_id_value;
@@ -795,27 +812,27 @@ pub async fn generate_chat_response(
                                         let session_dek_clone = session_dek_arc.clone();
                                         let recent_history_clone = gen_ai_recent_history_for_agent.clone();
                                         let current_user_text = current_user_content_text.clone();
-                                    
+
                                     tokio::spawn(async move {
                                         info!(session_id = %session_id_clone, "Starting post-processing agent in background");
-                                        
+
                                         // Create the agent with dependencies
                                         let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
                                             state_clone.qdrant_service.clone(),
                                             state_clone.embedding_client.clone(),
                                             state_clone.clone(),
                                         ));
-                                        
+
                                         let chronicle_service = Arc::new(ChronicleService::new(
                                             state_clone.pool.clone(),
                                         ));
-                                        
+
                                         let agent = ContextEnrichmentAgent::new(
                                             state_clone.clone(),
                                             search_tool,
                                             chronicle_service,
                                         );
-                                        
+
                                         // Prepare messages for the agent
                                         let recent_messages: Vec<(String, String)> = recent_history_clone
                                             .iter()
@@ -833,13 +850,13 @@ pub async fn generate_chat_response(
                                                 (role, content)
                                             })
                                             .collect();
-                                        
+
                                         // Add the current exchange
                                         let mut messages_for_agent = recent_messages;
                                         messages_for_agent.push(("User".to_string(), current_user_text));
                                         // Note: We don't have the assistant's response here in streaming mode
                                         // The agent will work with what it has
-                                        
+
                                         // Run the agent with the required assistant message ID
                                         match agent.enrich_context(
                                             session_id_clone,
@@ -852,7 +869,7 @@ pub async fn generate_chat_response(
                                         ).await {
                                             Ok(result) => {
                                                 info!(
-                                                    session_id = %session_id_clone, 
+                                                    session_id = %session_id_clone,
                                                     tokens_used = result.total_tokens_used,
                                                     execution_time_ms = result.execution_time_ms,
                                                     "Post-processing agent completed successfully"
@@ -860,8 +877,8 @@ pub async fn generate_chat_response(
                                             }
                                             Err(e) => {
                                                 warn!(
-                                                    session_id = %session_id_clone, 
-                                                    error = ?e, 
+                                                    session_id = %session_id_clone,
+                                                    error = ?e,
                                                     "Post-processing agent failed"
                                                 );
                                             }
@@ -872,13 +889,13 @@ pub async fn generate_chat_response(
                                     }
                                 }
                             }
-                            
+
                             debug!(%session_id, "Service stream ended, adding delay before [DONE] to ensure all chunks are transmitted.");
-                            
+
                             // Critical: Add delay to ensure all chunks in the SSE pipeline are transmitted
                             // This prevents the connection from closing while chunks are still in flight
                             tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-                            
+
                             debug!(%session_id, "Delay complete, now sending [DONE] event.");
                             yield Ok(Event::default().event("done").data("[DONE]"));
                         } else {
@@ -890,7 +907,7 @@ pub async fn generate_chat_response(
                         .keep_alive(
                             KeepAlive::new()
                                 .interval(std::time::Duration::from_secs(1))
-                                .text("keep-alive")
+                                .text("keep-alive"),
                         )
                         .into_response())
                 }
@@ -1019,24 +1036,25 @@ pub async fn generate_chat_response(
                         {
                             Ok(saved_message) => {
                                 debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON path)");
-                                
+
                                 // Update pre-processing analysis with assistant message ID if we have one
                                 if let Some(analysis_id) = pre_processing_analysis_id {
                                     debug!(%session_id, %analysis_id, assistant_message_id = %saved_message.id, 
                                            "Updating pre-processing analysis with assistant message ID");
-                                    
+
                                     let conn = state_arc.pool.get().await;
                                     if let Ok(conn) = conn {
                                         let assistant_msg_id = saved_message.id;
-                                        let update_result = conn.interact(move |conn| {
-                                            AgentContextAnalysis::update_assistant_message_id(
-                                                conn,
-                                                analysis_id,
-                                                assistant_msg_id,
-                                            )
-                                        })
-                                        .await;
-                                        
+                                        let update_result = conn
+                                            .interact(move |conn| {
+                                                AgentContextAnalysis::update_assistant_message_id(
+                                                    conn,
+                                                    analysis_id,
+                                                    assistant_msg_id,
+                                                )
+                                            })
+                                            .await;
+
                                         match update_result {
                                             Ok(Ok(())) => {
                                                 debug!(%session_id, "Successfully updated pre-processing analysis with assistant message ID");
@@ -1050,7 +1068,7 @@ pub async fn generate_chat_response(
                                         }
                                     }
                                 }
-                                
+
                                 Some(saved_message.id)
                             }
                             Err(e) => {
@@ -1066,87 +1084,92 @@ pub async fn generate_chat_response(
                             // Only run post-processing if we successfully saved the assistant message
                             if let Some(assistant_msg_id) = assistant_message_id {
                                 info!(%session_id, "Post-processing agent mode enabled (non-streaming) - will run in background");
-                                
+
                                 // Clone necessary data for the background task
                                 let session_id_clone = session_id;
                                 let user_id_clone = user_id_value;
-                                let player_chronicle_id_clone = player_chronicle_id;  // Clone chronicle_id for scoped search
+                                let player_chronicle_id_clone = player_chronicle_id; // Clone chronicle_id for scoped search
                                 let state_clone = state_arc.clone();
                                 let session_dek_clone = session_dek_arc.clone();
                                 let recent_history_clone = gen_ai_recent_history_for_agent.clone();
                                 let current_user_text = current_user_content_text.clone();
                                 let assistant_response = response_content.clone();
-                            
-                            tokio::spawn(async move {
-                                info!(session_id = %session_id_clone, "Starting post-processing agent in background (non-streaming)");
-                                
-                                // Create the agent with dependencies
-                                let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-                                    state_clone.qdrant_service.clone(),
-                                    state_clone.embedding_client.clone(),
-                                    state_clone.clone(),
-                                ));
-                                
-                                let chronicle_service = Arc::new(ChronicleService::new(
-                                    state_clone.pool.clone(),
-                                ));
-                                
-                                let agent = ContextEnrichmentAgent::new(
-                                    state_clone.clone(),
-                                    search_tool,
-                                    chronicle_service,
-                                );
-                                
-                                // Prepare messages for the agent
-                                let recent_messages: Vec<(String, String)> = recent_history_clone
-                                    .iter()
-                                    .take(10)
-                                    .map(|msg| {
-                                        let role = match msg.role {
-                                            ChatRole::User => "User".to_string(),
-                                            ChatRole::Assistant => "Assistant".to_string(),
-                                            _ => "System".to_string(),
-                                        };
-                                        let content = match &msg.content {
-                                MessageContent::Text(text) => text.clone(),
-                                _ => String::new(),
-                            };
-                                        (role, content)
-                                    })
-                                    .collect();
-                                
-                                // Add the current exchange (including assistant response)
-                                let mut messages_for_agent = recent_messages;
-                                messages_for_agent.push(("User".to_string(), current_user_text));
-                                messages_for_agent.push(("Assistant".to_string(), assistant_response));
-                                
-                                // Run the agent with the assistant message ID
-                                match agent.enrich_context(
-                                    session_id_clone,
-                                    user_id_clone,
-                                    player_chronicle_id_clone,  // Pass chronicle_id for scoped search
-                                    &messages_for_agent,
-                                    EnrichmentMode::PostProcessing,
-                                    session_dek_clone.expose_secret(),
-                                    assistant_msg_id,  // Pass the assistant message ID for association
-                                ).await {
-                                    Ok(result) => {
-                                        info!(
-                                            session_id = %session_id_clone, 
-                                            tokens_used = result.total_tokens_used,
-                                            execution_time_ms = result.execution_time_ms,
-                                            "Post-processing agent completed successfully (non-streaming)"
-                                        );
+
+                                tokio::spawn(async move {
+                                    info!(session_id = %session_id_clone, "Starting post-processing agent in background (non-streaming)");
+
+                                    // Create the agent with dependencies
+                                    let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
+                                        state_clone.qdrant_service.clone(),
+                                        state_clone.embedding_client.clone(),
+                                        state_clone.clone(),
+                                    ));
+
+                                    let chronicle_service =
+                                        Arc::new(ChronicleService::new(state_clone.pool.clone()));
+
+                                    let agent = ContextEnrichmentAgent::new(
+                                        state_clone.clone(),
+                                        search_tool,
+                                        chronicle_service,
+                                    );
+
+                                    // Prepare messages for the agent
+                                    let recent_messages: Vec<(String, String)> =
+                                        recent_history_clone
+                                            .iter()
+                                            .take(10)
+                                            .map(|msg| {
+                                                let role = match msg.role {
+                                                    ChatRole::User => "User".to_string(),
+                                                    ChatRole::Assistant => "Assistant".to_string(),
+                                                    _ => "System".to_string(),
+                                                };
+                                                let content = match &msg.content {
+                                                    MessageContent::Text(text) => text.clone(),
+                                                    _ => String::new(),
+                                                };
+                                                (role, content)
+                                            })
+                                            .collect();
+
+                                    // Add the current exchange (including assistant response)
+                                    let mut messages_for_agent = recent_messages;
+                                    messages_for_agent
+                                        .push(("User".to_string(), current_user_text));
+                                    messages_for_agent
+                                        .push(("Assistant".to_string(), assistant_response));
+
+                                    // Run the agent with the assistant message ID
+                                    match agent
+                                        .enrich_context(
+                                            session_id_clone,
+                                            user_id_clone,
+                                            player_chronicle_id_clone, // Pass chronicle_id for scoped search
+                                            &messages_for_agent,
+                                            EnrichmentMode::PostProcessing,
+                                            session_dek_clone.expose_secret(),
+                                            assistant_msg_id, // Pass the assistant message ID for association
+                                        )
+                                        .await
+                                    {
+                                        Ok(result) => {
+                                            info!(
+                                                session_id = %session_id_clone,
+                                                tokens_used = result.total_tokens_used,
+                                                execution_time_ms = result.execution_time_ms,
+                                                "Post-processing agent completed successfully (non-streaming)"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                session_id = %session_id_clone,
+                                                error = ?e,
+                                                "Post-processing agent failed (non-streaming)"
+                                            );
+                                        }
                                     }
-                                    Err(e) => {
-                                        warn!(
-                                            session_id = %session_id_clone, 
-                                            error = ?e, 
-                                            "Post-processing agent failed (non-streaming)"
-                                        );
-                                    }
-                                }
-                            });
+                                });
                             } else {
                                 warn!(%session_id, "Skipping post-processing agent - no assistant message ID available");
                             }
@@ -1291,7 +1314,7 @@ pub async fn generate_chat_response(
                         .keep_alive(
                             KeepAlive::new()
                                 .interval(std::time::Duration::from_secs(1))
-                                .text("keep-alive")
+                                .text("keep-alive"),
                         )
                         .into_response())
                 }
@@ -1322,12 +1345,8 @@ pub async fn get_chat_session_handler(
         AppError::Unauthorized("User not found in session".to_string())
     })?;
 
-    let chat_session = chat::session_management::get_chat_session_by_id(
-        &state.pool,
-        user.id,
-        session_id,
-    )
-    .await?;
+    let chat_session =
+        chat::session_management::get_chat_session_by_id(&state.pool, user.id, session_id).await?;
 
     Ok(Json(chat_session))
 }
@@ -1343,7 +1362,10 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
         )
         .route("/:session_id/expand", post(expand_text_handler))
         .route("/:session_id/impersonate", post(impersonate_handler))
-        .route("/:session_id/agent-analysis", get(get_agent_analysis_handler))
+        .route(
+            "/:session_id/agent-analysis",
+            get(get_agent_analysis_handler),
+        )
         .route("/count-tokens", post(count_tokens_handler))
         .route("/ping", get(ping_handler))
         .route(
@@ -1379,16 +1401,19 @@ pub async fn count_tokens_handler(
     Json(payload): Json<TokenCountRequest>,
 ) -> Result<Json<TokenCountResponse>, AppError> {
     // Ensure user is authenticated
-    let _user = auth_session.user.as_ref().ok_or_else(|| {
-        AppError::Unauthorized("User not found in session".to_string())
-    })?;
+    let _user = auth_session
+        .user
+        .as_ref()
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     // Validate the payload
-    payload.validate().map_err(|e| {
-        AppError::BadRequest(format!("Invalid token count request: {}", e))
-    })?;
+    payload
+        .validate()
+        .map_err(|e| AppError::BadRequest(format!("Invalid token count request: {}", e)))?;
 
-    let model_to_use = payload.model.unwrap_or_else(|| state.config.token_counter_default_model.clone());
+    let model_to_use = payload
+        .model
+        .unwrap_or_else(|| state.config.token_counter_default_model.clone());
 
     // Determine counting mode based on request preference
     let counting_mode = if payload.use_api_counting {
@@ -1446,69 +1471,76 @@ pub async fn get_agent_analysis_handler(
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Vec<AgentAnalysisResponse>>, AppError> {
     // Ensure user is authenticated
-    let user = auth_session.user.as_ref().ok_or_else(|| {
-        AppError::Unauthorized("User not found in session".to_string())
-    })?;
+    let user = auth_session
+        .user
+        .as_ref()
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
     let user_id = user.id;
 
     // Verify the chat session belongs to the user
     let conn = state.pool.get().await?;
-    let session_exists = conn.interact(move |conn| {
-        use crate::schema::chat_sessions;
-        use diesel::prelude::*;
-        
-        chat_sessions::table
-            .filter(chat_sessions::id.eq(session_id))
-            .filter(chat_sessions::user_id.eq(user_id))
-            .select(Chat::as_select())
-            .first::<Chat>(conn)
-            .optional()
-    }).await
-    .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
-    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to verify session: {}", e)))?;
+    let session_exists = conn
+        .interact(move |conn| {
+            use crate::schema::chat_sessions;
+            use diesel::prelude::*;
+
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to verify session: {}", e)))?;
 
     if session_exists.is_none() {
         return Err(AppError::NotFound("Chat session not found".to_string()));
     }
 
     // Parse analysis type from query params if provided
-    let analysis_type_filter = params.get("analysis_type")
+    let analysis_type_filter = params
+        .get("analysis_type")
         .and_then(|s| s.parse::<AnalysisType>().ok())
         .map(|at| at.to_string());
-    
+
     // Parse message_id from query params if provided
-    let message_id_filter = params.get("message_id")
+    let message_id_filter = params
+        .get("message_id")
         .and_then(|s| s.parse::<Uuid>().ok());
 
     // Get all analysis records for the session
     let conn = state.pool.get().await?;
-    let analysis_records = conn.interact(move |conn| {
-        use crate::schema::agent_context_analysis::dsl::*;
-        use diesel::prelude::*;
-        
-        let mut query = agent_context_analysis
-            .filter(chat_session_id.eq(session_id))
-            .filter(superseded_at.is_null()) // Only get active (non-superseded) analyses
-            .into_boxed();
+    let analysis_records = conn
+        .interact(move |conn| {
+            use crate::schema::agent_context_analysis::dsl::*;
+            use diesel::prelude::*;
 
-        if let Some(ref analysis_type_str) = analysis_type_filter {
-            query = query.filter(analysis_type.eq(analysis_type_str));
-        }
-        
-        // Filter by message_id if provided - check both message_id and assistant_message_id
-        if let Some(msg_id) = message_id_filter {
-            // Use OR condition to find analyses linked to either the user message or assistant message
-            query = query.filter(
-                message_id.eq(msg_id).or(assistant_message_id.eq(msg_id))
-            );
-        }
+            let mut query = agent_context_analysis
+                .filter(chat_session_id.eq(session_id))
+                .filter(superseded_at.is_null()) // Only get active (non-superseded) analyses
+                .into_boxed();
 
-        query
-            .order(created_at.desc())
-            .load::<AgentContextAnalysis>(conn)
-    }).await
-    .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
-    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch agent analysis: {}", e)))?;
+            if let Some(ref analysis_type_str) = analysis_type_filter {
+                query = query.filter(analysis_type.eq(analysis_type_str));
+            }
+
+            // Filter by message_id if provided - check both message_id and assistant_message_id
+            if let Some(msg_id) = message_id_filter {
+                // Use OR condition to find analyses linked to either the user message or assistant message
+                query = query.filter(message_id.eq(msg_id).or(assistant_message_id.eq(msg_id)));
+            }
+
+            query
+                .order(created_at.desc())
+                .load::<AgentContextAnalysis>(conn)
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to fetch agent analysis: {}", e))
+        })?;
 
     // Convert to response DTOs with decrypted content
     let mut responses = Vec::new();
@@ -1756,9 +1788,9 @@ pub async fn generate_suggested_actions(
         _rag_context_items_from_service, // RAG not typically used for suggestions
         _hist_management_strategy,
         _hist_management_limit,
-        user_persona_name, // NEW - for template substitution
+        user_persona_name,    // NEW - for template substitution
         _player_chronicle_id, // We don't use this for suggestions
-        _agent_mode, // Agent mode - not used for suggestions
+        _agent_mode,          // Agent mode - not used for suggestions
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id,
@@ -1773,7 +1805,9 @@ pub async fn generate_suggested_actions(
 
     // Fetch Character model from DB (only for character-based chats)
     let char_id = session_character_id.ok_or_else(|| {
-        AppError::BadRequest("Suggested actions not supported for non-character chat modes".to_string())
+        AppError::BadRequest(
+            "Suggested actions not supported for non-character chat modes".to_string(),
+        )
     })?;
     let character_db_model = state_arc
         .pool
@@ -1911,7 +1945,7 @@ pub async fn generate_suggested_actions(
             model_name: model_for_suggestions.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
             user_persona_name,                 // Pass user persona name for template substitution
-            agent_context: None,                // No agent context for suggestions
+            agent_context: None,               // No agent context for suggestions
         })
         .await
         {
@@ -2020,7 +2054,7 @@ pub async fn generate_suggested_actions(
         warn!(%session_id, "No token usage information available in Gemini response for suggested actions");
     }
 
-    Ok(Json(SuggestedActionsResponse { 
+    Ok(Json(SuggestedActionsResponse {
         suggestions,
         token_usage,
     }))
@@ -2129,7 +2163,9 @@ pub async fn create_or_update_chat_character_override_handler(
         ));
     }
     let original_character_id = chat_session_details.1.ok_or_else(|| {
-        AppError::BadRequest("Cannot create character overrides for non-character chat sessions".to_string())
+        AppError::BadRequest(
+            "Cannot create character overrides for non-character chat sessions".to_string(),
+        )
     })?;
 
     // 2. Call the ChatOverrideService to handle the logic
@@ -2395,7 +2431,7 @@ pub async fn expand_text_handler(
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
         user_dek: user_dek_arc,
-        character_name: None, // Text expansion doesn't have a character
+        character_name: None,      // Text expansion doesn't have a character
         player_chronicle_id: None, // Text expansion doesn't involve chronicle processing
     };
 
@@ -2703,7 +2739,7 @@ pub async fn impersonate_handler(
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
         user_dek: user_dek_arc,
-        character_name: None, // Impersonation doesn't have a character
+        character_name: None,      // Impersonation doesn't have a character
         player_chronicle_id: None, // Impersonation doesn't involve chronicle processing
     };
 

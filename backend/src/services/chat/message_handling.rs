@@ -107,7 +107,7 @@ pub struct SaveMessageParams<'a> {
     pub model_name: String,                // Added model_name parameter
     pub raw_prompt_debug: Option<&'a str>, // Raw prompt for debugging (only for AI responses)
     pub status: crate::models::chats::MessageStatus, // Status of the message (streaming, completed, failed, partial)
-    pub error_message: Option<String>,     // Error message if status is failed
+    pub error_message: Option<String>,               // Error message if status is failed
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -151,11 +151,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         // For user messages, count tokens for just the user's input content
         match state
             .token_counter
-            .count_tokens(
-                content,
-                CountingMode::LocalOnly,
-                Some(&model_name),
-            )
+            .count_tokens(content, CountingMode::LocalOnly, Some(&model_name))
             .await
         {
             Ok(estimate) => {
@@ -167,11 +163,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         // For assistant messages, count tokens for the assistant's response content
         match state
             .token_counter
-            .count_tokens(
-                content,
-                CountingMode::LocalOnly,
-                Some(&model_name),
-            )
+            .count_tokens(content, CountingMode::LocalOnly, Some(&model_name))
             .await
         {
             Ok(estimate) => {
@@ -188,14 +180,10 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         if let Some(raw_prompt) = raw_prompt_debug {
             info!(%session_id, raw_prompt_length = raw_prompt.len(), 
                   "Counting tokens for full AI prompt (system + RAG + history + user input)");
-            
+
             match state
                 .token_counter
-                .count_tokens(
-                    raw_prompt,
-                    CountingMode::LocalOnly,
-                    Some(&model_name),
-                )
+                .count_tokens(raw_prompt, CountingMode::LocalOnly, Some(&model_name))
                 .await
             {
                 Ok(estimate) => {
@@ -204,7 +192,10 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                     info!(%session_id, prompt_tokens = estimate.total, 
                           "Counted tokens for full AI prompt (system + RAG + history + user input)");
                 }
-                Err(e) => warn!("Failed to count full prompt tokens for assistant message: {}", e),
+                Err(e) => warn!(
+                    "Failed to count full prompt tokens for assistant message: {}",
+                    e
+                ),
             }
         }
     }
@@ -234,7 +225,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         model_name,        // model_name field
     )
     .with_status(status);
-    
+
     if let Some(err_msg) = error_message {
         new_message_to_insert = new_message_to_insert.with_error_message(err_msg);
     }

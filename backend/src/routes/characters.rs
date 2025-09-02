@@ -11,12 +11,12 @@ use crate::models::character_card::NewCharacter;
 use crate::models::characters::{Character, CharacterDataForClient};
 use crate::schema::character_assets::dsl::character_assets;
 use crate::schema::characters::dsl::{characters, id, user_id};
-use crate::services::character_parser::{self};
 use crate::services::character_generation::{
-    FieldGenerator, FullCharacterGenerator, EnhancementService,
-    FieldGenerationRequest, FullCharacterRequest, EnhancementRequest,
-    FieldGenerationResult, FullCharacterResult, EnhancementResult,
+    EnhancementRequest, EnhancementResult, EnhancementService, FieldGenerationRequest,
+    FieldGenerationResult, FieldGenerator, FullCharacterGenerator, FullCharacterRequest,
+    FullCharacterResult,
 };
+use crate::services::character_parser::{self};
 use crate::state::AppState;
 use axum::{
     Router,
@@ -1346,7 +1346,10 @@ pub async fn generate_full_character_handler(
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
-    info!("Generating full character from concept: {}", payload.concept);
+    info!(
+        "Generating full character from concept: {}",
+        payload.concept
+    );
 
     let full_generator = FullCharacterGenerator::new(Arc::new(state));
     let result = full_generator.generate_character(payload, user.id).await?;
@@ -1390,14 +1393,17 @@ pub async fn analyze_style_handler(
         .and_then(|v| v.as_str())
         .ok_or_else(|| AppError::InvalidInput("Content field required".to_string()))?;
 
-    info!("Analyzing style for content with {} characters", content.len());
+    info!(
+        "Analyzing style for content with {} characters",
+        content.len()
+    );
 
     // For now, implement basic style analysis
     // This will be enhanced with more sophisticated analysis later
     let detected_style = if content.contains("{{char}}") || content.contains("{{user}}") {
         "system"
     } else if content.contains("Characters(") {
-        "group" 
+        "group"
     } else if content.contains("Name:") || content.contains("Age:") {
         "profile"
     } else {

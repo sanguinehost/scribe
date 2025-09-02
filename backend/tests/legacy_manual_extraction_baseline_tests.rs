@@ -15,11 +15,11 @@ use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
     models::{
-        chronicle::{PlayerChronicle, CreateChronicleRequest},
+        chronicle::{CreateChronicleRequest, PlayerChronicle},
         lorebook_dtos::CreateLorebookPayload,
     },
-    test_helpers::{TestDataGuard, TestApp},
     schema,
+    test_helpers::{TestApp, TestDataGuard},
 };
 use serde_json::json;
 use tower::util::ServiceExt;
@@ -30,14 +30,17 @@ fn extract_session_cookie(response: &Response) -> Option<String> {
     response
         .headers()
         .get(header::SET_COOKIE)?
-        .to_str().ok()?
+        .to_str()
+        .ok()?
         .split(';')
         .next()
         .map(|s| s.to_string())
 }
 
 // Helper function to parse JSON response
-async fn parse_json_response<T: serde::de::DeserializeOwned>(response: Response) -> AnyhowResult<T> {
+async fn parse_json_response<T: serde::de::DeserializeOwned>(
+    response: Response,
+) -> AnyhowResult<T> {
     let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = std::str::from_utf8(&body_bytes)?;
     serde_json::from_str(body_str).context("Failed to parse JSON response")
@@ -56,7 +59,8 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
         "password": password
     });
 
-    let register_response = test_app.router
+    let register_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -73,8 +77,8 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
     // Parse the registration response to get user_id
     let register_body_bytes = register_response.into_body().collect().await?.to_bytes();
     let register_body_str = std::str::from_utf8(&register_body_bytes)?;
-    let auth_response: serde_json::Value = serde_json::from_str(register_body_str)
-        .context("Failed to parse registration response")?;
+    let auth_response: serde_json::Value =
+        serde_json::from_str(register_body_str).context("Failed to parse registration response")?;
     let user_id = auth_response["user_id"]
         .as_str()
         .context("No user_id in registration response")?;
@@ -125,7 +129,8 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
         "password": password
     });
 
-    let login_response = test_app.router
+    let login_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -156,7 +161,9 @@ mod baseline_tests {
 
     #[tokio::test]
     async fn test_manual_extract_events_endpoint_baseline() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app =
+            scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
+                .await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
@@ -166,7 +173,8 @@ mod baseline_tests {
             description: Some("For testing manual extraction baseline".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -174,14 +182,18 @@ mod baseline_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
         assert_eq!(create_chronicle_response.status(), StatusCode::CREATED);
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // Create a mock chat session ID (non-existent) for testing error handling
         let chat_session_id = create_mock_chat_session_id();
@@ -193,7 +205,8 @@ mod baseline_tests {
         });
 
         // Test the manual extraction endpoint: POST /api/chronicles/{id}/extract-events
-        let extract_response = test_app.router
+        let extract_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -210,14 +223,17 @@ mod baseline_tests {
         // BASELINE ASSERTION: Should handle nonexistent chat gracefully
         // This documents the current behavior - might be 404 or 400 depending on implementation
         assert!(
-            extract_response.status().is_client_error() || extract_response.status().is_server_error(),
+            extract_response.status().is_client_error()
+                || extract_response.status().is_server_error(),
             "Manual extraction should reject nonexistent chat sessions with an error"
         );
     }
 
     #[tokio::test]
     async fn test_manual_create_chronicle_from_chat_baseline() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app =
+            scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
+                .await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
@@ -232,7 +248,8 @@ mod baseline_tests {
         });
 
         // Test the manual chronicle creation endpoint: POST /api/chronicles/from-chat
-        let create_response = test_app.router
+        let create_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -248,14 +265,17 @@ mod baseline_tests {
 
         // BASELINE ASSERTION: Should handle nonexistent chat gracefully
         assert!(
-            create_response.status().is_client_error() || create_response.status().is_server_error(),
+            create_response.status().is_client_error()
+                || create_response.status().is_server_error(),
             "Manual chronicle creation should reject nonexistent chat sessions with an error"
         );
     }
 
     #[tokio::test]
     async fn test_manual_extract_events_validation_baseline() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app =
+            scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
+                .await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
@@ -265,7 +285,8 @@ mod baseline_tests {
             description: Some("For testing validation".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -273,13 +294,17 @@ mod baseline_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // BASELINE TEST: Invalid request validation
         let invalid_request = json!({
@@ -287,7 +312,8 @@ mod baseline_tests {
             "extraction_model": "gemini-2.5-flash-lite-preview-06-17"
         });
 
-        let invalid_response = test_app.router
+        let invalid_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -310,7 +336,8 @@ mod baseline_tests {
             "extraction_model": "gemini-2.5-flash-lite-preview-06-17"
         });
 
-        let nonexistent_response = test_app.router
+        let nonexistent_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -325,12 +352,17 @@ mod baseline_tests {
             .unwrap();
 
         // BASELINE ASSERTION: Should handle nonexistent chat gracefully
-        assert!(nonexistent_response.status().is_client_error() || nonexistent_response.status().is_server_error());
+        assert!(
+            nonexistent_response.status().is_client_error()
+                || nonexistent_response.status().is_server_error()
+        );
     }
 
     #[tokio::test]
     async fn test_manual_extract_events_unauthorized_baseline() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app =
+            scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
+                .await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
         let chronicle_id = Uuid::new_v4();
@@ -342,7 +374,8 @@ mod baseline_tests {
             "extraction_model": "gemini-2.5-flash-lite-preview-06-17"
         });
 
-        let unauthorized_response = test_app.router
+        let unauthorized_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -357,12 +390,17 @@ mod baseline_tests {
             .unwrap();
 
         // BASELINE ASSERTION: Should require authentication
-        assert!(unauthorized_response.status() == StatusCode::UNAUTHORIZED || unauthorized_response.status() == StatusCode::NOT_FOUND);
+        assert!(
+            unauthorized_response.status() == StatusCode::UNAUTHORIZED
+                || unauthorized_response.status() == StatusCode::NOT_FOUND
+        );
     }
 
     #[tokio::test]
     async fn test_manual_lorebook_extraction_baseline() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app =
+            scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
+                .await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
@@ -372,7 +410,8 @@ mod baseline_tests {
             description: Some("For testing manual lorebook extraction baseline".to_string()),
         };
 
-        let create_lorebook_response = test_app.router
+        let create_lorebook_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -380,14 +419,17 @@ mod baseline_tests {
                     .uri("/api/lorebooks")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_lorebook_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_lorebook_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
         assert_eq!(create_lorebook_response.status(), StatusCode::CREATED);
-        let lorebook: scribe_backend::models::lorebook_dtos::LorebookResponse = parse_json_response(create_lorebook_response).await.unwrap();
+        let lorebook: scribe_backend::models::lorebook_dtos::LorebookResponse =
+            parse_json_response(create_lorebook_response).await.unwrap();
 
         // Create a mock chat session ID for testing error handling
         let chat_session_id = create_mock_chat_session_id();
@@ -399,7 +441,8 @@ mod baseline_tests {
         });
 
         // Test the manual lorebook extraction endpoint: POST /api/lorebooks/{id}/extract-from-chat
-        let extract_response = test_app.router
+        let extract_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -415,14 +458,17 @@ mod baseline_tests {
 
         // BASELINE ASSERTION: Should handle nonexistent chat gracefully
         assert!(
-            extract_response.status().is_client_error() || extract_response.status().is_server_error(),
+            extract_response.status().is_client_error()
+                || extract_response.status().is_server_error(),
             "Manual lorebook extraction should reject nonexistent chat sessions with an error"
         );
     }
 
     #[tokio::test]
     async fn test_manual_extraction_model_parameter_baseline() {
-        let test_app = scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
+        let test_app =
+            scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
+                .await;
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
@@ -432,7 +478,8 @@ mod baseline_tests {
             description: Some("For testing model parameter handling".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -440,13 +487,17 @@ mod baseline_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
         let chat_session_id = create_mock_chat_session_id();
 
         // BASELINE TEST: Default model parameter behavior
@@ -455,7 +506,8 @@ mod baseline_tests {
             // No extraction_model specified - should use default
         });
 
-        let default_response = test_app.router
+        let default_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -478,7 +530,8 @@ mod baseline_tests {
             "extraction_model": "custom-model-name"
         });
 
-        let custom_response = test_app.router
+        let custom_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -494,6 +547,9 @@ mod baseline_tests {
 
         // BASELINE ASSERTION: Should accept custom model parameter
         // (Might fail with model error, but should accept the parameter)
-        assert!(custom_response.status() == StatusCode::OK || custom_response.status().is_server_error());
+        assert!(
+            custom_response.status() == StatusCode::OK
+                || custom_response.status().is_server_error()
+        );
     }
 }

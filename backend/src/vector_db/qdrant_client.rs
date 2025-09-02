@@ -360,15 +360,21 @@ impl QdrantClientService {
                 }
             }
         }
-        
+
         // Ensure text indexes exist for searchable text fields
         // These enable substring matching and full-text search
-        for field_name in &["chunk_text", "entry_title", "keywords", "event_text", "text"] {
+        for field_name in &[
+            "chunk_text",
+            "entry_title",
+            "keywords",
+            "event_text",
+            "text",
+        ] {
             info!(
                 "Ensuring text index exists for field '{}' in collection '{}'",
                 field_name, self.collection_name
             );
-            
+
             // Create text index with appropriate configuration for substring matching
             let result = self
                 .client
@@ -381,12 +387,9 @@ impl QdrantClientService {
                     ordering: None,
                 })
                 .await;
-                
+
             match result {
-                Ok(_) => info!(
-                    "Successfully ensured text index for field '{}'",
-                    field_name
-                ),
+                Ok(_) => info!("Successfully ensured text index for field '{}'", field_name),
                 Err(e) => {
                     let error_string = e.to_string();
                     if error_string.contains("already exists")
@@ -400,7 +403,7 @@ impl QdrantClientService {
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -446,7 +449,8 @@ impl QdrantClientService {
         limit: u64,
         filter: Option<Filter>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
-        self.search_points_with_threshold(query_vector, limit, filter, None).await
+        self.search_points_with_threshold(query_vector, limit, filter, None)
+            .await
     }
 
     // --- Search Operation with Score Threshold ---
@@ -479,7 +483,7 @@ impl QdrantClientService {
             filter,                          // Use the passed-in filter directly
             // Initialize other fields as needed, using defaults or None
             offset: None,
-            score_threshold,  // Use the provided score threshold
+            score_threshold, // Use the provided score threshold
             params: None,
             vector_name: None,
             with_vectors: None,
@@ -533,11 +537,11 @@ impl QdrantClientService {
 
         // Build filter conditions for text search
         let mut combined_filter = filter.clone();
-        
+
         if let Some(query) = &text_query {
             if !text_fields.is_empty() {
                 let query_lower = query.to_lowercase();
-                
+
                 // Create text matching conditions for each field
                 let mut text_conditions = Vec::new();
                 for field in &text_fields {
@@ -559,7 +563,7 @@ impl QdrantClientService {
                         })),
                     });
                 }
-                
+
                 // Combine text conditions with OR logic
                 let text_filter = if text_conditions.len() > 1 {
                     Filter {
@@ -583,7 +587,7 @@ impl QdrantClientService {
                         min_should: None,
                     }
                 };
-                
+
                 // Combine with existing filter using AND logic
                 combined_filter = if let Some(existing_filter) = combined_filter {
                     Some(Filter {
@@ -608,11 +612,14 @@ impl QdrantClientService {
         // Perform search based on available inputs
         let results = if let Some(vec) = vector {
             // Vector search with optional text filtering
-            self.search_points_with_threshold(vec, limit, combined_filter, score_threshold).await?
+            self.search_points_with_threshold(vec, limit, combined_filter, score_threshold)
+                .await?
         } else if text_query.is_some() {
             // Pure text search using scroll/retrieve
-            let retrieved = self.retrieve_points(combined_filter, limit as usize).await?;
-            
+            let retrieved = self
+                .retrieve_points(combined_filter, limit as usize)
+                .await?;
+
             // Convert RetrievedPoint to ScoredPoint
             retrieved
                 .into_iter()
@@ -629,14 +636,11 @@ impl QdrantClientService {
         } else {
             // No search criteria provided
             return Err(AppError::VectorDbError(
-                "Hybrid search requires either vector or text query".to_string()
+                "Hybrid search requires either vector or text query".to_string(),
             ));
         };
 
-        info!(
-            found_points = results.len(),
-            "Hybrid search completed"
-        );
+        info!(found_points = results.len(), "Hybrid search completed");
         Ok(results)
     }
 
@@ -787,7 +791,8 @@ impl QdrantClientServiceTrait for QdrantClientService {
         score_threshold: Option<f32>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the implementation's method directly
-        self.search_points_with_threshold(vector, limit, filter, score_threshold).await
+        self.search_points_with_threshold(vector, limit, filter, score_threshold)
+            .await
     }
 
     async fn hybrid_search(
@@ -800,7 +805,15 @@ impl QdrantClientServiceTrait for QdrantClientService {
         score_threshold: Option<f32>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the implementation's method directly
-        self.hybrid_search(vector, text_query, text_fields, limit, filter, score_threshold).await
+        self.hybrid_search(
+            vector,
+            text_query,
+            text_fields,
+            limit,
+            filter,
+            score_threshold,
+        )
+        .await
     }
 
     async fn retrieve_points(
@@ -916,13 +929,10 @@ impl QdrantClientServiceTrait for QdrantClientService {
     async fn health_check(&self) -> Result<(), AppError> {
         // Try to get basic health information from Qdrant by listing collections
         // This is a simple operation that checks connectivity
-        self.client
-            .list_collections()
-            .await
-            .map_err(|e| {
-                error!(error = %e, "Qdrant health check failed - cannot list collections");
-                AppError::VectorDbError(format!("Qdrant health check failed: {e}"))
-            })?;
+        self.client.list_collections().await.map_err(|e| {
+            error!(error = %e, "Qdrant health check failed - cannot list collections");
+            AppError::VectorDbError(format!("Qdrant health check failed: {e}"))
+        })?;
 
         info!("Qdrant health check successful - can list collections");
         Ok(())

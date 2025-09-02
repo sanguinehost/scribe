@@ -5,17 +5,15 @@
 
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, info, warn, error, instrument};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
     auth::session_dek::SessionDek,
-    config::{NarrativeFeatureFlags, ExtractionMode},
+    config::{ExtractionMode, NarrativeFeatureFlags},
     errors::AppError,
     models::chats::ChatMessage,
-    services::{
-        agentic::agent_runner::NarrativeAgentRunner,
-    },
+    services::agentic::agent_runner::NarrativeAgentRunner,
 };
 
 /// Result of an extraction operation
@@ -37,7 +35,7 @@ pub struct ExtractionComparisonMetrics {
     pub manual_result: Option<ExtractionResult>,
     pub agentic_result: Option<ExtractionResult>,
     pub agreement_score: Option<f64>, // 0.0 to 1.0, how similar the results were
-    pub recommendation: String, // Which system performed better
+    pub recommendation: String,       // Which system performed better
 }
 
 /// Service for dispatching extraction operations based on feature flags
@@ -67,11 +65,10 @@ impl ExtractionDispatcher {
         messages: &[ChatMessage],
         session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {
-        let decision = self.feature_flags.determine_extraction_mode(
-            &user_id.to_string(), 
-            "event_extraction"
-        );
-        
+        let decision = self
+            .feature_flags
+            .determine_extraction_mode(&user_id.to_string(), "event_extraction");
+
         info!(
             user_id = %user_id,
             mode = ?decision.mode,
@@ -81,13 +78,34 @@ impl ExtractionDispatcher {
 
         match decision.mode {
             ExtractionMode::ManualOnly => {
-                self.extract_events_manual(user_id, chat_session_id, chronicle_id, messages, session_dek).await
+                self.extract_events_manual(
+                    user_id,
+                    chat_session_id,
+                    chronicle_id,
+                    messages,
+                    session_dek,
+                )
+                .await
             }
             ExtractionMode::AgenticOnly => {
-                self.extract_events_agentic(user_id, chat_session_id, chronicle_id, messages, session_dek).await
+                self.extract_events_agentic(
+                    user_id,
+                    chat_session_id,
+                    chronicle_id,
+                    messages,
+                    session_dek,
+                )
+                .await
             }
             ExtractionMode::DualMode => {
-                self.extract_events_dual_mode(user_id, chat_session_id, chronicle_id, messages, session_dek).await
+                self.extract_events_dual_mode(
+                    user_id,
+                    chat_session_id,
+                    chronicle_id,
+                    messages,
+                    session_dek,
+                )
+                .await
             }
         }
     }
@@ -102,15 +120,15 @@ impl ExtractionDispatcher {
         session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {
         let start_time = Instant::now();
-        
+
         debug!("Using manual event extraction");
-        
+
         // For now, return a placeholder result since we're transitioning away from manual
         // In a real implementation, this would call the EventExtractionService
         let duration = start_time.elapsed();
-        
+
         warn!("Manual event extraction called but not fully implemented in dispatcher");
-        
+
         Ok(ExtractionResult {
             success: false,
             mode_used: ExtractionMode::ManualOnly,
@@ -133,22 +151,23 @@ impl ExtractionDispatcher {
         session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {
         let start_time = Instant::now();
-        
+
         debug!("Using agentic event extraction");
-        
+
         let Some(agentic_runner) = &self.agentic_runner else {
             return Err(AppError::InternalServerErrorGeneric(
-                "Agentic runner not configured but agentic extraction requested".to_string()
+                "Agentic runner not configured but agentic extraction requested".to_string(),
             ));
         };
 
         // Apply timeout if configured
-        let timeout_duration = std::time::Duration::from_secs(self.feature_flags.agentic_extraction_timeout_secs);
-        
+        let timeout_duration =
+            std::time::Duration::from_secs(self.feature_flags.agentic_extraction_timeout_secs);
+
         // TODO: Retrieve user's persona context for extraction
         // For now, pass None - this will be implemented when persona retrieval is added
         let persona_context = None;
-        
+
         let extraction_future = agentic_runner.process_narrative_event(
             user_id,
             chat_session_id,
@@ -158,28 +177,47 @@ impl ExtractionDispatcher {
             persona_context,
         );
 
-        let workflow_result = match tokio::time::timeout(timeout_duration, extraction_future).await {
+        let workflow_result = match tokio::time::timeout(timeout_duration, extraction_future).await
+        {
             Ok(result) => result?,
             Err(_) => {
-                error!("Agentic extraction timed out after {}s", self.feature_flags.agentic_extraction_timeout_secs);
-                
+                error!(
+                    "Agentic extraction timed out after {}s",
+                    self.feature_flags.agentic_extraction_timeout_secs
+                );
+
                 if self.feature_flags.should_fallback_to_manual() {
                     warn!("Falling back to manual extraction due to timeout");
-                    return self.extract_events_manual(user_id, chat_session_id, chronicle_id, messages, session_dek).await;
+                    return self
+                        .extract_events_manual(
+                            user_id,
+                            chat_session_id,
+                            chronicle_id,
+                            messages,
+                            session_dek,
+                        )
+                        .await;
                 } else {
-                    return Err(AppError::InternalServerErrorGeneric(
-                        format!("Agentic extraction timed out after {}s", self.feature_flags.agentic_extraction_timeout_secs)
-                    ));
+                    return Err(AppError::InternalServerErrorGeneric(format!(
+                        "Agentic extraction timed out after {}s",
+                        self.feature_flags.agentic_extraction_timeout_secs
+                    )));
                 }
             }
         };
 
         let duration = start_time.elapsed();
-        
+
         // Calculate metrics from workflow result
         let events_extracted = workflow_result.execution_results.len();
-        let chronicles_created = if chronicle_id.is_none() && events_extracted > 0 { 1 } else { 0 };
-        let lorebook_entries_created = workflow_result.actions_taken.iter()
+        let chronicles_created = if chronicle_id.is_none() && events_extracted > 0 {
+            1
+        } else {
+            0
+        };
+        let lorebook_entries_created = workflow_result
+            .actions_taken
+            .iter()
             .filter(|action| action.tool_name == "create_lorebook_entry")
             .count();
 
@@ -215,8 +253,20 @@ impl ExtractionDispatcher {
         debug!("Running dual-mode extraction for comparison");
 
         // Run both extractions concurrently
-        let manual_future = self.extract_events_manual(user_id, chat_session_id, chronicle_id, messages, session_dek);
-        let agentic_future = self.extract_events_agentic(user_id, chat_session_id, chronicle_id, messages, session_dek);
+        let manual_future = self.extract_events_manual(
+            user_id,
+            chat_session_id,
+            chronicle_id,
+            messages,
+            session_dek,
+        );
+        let agentic_future = self.extract_events_agentic(
+            user_id,
+            chat_session_id,
+            chronicle_id,
+            messages,
+            session_dek,
+        );
 
         let (manual_result, agentic_result) = tokio::join!(manual_future, agentic_future);
 
@@ -226,12 +276,12 @@ impl ExtractionDispatcher {
         // Log comparison metrics
         if let (Some(manual), Some(agentic)) = (&manual_result, &agentic_result) {
             let comparison = self.compare_extraction_results(manual, agentic);
-            
+
             info!(
                 comparison_metrics = ?comparison,
                 "Dual-mode extraction comparison completed"
             );
-            
+
             // In dual mode, we typically return the agentic result if it succeeded,
             // otherwise fall back to manual
             if agentic.success {
@@ -242,16 +292,18 @@ impl ExtractionDispatcher {
         }
 
         // If both failed or one is missing, return the agentic result (which should contain error info)
-        agentic_result.unwrap_or_else(|| ExtractionResult {
-            success: false,
-            mode_used: ExtractionMode::DualMode,
-            duration_ms: 0,
-            events_extracted: 0,
-            lorebook_entries_created: 0,
-            chronicles_created: 0,
-            error_message: Some("Both manual and agentic extraction failed".to_string()),
-            ai_calls_made: 0,
-        }).pipe(Ok)
+        agentic_result
+            .unwrap_or_else(|| ExtractionResult {
+                success: false,
+                mode_used: ExtractionMode::DualMode,
+                duration_ms: 0,
+                events_extracted: 0,
+                lorebook_entries_created: 0,
+                chronicles_created: 0,
+                error_message: Some("Both manual and agentic extraction failed".to_string()),
+                ai_calls_made: 0,
+            })
+            .pipe(Ok)
     }
 
     /// Compare results from manual and agentic extraction
@@ -294,19 +346,19 @@ impl ExtractionDispatcher {
 
     /// Check if realtime extraction is enabled for a user
     pub fn should_enable_realtime_extraction(&self, user_id: &str) -> bool {
-        self.feature_flags.enable_realtime_extraction 
+        self.feature_flags.enable_realtime_extraction
             && self.feature_flags.should_use_agentic_for_user(user_id)
     }
 
     /// Check if auto lorebook creation is enabled for a user
     pub fn should_enable_auto_lorebook_creation(&self, user_id: &str) -> bool {
-        self.feature_flags.enable_auto_lorebook_creation 
+        self.feature_flags.enable_auto_lorebook_creation
             && self.feature_flags.should_use_agentic_for_user(user_id)
     }
 
     /// Check if auto chronicle creation is enabled for a user
     pub fn should_enable_auto_chronicle_creation(&self, user_id: &str) -> bool {
-        self.feature_flags.enable_auto_chronicle_creation 
+        self.feature_flags.enable_auto_chronicle_creation
             && self.feature_flags.should_use_agentic_for_user(user_id)
     }
 }
@@ -336,7 +388,7 @@ mod tests {
     fn test_extraction_dispatcher_creation() {
         let flags = Arc::new(NarrativeFeatureFlags::default());
         let dispatcher = ExtractionDispatcher::new(flags, None);
-        
+
         // Should be able to create dispatcher without services for testing
         assert!(dispatcher.agentic_runner.is_none());
     }
@@ -347,10 +399,10 @@ mod tests {
         flags.enable_realtime_extraction = true;
         flags.enable_agentic_extraction = true;
         flags.agentic_rollout_percentage = 100;
-        
+
         let flags = Arc::new(flags);
         let dispatcher = ExtractionDispatcher::new(flags, None);
-        
+
         assert!(dispatcher.should_enable_realtime_extraction("test_user"));
     }
 
@@ -361,10 +413,10 @@ mod tests {
         flags.enable_auto_chronicle_creation = true;
         flags.enable_agentic_extraction = true;
         flags.agentic_rollout_percentage = 100;
-        
+
         let flags = Arc::new(flags);
         let dispatcher = ExtractionDispatcher::new(flags, None);
-        
+
         assert!(dispatcher.should_enable_auto_lorebook_creation("test_user"));
         assert!(dispatcher.should_enable_auto_chronicle_creation("test_user"));
     }

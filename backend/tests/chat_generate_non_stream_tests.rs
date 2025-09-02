@@ -352,7 +352,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         title_nonce: None,
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20,                                // Default
-        model_name: "gemini-2.5-flash".to_string(),    // Default
+        model_name: "gemini-2.5-flash".to_string(),                  // Default
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),
@@ -941,7 +941,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         title_nonce: None,
         history_management_strategy: "truncate_summary".to_string(), // Default
         history_management_limit: 20,                                // Default
-        model_name: "gemini-2.5-flash".to_string(),    // Default
+        model_name: "gemini-2.5-flash".to_string(),                  // Default
         created_at: Utc::now(),
         updated_at: Utc::now(),
         visibility: Some("private".to_string()),

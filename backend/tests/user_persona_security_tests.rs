@@ -6,20 +6,24 @@
 //! authorization, encryption, input validation, and other security concerns.
 
 use reqwest;
-use scribe_backend::test_helpers::{self, TestDataGuard, db::create_test_user, login_user_via_api};
 use scribe_backend::models::user_personas::UserPersonaDataForClient;
-use serde_json::{json, Value};
+use scribe_backend::test_helpers::{self, TestDataGuard, db::create_test_user, login_user_via_api};
+use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::time::sleep;
 use uuid::Uuid;
 
 /// Helper to create authenticated user and return client with cookie
-async fn create_authenticated_user(app: &scribe_backend::test_helpers::TestApp, username: &str, password: &str) -> (reqwest::Client, String) {
+async fn create_authenticated_user(
+    app: &scribe_backend::test_helpers::TestApp,
+    username: &str,
+    password: &str,
+) -> (reqwest::Client, String) {
     // Create user directly in DB
     let _user = create_test_user(&app.db_pool, username.to_string(), password.to_string())
         .await
         .expect("Failed to create test user");
-    
+
     // Login via API to get session cookie
     login_user_via_api(app, username, password).await
 }
@@ -34,11 +38,13 @@ async fn test_a01_access_control_user_cannot_access_other_personas() {
     // Create two users
     let user1_email = "user1@test.com";
     let user1_password = "Password123!";
-    let user2_email = "user2@test.com";  
+    let user2_email = "user2@test.com";
     let user2_password = "Password123!";
 
-    let (client1, user1_cookie) = create_authenticated_user(&test_app, user1_email, user1_password).await;
-    let (client2, user2_cookie) = create_authenticated_user(&test_app, user2_email, user2_password).await;
+    let (client1, user1_cookie) =
+        create_authenticated_user(&test_app, user1_email, user1_password).await;
+    let (client2, user2_cookie) =
+        create_authenticated_user(&test_app, user2_email, user2_password).await;
 
     // User1 creates a persona
     let create_persona_response = client1
@@ -51,9 +57,9 @@ async fn test_a01_access_control_user_cannot_access_other_personas() {
         .send()
         .await
         .expect("Failed to create persona for user1");
-    
+
     assert_eq!(create_persona_response.status().as_u16(), 201);
-    
+
     let persona: UserPersonaDataForClient = create_persona_response
         .json()
         .await
@@ -103,9 +109,18 @@ async fn test_a01_access_control_unauthenticated_requests_blocked() {
     let endpoints_and_methods = vec![
         ("GET", format!("{}/api/personas", &test_app.address)),
         ("POST", format!("{}/api/personas", &test_app.address)),
-        ("GET", format!("{}/api/personas/{}", &test_app.address, fake_persona_id)),
-        ("PUT", format!("{}/api/personas/{}", &test_app.address, fake_persona_id)),
-        ("DELETE", format!("{}/api/personas/{}", &test_app.address, fake_persona_id)),
+        (
+            "GET",
+            format!("{}/api/personas/{}", &test_app.address, fake_persona_id),
+        ),
+        (
+            "PUT",
+            format!("{}/api/personas/{}", &test_app.address, fake_persona_id),
+        ),
+        (
+            "DELETE",
+            format!("{}/api/personas/{}", &test_app.address, fake_persona_id),
+        ),
     ];
 
     for (method, endpoint) in endpoints_and_methods {
@@ -137,7 +152,8 @@ async fn test_a03_injection_sql_injection_prevention() {
 
     let user_email = "sqlinjection@test.com";
     let user_password = "Password123!";
-    let (client, session_cookie) = create_authenticated_user(&test_app, user_email, user_password).await;
+    let (client, session_cookie) =
+        create_authenticated_user(&test_app, user_email, user_password).await;
 
     // Test SQL injection in persona creation
     let malicious_payloads = vec![
@@ -161,8 +177,7 @@ async fn test_a03_injection_sql_injection_prevention() {
 
         // Should either succeed (treating as literal text) or fail gracefully
         assert!(
-            create_response.status().as_u16() == 201 || 
-            create_response.status().as_u16() == 400,
+            create_response.status().as_u16() == 201 || create_response.status().as_u16() == 400,
             "SQL injection payload should be handled safely: {}",
             payload
         );
@@ -177,7 +192,10 @@ async fn test_a03_injection_sql_injection_prevention() {
 
     for malicious_id in malicious_ids {
         let get_response = client
-            .get(format!("{}/api/personas/{}", &test_app.address, malicious_id))
+            .get(format!(
+                "{}/api/personas/{}",
+                &test_app.address, malicious_id
+            ))
             .header("Cookie", session_cookie.clone())
             .send()
             .await
@@ -202,16 +220,17 @@ async fn test_a04_insecure_design_persona_data_validation() {
 
     let user_email = "validation@test.com";
     let user_password = "Password123!";
-    let (client, session_cookie) = create_authenticated_user(&test_app, user_email, user_password).await;
+    let (client, session_cookie) =
+        create_authenticated_user(&test_app, user_email, user_password).await;
 
     // Test missing required fields and validation rules
     let invalid_payloads = vec![
-        json!({}), // Missing both name and description
-        json!({"name": "Test"}), // Missing description (required field)
-        json!({"description": "Test"}), // Missing name (required field)
+        json!({}),                                  // Missing both name and description
+        json!({"name": "Test"}),                    // Missing description (required field)
+        json!({"description": "Test"}),             // Missing name (required field)
         json!({"name": "", "description": "Test"}), // Empty name (validation rule)
         json!({"name": "a".repeat(300), "description": "Test"}), // Name too long (>255 chars)
-        // Note: Empty description is currently allowed by business logic
+                                                    // Note: Empty description is currently allowed by business logic
     ];
 
     for payload in invalid_payloads {
@@ -225,8 +244,7 @@ async fn test_a04_insecure_design_persona_data_validation() {
 
         // Should be rejected with either 400 (business logic validation) or 422 (request validation)
         assert!(
-            create_response.status().as_u16() == 400 || 
-            create_response.status().as_u16() == 422,
+            create_response.status().as_u16() == 400 || create_response.status().as_u16() == 422,
             "Invalid payload should be rejected (got {}): {}",
             create_response.status().as_u16(),
             payload
@@ -250,9 +268,9 @@ async fn test_a04_insecure_design_persona_data_validation() {
 
     // Should either succeed or fail gracefully (depending on field limits)
     assert!(
-        create_response.status().as_u16() == 201 || 
-        create_response.status().as_u16() == 400 ||
-        create_response.status().as_u16() == 422,
+        create_response.status().as_u16() == 201
+            || create_response.status().as_u16() == 400
+            || create_response.status().as_u16() == 422,
         "Very long fields should be handled properly (got {})",
         create_response.status().as_u16()
     );
@@ -260,14 +278,15 @@ async fn test_a04_insecure_design_persona_data_validation() {
 
 /// A07:2021 - Identification and Authentication Failures Tests
 /// Ensures proper session and authentication handling
-#[tokio::test] 
+#[tokio::test]
 async fn test_a07_authentication_session_security() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     let user_email = "session@test.com";
     let user_password = "Password123!";
-    let (client, session_cookie) = create_authenticated_user(&test_app, user_email, user_password).await;
+    let (client, session_cookie) =
+        create_authenticated_user(&test_app, user_email, user_password).await;
 
     // Test authenticated access works
     let personas_response = client
@@ -307,7 +326,8 @@ async fn test_rate_limiting_persona_creation() {
 
     let user_email = "ratelimit@test.com";
     let user_password = "Password123!";
-    let (client, session_cookie) = create_authenticated_user(&test_app, user_email, user_password).await;
+    let (client, session_cookie) =
+        create_authenticated_user(&test_app, user_email, user_password).await;
 
     // Attempt rapid persona creation
     let mut success_count = 0;
@@ -330,14 +350,14 @@ async fn test_rate_limiting_persona_creation() {
             429 => {
                 rate_limited = true;
                 break;
-            },
+            }
             _ => {
                 // Other errors are acceptable
                 break;
             }
         }
 
-        // Small delay to avoid overwhelming the system  
+        // Small delay to avoid overwhelming the system
         sleep(Duration::from_millis(10)).await;
     }
 

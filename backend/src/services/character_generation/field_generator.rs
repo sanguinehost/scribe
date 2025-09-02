@@ -1,18 +1,17 @@
+use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent};
 use std::sync::Arc;
 use std::time::Instant;
-use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent};
 use tracing::{debug, info, instrument};
 
 use crate::{
     AppState,
     errors::AppError,
-    services::{hybrid_token_counter::CountingMode, safety_utils::create_unrestricted_safety_settings},
+    services::{
+        hybrid_token_counter::CountingMode, safety_utils::create_unrestricted_safety_settings,
+    },
 };
 
-use super::{
-    types::*,
-    structured_output::*,
-};
+use super::{structured_output::*, types::*};
 
 /// Helper struct for debug information
 #[derive(Debug, Clone)]
@@ -42,45 +41,55 @@ impl FieldGenerator {
 
     /// Generate a specific character field using structured output
     #[instrument(skip_all, fields(field = ?request.field))]
-    pub async fn generate_field(&self, request: FieldGenerationRequest, user_id: uuid::Uuid) -> Result<FieldGenerationResult, AppError> {
+    pub async fn generate_field(
+        &self,
+        request: FieldGenerationRequest,
+        user_id: uuid::Uuid,
+    ) -> Result<FieldGenerationResult, AppError> {
         let start_time = Instant::now();
-        
+
         info!("Starting field generation for {:?}", request.field);
 
         // Determine the style to use
         let style = request.style.clone().unwrap_or(DescriptionStyle::Auto);
-        
+
         // Build the system prompt specifically for character field generation
         let system_prompt = self.build_field_generation_system_prompt(&request.field, &style);
-        
+
         // Build the user message with context and instructions, capturing debug info
-        let (user_message, debug_info) = self.build_field_generation_user_message_with_debug(&request, user_id).await?;
-        
+        let (user_message, debug_info) = self
+            .build_field_generation_user_message_with_debug(&request, user_id)
+            .await?;
+
         // Create a simple message for generation
-        let messages = vec![
-            GenAiChatMessage {
-                role: ChatRole::User,
-                content: MessageContent::Text(user_message.clone()),
-                options: None,
-            }
-        ];
+        let messages = vec![GenAiChatMessage {
+            role: ChatRole::User,
+            content: MessageContent::Text(user_message.clone()),
+            options: None,
+        }];
 
         // Generate using the LLM with structured output
-        let generated_output = self.generate_with_structured_output(
-            &system_prompt,
-            &messages,
-            &get_field_generation_schema(),
-            &request,
-        ).await?;
+        let generated_output = self
+            .generate_with_structured_output(
+                &system_prompt,
+                &messages,
+                &get_field_generation_schema(),
+                &request,
+            )
+            .await?;
 
         // Parse the structured output
         let mut field_output: CharacterFieldOutput = serde_json::from_value(generated_output)
-            .map_err(|e| AppError::InternalServerErrorGeneric(
-                format!("Failed to parse field generation output: {}", e)
-            ))?;
-        
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to parse field generation output: {}",
+                    e
+                ))
+            })?;
+
         // Post-process content for proper formatting
-        field_output.content = self.post_process_content(&field_output.content, &request.field, &request.style);
+        field_output.content =
+            self.post_process_content(&field_output.content, &request.field, &request.style);
 
         // Validate the output
         field_output.validate(&request.field)?;
@@ -121,9 +130,13 @@ impl FieldGenerator {
     }
 
     /// Build system prompt specifically for character field generation with style examples
-    fn build_field_generation_system_prompt(&self, field: &CharacterField, style: &DescriptionStyle) -> String {
+    fn build_field_generation_system_prompt(
+        &self,
+        field: &CharacterField,
+        style: &DescriptionStyle,
+    ) -> String {
         let field_name = field.display_name();
-        
+
         // Base instruction with field-specific guidance
         let base_instruction = match field {
             CharacterField::AlternateGreeting => {
@@ -175,7 +188,7 @@ INVENTORY (Carried):
 ```
 
 Choose the format that best matches the character's setting and intended roleplay style."#
-            },
+            }
             // Special handling for alternate greetings - focus on rich, immersive openings
             (CharacterField::AlternateGreeting, _) => {
                 r#"Create a rich, immersive opening scene that establishes context, character voice, and user interaction. Choose the appropriate structure based on the character type:
@@ -193,58 +206,72 @@ Choose the format that best matches the character's setting and intended rolepla
 3. **INVENTORY Section**: Items relevant to this specific scenario
 
 Make this distinct from their main greeting by using a different scenario, mood, or situation while maintaining the character's core personality and the appropriate format style."#
-            },
+            }
             // Regular field generation with existing style examples
             (_, DescriptionStyle::Profile) => {
                 r#"Use structured profile format with clear field labels separated by newlines. IMPORTANT: Include \n newline characters between each field. Example:
 Name: Captain Elena Vasquez\nAge: 34\nHeight: 5'8"\nBuild: Athletic, weathered from years at sea\nHair: Dark brown, usually tied back\nEyes: Steel gray\nPersonality: Determined, fair but firm, distrusts authority\nBackground: Former naval officer turned independent trader\nNotable: Has a mysterious treasure map hidden in her cabin
 
 Each field should be on its own line with proper newline separation for readability."#
-            },
+            }
             (_, DescriptionStyle::Traits) => {
                 r#"Use short, punchy sentences and fragments. Focus on observable traits. Example:
 Tall. Lean build. Silver hair, piercing green eyes. Former military sniper. Calm under pressure. Doesn't talk much. Prefers action over words. Methodical. Patient. Excellent marksman. Haunted by past missions. Drinks black coffee. Wears dark clothing."#
-            },
+            }
             (_, DescriptionStyle::Narrative) => {
                 r#"Write in flowing, story-like prose with complete sentences. Example:
 Captain Elena Vasquez stands at the helm of her merchant vessel, weathered hands gripping the wheel as storm clouds gather on the horizon. Twenty years of sailing treacherous waters have carved lines of determination into her sun-bronzed face, while her steel-gray eyes reflect the wisdom earned through countless adventures."#
-            },
+            }
             (_, DescriptionStyle::Group) => {
                 r#"Use the Characters() format for multiple characters. Example:
 Characters("Captain Zara, Chief Engineer Bolt, Navigator Iris")
 Captain Zara("A former pirate turned legitimate salvager. Fiery red hair, cybernetic left arm, sharp tongue. Excellent pilot and negotiator.")
 Chief Engineer Bolt("A gruff, bearded engineer who can fix anything. Missing his right leg from a reactor explosion. Drinks too much but never when on duty.")
 Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analytical, but has moments of surprising insight.")"#
-            },
+            }
             (_, DescriptionStyle::Worldbuilding) => {
                 r#"Establish the character as part of a larger fictional universe. Include world lore and context. Example:
 {{char}} is a Guardian of the Stellar Nexus, one of the ancient beings who maintain the cosmic balance between the seven dimensional realms. In the current age known as the Twilight Convergence, the barriers between dimensions have grown thin, allowing creatures and energies to bleed through."#
-            },
+            }
             (_, DescriptionStyle::System) => {
                 r#"Create behavioral instructions for AI roleplay. Define what the character will/won't do. Example:
 {{char}} is an adaptive survival simulation that responds to {{user}}'s choices in a post-apocalyptic wasteland. {{char}} will generate random encounters, manage resource scarcity, and track {{user}}'s health, hunger, and sanity levels. {{char}} will never guarantee {{user}}'s safety - death is a real possibility."#
-            },
+            }
             (_, DescriptionStyle::Auto) => {
                 "Choose the most appropriate style based on the context and field type. Focus on creating engaging, well-structured content."
-            },
+            }
         };
 
         let json_instruction = if matches!(style, DescriptionStyle::Profile) {
-            format!("You must respond with a JSON object containing:\n- content: The generated {} in profile format with \\n newline characters between each field for proper formatting\n- reasoning: Brief explanation of your creative choices\n- style_applied: The style you used\n- quality_score: Your assessment of the content quality (1-10)", field_name.to_lowercase())
+            format!(
+                "You must respond with a JSON object containing:\n- content: The generated {} in profile format with \\n newline characters between each field for proper formatting\n- reasoning: Brief explanation of your creative choices\n- style_applied: The style you used\n- quality_score: Your assessment of the content quality (1-10)",
+                field_name.to_lowercase()
+            )
         } else {
-            format!("You must respond with a JSON object containing:\n- content: The generated {} in the specified style\n- reasoning: Brief explanation of your creative choices\n- style_applied: The style you used\n- quality_score: Your assessment of the content quality (1-10)", field_name.to_lowercase())
+            format!(
+                "You must respond with a JSON object containing:\n- content: The generated {} in the specified style\n- reasoning: Brief explanation of your creative choices\n- style_applied: The style you used\n- quality_score: Your assessment of the content quality (1-10)",
+                field_name.to_lowercase()
+            )
         };
-        
-        format!("{}\n\n{}\n\n{}", base_instruction, style_guidance, json_instruction)
+
+        format!(
+            "{}\n\n{}\n\n{}",
+            base_instruction, style_guidance, json_instruction
+        )
     }
 
     /// Build user message with context and generation request, including lorebook context
-    async fn build_field_generation_user_message(&self, request: &FieldGenerationRequest, user_id: uuid::Uuid) -> Result<String, AppError> {
+    async fn build_field_generation_user_message(
+        &self,
+        request: &FieldGenerationRequest,
+        user_id: uuid::Uuid,
+    ) -> Result<String, AppError> {
         let mut message = String::new();
 
         // Query lorebook for relevant context if lorebook_id is provided
         let lorebook_context = if let Some(lorebook_id) = request.lorebook_id {
-            self.query_lorebook_context(user_id, lorebook_id, request).await?
+            self.query_lorebook_context(user_id, lorebook_id, request)
+                .await?
         } else {
             None
         };
@@ -264,27 +291,35 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                 message.push_str("- CURRENT STATE section reflecting the new situation\n");
                 message.push_str("- INVENTORY section with scenario-appropriate items\n");
                 message.push_str("- Maintain character personality within structured format\n\n");
-                message.push_str(&format!("**Scenario/Request:** {}\n\n", request.user_prompt));
-            },
+                message.push_str(&format!(
+                    "**Scenario/Request:** {}\n\n",
+                    request.user_prompt
+                ));
+            }
             CharacterField::FirstMes => {
                 message.push_str("Create a first message for this character. This should be a rich, immersive opening scene that introduces the character and establishes the roleplay context.\n\n");
                 message.push_str("CHOOSE APPROPRIATE FORMAT:\n");
                 message.push_str("**NARRATIVE STYLE** (for character-driven roleplay):\n");
-                message.push_str("- Start with compelling dialogue/action that shows personality\n");
-                message.push_str("- Include character thoughts, feelings, and background context\n");
-                message.push_str("- Establish environment and situation through immersive description\n");
-                message.push_str("- Mix dialogue, actions, descriptions, and internal monologue\n\n");
+                message
+                    .push_str("- Start with compelling dialogue/action that shows personality\n");
+                message
+                    .push_str("- Include character thoughts, feelings, and background context\n");
+                message.push_str(
+                    "- Establish environment and situation through immersive description\n",
+                );
+                message
+                    .push_str("- Mix dialogue, actions, descriptions, and internal monologue\n\n");
                 message.push_str("**SYSTEM/GAME STYLE** (for RPG/stat-based roleplay):\n");
                 message.push_str("- Rich narrative opening (2-3 paragraphs) with world-building\n");
                 message.push_str("- CURRENT STATE section with location, health, status, etc.\n");
                 message.push_str("- INVENTORY section with items and descriptions\n");
                 message.push_str("- Use structured format for game-like mechanics\n\n");
                 message.push_str(&format!("**Request:** {}\n\n", request.user_prompt));
-            },
+            }
             _ => {
                 message.push_str("Generate character content based on this request:\n\n");
                 message.push_str(&format!("**User Request:** {}\n\n", request.user_prompt));
-                
+
                 // Add specific formatting instructions for profile style
                 if let Some(style) = &request.style {
                     if matches!(style, DescriptionStyle::Profile) {
@@ -296,7 +331,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
 
         if let Some(context) = &request.character_context {
             message.push_str("**Character Context:**\n");
-            
+
             if let Some(name) = &context.name {
                 message.push_str(&format!("- Name: {}\n", name));
             }
@@ -336,30 +371,37 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                     message.push_str("\n**Relevant Lorebook Information:**\n");
                     for entry in lorebook_entries {
                         if entry.enabled {
-                            message.push_str(&format!("- **{}**: {}\n", 
-                                entry.keys.join(", "), 
+                            message.push_str(&format!(
+                                "- **{}**: {}\n",
+                                entry.keys.join(", "),
                                 entry.content
                             ));
                         }
                     }
                 }
             }
-            
+
             // Special instructions for alternate greetings
             if matches!(request.field, CharacterField::AlternateGreeting) {
                 message.push_str("\n**Instructions for Alternate Greeting:**\n");
-                message.push_str("- Write ONLY what the character would say, in quotes if dialogue\n");
+                message
+                    .push_str("- Write ONLY what the character would say, in quotes if dialogue\n");
                 message.push_str("- Use the character's name, personality, and speaking style\n");
-                message.push_str("- Make it different from their main first message (create variety)\n");
+                message.push_str(
+                    "- Make it different from their main first message (create variety)\n",
+                );
                 message.push_str("- Consider the specific scenario/request above\n");
                 message.push_str("- Stay in character - you ARE this character speaking\n");
                 if let Some(context) = &request.character_context {
                     if let Some(first_mes) = &context.first_mes {
-                        message.push_str(&format!("- Make it distinct from their main greeting: {}\n", first_mes));
+                        message.push_str(&format!(
+                            "- Make it distinct from their main greeting: {}\n",
+                            first_mes
+                        ));
                     }
                 }
             }
-            
+
             message.push('\n');
         }
 
@@ -375,23 +417,23 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         match request.field {
             CharacterField::AlternateGreeting => {
                 message.push_str("\nGenerate the alternate greeting as a rich, immersive scene. Choose between narrative style (dialogue, thoughts, descriptions) or system/game style (narrative + CURRENT STATE + INVENTORY sections). Stay true to the character's personality while creating a different scenario from their main greeting.");
-            },
+            }
             CharacterField::FirstMes => {
                 message.push_str("\nGenerate the first message as a rich, immersive introduction. Choose between narrative style (dialogue, actions, thoughts) or system/game style (narrative + CURRENT STATE + INVENTORY sections). Create a compelling opening that draws the user into the roleplay and matches the character's intended format.");
-            },
+            }
             _ => {
                 let mut final_instruction = format!(
                     "\nPlease generate a high-quality {} that matches the specified style and incorporates the user's request while maintaining consistency with any provided character context and lorebook information.",
                     request.field.display_name().to_lowercase()
                 );
-                
+
                 // Add specific formatting requirement for profile style
                 if let Some(style) = &request.style {
                     if matches!(style, DescriptionStyle::Profile) {
                         final_instruction.push_str(" CRITICAL: Include \\n newline characters between each field so the profile displays with proper line breaks.");
                     }
                 }
-                
+
                 message.push_str(&final_instruction);
             }
         }
@@ -407,7 +449,11 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
     }
 
     /// Build user message with context and generation request, including lorebook context, and capture debug info
-    async fn build_field_generation_user_message_with_debug(&self, request: &FieldGenerationRequest, user_id: uuid::Uuid) -> Result<(String, DebugInfo), AppError> {
+    async fn build_field_generation_user_message_with_debug(
+        &self,
+        request: &FieldGenerationRequest,
+        user_id: uuid::Uuid,
+    ) -> Result<(String, DebugInfo), AppError> {
         let mut message = String::new();
         let mut debug_info = DebugInfo {
             lorebook_context_included: false,
@@ -417,7 +463,9 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
 
         // Query lorebook for relevant context if lorebook_id is provided
         let lorebook_context = if let Some(lorebook_id) = request.lorebook_id {
-            let query_result = self.query_lorebook_context_with_debug(user_id, lorebook_id, request).await?;
+            let query_result = self
+                .query_lorebook_context_with_debug(user_id, lorebook_id, request)
+                .await?;
             debug_info.lorebook_context_included = query_result.context.is_some();
             debug_info.lorebook_entries_count = query_result.entries_count;
             debug_info.query_text_used = query_result.query_text_used;
@@ -442,15 +490,22 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                 message.push_str("- CURRENT STATE section reflecting the new situation\n");
                 message.push_str("- INVENTORY section with scenario-appropriate items\n");
                 message.push_str("- Maintain character personality within structured format\n\n");
-                message.push_str(&format!("**Scenario/Request:** {}\n\n", request.user_prompt));
-            },
+                message.push_str(&format!(
+                    "**Scenario/Request:** {}\n\n",
+                    request.user_prompt
+                ));
+            }
             CharacterField::FirstMes => {
                 message.push_str("Create a first message for this character. This should be a rich, immersive opening scene that introduces the character and establishes the roleplay context.\n\n");
                 message.push_str("CHOOSE APPROPRIATE FORMAT:\n");
                 message.push_str("**NARRATIVE STYLE** (for character-driven roleplay):\n");
-                message.push_str("- Start with compelling dialogue/action that shows personality\n");
-                message.push_str("- Include character thoughts, feelings, and background context\n");
-                message.push_str("- Establish environment and situation through immersive description\n");
+                message
+                    .push_str("- Start with compelling dialogue/action that shows personality\n");
+                message
+                    .push_str("- Include character thoughts, feelings, and background context\n");
+                message.push_str(
+                    "- Establish environment and situation through immersive description\n",
+                );
                 message.push_str("- Set up natural user interaction opportunities\n\n");
                 message.push_str("**SYSTEM/GAME STYLE** (for RPG/stat-based roleplay):\n");
                 message.push_str("- Rich narrative opening describing the scenario\n");
@@ -458,7 +513,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                 message.push_str("- INVENTORY section listing relevant items or equipment\n");
                 message.push_str("- Maintain character personality within structured format\n\n");
                 message.push_str(&format!("**User Request:** {}\n\n", request.user_prompt));
-            },
+            }
             _ => {
                 message.push_str(&format!("**User Request:** {}\n\n", request.user_prompt));
             }
@@ -467,7 +522,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         // Add existing character context if available
         if let Some(context) = &request.character_context {
             message.push_str("**Existing Character Information:**\n");
-            
+
             if let Some(name) = &context.name {
                 message.push_str(&format!("- **Name:** {}\n", name));
             }
@@ -502,7 +557,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
             if let Some(persona) = &context.associated_persona {
                 message.push_str(&format!("- **Associated Persona:** {}\n", persona));
             }
-            
+
             message.push('\n');
         }
 
@@ -519,23 +574,23 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         match request.field {
             CharacterField::AlternateGreeting => {
                 message.push_str("\nGenerate the alternate greeting as a rich, immersive scene. Choose between narrative style (dialogue, thoughts, descriptions) or system/game style (narrative + CURRENT STATE + INVENTORY sections). Stay true to the character's personality while creating a different scenario from their main greeting.");
-            },
+            }
             CharacterField::FirstMes => {
                 message.push_str("\nGenerate the first message as a rich, immersive introduction. Choose between narrative style (dialogue, actions, thoughts) or system/game style (narrative + CURRENT STATE + INVENTORY sections). Create a compelling opening that draws the user into the roleplay and matches the character's intended format.");
-            },
+            }
             _ => {
                 let mut final_instruction = format!(
                     "\nPlease generate a high-quality {} that matches the specified style and incorporates the user's request while maintaining consistency with any provided character context and lorebook information.",
                     request.field.display_name().to_lowercase()
                 );
-                
+
                 // Add specific formatting requirement for profile style
                 if let Some(style) = &request.style {
                     if matches!(style, DescriptionStyle::Profile) {
                         final_instruction.push_str(" CRITICAL: Include \\n newline characters between each field so the profile displays with proper line breaks.");
                     }
                 }
-                
+
                 message.push_str(&final_instruction);
             }
         }
@@ -550,43 +605,60 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         Ok((message, debug_info))
     }
 
-
     /// Query lorebook for relevant context based on the character generation request (with debug info)
-    async fn query_lorebook_context_with_debug(&self, user_id: uuid::Uuid, lorebook_id: uuid::Uuid, request: &FieldGenerationRequest) -> Result<LorebookQueryResult, AppError> {
+    async fn query_lorebook_context_with_debug(
+        &self,
+        user_id: uuid::Uuid,
+        lorebook_id: uuid::Uuid,
+        request: &FieldGenerationRequest,
+    ) -> Result<LorebookQueryResult, AppError> {
         // Build query text from character name and field content
         let mut query_parts = Vec::new();
-        
+
         // Add character name if available
         if let Some(context) = &request.character_context {
             if let Some(name) = &context.name {
                 query_parts.push(name.clone());
             }
         }
-        
+
         // Add user prompt content
         query_parts.push(request.user_prompt.clone());
-        
+
         // Add specific field context for better matching
         match request.field {
-            CharacterField::Description => query_parts.push("character appearance personality".to_string()),
-            CharacterField::Personality => query_parts.push("personality traits behavior".to_string()),
-            CharacterField::Scenario => query_parts.push("setting location environment".to_string()),
-            CharacterField::FirstMes | CharacterField::AlternateGreeting => query_parts.push("introduction greeting dialogue".to_string()),
+            CharacterField::Description => {
+                query_parts.push("character appearance personality".to_string())
+            }
+            CharacterField::Personality => {
+                query_parts.push("personality traits behavior".to_string())
+            }
+            CharacterField::Scenario => {
+                query_parts.push("setting location environment".to_string())
+            }
+            CharacterField::FirstMes | CharacterField::AlternateGreeting => {
+                query_parts.push("introduction greeting dialogue".to_string())
+            }
             _ => {}
         }
-        
+
         let query_text = query_parts.join(" ");
-        
+
         // Use the embedding service to retrieve relevant lorebook entries
-        match self.state.embedding_pipeline_service.retrieve_relevant_chunks(
-            self.state.clone(),
-            user_id,
-            None, // No chat session for character generation
-            Some(vec![lorebook_id]), // Query the specific lorebook
-            None, // No chronicle search for character generation
-            &query_text,
-            10, // Limit to top 10 most relevant chunks
-        ).await {
+        match self
+            .state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                self.state.clone(),
+                user_id,
+                None,                    // No chat session for character generation
+                Some(vec![lorebook_id]), // Query the specific lorebook
+                None,                    // No chronicle search for character generation
+                &query_text,
+                10, // Limit to top 10 most relevant chunks
+            )
+            .await
+        {
             Ok(chunks) => {
                 if chunks.is_empty() {
                     return Ok(LorebookQueryResult {
@@ -595,7 +667,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                         query_text_used: Some(query_text),
                     });
                 }
-                
+
                 // Format retrieved entries
                 let mut formatted_entries = Vec::new();
                 for chunk in &chunks {
@@ -612,7 +684,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                         }
                     }
                 }
-                
+
                 let context = if formatted_entries.is_empty() {
                     None
                 } else {
@@ -627,7 +699,10 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
             }
             Err(e) => {
                 // Log error but don't fail generation
-                tracing::warn!("Failed to query lorebook context for character generation: {}", e);
+                tracing::warn!(
+                    "Failed to query lorebook context for character generation: {}",
+                    e
+                );
                 Ok(LorebookQueryResult {
                     context: None,
                     entries_count: None,
@@ -638,41 +713,59 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
     }
 
     /// Query lorebook for relevant context based on the character generation request
-    async fn query_lorebook_context(&self, user_id: uuid::Uuid, lorebook_id: uuid::Uuid, request: &FieldGenerationRequest) -> Result<Option<String>, AppError> {
+    async fn query_lorebook_context(
+        &self,
+        user_id: uuid::Uuid,
+        lorebook_id: uuid::Uuid,
+        request: &FieldGenerationRequest,
+    ) -> Result<Option<String>, AppError> {
         // Build query text from character name and field content
         let mut query_parts = Vec::new();
-        
+
         // Add character name if available
         if let Some(context) = &request.character_context {
             if let Some(name) = &context.name {
                 query_parts.push(name.clone());
             }
         }
-        
+
         // Add user prompt content
         query_parts.push(request.user_prompt.clone());
-        
+
         // Add specific field context for better matching
         match request.field {
-            CharacterField::Description => query_parts.push("character appearance personality".to_string()),
-            CharacterField::Personality => query_parts.push("personality traits behavior".to_string()),
-            CharacterField::Scenario => query_parts.push("setting location environment".to_string()),
-            CharacterField::FirstMes | CharacterField::AlternateGreeting => query_parts.push("introduction greeting dialogue".to_string()),
+            CharacterField::Description => {
+                query_parts.push("character appearance personality".to_string())
+            }
+            CharacterField::Personality => {
+                query_parts.push("personality traits behavior".to_string())
+            }
+            CharacterField::Scenario => {
+                query_parts.push("setting location environment".to_string())
+            }
+            CharacterField::FirstMes | CharacterField::AlternateGreeting => {
+                query_parts.push("introduction greeting dialogue".to_string())
+            }
             _ => {}
         }
-        
+
         let query_text = query_parts.join(" ");
-        
+
         // Use the embedding service to retrieve relevant lorebook entries
-        match self.state.embedding_pipeline_service.retrieve_relevant_chunks(
-            self.state.clone(),
-            user_id,
-            None, // No chat session for character generation
-            Some(vec![lorebook_id]), // Query the specific lorebook
-            None, // No chronicle search for character generation
-            &query_text,
-            10, // Limit to top 10 most relevant chunks
-        ).await {
+        match self
+            .state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                self.state.clone(),
+                user_id,
+                None,                    // No chat session for character generation
+                Some(vec![lorebook_id]), // Query the specific lorebook
+                None,                    // No chronicle search for character generation
+                &query_text,
+                10, // Limit to top 10 most relevant chunks
+            )
+            .await
+        {
             Ok(chunks) => {
                 if chunks.is_empty() {
                     Ok(None)
@@ -680,7 +773,10 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                     // Format the retrieved lorebook entries for inclusion in the prompt
                     let mut context_parts = Vec::new();
                     for chunk in chunks {
-                        if let crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) = chunk.metadata {
+                        if let crate::services::embeddings::RetrievedMetadata::Lorebook(
+                            lorebook_meta,
+                        ) = chunk.metadata
+                        {
                             // Format entry with title if available
                             if let Some(title) = lorebook_meta.entry_title {
                                 context_parts.push(format!("- **{}**: {}", title, chunk.text));
@@ -689,7 +785,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                             }
                         }
                     }
-                    
+
                     if context_parts.is_empty() {
                         Ok(None)
                     } else {
@@ -699,16 +795,24 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
             }
             Err(e) => {
                 // Log the error but don't fail generation - lorebook is optional context
-                tracing::warn!("Failed to query lorebook context for character generation: {}", e);
+                tracing::warn!(
+                    "Failed to query lorebook context for character generation: {}",
+                    e
+                );
                 Ok(None)
             }
         }
     }
-    
+
     /// Post-process generated content to ensure proper formatting
-    fn post_process_content(&self, content: &str, field: &CharacterField, style: &Option<DescriptionStyle>) -> String {
+    fn post_process_content(
+        &self,
+        content: &str,
+        field: &CharacterField,
+        style: &Option<DescriptionStyle>,
+    ) -> String {
         let mut processed_content = content.to_string();
-        
+
         // Handle profile format newlines
         if let Some(DescriptionStyle::Profile) = style {
             // If the content doesn't have proper newlines, try to fix common issues
@@ -726,16 +830,19 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                     .replace("Skills:", "\nSkills:")
                     .replace("Occupation:", "\nOccupation:")
                     .replace("Status:", "\nStatus:");
-                
+
                 // Clean up double newlines at the start
                 if processed_content.starts_with('\n') {
                     processed_content = processed_content.trim_start_matches('\n').to_string();
                 }
             }
         }
-        
+
         // Handle system/game style formatting for first messages and alternate greetings
-        if matches!(field, CharacterField::FirstMes | CharacterField::AlternateGreeting) {
+        if matches!(
+            field,
+            CharacterField::FirstMes | CharacterField::AlternateGreeting
+        ) {
             // Ensure proper line spacing for CURRENT STATE and INVENTORY sections
             processed_content = processed_content
                 .replace("CURRENT STATE:", "\n\nCURRENT STATE:")
@@ -746,7 +853,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                 .replace("Attainment:", "\nAttainment:")
                 .replace("Status:", "\nStatus:");
         }
-        
+
         processed_content
     }
 
@@ -758,11 +865,14 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         schema: &serde_json::Value,
         request: &FieldGenerationRequest,
     ) -> Result<serde_json::Value, AppError> {
-        use genai::chat::{ChatOptions as GenAiChatOptions, HarmBlockThreshold, HarmCategory, SafetySetting, ChatResponseFormat, JsonSchemaSpec, ChatRole};
-        
+        use genai::chat::{
+            ChatOptions as GenAiChatOptions, ChatResponseFormat, ChatRole, HarmBlockThreshold,
+            HarmCategory, JsonSchemaSpec, SafetySetting,
+        };
+
         // Follow the same pattern as main chat generation
         let mut messages_vec: Vec<GenAiChatMessage> = messages.to_vec();
-        
+
         // Add prefill message to establish generation context (following main chat pattern)
         let prefill_content = match &request.field {
             CharacterField::AlternateGreeting => {
@@ -778,7 +888,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
             },
             _ => "I'll generate the requested character content, focusing on quality and consistency with the provided context:".to_string()
         };
-        
+
         let prefill_message = GenAiChatMessage {
             role: ChatRole::Assistant,
             content: MessageContent::Text(prefill_content),
@@ -788,32 +898,36 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
 
         // Build chat options similar to main generation
         let mut genai_chat_options = GenAiChatOptions::default();
-        
+
         // Set temperature for creative generation
         genai_chat_options = genai_chat_options.with_temperature(0.8);
-        
+
         // Set max tokens based on field complexity
         let max_tokens = match &request.field {
             CharacterField::FirstMes | CharacterField::AlternateGreeting => 4096, // Longer for rich, immersive scenes
-            CharacterField::Description | CharacterField::Personality => 3072,    // Medium for detailed descriptions
+            CharacterField::Description | CharacterField::Personality => 3072, // Medium for detailed descriptions
             _ => 2048, // Standard for other fields
         };
         genai_chat_options = genai_chat_options.with_max_tokens(max_tokens);
-        
+
         // Add reasoning budget for complex fields that benefit from thinking
         use genai::chat::ReasoningEffort;
         let reasoning_budget = match &request.field {
             CharacterField::AlternateGreeting => Some(ReasoningEffort::Budget(8000)), // Medium thinking for complex roleplay
-            CharacterField::Description | CharacterField::Personality => Some(ReasoningEffort::Budget(4000)), // Light thinking for core fields
-            CharacterField::SystemPrompt | CharacterField::DepthPrompt => Some(ReasoningEffort::Budget(8000)), // Medium thinking for technical fields
+            CharacterField::Description | CharacterField::Personality => {
+                Some(ReasoningEffort::Budget(4000))
+            } // Light thinking for core fields
+            CharacterField::SystemPrompt | CharacterField::DepthPrompt => {
+                Some(ReasoningEffort::Budget(8000))
+            } // Medium thinking for technical fields
             _ => None, // No reasoning for simple fields
         };
-        
+
         if let Some(reasoning) = reasoning_budget {
             genai_chat_options = genai_chat_options.with_reasoning_effort(reasoning);
             genai_chat_options = genai_chat_options.with_include_thoughts(true); // Include reasoning in response for debugging
         }
-        
+
         // Add safety settings to allow mature content (same as main generation)
         let safety_settings = create_unrestricted_safety_settings();
         genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
@@ -826,7 +940,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         // Implement retry logic similar to main chat generation
         const MAX_RETRIES: usize = 2;
         let mut last_error = None;
-        
+
         for retry_count in 0..=MAX_RETRIES {
             // Adjust system prompt for retries
             let enhanced_system_prompt = if retry_count > 0 {
@@ -837,58 +951,79 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
             } else {
                 system_prompt.to_string()
             };
-            
+
             // Create chat request with enhanced system prompt
-            let chat_req = genai::chat::ChatRequest::new(messages_vec.clone()).with_system(&enhanced_system_prompt);
-            
-            debug!("Character generation attempt {} of {}", retry_count + 1, MAX_RETRIES + 1);
-            
-            match self.state.ai_client
-                .exec_chat(&self.state.config.token_counter_default_model, chat_req, Some(genai_chat_options.clone()))
+            let chat_req = genai::chat::ChatRequest::new(messages_vec.clone())
+                .with_system(&enhanced_system_prompt);
+
+            debug!(
+                "Character generation attempt {} of {}",
+                retry_count + 1,
+                MAX_RETRIES + 1
+            );
+
+            match self
+                .state
+                .ai_client
+                .exec_chat(
+                    &self.state.config.token_counter_default_model,
+                    chat_req,
+                    Some(genai_chat_options.clone()),
+                )
                 .await
             {
                 Ok(response) => {
                     // Successfully got a response, process it
                     let chat_response = response;
                     debug!("Received chat response on attempt {}", retry_count + 1);
-                    
+
                     // Continue with the existing response processing
                     return self.process_chat_response(chat_response);
                 }
                 Err(e) => {
                     let error_str = e.to_string();
-                    debug!("AI client error on attempt {}: {}", retry_count + 1, error_str);
-                    
+                    debug!(
+                        "AI client error on attempt {}: {}",
+                        retry_count + 1,
+                        error_str
+                    );
+
                     // Check if it's a safety filter error
-                    if error_str.contains("PropertyNotFound(\"/content/parts\")") 
-                        || error_str.contains("safety") 
-                        || error_str.contains("blocked") {
-                        
+                    if error_str.contains("PropertyNotFound(\"/content/parts\")")
+                        || error_str.contains("safety")
+                        || error_str.contains("blocked")
+                    {
                         if retry_count < MAX_RETRIES {
                             // Try again with enhanced prompt
                             debug!("Retrying with enhanced prompt due to safety filter");
                             last_error = Some(AppError::GeminiError(
-                                "Request blocked by safety filters, retrying with enhanced prompt".to_string()
+                                "Request blocked by safety filters, retrying with enhanced prompt"
+                                    .to_string(),
                             ));
                             continue;
                         }
                     }
-                    
+
                     // Non-safety error or final retry failed
                     last_error = Some(AppError::GeminiError(format!("Generation failed: {}", e)));
                     break;
                 }
             }
         }
-        
+
         // All retries failed
-        Err(last_error.unwrap_or_else(|| AppError::GeminiError("Character generation failed after all retries".to_string())))
+        Err(last_error.unwrap_or_else(|| {
+            AppError::GeminiError("Character generation failed after all retries".to_string())
+        }))
     }
-    
+
     /// Process the chat response and extract the JSON content
-    fn process_chat_response(&self, chat_response: genai::chat::ChatResponse) -> Result<serde_json::Value, AppError> {
+    fn process_chat_response(
+        &self,
+        chat_response: genai::chat::ChatResponse,
+    ) -> Result<serde_json::Value, AppError> {
         debug!("Processing chat response");
-        
+
         // Try the same approach as main chat generation - access contents directly
         let response_text = chat_response
             .contents
@@ -901,21 +1036,27 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
             .unwrap_or_default();
 
         if response_text.is_empty() {
-            return Err(AppError::GeminiError("No content in response - likely blocked by safety filters. Try a simpler prompt.".to_string()));
+            return Err(AppError::GeminiError(
+                "No content in response - likely blocked by safety filters. Try a simpler prompt."
+                    .to_string(),
+            ));
         }
 
-        debug!("Received response from LLM: {} characters", response_text.len());
+        debug!(
+            "Received response from LLM: {} characters",
+            response_text.len()
+        );
 
         // Parse the structured JSON response
         match serde_json::from_str::<serde_json::Value>(&response_text) {
             Ok(json) => {
                 debug!("Successfully parsed structured JSON response");
                 Ok(json)
-            },
+            }
             Err(e) => {
                 debug!("Failed to parse as JSON, error: {}", e);
                 debug!("Raw response: {}", response_text);
-                
+
                 // Fallback: wrap plain text response in expected structure
                 debug!("Wrapping plain text response in expected structure");
                 Ok(serde_json::json!({
@@ -929,20 +1070,36 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
     }
 
     /// Count tokens for the generation request
-    async fn count_tokens(&self, system_prompt: &str, messages: &[GenAiChatMessage]) -> Result<usize, AppError> {
+    async fn count_tokens(
+        &self,
+        system_prompt: &str,
+        messages: &[GenAiChatMessage],
+    ) -> Result<usize, AppError> {
         let mut total_tokens = 0;
 
         // Count system prompt tokens
-        total_tokens += self.state.token_counter
-            .count_tokens(system_prompt, CountingMode::LocalOnly, Some(&self.state.config.token_counter_default_model))
+        total_tokens += self
+            .state
+            .token_counter
+            .count_tokens(
+                system_prompt,
+                CountingMode::LocalOnly,
+                Some(&self.state.config.token_counter_default_model),
+            )
             .await?
             .total;
 
         // Count message tokens
         for message in messages {
             if let MessageContent::Text(text) = &message.content {
-                total_tokens += self.state.token_counter
-                    .count_tokens(text, CountingMode::LocalOnly, Some(&self.state.config.token_counter_default_model))
+                total_tokens += self
+                    .state
+                    .token_counter
+                    .count_tokens(
+                        text,
+                        CountingMode::LocalOnly,
+                        Some(&self.state.config.token_counter_default_model),
+                    )
                     .await?
                     .total;
             }

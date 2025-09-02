@@ -95,11 +95,11 @@ use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid; // Added for CryptoProvider
 
 #[cfg(feature = "local-llm")]
-use crate::llm::llamacpp::{LlamaCppServerManager, ModelManager, LlamaCppConfig};
-#[cfg(feature = "local-llm")]
-use std::sync::atomic::{AtomicBool, Ordering};
+use crate::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
 #[cfg(feature = "local-llm")]
 use std::sync::Arc as StdArc;
+#[cfg(feature = "local-llm")]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 // Type aliases for complex test types
 type EmbeddingResponse = Arc<Mutex<Option<Result<Vec<f32>, AppError>>>>;
@@ -168,7 +168,7 @@ impl MockAiClient {
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
-    
+
     /// Create a new MockAiClient that returns an error
     #[must_use]
     pub fn new_with_error(error: AppError) -> Self {
@@ -476,10 +476,10 @@ impl EmbeddingClient for MockEmbeddingClient {
 #[derive(Clone, Debug)] // Added Clone, Debug
 pub enum PipelineCall {
     RetrieveRelevantChunks {
-        user_id: Uuid,                             // Renamed from chat_id
-        session_id_for_chat_history: Option<Uuid>, // New field - Updated to Option<Uuid>
+        user_id: Uuid,                                     // Renamed from chat_id
+        session_id_for_chat_history: Option<Uuid>,         // New field - Updated to Option<Uuid>
         active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New field
-        chronicle_id_for_search: Option<Uuid>, // New field for chronicle search
+        chronicle_id_for_search: Option<Uuid>,             // New field for chronicle search
         query_text: String,
         limit: u64,
     },
@@ -639,7 +639,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         user_id: Uuid,                                     // New parameter
         session_id_for_chat_history: Option<Uuid>, // New parameter - Updated to Option<Uuid>
         active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New parameter
-        chronicle_id_for_search: Option<Uuid>, // New parameter for chronicle search
+        chronicle_id_for_search: Option<Uuid>,     // New parameter for chronicle search
         query_text: &str,
         limit: u64,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
@@ -649,11 +649,11 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             .unwrap()
             .push(PipelineCall::RetrieveRelevantChunks {
                 user_id,
-                session_id_for_chat_history, // This is Option<Uuid>
+                session_id_for_chat_history,    // This is Option<Uuid>
                 active_lorebook_ids_for_search, // Corrected order
                 chronicle_id_for_search,
                 query_text: query_text.to_string(), // Corrected order
-                limit,                       // Corrected order
+                limit,                              // Corrected order
             });
 
         // Return the next response from the queue
@@ -713,9 +713,10 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             event.id
         );
         // Record the call
-        self.calls.lock().unwrap().push(PipelineCall::ProcessAndEmbedChronicleEvent {
-            event_id: event.id,
-        });
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::ProcessAndEmbedChronicleEvent { event_id: event.id });
         Ok(())
     }
 
@@ -731,10 +732,10 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             event_id, user_id
         );
         // Record the call
-        self.calls.lock().unwrap().push(PipelineCall::DeleteChronicleEventChunks {
-            event_id,
-            user_id,
-        });
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::DeleteChronicleEventChunks { event_id, user_id });
         Ok(())
     }
 
@@ -750,10 +751,13 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             chronicle_id, user_id
         );
         // Record the call
-        self.calls.lock().unwrap().push(PipelineCall::DeleteChronicleEventsByChronicleId {
-            chronicle_id,
-            user_id,
-        });
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::DeleteChronicleEventsByChronicleId {
+                chronicle_id,
+                user_id,
+            });
         Ok(())
     }
 }
@@ -1194,9 +1198,7 @@ impl TestAppStateBuilder {
         });
 
         // Create chronicle service for narrative intelligence
-        let chronicle_service = Arc::new(ChronicleService::new(
-            self.db_pool.clone(),
-        ));
+        let chronicle_service = Arc::new(ChronicleService::new(self.db_pool.clone()));
 
         // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
         // due to circular dependency (service needs AppState, but AppState is built from services)
@@ -1226,33 +1228,34 @@ impl TestAppStateBuilder {
             )
             .await?,
             ai_client_factory,
-            rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(10, 100)), // Test rate limiter
+            rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
+                10, 100,
+            )), // Test rate limiter
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
             #[cfg(feature = "local-llm")]
             security_audit_logger: None, // Not used in tests
             #[cfg(feature = "local-llm")]
             model_integrity_verifier: None, // Not used in tests
-            // narrative_intelligence_service will be added after AppState is built
+                                            // narrative_intelligence_service will be added after AppState is built
         };
 
         let mut app_state = AppState::new(self.db_pool, self.config, services);
-        
+
         // Now create the narrative intelligence service with the fully constructed AppState
-        let narrative_intelligence_service = Arc::new(
-            NarrativeIntelligenceService::for_development_with_deps(
+        let narrative_intelligence_service =
+            Arc::new(NarrativeIntelligenceService::for_development_with_deps(
                 app_state.ai_client.clone(),
                 chronicle_service,
                 app_state.lorebook_service.clone(),
                 app_state.qdrant_service.clone(),
                 app_state.embedding_client.clone(),
                 Arc::new(app_state.clone()),
-            )
-        );
-        
+            ));
+
         // Set the narrative intelligence service
         app_state.set_narrative_intelligence_service(narrative_intelligence_service);
-        
+
         Ok(app_state)
     }
 }
@@ -1585,7 +1588,10 @@ pub async fn spawn_app_with_rate_limiting_options(
         )
         .nest("/chat", chat_routes(app_state_inner.clone()))
         .nest("/chats", chats::chat_routes()) // Assuming this returns Router<AppState> or is already stateful
-        .nest("/chronicles", chronicles::create_chronicles_router(app_state_inner.clone())) // Add chronicles routes
+        .nest(
+            "/chronicles",
+            chronicles::create_chronicles_router(app_state_inner.clone()),
+        ) // Add chronicles routes
         .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest(
             "/personas",
@@ -2780,16 +2786,17 @@ pub async fn set_history_settings(
 impl TestApp {
     /// Create an AppState instance for testing
     pub async fn create_app_state(&self) -> Arc<AppState> {
-        let encryption_service = Arc::new(crate::services::encryption_service::EncryptionService::new());
+        let encryption_service =
+            Arc::new(crate::services::encryption_service::EncryptionService::new());
         let lorebook_service = Arc::new(crate::services::lorebook::LorebookService::new(
             self.db_pool.clone(),
             encryption_service.clone(),
             self.qdrant_service.clone(),
         ));
-        
+
         // Create auth_backend for this AppState
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(self.db_pool.clone()));
-        
+
         // Create email service for testing
         let email_service = crate::services::email_service::create_email_service(
             "development",
@@ -2805,33 +2812,46 @@ impl TestApp {
             self.config.clone(),
             self.ai_client.clone(), // Use test AI client as fallback
         ));
-        
+
         let services = crate::state::AppStateServices {
             ai_client: self.ai_client.clone(),
-            embedding_client: self.mock_embedding_client.clone() as Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
+            embedding_client: self.mock_embedding_client.clone()
+                as Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
             qdrant_service: self.qdrant_service.clone(),
-            embedding_pipeline_service: self.mock_embedding_pipeline_service.clone() as Arc<dyn crate::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
-            chat_override_service: Arc::new(crate::services::chat_override_service::ChatOverrideService::new(
-                self.db_pool.clone(),
-                encryption_service.clone()
-            )),
-            user_persona_service: Arc::new(crate::services::user_persona_service::UserPersonaService::new(
-                self.db_pool.clone(),
-                encryption_service.clone()
-            )),
-            token_counter: Arc::new(crate::services::hybrid_token_counter::HybridTokenCounter::new(
-                crate::services::tokenizer_service::TokenizerService::new(&self.config.tokenizer_model_path).unwrap_or_else(|_| {
-                    panic!("Failed to create tokenizer for test")
-                }),
-                None,
-                "gemini-2.5-pro"
-            )),
+            embedding_pipeline_service: self.mock_embedding_pipeline_service.clone()
+                as Arc<
+                    dyn crate::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync,
+                >,
+            chat_override_service: Arc::new(
+                crate::services::chat_override_service::ChatOverrideService::new(
+                    self.db_pool.clone(),
+                    encryption_service.clone(),
+                ),
+            ),
+            user_persona_service: Arc::new(
+                crate::services::user_persona_service::UserPersonaService::new(
+                    self.db_pool.clone(),
+                    encryption_service.clone(),
+                ),
+            ),
+            token_counter: Arc::new(
+                crate::services::hybrid_token_counter::HybridTokenCounter::new(
+                    crate::services::tokenizer_service::TokenizerService::new(
+                        &self.config.tokenizer_model_path,
+                    )
+                    .unwrap_or_else(|_| panic!("Failed to create tokenizer for test")),
+                    None,
+                    "gemini-2.5-pro",
+                ),
+            ),
             encryption_service: encryption_service.clone(),
             lorebook_service: lorebook_service.clone(),
             auth_backend,
             email_service,
             ai_client_factory,
-            rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(10, 100)), // Test rate limiter
+            rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
+                10, 100,
+            )), // Test rate limiter
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
             #[cfg(feature = "local-llm")]
@@ -2839,7 +2859,7 @@ impl TestApp {
             #[cfg(feature = "local-llm")]
             model_integrity_verifier: None, // Not used in tests
         };
-        
+
         Arc::new(AppState::new(
             self.db_pool.clone(),
             self.config.clone(),
@@ -2855,7 +2875,7 @@ pub mod llm_server {
     use std::process::{Child, Command, Stdio};
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
-    use tracing::{debug, info, warn, error};
+    use tracing::{debug, error, info, warn};
 
     /// Configuration for the LLM test server
     #[derive(Debug, Clone)]
@@ -2872,11 +2892,12 @@ pub mod llm_server {
     impl Default for LlmServerConfig {
         fn default() -> Self {
             Self {
-                model_path: "/home/socol/Workspace/sanguine-scribe/models/gpt-oss-20b-Q4_K_M.gguf".to_string(),
+                model_path: "/home/socol/Workspace/sanguine-scribe/models/gpt-oss-20b-Q4_K_M.gguf"
+                    .to_string(),
                 host: "127.0.0.1".to_string(),
                 port: 11435,
                 context_size: 131072, // 128K tokens
-                gpu_layers: 999, // Try to use all GPU layers
+                gpu_layers: 999,      // Try to use all GPU layers
                 threads: 8,
                 timeout_seconds: 30,
             }
@@ -2911,7 +2932,9 @@ pub mod llm_server {
         /// - The llama-server executable cannot be found
         /// - The server fails to start
         /// - The server doesn't respond within the timeout period
-        pub async fn start_with_config(config: LlmServerConfig) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        pub async fn start_with_config(
+            config: LlmServerConfig,
+        ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
             // Check if model file exists
             if !std::path::Path::new(&config.model_path).exists() {
                 return Err(format!("Model file not found: {}", config.model_path).into());
@@ -2923,7 +2946,8 @@ pub mod llm_server {
             let _ = stop_server_on_port(config.port).await;
 
             // Start the llama-server process
-            let mut command = Command::new("/home/socol/Workspace/llama.cpp/build/bin/llama-server");
+            let mut command =
+                Command::new("/home/socol/Workspace/llama.cpp/build/bin/llama-server");
             command
                 .arg("--model")
                 .arg(&config.model_path)
@@ -2937,7 +2961,7 @@ pub mod llm_server {
                 .arg(&config.gpu_layers.to_string())
                 .arg("--threads")
                 .arg(&config.threads.to_string())
-                .arg("--log-disable")  // Disable verbose logging during tests
+                .arg("--log-disable") // Disable verbose logging during tests
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
 
@@ -2957,7 +2981,11 @@ pub mod llm_server {
                 // Check if process is still running
                 match process.try_wait() {
                     Ok(Some(status)) => {
-                        return Err(format!("LLM server process exited early with status: {}", status).into());
+                        return Err(format!(
+                            "LLM server process exited early with status: {}",
+                            status
+                        )
+                        .into());
                     }
                     Ok(None) => {
                         // Process is still running, continue checking
@@ -2986,8 +3014,12 @@ pub mod llm_server {
             if let Err(e) = process.kill() {
                 warn!("Failed to kill LLM server process after timeout: {}", e);
             }
-            
-            Err(format!("LLM server failed to start within {} seconds", config.timeout_seconds).into())
+
+            Err(format!(
+                "LLM server failed to start within {} seconds",
+                config.timeout_seconds
+            )
+            .into())
         }
 
         /// Get the server URL
@@ -3005,21 +3037,21 @@ pub mod llm_server {
         fn drop(&mut self) {
             if let Some(mut process) = self.process.take() {
                 info!("Stopping LLM server...");
-                
+
                 // Try graceful shutdown first
                 if let Err(e) = process.kill() {
                     warn!("Failed to terminate LLM server gracefully: {}", e);
-                    
+
                     // Force kill if graceful shutdown fails
                     if let Err(e) = process.kill() {
                         error!("Failed to kill LLM server process: {}", e);
                     }
                 }
-                
+
                 // Wait for process to exit (with timeout)
                 let start_time = Instant::now();
                 let timeout = Duration::from_secs(5);
-                
+
                 while start_time.elapsed() < timeout {
                     match process.try_wait() {
                         Ok(Some(_)) => {
@@ -3035,7 +3067,7 @@ pub mod llm_server {
                         }
                     }
                 }
-                
+
                 warn!("LLM server did not stop within timeout, may still be running");
             }
         }
@@ -3046,7 +3078,8 @@ pub mod llm_server {
     /// # Errors
     ///
     /// Returns an error if the server fails to start
-    pub async fn start_test_llm_server() -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_test_llm_server()
+    -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
         LlmServerTestGuard::start().await
     }
 
@@ -3055,7 +3088,9 @@ pub mod llm_server {
     /// # Errors
     ///
     /// Returns an error if the process lookup or termination fails
-    pub async fn stop_server_on_port(port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn stop_server_on_port(
+        port: u16,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Try to find and kill any process using the port
         let output = Command::new("lsof")
             .arg("-ti")
@@ -3066,29 +3101,30 @@ pub mod llm_server {
             Ok(output) if output.status.success() && !output.stdout.is_empty() => {
                 let pid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if let Ok(pid) = pid_str.parse::<u32>() {
-                    info!("Found process {} using port {}, attempting to terminate", pid, port);
-                    
+                    info!(
+                        "Found process {} using port {}, attempting to terminate",
+                        pid, port
+                    );
+
                     // Try SIGTERM first
-                    let kill_result = Command::new("kill")
-                        .arg(pid.to_string())
-                        .output();
-                    
+                    let kill_result = Command::new("kill").arg(pid.to_string()).output();
+
                     match kill_result {
                         Ok(output) if output.status.success() => {
                             info!("Successfully terminated process {} on port {}", pid, port);
-                            
+
                             // Give it a moment to shut down
                             sleep(Duration::from_millis(1000)).await;
                         }
                         _ => {
-                            warn!("Failed to terminate process {} gracefully, trying SIGKILL", pid);
-                            
+                            warn!(
+                                "Failed to terminate process {} gracefully, trying SIGKILL",
+                                pid
+                            );
+
                             // Force kill
-                            let _ = Command::new("kill")
-                                .arg("-9")
-                                .arg(pid.to_string())
-                                .output();
-                            
+                            let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
+
                             sleep(Duration::from_millis(1000)).await;
                         }
                     }
@@ -3107,9 +3143,12 @@ pub mod llm_server {
     /// # Errors
     ///
     /// Returns an error if the health check fails
-    pub async fn is_llm_server_running(host: &str, port: u16) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn is_llm_server_running(
+        host: &str,
+        port: u16,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let health_url = format!("http://{}:{}/health", host, port);
-        
+
         match reqwest::get(&health_url).await {
             Ok(response) => Ok(response.status().is_success()),
             Err(_) => Ok(false),
@@ -3121,11 +3160,15 @@ pub mod llm_server {
     /// # Errors
     ///
     /// Returns an error if the server cannot be started
-    pub async fn ensure_llm_server_running() -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn ensure_llm_server_running()
+    -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
         let config = LlmServerConfig::default();
-        
+
         if is_llm_server_running(&config.host, config.port).await? {
-            info!("LLM server is already running at {}:{}", config.host, config.port);
+            info!(
+                "LLM server is already running at {}:{}",
+                config.host, config.port
+            );
             Ok(None) // Server is already running, no guard needed
         } else {
             info!("LLM server is not running, starting it...");
@@ -3139,33 +3182,40 @@ pub mod llm_server {
 pub mod llm_server {
     //! Placeholder module when local-llm feature is not enabled
     use std::fmt;
-    
+
     #[derive(Debug)]
     pub struct LlmServerTestGuard;
-    
+
     impl LlmServerTestGuard {
         pub async fn start() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
             Err("local-llm feature not enabled".into())
         }
-        
+
         pub fn server_url(&self) -> String {
             "http://localhost:11435".to_string()
         }
     }
-    
-    pub async fn start_test_llm_server() -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
+
+    pub async fn start_test_llm_server()
+    -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
         LlmServerTestGuard::start().await
     }
-    
-    pub async fn stop_server_on_port(_port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+
+    pub async fn stop_server_on_port(
+        _port: u16,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(())
     }
-    
-    pub async fn is_llm_server_running(_host: &str, _port: u16) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+
+    pub async fn is_llm_server_running(
+        _host: &str,
+        _port: u16,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         Ok(false)
     }
-    
-    pub async fn ensure_llm_server_running() -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
+
+    pub async fn ensure_llm_server_running()
+    -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
         Err("local-llm feature not enabled".into())
     }
 }

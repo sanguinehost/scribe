@@ -210,7 +210,7 @@ pub async fn get_session_data_for_generation(
         final_effective_system_prompt, // This is the system_prompt for the builder (persona/override only)
         raw_character_system_prompt,   // This is the raw system_prompt from the character itself
         player_chronicle_id_from_session, // The chronicle ID for RAG retrieval
-        agent_mode_from_session, // The agent mode for context enrichment
+        agent_mode_from_session,       // The agent mode for context enrichment
     ) = {
         let conn = state
             .pool
@@ -287,40 +287,35 @@ pub async fn get_session_data_for_generation(
                 })?;
 
             // Query 2: Additional session fields (4 fields)
-            let (
-                gem_think_budget,
-                gem_enable_code_exec,
-                player_chronicle_id,
-                agent_mode,
-            ) = chat_sessions::table
-                .filter(chat_sessions::id.eq(session_id))
-                .filter(chat_sessions::user_id.eq(user_id))
-                .select((
-                    chat_sessions::gemini_thinking_budget,
-                    chat_sessions::gemini_enable_code_execution,
-                    chat_sessions::player_chronicle_id,
-                    chat_sessions::agent_mode,
-                ))
-                .first::<(
-                    Option<i32>,
-                    Option<bool>,
-                    Option<Uuid>,
-                    Option<String>,
-                )>(conn_interaction)
-                .map_err(|e| match e {
-                    DieselError::NotFound => {
-                        AppError::NotFound(format!("Chat session {session_id} not found"))
-                    }
-                    _ => AppError::DatabaseQueryError(format!(
-                        "Failed to query chat session {session_id}: {e}"
-                    )),
-                })?;
+            let (gem_think_budget, gem_enable_code_exec, player_chronicle_id, agent_mode) =
+                chat_sessions::table
+                    .filter(chat_sessions::id.eq(session_id))
+                    .filter(chat_sessions::user_id.eq(user_id))
+                    .select((
+                        chat_sessions::gemini_thinking_budget,
+                        chat_sessions::gemini_enable_code_execution,
+                        chat_sessions::player_chronicle_id,
+                        chat_sessions::agent_mode,
+                    ))
+                    .first::<(Option<i32>, Option<bool>, Option<Uuid>, Option<String>)>(
+                        conn_interaction,
+                    )
+                    .map_err(|e| match e {
+                        DieselError::NotFound => {
+                            AppError::NotFound(format!("Chat session {session_id} not found"))
+                        }
+                        _ => AppError::DatabaseQueryError(format!(
+                            "Failed to query chat session {session_id}: {e}"
+                        )),
+                    })?;
 
             // TODO: Refactor to handle different chat modes as per MODULAR_CHAT_SYSTEM_DESIGN.md
             let char_id = sess_char_id.ok_or_else(|| {
-                AppError::BadRequest("Cannot generate chat response for non-character chat sessions".to_string())
+                AppError::BadRequest(
+                    "Cannot generate chat response for non-character chat sessions".to_string(),
+                )
             })?;
-            
+
             let character_db: Character = characters::table
                 .filter(characters::id.eq(char_id))
                 .first::<Character>(conn_interaction)
@@ -329,7 +324,8 @@ pub async fn get_session_data_for_generation(
                         AppError::NotFound(format!("Character {} not found", char_id))
                     }
                     _ => AppError::DatabaseQueryError(format!(
-                        "Failed to query character {}: {}", char_id, e
+                        "Failed to query character {}: {}",
+                        char_id, e
                     )),
                 })?;
 
@@ -562,24 +558,34 @@ pub async fn get_session_data_for_generation(
             .collect()
     } else {
         debug!(%session_id, "Using database-queried history ({} messages)", existing_messages_db_raw.len());
-        
+
         // Check if the last message in DB history matches the current user message being processed
         // If so, exclude it to prevent duplication (the current user message is passed separately to the prompt builder)
         if let Some(last_msg) = existing_messages_db_raw.last() {
             // Check if it's a user message and content matches
             if last_msg.message_type == MessageRole::User {
                 // Decrypt the message content to compare
-                let last_msg_content = match (last_msg.content_nonce.as_ref(), &user_dek_secret_box) {
-                    (Some(nonce_vec), Some(dek_arc)) if !last_msg.content.is_empty() && !nonce_vec.is_empty() => {
+                let last_msg_content = match (last_msg.content_nonce.as_ref(), &user_dek_secret_box)
+                {
+                    (Some(nonce_vec), Some(dek_arc))
+                        if !last_msg.content.is_empty() && !nonce_vec.is_empty() =>
+                    {
                         // Decrypt the content
-                        match crate::crypto::decrypt_gcm(&last_msg.content, nonce_vec, dek_arc.as_ref()) {
-                            Ok(decrypted_bytes) => String::from_utf8_lossy(decrypted_bytes.expose_secret()).into_owned(),
+                        match crate::crypto::decrypt_gcm(
+                            &last_msg.content,
+                            nonce_vec,
+                            dek_arc.as_ref(),
+                        ) {
+                            Ok(decrypted_bytes) => {
+                                String::from_utf8_lossy(decrypted_bytes.expose_secret())
+                                    .into_owned()
+                            }
                             Err(_) => String::from_utf8_lossy(&last_msg.content).into_owned(), // Fallback to plaintext
                         }
                     }
                     _ => String::from_utf8_lossy(&last_msg.content).into_owned(), // Content is plaintext
                 };
-                
+
                 // If the last DB message content matches the current user message, exclude it
                 if last_msg_content == user_message_content {
                     debug!(%session_id, "Excluding last DB message as it matches current user message (preventing duplication)");
@@ -600,20 +606,24 @@ pub async fn get_session_data_for_generation(
     };
 
     // --- Retrieve User Settings for Context Management ---
-    let user_settings = UserSettingsService::get_user_settings(&state.pool, user_id, &state.config).await?;
+    let user_settings =
+        UserSettingsService::get_user_settings(&state.pool, user_id, &state.config).await?;
     debug!(%session_id, %user_id, "Retrieved user settings for context management");
-    
+
     // Use user-configured values or fall back to config defaults
-    let context_total_token_limit = user_settings.default_context_total_token_limit
+    let context_total_token_limit = user_settings
+        .default_context_total_token_limit
         .map(|v| v as usize)
         .unwrap_or(state.config.context_total_token_limit);
-    let recent_history_token_budget = user_settings.default_context_recent_history_budget
+    let recent_history_token_budget = user_settings
+        .default_context_recent_history_budget
         .map(|v| v as usize)
         .unwrap_or(state.config.context_recent_history_token_budget);
-    let context_rag_budget = user_settings.default_context_rag_budget
+    let context_rag_budget = user_settings
+        .default_context_rag_budget
         .map(|v| v as usize)
         .unwrap_or(state.config.context_rag_token_budget);
-    
+
     info!(
         %session_id,
         %context_total_token_limit,
@@ -708,8 +718,7 @@ pub async fn get_session_data_for_generation(
     // --- RAG Context Budgeting and Assembly ---
     let available_rag_tokens = min(
         context_rag_budget,
-        context_total_token_limit
-            .saturating_sub(actual_recent_history_tokens),
+        context_total_token_limit.saturating_sub(actual_recent_history_tokens),
     );
     info!(%session_id, %actual_recent_history_tokens, %available_rag_tokens, "Calculated RAG token budget.");
     let mut rag_context_items: Vec<RetrievedChunk> = Vec::new();
@@ -730,7 +739,7 @@ pub async fn get_session_data_for_generation(
                         user_id,
                         None, // Not searching chat history here
                         Some(lorebook_ids.clone()),
-                        None, // Not searching chronicles here (done separately)
+                        None,                  // Not searching chronicles here (done separately)
                         &user_message_content, // query_text
                         rag_query_limit_per_source,
                     )
@@ -750,17 +759,17 @@ pub async fn get_session_data_for_generation(
         // Retrieve Chronicle Events (if chronicle is linked to this session) using semantic search
         if let Some(chronicle_id) = player_chronicle_id_from_session {
             info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG using semantic search.");
-            
+
             match state
                 .embedding_pipeline_service
                 .retrieve_relevant_chunks(
                     state.clone(),
                     user_id,
-                    None,             // Not searching chat history here
-                    None,             // Not searching lorebooks here
+                    None,               // Not searching chat history here
+                    None,               // Not searching lorebooks here
                     Some(chronicle_id), // Search this chronicle
                     &user_message_content,
-                    10,               // Limit to top 10 chronicle events
+                    10, // Limit to top 10 chronicle events
                 )
                 .await
             {
@@ -847,47 +856,65 @@ pub async fn get_session_data_for_generation(
 
         // Unified RAG Context Selection with Dynamic Budget Management
         debug!(target: "test_debug", %session_id, num_combined_candidates = combined_rag_candidates.len(), "Combined RAG candidates before dynamic selection.");
-        
+
         if combined_rag_candidates.is_empty() {
             debug!(target: "test_debug", %session_id, "No combined RAG candidates to process.");
         } else {
             info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting unified RAG selection with dynamic budget management.");
-            
+
             // Create pricing-aware context budget planner for the current model
             // Use the user-configured total limit but cap it at available RAG tokens
-            let effective_total_limit = min(context_total_token_limit, available_rag_tokens + actual_recent_history_tokens);
-            let budget_planner = ContextBudgetPlanner::new_for_model(&session_model_name_db, Some(effective_total_limit));
-            
+            let effective_total_limit = min(
+                context_total_token_limit,
+                available_rag_tokens + actual_recent_history_tokens,
+            );
+            let budget_planner = ContextBudgetPlanner::new_for_model(
+                &session_model_name_db,
+                Some(effective_total_limit),
+            );
+
             // Override the RAG budget with our calculated available tokens
             let mut budget_planner_adjusted = budget_planner;
             budget_planner_adjusted.rag_budget = available_rag_tokens;
-            
+
             debug!(
-                %session_id, 
-                model = %session_model_name_db, 
+                %session_id,
+                model = %session_model_name_db,
                 total_limit = effective_total_limit,
-                rag_budget = budget_planner_adjusted.available_rag_budget(), 
+                rag_budget = budget_planner_adjusted.available_rag_budget(),
                 "Created context budget planner for RAG selection with user settings."
             );
-            
+
             // Create dynamic RAG selector using existing token counter
-            let rag_selector = DynamicRagSelector::new((*state.token_counter).clone(), budget_planner_adjusted);
-            
+            let rag_selector =
+                DynamicRagSelector::new((*state.token_counter).clone(), budget_planner_adjusted);
+
             // Use the unified RAG selector to choose content within budget
-            match rag_selector.select_rag_content(combined_rag_candidates, Some(chrono::Utc::now())).await {
+            match rag_selector
+                .select_rag_content(combined_rag_candidates, Some(chrono::Utc::now()))
+                .await
+            {
                 Ok(selected_chunks) => {
                     rag_context_items = selected_chunks;
                     info!(%session_id, num_selected_items = rag_context_items.len(), "Dynamic RAG selection completed successfully.");
-                    
+
                     // Calculate actual tokens used for debugging
                     let mut actual_tokens_used = 0;
                     for chunk in &rag_context_items {
-                        if let Ok(estimate) = state.token_counter.count_tokens(&chunk.text, CountingMode::LocalOnly, Some(&session_model_name_db)).await {
+                        if let Ok(estimate) = state
+                            .token_counter
+                            .count_tokens(
+                                &chunk.text,
+                                CountingMode::LocalOnly,
+                                Some(&session_model_name_db),
+                            )
+                            .await
+                        {
                             actual_tokens_used += estimate.total;
                         }
                     }
                     current_rag_tokens_used = actual_tokens_used;
-                    
+
                     debug!(target: "test_debug", %session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, %available_rag_tokens, "Unified RAG selection finished.");
                     info!(%session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, budget_utilization = format!("{:.1}%", (current_rag_tokens_used as f32 / available_rag_tokens as f32) * 100.0), "Unified RAG context selection complete.");
                 }
@@ -980,7 +1007,7 @@ pub async fn get_session_data_for_generation(
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: session_model_name_db.clone(), // Use session model for character first message
-                status: "completed".to_string(), // First message is considered completed
+                status: "completed".to_string(),           // First message is considered completed
                 error_message: None,
                 superseded_at: None,
             };
@@ -1054,10 +1081,10 @@ pub struct StreamAiParams {
     pub model_provider: Option<String>,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
-    pub request_thinking: bool,                    // New parameter
+    pub request_thinking: bool,            // New parameter
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
-    pub character_name: Option<String>,            // For prefill generation
-    pub player_chronicle_id: Option<Uuid>,        // For narrative processing
+    pub character_name: Option<String>,    // For prefill generation
+    pub player_chronicle_id: Option<Uuid>, // For narrative processing
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -1110,8 +1137,8 @@ pub struct ExecChatWithRetryParams {
     pub chat_request: genai::chat::ChatRequest,
     pub chat_options: Option<genai::chat::ChatOptions>,
     pub session_id: Uuid,
-    pub user_id: Uuid, // Added for per-user AI client selection
-    pub character_name: Option<String>, // For prefill generation
+    pub user_id: Uuid,                     // Added for per-user AI client selection
+    pub character_name: Option<String>,    // For prefill generation
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
 }
 
@@ -1128,7 +1155,7 @@ pub async fn exec_chat_with_retry(
     const MAX_RETRIES: u8 = 2;
     let mut retry_count = 0;
 
-    // Get the secure AI client - user_dek is mandatory for security  
+    // Get the secure AI client - user_dek is mandatory for security
     let dek_bytes = params.user_dek.expose_secret().clone();
     let session_dek = crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)));
     let ai_client = params
@@ -1373,8 +1400,8 @@ pub async fn stream_ai_response_and_save_message(
     let ai_client = state
         .ai_client_factory
         .get_secure_client_for_provider(
-            user_id, 
-            model_provider.as_deref(), 
+            user_id,
+            model_provider.as_deref(),
             Some(&model_name),
             Some(&session_dek),
             &state,
@@ -1505,7 +1532,7 @@ pub async fn stream_ai_response_and_save_message(
         let mut accumulated_content = String::new();
         let mut stream_error_occurred = false;
         let mut chunk_index: u32 = 0;
-        
+
         // Create a channel to receive token usage data from the spawned task
         let (token_sender, mut token_receiver) = tokio::sync::mpsc::unbounded_channel::<ScribeSseEvent>();
 
@@ -1545,7 +1572,7 @@ pub async fn stream_ai_response_and_save_message(
                             content: chunk.content.clone(),
                             checksum,
                         };
-                        
+
                         // Serialize to JSON for transmission
                         match serde_json::to_string(&structured_chunk) {
                             Ok(json_payload) => {
@@ -1557,7 +1584,7 @@ pub async fn stream_ai_response_and_save_message(
                                     chunk_index,
                                     chunk.content.len()
                                 );
-                                
+
                                 accumulated_content.push_str(&chunk.content);
                                 yield Ok(ScribeSseEvent::Content(json_payload));
                                 chunk_index += 1;
@@ -1628,17 +1655,17 @@ pub async fn stream_ai_response_and_save_message(
                     });
 
                     let detailed_error = e.to_string();
-                    
+
                     // Special case: If we got PropertyNotFound but have complete content, this is likely a final parsing error
                     // that can be safely ignored. This commonly happens when Gemini sends complete responses but the final
                     // API response structure is missing expected fields.
                     if detailed_error.contains("PropertyNotFound(\"/content/parts\")") && !accumulated_content.is_empty() {
-                        warn!(session_id = %stream_session_id, content_length = accumulated_content.len(), 
+                        warn!(session_id = %stream_session_id, content_length = accumulated_content.len(),
                               "PropertyNotFound error occurred but response appears complete. This may be a final API response parsing issue - treating as successful completion.");
                         // Don't set error flag and don't send error event, let the stream complete normally
                         break;
                     }
-                    
+
                     let client_error_message = if detailed_error.contains("LLM API error:") {
                         detailed_error
                     } else if detailed_error.contains("Failed to parse stream data") {
@@ -1686,10 +1713,10 @@ pub async fn stream_ai_response_and_save_message(
 
             tokio::spawn(async move {
                 info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Entering tokio::spawn block for message save and narrative processing");
-                
+
                 let dek_ref_full = user_dek_arc_clone_full.clone();
                 info!(session_id = %full_session_id_clone, dek_available = true, "NARRATIVE_DEBUG: About to save message");
-                
+
                 match save_message(SaveMessageParams {
                     state: state_for_full_save.clone(),
                     session_id: full_session_id_clone,
@@ -1707,13 +1734,13 @@ pub async fn stream_ai_response_and_save_message(
                 }).await {
                     Ok(saved_message) => {
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");
-                        
+
                         // Send message ID first (for raw prompt modal)
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Sending message ID through channel");
                         let _ = token_sender_clone.send(ScribeSseEvent::MessageSaved {
                             message_id: saved_message.id.to_string(),
                         });
-                        
+
                         // Send token usage data through the channel
                         if let (Some(prompt_tokens), Some(completion_tokens)) = (saved_message.prompt_tokens, saved_message.completion_tokens) {
                             info!(session_id = %full_session_id_clone, prompt_tokens = prompt_tokens, completion_tokens = completion_tokens, "Sending token usage through channel");
@@ -1725,22 +1752,22 @@ pub async fn stream_ai_response_and_save_message(
                         } else {
                             warn!(session_id = %full_session_id_clone, "Token data not available in saved message");
                         }
-                        
+
                         // --- Narrative Intelligence Processing (After Message Save) ---
                         // Process narrative intelligence now that the assistant message has been saved
                         info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to check DEK availability for narrative processing");
-                        
+
                         // Always have DEK available for narrative processing
                         info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: DEK available, starting narrative intelligence processing");
-                        
+
                         // Convert user_dek_secret_box to SessionDek for narrative processing
                         let secret_bytes = dek_ref_full.expose_secret().clone();
                         let session_dek_for_narrative = crate::auth::session_dek::SessionDek(secrecy::SecretBox::new(Box::new(secret_bytes)));
-                            
+
                             // Retrieve the latest messages from the database for narrative analysis
                             // This ensures we're analyzing the complete conversation including the just-saved assistant response
                             info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Processing narrative intelligence context after message save");
-                            
+
                             // Get recent messages from the database for narrative analysis
                             let recent_messages = match crate::services::chat::message_handling::get_messages_for_session(
                                 &state_for_full_save.pool,
@@ -1756,12 +1783,12 @@ pub async fn stream_ai_response_and_save_message(
                                     Vec::new()
                                 }
                             };
-                            
+
                             // For now, use empty RAG context - this could be enhanced later to include relevant lorebook entries
                             let empty_rag_context: Vec<crate::services::embeddings::RetrievedChunk> = Vec::new();
-                            
+
                             info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to call narrative_intelligence_service.process_conversation_context");
-                            
+
                             match state_for_full_save.narrative_intelligence_service.as_ref().unwrap().process_conversation_context(
                                 full_user_id_clone,
                                 full_session_id_clone,
@@ -1789,14 +1816,14 @@ pub async fn stream_ai_response_and_save_message(
                                     error!(session_id = %full_session_id_clone, error = %e, "NARRATIVE_DEBUG: Failed to process narrative intelligence context after message save");
                                 }
                             }
-                        
+
                         info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Completed narrative processing attempt");
                     }
                     Err(e) => {
                         error!(error = ?e, session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Error saving full AI response via save_message (chat_service)");
                     }
                 }
-                
+
                 info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Exiting tokio::spawn block");
             });
         } else if stream_error_occurred {
@@ -1809,11 +1836,11 @@ pub async fn stream_ai_response_and_save_message(
         } else {
             warn!(session_id = %stream_session_id, stream_error_occurred = stream_error_occurred, accumulated_content_len = accumulated_content.len(), "NARRATIVE_DEBUG: Unexpected condition - neither success nor error case matched");
         }
-        
+
         // Wait for token usage data from the spawned task and yield it with timeout
         if !stream_error_occurred && !accumulated_content.is_empty() {
             info!(session_id = %stream_session_id, "Waiting for token usage data from spawned task");
-            
+
             // Use timeout to prevent indefinite blocking
             match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
                 Ok(Some(token_event)) => {
@@ -1830,7 +1857,7 @@ pub async fn stream_ai_response_and_save_message(
                 }
             }
         }
-        
+
         // Add a significant delay to ensure all content chunks are flushed through the SSE pipeline
         // This is critical to prevent the stream from ending before chunks reach the frontend
         // Only do this for successful streams (not when an error occurred)
@@ -1843,11 +1870,11 @@ pub async fn stream_ai_response_and_save_message(
                 chunk_index,
                 &accumulated_content.chars().rev().take(50).collect::<String>().chars().rev().collect::<String>()
             );
-            
+
             // More aggressive delay to ensure pipeline flush
             // This gives time for all chunks to traverse the entire SSE pipeline
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            
+
             // Send a final "flush" event to ensure the pipeline is clear
             // Only send this if the stream completed successfully (no error occurred)
             yield Ok(ScribeSseEvent::Content(serde_json::to_string(&super::types::StreamedChunk {
@@ -1856,7 +1883,7 @@ pub async fn stream_ai_response_and_save_message(
                 checksum: 0,
             }).unwrap_or_default()));
         }
-        
+
         trace!("Finished SSE async_stream! block in chat_service");
     };
 

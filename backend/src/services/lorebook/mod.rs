@@ -81,7 +81,10 @@ impl LorebookService {
         user_id: Uuid,
         lorebook_id: Uuid,
     ) -> Result<Vec<LorebookEntrySummaryResponse>, AppError> {
-        debug!("Attempting to list lorebook entries for test (user: {}, lorebook: {})", user_id, lorebook_id);
+        debug!(
+            "Attempting to list lorebook entries for test (user: {}, lorebook: {})",
+            user_id, lorebook_id
+        );
 
         let conn = self.pool.get().await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
@@ -101,7 +104,10 @@ impl LorebookService {
             })
             .await
             .map_err(|e| {
-                error!("Interaction error while fetching lorebook for test: {:?}", e);
+                error!(
+                    "Interaction error while fetching lorebook for test: {:?}",
+                    e
+                );
                 AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while fetching lorebook: {e}"
                 ))
@@ -132,7 +138,10 @@ impl LorebookService {
             })
             .await
             .map_err(|e| {
-                error!("Interaction error while fetching lorebook entries for test: {:?}", e);
+                error!(
+                    "Interaction error while fetching lorebook entries for test: {:?}",
+                    e
+                );
                 AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while fetching lorebook entries: {e}"
                 ))
@@ -149,9 +158,9 @@ impl LorebookService {
                 id: entry.id,
                 lorebook_id: entry.lorebook_id,
                 entry_title: format!("Test-{}", entry.id), // Simplified for testing
-                is_enabled: true, // Default for tests
-                is_constant: false, // Default for tests
-                insertion_order: 1, // Default for tests
+                is_enabled: true,                          // Default for tests
+                is_constant: false,                        // Default for tests
+                insertion_order: 1,                        // Default for tests
                 updated_at: entry.updated_at,
             })
             .collect();
@@ -196,7 +205,10 @@ impl LorebookService {
             })
             .await
             .map_err(|e| {
-                error!("Interaction error while creating lorebook for test: {:?}", e);
+                error!(
+                    "Interaction error while creating lorebook for test: {:?}",
+                    e
+                );
                 AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while creating lorebook: {e}"
                 ))
@@ -227,7 +239,10 @@ impl LorebookService {
         payload: CreateLorebookEntryPayload,
         user_dek: &SecretBox<Vec<u8>>,
     ) -> Result<LorebookEntryResponse, AppError> {
-        debug!("Attempting to create lorebook entry for test (user: {}, lorebook: {})", user_id, lorebook_id);
+        debug!(
+            "Attempting to create lorebook entry for test (user: {}, lorebook: {})",
+            user_id, lorebook_id
+        );
 
         let conn = self.pool.get().await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
@@ -249,7 +264,10 @@ impl LorebookService {
             })
             .await
             .map_err(|e| {
-                error!("Interaction error while fetching lorebook for test: {:?}", e);
+                error!(
+                    "Interaction error while fetching lorebook for test: {:?}",
+                    e
+                );
                 AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while fetching lorebook: {e}"
                 ))
@@ -336,7 +354,10 @@ impl LorebookService {
             })
             .await
             .map_err(|e| {
-                error!("Interaction error while creating lorebook entry for test: {:?}", e);
+                error!(
+                    "Interaction error while creating lorebook entry for test: {:?}",
+                    e
+                );
                 AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while creating lorebook entry: {e}"
                 ))
@@ -358,7 +379,9 @@ impl LorebookService {
             is_enabled: lorebook_entry.is_enabled,
             is_constant: lorebook_entry.is_constant,
             insertion_order: lorebook_entry.insertion_order,
-            placement_hint: lorebook_entry.placement_hint.unwrap_or_else(|| "after_prompt".to_string()),
+            placement_hint: lorebook_entry
+                .placement_hint
+                .unwrap_or_else(|| "after_prompt".to_string()),
             created_at: lorebook_entry.created_at,
             updated_at: lorebook_entry.updated_at,
         })

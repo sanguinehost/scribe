@@ -193,12 +193,15 @@ async fn test_chat_session_uses_user_default_model() {
         encryption_service.clone(),
         qdrant_service.clone(),
     ));
-    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        db_pool.clone(),
-        config.clone(),
-        ai_client.clone(),
-    ));
-    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            db_pool.clone(),
+            config.clone(),
+            ai_client.clone(),
+        ),
+    );
+    let rate_limiter =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let app_services = AppStateServices {
         ai_client,

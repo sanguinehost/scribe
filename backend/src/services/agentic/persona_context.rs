@@ -1,8 +1,8 @@
 // backend/src/services/agentic/persona_context.rs
 
-use uuid::Uuid;
-use serde::{Deserialize, Serialize};
 use crate::models::user_personas::UserPersonaDataForClient;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Context information about a user's persona for narrative intelligence processing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,19 +40,19 @@ impl UserPersonaContext {
     /// Get a formatted string for use in AI prompts
     pub fn to_prompt_context(&self) -> String {
         let mut context = format!("USER PERSONA: {}\n", self.name);
-        
+
         if let Some(description) = &self.description {
             context.push_str(&format!("Description: {}\n", description));
         }
-        
+
         if let Some(personality) = &self.personality {
             context.push_str(&format!("Personality: {}\n", personality));
         }
-        
+
         if let Some(scenario) = &self.scenario {
             context.push_str(&format!("Scenario: {}\n", scenario));
         }
-        
+
         context
     }
 
@@ -105,7 +105,7 @@ mod tests {
         );
 
         let prompt = context.to_prompt_context();
-        
+
         assert!(prompt.contains("USER PERSONA: Lucas"));
         assert!(prompt.contains("Description: A cybersecurity expert"));
         assert!(prompt.contains("Personality: Idealistic yet cynical"));
@@ -134,20 +134,15 @@ mod tests {
         };
 
         let context: UserPersonaContext = persona_data.into();
-        
+
         assert_eq!(context.name, "TestUser");
         assert_eq!(context.description, Some("Test description".to_string()));
     }
 
     #[test]
     fn test_get_name_for_substitution() {
-        let context = UserPersonaContext::new(
-            Uuid::new_v4(),
-            "Lucas".to_string(),
-            None,
-            None,
-            None,
-        );
+        let context =
+            UserPersonaContext::new(Uuid::new_v4(), "Lucas".to_string(), None, None, None);
 
         assert_eq!(context.get_name_for_substitution(), "Lucas");
     }

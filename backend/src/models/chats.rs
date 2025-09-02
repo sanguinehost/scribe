@@ -2,7 +2,7 @@ use crate::schema::{chat_messages, chat_sessions, message_variants};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
-use diesel::{PgConnection, ExpressionMethods, RunQueryDsl, QueryDsl, BoolExpressionMethods};
+use diesel::{BoolExpressionMethods, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -53,7 +53,10 @@ impl MessageStatus {
             "failed" => Ok(Self::Failed),
             "partial" => Ok(Self::Partial),
             "pending" => Ok(Self::Pending),
-            _ => Err(AppError::BadRequest(format!("Invalid message status: {}", s))),
+            _ => Err(AppError::BadRequest(format!(
+                "Invalid message status: {}",
+                s
+            ))),
         }
     }
 }
@@ -589,7 +592,7 @@ impl ChatMessage {
         error_msg: Option<String>,
     ) -> Result<(), AppError> {
         use crate::schema::chat_messages::dsl::*;
-        
+
         diesel::update(chat_messages.find(message_id))
             .set((
                 status.eq(new_status.to_string()),
@@ -597,11 +600,13 @@ impl ChatMessage {
                 updated_at.eq(chrono::Utc::now()),
             ))
             .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update message status: {e}")))?;
-        
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to update message status: {e}"))
+            })?;
+
         Ok(())
     }
-    
+
     /// Mark messages as superseded when retrying
     pub fn supersede_failed_messages(
         conn: &mut PgConnection,
@@ -609,22 +614,23 @@ impl ChatMessage {
         after_timestamp: DateTime<Utc>,
     ) -> Result<usize, AppError> {
         use crate::schema::chat_messages::dsl::*;
-        
+
         let count = diesel::update(
             chat_messages
                 .filter(session_id.eq(session_id_val))
                 .filter(created_at.ge(after_timestamp))
                 .filter(superseded_at.is_null())
                 .filter(
-                    status.eq("failed")
+                    status
+                        .eq("failed")
                         .or(status.eq("partial"))
-                        .or(status.eq("streaming"))
-                )
+                        .or(status.eq("streaming")),
+                ),
         )
         .set(superseded_at.eq(Some(chrono::Utc::now())))
         .execute(conn)
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to supersede messages: {e}")))?;
-        
+
         Ok(count)
     }
 
@@ -1267,13 +1273,13 @@ impl DbInsertableChatMessage {
         self.raw_prompt_nonce = raw_prompt_nonce;
         self
     }
-    
+
     #[must_use]
     pub fn with_status(mut self, status: MessageStatus) -> Self {
         self.status = status.to_string();
         self
     }
-    
+
     #[must_use]
     pub fn with_error_message(mut self, error_message: String) -> Self {
         self.error_message = Some(error_message);
@@ -2323,8 +2329,14 @@ mod tests {
         let content_str = "Test message";
         let content_vec = content_str.as_bytes().to_vec();
 
-        let message =
-            DbInsertableChatMessage::new(chat_id, user_id, role, content_vec.clone(), None, "test-model".to_string());
+        let message = DbInsertableChatMessage::new(
+            chat_id,
+            user_id,
+            role,
+            content_vec.clone(),
+            None,
+            "test-model".to_string(),
+        );
         assert_eq!(message.chat_id, chat_id);
         assert_eq!(message.user_id, user_id);
         assert_eq!(message.msg_type, role);

@@ -4,23 +4,23 @@ use diesel::prelude::*;
 use scribe_backend::{
     models::{
         AgentContextAnalysis,
-        chats::{NewChat, Chat, NewChatMessage, MessageRole},
+        chats::{Chat, MessageRole, NewChat, NewChatMessage},
     },
-    schema::{chat_sessions, chat_messages},
+    schema::{chat_messages, chat_sessions},
     services::{
+        ChronicleService,
         agentic::{
             context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
             narrative_tools::SearchKnowledgeBaseTool,
         },
-        ChronicleService,
     },
     state::{AppState, AppStateServices},
-    test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
+    test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
 };
-use std::sync::Arc;
-use uuid::Uuid;
 use secrecy::ExposeSecret;
+use std::sync::Arc;
 use tracing::info;
+use uuid::Uuid;
 
 /// Test that agent analysis is properly associated with specific messages
 #[tokio::test]
@@ -44,7 +44,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
     use scribe_backend::models::character_card::NewCharacter;
     use scribe_backend::models::characters::Character as DbCharacter;
     use scribe_backend::schema::characters;
-    
+
     let new_character = NewCharacter {
         user_id: user.id,
         spec: "test_spec".to_string(),
@@ -55,7 +55,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         updated_at: Some(chrono::Utc::now()),
         ..Default::default()
     };
-    
+
     let character: DbCharacter = test_app
         .db_pool
         .get()
@@ -115,43 +115,69 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Pool interact error: {:?}", e))??;
 
     // Create context enrichment agent
-    let encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let encryption_service =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let lorebook_service = Arc::new(scribe_backend::services::lorebook::LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service.clone(),
         test_app.qdrant_service.clone(),
     ));
-    
+
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
-        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        embedding_client: test_app.mock_embedding_client.clone()
+            as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
-        chat_override_service: Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
-            test_app.db_pool.clone(),
-            encryption_service.clone()
-        )),
-        user_persona_service: Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
-            test_app.db_pool.clone(),
-            encryption_service.clone()
-        )),
-        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
-            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
-                panic!("Failed to create tokenizer for test")
-            }),
-            None,
-            "gemini-2.5-pro"
-        )),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone()
+            as Arc<
+                dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait
+                    + Send
+                    + Sync,
+            >,
+        chat_override_service: Arc::new(
+            scribe_backend::services::chat_override_service::ChatOverrideService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
+        user_persona_service: Arc::new(
+            scribe_backend::services::user_persona_service::UserPersonaService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
+        token_counter: Arc::new(
+            scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+                scribe_backend::services::tokenizer_service::TokenizerService::new(
+                    &test_app.config.tokenizer_model_path,
+                )
+                .unwrap_or_else(|_| panic!("Failed to create tokenizer for test")),
+                None,
+                "gemini-2.5-pro",
+            ),
+        ),
         encryption_service: encryption_service.clone(),
         lorebook_service: lorebook_service.clone(),
-        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
-        email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
-        ai_client_factory: Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(
             test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.ai_client.clone(),
         )),
-        rate_limiter: Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100)),
+        email_service: scribe_backend::services::email_service::create_email_service(
+            "development",
+            "http://localhost:3000".to_string(),
+            None,
+        )
+        .await
+        .unwrap(),
+        ai_client_factory: Arc::new(
+            scribe_backend::services::ai_client_factory::AiClientFactory::new(
+                test_app.db_pool.clone(),
+                test_app.config.clone(),
+                test_app.ai_client.clone(),
+            ),
+        ),
+        rate_limiter: Arc::new(
+            scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -159,24 +185,20 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
     };
-    
+
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        services
+        services,
     ));
-    
+
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(
-        app_state,
-        search_tool,
-        chronicle_service,
-    );
+    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
 
     // Create first message and enrich it
     let message1_id = Uuid::new_v4();
@@ -215,19 +237,19 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
     info!("Testing message 1 association...");
 
     // Enrich first message with pre-processing
-    let messages1 = vec![
-        ("user".to_string(), message1_content.to_string()),
-    ];
+    let messages1 = vec![("user".to_string(), message1_content.to_string())];
 
-    let result1 = context_agent.enrich_context(
-        session_id,
-        user.id,
-        None, // chronicle_id
-        &messages1,
-        EnrichmentMode::PreProcessing,
-        user_dek.0.expose_secret(),
-        message1_id, // Required: Associate with message 1
-    ).await;
+    let result1 = context_agent
+        .enrich_context(
+            session_id,
+            user.id,
+            None, // chronicle_id
+            &messages1,
+            EnrichmentMode::PreProcessing,
+            user_dek.0.expose_secret(),
+            message1_id, // Required: Associate with message 1
+        )
+        .await;
 
     // Even if enrichment fails due to mock AI, verify any stored analysis is associated correctly
     if result1.is_ok() {
@@ -270,22 +292,27 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
 
     info!("Testing message 2 association...");
 
-    // Enrich second message  
+    // Enrich second message
     let messages2 = vec![
         ("user".to_string(), message1_content.to_string()),
-        ("assistant".to_string(), "Dragons are mythical creatures...".to_string()),
+        (
+            "assistant".to_string(),
+            "Dragons are mythical creatures...".to_string(),
+        ),
         ("user".to_string(), message2_content.to_string()),
     ];
 
-    let result2 = context_agent.enrich_context(
-        session_id,
-        user.id,
-        None, // chronicle_id
-        &messages2,
-        EnrichmentMode::PreProcessing,
-        user_dek.0.expose_secret(),
-        message2_id, // Required: Associate with message 2
-    ).await;
+    let result2 = context_agent
+        .enrich_context(
+            session_id,
+            user.id,
+            None, // chronicle_id
+            &messages2,
+            EnrichmentMode::PreProcessing,
+            user_dek.0.expose_secret(),
+            message2_id, // Required: Associate with message 2
+        )
+        .await;
 
     if result2.is_ok() {
         info!("✅ Message 2 enrichment succeeded");
@@ -293,24 +320,26 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
 
     // Verify message associations in database
     let conn = test_app.db_pool.get().await?;
-    let analyses = conn.interact(move |conn| {
-        use scribe_backend::schema::agent_context_analysis::dsl::*;
-        
-        agent_context_analysis
-            .filter(chat_session_id.eq(session_id))
-            .order_by(created_at.asc())
-            .load::<AgentContextAnalysis>(conn)
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("Pool interact error: {:?}", e))??;
+    let analyses = conn
+        .interact(move |conn| {
+            use scribe_backend::schema::agent_context_analysis::dsl::*;
+
+            agent_context_analysis
+                .filter(chat_session_id.eq(session_id))
+                .order_by(created_at.asc())
+                .load::<AgentContextAnalysis>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Pool interact error: {:?}", e))??;
 
     info!("Found {} analyses for session", analyses.len());
 
     // If any analyses were stored (even with mock AI), verify they have correct message associations
     if !analyses.is_empty() {
         for (i, analysis) in analyses.iter().enumerate() {
-            info!("Analysis {}: message_id = {:?}, type = {}", 
-                i + 1, 
+            info!(
+                "Analysis {}: message_id = {:?}, type = {}",
+                i + 1,
                 analysis.message_id,
                 analysis.analysis_type
             );
@@ -338,18 +367,19 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
     // Test querying analysis by message_id
     if !analyses.is_empty() {
         let target_message_id = analyses[0].message_id; // Already a Uuid, not Option<Uuid>
-        
-        let specific_analysis = conn.interact(move |conn| {
-            use scribe_backend::schema::agent_context_analysis::dsl::*;
-            
-            agent_context_analysis
-                .filter(chat_session_id.eq(session_id))
-                .filter(message_id.eq(target_message_id))
-                .first::<AgentContextAnalysis>(conn)
-                .optional()
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Pool interact error: {:?}", e))??;
+
+        let specific_analysis = conn
+            .interact(move |conn| {
+                use scribe_backend::schema::agent_context_analysis::dsl::*;
+
+                agent_context_analysis
+                    .filter(chat_session_id.eq(session_id))
+                    .filter(message_id.eq(target_message_id))
+                    .first::<AgentContextAnalysis>(conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Pool interact error: {:?}", e))??;
 
         assert!(
             specific_analysis.is_some(),
@@ -358,8 +388,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
 
         let found = specific_analysis.unwrap();
         assert_eq!(
-            found.message_id,
-            target_message_id,
+            found.message_id, target_message_id,
             "Retrieved analysis should have correct message_id"
         );
 
@@ -376,7 +405,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
     use scribe_backend::models::character_card::NewCharacter;
     use scribe_backend::models::characters::Character as DbCharacter;
     use scribe_backend::schema::characters;
-    
+
     let test_app = spawn_app(false, false, false).await;
     let mut guard = TestDataGuard::new(test_app.db_pool.clone());
 
@@ -403,7 +432,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         updated_at: Some(chrono::Utc::now()),
         ..Default::default()
     };
-    
+
     let character: DbCharacter = test_app
         .db_pool
         .get()
@@ -497,43 +526,69 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Pool interact error: {:?}", e))??;
 
     // Create context enrichment agent
-    let encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let encryption_service =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let lorebook_service = Arc::new(scribe_backend::services::lorebook::LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service.clone(),
         test_app.qdrant_service.clone(),
     ));
-    
+
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
-        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        embedding_client: test_app.mock_embedding_client.clone()
+            as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
-        chat_override_service: Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
-            test_app.db_pool.clone(),
-            encryption_service.clone()
-        )),
-        user_persona_service: Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
-            test_app.db_pool.clone(),
-            encryption_service.clone()
-        )),
-        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
-            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
-                panic!("Failed to create tokenizer for test")
-            }),
-            None,
-            "gemini-2.5-pro"
-        )),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone()
+            as Arc<
+                dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait
+                    + Send
+                    + Sync,
+            >,
+        chat_override_service: Arc::new(
+            scribe_backend::services::chat_override_service::ChatOverrideService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
+        user_persona_service: Arc::new(
+            scribe_backend::services::user_persona_service::UserPersonaService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
+        token_counter: Arc::new(
+            scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+                scribe_backend::services::tokenizer_service::TokenizerService::new(
+                    &test_app.config.tokenizer_model_path,
+                )
+                .unwrap_or_else(|_| panic!("Failed to create tokenizer for test")),
+                None,
+                "gemini-2.5-pro",
+            ),
+        ),
         encryption_service: encryption_service.clone(),
         lorebook_service: lorebook_service.clone(),
-        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
-        email_service: scribe_backend::services::email_service::create_email_service("development", "http://localhost:3000".to_string(), None).await.unwrap(),
-        ai_client_factory: Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(
             test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.ai_client.clone(),
         )),
-        rate_limiter: Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100)),
+        email_service: scribe_backend::services::email_service::create_email_service(
+            "development",
+            "http://localhost:3000".to_string(),
+            None,
+        )
+        .await
+        .unwrap(),
+        ai_client_factory: Arc::new(
+            scribe_backend::services::ai_client_factory::AiClientFactory::new(
+                test_app.db_pool.clone(),
+                test_app.config.clone(),
+                test_app.ai_client.clone(),
+            ),
+        ),
+        rate_limiter: Arc::new(
+            scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -541,84 +596,85 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
     };
-    
+
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        services
+        services,
     ));
-    
+
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(
-        app_state,
-        search_tool,
-        chronicle_service,
-    );
+    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
 
-    let messages = vec![
-        ("user".to_string(), message_content.to_string()),
-    ];
+    let messages = vec![("user".to_string(), message_content.to_string())];
 
     info!("Testing pre-processing analysis for message...");
 
     // Run pre-processing analysis
-    let _pre_result = context_agent.enrich_context(
-        session_id,
-        user.id,
-        None, // chronicle_id
-        &messages,
-        EnrichmentMode::PreProcessing,
-        user_dek.0.expose_secret(),
-        message_id, // Required message ID
-    ).await;
+    let _pre_result = context_agent
+        .enrich_context(
+            session_id,
+            user.id,
+            None, // chronicle_id
+            &messages,
+            EnrichmentMode::PreProcessing,
+            user_dek.0.expose_secret(),
+            message_id, // Required message ID
+        )
+        .await;
 
     info!("Testing post-processing analysis for same message...");
 
     // Run post-processing analysis for the same message
     let messages_with_response = vec![
         ("user".to_string(), message_content.to_string()),
-        ("assistant".to_string(), "Here's a story for you...".to_string()),
+        (
+            "assistant".to_string(),
+            "Here's a story for you...".to_string(),
+        ),
     ];
 
-    let _post_result = context_agent.enrich_context(
-        session_id,
-        user.id,
-        None, // chronicle_id
-        &messages_with_response,
-        EnrichmentMode::PostProcessing,
-        user_dek.0.expose_secret(),
-        message_id, // Required message ID // Same message ID
-    ).await;
+    let _post_result = context_agent
+        .enrich_context(
+            session_id,
+            user.id,
+            None, // chronicle_id
+            &messages_with_response,
+            EnrichmentMode::PostProcessing,
+            user_dek.0.expose_secret(),
+            message_id, // Required message ID // Same message ID
+        )
+        .await;
 
     // Query analyses for this message
     let conn = test_app.db_pool.get().await?;
-    let analyses = conn.interact(move |conn| {
-        use scribe_backend::schema::agent_context_analysis::dsl::*;
-        
-        agent_context_analysis
-            .filter(chat_session_id.eq(session_id))
-            .filter(message_id.eq(message_id))
-            .order_by(created_at.asc())
-            .load::<AgentContextAnalysis>(conn)
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("Pool interact error: {:?}", e))??;
+    let analyses = conn
+        .interact(move |conn| {
+            use scribe_backend::schema::agent_context_analysis::dsl::*;
+
+            agent_context_analysis
+                .filter(chat_session_id.eq(session_id))
+                .filter(message_id.eq(message_id))
+                .order_by(created_at.asc())
+                .load::<AgentContextAnalysis>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Pool interact error: {:?}", e))??;
 
     info!("Found {} analyses for message", analyses.len());
 
     // If analyses were stored, verify they have different modes but same message_id
     if analyses.len() >= 2 {
-        let modes: Vec<String> = analyses.iter()
-            .map(|a| a.analysis_type.clone())
-            .collect();
+        let modes: Vec<String> = analyses.iter().map(|a| a.analysis_type.clone()).collect();
 
         assert!(
-            modes.contains(&"pre_processing".to_string()) || modes.contains(&"post_processing".to_string()),
+            modes.contains(&"pre_processing".to_string())
+                || modes.contains(&"post_processing".to_string()),
             "Should have analyses with different modes"
         );
 

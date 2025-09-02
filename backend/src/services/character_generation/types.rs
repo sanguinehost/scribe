@@ -80,8 +80,12 @@ impl DescriptionStyle {
             DescriptionStyle::Narrative => "Story-like description with background and context",
             DescriptionStyle::Profile => "Organized data fields with biographical information",
             DescriptionStyle::Group => "Multiple character definitions with Characters() format",
-            DescriptionStyle::Worldbuilding => "Rich world context with character as part of larger narrative universe",
-            DescriptionStyle::System => "Behavioral rules and interaction guidelines for AI roleplay",
+            DescriptionStyle::Worldbuilding => {
+                "Rich world context with character as part of larger narrative universe"
+            }
+            DescriptionStyle::System => {
+                "Behavioral rules and interaction guidelines for AI roleplay"
+            }
             DescriptionStyle::Auto => "Automatically detect the best style based on context",
         }
     }
@@ -147,9 +151,9 @@ pub struct LorebookEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StylePreferences {
     pub description_style: Option<DescriptionStyle>,
-    pub tone: Option<String>, // "casual", "formal", "poetic", etc.
+    pub tone: Option<String>,   // "casual", "formal", "poetic", etc.
     pub length: Option<String>, // "brief", "detailed", "extensive"
-    pub focus: Option<String>, // "appearance", "personality", "background", etc.
+    pub focus: Option<String>,  // "appearance", "personality", "background", etc.
 }
 
 /// Options for controlling generation behavior

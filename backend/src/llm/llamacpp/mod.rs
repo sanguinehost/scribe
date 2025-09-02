@@ -53,30 +53,33 @@ pub use health::HealthChecker;
 pub use fallback::{FallbackStrategy, LlamaCppResilience};
 
 #[cfg(feature = "local-llm")]
-pub use security::{PromptSanitizer, OutputValidator, ResourceLimiter};
+pub use security::{OutputValidator, PromptSanitizer, ResourceLimiter};
 
 #[cfg(feature = "local-llm")]
-pub use hardware::{HardwareCapabilities, HardwareRequirements, ContextSizeConfig, detect_hardware, calculate_optimal_context_size};
+pub use hardware::{
+    ContextSizeConfig, HardwareCapabilities, HardwareRequirements, calculate_optimal_context_size,
+    detect_hardware,
+};
 
 #[cfg(feature = "local-llm")]
-pub use metrics::{PerformanceMetrics, MetricsCollector, LlamaCppMetrics};
+pub use metrics::{LlamaCppMetrics, MetricsCollector, PerformanceMetrics};
 
 #[cfg(feature = "local-llm")]
 pub use encryption::{
-    LlmEncryptionService, LlmEncryptionError, EncryptedLlmData, 
-    LlmDataType, StreamingEncryptionHandler
+    EncryptedLlmData, LlmDataType, LlmEncryptionError, LlmEncryptionService,
+    StreamingEncryptionHandler,
 };
 
 #[cfg(feature = "local-llm")]
 pub use audit::{
-    SecurityAuditLogger, SecurityEvent, SecurityEventType, SecurityEventSeverity,
-    SecurityEventFilter, SecurityMetrics
+    SecurityAuditLogger, SecurityEvent, SecurityEventFilter, SecurityEventSeverity,
+    SecurityEventType, SecurityMetrics,
 };
 
 #[cfg(feature = "local-llm")]
 pub use integrity::{
-    ModelIntegrityVerifier, ModelMetadata, QuarantineStatus, SecureModelRegistry,
-    IntegrityError, VerificationRecord, VerificationType, VerificationResult
+    IntegrityError, ModelIntegrityVerifier, ModelMetadata, QuarantineStatus, SecureModelRegistry,
+    VerificationRecord, VerificationResult, VerificationType,
 };
 
 #[cfg(feature = "local-llm")]
@@ -134,81 +137,84 @@ impl LlamaCppConfig {
     /// Create config with environment variable overrides
     pub fn from_env() -> Self {
         use std::env;
-        
+
         let mut config = Self::default();
-        
+
         // Override with environment variables if present
         if let Ok(val) = env::var("LLAMACPP_ENABLE_TOOLS") {
             config.enable_tool_calling = val.parse().unwrap_or(true);
         }
-        
+
         if let Ok(val) = env::var("LLAMACPP_PARALLEL_REQUESTS") {
             config.parallel_requests = val.parse().ok();
         }
-        
+
         if let Ok(val) = env::var("LLAMACPP_CHAT_TEMPLATE") {
             config.chat_template = Some(val);
         }
-        
+
         // Override other common settings
         if let Ok(val) = env::var("LLAMACPP_SERVER_HOST") {
             config.server_host = val;
         }
-        
+
         if let Ok(val) = env::var("LLAMACPP_SERVER_PORT") {
             config.server_port = val.parse().unwrap_or(11435);
         }
-        
+
         if let Ok(val) = env::var("LLAMACPP_CONTEXT_SIZE") {
             config.context_size = val.parse().unwrap_or(8192);
         }
-        
+
         if let Ok(val) = env::var("LLAMACPP_GPU_LAYERS") {
             config.gpu_layers = val.parse().ok();
         }
-        
+
         config
     }
-    
+
     /// Create config with adaptive context sizing based on model and hardware
-    pub fn with_adaptive_context(mut self, model: &hardware::ModelSelection) -> Result<(Self, ContextSizeConfig), LocalLlmError> {
-        let hardware = detect_hardware()
-            .map_err(|e| LocalLlmError::HardwareDetectionFailed(e.to_string()))?;
-        
+    pub fn with_adaptive_context(
+        mut self,
+        model: &hardware::ModelSelection,
+    ) -> Result<(Self, ContextSizeConfig), LocalLlmError> {
+        let hardware =
+            detect_hardware().map_err(|e| LocalLlmError::HardwareDetectionFailed(e.to_string()))?;
+
         let context_config = calculate_optimal_context_size(model, &hardware);
-        
+
         // Update config with adaptive values
         self.context_size = context_config.optimal_context_size;
         self.gpu_layers = context_config.optimal_gpu_layers;
-        
+
         // Log the adaptive configuration
         if let Some(ref warning) = context_config.memory_warning {
             tracing::warn!("Adaptive context configuration: {}", warning);
         }
-        
+
         tracing::info!(
             "Adaptive context configured: context_size={}, gpu_layers={:?}",
             self.context_size,
             self.gpu_layers
         );
-        
+
         Ok((self, context_config))
     }
-    
+
     /// Check if adaptive context sizing should be used
     pub fn should_use_adaptive_context(&self) -> bool {
         // Use adaptive context if:
         // 1. Environment variable is set to enable it
         // 2. Context size is at default or very large (suggests it wasn't manually tuned)
         // 3. GPU layers is set to auto (999) suggesting auto-configuration is desired
-        
+
         use std::env;
-        
+
         // Check explicit environment variable
         if let Ok(val) = env::var("LLAMACPP_ADAPTIVE_CONTEXT") {
             return val.parse().unwrap_or(true);
         }
-        
+
         // Auto-enable if config looks like defaults that could benefit from adaptation
         self.context_size >= 32768 && self.gpu_layers == Some(999)
     }
@@ -220,31 +226,31 @@ impl LlamaCppConfig {
 pub enum LocalLlmError {
     #[error("LlamaCpp server unavailable: {0}")]
     ServerUnavailable(String),
-    
+
     #[error("Model loading failed: {0}")]
     ModelLoadFailed(String),
-    
+
     #[error("Model not found: {0}")]
     ModelNotFound(String),
-    
+
     #[error("Insufficient resources (RAM: {ram_gb}GB, VRAM: {vram_gb}GB required)")]
     InsufficientResources { ram_gb: f32, vram_gb: f32 },
-    
+
     #[error("Fallback to remote API: {reason}")]
     FallbackTriggered { reason: String },
-    
+
     #[error("Security violation: {0}")]
     SecurityViolation(String),
-    
+
     #[error("Model download failed: {0}")]
     ModelDownloadFailed(String),
-    
+
     #[error("Hardware detection failed: {0}")]
     HardwareDetectionFailed(String),
-    
+
     #[error("Server startup timeout")]
     ServerStartupTimeout,
-    
+
     #[error("Resource limit exceeded: {0}")]
     ResourceLimitExceeded(String),
 }

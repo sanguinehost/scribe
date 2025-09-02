@@ -715,10 +715,10 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
-            _model_name, // 12: model_name
-            _,           // 13: model_provider (NEW)
-            _,           // 14: gemini_thinking_budget
-            _,           // 15: gemini_enable_code_execution
+            _model_name,          // 12: model_name
+            _,                    // 13: model_provider (NEW)
+            _,                    // 14: gemini_thinking_budget
+            _,                    // 15: gemini_enable_code_execution
             _user_msg_struct,     // 16: DbInsertableChatMessage
             actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
             rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
@@ -892,10 +892,10 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
-            _model_name, // 12: model_name
-            _,           // 13: model_provider (NEW)
-            _,           // 14: gemini_thinking_budget
-            _,           // 15: gemini_enable_code_execution
+            _model_name,          // 12: model_name
+            _,                    // 13: model_provider (NEW)
+            _,                    // 14: gemini_thinking_budget
+            _,                    // 15: gemini_enable_code_execution
             _user_msg_struct,     // 16: DbInsertableChatMessage
             actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
             rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
@@ -1186,10 +1186,10 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
-            _model_name, // 12: model_name
-            _,           // 13: model_provider (NEW)
-            _,           // 14: gemini_thinking_budget
-            _,           // 15: gemini_enable_code_execution
+            _model_name,          // 12: model_name
+            _,                    // 13: model_provider (NEW)
+            _,                    // 14: gemini_thinking_budget
+            _,                    // 15: gemini_enable_code_execution
             _user_msg_struct,     // 16: DbInsertableChatMessage
             actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
             rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
@@ -1910,7 +1910,7 @@ mod get_session_data_for_generation_tests {
                         // token_count: tokens as usize, // Removed, not in struct
                         source_type: "chat_message".to_string(),
                         text: (*content).to_string(), // Changed from chunk_text
-                                                      // original_message_id: msg_id, // Removed, covered by message_id
+                        // original_message_id: msg_id, // Removed, covered by message_id
                         encrypted_text: None,
                         text_nonce: None,
                     },
@@ -2031,10 +2031,10 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _,
-            _model_name, // 12: model_name
-            _,           // 13: model_provider (NEW)
-            _,           // 14: gemini_thinking_budget
-            _,           // 15: gemini_enable_code_execution
+            _model_name,          // 12: model_name
+            _,                    // 13: model_provider (NEW)
+            _,                    // 14: gemini_thinking_budget
+            _,                    // 15: gemini_enable_code_execution
             _user_msg_struct,     // 16: DbInsertableChatMessage
             actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
             rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)

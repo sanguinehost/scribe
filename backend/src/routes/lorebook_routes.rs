@@ -27,7 +27,6 @@ use tracing::instrument; // Keep instrument
 use uuid::Uuid;
 use validator::Validate; // For validating payloads
 
-
 pub fn lorebook_routes() -> Router<AppState> {
     Router::new()
         .route("/lorebooks", post(create_lorebook_handler))
@@ -648,4 +647,3 @@ async fn get_character_lorebook_overrides_handler(
 
     Ok((StatusCode::OK, Json(response)))
 }
-

@@ -7,21 +7,21 @@ use axum::{
     http::{Method, Request, StatusCode, header},
     response::Response,
 };
+use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use http_body_util::BodyExt;
-use bigdecimal::BigDecimal;
-use std::str::FromStr;
 use scribe_backend::{
     models::{
-        chronicle::{PlayerChronicle, CreateChronicleRequest},
-        chats::{NewChat, MessageRole, DbInsertableChatMessage},
         characters::Character as DbCharacter,
+        chats::{DbInsertableChatMessage, MessageRole, NewChat},
+        chronicle::{CreateChronicleRequest, PlayerChronicle},
     },
     routes::chronicles::ReChronicleResponse,
-    test_helpers::{self, TestDataGuard, TestApp},
     schema,
+    test_helpers::{self, TestApp, TestDataGuard},
 };
 use serde_json::json;
+use std::str::FromStr;
 use tower::util::ServiceExt;
 use uuid::Uuid;
 
@@ -30,14 +30,17 @@ fn extract_session_cookie(response: &Response) -> Option<String> {
     response
         .headers()
         .get(header::SET_COOKIE)?
-        .to_str().ok()?
+        .to_str()
+        .ok()?
         .split(';')
         .next()
         .map(|s| s.to_string())
 }
 
 // Helper function to parse JSON response
-async fn parse_json_response<T: serde::de::DeserializeOwned>(response: Response) -> AnyhowResult<T> {
+async fn parse_json_response<T: serde::de::DeserializeOwned>(
+    response: Response,
+) -> AnyhowResult<T> {
     let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = std::str::from_utf8(&body_bytes)?;
     serde_json::from_str(body_str).context("Failed to parse JSON response")
@@ -56,7 +59,8 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<(String, 
         "password": password
     });
 
-    let register_response = test_app.router
+    let register_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -73,8 +77,8 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<(String, 
     // Parse the registration response to get user_id
     let register_body_bytes = register_response.into_body().collect().await?.to_bytes();
     let register_body_str = std::str::from_utf8(&register_body_bytes)?;
-    let auth_response: serde_json::Value = serde_json::from_str(register_body_str)
-        .context("Failed to parse registration response")?;
+    let auth_response: serde_json::Value =
+        serde_json::from_str(register_body_str).context("Failed to parse registration response")?;
     let user_id = auth_response["user_id"]
         .as_str()
         .context("No user_id in registration response")?;
@@ -125,7 +129,8 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<(String, 
         "password": password
     });
 
-    let login_response = test_app.router
+    let login_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -153,7 +158,7 @@ async fn create_chat_session_with_messages(
 ) -> AnyhowResult<Uuid> {
     let conn = test_app.db_pool.get().await?;
     let session_id = Uuid::new_v4();
-    
+
     // Create a dummy character first (required for NewChat)
     let character_id = Uuid::new_v4();
     let character = DbCharacter {
@@ -256,7 +261,7 @@ async fn create_chat_session_with_messages(
     .await
     .map_err(|e| anyhow::anyhow!("Interact error: {}", e))?
     .map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
-    
+
     // Create chat session
     let chat = NewChat {
         id: session_id,
@@ -300,16 +305,28 @@ async fn create_chat_session_with_messages(
     // Create messages
     for i in 0..message_count {
         let message_id = Uuid::new_v4();
-        let role = if i % 2 == 0 { MessageRole::User } else { MessageRole::Assistant };
+        let role = if i % 2 == 0 {
+            MessageRole::User
+        } else {
+            MessageRole::Assistant
+        };
         let content = match role {
-            MessageRole::User => format!("User message {}: This is a test user message with some context.", i + 1),
-            MessageRole::Assistant => format!("Assistant message {}: This is a test assistant response with detailed information about the conversation.", i + 1),
-            MessageRole::System => format!("System message {}: This is a test system message.", i + 1),
+            MessageRole::User => format!(
+                "User message {}: This is a test user message with some context.",
+                i + 1
+            ),
+            MessageRole::Assistant => format!(
+                "Assistant message {}: This is a test assistant response with detailed information about the conversation.",
+                i + 1
+            ),
+            MessageRole::System => {
+                format!("System message {}: This is a test system message.", i + 1)
+            }
         };
 
         // Encrypt the content (in real app this would use proper encryption)
         let content_bytes = content.as_bytes().to_vec();
-        
+
         let message = DbInsertableChatMessage {
             chat_id: session_id,
             msg_type: role,
@@ -357,7 +374,8 @@ mod re_chronicle_api_tests {
             description: Some("Testing re-chronicle functionality".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -365,16 +383,23 @@ mod re_chronicle_api_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // Create a chat session with messages
-        let chat_session_id = create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 5).await.unwrap();
+        let chat_session_id =
+            create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 5)
+                .await
+                .unwrap();
 
         // Test: Re-chronicle from chat
         let re_chronicle_request = json!({
@@ -384,7 +409,8 @@ mod re_chronicle_api_tests {
             "batch_size": 3
         });
 
-        let re_chronicle_response = test_app.router
+        let re_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -400,7 +426,8 @@ mod re_chronicle_api_tests {
 
         assert_eq!(re_chronicle_response.status(), StatusCode::OK);
 
-        let response_body: serde_json::Value = parse_json_response(re_chronicle_response).await.unwrap();
+        let response_body: serde_json::Value =
+            parse_json_response(re_chronicle_response).await.unwrap();
 
         // Verify response structure
         assert!(response_body.get("events_created").is_some());
@@ -429,7 +456,8 @@ mod re_chronicle_api_tests {
             description: Some("Testing with existing events".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -437,16 +465,23 @@ mod re_chronicle_api_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // Create a chat session
-        let chat_session_id = create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 3).await.unwrap();
+        let chat_session_id =
+            create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 3)
+                .await
+                .unwrap();
 
         // Create some existing events first
         let event_data = json!({
@@ -462,7 +497,8 @@ mod re_chronicle_api_tests {
                 "event_data": event_data
             });
 
-            let create_event_response = test_app.router
+            let create_event_response = test_app
+                .router
                 .clone()
                 .oneshot(
                     Request::builder()
@@ -487,7 +523,8 @@ mod re_chronicle_api_tests {
             "batch_size": 2
         });
 
-        let re_chronicle_response = test_app.router
+        let re_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -503,7 +540,8 @@ mod re_chronicle_api_tests {
 
         assert_eq!(re_chronicle_response.status(), StatusCode::OK);
 
-        let response_body: serde_json::Value = parse_json_response(re_chronicle_response).await.unwrap();
+        let response_body: serde_json::Value =
+            parse_json_response(re_chronicle_response).await.unwrap();
 
         // Verify existing events were purged
         let events_purged = response_body["events_purged"].as_u64().unwrap();
@@ -526,7 +564,8 @@ mod re_chronicle_api_tests {
             description: Some("Testing without purging".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -534,16 +573,23 @@ mod re_chronicle_api_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // Create a chat session
-        let chat_session_id = create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 3).await.unwrap();
+        let chat_session_id =
+            create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 3)
+                .await
+                .unwrap();
 
         // Test: Re-chronicle with purge_existing = false
         let re_chronicle_request = json!({
@@ -553,7 +599,8 @@ mod re_chronicle_api_tests {
             "batch_size": 2
         });
 
-        let re_chronicle_response = test_app.router
+        let re_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -569,7 +616,8 @@ mod re_chronicle_api_tests {
 
         assert_eq!(re_chronicle_response.status(), StatusCode::OK);
 
-        let response_body: serde_json::Value = parse_json_response(re_chronicle_response).await.unwrap();
+        let response_body: serde_json::Value =
+            parse_json_response(re_chronicle_response).await.unwrap();
 
         // Verify no events were purged
         let events_purged = response_body["events_purged"].as_u64().unwrap();
@@ -592,7 +640,8 @@ mod re_chronicle_api_tests {
             description: Some("Testing message range filtering".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -600,16 +649,23 @@ mod re_chronicle_api_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // Create a chat session with more messages
-        let chat_session_id = create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 10).await.unwrap();
+        let chat_session_id =
+            create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 10)
+                .await
+                .unwrap();
 
         // Test: Re-chronicle with message range (messages 2-6)
         let re_chronicle_request = json!({
@@ -621,7 +677,8 @@ mod re_chronicle_api_tests {
             "batch_size": 2
         });
 
-        let re_chronicle_response = test_app.router
+        let re_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -637,7 +694,8 @@ mod re_chronicle_api_tests {
 
         assert_eq!(re_chronicle_response.status(), StatusCode::OK);
 
-        let response_body: serde_json::Value = parse_json_response(re_chronicle_response).await.unwrap();
+        let response_body: serde_json::Value =
+            parse_json_response(re_chronicle_response).await.unwrap();
 
         // Verify only the specified range was processed (4 messages: indices 2, 3, 4, 5)
         let messages_processed = response_body["messages_processed"].as_u64().unwrap();
@@ -660,12 +718,16 @@ mod re_chronicle_api_tests {
             "extraction_model": "gemini-2.5-pro"
         });
 
-        let re_chronicle_response = test_app.router
+        let re_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
-                    .uri(&format!("/api/chronicles/{}/re-chronicle", nonexistent_chronicle_id))
+                    .uri(&format!(
+                        "/api/chronicles/{}/re-chronicle",
+                        nonexistent_chronicle_id
+                    ))
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
                     .body(Body::from(re_chronicle_request.to_string()))
@@ -689,7 +751,8 @@ mod re_chronicle_api_tests {
             description: Some("Testing with nonexistent chat".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -697,13 +760,17 @@ mod re_chronicle_api_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         let nonexistent_chat_id = Uuid::new_v4();
 
@@ -714,7 +781,8 @@ mod re_chronicle_api_tests {
             "extraction_model": "gemini-2.5-pro"
         });
 
-        let re_chronicle_response = test_app.router
+        let re_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -729,9 +797,10 @@ mod re_chronicle_api_tests {
             .unwrap();
 
         assert_eq!(re_chronicle_response.status(), StatusCode::OK);
-        
+
         // Verify the response indicates no messages were found
-        let response_body: ReChronicleResponse = parse_json_response(re_chronicle_response).await.unwrap();
+        let response_body: ReChronicleResponse =
+            parse_json_response(re_chronicle_response).await.unwrap();
         assert_eq!(response_body.events_created, 0);
         assert_eq!(response_body.messages_processed, 0);
         assert_eq!(response_body.summary, "No messages found in chat session");
@@ -752,7 +821,8 @@ mod re_chronicle_api_tests {
             description: Some("Should not be accessible by User2".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -760,16 +830,23 @@ mod re_chronicle_api_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie1)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // Create chat session for user1
-        let chat_session_id = create_chat_session_with_messages(&test_app, user_id1, Some(chronicle.id), 3).await.unwrap();
+        let chat_session_id =
+            create_chat_session_with_messages(&test_app, user_id1, Some(chronicle.id), 3)
+                .await
+                .unwrap();
 
         // Test: User2 tries to re-chronicle User1's chronicle
         let re_chronicle_request = json!({
@@ -778,7 +855,8 @@ mod re_chronicle_api_tests {
             "extraction_model": "gemini-2.5-pro"
         });
 
-        let unauthorized_response = test_app.router
+        let unauthorized_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -795,7 +873,8 @@ mod re_chronicle_api_tests {
         assert_eq!(unauthorized_response.status(), StatusCode::NOT_FOUND);
 
         // Test: Access without authentication
-        let unauth_response = test_app.router
+        let unauth_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -823,7 +902,8 @@ mod re_chronicle_api_tests {
             description: Some("For testing validation".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -831,13 +911,17 @@ mod re_chronicle_api_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // Test: Missing required fields
         let incomplete_request = json!({
@@ -846,7 +930,8 @@ mod re_chronicle_api_tests {
             // Missing chat_session_id
         });
 
-        let incomplete_response = test_app.router
+        let incomplete_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -860,7 +945,10 @@ mod re_chronicle_api_tests {
             .await
             .unwrap();
 
-        assert_eq!(incomplete_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            incomplete_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
 
         // Test: Invalid UUID format
         let invalid_uuid_request = json!({
@@ -869,7 +957,8 @@ mod re_chronicle_api_tests {
             "extraction_model": "gemini-2.5-pro"
         });
 
-        let invalid_uuid_response = test_app.router
+        let invalid_uuid_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -883,7 +972,10 @@ mod re_chronicle_api_tests {
             .await
             .unwrap();
 
-        assert_eq!(invalid_uuid_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            invalid_uuid_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
 
         // Test: Invalid batch size (too large)
         let invalid_batch_size_request = json!({
@@ -893,7 +985,8 @@ mod re_chronicle_api_tests {
             "batch_size": 1000
         });
 
-        let invalid_batch_response = test_app.router
+        let invalid_batch_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -923,7 +1016,8 @@ mod re_chronicle_api_tests {
             description: Some("Testing with empty chat".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -931,16 +1025,23 @@ mod re_chronicle_api_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // Create an empty chat session (0 messages)
-        let chat_session_id = create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 0).await.unwrap();
+        let chat_session_id =
+            create_chat_session_with_messages(&test_app, user_id, Some(chronicle.id), 0)
+                .await
+                .unwrap();
 
         // Test: Re-chronicle empty chat session
         let re_chronicle_request = json!({
@@ -949,7 +1050,8 @@ mod re_chronicle_api_tests {
             "extraction_model": "gemini-2.5-pro"
         });
 
-        let re_chronicle_response = test_app.router
+        let re_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -965,7 +1067,8 @@ mod re_chronicle_api_tests {
 
         assert_eq!(re_chronicle_response.status(), StatusCode::OK);
 
-        let response_body: serde_json::Value = parse_json_response(re_chronicle_response).await.unwrap();
+        let response_body: serde_json::Value =
+            parse_json_response(re_chronicle_response).await.unwrap();
 
         // Verify no messages were processed
         let messages_processed = response_body["messages_processed"].as_u64().unwrap();

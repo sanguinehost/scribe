@@ -1,13 +1,13 @@
+use crate::crypto;
+use crate::errors::AppError;
 use crate::schema::agent_context_analysis;
 use chrono::{DateTime, Utc};
-use diesel::{Identifiable, Insertable, Queryable, Selectable, AsChangeset};
 use diesel::prelude::*;
+use diesel::{AsChangeset, Identifiable, Insertable, Queryable, Selectable};
+use secrecy::{ExposeSecret, SecretBox};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
-use secrecy::{ExposeSecret, SecretBox};
-use crate::crypto;
-use crate::errors::AppError;
 
 /// Mode of operation for the context enrichment agent
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,7 +102,7 @@ pub struct AgentContextAnalysis {
     pub updated_at: Option<DateTime<Utc>>,
     pub message_id: Uuid, // Link to specific message this analysis is for (REQUIRED)
     pub assistant_message_id: Option<Uuid>, // Link to assistant message (set after assistant responds)
-    pub status: String, // Will be converted to/from AnalysisStatus
+    pub status: String,                     // Will be converted to/from AnalysisStatus
     pub error_message: Option<String>,
     pub retry_count: i32,
     pub superseded_at: Option<DateTime<Utc>>,
@@ -116,9 +116,9 @@ impl AgentContextAnalysis {
         analysis_type: AnalysisType,
     ) -> Result<Option<Self>, AppError> {
         use crate::schema::agent_context_analysis::dsl;
-        
+
         let analysis_type_str = analysis_type.to_string();
-        
+
         // Only get non-superseded analyses
         dsl::agent_context_analysis
             .filter(dsl::chat_session_id.eq(session_id))
@@ -126,19 +126,21 @@ impl AgentContextAnalysis {
             .filter(dsl::superseded_at.is_null())
             .first::<Self>(conn)
             .optional()
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch agent analysis: {}", e)))
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to fetch agent analysis: {}", e))
+            })
     }
-    
+
     /// Get the analysis type as an enum
     pub fn get_analysis_type(&self) -> Result<AnalysisType, String> {
         self.analysis_type.parse()
     }
-    
+
     /// Get the analysis status as an enum
     pub fn get_analysis_status(&self) -> Result<AnalysisStatus, String> {
         self.status.parse()
     }
-    
+
     /// Mark failed/partial analyses as superseded for a session
     pub fn supersede_failed_analyses(
         conn: &mut PgConnection,
@@ -147,27 +149,28 @@ impl AgentContextAnalysis {
     ) -> Result<usize, AppError> {
         use crate::schema::agent_context_analysis::dsl;
         use diesel::prelude::*;
-        
+
         let analysis_type_str = analysis_type.to_string();
-        
+
         diesel::update(
             dsl::agent_context_analysis
                 .filter(dsl::chat_session_id.eq(session_id))
                 .filter(dsl::analysis_type.eq(analysis_type_str))
                 .filter(dsl::superseded_at.is_null())
                 .filter(
-                    dsl::status.eq("failed")
+                    dsl::status
+                        .eq("failed")
                         .or(dsl::status.eq("partial"))
-                        .or(dsl::status.eq("pending"))
-                )
+                        .or(dsl::status.eq("pending")),
+                ),
         )
         .set(dsl::superseded_at.eq(diesel::dsl::now))
         .execute(conn)
-        .map_err(|e| AppError::DatabaseQueryError(
-            format!("Failed to supersede failed analyses: {}", e)
-        ))
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to supersede failed analyses: {}", e))
+        })
     }
-    
+
     /// Update the status of an analysis
     pub fn update_status(
         conn: &mut PgConnection,
@@ -177,9 +180,9 @@ impl AgentContextAnalysis {
     ) -> Result<(), AppError> {
         use crate::schema::agent_context_analysis::dsl;
         use diesel::prelude::*;
-        
+
         let status_str = status.to_string();
-        
+
         diesel::update(dsl::agent_context_analysis.find(analysis_id))
             .set((
                 dsl::status.eq(status_str),
@@ -187,10 +190,10 @@ impl AgentContextAnalysis {
                 dsl::updated_at.eq(diesel::dsl::now),
             ))
             .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(
-                format!("Failed to update analysis status: {}", e)
-            ))?;
-        
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to update analysis status: {}", e))
+            })?;
+
         Ok(())
     }
 
@@ -202,14 +205,17 @@ impl AgentContextAnalysis {
     ) -> Result<(), AppError> {
         use crate::schema::agent_context_analysis::dsl;
         use diesel::prelude::*;
-        
+
         diesel::update(dsl::agent_context_analysis.find(analysis_id))
             .set(dsl::assistant_message_id.eq(Some(assistant_message_id)))
             .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(
-                format!("Failed to update assistant_message_id: {}", e)
-            ))?;
-        
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!(
+                    "Failed to update assistant_message_id: {}",
+                    e
+                ))
+            })?;
+
         Ok(())
     }
 
@@ -222,7 +228,9 @@ impl AgentContextAnalysis {
                     let decrypted = crypto::decrypt_gcm(&encrypted_bytes, nonce, dek)
                         .map_err(|e| AppError::CryptoError(e.to_string()))?;
                     let decrypted_str = String::from_utf8(decrypted.expose_secret().clone())
-                        .map_err(|e| AppError::CryptoError(format!("UTF-8 conversion failed: {}", e)))?;
+                        .map_err(|e| {
+                            AppError::CryptoError(format!("UTF-8 conversion failed: {}", e))
+                        })?;
                     Ok(decrypted_str)
                 } else {
                     // Fallback to plaintext if not hex
@@ -238,7 +246,10 @@ impl AgentContextAnalysis {
     }
 
     /// Get the decrypted execution log using the provided DEK
-    pub fn get_decrypted_execution_log(&self, dek: &SecretBox<Vec<u8>>) -> Result<JsonValue, AppError> {
+    pub fn get_decrypted_execution_log(
+        &self,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<JsonValue, AppError> {
         match (&self.execution_log, &self.execution_log_nonce) {
             (Some(log), Some(nonce)) if !nonce.is_empty() => {
                 // Execution log is stored as JSON, but we need to decrypt it first
@@ -247,7 +258,9 @@ impl AgentContextAnalysis {
                         let decrypted = crypto::decrypt_gcm(&encrypted_bytes, nonce, dek)
                             .map_err(|e| AppError::CryptoError(e.to_string()))?;
                         let decrypted_str = String::from_utf8(decrypted.expose_secret().clone())
-                            .map_err(|e| AppError::CryptoError(format!("UTF-8 conversion failed: {}", e)))?;
+                            .map_err(|e| {
+                                AppError::CryptoError(format!("UTF-8 conversion failed: {}", e))
+                            })?;
                         let json_value = serde_json::from_str(&decrypted_str)?;
                         Ok(json_value)
                     } else {
@@ -276,7 +289,9 @@ impl AgentContextAnalysis {
                     let decrypted = crypto::decrypt_gcm(&encrypted_bytes, nonce, dek)
                         .map_err(|e| AppError::CryptoError(e.to_string()))?;
                     let decrypted_str = String::from_utf8(decrypted.expose_secret().clone())
-                        .map_err(|e| AppError::CryptoError(format!("UTF-8 conversion failed: {}", e)))?;
+                        .map_err(|e| {
+                            AppError::CryptoError(format!("UTF-8 conversion failed: {}", e))
+                        })?;
                     Ok(decrypted_str)
                 } else {
                     // Fallback to plaintext if not hex
@@ -300,7 +315,9 @@ impl AgentContextAnalysis {
                     let decrypted = crypto::decrypt_gcm(&encrypted_bytes, nonce, dek)
                         .map_err(|e| AppError::CryptoError(e.to_string()))?;
                     let decrypted_str = String::from_utf8(decrypted.expose_secret().clone())
-                        .map_err(|e| AppError::CryptoError(format!("UTF-8 conversion failed: {}", e)))?;
+                        .map_err(|e| {
+                            AppError::CryptoError(format!("UTF-8 conversion failed: {}", e))
+                        })?;
                     Ok(decrypted_str)
                 } else {
                     // Fallback to plaintext if not hex
@@ -362,8 +379,10 @@ impl NewAgentContextAnalysis {
     ) -> Result<Self, AppError> {
         // Encrypt sensitive text fields
         let (encrypted_reasoning, reasoning_nonce) = if !agent_reasoning.is_empty() {
-            let (encrypted, nonce) = crypto::encrypt_gcm(agent_reasoning.as_bytes(), dek)
-                .map_err(|e| AppError::CryptoError(format!("Failed to encrypt reasoning: {}", e)))?;
+            let (encrypted, nonce) =
+                crypto::encrypt_gcm(agent_reasoning.as_bytes(), dek).map_err(|e| {
+                    AppError::CryptoError(format!("Failed to encrypt reasoning: {}", e))
+                })?;
             (Some(hex::encode(encrypted)), Some(nonce))
         } else {
             (Some(String::new()), None)
@@ -372,8 +391,10 @@ impl NewAgentContextAnalysis {
         let (encrypted_log, log_nonce) = {
             let log_str = serde_json::to_string(execution_log)?;
             if !log_str.is_empty() && log_str != "null" {
-                let (encrypted, nonce) = crypto::encrypt_gcm(log_str.as_bytes(), dek)
-                    .map_err(|e| AppError::CryptoError(format!("Failed to encrypt execution log: {}", e)))?;
+                let (encrypted, nonce) =
+                    crypto::encrypt_gcm(log_str.as_bytes(), dek).map_err(|e| {
+                        AppError::CryptoError(format!("Failed to encrypt execution log: {}", e))
+                    })?;
                 // Store encrypted data as a JSON string
                 (Some(JsonValue::String(hex::encode(encrypted))), Some(nonce))
             } else {

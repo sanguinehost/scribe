@@ -17,19 +17,19 @@ use crate::services::embeddings::EmbeddingPipelineServiceTrait;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
 // use crate::auth::user_store::Backend as AuthBackend; // For axum-login
 use crate::auth::user_store::Backend as AuthBackend; // Added for shared AuthBackend
+#[cfg(feature = "local-llm")]
+use crate::llm::llamacpp::LlamaCppServerManager; // Added for local LLM server management
+#[cfg(feature = "local-llm")]
+use crate::llm::llamacpp::{ModelIntegrityVerifier, SecurityAuditLogger}; // Added for LLM security
+use crate::middleware::llm_security::LlmRateLimiter; // Added for rate limiting
 use crate::services::EmailService; // For email service
+use crate::services::ai_client_factory::AiClientFactory;
 use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
 use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
 use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
 use crate::services::lorebook::LorebookService; // Added for LorebookService
-use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
-use crate::services::ai_client_factory::AiClientFactory;
 use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
-use crate::middleware::llm_security::LlmRateLimiter; // Added for rate limiting
-#[cfg(feature = "local-llm")]
-use crate::llm::llamacpp::LlamaCppServerManager; // Added for local LLM server management
-#[cfg(feature = "local-llm")]
-use crate::llm::llamacpp::{SecurityAuditLogger, ModelIntegrityVerifier}; // Added for LLM security
+use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
@@ -85,8 +85,8 @@ pub struct AppState {
     pub lorebook_service: Arc<LorebookService>,     // Added for LorebookService
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
-    pub ai_client_factory: Arc<AiClientFactory>, // Added for dynamic AI client selection
-    pub rate_limiter: Arc<LlmRateLimiter>, // Added for rate limiting
+    pub ai_client_factory: Arc<AiClientFactory>,    // Added for dynamic AI client selection
+    pub rate_limiter: Arc<LlmRateLimiter>,          // Added for rate limiting
     pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
     #[cfg(feature = "local-llm")]
     pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
@@ -120,15 +120,28 @@ impl fmt::Debug for AppState {
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
             .field("ai_client_factory", &"<Arc<AiClientFactory>>") // Added for AI client factory
             .field("rate_limiter", &"<Arc<LlmRateLimiter>>") // Added for rate limiting
-            .field("narrative_intelligence_service", &"<Option<Arc<NarrativeIntelligenceService>>>"); // Added for agentic narrative processing
-        
+            .field(
+                "narrative_intelligence_service",
+                &"<Option<Arc<NarrativeIntelligenceService>>>",
+            ); // Added for agentic narrative processing
+
         #[cfg(feature = "local-llm")]
         {
-            debug_struct.field("llamacpp_server_manager", &"<Option<Arc<LlamaCppServerManager>>>")
-                       .field("security_audit_logger", &"<Option<Arc<SecurityAuditLogger>>>")
-                       .field("model_integrity_verifier", &"<Option<Arc<ModelIntegrityVerifier>>>");
+            debug_struct
+                .field(
+                    "llamacpp_server_manager",
+                    &"<Option<Arc<LlamaCppServerManager>>>",
+                )
+                .field(
+                    "security_audit_logger",
+                    &"<Option<Arc<SecurityAuditLogger>>>",
+                )
+                .field(
+                    "model_integrity_verifier",
+                    &"<Option<Arc<ModelIntegrityVerifier>>>",
+                );
         }
-        
+
         debug_struct.finish()
     }
 }
@@ -166,7 +179,10 @@ impl AppState {
 
     /// Set the narrative intelligence service after AppState construction
     /// This is needed to break the circular dependency during construction
-    pub fn set_narrative_intelligence_service(&mut self, service: Arc<NarrativeIntelligenceService>) {
+    pub fn set_narrative_intelligence_service(
+        &mut self,
+        service: Arc<NarrativeIntelligenceService>,
+    ) {
         self.narrative_intelligence_service = Some(service);
     }
 }

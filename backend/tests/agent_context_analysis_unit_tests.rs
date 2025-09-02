@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use scribe_backend::models::agent_context_analysis::{NewAgentContextAnalysis, AnalysisType};
-use uuid::Uuid;
+use scribe_backend::models::agent_context_analysis::{AnalysisType, NewAgentContextAnalysis};
 use secrecy::SecretBox;
+use uuid::Uuid;
 
 #[test]
 fn test_new_agent_context_analysis_with_message_id() {
@@ -26,7 +26,8 @@ fn test_new_agent_context_analysis_with_message_id() {
         "gemini-2.5-flash-lite",
         &session_dek,
         message_id,
-    ).expect("Should create analysis");
+    )
+    .expect("Should create analysis");
 
     assert_eq!(analysis.chat_session_id, session_id);
     assert_eq!(analysis.user_id, user_id);
@@ -60,7 +61,8 @@ fn test_new_agent_context_analysis_with_required_message_id() {
         "gemini-2.5-flash-lite",
         &session_dek,
         message_id, // Required message_id
-    ).expect("Should create analysis");
+    )
+    .expect("Should create analysis");
 
     assert_eq!(analysis.chat_session_id, session_id);
     assert_eq!(analysis.user_id, user_id);
@@ -104,7 +106,8 @@ fn test_message_id_field_is_required() {
             "model",
             &session_dek,
             Uuid::new_v4(),
-        ).expect("Should create analysis 1"),
+        )
+        .expect("Should create analysis 1"),
         NewAgentContextAnalysis::new_encrypted(
             session_id,
             user_id,
@@ -119,7 +122,8 @@ fn test_message_id_field_is_required() {
             "model",
             &session_dek,
             Uuid::new_v4(),
-        ).expect("Should create analysis 2"),
+        )
+        .expect("Should create analysis 2"),
         NewAgentContextAnalysis::new_encrypted(
             session_id,
             user_id,
@@ -134,7 +138,8 @@ fn test_message_id_field_is_required() {
             "model",
             &session_dek,
             Uuid::new_v4(),
-        ).expect("Should create analysis 3"),
+        )
+        .expect("Should create analysis 3"),
     ];
 
     // Verify each analysis has a message_id (all are required now)

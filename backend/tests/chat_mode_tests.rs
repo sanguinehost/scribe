@@ -31,11 +31,7 @@ use scribe_backend::crypto;
 use scribe_backend::models::users::User;
 
 // Helper function to authenticate and get auth cookie
-async fn authenticate_user(
-    router: &axum::Router<()>,
-    username: &str,
-    password: &str,
-) -> String {
+async fn authenticate_user(router: &axum::Router<()>, username: &str, password: &str) -> String {
     let login_payload = json!({
         "identifier": username,
         "password": password
@@ -46,11 +42,7 @@ async fn authenticate_user(
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
         .unwrap();
-    let login_response = router
-        .clone()
-        .oneshot(login_request)
-        .await
-        .unwrap();
+    let login_response = router.clone().oneshot(login_request).await.unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
     login_response
         .headers()
@@ -389,7 +381,9 @@ async fn test_character_operations_fail_for_non_character_modes() {
         .uri(&format!("/api/chat/{}/generate", session.id))
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::COOKIE, &auth_cookie)
-        .body(Body::from(serde_json::to_string(&generate_payload).unwrap()))
+        .body(Body::from(
+            serde_json::to_string(&generate_payload).unwrap(),
+        ))
         .unwrap();
 
     let response = test_app
@@ -413,7 +407,9 @@ async fn test_character_operations_fail_for_non_character_modes() {
         .uri(&format!("/api/chat/overrides/{}", session.id))
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::COOKIE, &auth_cookie)
-        .body(Body::from(serde_json::to_string(&override_payload).unwrap()))
+        .body(Body::from(
+            serde_json::to_string(&override_payload).unwrap(),
+        ))
         .unwrap();
 
     let response = test_app
@@ -445,7 +441,7 @@ async fn test_chat_mode_persistence() {
 
     // Create sessions for each mode
     let modes = vec![
-        (ChatMode::Character, true),  // needs character
+        (ChatMode::Character, true), // needs character
         (ChatMode::ScribeAssistant, false),
         (ChatMode::Rpg, false),
     ];
@@ -490,7 +486,8 @@ async fn test_chat_mode_persistence() {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
-        let session: DbChatSession = serde_json::from_slice(&body).expect("Failed to parse response");
+        let session: DbChatSession =
+            serde_json::from_slice(&body).expect("Failed to parse response");
 
         // Verify mode persistence
         assert_eq!(session.chat_mode, mode);
@@ -516,7 +513,8 @@ async fn test_chat_mode_persistence() {
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
-        let session: DbChatSession = serde_json::from_slice(&body).expect("Failed to parse response");
+        let session: DbChatSession =
+            serde_json::from_slice(&body).expect("Failed to parse response");
 
         // Mode should be preserved
         assert!(matches!(
@@ -539,57 +537,76 @@ async fn test_chat_mode_database_constraints() {
     .await
     .expect("Failed to create test user");
 
-    let mut conn = test_app.db_pool.get().await.expect("Failed to get DB connection");
+    let mut conn = test_app
+        .db_pool
+        .get()
+        .await
+        .expect("Failed to get DB connection");
 
     // Test 1: Verify chat_mode column exists and accepts valid values
     let session_id = Uuid::new_v4();
-    
-    let result = conn.interact(move |conn| {
-        diesel::insert_into(chat_sessions::table)
-            .values((
-                chat_sessions::id.eq(session_id),
-                chat_sessions::user_id.eq(user.id),
-                chat_sessions::character_id.eq(None::<Uuid>),
-                chat_sessions::chat_mode.eq(ChatMode::ScribeAssistant),
-                chat_sessions::history_management_strategy.eq("message_window"),
-                chat_sessions::history_management_limit.eq(20),
-                chat_sessions::model_name.eq("gemini-2.0-flash-exp"),
-            ))
-            .execute(conn)
-    }).await;
 
-    assert!(result.is_ok(), "Failed to insert session with ScribeAssistant mode");
+    let result = conn
+        .interact(move |conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values((
+                    chat_sessions::id.eq(session_id),
+                    chat_sessions::user_id.eq(user.id),
+                    chat_sessions::character_id.eq(None::<Uuid>),
+                    chat_sessions::chat_mode.eq(ChatMode::ScribeAssistant),
+                    chat_sessions::history_management_strategy.eq("message_window"),
+                    chat_sessions::history_management_limit.eq(20),
+                    chat_sessions::model_name.eq("gemini-2.0-flash-exp"),
+                ))
+                .execute(conn)
+        })
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Failed to insert session with ScribeAssistant mode"
+    );
 
     // Test 2: Verify nullable character_id works
     let session_id_2 = Uuid::new_v4();
-    
-    let result = conn.interact(move |conn| {
-        diesel::insert_into(chat_sessions::table)
-            .values((
-                chat_sessions::id.eq(session_id_2),
-                chat_sessions::user_id.eq(user.id),
-                chat_sessions::character_id.eq(None::<Uuid>),
-                chat_sessions::chat_mode.eq(ChatMode::Rpg),
-                chat_sessions::history_management_strategy.eq("message_window"),
-                chat_sessions::history_management_limit.eq(20),
-                chat_sessions::model_name.eq("gemini-2.0-flash-exp"),
-            ))
-            .execute(conn)
-    }).await;
 
-    assert!(result.is_ok(), "Failed to insert session with null character_id");
+    let result = conn
+        .interact(move |conn| {
+            diesel::insert_into(chat_sessions::table)
+                .values((
+                    chat_sessions::id.eq(session_id_2),
+                    chat_sessions::user_id.eq(user.id),
+                    chat_sessions::character_id.eq(None::<Uuid>),
+                    chat_sessions::chat_mode.eq(ChatMode::Rpg),
+                    chat_sessions::history_management_strategy.eq("message_window"),
+                    chat_sessions::history_management_limit.eq(20),
+                    chat_sessions::model_name.eq("gemini-2.0-flash-exp"),
+                ))
+                .execute(conn)
+        })
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Failed to insert session with null character_id"
+    );
 
     // Test 3: Verify querying by chat_mode works
-    let result = conn.interact(move |conn| {
-        chat_sessions::table
-            .filter(chat_sessions::chat_mode.eq(ChatMode::ScribeAssistant))
-            .filter(chat_sessions::user_id.eq(user.id))
-            .count()
-            .get_result::<i64>(conn)
-    }).await;
+    let result = conn
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::chat_mode.eq(ChatMode::ScribeAssistant))
+                .filter(chat_sessions::user_id.eq(user.id))
+                .count()
+                .get_result::<i64>(conn)
+        })
+        .await;
 
     let count = result
         .expect("Failed to interact with database")
         .expect("Failed to count ScribeAssistant sessions");
-    assert!(count >= 1, "Should find at least one ScribeAssistant session");
+    assert!(
+        count >= 1,
+        "Should find at least one ScribeAssistant session"
+    );
 }

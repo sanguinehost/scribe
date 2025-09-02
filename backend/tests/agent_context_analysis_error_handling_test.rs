@@ -1,7 +1,9 @@
-use scribe_backend::models::agent_context_analysis::{AgentContextAnalysis, AnalysisType, AnalysisStatus};
+use diesel::prelude::*;
+use scribe_backend::models::agent_context_analysis::{
+    AgentContextAnalysis, AnalysisStatus, AnalysisType,
+};
 use scribe_backend::test_helpers;
 use uuid::Uuid;
-use diesel::prelude::*;
 
 #[tokio::test]
 async fn test_agent_analysis_error_handling() {
@@ -20,14 +22,14 @@ async fn test_agent_analysis_error_handling() {
     .unwrap();
 
     let user_id = user.id;
-    
+
     // Create a chat session
     let session_id = Uuid::new_v4();
     let conn = test_app.db_pool.get().await.unwrap();
     conn.interact(move |conn| {
-        use scribe_backend::schema::chat_sessions;
         use scribe_backend::models::chats::ChatMode;
-        
+        use scribe_backend::schema::chat_sessions;
+
         diesel::insert_into(chat_sessions::table)
             .values((
                 chat_sessions::id.eq(session_id),
@@ -64,14 +66,14 @@ async fn test_agent_analysis_error_handling() {
     .await
     .unwrap()
     .unwrap();
-    
+
     // Test 1: Create a pending analysis
     let analysis_id = Uuid::new_v4();
-    
+
     let conn = test_app.db_pool.get().await.unwrap();
     conn.interact(move |conn| {
         use scribe_backend::schema::agent_context_analysis;
-        
+
         diesel::insert_into(agent_context_analysis::table)
             .values((
                 agent_context_analysis::id.eq(analysis_id),
@@ -106,71 +108,77 @@ async fn test_agent_analysis_error_handling() {
 
     // Test 3: Verify the failed analysis is marked correctly
     let conn = test_app.db_pool.get().await.unwrap();
-    let failed_analysis = conn.interact(move |conn| {
-        use scribe_backend::schema::agent_context_analysis::dsl::*;
-        
-        agent_context_analysis
-            .find(analysis_id)
-            .first::<AgentContextAnalysis>(conn)
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let failed_analysis = conn
+        .interact(move |conn| {
+            use scribe_backend::schema::agent_context_analysis::dsl::*;
+
+            agent_context_analysis
+                .find(analysis_id)
+                .first::<AgentContextAnalysis>(conn)
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
     assert_eq!(failed_analysis.status, "failed");
-    assert_eq!(failed_analysis.error_message, Some("Model overloaded (503)".to_string()));
+    assert_eq!(
+        failed_analysis.error_message,
+        Some("Model overloaded (503)".to_string())
+    );
 
     // Test 4: Supersede failed analyses
     let conn = test_app.db_pool.get().await.unwrap();
-    let count = conn.interact(move |conn| {
-        AgentContextAnalysis::supersede_failed_analyses(
-            conn,
-            session_id,
-            AnalysisType::PreProcessing,
-        )
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let count = conn
+        .interact(move |conn| {
+            AgentContextAnalysis::supersede_failed_analyses(
+                conn,
+                session_id,
+                AnalysisType::PreProcessing,
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
     assert_eq!(count, 1);
 
     // Test 5: Verify the failed analysis is now superseded
     let conn = test_app.db_pool.get().await.unwrap();
-    let superseded_analysis = conn.interact(move |conn| {
-        use scribe_backend::schema::agent_context_analysis::dsl::*;
-        
-        agent_context_analysis
-            .find(analysis_id)
-            .first::<AgentContextAnalysis>(conn)
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let superseded_analysis = conn
+        .interact(move |conn| {
+            use scribe_backend::schema::agent_context_analysis::dsl::*;
+
+            agent_context_analysis
+                .find(analysis_id)
+                .first::<AgentContextAnalysis>(conn)
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
     assert!(superseded_analysis.superseded_at.is_some());
 
     // Test 6: Verify that superseded analyses are not returned by get_for_session
     let conn = test_app.db_pool.get().await.unwrap();
-    let active_analysis = conn.interact(move |conn| {
-        AgentContextAnalysis::get_for_session(
-            conn,
-            session_id,
-            AnalysisType::PreProcessing,
-        )
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let active_analysis = conn
+        .interact(move |conn| {
+            AgentContextAnalysis::get_for_session(conn, session_id, AnalysisType::PreProcessing)
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
-    assert!(active_analysis.is_none(), "Superseded analysis should not be returned");
+    assert!(
+        active_analysis.is_none(),
+        "Superseded analysis should not be returned"
+    );
 
     // Test 7: Update the superseded analysis to be successful and active again
     // Since there can only be one record per (session_id, analysis_type), we update the existing one
     let conn = test_app.db_pool.get().await.unwrap();
     conn.interact(move |conn| {
         use scribe_backend::schema::agent_context_analysis::dsl;
-        
+
         // Update the existing superseded analysis to be successful and active
         diesel::update(dsl::agent_context_analysis)
             .filter(dsl::chat_session_id.eq(session_id))
@@ -190,16 +198,13 @@ async fn test_agent_analysis_error_handling() {
 
     // Test 8: Verify the new successful analysis is returned
     let conn = test_app.db_pool.get().await.unwrap();
-    let new_active_analysis = conn.interact(move |conn| {
-        AgentContextAnalysis::get_for_session(
-            conn,
-            session_id,
-            AnalysisType::PreProcessing,
-        )
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let new_active_analysis = conn
+        .interact(move |conn| {
+            AgentContextAnalysis::get_for_session(conn, session_id, AnalysisType::PreProcessing)
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
     assert!(new_active_analysis.is_some());
     let analysis = new_active_analysis.unwrap();

@@ -2,9 +2,7 @@ use crate::{
     auth::user_store::Backend as AuthBackend,
     config::Config,
     llm::{AiClient, EmbeddingClient},
-    services::{
-        email_service::{EmailService, create_email_service},
-    },
+    services::email_service::{EmailService, create_email_service},
     state::{AppState, DbPool},
     state_builder::AppStateServicesBuilder,
     test_helpers::{MockAiClient, MockEmbeddingClient, MockQdrantClientService},
@@ -83,7 +81,6 @@ impl TestFixtures {
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
     }
-
 
     /// Create a test auth backend
     pub fn test_auth_backend(pool: DbPool) -> Arc<AuthBackend> {

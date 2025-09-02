@@ -2,15 +2,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{info, instrument};
 
-use crate::{
-    AppState,
-    errors::AppError,
-};
+use crate::{AppState, errors::AppError};
 
-use super::{
-    types::*,
-    field_generator::FieldGenerator,
-};
+use super::{field_generator::FieldGenerator, types::*};
 
 /// Service for enhancing existing character content
 pub struct EnhancementService {
@@ -21,14 +15,21 @@ pub struct EnhancementService {
 impl EnhancementService {
     pub fn new(state: Arc<AppState>) -> Self {
         let field_generator = FieldGenerator::new(state.clone());
-        Self { state, field_generator }
+        Self {
+            state,
+            field_generator,
+        }
     }
 
     /// Enhance existing character field content
     #[instrument(skip_all, fields(field = ?request.field))]
-    pub async fn enhance_field(&self, request: EnhancementRequest, user_id: uuid::Uuid) -> Result<EnhancementResult, AppError> {
+    pub async fn enhance_field(
+        &self,
+        request: EnhancementRequest,
+        user_id: uuid::Uuid,
+    ) -> Result<EnhancementResult, AppError> {
         let start_time = Instant::now();
-        
+
         info!("Starting enhancement for {:?} field", request.field);
 
         // Build enhancement prompt that focuses on improving existing content
@@ -49,10 +50,14 @@ impl EnhancementService {
             lorebook_id: None, // Enhancement doesn't use lorebook context for now
         };
 
-        let generation_result = self.field_generator.generate_field(field_request, user_id).await?;
+        let generation_result = self
+            .field_generator
+            .generate_field(field_request, user_id)
+            .await?;
 
         // Analyze what changes were made (simplified approach)
-        let changes_made = self.analyze_changes(&request.current_content, &generation_result.content);
+        let changes_made =
+            self.analyze_changes(&request.current_content, &generation_result.content);
 
         let generation_time = start_time.elapsed();
 
@@ -95,13 +100,11 @@ impl EnhancementService {
 
         // Check for new descriptive elements (simplified)
         let original_lower = original.to_lowercase();
-        let original_words: std::collections::HashSet<_> = original_lower
-            .split_whitespace()
-            .collect();
+        let original_words: std::collections::HashSet<_> =
+            original_lower.split_whitespace().collect();
         let enhanced_lower = enhanced.to_lowercase();
-        let enhanced_words: std::collections::HashSet<_> = enhanced_lower
-            .split_whitespace()
-            .collect();
+        let enhanced_words: std::collections::HashSet<_> =
+            enhanced_lower.split_whitespace().collect();
 
         let new_words: Vec<_> = enhanced_words
             .difference(&original_words)
@@ -109,8 +112,14 @@ impl EnhancementService {
             .collect();
 
         if !new_words.is_empty() {
-            changes.push(format!("Added new descriptive elements: {}", 
-                new_words.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(", ")));
+            changes.push(format!(
+                "Added new descriptive elements: {}",
+                new_words
+                    .iter()
+                    .map(|w| w.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
 
         if changes.is_empty() {

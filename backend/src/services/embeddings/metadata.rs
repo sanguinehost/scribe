@@ -13,7 +13,7 @@ pub struct ChatMessageChunkMetadata {
     pub message_id: Uuid,
     pub session_id: Uuid,
     pub chronicle_id: Option<Uuid>, // Added for chronicle-scoped search
-    pub user_id: Uuid, // Added user_id
+    pub user_id: Uuid,              // Added user_id
     pub speaker: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
     #[deprecated(note = "Use encrypted_text instead for security")]
@@ -21,7 +21,7 @@ pub struct ChatMessageChunkMetadata {
     pub source_type: String,
     // Encrypted fields for secure storage
     pub encrypted_text: Option<Vec<u8>>, // Encrypted text content
-    pub text_nonce: Option<Vec<u8>>, // Nonce for decrypting text
+    pub text_nonce: Option<Vec<u8>>,     // Nonce for decrypting text
 }
 impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
     type Error = AppError;
@@ -31,7 +31,8 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
             extract_uuid_from_payload(&payload, "message_id", "ChatMessageChunkMetadata")?;
         let session_id =
             extract_uuid_from_payload(&payload, "session_id", "ChatMessageChunkMetadata")?;
-        let chronicle_id = payload.get("chronicle_id")
+        let chronicle_id = payload
+            .get("chronicle_id")
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok());
         let user_id = extract_uuid_from_payload(&payload, "user_id", "ChatMessageChunkMetadata")?;
@@ -48,37 +49,41 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
             .map(|dt| dt.with_timezone(&chrono::Utc))?;
 
         // Try to get encrypted fields first, fall back to plaintext for backward compatibility
-        let (text, encrypted_text, text_nonce) = if let Some(enc_text) = payload.get("encrypted_text") {
+        let (text, encrypted_text, text_nonce) = if let Some(enc_text) =
+            payload.get("encrypted_text")
+        {
             // We have encrypted content
-            let encrypted_bytes = enc_text.as_list()
-                .and_then(|list| {
-                    let bytes: Option<Vec<u8>> = list.iter()
-                        .map(|v| v.as_integer().map(|i| i as u8))
-                        .collect();
-                    bytes
-                });
-            
-            let nonce_bytes = payload.get("text_nonce")
+            let encrypted_bytes = enc_text.as_list().and_then(|list| {
+                let bytes: Option<Vec<u8>> = list
+                    .iter()
+                    .map(|v| v.as_integer().map(|i| i as u8))
+                    .collect();
+                bytes
+            });
+
+            let nonce_bytes = payload
+                .get("text_nonce")
                 .and_then(|v| v.as_list())
                 .and_then(|list| {
-                    let bytes: Option<Vec<u8>> = list.iter()
+                    let bytes: Option<Vec<u8>> = list
+                        .iter()
                         .map(|v| v.as_integer().map(|i| i as u8))
                         .collect();
                     bytes
                 });
-            
+
             // If we have encrypted content, we still need a text field for backward compat
             // Use placeholder text
             let text = extract_string_from_payload(&payload, "text", "ChatMessageChunkMetadata")
                 .unwrap_or_else(|_| "[encrypted]".to_string());
-            
+
             (text, encrypted_bytes, nonce_bytes)
         } else {
             // Legacy plaintext mode
             let text = extract_string_from_payload(&payload, "text", "ChatMessageChunkMetadata")?;
             (text, None, None)
         };
-        
+
         let source_type =
             extract_string_from_payload(&payload, "source_type", "ChatMessageChunkMetadata")?;
 
@@ -111,9 +116,9 @@ pub struct LorebookChunkMetadata {
     pub source_type: String,
     // Encrypted fields for secure storage
     pub encrypted_chunk_text: Option<Vec<u8>>, // Encrypted chunk content
-    pub chunk_text_nonce: Option<Vec<u8>>, // Nonce for decrypting chunk
-    pub encrypted_title: Option<Vec<u8>>, // Encrypted title
-    pub title_nonce: Option<Vec<u8>>, // Nonce for decrypting title
+    pub chunk_text_nonce: Option<Vec<u8>>,     // Nonce for decrypting chunk
+    pub encrypted_title: Option<Vec<u8>>,      // Encrypted title
+    pub title_nonce: Option<Vec<u8>>,          // Nonce for decrypting title
 }
 impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
     type Error = AppError;
@@ -129,30 +134,33 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
         let user_id = extract_uuid_from_payload(&payload, "user_id", "LorebookChunkMetadata")?;
 
         // Try to get encrypted fields first, fall back to plaintext for backward compatibility
-        let (chunk_text, encrypted_chunk_text, chunk_text_nonce) = 
+        let (chunk_text, encrypted_chunk_text, chunk_text_nonce) =
             if let Some(enc_text) = payload.get("encrypted_chunk_text") {
                 // We have encrypted content
-                let encrypted_bytes = enc_text.as_list()
-                    .and_then(|list| {
-                        let bytes: Option<Vec<u8>> = list.iter()
-                            .map(|v| v.as_integer().map(|i| i as u8))
-                            .collect();
-                        bytes
-                    });
-                
-                let nonce_bytes = payload.get("chunk_text_nonce")
+                let encrypted_bytes = enc_text.as_list().and_then(|list| {
+                    let bytes: Option<Vec<u8>> = list
+                        .iter()
+                        .map(|v| v.as_integer().map(|i| i as u8))
+                        .collect();
+                    bytes
+                });
+
+                let nonce_bytes = payload
+                    .get("chunk_text_nonce")
                     .and_then(|v| v.as_list())
                     .and_then(|list| {
-                        let bytes: Option<Vec<u8>> = list.iter()
+                        let bytes: Option<Vec<u8>> = list
+                            .iter()
                             .map(|v| v.as_integer().map(|i| i as u8))
                             .collect();
                         bytes
                     });
-                
+
                 // If we have encrypted content, still need chunk_text for backward compat
-                let chunk_text = extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")
-                    .unwrap_or_else(|_| "[encrypted]".to_string());
-                
+                let chunk_text =
+                    extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")
+                        .unwrap_or_else(|_| "[encrypted]".to_string());
+
                 (chunk_text, encrypted_bytes, nonce_bytes)
             } else {
                 // Legacy plaintext mode
@@ -160,34 +168,36 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
                     extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")?;
                 (chunk_text, None, None)
             };
-        
+
         // Handle encrypted title
-        let (entry_title, encrypted_title, title_nonce) = 
+        let (entry_title, encrypted_title, title_nonce) =
             if let Some(enc_title) = payload.get("encrypted_title") {
-                let encrypted_bytes = enc_title.as_list()
-                    .and_then(|list| {
-                        let bytes: Option<Vec<u8>> = list.iter()
-                            .map(|v| v.as_integer().map(|i| i as u8))
-                            .collect();
-                        bytes
-                    });
-                
-                let nonce_bytes = payload.get("title_nonce")
+                let encrypted_bytes = enc_title.as_list().and_then(|list| {
+                    let bytes: Option<Vec<u8>> = list
+                        .iter()
+                        .map(|v| v.as_integer().map(|i| i as u8))
+                        .collect();
+                    bytes
+                });
+
+                let nonce_bytes = payload
+                    .get("title_nonce")
                     .and_then(|v| v.as_list())
                     .and_then(|list| {
-                        let bytes: Option<Vec<u8>> = list.iter()
+                        let bytes: Option<Vec<u8>> = list
+                            .iter()
                             .map(|v| v.as_integer().map(|i| i as u8))
                             .collect();
                         bytes
                     });
-                
+
                 let entry_title = extract_optional_string_from_payload(&payload, "entry_title");
                 (entry_title, encrypted_bytes, nonce_bytes)
             } else {
                 let entry_title = extract_optional_string_from_payload(&payload, "entry_title");
                 (entry_title, None, None)
             };
-        
+
         let keywords =
             extract_string_list_from_payload(&payload, "keywords", "LorebookChunkMetadata")?;
 

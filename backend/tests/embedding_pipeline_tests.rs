@@ -1,7 +1,6 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::ignored_unit_patterns)]
 use chrono::Utc;
-use secrecy::{SecretBox, ExposeSecret};
 use mockall::predicate::*;
 use qdrant_client::qdrant::{PointId, Value, point_id::PointIdOptions};
 use scribe_backend::{
@@ -24,6 +23,7 @@ use scribe_backend::{
     text_processing::chunking::ChunkConfig,
     vector_db::qdrant_client::{QdrantClientServiceTrait, ScoredPoint, create_message_id_filter},
 };
+use secrecy::{ExposeSecret, SecretBox};
 use serial_test::serial;
 // Removed unused std::convert::TryFrom
 use std::time::Duration;
@@ -635,12 +635,15 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
     let auth_backend_5 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory_5 = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter_5 = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory_5 = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter_5 =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
         ai_client: test_app
@@ -743,12 +746,15 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
     let auth_backend_6 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory_6 = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter_6 = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory_6 = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter_6 =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
         ai_client: test_app
@@ -849,12 +855,16 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                 "http://localhost:3000".to_string(),
             ),
         ),
-        ai_client_factory: Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-            test_app.db_pool.clone(),
-            app_state_arc.config.clone(),
-            app_state_arc.ai_client.clone(),
-        )),
-        rate_limiter: Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100)),
+        ai_client_factory: Arc::new(
+            scribe_backend::services::ai_client_factory::AiClientFactory::new(
+                test_app.db_pool.clone(),
+                app_state_arc.config.clone(),
+                app_state_arc.ai_client.clone(),
+            ),
+        ),
+        rate_limiter: Arc::new(
+            scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -961,12 +971,15 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     let auth_backend_7 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory_7 = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter_7 = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory_7 = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter_7 =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_test_7 = AppStateServices {
         ai_client: test_app
@@ -1062,12 +1075,16 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                 "http://localhost:3000".to_string(),
             ),
         ),
-        ai_client_factory: Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-            test_app.db_pool.clone(),
-            app_state_arc.config.clone(),
-            app_state_arc.ai_client.clone(),
-        )),
-        rate_limiter: Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100)),
+        ai_client_factory: Arc::new(
+            scribe_backend::services::ai_client_factory::AiClientFactory::new(
+                test_app.db_pool.clone(),
+                app_state_arc.config.clone(),
+                app_state_arc.ai_client.clone(),
+            ),
+        ),
+        rate_limiter: Arc::new(
+            scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -1144,12 +1161,15 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     let auth_backend_8 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory_8 = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter_8 = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory_8 = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter_8 =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     // This app_state_arc is not needed here as we are creating app_state_for_metadata_test below
     // let app_state_arc = Arc::new(AppState::new(
@@ -1303,12 +1323,15 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
     let auth_backend_9 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory_9 = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter_9 = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory_9 = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter_9 =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     // This _app_state is not needed here as we are creating app_state_for_metadata_test below
     // let _app_state = Arc::new(AppState::new( // Renamed to avoid conflict, though it's unused now
@@ -1468,9 +1491,9 @@ async fn test_rag_context_injection_with_qdrant() {
     // Set up test data
     let user_id = Uuid::new_v4(); // Consistent user_id for all data
     // Create a mock session_dek for the test
-    let session_dek = scribe_backend::auth::session_dek::SessionDek(
-        secrecy::SecretBox::new(Box::new(b"test_session_key_32_bytes_long!!".to_vec()))
-    );
+    let session_dek = scribe_backend::auth::session_dek::SessionDek(secrecy::SecretBox::new(
+        Box::new(b"test_session_key_32_bytes_long!!".to_vec()),
+    ));
     let chat_session_id = Uuid::new_v4();
     let chat_message_id = Uuid::new_v4();
     let chat_message_content = "This is a test chat message about dragons for RAG.";
@@ -1536,12 +1559,15 @@ async fn test_rag_context_injection_with_qdrant() {
     let auth_backend_10 = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory_10 = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter_10 = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory_10 = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter_10 =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_rag = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -1599,7 +1625,9 @@ async fn test_rag_context_injection_with_qdrant() {
         decrypted_keywords: None, // No keywords for this test
         is_enabled: true,         // is_enabled
         is_constant: false,       // is_constant
-        session_dek: Some(SecretBox::new(Box::new(session_dek.0.expose_secret().to_vec()))),
+        session_dek: Some(SecretBox::new(Box::new(
+            session_dek.0.expose_secret().to_vec(),
+        ))),
     };
 
     let process_lore_result = app_state_for_rag
@@ -1905,12 +1933,15 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_isolation_test = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -2250,12 +2281,15 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let auth_backend = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_lorebook_isolation_test = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -2291,13 +2325,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     // 2. Define User IDs and Lorebook IDs
     let user_c_id = Uuid::new_v4();
     let user_d_id = Uuid::new_v4();
-    
+
     // Create mock session_deks for the users
     let user_c_session_dek = scribe_backend::auth::session_dek::SessionDek(
-        secrecy::SecretBox::new(Box::new(b"test_user_c_key_32_bytes_long!".to_vec()))
+        secrecy::SecretBox::new(Box::new(b"test_user_c_key_32_bytes_long!".to_vec())),
     );
     let user_d_session_dek = scribe_backend::auth::session_dek::SessionDek(
-        secrecy::SecretBox::new(Box::new(b"test_user_d_key_32_bytes_long!".to_vec()))
+        secrecy::SecretBox::new(Box::new(b"test_user_d_key_32_bytes_long!".to_vec())),
     );
 
     let lorebook_c1_id = Uuid::new_v4(); // User C's first lorebook
@@ -2347,7 +2381,9 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(SecretBox::new(Box::new(user_c_session_dek.0.expose_secret().to_vec()))),
+        session_dek: Some(SecretBox::new(Box::new(
+            user_c_session_dek.0.expose_secret().to_vec(),
+        ))),
     };
 
     app_state
@@ -2364,7 +2400,9 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(SecretBox::new(Box::new(user_c_session_dek.0.expose_secret().to_vec()))),
+        session_dek: Some(SecretBox::new(Box::new(
+            user_c_session_dek.0.expose_secret().to_vec(),
+        ))),
     };
 
     app_state
@@ -2381,7 +2419,9 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(SecretBox::new(Box::new(user_d_session_dek.0.expose_secret().to_vec()))),
+        session_dek: Some(SecretBox::new(Box::new(
+            user_d_session_dek.0.expose_secret().to_vec(),
+        ))),
     };
 
     app_state
@@ -2534,7 +2574,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             user_c_id,
             None,
             Some(vec![lorebook_c1_id, lorebook_c2_id]),
-            None,                    // chronicle_id_for_search
+            None, // chronicle_id_for_search
             query6_text,
             limit,
         )

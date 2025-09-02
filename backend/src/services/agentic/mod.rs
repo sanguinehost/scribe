@@ -16,11 +16,11 @@
 
 pub mod agent_runner;
 pub mod context_enrichment_agent;
-pub mod narrative_tools;
 pub mod factory;
+pub mod narrative_tools;
+pub mod persona_context;
 pub mod registry;
 pub mod tools;
-pub mod persona_context;
 
 #[cfg(test)]
 mod narrative_tools_tests;
@@ -28,14 +28,14 @@ mod narrative_tools_tests;
 // Re-export key types for convenience
 pub use agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig, NarrativeWorkflowResult};
 pub use context_enrichment_agent::{
-    ContextEnrichmentAgent, ContextEnrichmentResult, EnrichmentMode,
-    AgentExecutionLog, AgentStep, PlannedSearch,
+    AgentExecutionLog, AgentStep, ContextEnrichmentAgent, ContextEnrichmentResult, EnrichmentMode,
+    PlannedSearch,
 };
 pub use factory::AgenticNarrativeFactory;
+pub use narrative_tools::{
+    AnalyzeTextSignificanceTool, CreateChronicleEventTool, CreateLorebookEntryTool,
+    SearchKnowledgeBaseTool, UpdateLorebookEntryTool,
+};
+pub use persona_context::UserPersonaContext;
 pub use registry::ToolRegistry;
 pub use tools::{ScribeTool, ToolError, ToolParams, ToolResult};
-pub use persona_context::UserPersonaContext;
-pub use narrative_tools::{
-    CreateChronicleEventTool, CreateLorebookEntryTool, 
-    AnalyzeTextSignificanceTool, SearchKnowledgeBaseTool, UpdateLorebookEntryTool
-};

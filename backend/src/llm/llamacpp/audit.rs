@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// Types of security events that can occur in LLM operations
@@ -17,49 +17,49 @@ pub enum SecurityEventType {
     UnauthorizedAccess,
     AuthenticationFailed,
     PrivilegeEscalation,
-    
+
     // OWASP LLM01 - Prompt Injection
     PromptInjectionAttempt,
     JailbreakAttempt,
     SystemPromptBypass,
     InstructionManipulation,
-    
-    // OWASP LLM02 - Sensitive Information Disclosure  
+
+    // OWASP LLM02 - Sensitive Information Disclosure
     SensitiveDataLeakage,
     PiiExposureAttempt,
     CredentialLeakage,
     InternalDataExposure,
-    
+
     // OWASP LLM05 - Improper Output Handling
     UnsafeOutputGenerated,
     XssAttempt,
     SqlInjectionAttempt,
     CodeInjectionAttempt,
-    
+
     // OWASP LLM07 - System Prompt Leakage
     SystemPromptLeakage,
     ConfigurationExposure,
     InternalRulesDisclosure,
-    
+
     // OWASP LLM10 - Unbounded Consumption
     RateLimitExceeded,
     ResourceExhaustion,
     DosAttempt,
     TokenLimitExceeded,
     ConcurrentRequestsExceeded,
-    
+
     // Model and infrastructure security
     ModelTampering,
     ServerCompromise,
     ModelDownloadFailed,
     IntegrityCheckFailed,
-    
+
     // Encryption and privacy
     EncryptionFailure,
     DecryptionFailure,
     DekCompromise,
     DataExfiltration,
-    
+
     // General security violations
     SuspiciousActivity,
     PolicyViolation,
@@ -285,25 +285,46 @@ impl SecurityAuditLogger {
             alert_thresholds: HashMap::new(),
             user_activity: Arc::new(RwLock::new(HashMap::new())),
         };
-        
+
         // Set default alert thresholds
-        logger.set_alert_threshold(SecurityEventType::PromptInjectionAttempt, 5, Duration::from_secs(300)); // 5 in 5 minutes
-        logger.set_alert_threshold(SecurityEventType::RateLimitExceeded, 10, Duration::from_secs(600)); // 10 in 10 minutes
-        logger.set_alert_threshold(SecurityEventType::UnauthorizedAccess, 3, Duration::from_secs(300)); // 3 in 5 minutes
-        logger.set_alert_threshold(SecurityEventType::SensitiveDataLeakage, 1, Duration::from_secs(60)); // 1 in 1 minute
-        
+        logger.set_alert_threshold(
+            SecurityEventType::PromptInjectionAttempt,
+            5,
+            Duration::from_secs(300),
+        ); // 5 in 5 minutes
+        logger.set_alert_threshold(
+            SecurityEventType::RateLimitExceeded,
+            10,
+            Duration::from_secs(600),
+        ); // 10 in 10 minutes
+        logger.set_alert_threshold(
+            SecurityEventType::UnauthorizedAccess,
+            3,
+            Duration::from_secs(300),
+        ); // 3 in 5 minutes
+        logger.set_alert_threshold(
+            SecurityEventType::SensitiveDataLeakage,
+            1,
+            Duration::from_secs(60),
+        ); // 1 in 1 minute
+
         logger
     }
 
     /// Set alert threshold for a specific event type
-    pub fn set_alert_threshold(&mut self, event_type: SecurityEventType, count: u32, window: Duration) {
+    pub fn set_alert_threshold(
+        &mut self,
+        event_type: SecurityEventType,
+        count: u32,
+        window: Duration,
+    ) {
         self.alert_thresholds.insert(event_type, (count, window));
     }
 
     /// Log a security event
     pub fn log_event(&self, event: SecurityEvent) {
         let log_message = event.log_message();
-        
+
         // Log with appropriate level based on severity
         match event.severity {
             SecurityEventSeverity::Info => info!("{}", log_message),
@@ -316,7 +337,7 @@ impl SecurityAuditLogger {
         // Store the event
         if let Ok(mut events) = self.events.write() {
             events.push(event.clone());
-            
+
             // Rotate events if we exceed max_events
             if events.len() > self.max_events {
                 let events_len = events.len();
@@ -340,7 +361,7 @@ impl SecurityAuditLogger {
         if let Ok(mut activity) = self.user_activity.write() {
             let user_events = activity.entry(user_id).or_insert_with(Vec::new);
             user_events.push(Utc::now());
-            
+
             // Keep only last hour of activity
             let one_hour_ago = Utc::now() - chrono::Duration::hours(1);
             user_events.retain(|&timestamp| timestamp > one_hour_ago);
@@ -351,7 +372,7 @@ impl SecurityAuditLogger {
     fn check_alert_conditions(&self, event: &SecurityEvent) {
         if let Some((threshold_count, time_window)) = self.alert_thresholds.get(&event.event_type) {
             let since = Utc::now() - chrono::Duration::from_std(*time_window).unwrap_or_default();
-            
+
             if let Ok(events) = self.events.read() {
                 let matching_events = events
                     .iter()
@@ -388,10 +409,10 @@ impl SecurityAuditLogger {
     pub fn get_security_metrics(&self) -> SecurityMetrics {
         if let Ok(events) = self.events.read() {
             let mut metrics = SecurityMetrics::default();
-            
+
             for event in events.iter() {
                 metrics.total_events += 1;
-                
+
                 match event.severity {
                     SecurityEventSeverity::Info => metrics.info_events += 1,
                     SecurityEventSeverity::Low => metrics.low_severity += 1,
@@ -399,15 +420,18 @@ impl SecurityAuditLogger {
                     SecurityEventSeverity::High => metrics.high_severity += 1,
                     SecurityEventSeverity::Critical => metrics.critical_events += 1,
                 }
-                
+
                 if event.blocked {
                     metrics.blocked_events += 1;
                 }
-                
+
                 // Count by event type
-                *metrics.event_type_counts.entry(event.event_type.clone()).or_insert(0) += 1;
+                *metrics
+                    .event_type_counts
+                    .entry(event.event_type.clone())
+                    .or_insert(0) += 1;
             }
-            
+
             metrics
         } else {
             SecurityMetrics::default()
@@ -543,7 +567,13 @@ pub struct SecurityMetrics {
 /// Convenience functions for logging common security events
 impl SecurityAuditLogger {
     /// Log a prompt injection attempt
-    pub fn log_prompt_injection(&self, user_id: Option<Uuid>, endpoint: &str, pattern: &str, blocked: bool) {
+    pub fn log_prompt_injection(
+        &self,
+        user_id: Option<Uuid>,
+        endpoint: &str,
+        pattern: &str,
+        blocked: bool,
+    ) {
         let event = SecurityEvent::new(
             SecurityEventType::PromptInjectionAttempt,
             SecurityEventType::PromptInjectionAttempt.default_severity(),
@@ -635,9 +665,16 @@ impl From<SecurityError> for SecurityEvent {
                 SecurityEventType::UnsafeOutputGenerated,
                 format!("Output validation failed: {}", reason),
             ),
-            SecurityError::ResourceLimitExceeded { resource, current, limit } => (
+            SecurityError::ResourceLimitExceeded {
+                resource,
+                current,
+                limit,
+            } => (
                 SecurityEventType::ResourceExhaustion,
-                format!("Resource limit exceeded: {} = {} > {}", resource, current, limit),
+                format!(
+                    "Resource limit exceeded: {} = {} > {}",
+                    resource, current, limit
+                ),
             ),
             SecurityError::RateLimitExceeded { user_id } => (
                 SecurityEventType::RateLimitExceeded,
@@ -657,7 +694,7 @@ impl From<SecurityError> for SecurityEvent {
             event_type.clone(),
             event_type.default_severity(),
             "/api/llm".to_string(), // Default endpoint
-            "POST".to_string(), // Default method
+            "POST".to_string(),     // Default method
             message,
         )
         .blocked() // Security errors are typically blocked
@@ -687,7 +724,7 @@ mod tests {
     #[test]
     fn test_security_audit_logger() {
         let logger = SecurityAuditLogger::new(1000);
-        
+
         let event = SecurityEvent::new(
             SecurityEventType::PromptInjectionAttempt,
             SecurityEventSeverity::High,
@@ -697,7 +734,7 @@ mod tests {
         );
 
         logger.log_event(event);
-        
+
         let metrics = logger.get_security_metrics();
         assert_eq!(metrics.total_events, 1);
         assert_eq!(metrics.high_severity, 1);
@@ -706,7 +743,7 @@ mod tests {
     #[test]
     fn test_event_filtering() {
         let logger = SecurityAuditLogger::new(1000);
-        
+
         // Add events with different types
         logger.log_event(SecurityEvent::new(
             SecurityEventType::PromptInjectionAttempt,
@@ -715,7 +752,7 @@ mod tests {
             "POST".to_string(),
             "Prompt injection".to_string(),
         ));
-        
+
         logger.log_event(SecurityEvent::new(
             SecurityEventType::RateLimitExceeded,
             SecurityEventSeverity::Medium,
@@ -726,9 +763,12 @@ mod tests {
 
         let filter = SecurityEventFilter::new()
             .with_event_types(vec![SecurityEventType::PromptInjectionAttempt]);
-            
+
         let filtered_events = logger.get_events(filter);
         assert_eq!(filtered_events.len(), 1);
-        assert_eq!(filtered_events[0].event_type, SecurityEventType::PromptInjectionAttempt);
+        assert_eq!(
+            filtered_events[0].event_type,
+            SecurityEventType::PromptInjectionAttempt
+        );
     }
 }

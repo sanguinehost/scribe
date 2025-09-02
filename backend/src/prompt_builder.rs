@@ -224,7 +224,7 @@ pub struct PromptBuildParams<'a> {
     pub model_name: String,
     pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>, // For decrypting character data
     pub user_persona_name: Option<String>,                 // For {{user}} template substitution
-    pub agent_context: Option<String>,                      // Pre-processing agent context to inject
+    pub agent_context: Option<String>,                     // Pre-processing agent context to inject
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -607,7 +607,7 @@ pub(crate) fn truncate_recent_history_strategically(
             "Total messages ({}) <= min_tail_to_preserve ({}). Cannot use strategic truncation.",
             total_messages, min_tail_messages_to_preserve
         );
-        
+
         // Fallback: try removing from oldest first, but warn
         warn!(
             "Falling back to oldest-first truncation due to insufficient message count for strategic truncation."
@@ -624,9 +624,9 @@ pub(crate) fn truncate_recent_history_strategically(
     // Strategic middle-out truncation:
     // Keep the last min_tail_messages_to_preserve messages
     // Remove messages from the middle (oldest messages before the tail)
-    
+
     let tail_start_index = total_messages.saturating_sub(min_tail_messages_to_preserve);
-    
+
     debug!(
         tail_start_index,
         "Preserving tail messages from index {} to end", tail_start_index
@@ -634,31 +634,36 @@ pub(crate) fn truncate_recent_history_strategically(
 
     // Remove messages from the middle (working backwards from tail_start_index - 1)
     let mut removal_index = tail_start_index.saturating_sub(1);
-    
+
     while *current_total_tokens > max_allowed_tokens && removal_index > 0 {
         // Make sure we don't go out of bounds due to previous removals
         if removal_index >= calculation.recent_history_with_tokens.len() {
-            removal_index = calculation.recent_history_with_tokens.len().saturating_sub(1);
+            removal_index = calculation
+                .recent_history_with_tokens
+                .len()
+                .saturating_sub(1);
         }
-        
+
         if removal_index == 0 {
             break; // Don't remove the very first message if we can help it
         }
-        
+
         let (_, tokens) = calculation.recent_history_with_tokens.remove(removal_index);
         *current_total_tokens -= tokens;
-        
+
         debug!(
             removal_index,
             tokens,
             current_total_tokens = *current_total_tokens,
-            "Removed middle message at index {} ({} tokens)", removal_index, tokens
+            "Removed middle message at index {} ({} tokens)",
+            removal_index,
+            tokens
         );
-        
+
         // Update removal_index for next iteration (move towards beginning)
         removal_index = removal_index.saturating_sub(1);
     }
-    
+
     // If still over limit, remove from the very beginning (oldest messages)
     // This preserves the tail but sacrifices the earliest conversation context
     while !calculation.recent_history_with_tokens.is_empty()
@@ -671,14 +676,15 @@ pub(crate) fn truncate_recent_history_strategically(
             );
             break;
         }
-        
+
         let (_, tokens) = calculation.recent_history_with_tokens.remove(0);
         *current_total_tokens -= tokens;
-        
+
         debug!(
             tokens,
             current_total_tokens = *current_total_tokens,
-            "Removed oldest message ({} tokens) as final resort", tokens
+            "Removed oldest message ({} tokens) as final resort",
+            tokens
         );
     }
 
@@ -691,7 +697,10 @@ pub(crate) fn truncate_recent_history_strategically(
 }
 
 /// Enforces hard token limit by returning an error if limit is still exceeded after truncation
-fn enforce_hard_token_limit(current_total_tokens: usize, max_allowed_tokens: usize) -> Result<(), AppError> {
+fn enforce_hard_token_limit(
+    current_total_tokens: usize,
+    max_allowed_tokens: usize,
+) -> Result<(), AppError> {
     if current_total_tokens > max_allowed_tokens {
         let excess_tokens = current_total_tokens - max_allowed_tokens;
         error!(
@@ -711,7 +720,10 @@ fn enforce_hard_token_limit(current_total_tokens: usize, max_allowed_tokens: usi
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(crate) fn apply_token_limits(mut calculation: TokenCalculation, config: &Arc<Config>) -> Result<TokenCalculation, AppError> {
+pub(crate) fn apply_token_limits(
+    mut calculation: TokenCalculation,
+    config: &Arc<Config>,
+) -> Result<TokenCalculation, AppError> {
     let mut current_total_tokens = calculate_total_tokens(&calculation);
     let max_allowed_tokens = config.context_total_token_limit;
 
@@ -805,7 +817,7 @@ async fn build_final_prompt_strings(
         // Separate chronicle events and other RAG items
         let mut chronicle_events = Vec::new();
         let mut other_rag_items = Vec::new();
-        
+
         for (rag_item, tokens) in &calculation.rag_items_with_tokens {
             match &rag_item.metadata {
                 crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
@@ -816,14 +828,18 @@ async fn build_final_prompt_strings(
                 }
             }
         }
-        
+
         // Add chronicle events in a long_term_memory section
         if !chronicle_events.is_empty() {
             rag_context_for_user_message.push_str("<long_term_memory>\n");
             for (rag_item, _) in &chronicle_events {
-                if let crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_meta) = &rag_item.metadata {
+                if let crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_meta) =
+                    &rag_item.metadata
+                {
                     // Try to parse the text as JSON to extract rich chronicle data
-                    if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&rag_item.text) {
+                    if let Ok(event_data) =
+                        serde_json::from_str::<serde_json::Value>(&rag_item.text)
+                    {
                         write!(
                             rag_context_for_user_message,
                             "<chronicle_event type=\"{}\" timestamp=\"{}\"",
@@ -831,19 +847,30 @@ async fn build_final_prompt_strings(
                             chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC")
                         )
                         .unwrap();
-                        
+
                         // Add action if available
                         if let Some(action) = event_data.get("action").and_then(|a| a.as_str()) {
-                            write!(rag_context_for_user_message, " action=\"{}\"", escape_xml(action)).unwrap();
+                            write!(
+                                rag_context_for_user_message,
+                                " action=\"{}\"",
+                                escape_xml(action)
+                            )
+                            .unwrap();
                         }
-                        
+
                         // Add modality if available
-                        if let Some(modality) = event_data.get("modality").and_then(|m| m.as_str()) {
-                            write!(rag_context_for_user_message, " modality=\"{}\"", escape_xml(modality)).unwrap();
+                        if let Some(modality) = event_data.get("modality").and_then(|m| m.as_str())
+                        {
+                            write!(
+                                rag_context_for_user_message,
+                                " modality=\"{}\"",
+                                escape_xml(modality)
+                            )
+                            .unwrap();
                         }
-                        
+
                         writeln!(rag_context_for_user_message, ">").unwrap();
-                        
+
                         // Add actors if available
                         if let Some(actors) = event_data.get("actors").and_then(|a| a.as_array()) {
                             if !actors.is_empty() {
@@ -851,9 +878,12 @@ async fn build_final_prompt_strings(
                                 for actor in actors {
                                     if let (Some(id), Some(role)) = (
                                         actor.get("id").and_then(|i| i.as_str()),
-                                        actor.get("role").and_then(|r| r.as_str())
+                                        actor.get("role").and_then(|r| r.as_str()),
                                     ) {
-                                        let details = actor.get("details").and_then(|d| d.as_str()).unwrap_or("");
+                                        let details = actor
+                                            .get("details")
+                                            .and_then(|d| d.as_str())
+                                            .unwrap_or("");
                                         writeln!(
                                             rag_context_for_user_message,
                                             "        <actor id=\"{}\" role=\"{}\">{}</actor>",
@@ -867,16 +897,17 @@ async fn build_final_prompt_strings(
                                 writeln!(rag_context_for_user_message, "    </actors>").unwrap();
                             }
                         }
-                        
+
                         // Add valence changes if available
-                        if let Some(valence) = event_data.get("valence").and_then(|v| v.as_array()) {
+                        if let Some(valence) = event_data.get("valence").and_then(|v| v.as_array())
+                        {
                             if !valence.is_empty() {
                                 writeln!(rag_context_for_user_message, "    <valence>").unwrap();
                                 for change in valence {
                                     if let (Some(target), Some(change_type), Some(delta)) = (
                                         change.get("target").and_then(|t| t.as_str()),
                                         change.get("type").and_then(|t| t.as_str()),
-                                        change.get("change").and_then(|c| c.as_f64())
+                                        change.get("change").and_then(|c| c.as_f64()),
                                     ) {
                                         writeln!(
                                             rag_context_for_user_message,
@@ -891,50 +922,83 @@ async fn build_final_prompt_strings(
                                 writeln!(rag_context_for_user_message, "    </valence>").unwrap();
                             }
                         }
-                        
+
                         // Add context data if available
-                        if let Some(context) = event_data.get("context_data").and_then(|c| c.as_object()) {
+                        if let Some(context) =
+                            event_data.get("context_data").and_then(|c| c.as_object())
+                        {
                             if !context.is_empty() {
                                 write!(rag_context_for_user_message, "    <context").unwrap();
                                 for (key, value) in context {
                                     if let Some(val_str) = value.as_str() {
-                                        write!(rag_context_for_user_message, " {}=\"{}\"", escape_xml(key), escape_xml(val_str)).unwrap();
+                                        write!(
+                                            rag_context_for_user_message,
+                                            " {}=\"{}\"",
+                                            escape_xml(key),
+                                            escape_xml(val_str)
+                                        )
+                                        .unwrap();
                                     }
                                 }
                                 writeln!(rag_context_for_user_message, "/>").unwrap();
                             }
                         }
-                        
+
                         // Add causality if available
-                        if let Some(causality) = event_data.get("causality").and_then(|c| c.as_object()) {
-                            let has_caused_by = causality.get("causedBy").and_then(|cb| cb.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
-                            let has_causes = causality.get("causes").and_then(|c| c.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
-                            
+                        if let Some(causality) =
+                            event_data.get("causality").and_then(|c| c.as_object())
+                        {
+                            let has_caused_by = causality
+                                .get("causedBy")
+                                .and_then(|cb| cb.as_array())
+                                .map(|a| !a.is_empty())
+                                .unwrap_or(false);
+                            let has_causes = causality
+                                .get("causes")
+                                .and_then(|c| c.as_array())
+                                .map(|a| !a.is_empty())
+                                .unwrap_or(false);
+
                             if has_caused_by || has_causes {
                                 writeln!(rag_context_for_user_message, "    <causality>").unwrap();
-                                
-                                if let Some(caused_by) = causality.get("causedBy").and_then(|cb| cb.as_array()) {
+
+                                if let Some(caused_by) =
+                                    causality.get("causedBy").and_then(|cb| cb.as_array())
+                                {
                                     for cause_id in caused_by {
                                         if let Some(id_str) = cause_id.as_str() {
-                                            writeln!(rag_context_for_user_message, "        <caused_by>{}</caused_by>", escape_xml(id_str)).unwrap();
+                                            writeln!(
+                                                rag_context_for_user_message,
+                                                "        <caused_by>{}</caused_by>",
+                                                escape_xml(id_str)
+                                            )
+                                            .unwrap();
                                         }
                                     }
                                 }
-                                
-                                if let Some(causes) = causality.get("causes").and_then(|c| c.as_array()) {
+
+                                if let Some(causes) =
+                                    causality.get("causes").and_then(|c| c.as_array())
+                                {
                                     for effect_id in causes {
                                         if let Some(id_str) = effect_id.as_str() {
-                                            writeln!(rag_context_for_user_message, "        <causes>{}</causes>", escape_xml(id_str)).unwrap();
+                                            writeln!(
+                                                rag_context_for_user_message,
+                                                "        <causes>{}</causes>",
+                                                escape_xml(id_str)
+                                            )
+                                            .unwrap();
                                         }
                                     }
                                 }
-                                
+
                                 writeln!(rag_context_for_user_message, "    </causality>").unwrap();
                             }
                         }
-                        
+
                         // Add summary - try to get it from the event data first, fall back to rag_item.text
-                        let summary = event_data.get("summary")
+                        let summary = event_data
+                            .get("summary")
                             .and_then(|s| s.as_str())
                             .unwrap_or_else(|| rag_item.text.trim());
                         writeln!(
@@ -943,11 +1007,14 @@ async fn build_final_prompt_strings(
                             escape_xml(summary)
                         )
                         .unwrap();
-                        
+
                         writeln!(rag_context_for_user_message, "</chronicle_event>").unwrap();
                     } else {
                         // Fallback to simple format if JSON parsing fails
-                        warn!("Failed to parse chronicle event JSON for event type: {}", chronicle_meta.event_type);
+                        warn!(
+                            "Failed to parse chronicle event JSON for event type: {}",
+                            chronicle_meta.event_type
+                        );
                         writeln!(
                             rag_context_for_user_message,
                             "<chronicle_event type=\"{}\" timestamp=\"{}\" status=\"unparseable\">[Chronicle data corrupted or truncated - raw text length: {} chars]</chronicle_event>",
@@ -961,11 +1028,11 @@ async fn build_final_prompt_strings(
             }
             rag_context_for_user_message.push_str("</long_term_memory>\n\n");
         }
-        
+
         // Add regular RAG items (lorebooks and chat history) in lorebook_entries section
         if !other_rag_items.is_empty() {
             rag_context_for_user_message.push_str("<lorebook_entries>\n");
-            
+
             for (rag_item, _) in &other_rag_items {
                 match &rag_item.metadata {
                     crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
@@ -979,14 +1046,21 @@ async fn build_final_prompt_strings(
                     }
                     crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) => {
                         // Decrypt content if encrypted fields are present
-                        let content = if let (Some(ref encrypted_chunk), Some(ref nonce)) = 
-                            (lorebook_meta.encrypted_chunk_text.as_ref(), lorebook_meta.chunk_text_nonce.as_ref()) {
+                        let content = if let (Some(ref encrypted_chunk), Some(ref nonce)) = (
+                            lorebook_meta.encrypted_chunk_text.as_ref(),
+                            lorebook_meta.chunk_text_nonce.as_ref(),
+                        ) {
                             // We have encrypted content
                             if let Some(ref session_dek) = user_dek {
                                 // We have the DEK to decrypt
-                                match crate::crypto::decrypt_gcm(encrypted_chunk, nonce, session_dek) {
+                                match crate::crypto::decrypt_gcm(
+                                    encrypted_chunk,
+                                    nonce,
+                                    session_dek,
+                                ) {
                                     Ok(decrypted_secret) => {
-                                        let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                        let decrypted_bytes =
+                                            secrecy::ExposeSecret::expose_secret(&decrypted_secret);
                                         String::from_utf8_lossy(decrypted_bytes).to_string()
                                     }
                                     Err(e) => {
@@ -1011,16 +1085,24 @@ async fn build_final_prompt_strings(
                             // Legacy plaintext mode
                             lorebook_meta.chunk_text.clone()
                         };
-                        
+
                         // Decrypt title if encrypted fields are present
-                        let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = 
-                            (lorebook_meta.encrypted_title.as_ref(), lorebook_meta.title_nonce.as_ref()) {
+                        let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
+                            lorebook_meta.encrypted_title.as_ref(),
+                            lorebook_meta.title_nonce.as_ref(),
+                        ) {
                             // We have encrypted title
                             if let Some(ref session_dek) = user_dek {
-                                match crate::crypto::decrypt_gcm(encrypted_title, title_nonce, session_dek) {
+                                match crate::crypto::decrypt_gcm(
+                                    encrypted_title,
+                                    title_nonce,
+                                    session_dek,
+                                ) {
                                     Ok(decrypted_secret) => {
-                                        let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
-                                        let decrypted_title = String::from_utf8_lossy(decrypted_bytes).to_string();
+                                        let decrypted_bytes =
+                                            secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                        let decrypted_title =
+                                            String::from_utf8_lossy(decrypted_bytes).to_string();
                                         // Handle empty decrypted titles
                                         if decrypted_title.trim().is_empty() {
                                             "Untitled".to_string()
@@ -1031,20 +1113,28 @@ async fn build_final_prompt_strings(
                                     Err(e) => {
                                         warn!("Failed to decrypt lorebook title: {}", e);
                                         // Handle empty fallback titles
-                                        lorebook_meta.entry_title.clone()
-                                            .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                                        lorebook_meta
+                                            .entry_title
+                                            .clone()
+                                            .and_then(|t| {
+                                                if t.trim().is_empty() { None } else { Some(t) }
+                                            })
                                             .unwrap_or_else(|| "[decryption failed]".to_string())
                                     }
                                 }
                             } else {
                                 // Handle empty fallback titles
-                                lorebook_meta.entry_title.clone()
+                                lorebook_meta
+                                    .entry_title
+                                    .clone()
                                     .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
                                     .unwrap_or_else(|| "[encrypted - no DEK]".to_string())
                             }
                         } else {
                             // Handle empty unencrypted titles
-                            lorebook_meta.entry_title.clone()
+                            lorebook_meta
+                                .entry_title
+                                .clone()
                                 .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
                                 .unwrap_or_else(|| "Untitled".to_string())
                         };
@@ -1082,12 +1172,11 @@ async fn build_final_prompt_strings(
                     }
                 }
             }
-            
+
             rag_context_for_user_message.push_str("</lorebook_entries>\n\n");
         }
-        
     }
-    
+
     // Add agent context if available from pre-processing analysis
     if let Some(agent_ctx) = agent_context {
         if !agent_ctx.is_empty() {
@@ -1096,7 +1185,7 @@ async fn build_final_prompt_strings(
             rag_context_for_user_message.push_str("\n</agent_context>\n\n");
         }
     }
-    
+
     // Combine RAG context with the current user message
     let mut final_user_message = current_user_message.clone();
     if let MessageContent::Text(text_content) = final_user_message.content {
@@ -1330,12 +1419,21 @@ mod tests {
         use super::*;
         use crate::config::Config;
         use crate::errors::AppError;
-        use crate::services::embeddings::{RetrievedChunk, RetrievedMetadata, ChatMessageChunkMetadata};
+        use crate::prompt_builder::{
+            TokenCalculation, apply_token_limits, truncate_rag_context,
+            truncate_recent_history_strategically,
+        };
+        use crate::services::embeddings::{
+            ChatMessageChunkMetadata, RetrievedChunk, RetrievedMetadata,
+        };
         use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent};
         use std::sync::Arc;
-        use crate::prompt_builder::{TokenCalculation, truncate_recent_history_strategically, apply_token_limits, truncate_rag_context};
-        
-        fn create_test_message(role: ChatRole, content: &str, tokens: usize) -> (GenAiChatMessage, usize) {
+
+        fn create_test_message(
+            role: ChatRole,
+            content: &str,
+            tokens: usize,
+        ) -> (GenAiChatMessage, usize) {
             (
                 GenAiChatMessage {
                     role,
@@ -1357,11 +1455,23 @@ mod tests {
         ) -> TokenCalculation {
             TokenCalculation {
                 meta_system_prompt_tokens: meta_tokens,
-                persona_override_prompt_str: if persona_tokens > 0 { "persona".to_string() } else { String::new() },
+                persona_override_prompt_str: if persona_tokens > 0 {
+                    "persona".to_string()
+                } else {
+                    String::new()
+                },
                 persona_override_prompt_tokens: persona_tokens,
-                character_definition_str: if character_tokens > 0 { "character".to_string() } else { String::new() },
+                character_definition_str: if character_tokens > 0 {
+                    "character".to_string()
+                } else {
+                    String::new()
+                },
                 character_definition_tokens: character_tokens,
-                character_details_str: if details_tokens > 0 { "details".to_string() } else { String::new() },
+                character_details_str: if details_tokens > 0 {
+                    "details".to_string()
+                } else {
+                    String::new()
+                },
                 character_details_tokens: details_tokens,
                 current_user_message_tokens: current_user_tokens,
                 rag_items_with_tokens: rag_items,
@@ -1375,18 +1485,22 @@ mod tests {
             let mut history_messages = Vec::new();
             for i in 0..10 {
                 history_messages.push(create_test_message(
-                    if i % 2 == 0 { ChatRole::User } else { ChatRole::Assistant },
+                    if i % 2 == 0 {
+                        ChatRole::User
+                    } else {
+                        ChatRole::Assistant
+                    },
                     &format!("Message {}", i),
                     1000,
                 ));
             }
 
             let mut calculation = create_test_calculation(
-                5000,  // meta_tokens
-                1000,  // persona_tokens  
-                2000,  // character_tokens
-                1000,  // details_tokens
-                500,   // current_user_tokens
+                5000,   // meta_tokens
+                1000,   // persona_tokens
+                2000,   // character_tokens
+                1000,   // details_tokens
+                500,    // current_user_tokens
                 vec![], // no RAG items
                 history_messages,
             );
@@ -1408,7 +1522,10 @@ mod tests {
             // Should preserve the last 4 messages (tail)
             // Need to remove 4500 tokens = 5 messages, so should have 5 left
             assert_eq!(calculation.recent_history_with_tokens.len(), 5); // Started with 10, should have 5 left
-            assert!(current_total <= max_allowed, "Token count should be within limit");
+            assert!(
+                current_total <= max_allowed,
+                "Token count should be within limit"
+            );
 
             // Verify tail preservation: the last messages should be preserved
             let preserved_messages = &calculation.recent_history_with_tokens;
@@ -1435,11 +1552,11 @@ mod tests {
             ];
 
             let mut calculation = create_test_calculation(
-                5000,  // meta_tokens
-                1000,  // persona_tokens  
-                2000,  // character_tokens
-                1000,  // details_tokens
-                500,   // current_user_tokens
+                5000,   // meta_tokens
+                1000,   // persona_tokens
+                2000,   // character_tokens
+                1000,   // details_tokens
+                500,    // current_user_tokens
                 vec![], // no RAG items
                 history_messages,
             );
@@ -1473,11 +1590,11 @@ mod tests {
             ];
 
             let mut calculation = create_test_calculation(
-                5000,  // meta_tokens
-                1000,  // persona_tokens  
-                2000,  // character_tokens
-                1000,  // details_tokens
-                500,   // current_user_tokens
+                5000,   // meta_tokens
+                1000,   // persona_tokens
+                2000,   // character_tokens
+                1000,   // details_tokens
+                500,    // current_user_tokens
                 vec![], // no RAG items
                 history_messages,
             );
@@ -1505,18 +1622,22 @@ mod tests {
             let mut history_messages = Vec::new();
             for i in 0..8 {
                 history_messages.push(create_test_message(
-                    if i % 2 == 0 { ChatRole::User } else { ChatRole::Assistant },
+                    if i % 2 == 0 {
+                        ChatRole::User
+                    } else {
+                        ChatRole::Assistant
+                    },
                     &format!("Message {}", i),
                     1000,
                 ));
             }
 
             let mut calculation = create_test_calculation(
-                1000,  // meta_tokens
-                500,   // persona_tokens  
-                500,   // character_tokens
-                500,   // details_tokens
-                500,   // current_user_tokens
+                1000,   // meta_tokens
+                500,    // persona_tokens
+                500,    // character_tokens
+                500,    // details_tokens
+                500,    // current_user_tokens
                 vec![], // no RAG items
                 history_messages,
             );
@@ -1542,7 +1663,7 @@ mod tests {
             // Verify that the last 3 messages are preserved (tail)
             let preserved_messages = &calculation.recent_history_with_tokens;
             let tail_start = preserved_messages.len() - min_tail;
-            
+
             for (i, (message, _)) in preserved_messages[tail_start..].iter().enumerate() {
                 if let MessageContent::Text(content) = &message.content {
                     // These should be messages 5, 6, 7 (the tail)
@@ -1555,36 +1676,38 @@ mod tests {
         #[test]
         fn test_hard_limit_enforcement() {
             use crate::config::Config;
-            
+
             // Create a scenario where even after truncation, we're still over limit
-            let history_messages = vec![
-                create_test_message(ChatRole::User, "Huge message", 100_000),
-            ];
+            let history_messages =
+                vec![create_test_message(ChatRole::User, "Huge message", 100_000)];
 
             let calculation = create_test_calculation(
-                50_000,  // meta_tokens
-                10_000,  // persona_tokens  
-                20_000,  // character_tokens
-                10_000,  // details_tokens
-                5_000,   // current_user_tokens
+                50_000, // meta_tokens
+                10_000, // persona_tokens
+                20_000, // character_tokens
+                10_000, // details_tokens
+                5_000,  // current_user_tokens
                 vec![], // no RAG items
                 history_messages,
             );
 
             // Total: 50_000 + 10_000 + 20_000 + 10_000 + 5_000 + 100_000 = 195,000 tokens
             // Even if we remove all history, we still have 95,000 from head components
-            
+
             let mut config = Config::default();
             config.context_total_token_limit = 80_000; // Lower than head components alone
             config.min_tail_messages_to_preserve = 1;
-            
+
             let config_arc = Arc::new(config);
-            
+
             // This should return an error due to hard limit enforcement
             let result = apply_token_limits(calculation, &config_arc);
-            
-            assert!(result.is_err(), "Should return error when hard limit is exceeded");
-            
+
+            assert!(
+                result.is_err(),
+                "Should return error when hard limit is exceeded"
+            );
+
             if let Err(AppError::BadRequest(msg)) = result {
                 assert!(msg.contains("Request too large"));
                 assert!(msg.contains("tokens exceeds maximum limit"));
@@ -1612,11 +1735,8 @@ mod tests {
                 }),
                 score: 0.9,
             };
-            
-            let rag_items = vec![
-                (rag_chunk.clone(), 3000),
-                (rag_chunk.clone(), 3000),
-            ];
+
+            let rag_items = vec![(rag_chunk.clone(), 3000), (rag_chunk.clone(), 3000)];
 
             let history_messages = vec![
                 create_test_message(ChatRole::User, "Important message 1", 1000),
@@ -1624,11 +1744,11 @@ mod tests {
             ];
 
             let mut calculation = create_test_calculation(
-                5000,  // meta_tokens
-                1000,  // persona_tokens  
-                2000,  // character_tokens
-                1000,  // details_tokens
-                500,   // current_user_tokens
+                5000, // meta_tokens
+                1000, // persona_tokens
+                2000, // character_tokens
+                1000, // details_tokens
+                500,  // current_user_tokens
                 rag_items,
                 history_messages,
             );
@@ -1640,17 +1760,17 @@ mod tests {
 
             // First truncate RAG (should remove all 6000 tokens of RAG)
             truncate_rag_context(&mut calculation, &mut current_total, max_allowed);
-            
+
             // After RAG truncation: 17,500 - 6,000 = 11,500 tokens (under limit)
             assert_eq!(calculation.rag_items_with_tokens.len(), 0);
             assert_eq!(current_total, 11_500);
             assert!(current_total <= max_allowed);
-            
+
             // History should be preserved since RAG truncation was sufficient
             assert_eq!(calculation.recent_history_with_tokens.len(), 2);
         }
     }
-    
+
     #[test]
     fn test_enhanced_chronicle_event_formatting() {
         // Test that chronicle events with rich data are properly formatted
@@ -1697,17 +1817,26 @@ mod tests {
             "modality": "ACTUAL",
             "summary": "In the intimate aftermath of their bond's profound reinforcement, Sol commanded Lumiya to accompany him."
         }"#;
-        
+
         // Test that the escape_xml function works correctly for special characters
         let result = super::escape_xml("Test & <tag> \"quote\" 'apostrophe'");
-        assert_eq!(result, "Test &amp; &lt;tag&gt; &quot;quote&quot; &apos;apostrophe&apos;");
-        
+        assert_eq!(
+            result,
+            "Test &amp; &lt;tag&gt; &quot;quote&quot; &apos;apostrophe&apos;"
+        );
+
         // Test JSON parsing of the event data
         let parsed: serde_json::Value = serde_json::from_str(chronicle_event_json).unwrap();
         assert_eq!(parsed["action"], "Agreed");
         assert_eq!(parsed["actors"][0]["id"], "sol");
         assert_eq!(parsed["valence"][0]["change"], 0.3);
-        assert_eq!(parsed["context_data"]["location_id"], "sol_private_quarters");
-        assert_eq!(parsed["causality"]["causedBy"][0], "997a300f-1e05-42da-a906-08a2858be03a");
+        assert_eq!(
+            parsed["context_data"]["location_id"],
+            "sol_private_quarters"
+        );
+        assert_eq!(
+            parsed["causality"]["causedBy"][0],
+            "997a300f-1e05-42da-a906-08a2858be03a"
+        );
     }
 }

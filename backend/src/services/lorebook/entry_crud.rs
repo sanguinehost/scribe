@@ -279,7 +279,7 @@ AppError::InternalServerErrorGeneric(format!(
 
         let is_enabled_for_embedding = new_entry_db.is_enabled; // Use value from payload/defaults
         let is_constant_for_embedding = new_entry_db.is_constant; // Use value from payload/defaults
-        
+
         // Clone the SessionDek for the async task
         let session_dek_for_embedding = user_dek.map(|dek| {
             let dek_bytes = dek.expose_secret().clone();
@@ -1009,7 +1009,7 @@ AppError::InternalServerErrorGeneric(format!(
             });
         let is_enabled_for_embedding = updated_db_entry.is_enabled;
         let is_constant_for_embedding = updated_db_entry.is_constant;
-        
+
         // Clone the SessionDek for the async task
         let session_dek_for_embedding = user_dek.map(|dek| {
             let dek_bytes = dek.expose_secret().clone();
@@ -1161,7 +1161,10 @@ AppError::InternalServerErrorGeneric(format!(
                 })
                 .await
                 .map_err(|e| {
-                    error!("Interaction error while checking lorebook ownership: {:?}", e);
+                    error!(
+                        "Interaction error while checking lorebook ownership: {:?}",
+                        e
+                    );
                     AppError::InternalServerErrorGeneric(format!(
                         "Database interaction failed while checking lorebook: {e}"
                     ))
@@ -1194,9 +1197,8 @@ AppError::InternalServerErrorGeneric(format!(
             .encryption_service
             .encrypt(text_to_encrypt_for_keys, user_dek_bytes)?;
 
-        let (content_ciphertext, content_nonce) = self
-            .encryption_service
-            .encrypt(&content, user_dek_bytes)?;
+        let (content_ciphertext, content_nonce) =
+            self.encryption_service.encrypt(&content, user_dek_bytes)?;
 
         // No comment for AI-generated entries
         let (comment_ciphertext, comment_nonce) = (None, None);
@@ -1239,7 +1241,10 @@ AppError::InternalServerErrorGeneric(format!(
             })
             .await
             .map_err(|e| {
-                error!("Interaction error while inserting AI lorebook entry: {:?}", e);
+                error!(
+                    "Interaction error while inserting AI lorebook entry: {:?}",
+                    e
+                );
                 AppError::InternalServerErrorGeneric(format!(
                     "Database interaction failed while creating AI lorebook entry: {e}"
                 ))
@@ -1263,7 +1268,8 @@ AppError::InternalServerErrorGeneric(format!(
                 error!("Failed to decrypt entry title for verification: {:?}", e);
                 AppError::DecryptionError("Failed to decrypt entry title".to_string())
             })?;
-        let decrypted_entry_title = String::from_utf8_lossy(&decrypted_entry_title_bytes).into_owned();
+        let decrypted_entry_title =
+            String::from_utf8_lossy(&decrypted_entry_title_bytes).into_owned();
 
         let decrypted_keys_text = if !inserted_entry.keys_text_ciphertext.is_empty() {
             let decrypted_bytes = self
@@ -1278,7 +1284,11 @@ AppError::InternalServerErrorGeneric(format!(
                     AppError::DecryptionError("Failed to decrypt keys text".to_string())
                 })?;
             let decrypted_string = String::from_utf8_lossy(&decrypted_bytes).into_owned();
-            if decrypted_string.is_empty() { None } else { Some(decrypted_string) }
+            if decrypted_string.is_empty() {
+                None
+            } else {
+                Some(decrypted_string)
+            }
         } else {
             None
         };
@@ -1312,7 +1322,9 @@ AppError::InternalServerErrorGeneric(format!(
             is_enabled: inserted_entry.is_enabled,
             is_constant: inserted_entry.is_constant,
             insertion_order: inserted_entry.insertion_order,
-            placement_hint: inserted_entry.placement_hint.unwrap_or_else(|| "after_prompt".to_string()),
+            placement_hint: inserted_entry
+                .placement_hint
+                .unwrap_or_else(|| "after_prompt".to_string()),
             created_at: inserted_entry.created_at,
             updated_at: inserted_entry.updated_at,
         })
@@ -1385,13 +1397,10 @@ AppError::InternalServerErrorGeneric(format!(
             })?
             .map_err(|e| {
                 error!("Failed to create AI lorebook: {:?}", e);
-                AppError::InternalServerErrorGeneric(format!(
-                    "Failed to create AI lorebook: {e}"
-                ))
+                AppError::InternalServerErrorGeneric(format!("Failed to create AI lorebook: {e}"))
             })?;
 
         info!("Created new AI lorebook: {}", created_lorebook.id);
         Ok(created_lorebook.id)
     }
-
 }

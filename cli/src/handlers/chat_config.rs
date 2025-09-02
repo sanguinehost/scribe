@@ -41,7 +41,9 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
             i + 1,
             session.title.as_deref().unwrap_or("Untitled"), // Now decrypted
             session.id,
-            session.character_id.map_or("None".to_string(), |id| id.to_string())
+            session
+                .character_id
+                .map_or("None".to_string(), |id| id.to_string())
         ))?;
     }
 
@@ -106,9 +108,9 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
         history_management_strategy: None,
         history_management_limit: None,
         model_name: None,
-            model_provider: None, // Will be determined by backend based on model
-        chronicle_id: None, // Not relevant for CLI
-        agent_mode: None, // Not used in CLI
+        model_provider: None, // Will be determined by backend based on model
+        chronicle_id: None,   // Not relevant for CLI
+        agent_mode: None,     // Not used in CLI
     };
 
     // 4. Configure model

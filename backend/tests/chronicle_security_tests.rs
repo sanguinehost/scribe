@@ -13,12 +13,9 @@ use axum::{
 use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
-    models::{
-        chronicle::PlayerChronicle,
-        chronicle_event::ChronicleEvent,
-    },
-    test_helpers::{self, TestDataGuard, TestApp},
+    models::{chronicle::PlayerChronicle, chronicle_event::ChronicleEvent},
     schema,
+    test_helpers::{self, TestApp, TestDataGuard},
 };
 use serde_json::json;
 use tower::util::ServiceExt;
@@ -33,14 +30,17 @@ fn extract_session_cookie(response: &Response) -> Option<String> {
     response
         .headers()
         .get(header::SET_COOKIE)?
-        .to_str().ok()?
+        .to_str()
+        .ok()?
         .split(';')
         .next()
         .map(|s| s.to_string())
 }
 
 /// Parse JSON response body
-async fn parse_json_response<T: serde::de::DeserializeOwned>(response: Response) -> AnyhowResult<T> {
+async fn parse_json_response<T: serde::de::DeserializeOwned>(
+    response: Response,
+) -> AnyhowResult<T> {
     let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = std::str::from_utf8(&body_bytes)?;
     serde_json::from_str(body_str).context("Failed to parse JSON response")
@@ -50,7 +50,7 @@ async fn parse_json_response<T: serde::de::DeserializeOwned>(response: Response)
 async fn extract_error_message(response: Response) -> AnyhowResult<String> {
     let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = std::str::from_utf8(&body_bytes)?;
-    
+
     // Try to parse as JSON error first
     if let Ok(json_error) = serde_json::from_str::<serde_json::Value>(body_str) {
         if let Some(message) = json_error.get("message").and_then(|m| m.as_str()) {
@@ -60,13 +60,16 @@ async fn extract_error_message(response: Response) -> AnyhowResult<String> {
             return Ok(error.to_string());
         }
     }
-    
+
     // Return raw body if not JSON
     Ok(body_str.to_string())
 }
 
 /// Create and authenticate a test user, returning session cookie and user ID
-async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) -> AnyhowResult<(String, Uuid)> {
+async fn create_authenticated_user(
+    test_app: &TestApp,
+    username_suffix: &str,
+) -> AnyhowResult<(String, Uuid)> {
     let username = format!("testuser_{}_{}", username_suffix, Uuid::new_v4().simple());
     let email = format!("{}@test.com", username);
     let password = "TestPassword123!";
@@ -78,7 +81,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
         "password": password
     });
 
-    let register_response = test_app.router
+    let register_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -117,7 +121,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
 
     if let Some(token) = verification_token {
         let verify_payload = json!({ "token": token });
-        let verify_response = test_app.router
+        let verify_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -137,7 +142,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
         "password": password
     });
 
-    let login_response = test_app.router
+    let login_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -151,8 +157,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
 
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let session_cookie = extract_session_cookie(&login_response)
-        .context("No session cookie in login response")?;
+    let session_cookie =
+        extract_session_cookie(&login_response).context("No session cookie in login response")?;
 
     Ok((session_cookie, user_uuid))
 }
@@ -169,7 +175,8 @@ async fn create_chronicle(
         "description": description
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -200,12 +207,13 @@ async fn create_chronicle_event(
         "summary": summary,
         "source": "USER_ADDED"
     });
-    
+
     if let Some(kw) = keywords {
         request_body["keywords"] = json!(kw);
     }
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -230,17 +238,19 @@ async fn create_chronicle_event(
 async fn test_a01_cannot_access_other_users_chronicle() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Create two users
     let (user1_cookie, user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User1 creates a chronicle
-    let chronicle = create_chronicle(&test_app, &user1_cookie, "User1's Chronicle", None).await.unwrap();
+    let chronicle = create_chronicle(&test_app, &user1_cookie, "User1's Chronicle", None)
+        .await
+        .unwrap();
 
     // User2 tries to access User1's chronicle
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -255,9 +265,9 @@ async fn test_a01_cannot_access_other_users_chronicle() {
 
     // Should be forbidden or not found (implementation dependent)
     assert!(
-        response.status() == StatusCode::FORBIDDEN || 
-        response.status() == StatusCode::NOT_FOUND,
-        "Expected FORBIDDEN or NOT_FOUND, got {}", response.status()
+        response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND,
+        "Expected FORBIDDEN or NOT_FOUND, got {}",
+        response.status()
     );
 }
 
@@ -265,14 +275,15 @@ async fn test_a01_cannot_access_other_users_chronicle() {
 async fn test_a01_cannot_update_other_users_chronicle() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User1 creates a chronicle
-    let chronicle = create_chronicle(&test_app, &user1_cookie, "Original Name", None).await.unwrap();
+    let chronicle = create_chronicle(&test_app, &user1_cookie, "Original Name", None)
+        .await
+        .unwrap();
 
     // User2 tries to update User1's chronicle
     let update_request = json!({
@@ -280,7 +291,8 @@ async fn test_a01_cannot_update_other_users_chronicle() {
         "description": "Malicious update"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -296,13 +308,14 @@ async fn test_a01_cannot_update_other_users_chronicle() {
 
     // Should be forbidden or not found
     assert!(
-        response.status() == StatusCode::FORBIDDEN || 
-        response.status() == StatusCode::NOT_FOUND,
-        "Expected FORBIDDEN or NOT_FOUND, got {}", response.status()
+        response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND,
+        "Expected FORBIDDEN or NOT_FOUND, got {}",
+        response.status()
     );
 
     // Verify chronicle wasn't updated
-    let verify_response = test_app.router
+    let verify_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -323,17 +336,19 @@ async fn test_a01_cannot_update_other_users_chronicle() {
 async fn test_a01_cannot_delete_other_users_chronicle() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User1 creates a chronicle
-    let chronicle = create_chronicle(&test_app, &user1_cookie, "User1's Chronicle", None).await.unwrap();
+    let chronicle = create_chronicle(&test_app, &user1_cookie, "User1's Chronicle", None)
+        .await
+        .unwrap();
 
     // User2 tries to delete User1's chronicle
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -348,13 +363,14 @@ async fn test_a01_cannot_delete_other_users_chronicle() {
 
     // Should be forbidden or not found
     assert!(
-        response.status() == StatusCode::FORBIDDEN || 
-        response.status() == StatusCode::NOT_FOUND,
-        "Expected FORBIDDEN or NOT_FOUND, got {}", response.status()
+        response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND,
+        "Expected FORBIDDEN or NOT_FOUND, got {}",
+        response.status()
     );
 
     // Verify chronicle still exists
-    let verify_response = test_app.router
+    let verify_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -374,14 +390,15 @@ async fn test_a01_cannot_delete_other_users_chronicle() {
 async fn test_a01_cannot_add_events_to_other_users_chronicle() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User1 creates a chronicle
-    let chronicle = create_chronicle(&test_app, &user1_cookie, "User1's Chronicle", None).await.unwrap();
+    let chronicle = create_chronicle(&test_app, &user1_cookie, "User1's Chronicle", None)
+        .await
+        .unwrap();
 
     // User2 tries to add an event to User1's chronicle
     let event_request = json!({
@@ -390,7 +407,8 @@ async fn test_a01_cannot_add_events_to_other_users_chronicle() {
         "source": "USER_ADDED"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -406,9 +424,9 @@ async fn test_a01_cannot_add_events_to_other_users_chronicle() {
 
     // Should be forbidden or not found
     assert!(
-        response.status() == StatusCode::FORBIDDEN || 
-        response.status() == StatusCode::NOT_FOUND,
-        "Expected FORBIDDEN or NOT_FOUND, got {}", response.status()
+        response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND,
+        "Expected FORBIDDEN or NOT_FOUND, got {}",
+        response.status()
     );
 }
 
@@ -416,24 +434,37 @@ async fn test_a01_cannot_add_events_to_other_users_chronicle() {
 async fn test_a01_cannot_delete_other_users_chronicle_events() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User1 creates a chronicle and event
-    let chronicle = create_chronicle(&test_app, &user1_cookie, "User1's Chronicle", None).await.unwrap();
-    let event = create_chronicle_event(&test_app, &user1_cookie, chronicle.id, 
-        "STORY_EVENT", "Important event", None).await.unwrap();
+    let chronicle = create_chronicle(&test_app, &user1_cookie, "User1's Chronicle", None)
+        .await
+        .unwrap();
+    let event = create_chronicle_event(
+        &test_app,
+        &user1_cookie,
+        chronicle.id,
+        "STORY_EVENT",
+        "Important event",
+        None,
+    )
+    .await
+    .unwrap();
 
     // User2 tries to delete User1's event
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
                 .method(Method::DELETE)
-                .uri(format!("/api/chronicles/{}/events/{}", chronicle.id, event.id))
+                .uri(format!(
+                    "/api/chronicles/{}/events/{}",
+                    chronicle.id, event.id
+                ))
                 .header(header::COOKIE, &user2_cookie)
                 .body(Body::empty())
                 .unwrap(),
@@ -443,13 +474,14 @@ async fn test_a01_cannot_delete_other_users_chronicle_events() {
 
     // Should be forbidden or not found
     assert!(
-        response.status() == StatusCode::FORBIDDEN || 
-        response.status() == StatusCode::NOT_FOUND,
-        "Expected FORBIDDEN or NOT_FOUND, got {}", response.status()
+        response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND,
+        "Expected FORBIDDEN or NOT_FOUND, got {}",
+        response.status()
     );
 
     // Verify event still exists
-    let verify_response = test_app.router
+    let verify_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -475,15 +507,26 @@ async fn test_a01_cannot_delete_other_users_chronicle_events() {
 async fn test_a02_chronicle_events_are_encrypted_at_rest() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Create authenticated user
-    let (cookie, user_id) = create_authenticated_user(&test_app, "crypto_test").await.unwrap();
+    let (cookie, user_id) = create_authenticated_user(&test_app, "crypto_test")
+        .await
+        .unwrap();
 
     // Create chronicle and event
-    let chronicle = create_chronicle(&test_app, &cookie, "Encrypted Chronicle", None).await.unwrap();
-    let event = create_chronicle_event(&test_app, &cookie, chronicle.id,
-        "SECRET_EVENT", "This is a secret message", Some(vec!["secret".to_string(), "encrypted".to_string()])).await.unwrap();
+    let chronicle = create_chronicle(&test_app, &cookie, "Encrypted Chronicle", None)
+        .await
+        .unwrap();
+    let event = create_chronicle_event(
+        &test_app,
+        &cookie,
+        chronicle.id,
+        "SECRET_EVENT",
+        "This is a secret message",
+        Some(vec!["secret".to_string(), "encrypted".to_string()]),
+    )
+    .await
+    .unwrap();
 
     // Query database directly to verify encryption
     let conn = test_app.db_pool.get().await.unwrap();
@@ -499,15 +542,23 @@ async fn test_a02_chronicle_events_are_encrypted_at_rest() {
         .unwrap();
 
     // Check that encrypted fields exist
-    assert!(db_event.summary_encrypted.is_some(), "Summary should be encrypted");
-    assert!(db_event.summary_nonce.is_some(), "Summary nonce should exist");
-    
+    assert!(
+        db_event.summary_encrypted.is_some(),
+        "Summary should be encrypted"
+    );
+    assert!(
+        db_event.summary_nonce.is_some(),
+        "Summary nonce should exist"
+    );
+
     // The plaintext should NOT be stored (or should be a placeholder)
     // This depends on implementation - if plaintext is kept for legacy, it should be empty or placeholder
     if !db_event.summary.is_empty() {
         // If summary is not empty, it should be different from the original
-        assert_ne!(db_event.summary, "This is a secret message", 
-            "Plaintext summary should not match original if stored");
+        assert_ne!(
+            db_event.summary, "This is a secret message",
+            "Plaintext summary should not match original if stored"
+        );
     }
 }
 
@@ -515,18 +566,30 @@ async fn test_a02_chronicle_events_are_encrypted_at_rest() {
 async fn test_a02_api_responses_dont_leak_encrypted_data() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Create authenticated user
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "no_leak").await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "no_leak")
+        .await
+        .unwrap();
 
     // Create chronicle and event
-    let chronicle = create_chronicle(&test_app, &cookie, "No Leak Chronicle", None).await.unwrap();
-    let _event = create_chronicle_event(&test_app, &cookie, chronicle.id,
-        "SENSITIVE", "Sensitive information", None).await.unwrap();
+    let chronicle = create_chronicle(&test_app, &cookie, "No Leak Chronicle", None)
+        .await
+        .unwrap();
+    let _event = create_chronicle_event(
+        &test_app,
+        &cookie,
+        chronicle.id,
+        "SENSITIVE",
+        "Sensitive information",
+        None,
+    )
+    .await
+    .unwrap();
 
     // Get events via API
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -541,11 +604,20 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
 
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body_str = std::str::from_utf8(&body_bytes).unwrap();
-    
+
     // Verify no encrypted fields in response
-    assert!(!body_str.contains("summary_encrypted"), "Response should not contain encrypted fields");
-    assert!(!body_str.contains("summary_nonce"), "Response should not contain nonce fields");
-    assert!(!body_str.contains("keywords_encrypted"), "Response should not contain encrypted keywords");
+    assert!(
+        !body_str.contains("summary_encrypted"),
+        "Response should not contain encrypted fields"
+    );
+    assert!(
+        !body_str.contains("summary_nonce"),
+        "Response should not contain nonce fields"
+    );
+    assert!(
+        !body_str.contains("keywords_encrypted"),
+        "Response should not contain encrypted keywords"
+    );
 }
 
 // ============================================================================
@@ -556,9 +628,10 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
 async fn test_a03_sql_injection_in_chronicle_name() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "sql_inject").await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "sql_inject")
+        .await
+        .unwrap();
 
     // Various SQL injection attempts
     let sql_payloads = vec![
@@ -576,7 +649,8 @@ async fn test_a03_sql_injection_in_chronicle_name() {
             "description": "Test description"
         });
 
-        let response = test_app.router
+        let response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -594,19 +668,23 @@ async fn test_a03_sql_injection_in_chronicle_name() {
         if response.status() == StatusCode::CREATED {
             let chronicle: PlayerChronicle = parse_json_response(response).await.unwrap();
             // If created, verify the name is stored safely (escaped)
-            assert_eq!(chronicle.name, payload, "Payload should be stored as-is, not executed");
+            assert_eq!(
+                chronicle.name, payload,
+                "Payload should be stored as-is, not executed"
+            );
         } else {
             // Validation might reject it, which is also fine
             assert!(
-                response.status() == StatusCode::BAD_REQUEST ||
-                response.status() == StatusCode::UNPROCESSABLE_ENTITY,
+                response.status() == StatusCode::BAD_REQUEST
+                    || response.status() == StatusCode::UNPROCESSABLE_ENTITY,
                 "Expected validation error for SQL injection attempt"
             );
         }
     }
 
     // Verify database is still functional
-    let verify_response = test_app.router
+    let verify_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -619,17 +697,24 @@ async fn test_a03_sql_injection_in_chronicle_name() {
         .await
         .unwrap();
 
-    assert_eq!(verify_response.status(), StatusCode::OK, "Database should still be functional");
+    assert_eq!(
+        verify_response.status(),
+        StatusCode::OK,
+        "Database should still be functional"
+    );
 }
 
 #[tokio::test]
 async fn test_a03_xss_prevention_in_chronicle_events() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "xss_test").await.unwrap();
-    let chronicle = create_chronicle(&test_app, &cookie, "XSS Test Chronicle", None).await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "xss_test")
+        .await
+        .unwrap();
+    let chronicle = create_chronicle(&test_app, &cookie, "XSS Test Chronicle", None)
+        .await
+        .unwrap();
 
     // XSS payloads
     let xss_payloads = vec![
@@ -649,7 +734,8 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
             "keywords": [payload]
         });
 
-        let response = test_app.router
+        let response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -677,10 +763,13 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
 async fn test_a03_json_injection_in_event_data() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "json_inject").await.unwrap();
-    let chronicle = create_chronicle(&test_app, &cookie, "JSON Injection Test", None).await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "json_inject")
+        .await
+        .unwrap();
+    let chronicle = create_chronicle(&test_app, &cookie, "JSON Injection Test", None)
+        .await
+        .unwrap();
 
     // Malicious JSON payloads
     let json_payloads = vec![
@@ -706,7 +795,8 @@ async fn test_a03_json_injection_in_event_data() {
             "event_data": payload
         });
 
-        let response = test_app.router
+        let response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -722,8 +812,8 @@ async fn test_a03_json_injection_in_event_data() {
 
         // Should either safely store or reject malicious patterns
         assert!(
-            response.status() == StatusCode::CREATED ||
-            response.status() == StatusCode::BAD_REQUEST,
+            response.status() == StatusCode::CREATED
+                || response.status() == StatusCode::BAD_REQUEST,
             "Should handle JSON injection attempt safely"
         );
     }
@@ -737,21 +827,23 @@ async fn test_a03_json_injection_in_event_data() {
 async fn test_a04_rate_limiting_chronicle_creation() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "rate_limit").await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "rate_limit")
+        .await
+        .unwrap();
 
     // Try to create many chronicles rapidly
     let mut success_count = 0;
     let mut blocked_count = 0;
-    
+
     for i in 0..50 {
         let request_body = json!({
             "name": format!("Chronicle {}", i),
             "description": "Rate limit test"
         });
 
-        let response = test_app.router
+        let response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -784,19 +876,21 @@ async fn test_a04_rate_limiting_chronicle_creation() {
 async fn test_a04_resource_exhaustion_prevention() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "resource_test").await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "resource_test")
+        .await
+        .unwrap();
 
     // Try to create chronicle with massive description
     let huge_description = "A".repeat(1_000_000); // 1MB of text
-    
+
     let request_body = json!({
         "name": "Normal Name",
         "description": huge_description
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -812,16 +906,18 @@ async fn test_a04_resource_exhaustion_prevention() {
 
     // Should reject overly large payloads
     assert!(
-        response.status() == StatusCode::BAD_REQUEST ||
-        response.status() == StatusCode::PAYLOAD_TOO_LARGE ||
-        response.status() == StatusCode::UNPROCESSABLE_ENTITY,
+        response.status() == StatusCode::BAD_REQUEST
+            || response.status() == StatusCode::PAYLOAD_TOO_LARGE
+            || response.status() == StatusCode::UNPROCESSABLE_ENTITY,
         "Should reject overly large descriptions"
     );
 
     // Try with massive keywords list
-    let chronicle = create_chronicle(&test_app, &cookie, "Keyword Test", None).await.unwrap();
+    let chronicle = create_chronicle(&test_app, &cookie, "Keyword Test", None)
+        .await
+        .unwrap();
     let huge_keywords: Vec<String> = (0..10000).map(|i| format!("keyword_{}", i)).collect();
-    
+
     let event_request = json!({
         "event_type": "HUGE_KEYWORDS",
         "summary": "Testing huge keywords",
@@ -829,7 +925,8 @@ async fn test_a04_resource_exhaustion_prevention() {
         "keywords": huge_keywords
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -858,13 +955,15 @@ async fn test_a04_resource_exhaustion_prevention() {
 async fn test_a05_error_messages_dont_leak_sensitive_info() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "error_test").await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "error_test")
+        .await
+        .unwrap();
 
     // Try to access non-existent chronicle
     let fake_id = Uuid::new_v4();
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -878,18 +977,30 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
         .unwrap();
 
     let error_msg = extract_error_message(response).await.unwrap();
-    
+
     // Error message should not contain:
     // - Database table names
     // - SQL queries
     // - File paths
     // - Stack traces
-    assert!(!error_msg.to_lowercase().contains("chronicle_events"), "Should not leak table names");
-    assert!(!error_msg.to_lowercase().contains("select"), "Should not leak SQL queries");
+    assert!(
+        !error_msg.to_lowercase().contains("chronicle_events"),
+        "Should not leak table names"
+    );
+    assert!(
+        !error_msg.to_lowercase().contains("select"),
+        "Should not leak SQL queries"
+    );
     assert!(!error_msg.contains("/home/"), "Should not leak file paths");
     assert!(!error_msg.contains("/src/"), "Should not leak source paths");
-    assert!(!error_msg.contains("at line"), "Should not leak stack traces");
-    assert!(!error_msg.contains("diesel::"), "Should not leak framework details");
+    assert!(
+        !error_msg.contains("at line"),
+        "Should not leak stack traces"
+    );
+    assert!(
+        !error_msg.contains("diesel::"),
+        "Should not leak framework details"
+    );
 }
 
 // ============================================================================
@@ -900,7 +1011,6 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
 async fn test_a07_unauthenticated_access_prevented() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Try to create chronicle without authentication
     let request_body = json!({
@@ -908,7 +1018,8 @@ async fn test_a07_unauthenticated_access_prevented() {
         "description": "Should not be created"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -921,11 +1032,15 @@ async fn test_a07_unauthenticated_access_prevented() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED, 
-        "Should require authentication to create chronicles");
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "Should require authentication to create chronicles"
+    );
 
     // Try to list chronicles without authentication
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -937,20 +1052,23 @@ async fn test_a07_unauthenticated_access_prevented() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED,
-        "Should require authentication to list chronicles");
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "Should require authentication to list chronicles"
+    );
 }
 
 #[tokio::test]
 async fn test_a07_invalid_session_token_rejected() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Try with completely invalid session
     let fake_session = "id=totally-fake-session-id";
-    
-    let response = test_app.router
+
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -963,13 +1081,17 @@ async fn test_a07_invalid_session_token_rejected() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED,
-        "Should reject invalid session tokens");
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "Should reject invalid session tokens"
+    );
 
     // Try with malformed session
     let malformed_session = "id='; DROP TABLE sessions; --";
-    
-    let response = test_app.router
+
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -982,8 +1104,11 @@ async fn test_a07_invalid_session_token_rejected() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED,
-        "Should safely reject malformed session tokens");
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "Should safely reject malformed session tokens"
+    );
 }
 
 // ============================================================================
@@ -994,18 +1119,37 @@ async fn test_a07_invalid_session_token_rejected() {
 async fn test_a08_chronicle_data_integrity() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, user_id) = create_authenticated_user(&test_app, "integrity_test").await.unwrap();
-    
+    let (cookie, user_id) = create_authenticated_user(&test_app, "integrity_test")
+        .await
+        .unwrap();
+
     // Create chronicle
-    let chronicle = create_chronicle(&test_app, &cookie, "Integrity Test", None).await.unwrap();
-    
+    let chronicle = create_chronicle(&test_app, &cookie, "Integrity Test", None)
+        .await
+        .unwrap();
+
     // Create events
-    let event1 = create_chronicle_event(&test_app, &cookie, chronicle.id,
-        "EVENT_1", "First event", None).await.unwrap();
-    let event2 = create_chronicle_event(&test_app, &cookie, chronicle.id,
-        "EVENT_2", "Second event", None).await.unwrap();
+    let event1 = create_chronicle_event(
+        &test_app,
+        &cookie,
+        chronicle.id,
+        "EVENT_1",
+        "First event",
+        None,
+    )
+    .await
+    .unwrap();
+    let event2 = create_chronicle_event(
+        &test_app,
+        &cookie,
+        chronicle.id,
+        "EVENT_2",
+        "Second event",
+        None,
+    )
+    .await
+    .unwrap();
 
     // Verify all events belong to the same chronicle
     assert_eq!(event1.chronicle_id, chronicle.id);
@@ -1014,7 +1158,8 @@ async fn test_a08_chronicle_data_integrity() {
     assert_eq!(event2.user_id, user_id);
 
     // Delete chronicle
-    let delete_response = test_app.router
+    let delete_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -1044,7 +1189,10 @@ async fn test_a08_chronicle_data_integrity() {
         .unwrap()
         .unwrap();
 
-    assert_eq!(event_count, 0, "Events should be cascade deleted with chronicle");
+    assert_eq!(
+        event_count, 0,
+        "Events should be cascade deleted with chronicle"
+    );
 }
 
 // ============================================================================
@@ -1055,18 +1203,24 @@ async fn test_a08_chronicle_data_integrity() {
 async fn test_a09_failed_access_attempts_logged() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
     // Create two users
-    let (user1_cookie, _) = create_authenticated_user(&test_app, "logger1").await.unwrap();
-    let (user2_cookie, _) = create_authenticated_user(&test_app, "logger2").await.unwrap();
+    let (user1_cookie, _) = create_authenticated_user(&test_app, "logger1")
+        .await
+        .unwrap();
+    let (user2_cookie, _) = create_authenticated_user(&test_app, "logger2")
+        .await
+        .unwrap();
 
     // User1 creates a chronicle
-    let chronicle = create_chronicle(&test_app, &user1_cookie, "Logged Chronicle", None).await.unwrap();
+    let chronicle = create_chronicle(&test_app, &user1_cookie, "Logged Chronicle", None)
+        .await
+        .unwrap();
 
     // User2 attempts unauthorized access (multiple times to simulate attack)
     for _i in 0..5 {
-        let _ = test_app.router
+        let _ = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -1086,9 +1240,10 @@ async fn test_a09_failed_access_attempts_logged() {
     // - Target resource ID
     // - Type of unauthorized action attempted
     // Since we can't easily check logs in tests, we just verify the attempts were blocked
-    
+
     // Verify chronicle still exists (wasn't deleted)
-    let verify_response = test_app.router
+    let verify_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -1101,8 +1256,11 @@ async fn test_a09_failed_access_attempts_logged() {
         .await
         .unwrap();
 
-    assert_eq!(verify_response.status(), StatusCode::OK,
-        "Chronicle should still exist after failed deletion attempts");
+    assert_eq!(
+        verify_response.status(),
+        StatusCode::OK,
+        "Chronicle should still exist after failed deletion attempts"
+    );
 }
 
 // ============================================================================
@@ -1113,10 +1271,13 @@ async fn test_a09_failed_access_attempts_logged() {
 async fn test_a10_ssrf_prevention_in_event_data() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "ssrf_test").await.unwrap();
-    let chronicle = create_chronicle(&test_app, &cookie, "SSRF Test", None).await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "ssrf_test")
+        .await
+        .unwrap();
+    let chronicle = create_chronicle(&test_app, &cookie, "SSRF Test", None)
+        .await
+        .unwrap();
 
     // SSRF payloads in event data
     let ssrf_payloads = vec![
@@ -1146,7 +1307,8 @@ async fn test_a10_ssrf_prevention_in_event_data() {
             "event_data": payload
         });
 
-        let response = test_app.router
+        let response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -1178,9 +1340,10 @@ async fn test_a10_ssrf_prevention_in_event_data() {
 async fn test_chronicle_name_validation() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "validation_test").await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "validation_test")
+        .await
+        .unwrap();
 
     // Test empty name
     let request_body = json!({
@@ -1188,7 +1351,8 @@ async fn test_chronicle_name_validation() {
         "description": "Valid description"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -1203,8 +1367,8 @@ async fn test_chronicle_name_validation() {
         .unwrap();
 
     assert!(
-        response.status() == StatusCode::BAD_REQUEST ||
-        response.status() == StatusCode::UNPROCESSABLE_ENTITY,
+        response.status() == StatusCode::BAD_REQUEST
+            || response.status() == StatusCode::UNPROCESSABLE_ENTITY,
         "Should reject empty chronicle names"
     );
 
@@ -1215,7 +1379,8 @@ async fn test_chronicle_name_validation() {
         "description": "Valid description"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -1230,8 +1395,8 @@ async fn test_chronicle_name_validation() {
         .unwrap();
 
     assert!(
-        response.status() == StatusCode::BAD_REQUEST ||
-        response.status() == StatusCode::UNPROCESSABLE_ENTITY,
+        response.status() == StatusCode::BAD_REQUEST
+            || response.status() == StatusCode::UNPROCESSABLE_ENTITY,
         "Should reject overly long chronicle names"
     );
 }
@@ -1240,9 +1405,10 @@ async fn test_chronicle_name_validation() {
 async fn test_chronicle_id_tampering_prevention() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
 
-    let (cookie, _user_id) = create_authenticated_user(&test_app, "tamper_test").await.unwrap();
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "tamper_test")
+        .await
+        .unwrap();
 
     // Try various invalid chronicle IDs
     let invalid_ids = vec![
@@ -1255,7 +1421,8 @@ async fn test_chronicle_id_tampering_prevention() {
     ];
 
     for invalid_id in invalid_ids {
-        let response = test_app.router
+        let response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -1269,9 +1436,10 @@ async fn test_chronicle_id_tampering_prevention() {
             .unwrap();
 
         assert!(
-            response.status() == StatusCode::BAD_REQUEST ||
-            response.status() == StatusCode::NOT_FOUND,
-            "Should safely handle invalid chronicle ID: {}", invalid_id
+            response.status() == StatusCode::BAD_REQUEST
+                || response.status() == StatusCode::NOT_FOUND,
+            "Should safely handle invalid chronicle ID: {}",
+            invalid_id
         );
     }
 }

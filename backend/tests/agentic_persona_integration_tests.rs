@@ -1,35 +1,31 @@
 #![cfg(test)]
 // backend/tests/agentic_persona_integration_tests.rs
 
-use std::sync::Arc;
 use anyhow::Result as AnyhowResult;
+use bcrypt;
+use chrono::Utc;
+use diesel::{RunQueryDsl, prelude::*};
+use hex;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     models::{
         chats::{ChatMessage, MessageRole},
-        chronicle::{CreateChronicleRequest},
-        chronicle_event::{EventSource, EventFilter},
-        users::{NewUser, UserRole, AccountStatus, UserDbQuery},
+        chronicle::CreateChronicleRequest,
+        chronicle_event::{EventFilter, EventSource},
         user_personas::{CreateUserPersonaDto, UserPersonaDataForClient},
-    },
-    services::{
-        ScribeTool,
-        agentic::{
-            AgenticNarrativeFactory,
-            AnalyzeTextSignificanceTool, CreateChronicleEventTool,
-        },
-        ChronicleService, UserPersonaService,
+        users::{AccountStatus, NewUser, UserDbQuery, UserRole},
     },
     schema::users,
-    test_helpers::{TestDataGuard, TestApp, spawn_app_permissive_rate_limiting},
+    services::{
+        ChronicleService, ScribeTool, UserPersonaService,
+        agentic::{AgenticNarrativeFactory, AnalyzeTextSignificanceTool, CreateChronicleEventTool},
+    },
+    test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
 };
-use uuid::Uuid;
-use chrono::Utc;
+use secrecy::{ExposeSecret, SecretBox, SecretString};
 use serde_json::json;
-use secrecy::{SecretString, SecretBox, ExposeSecret};
-use diesel::{RunQueryDsl, prelude::*};
-use bcrypt;
-use hex;
+use std::sync::Arc;
+use uuid::Uuid;
 
 /// Create a test chat session in the database to satisfy foreign key constraints
 async fn create_test_chat_session(
@@ -37,13 +33,15 @@ async fn create_test_chat_session(
     user_id: Uuid,
     session_id: Uuid,
 ) -> anyhow::Result<()> {
-    let conn = db_pool.get().await
+    let conn = db_pool
+        .get()
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
-    
+
     conn.interact(move |conn| {
+        use diesel::{ExpressionMethods, RunQueryDsl};
         use scribe_backend::schema::chat_sessions;
-        use diesel::{RunQueryDsl, ExpressionMethods};
-        
+
         diesel::insert_into(chat_sessions::table)
             .values((
                 chat_sessions::id.eq(session_id),
@@ -57,27 +55,30 @@ async fn create_test_chat_session(
     })
     .await
     .map_err(|e| anyhow::anyhow!("Database interaction error: {}", e))??;
-    
+
     Ok(())
 }
 
 /// Helper to create a test user with a specific persona
-async fn create_test_user_with_persona(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek, UserPersonaDataForClient)> {
+async fn create_test_user_with_persona(
+    test_app: &TestApp,
+) -> AnyhowResult<(Uuid, SessionDek, UserPersonaDataForClient)> {
     let conn = test_app.db_pool.get().await?;
-    
+
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
     let username = format!("lucas_test_user_{}", Uuid::new_v4().simple());
     let email = format!("{}@test.com", username);
-    
+
     // Generate proper crypto keys
     let kek_salt = scribe_backend::crypto::generate_salt()?;
     let dek = scribe_backend::crypto::generate_dek()?;
-    
+
     let secret_password = secrecy::SecretString::new("testpassword".to_string().into());
     let kek = scribe_backend::crypto::derive_kek(&secret_password, &kek_salt)?;
-    
-    let (encrypted_dek, dek_nonce) = scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
-    
+
+    let (encrypted_dek, dek_nonce) =
+        scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
+
     let new_user = NewUser {
         username: username.clone(),
         password_hash: hashed_password,
@@ -91,7 +92,7 @@ async fn create_test_user_with_persona(test_app: &TestApp) -> AnyhowResult<(Uuid
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
     };
-    
+
     let user_db: UserDbQuery = conn
         .interact(move |conn| {
             diesel::insert_into(users::table)
@@ -101,16 +102,15 @@ async fn create_test_user_with_persona(test_app: &TestApp) -> AnyhowResult<(Uuid
         })
         .await
         .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
-    
+
     let session_dek = SessionDek(SecretBox::new(Box::new(dek.expose_secret().to_vec())));
-    
+
     // Create Lucas persona
-    let encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
-    let persona_service = UserPersonaService::new(
-        test_app.db_pool.clone(),
-        encryption_service.clone(),
-    );
-    
+    let encryption_service =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+    let persona_service =
+        UserPersonaService::new(test_app.db_pool.clone(), encryption_service.clone());
+
     let lucas_persona = CreateUserPersonaDto {
         name: "Lucas".to_string(),
         description: "A 27-year-old Australian man, Lucas stands at 184cm with a lean build, pale skin, and medium-length dark brown hair. He has deep-set dark brown eyes behind round, black-framed glasses, beneath low, thick brows.
@@ -133,40 +133,54 @@ Highly self-absorbed, his focus is on his ambitions, primarily through his compa
         tags: None,
         avatar: None,
     };
-    
+
     let user_id = user_db.id;
     let user: scribe_backend::models::users::User = user_db.into();
     let persona = persona_service
         .create_user_persona(&user, &session_dek.0, lucas_persona)
         .await?;
-    
+
     Ok((user_id, session_dek, persona))
 }
 
 /// Helper to create roleplay messages that should reference Lucas by name
-fn create_lucas_roleplay_messages(user_id: Uuid, session_id: Uuid, session_dek: &SessionDek) -> AnyhowResult<Vec<ChatMessage>> {
+fn create_lucas_roleplay_messages(
+    user_id: Uuid,
+    session_id: Uuid,
+    session_dek: &SessionDek,
+) -> AnyhowResult<Vec<ChatMessage>> {
     let messages_content = vec![
-        ("user", "I descend upon Everest and look around slowly, before waving my hand and cleansing it of the accumulated human filth that my species had left behind."),
-        ("assistant", "Your consciousness coalesces, and suddenly you are there, atop the colossal peak of Mount Everest. As your hand sweeps through the frigid air, a subtle ripple in reality emanates from your being. The abandoned ropes coil and retract into nothingness. Tents dissolve into the air like wisps of smoke. Even the frozen bodies gently decompose and integrate into the mountain's natural geology. Everest stands, pristine and unblemished, as if human presence had never scarred its slopes."),
-        ("user", "Given this, I decide to try and find some middle ground. I proceed to curse key figures in the Israeli administration and Hamas with an illusion that causes an 'Eye of God' to follow each of their actions, driving them toward madness when they commit atrocities."),
-        ("assistant", "With a focused intent, you weave your will into the fabric of their reality. A singular, unblinking eye manifests before each targeted individual. The military intelligence chief sees the Eye bloom into searing white when authorizing artillery strikes. The Hamas commander finds the Eye's pupil transforming into a vortex of screaming faces when counting blood money. Only they can see it, driving splinters of madness into their psyche with each decision that perpetuates suffering."),
+        (
+            "user",
+            "I descend upon Everest and look around slowly, before waving my hand and cleansing it of the accumulated human filth that my species had left behind.",
+        ),
+        (
+            "assistant",
+            "Your consciousness coalesces, and suddenly you are there, atop the colossal peak of Mount Everest. As your hand sweeps through the frigid air, a subtle ripple in reality emanates from your being. The abandoned ropes coil and retract into nothingness. Tents dissolve into the air like wisps of smoke. Even the frozen bodies gently decompose and integrate into the mountain's natural geology. Everest stands, pristine and unblemished, as if human presence had never scarred its slopes.",
+        ),
+        (
+            "user",
+            "Given this, I decide to try and find some middle ground. I proceed to curse key figures in the Israeli administration and Hamas with an illusion that causes an 'Eye of God' to follow each of their actions, driving them toward madness when they commit atrocities.",
+        ),
+        (
+            "assistant",
+            "With a focused intent, you weave your will into the fabric of their reality. A singular, unblinking eye manifests before each targeted individual. The military intelligence chief sees the Eye bloom into searing white when authorizing artillery strikes. The Hamas commander finds the Eye's pupil transforming into a vortex of screaming faces when counting blood money. Only they can see it, driving splinters of madness into their psyche with each decision that perpetuates suffering.",
+        ),
     ];
-    
+
     let mut messages = Vec::new();
-    
+
     for (i, (role, content)) in messages_content.iter().enumerate() {
         let message_role = match *role {
             "user" => MessageRole::User,
             "assistant" => MessageRole::Assistant,
             _ => MessageRole::System,
         };
-        
+
         // Encrypt the content
-        let (encrypted_content, nonce) = scribe_backend::crypto::encrypt_gcm(
-            content.as_bytes(),
-            &session_dek.0,
-        )?;
-        
+        let (encrypted_content, nonce) =
+            scribe_backend::crypto::encrypt_gcm(content.as_bytes(), &session_dek.0)?;
+
         messages.push(ChatMessage {
             id: Uuid::new_v4(),
             session_id,
@@ -185,35 +199,44 @@ fn create_lucas_roleplay_messages(user_id: Uuid, session_id: Uuid, session_dek: 
             superseded_at: None,
         });
     }
-    
+
     Ok(messages)
 }
 
 /// Helper to create a test chronicle
 async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResult<Uuid> {
     let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
-    
+
     let create_request = CreateChronicleRequest {
         name: "Cosmic Awakening: A World on the Brink".to_string(),
         description: Some("Automatically created chronicle for chat session".to_string()),
     };
-    
+
     let chronicle = chronicle_service
         .create_chronicle(user_id, create_request)
         .await?;
-    
+
     Ok(chronicle.id)
 }
 
 // Helper to create AppState for tests
-async fn create_test_app_state(test_app: &TestApp, lorebook_service: Arc<scribe_backend::services::LorebookService>) -> Arc<scribe_backend::state::AppState> {
+async fn create_test_app_state(
+    test_app: &TestApp,
+    lorebook_service: Arc<scribe_backend::services::LorebookService>,
+) -> Arc<scribe_backend::state::AppState> {
     let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
-    
+
     let services = scribe_backend::state::AppStateServices {
         ai_client: test_app.ai_client.clone(),
-        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        embedding_client: test_app.mock_embedding_client.clone()
+            as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone()
+            as Arc<
+                dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait
+                    + Send
+                    + Sync,
+            >,
         chat_override_service: Arc::new(scribe_backend::services::ChatOverrideService::new(
             test_app.db_pool.clone(),
             encryption_service.clone(),
@@ -222,23 +245,38 @@ async fn create_test_app_state(test_app: &TestApp, lorebook_service: Arc<scribe_
             test_app.db_pool.clone(),
             encryption_service.clone(),
         )),
-        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
-            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
-                panic!("Failed to create tokenizer for test")
-            }),
-            None,
-            "gemini-2.5-pro"
-        )),
+        token_counter: Arc::new(
+            scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+                scribe_backend::services::tokenizer_service::TokenizerService::new(
+                    &test_app.config.tokenizer_model_path,
+                )
+                .unwrap_or_else(|_| panic!("Failed to create tokenizer for test")),
+                None,
+                "gemini-2.5-pro",
+            ),
+        ),
         encryption_service: encryption_service.clone(),
         lorebook_service: lorebook_service.clone(),
-        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
-        email_service: scribe_backend::services::email_service::create_email_service(&"development".to_string(), "http://localhost:3000".to_string(), None).await.unwrap(),
-        ai_client_factory: Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(
             test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.ai_client.clone(),
         )),
-        rate_limiter: Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100)),
+        email_service: scribe_backend::services::email_service::create_email_service(
+            &"development".to_string(),
+            "http://localhost:3000".to_string(),
+            None,
+        )
+        .await
+        .unwrap(),
+        ai_client_factory: Arc::new(
+            scribe_backend::services::ai_client_factory::AiClientFactory::new(
+                test_app.db_pool.clone(),
+                test_app.config.clone(),
+                test_app.ai_client.clone(),
+            ),
+        ),
+        rate_limiter: Arc::new(
+            scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -250,9 +288,9 @@ async fn create_test_app_state(test_app: &TestApp, lorebook_service: Arc<scribe_
     let app_state = scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        services
+        services,
     );
-    
+
     // Skip setting narrative intelligence service to avoid circular dependency in tests
     Arc::new(app_state)
 }
@@ -262,31 +300,31 @@ async fn test_persona_context_missing_in_events() {
     // This test demonstrates the current bug where persona information is not included
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
+
     let (user_id, session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
     let session_id = Uuid::new_v4();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
-    
+
     // Create chat session in database (required for foreign key constraint)
     create_test_chat_session(&test_app.db_pool, user_id, session_id)
         .await
         .expect("Failed to create test chat session");
-    
+
     // Create realistic roleplay messages
     let messages = create_lucas_roleplay_messages(user_id, session_id, &session_dek).unwrap();
-    
+
     // Create encryption service for the test
     let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
-    
+
     // Create a mock AI response for the workflow
     let mock_response = json!({
         "is_significant": true,
-        "summary": "Character performs magical feats and interacts with environment", 
+        "summary": "Character performs magical feats and interacts with environment",
         "event_category": "CHARACTER",
         "event_type": "DEVELOPMENT",
         "narrative_action": "PERFORMED",
         "primary_agent": "User",
-        "primary_patient": "Environment", 
+        "primary_patient": "Environment",
         "confidence": 0.8,
         "reasoning": "User demonstrates magical abilities which should be recorded",
         "actions": [
@@ -309,8 +347,10 @@ async fn test_persona_context_missing_in_events() {
         ]
     });
 
-    let mock_ai_client = Arc::new(scribe_backend::test_helpers::MockAiClient::new_with_response(mock_response.to_string()));
-    
+    let mock_ai_client = Arc::new(
+        scribe_backend::test_helpers::MockAiClient::new_with_response(mock_response.to_string()),
+    );
+
     // Create the agentic narrative system
     let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
         test_app.db_pool.clone(),
@@ -327,7 +367,7 @@ async fn test_persona_context_missing_in_events() {
         app_state,
         Some(AgenticNarrativeFactory::create_dev_config()),
     );
-    
+
     // Execute the narrative workflow
     let workflow_result = agentic_system
         .process_narrative_event(
@@ -340,62 +380,73 @@ async fn test_persona_context_missing_in_events() {
         )
         .await
         .expect("Workflow should complete");
-    
+
     // Check if events were created
-    if workflow_result.triage_result.is_significant && !workflow_result.execution_results.is_empty() {
+    if workflow_result.triage_result.is_significant && !workflow_result.execution_results.is_empty()
+    {
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
         let events = chronicle_service
             .get_chronicle_events(user_id, chronicle_id, EventFilter::default())
             .await
             .expect("Should retrieve events");
-        
+
         let ai_extracted_events: Vec<_> = events
             .iter()
             .filter(|event| event.source == EventSource::AiExtracted.to_string())
             .collect();
-        
+
         if !ai_extracted_events.is_empty() {
             // This demonstrates the bug - events should reference "Lucas" but likely reference "the user"
             for event in &ai_extracted_events {
                 println!("Event summary: {}", event.summary);
-                
+
                 // The bug: these should be false when persona integration is working
-                let contains_generic_user = event.summary.contains("the user") || event.summary.contains("The user");
-                let contains_generic_character = event.summary.contains("the character") || event.summary.contains("The character");
+                let contains_generic_user =
+                    event.summary.contains("the user") || event.summary.contains("The user");
+                let contains_generic_character = event.summary.contains("the character")
+                    || event.summary.contains("The character");
                 let contains_persona_name = event.summary.contains("Lucas");
-                
+
                 if contains_generic_user || contains_generic_character {
-                    println!("❌ BUG DETECTED: Event uses generic reference instead of persona name");
+                    println!(
+                        "❌ BUG DETECTED: Event uses generic reference instead of persona name"
+                    );
                     println!("   Summary: {}", event.summary);
                 }
-                
+
                 if contains_persona_name {
                     println!("✅ Event correctly uses persona name: Lucas");
                 } else {
                     println!("❌ Event does not reference persona name: Lucas");
                 }
             }
-            
+
             // For now, this test documents the current buggy behavior
             // When fixed, these assertions should be reversed
             let has_generic_references = ai_extracted_events.iter().any(|event| {
-                event.summary.contains("the user") || 
-                event.summary.contains("The user") ||
-                event.summary.contains("the character") ||
-                event.summary.contains("The character")
+                event.summary.contains("the user")
+                    || event.summary.contains("The user")
+                    || event.summary.contains("the character")
+                    || event.summary.contains("The character")
             });
-            
-            let has_persona_references = ai_extracted_events.iter().any(|event| {
-                event.summary.contains("Lucas")
-            });
-            
+
+            let has_persona_references = ai_extracted_events
+                .iter()
+                .any(|event| event.summary.contains("Lucas"));
+
             // Current buggy behavior - should be !has_generic_references when fixed
-            println!("Current state - Generic references found: {}", has_generic_references);
-            println!("Current state - Persona references found: {}", has_persona_references);
+            println!(
+                "Current state - Generic references found: {}",
+                has_generic_references
+            );
+            println!(
+                "Current state - Persona references found: {}",
+                has_persona_references
+            );
             println!("Persona name should be: {}", persona.name);
         }
     }
-    
+
     println!("✅ Persona context test completed (demonstrating current bug)");
 }
 
@@ -404,10 +455,10 @@ async fn test_create_chronicle_event_tool_without_persona() {
     // Test that demonstrates the CreateChronicleEventTool doesn't have persona context
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
+
     let (user_id, session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
-    
+
     // Test the CreateChronicleEventTool directly
     let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
     let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
@@ -420,16 +471,16 @@ async fn test_create_chronicle_event_tool_without_persona() {
         Arc::new(ChronicleService::new(test_app.db_pool.clone())),
         app_state,
     );
-    
+
     // Hex-encode the session_dek for the tool parameter
     let session_dek_hex = hex::encode(session_dek.0.expose_secret());
-    
+
     // Current behavior - no persona context available to the tool
     let event_params = json!({
         "user_id": user_id.to_string(),
         "chronicle_id": chronicle_id.to_string(),
         "event_category": "WORLD",
-        "event_type": "ALTERATION", 
+        "event_type": "ALTERATION",
         "event_subtype": "WORLD_CHANGE",
         "summary": "The user cleansed Mount Everest of all human pollution with cosmic powers",
         "subject": "The user",
@@ -440,49 +491,61 @@ async fn test_create_chronicle_event_tool_without_persona() {
             "method": "Cosmic powers"
         }
     });
-    
+
     let create_result = create_event_tool.execute(&event_params).await.unwrap();
     assert_eq!(create_result.get("success").unwrap(), true);
-    
+
     // Verify the event was created with generic reference
     let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
     let events = chronicle_service
         .get_chronicle_events(user_id, chronicle_id, Default::default())
         .await
         .unwrap();
-    
+
     // Debug: Print all events to see what's actually created
     for event in &events {
-        println!("Found event: type='{}', summary='{}'", event.event_type, event.summary);
+        println!(
+            "Found event: type='{}', summary='{}'",
+            event.event_type, event.summary
+        );
     }
-    
+
     // Find any event created by the tool (adjust expectations based on actual behavior)
-    let test_event = events.iter().find(|e| 
-        e.summary.contains("cleansed Mount Everest") ||
-        e.event_type.contains("WORLD") ||
-        e.source == EventSource::AiExtracted.to_string()
-    ).expect("Should find an event created by the CreateChronicleEventTool");
-    
+    let test_event = events
+        .iter()
+        .find(|e| {
+            e.summary.contains("cleansed Mount Everest")
+                || e.event_type.contains("WORLD")
+                || e.source == EventSource::AiExtracted.to_string()
+        })
+        .expect("Should find an event created by the CreateChronicleEventTool");
+
     // This demonstrates the bug - when properly implemented, the tool should use persona context
     // Currently the summary is encrypted so we can't check the content directly in tests
     // The bug is that CreateChronicleEventTool doesn't receive persona context
     println!("❌ Current bug: CreateChronicleEventTool created event without persona context");
-    println!("   Event type: '{}', summary: '{}'", test_event.event_type, test_event.summary);
-    println!("✅ Should use persona name: '{}' instead of generic 'the user'", persona.name);
-    
+    println!(
+        "   Event type: '{}', summary: '{}'",
+        test_event.event_type, test_event.summary
+    );
+    println!(
+        "✅ Should use persona name: '{}' instead of generic 'the user'",
+        persona.name
+    );
+
     // For now, just verify the event was created successfully
     assert_eq!(test_event.event_type, "ALTERATION");
     assert_eq!(test_event.source, EventSource::AiExtracted.to_string());
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_triage_tool_persona_awareness() {
     // Test that demonstrates triage tool lacks persona context
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
+
     let (user_id, _session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
-    
+
     // Test messages with persona-specific content
     let messages = json!({
         "messages": [
@@ -490,19 +553,22 @@ async fn test_triage_tool_persona_awareness() {
             {"role": "assistant", "content": "Your extensive IT and cybersecurity expertise allows you to penetrate the most secure networks with ease"}
         ]
     });
-    
+
     // Test the triage tool
     let triage_tool = AnalyzeTextSignificanceTool::new(test_app.ai_client.clone());
     let triage_result = triage_tool.execute(&messages).await.unwrap();
-    
+
     assert!(triage_result.get("is_significant").is_some());
-    
+
     // The current triage tool doesn't have access to persona context
     // So it can't understand that "Lucas" is the user's persona name
     println!("Triage result: {:?}", triage_result);
     println!("❌ Current limitation: Triage tool cannot access persona context");
-    println!("Persona should provide context that 'Lucas' is: {}", persona.description);
-    
+    println!(
+        "Persona should provide context that 'Lucas' is: {}",
+        persona.description
+    );
+
     // When persona integration is added, the triage tool should understand
     // that "Lucas" refers to the user persona and have context about his background
 }
@@ -513,13 +579,13 @@ async fn test_triage_tool_persona_awareness() {
 //     // Future test: Verify that events correctly use persona name and context
 //     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
 //     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-//     
+//
 //     let (user_id, session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
 //     let session_id = Uuid::new_v4();
 //     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
-//     
+//
 //     let messages = create_lucas_roleplay_messages(user_id, session_id, &session_dek).unwrap();
-//     
+//
 //     // Create the agentic narrative system WITH persona context
 //     let workflow_result = agentic_system
 //         .process_narrative_event_with_persona(  // New method with persona
@@ -532,26 +598,26 @@ async fn test_triage_tool_persona_awareness() {
 //         )
 //         .await
 //         .expect("Workflow should complete");
-//     
+//
 //     // Verify events use persona name and context
 //     let events = chronicle_service
 //         .get_chronicle_events(user_id, chronicle_id, EventFilter::default())
 //         .await
 //         .unwrap();
-//     
+//
 //     let ai_events: Vec<_> = events
 //         .iter()
 //         .filter(|event| event.source == EventSource::AiExtracted.to_string())
 //         .collect();
-//     
+//
 //     assert!(!ai_events.is_empty());
-//     
+//
 //     for event in &ai_events {
 //         // Events should use "Lucas" instead of generic terms
 //         assert!(event.summary.contains("Lucas"));
 //         assert!(!event.summary.contains("the user"));
 //         assert!(!event.summary.contains("the character"));
-//         
+//
 //         // Events should incorporate persona context (Australian, cybersecurity, etc.)
 //         // This will depend on the specific implementation
 //     }

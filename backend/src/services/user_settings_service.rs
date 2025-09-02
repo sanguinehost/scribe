@@ -2,16 +2,14 @@ use diesel::{OptionalExtension, prelude::*};
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
-use bigdecimal::BigDecimal;
 use crate::{
     config::Config,
     errors::AppError,
-    models::user_settings::{
-        UpdateUserSettingsRequest, UserSettingsResponse,
-    },
+    models::user_settings::{UpdateUserSettingsRequest, UserSettingsResponse},
     schema::user_settings,
     state::DbPool,
 };
+use bigdecimal::BigDecimal;
 
 pub struct UserSettingsService;
 
@@ -63,10 +61,21 @@ impl UserSettingsService {
                             user_settings::theme,
                         ))
                         .first::<(
-                            Option<String>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>,
-                            Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<i32>,
-                            Option<i32>, Option<bool>, Option<i32>, Option<i32>, Option<i32>,
-                            Option<bool>, Option<String>,
+                            Option<String>,
+                            Option<BigDecimal>,
+                            Option<i32>,
+                            Option<BigDecimal>,
+                            Option<BigDecimal>,
+                            Option<BigDecimal>,
+                            Option<i32>,
+                            Option<i32>,
+                            Option<i32>,
+                            Option<bool>,
+                            Option<i32>,
+                            Option<i32>,
+                            Option<i32>,
+                            Option<bool>,
+                            Option<String>,
                         )>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -74,8 +83,15 @@ impl UserSettingsService {
                         .filter(user_settings::user_id.eq(user_id))
                         .select((
                             (user_settings::created_at, user_settings::updated_at),
-                            (user_settings::notifications_enabled, user_settings::typing_speed),
-                            (user_settings::preferred_local_model, user_settings::local_llm_enabled, user_settings::local_model_preferences),
+                            (
+                                user_settings::notifications_enabled,
+                                user_settings::typing_speed,
+                            ),
+                            (
+                                user_settings::preferred_local_model,
+                                user_settings::local_llm_enabled,
+                                user_settings::local_model_preferences,
+                            ),
                         ))
                         .first::<(
                             (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>),
@@ -116,7 +132,7 @@ impl UserSettingsService {
                     info!(%user_id, "No user settings found, creating default settings");
                     // Use raw SQL to avoid Diesel tuple size limit
                     use diesel::sql_query;
-                    
+
                     // First, insert with raw SQL without returning
                     sql_query(
                         r#"
@@ -128,13 +144,21 @@ impl UserSettingsService {
                         ) VALUES (
                             $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE
                         )
-                        "#
+                        "#,
                     )
                     .bind::<diesel::sql_types::Uuid, _>(user_id)
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(default_model.clone()))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(context_total_limit))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(context_history_budget))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(context_rag_budget))
+                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
+                        default_model.clone(),
+                    ))
+                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                        context_total_limit,
+                    ))
+                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                        context_history_budget,
+                    ))
+                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                        context_rag_budget,
+                    ))
                     .execute(conn)
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -154,7 +178,19 @@ impl UserSettingsService {
                             user_settings::created_at,
                             user_settings::updated_at,
                         ))
-                        .first::<(Option<String>, Option<i32>, Option<i32>, Option<i32>, Option<bool>, Option<String>, Option<bool>, Option<i32>, Option<bool>, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(conn)
+                        .first::<(
+                            Option<String>,
+                            Option<i32>,
+                            Option<i32>,
+                            Option<i32>,
+                            Option<bool>,
+                            Option<String>,
+                            Option<bool>,
+                            Option<i32>,
+                            Option<bool>,
+                            chrono::DateTime<chrono::Utc>,
+                            chrono::DateTime<chrono::Utc>,
+                        )>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
                     // Manually construct the response
@@ -231,13 +267,21 @@ impl UserSettingsService {
                         ) VALUES (
                             $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE
                         )
-                        "#
+                        "#,
                     )
                     .bind::<diesel::sql_types::Uuid, _>(user_id)
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(default_model.clone()))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(context_total_limit))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(context_history_budget))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(context_rag_budget))
+                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
+                        default_model.clone(),
+                    ))
+                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                        context_total_limit,
+                    ))
+                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                        context_history_budget,
+                    ))
+                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                        context_rag_budget,
+                    ))
                     .execute(conn)
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -251,23 +295,31 @@ impl UserSettingsService {
             };
 
             // Split the update into two parts to avoid Diesel tuple size limit
-            
+
             // First update: Core generation and context settings (15 fields)
             diesel::update(user_settings::table.filter(user_settings::id.eq(settings_id)))
                 .set((
                     user_settings::default_model_name.eq(update_request.default_model_name),
                     user_settings::default_temperature.eq(update_request.default_temperature),
-                    user_settings::default_max_output_tokens.eq(update_request.default_max_output_tokens),
-                    user_settings::default_frequency_penalty.eq(update_request.default_frequency_penalty),
-                    user_settings::default_presence_penalty.eq(update_request.default_presence_penalty),
+                    user_settings::default_max_output_tokens
+                        .eq(update_request.default_max_output_tokens),
+                    user_settings::default_frequency_penalty
+                        .eq(update_request.default_frequency_penalty),
+                    user_settings::default_presence_penalty
+                        .eq(update_request.default_presence_penalty),
                     user_settings::default_top_p.eq(update_request.default_top_p),
                     user_settings::default_top_k.eq(update_request.default_top_k),
                     user_settings::default_seed.eq(update_request.default_seed),
-                    user_settings::default_gemini_thinking_budget.eq(update_request.default_gemini_thinking_budget),
-                    user_settings::default_gemini_enable_code_execution.eq(update_request.default_gemini_enable_code_execution),
-                    user_settings::default_context_total_token_limit.eq(update_request.default_context_total_token_limit),
-                    user_settings::default_context_recent_history_budget.eq(update_request.default_context_recent_history_budget),
-                    user_settings::default_context_rag_budget.eq(update_request.default_context_rag_budget),
+                    user_settings::default_gemini_thinking_budget
+                        .eq(update_request.default_gemini_thinking_budget),
+                    user_settings::default_gemini_enable_code_execution
+                        .eq(update_request.default_gemini_enable_code_execution),
+                    user_settings::default_context_total_token_limit
+                        .eq(update_request.default_context_total_token_limit),
+                    user_settings::default_context_recent_history_budget
+                        .eq(update_request.default_context_recent_history_budget),
+                    user_settings::default_context_rag_budget
+                        .eq(update_request.default_context_rag_budget),
                     user_settings::auto_save_chats.eq(update_request.auto_save_chats),
                     user_settings::theme.eq(update_request.theme),
                 ))
@@ -281,7 +333,8 @@ impl UserSettingsService {
                     user_settings::typing_speed.eq(update_request.typing_speed),
                     user_settings::preferred_local_model.eq(update_request.preferred_local_model),
                     user_settings::local_llm_enabled.eq(update_request.local_llm_enabled),
-                    user_settings::local_model_preferences.eq(update_request.local_model_preferences),
+                    user_settings::local_model_preferences
+                        .eq(update_request.local_model_preferences),
                 ))
                 .execute(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -307,10 +360,21 @@ impl UserSettingsService {
                     user_settings::theme,
                 ))
                 .first::<(
-                    Option<String>, Option<BigDecimal>, Option<i32>, Option<BigDecimal>,
-                    Option<BigDecimal>, Option<BigDecimal>, Option<i32>, Option<i32>,
-                    Option<i32>, Option<bool>, Option<i32>, Option<i32>, Option<i32>,
-                    Option<bool>, Option<String>,
+                    Option<String>,
+                    Option<BigDecimal>,
+                    Option<i32>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<BigDecimal>,
+                    Option<i32>,
+                    Option<i32>,
+                    Option<i32>,
+                    Option<bool>,
+                    Option<i32>,
+                    Option<i32>,
+                    Option<i32>,
+                    Option<bool>,
+                    Option<String>,
                 )>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -318,8 +382,15 @@ impl UserSettingsService {
                 .filter(user_settings::id.eq(settings_id))
                 .select((
                     (user_settings::created_at, user_settings::updated_at),
-                    (user_settings::notifications_enabled, user_settings::typing_speed),
-                    (user_settings::preferred_local_model, user_settings::local_llm_enabled, user_settings::local_model_preferences),
+                    (
+                        user_settings::notifications_enabled,
+                        user_settings::typing_speed,
+                    ),
+                    (
+                        user_settings::preferred_local_model,
+                        user_settings::local_llm_enabled,
+                        user_settings::local_model_preferences,
+                    ),
                 ))
                 .first::<(
                     (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>),

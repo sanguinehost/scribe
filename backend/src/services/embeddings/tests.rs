@@ -199,9 +199,9 @@ mod tests {
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 
         // Create chronicle service for narrative intelligence
-        let chronicle_service = Arc::new(crate::services::chronicle_service::ChronicleService::new(
-            pool.clone(),
-        ));
+        let chronicle_service = Arc::new(
+            crate::services::chronicle_service::ChronicleService::new(pool.clone()),
+        );
 
         // First create services without narrative intelligence service
         let ai_client_factory = Arc::new(crate::services::ai_client_factory::AiClientFactory::new(
@@ -209,7 +209,7 @@ mod tests {
             config.clone(),
             ai_client.clone(),
         ));
-        
+
         let services = AppStateServices {
             ai_client: ai_client.clone(),
             embedding_client: mock_embed_client.clone(),
@@ -231,7 +231,9 @@ mod tests {
             security_audit_logger: None,
             #[cfg(feature = "local-llm")]
             model_integrity_verifier: None,
-            rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(10, 100)), // Test rate limiter
+            rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
+                10, 100,
+            )), // Test rate limiter
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));
@@ -1147,13 +1149,18 @@ mod tests {
         // Verify embedding client calls
         let embed_calls = mock_embed_client.get_calls();
         assert_eq!(embed_calls.len(), 1, "Expected 1 call to embedding client");
-        
+
         // The embedding service now formats content with title and keywords
         let expected_content = format!(
             "Title: {}\n\n{}\n\nRelated topics: {}",
             test_params.params.decrypted_title.as_ref().unwrap(),
             test_params.content,
-            test_params.params.decrypted_keywords.as_ref().unwrap().join(", ")
+            test_params
+                .params
+                .decrypted_keywords
+                .as_ref()
+                .unwrap()
+                .join(", ")
         );
         assert_eq!(embed_calls[0].0, expected_content);
         assert_eq!(embed_calls[0].1, "RETRIEVAL_DOCUMENT");
@@ -1354,7 +1361,12 @@ mod tests {
             "Title: {}\n\n{}\n\nRelated topics: {}",
             test_params.params.decrypted_title.as_ref().unwrap(),
             test_params.content,
-            test_params.params.decrypted_keywords.as_ref().unwrap().join(", ")
+            test_params
+                .params
+                .decrypted_keywords
+                .as_ref()
+                .unwrap()
+                .join(", ")
         );
         verify_embedding_calls(
             &embed_calls,
@@ -2032,7 +2044,7 @@ mod tests {
                 user_id,
                 None,         // No chat session
                 Some(vec![]), // Empty list of lorebook IDs
-                None, // chronicle_id_for_search
+                None,         // chronicle_id_for_search
                 query_text,
                 limit,
             )
@@ -2088,7 +2100,7 @@ mod tests {
                 user_id,
                 Some(session_id), // Chat session provided
                 Some(vec![]),     // Empty list of lorebook IDs
-                None, // chronicle_id_for_search
+                None,             // chronicle_id_for_search
                 query_text,
                 limit,
             )

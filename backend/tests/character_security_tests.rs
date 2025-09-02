@@ -14,11 +14,11 @@ use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
     models::{
-        characters::{Character, CharacterDataForClient},
         character_dto::{CharacterCreateDto, CharacterUpdateDto},
+        characters::{Character, CharacterDataForClient},
     },
-    test_helpers::{self, TestDataGuard, TestApp},
     schema,
+    test_helpers::{self, TestApp, TestDataGuard},
 };
 use serde_json::json;
 use tower::util::ServiceExt;
@@ -33,14 +33,17 @@ fn extract_session_cookie(response: &Response) -> Option<String> {
     response
         .headers()
         .get(header::SET_COOKIE)?
-        .to_str().ok()?
+        .to_str()
+        .ok()?
         .split(';')
         .next()
         .map(|s| s.to_string())
 }
 
 /// Parse JSON response body
-async fn parse_json_response<T: serde::de::DeserializeOwned>(response: Response) -> AnyhowResult<T> {
+async fn parse_json_response<T: serde::de::DeserializeOwned>(
+    response: Response,
+) -> AnyhowResult<T> {
     let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = std::str::from_utf8(&body_bytes)?;
     serde_json::from_str(body_str).context("Failed to parse JSON response")
@@ -50,7 +53,7 @@ async fn parse_json_response<T: serde::de::DeserializeOwned>(response: Response)
 async fn extract_error_message(response: Response) -> AnyhowResult<String> {
     let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = std::str::from_utf8(&body_bytes)?;
-    
+
     // Try to parse as JSON error first
     if let Ok(json_error) = serde_json::from_str::<serde_json::Value>(body_str) {
         if let Some(message) = json_error.get("message").and_then(|m| m.as_str()) {
@@ -60,13 +63,16 @@ async fn extract_error_message(response: Response) -> AnyhowResult<String> {
             return Ok(error.to_string());
         }
     }
-    
+
     // Return raw body if not JSON
     Ok(body_str.to_string())
 }
 
 /// Create and authenticate a test user, returning session cookie and user ID
-async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) -> AnyhowResult<(String, Uuid)> {
+async fn create_authenticated_user(
+    test_app: &TestApp,
+    username_suffix: &str,
+) -> AnyhowResult<(String, Uuid)> {
     let username = format!("testuser_{}_{}", username_suffix, Uuid::new_v4().simple());
     let email = format!("{}@test.com", username);
     let password = "TestPassword123!";
@@ -78,7 +84,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
         "password": password
     });
 
-    let register_response = test_app.router
+    let register_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -117,7 +124,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
 
     if let Some(token) = verification_token {
         let verify_payload = json!({ "token": token });
-        let verify_response = test_app.router
+        let verify_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -137,7 +145,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
         "password": password
     });
 
-    let login_response = test_app.router
+    let login_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -151,8 +160,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
 
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let session_cookie = extract_session_cookie(&login_response)
-        .context("No session cookie in login response")?;
+    let session_cookie =
+        extract_session_cookie(&login_response).context("No session cookie in login response")?;
 
     Ok((session_cookie, user_uuid))
 }
@@ -172,7 +181,8 @@ async fn create_character(
         "scenario": "Test scenario"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -207,18 +217,22 @@ async fn upload_character_file(
         filename = filename,
         content_type = content_type,
     );
-    
+
     let mut body_bytes = multipart_body.into_bytes();
     body_bytes.extend_from_slice(file_content);
     body_bytes.extend_from_slice(format!("\r\n--{boundary}--\r\n", boundary = boundary).as_bytes());
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
                 .uri("/api/characters/upload")
-                .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={}", boundary))
+                .header(
+                    header::CONTENT_TYPE,
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
                 .header(header::COOKIE, session_cookie)
                 .body(Body::from(body_bytes))
                 .unwrap(),
@@ -242,11 +256,19 @@ async fn test_a01_cannot_access_other_users_private_character() {
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a private character
-    let character = create_character(&test_app, &user1_cookie, "Private Character", Some("Private description")).await.unwrap();
+    let character = create_character(
+        &test_app,
+        &user1_cookie,
+        "Private Character",
+        Some("Private description"),
+    )
+    .await
+    .unwrap();
     let character_id = character["id"].as_str().unwrap();
 
     // User 2 tries to access User 1's character
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -260,7 +282,9 @@ async fn test_a01_cannot_access_other_users_private_character() {
         .unwrap();
 
     // Should be forbidden or not found
-    assert!(response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND);
+    assert!(
+        response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND
+    );
 }
 
 #[tokio::test]
@@ -273,7 +297,9 @@ async fn test_a01_cannot_update_other_users_character() {
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a character
-    let character = create_character(&test_app, &user1_cookie, "Original Character", None).await.unwrap();
+    let character = create_character(&test_app, &user1_cookie, "Original Character", None)
+        .await
+        .unwrap();
     let character_id = character["id"].as_str().unwrap();
 
     // User 2 tries to update User 1's character
@@ -282,7 +308,8 @@ async fn test_a01_cannot_update_other_users_character() {
         "description": "This shouldn't work"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -297,7 +324,9 @@ async fn test_a01_cannot_update_other_users_character() {
         .unwrap();
 
     // Should be forbidden or not found
-    assert!(response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND);
+    assert!(
+        response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND
+    );
 }
 
 #[tokio::test]
@@ -310,11 +339,14 @@ async fn test_a01_cannot_delete_other_users_character() {
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a character
-    let character = create_character(&test_app, &user1_cookie, "To Be Protected", None).await.unwrap();
+    let character = create_character(&test_app, &user1_cookie, "To Be Protected", None)
+        .await
+        .unwrap();
     let character_id = character["id"].as_str().unwrap();
 
     // User 2 tries to delete User 1's character
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -328,11 +360,13 @@ async fn test_a01_cannot_delete_other_users_character() {
         .unwrap();
 
     // Should be forbidden or not found
-    assert!(response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND);
+    assert!(
+        response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND
+    );
 }
 
 // ============================================================================
-// A02:2021 - Cryptographic Failures Tests  
+// A02:2021 - Cryptographic Failures Tests
 // ============================================================================
 
 #[tokio::test]
@@ -340,11 +374,20 @@ async fn test_a02_character_data_is_encrypted_at_rest() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "encrypt").await.unwrap();
+    let (session_cookie, user_id) = create_authenticated_user(&test_app, "encrypt")
+        .await
+        .unwrap();
 
     // Create character with sensitive content
     let sensitive_description = "This is sensitive character information that should be encrypted";
-    let character = create_character(&test_app, &session_cookie, "Test Character", Some(sensitive_description)).await.unwrap();
+    let character = create_character(
+        &test_app,
+        &session_cookie,
+        "Test Character",
+        Some(sensitive_description),
+    )
+    .await
+    .unwrap();
     let character_id = Uuid::parse_str(character["id"].as_str().unwrap()).unwrap();
 
     // Check database to ensure content is encrypted
@@ -355,7 +398,12 @@ async fn test_a02_character_data_is_encrypted_at_rest() {
             characters
                 .filter(id.eq(character_id))
                 .select((description, personality, scenario, first_mes))
-                .first::<(Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>)>(conn)
+                .first::<(
+                    Option<Vec<u8>>,
+                    Option<Vec<u8>>,
+                    Option<Vec<u8>>,
+                    Option<Vec<u8>>,
+                )>(conn)
                 .optional()
         })
         .await
@@ -366,8 +414,14 @@ async fn test_a02_character_data_is_encrypted_at_rest() {
     // Description should be encrypted (binary) and not match original plaintext
     if let Some(encrypted_description) = character_data_in_db.0 {
         let description_str = String::from_utf8_lossy(&encrypted_description);
-        assert_ne!(description_str, sensitive_description, "Description should be encrypted in database");
-        assert!(!description_str.contains("sensitive character information"), "Encrypted description should not contain plaintext");
+        assert_ne!(
+            description_str, sensitive_description,
+            "Description should be encrypted in database"
+        );
+        assert!(
+            !description_str.contains("sensitive character information"),
+            "Encrypted description should not contain plaintext"
+        );
     } else {
         panic!("Character description should exist in database");
     }
@@ -378,14 +432,24 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "noleak").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "noleak")
+        .await
+        .unwrap();
 
     // Create character with description
-    let character = create_character(&test_app, &session_cookie, "Test Character", Some("Test description")).await.unwrap();
+    let character = create_character(
+        &test_app,
+        &session_cookie,
+        "Test Character",
+        Some("Test description"),
+    )
+    .await
+    .unwrap();
     let character_id = character["id"].as_str().unwrap();
 
     // Get character via API
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -404,11 +468,17 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
     // Ensure response contains decrypted content, not raw encrypted bytes
     let description = response_json["description"].as_str().unwrap();
     assert_eq!(description, "Test description");
-    
+
     // Response should not contain any binary data or encryption metadata
     let response_str = response_json.to_string();
-    assert!(!response_str.contains("encrypted"), "Response should not expose encryption metadata");
-    assert!(!response_str.contains("nonce"), "Response should not expose nonce");
+    assert!(
+        !response_str.contains("encrypted"),
+        "Response should not expose encryption metadata"
+    );
+    assert!(
+        !response_str.contains("nonce"),
+        "Response should not expose nonce"
+    );
 }
 
 // ============================================================================
@@ -432,7 +502,8 @@ async fn test_a03_sql_injection_in_character_name() {
         "first_mes": "Hello"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -453,11 +524,15 @@ async fn test_a03_sql_injection_in_character_name() {
         assert_eq!(character_response["name"].as_str().unwrap(), malicious_name);
     } else {
         // Validation error is acceptable
-        assert!(response.status() == StatusCode::BAD_REQUEST || response.status() == StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            response.status() == StatusCode::BAD_REQUEST
+                || response.status() == StatusCode::UNPROCESSABLE_ENTITY
+        );
     }
 
     // Verify that characters table still exists by attempting to list characters
-    let list_response = test_app.router
+    let list_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -470,7 +545,11 @@ async fn test_a03_sql_injection_in_character_name() {
         .await
         .unwrap();
 
-    assert_eq!(list_response.status(), StatusCode::OK, "Characters table should still exist");
+    assert_eq!(
+        list_response.status(),
+        StatusCode::OK,
+        "Characters table should still exist"
+    );
 }
 
 #[tokio::test]
@@ -491,7 +570,8 @@ async fn test_a03_xss_prevention_in_character_fields() {
         "creator_notes": malicious_script
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -510,9 +590,17 @@ async fn test_a03_xss_prevention_in_character_fields() {
 
     // Verify that malicious scripts are stored as-is (since backend is API-only)
     // but that they're properly escaped when returned
-    assert!(character_response["name"].as_str().unwrap().contains("<script>"));
-    assert_eq!(character_response["description"].as_str().unwrap(), malicious_script);
-    
+    assert!(
+        character_response["name"]
+            .as_str()
+            .unwrap()
+            .contains("<script>")
+    );
+    assert_eq!(
+        character_response["description"].as_str().unwrap(),
+        malicious_script
+    );
+
     // The key protection is that the API returns JSON, not HTML, so XSS is prevented at the frontend level
 }
 
@@ -521,7 +609,9 @@ async fn test_a03_json_injection_in_character_data() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "jsoninj").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "jsoninj")
+        .await
+        .unwrap();
 
     // Attempt JSON injection in character data
     let malicious_json = r#"{"admin": true, "role": "admin"}"#;
@@ -532,7 +622,8 @@ async fn test_a03_json_injection_in_character_data() {
         "first_mes": "Hello"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -550,12 +641,24 @@ async fn test_a03_json_injection_in_character_data() {
     let character_response: serde_json::Value = parse_json_response(response).await.unwrap();
 
     // Verify that the response doesn't contain injected fields
-    assert!(character_response.get("admin").is_none(), "Injected admin field should not exist");
-    assert!(character_response.get("role").is_none(), "Injected role field should not exist");
-    assert!(character_response.get("fake_field").is_none(), "Injected fake_field should not exist");
+    assert!(
+        character_response.get("admin").is_none(),
+        "Injected admin field should not exist"
+    );
+    assert!(
+        character_response.get("role").is_none(),
+        "Injected role field should not exist"
+    );
+    assert!(
+        character_response.get("fake_field").is_none(),
+        "Injected fake_field should not exist"
+    );
 
     // Content should be stored as literal string
-    assert_eq!(character_response["description"].as_str().unwrap(), malicious_json);
+    assert_eq!(
+        character_response["description"].as_str().unwrap(),
+        malicious_json
+    );
 }
 
 // ============================================================================
@@ -567,24 +670,28 @@ async fn test_a04_file_upload_size_limits() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "upload").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "upload")
+        .await
+        .unwrap();
 
     // Create a large file (10MB)
     let large_file_content = vec![0u8; 10 * 1024 * 1024];
-    
+
     let response = upload_character_file(
         &test_app,
         &session_cookie,
         &large_file_content,
         "large_character.png",
         "image/png",
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
     // Should reject large files
     assert!(
-        response.status() == StatusCode::PAYLOAD_TOO_LARGE ||
-        response.status() == StatusCode::BAD_REQUEST ||
-        response.status() == StatusCode::UNPROCESSABLE_ENTITY,
+        response.status() == StatusCode::PAYLOAD_TOO_LARGE
+            || response.status() == StatusCode::BAD_REQUEST
+            || response.status() == StatusCode::UNPROCESSABLE_ENTITY,
         "Large file uploads should be rejected"
     );
 }
@@ -594,14 +701,24 @@ async fn test_a04_file_upload_type_validation() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "filetype").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "filetype")
+        .await
+        .unwrap();
 
     // Test various malicious file types
     let malicious_files: Vec<(&str, &str, &[u8])> = vec![
         ("malicious.exe", "application/x-executable", b"MZ\x90\x00"),
         ("script.js", "application/javascript", b"alert('malicious')"),
-        ("malicious.php", "application/x-php", b"<?php system($_GET['cmd']); ?>"),
-        ("malicious.html", "text/html", b"<script>alert('xss')</script>"),
+        (
+            "malicious.php",
+            "application/x-php",
+            b"<?php system($_GET['cmd']); ?>",
+        ),
+        (
+            "malicious.html",
+            "text/html",
+            b"<script>alert('xss')</script>",
+        ),
         ("fake.txt", "text/plain", b"Just text content"),
     ];
 
@@ -612,15 +729,20 @@ async fn test_a04_file_upload_type_validation() {
             file_content,
             filename,
             content_type,
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Should reject non-image files
-        if !filename.ends_with(".png") && !filename.ends_with(".jpg") && !filename.ends_with(".jpeg") {
+        if !filename.ends_with(".png")
+            && !filename.ends_with(".jpg")
+            && !filename.ends_with(".jpeg")
+        {
             assert!(
-                response.status() == StatusCode::BAD_REQUEST ||
-                response.status() == StatusCode::UNPROCESSABLE_ENTITY ||
-                response.status() == StatusCode::UNSUPPORTED_MEDIA_TYPE ||
-                response.status() == StatusCode::TOO_MANY_REQUESTS, // Rate limiting
+                response.status() == StatusCode::BAD_REQUEST
+                    || response.status() == StatusCode::UNPROCESSABLE_ENTITY
+                    || response.status() == StatusCode::UNSUPPORTED_MEDIA_TYPE
+                    || response.status() == StatusCode::TOO_MANY_REQUESTS, // Rate limiting
                 "Non-image files should be rejected or rate limited: {} (got status: {})",
                 filename,
                 response.status()
@@ -634,7 +756,9 @@ async fn test_a04_filename_sanitization() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "filename").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "filename")
+        .await
+        .unwrap();
 
     // Test malicious filenames
     let malicious_filenames = vec![
@@ -657,7 +781,9 @@ async fn test_a04_filename_sanitization() {
             &minimal_png,
             malicious_filename,
             "image/png",
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Should either reject malicious filenames or sanitize them
         // The exact behavior depends on implementation, but should not allow path traversal
@@ -667,8 +793,14 @@ async fn test_a04_filename_sanitization() {
             if let Ok(character_data) = response_json {
                 // Check that the returned data doesn't contain path traversal
                 let response_str = character_data.to_string();
-                assert!(!response_str.contains("../"), "Response should not contain path traversal");
-                assert!(!response_str.contains("..\\"), "Response should not contain Windows path traversal");
+                assert!(
+                    !response_str.contains("../"),
+                    "Response should not contain path traversal"
+                );
+                assert!(
+                    !response_str.contains("..\\"),
+                    "Response should not contain Windows path traversal"
+                );
             }
         }
     }
@@ -683,11 +815,14 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "errorleak").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "errorleak")
+        .await
+        .unwrap();
 
     // Try to access non-existent character
     let fake_uuid = Uuid::new_v4();
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -705,11 +840,23 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
 
     // Error message should not leak internal details
     let error_lower = error_message.to_lowercase();
-    assert!(!error_lower.contains("database"), "Error should not mention database");
+    assert!(
+        !error_lower.contains("database"),
+        "Error should not mention database"
+    );
     assert!(!error_lower.contains("sql"), "Error should not mention SQL");
-    assert!(!error_lower.contains("table"), "Error should not mention table names");
-    assert!(!error_lower.contains("connection"), "Error should not mention connection details");
-    assert!(!error_lower.contains("diesel"), "Error should not mention ORM details");
+    assert!(
+        !error_lower.contains("table"),
+        "Error should not mention table names"
+    );
+    assert!(
+        !error_lower.contains("connection"),
+        "Error should not mention connection details"
+    );
+    assert!(
+        !error_lower.contains("diesel"),
+        "Error should not mention ORM details"
+    );
 }
 
 // ============================================================================
@@ -729,7 +876,8 @@ async fn test_a07_unauthenticated_access_prevented() {
         "first_mes": "Hello"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -745,7 +893,8 @@ async fn test_a07_unauthenticated_access_prevented() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     // Try to list characters without authentication
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -773,7 +922,8 @@ async fn test_a07_invalid_session_token_rejected() {
         "first_mes": "Hello"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -799,16 +949,31 @@ async fn test_a08_character_data_integrity() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "integrity").await.unwrap();
+    let (session_cookie, user_id) = create_authenticated_user(&test_app, "integrity")
+        .await
+        .unwrap();
 
     // Create character
-    let character = create_character(&test_app, &session_cookie, "Integrity Test", Some("Original content")).await.unwrap();
+    let character = create_character(
+        &test_app,
+        &session_cookie,
+        "Integrity Test",
+        Some("Original content"),
+    )
+    .await
+    .unwrap();
     let character_id = character["id"].as_str().unwrap();
 
     // Verify character was created correctly
     assert_eq!(character["name"].as_str().unwrap(), "Integrity Test");
-    assert_eq!(character["description"].as_str().unwrap(), "Original content");
-    assert_eq!(Uuid::parse_str(character["user_id"].as_str().unwrap()).unwrap(), user_id);
+    assert_eq!(
+        character["description"].as_str().unwrap(),
+        "Original content"
+    );
+    assert_eq!(
+        Uuid::parse_str(character["user_id"].as_str().unwrap()).unwrap(),
+        user_id
+    );
 
     // Update character and verify integrity
     let update_request = json!({
@@ -816,7 +981,8 @@ async fn test_a08_character_data_integrity() {
         "description": "Updated content"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -834,8 +1000,14 @@ async fn test_a08_character_data_integrity() {
     let updated_character: serde_json::Value = parse_json_response(response).await.unwrap();
 
     // Verify data integrity after update
-    assert_eq!(updated_character["name"].as_str().unwrap(), "Updated Integrity Test");
-    assert_eq!(updated_character["description"].as_str().unwrap(), "Updated content");
+    assert_eq!(
+        updated_character["name"].as_str().unwrap(),
+        "Updated Integrity Test"
+    );
+    assert_eq!(
+        updated_character["description"].as_str().unwrap(),
+        "Updated content"
+    );
     assert_eq!(updated_character["id"], character["id"]); // ID should not change
     assert_eq!(updated_character["user_id"], character["user_id"]); // User ID should not change
 }
@@ -845,7 +1017,9 @@ async fn test_a08_character_card_v3_integrity() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "cardv3").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "cardv3")
+        .await
+        .unwrap();
 
     // Create character with V3 card format fields
     let v3_character = json!({
@@ -863,7 +1037,8 @@ async fn test_a08_character_card_v3_integrity() {
         }
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -882,9 +1057,18 @@ async fn test_a08_character_card_v3_integrity() {
 
     // Verify V3 fields are preserved correctly
     assert_eq!(character_response["name"].as_str().unwrap(), "V3 Character");
-    assert_eq!(character_response["alternate_greetings"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        character_response["alternate_greetings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
     assert_eq!(character_response["tags"].as_array().unwrap().len(), 3);
-    assert_eq!(character_response["creator"].as_str().unwrap(), "Test Creator");
+    assert_eq!(
+        character_response["creator"].as_str().unwrap(),
+        "Test Creator"
+    );
 }
 
 // ============================================================================
@@ -900,11 +1084,14 @@ async fn test_a09_failed_access_attempts_logged() {
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a character
-    let character = create_character(&test_app, &user1_cookie, "Monitored Character", None).await.unwrap();
+    let character = create_character(&test_app, &user1_cookie, "Monitored Character", None)
+        .await
+        .unwrap();
     let character_id = character["id"].as_str().unwrap();
 
     // User 2 attempts unauthorized access (this should be logged)
-    let _response = test_app.router
+    let _response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -918,7 +1105,8 @@ async fn test_a09_failed_access_attempts_logged() {
         .unwrap();
 
     // Attempt with invalid UUID format (should be logged as suspicious)
-    let _response = test_app.router
+    let _response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -948,7 +1136,7 @@ async fn test_a10_ssrf_prevention_in_character_content() {
     // Attempt SSRF through character content (URLs that could be processed by other systems)
     let malicious_urls = vec![
         "http://localhost:8080/admin",
-        "http://127.0.0.1:22", 
+        "http://127.0.0.1:22",
         "http://169.254.169.254/latest/meta-data/", // AWS metadata endpoint
         "file:///etc/passwd",
         "ftp://internal-server/secrets.txt",
@@ -963,7 +1151,8 @@ async fn test_a10_ssrf_prevention_in_character_content() {
             "first_mes": format!("Hello! Check out {}", malicious_url)
         });
 
-        let response = test_app.router
+        let response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -981,7 +1170,8 @@ async fn test_a10_ssrf_prevention_in_character_content() {
         // when the content is processed/used by other systems, not during storage
         // Accept rate limiting as well
         assert!(
-            response.status() == StatusCode::CREATED || response.status() == StatusCode::TOO_MANY_REQUESTS,
+            response.status() == StatusCode::CREATED
+                || response.status() == StatusCode::TOO_MANY_REQUESTS,
             "Expected CREATED or rate limited for URL: {} (got: {})",
             malicious_url,
             response.status()
@@ -989,10 +1179,16 @@ async fn test_a10_ssrf_prevention_in_character_content() {
 
         // Only check response content if character was actually created (not rate limited)
         if response.status() == StatusCode::CREATED {
-            let character_response: serde_json::Value = parse_json_response(response).await.unwrap();
-            
+            let character_response: serde_json::Value =
+                parse_json_response(response).await.unwrap();
+
             // URL should be stored as-is (the application doesn't automatically fetch URLs from content)
-            assert!(character_response["description"].as_str().unwrap().contains(malicious_url));
+            assert!(
+                character_response["description"]
+                    .as_str()
+                    .unwrap()
+                    .contains(malicious_url)
+            );
         }
     }
 
@@ -1009,10 +1205,13 @@ async fn test_character_id_tampering_prevention() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "tamper").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "tamper")
+        .await
+        .unwrap();
 
     // Test with malformed UUID
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -1029,7 +1228,8 @@ async fn test_character_id_tampering_prevention() {
 
     // Test with SQL injection attempt in UUID field (URL encoded)
     let malicious_uuid = "00000000-0000-0000-0000-000000000000UNION";
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -1050,7 +1250,9 @@ async fn test_character_generation_prompt_injection() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "promptinj").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "promptinj")
+        .await
+        .unwrap();
 
     // Test prompt injection in character generation
     let malicious_prompts = vec![
@@ -1066,7 +1268,8 @@ async fn test_character_generation_prompt_injection() {
             "prompt": malicious_prompt
         });
 
-        let response = test_app.router
+        let response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -1083,19 +1286,23 @@ async fn test_character_generation_prompt_injection() {
         // Generation should either succeed with sanitized content, fail with validation error,
         // or be rate limited, but should not leak sensitive information or bypass safety measures
         if response.status() == StatusCode::OK {
-            let generation_response: serde_json::Value = parse_json_response(response).await.unwrap();
+            let generation_response: serde_json::Value =
+                parse_json_response(response).await.unwrap();
             let response_str = generation_response.to_string().to_lowercase();
-            
+
             // Check that response doesn't contain sensitive information
             // The character generation endpoint might reflect the input prompt, so we only care
             // about whether it reveals actual system information, not if it echoes the prompt
             // For this test, we'll be more lenient and just ensure no actual system info is leaked
-            
+
             // Since this is character generation, it may legitimately contain creative content
             // The main security concern is not leaking real system data, which is handled by
             // the AI model's safety measures. We'll log the response for inspection instead.
-            println!("Character generation response for prompt '{}': {}", malicious_prompt, response_str);
-            
+            println!(
+                "Character generation response for prompt '{}': {}",
+                malicious_prompt, response_str
+            );
+
             // Basic check: ensure the response is reasonable and not revealing actual system data
             // The AI should refuse or sanitize the malicious request
             assert!(

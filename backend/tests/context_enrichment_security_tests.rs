@@ -2,18 +2,12 @@
 
 use diesel::prelude::*;
 use scribe_backend::{
-    models::{
-        NewAgentContextAnalysis, AnalysisType,
-        chronicle::CreateChronicleRequest,
-    },
+    models::{AnalysisType, NewAgentContextAnalysis, chronicle::CreateChronicleRequest},
     services::{
-        agentic::{
-            narrative_tools::SearchKnowledgeBaseTool,
-            tools::ScribeTool,
-        },
         ChronicleService,
+        agentic::{narrative_tools::SearchKnowledgeBaseTool, tools::ScribeTool},
     },
-    test_helpers::{spawn_app, TestDataGuard, db::create_test_user},
+    test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -21,44 +15,72 @@ use tracing::info;
 use uuid::Uuid;
 
 // Helper function to create AppState from TestApp
-async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp) -> Arc<scribe_backend::state::AppState> {
-    let encryption_service = Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
+async fn create_test_app_state(
+    test_app: &scribe_backend::test_helpers::TestApp,
+) -> Arc<scribe_backend::state::AppState> {
+    let encryption_service =
+        Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let lorebook_service = Arc::new(scribe_backend::services::lorebook::LorebookService::new(
         test_app.db_pool.clone(),
         encryption_service.clone(),
         test_app.qdrant_service.clone(),
     ));
-    
+
     let services = scribe_backend::state::AppStateServices {
         ai_client: test_app.ai_client.clone(),
-        embedding_client: test_app.mock_embedding_client.clone() as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        embedding_client: test_app.mock_embedding_client.clone()
+            as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
         qdrant_service: test_app.qdrant_service.clone(),
-        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone() as Arc<dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait + Send + Sync>,
-        chat_override_service: Arc::new(scribe_backend::services::chat_override_service::ChatOverrideService::new(
-            test_app.db_pool.clone(),
-            encryption_service.clone()
-        )),
-        user_persona_service: Arc::new(scribe_backend::services::user_persona_service::UserPersonaService::new(
-            test_app.db_pool.clone(),
-            encryption_service.clone()
-        )),
-        token_counter: Arc::new(scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
-            scribe_backend::services::tokenizer_service::TokenizerService::new(&test_app.config.tokenizer_model_path).unwrap_or_else(|_| {
-                panic!("Failed to create tokenizer for test")
-            }),
-            None,
-            "gemini-2.5-pro"
-        )),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone()
+            as Arc<
+                dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait
+                    + Send
+                    + Sync,
+            >,
+        chat_override_service: Arc::new(
+            scribe_backend::services::chat_override_service::ChatOverrideService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
+        user_persona_service: Arc::new(
+            scribe_backend::services::user_persona_service::UserPersonaService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
+        token_counter: Arc::new(
+            scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
+                scribe_backend::services::tokenizer_service::TokenizerService::new(
+                    &test_app.config.tokenizer_model_path,
+                )
+                .unwrap_or_else(|_| panic!("Failed to create tokenizer for test")),
+                None,
+                "gemini-2.5-pro",
+            ),
+        ),
         encryption_service: encryption_service.clone(),
         lorebook_service: lorebook_service.clone(),
-        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(test_app.db_pool.clone())),
-        email_service: scribe_backend::services::email_service::create_email_service(&"development".to_string(), "http://localhost:3000".to_string(), None).await.unwrap(),
-        ai_client_factory: Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(
             test_app.db_pool.clone(),
-            test_app.config.clone(),
-            test_app.ai_client.clone(),
         )),
-        rate_limiter: Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100)),
+        email_service: scribe_backend::services::email_service::create_email_service(
+            &"development".to_string(),
+            "http://localhost:3000".to_string(),
+            None,
+        )
+        .await
+        .unwrap(),
+        ai_client_factory: Arc::new(
+            scribe_backend::services::ai_client_factory::AiClientFactory::new(
+                test_app.db_pool.clone(),
+                test_app.config.clone(),
+                test_app.ai_client.clone(),
+            ),
+        ),
+        rate_limiter: Arc::new(
+            scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -66,13 +88,13 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp)
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
     };
-    
+
     let app_state = scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
-        services
+        services,
     );
-    
+
     // Skip setting narrative intelligence service to avoid circular dependency in tests
     Arc::new(app_state)
 }
@@ -108,7 +130,7 @@ async fn test_search_knowledge_base_user_isolation() {
 
     // Create lorebooks for each user (not needed for basic security test)
     let _lorebook_service = ChronicleService::new(test_app.db_pool.clone());
-    
+
     // Since we need to bypass the auth session, let's create lorebooks directly via DB
     // For now, let's skip the lorebook creation and focus on the basic security test
     // We'll create mock data using direct DB insertion
@@ -133,9 +155,12 @@ async fn test_search_knowledge_base_user_isolation() {
     });
 
     info!("Testing user_id requirement...");
-    let result = search_tool.as_ref().execute(&search_params_no_user_id).await;
+    let result = search_tool
+        .as_ref()
+        .execute(&search_params_no_user_id)
+        .await;
     assert!(result.is_err(), "Search without user_id should fail");
-    
+
     let error_msg = result.unwrap_err().to_string();
     assert!(
         error_msg.contains("user_id") && error_msg.contains("required"),
@@ -146,7 +171,7 @@ async fn test_search_knowledge_base_user_isolation() {
     // SECURITY TEST: Test with valid user_id (should succeed even if no data)
     let valid_search_params = json!({
         "query": "test search",
-        "search_type": "all", 
+        "search_type": "all",
         "limit": 10,
         "user_id": user1.id.to_string()
     });
@@ -165,7 +190,7 @@ async fn test_context_enrichment_agent_security() {
     let test_app = spawn_app(false, false, false).await;
     let mut guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    // Create test user 
+    // Create test user
     let user = create_test_user(
         &test_app.db_pool,
         format!("agent_security_user_{}", Uuid::new_v4()),
@@ -209,8 +234,11 @@ async fn test_context_enrichment_agent_security() {
 
     info!("Testing SearchKnowledgeBaseTool security requirement...");
     let result = search_tool.as_ref().execute(&params_without_user_id).await;
-    assert!(result.is_err(), "SearchKnowledgeBaseTool should require user_id");
-    
+    assert!(
+        result.is_err(),
+        "SearchKnowledgeBaseTool should require user_id"
+    );
+
     let error_msg = result.unwrap_err().to_string();
     assert!(
         error_msg.contains("user_id") && error_msg.contains("required"),
@@ -218,7 +246,9 @@ async fn test_context_enrichment_agent_security() {
         error_msg
     );
 
-    info!("✅ ContextEnrichmentAgent security test passed - SearchKnowledgeBaseTool properly requires user_id");
+    info!(
+        "✅ ContextEnrichmentAgent security test passed - SearchKnowledgeBaseTool properly requires user_id"
+    );
 
     guard.cleanup().await.expect("Failed to cleanup");
 }
@@ -251,7 +281,7 @@ async fn test_malicious_user_id_injection() {
 
     for malicious_input in malicious_inputs {
         info!("Testing malicious input: '{}'", malicious_input);
-        
+
         let malicious_params = json!({
             "query": "test",
             "search_type": "all",
@@ -260,14 +290,14 @@ async fn test_malicious_user_id_injection() {
         });
 
         let result = search_tool.as_ref().execute(&malicious_params).await;
-        
+
         // All malicious inputs should fail with InvalidParams error
         assert!(
             result.is_err(),
             "Malicious input '{}' should be rejected",
             malicious_input
         );
-        
+
         let error_msg = result.unwrap_err().to_string();
         assert!(
             error_msg.contains("InvalidParams") || error_msg.contains("Invalid user_id"),
@@ -312,11 +342,15 @@ async fn test_agent_analysis_storage_security() {
     let user2_session_id = Uuid::new_v4();
 
     // Create chat sessions in database to satisfy foreign key constraint
-    let conn = test_app.db_pool.get().await.expect("Failed to get connection");
+    let conn = test_app
+        .db_pool
+        .get()
+        .await
+        .expect("Failed to get connection");
     conn.interact(move |conn| {
+        use diesel::{ExpressionMethods, RunQueryDsl, insert_into};
         use scribe_backend::schema::chat_sessions;
-        use diesel::{RunQueryDsl, insert_into, ExpressionMethods};
-        
+
         // Insert user1's session
         insert_into(chat_sessions::table)
             .values((
@@ -331,7 +365,7 @@ async fn test_agent_analysis_storage_security() {
                 chat_sessions::visibility.eq(Some("private".to_string())),
             ))
             .execute(conn)?;
-        
+
         // Insert user2's session
         insert_into(chat_sessions::table)
             .values((
@@ -346,7 +380,7 @@ async fn test_agent_analysis_storage_security() {
                 chat_sessions::visibility.eq(Some("private".to_string())),
             ))
             .execute(conn)?;
-            
+
         Ok::<(), diesel::result::Error>(())
     })
     .await
@@ -372,7 +406,8 @@ async fn test_agent_analysis_storage_security() {
         "gemini-2.5-flash-lite",
         user1_dek,
         user1_message_id, // Required message_id
-    ).expect("Failed to create user1 analysis");
+    )
+    .expect("Failed to create user1 analysis");
 
     let user2_analysis = NewAgentContextAnalysis::new_encrypted(
         user2_session_id,
@@ -388,21 +423,22 @@ async fn test_agent_analysis_storage_security() {
         "gemini-2.5-flash-lite",
         user2_dek,
         user2_message_id, // Required message_id
-    ).expect("Failed to create user2 analysis");
+    )
+    .expect("Failed to create user2 analysis");
 
     // Store analyses in database
     conn.interact(move |conn| {
         use diesel::insert_into;
         use scribe_backend::schema::agent_context_analysis;
-        
+
         insert_into(agent_context_analysis::table)
             .values(&user1_analysis)
             .execute(conn)?;
-            
+
         insert_into(agent_context_analysis::table)
             .values(&user2_analysis)
             .execute(conn)?;
-            
+
         Ok::<(), diesel::result::Error>(())
     })
     .await
@@ -410,19 +446,19 @@ async fn test_agent_analysis_storage_security() {
     .expect("Failed to insert analyses");
 
     // SECURITY TEST 1: Verify analyses are properly encrypted in database
-    let raw_analyses = conn.interact(move |conn| {
-        use scribe_backend::schema::agent_context_analysis::dsl::*;
-        use scribe_backend::models::AgentContextAnalysis;
-        
-        agent_context_analysis
-            .load::<AgentContextAnalysis>(conn)
-    })
-    .await
-    .expect("Failed to interact with database")
-    .expect("Failed to load analyses");
+    let raw_analyses = conn
+        .interact(move |conn| {
+            use scribe_backend::models::AgentContextAnalysis;
+            use scribe_backend::schema::agent_context_analysis::dsl::*;
+
+            agent_context_analysis.load::<AgentContextAnalysis>(conn)
+        })
+        .await
+        .expect("Failed to interact with database")
+        .expect("Failed to load analyses");
 
     assert_eq!(raw_analyses.len(), 2, "Should have 2 stored analyses");
-    
+
     // Verify that raw encrypted data doesn't contain sensitive information
     for analysis in &raw_analyses {
         // Check if the fields are encrypted (should not contain plaintext)
@@ -447,27 +483,43 @@ async fn test_agent_analysis_storage_security() {
     }
 
     // SECURITY TEST 2: Verify user isolation - each user can only see their own data
-    let user1_analyses: Vec<_> = raw_analyses.iter()
+    let user1_analyses: Vec<_> = raw_analyses
+        .iter()
         .filter(|a| a.user_id == user1.id)
         .collect();
-    let user2_analyses: Vec<_> = raw_analyses.iter()
+    let user2_analyses: Vec<_> = raw_analyses
+        .iter()
         .filter(|a| a.user_id == user2.id)
         .collect();
 
-    assert_eq!(user1_analyses.len(), 1, "Should have exactly 1 analysis for user1");
-    assert_eq!(user2_analyses.len(), 1, "Should have exactly 1 analysis for user2");
-    
+    assert_eq!(
+        user1_analyses.len(),
+        1,
+        "Should have exactly 1 analysis for user1"
+    );
+    assert_eq!(
+        user2_analyses.len(),
+        1,
+        "Should have exactly 1 analysis for user2"
+    );
+
     // Verify user isolation - analyses are tied to correct users
-    assert_eq!(user1_analyses[0].user_id, user1.id, "User1 analysis should belong to user1");
-    assert_eq!(user2_analyses[0].user_id, user2.id, "User2 analysis should belong to user2");
+    assert_eq!(
+        user1_analyses[0].user_id, user1.id,
+        "User1 analysis should belong to user1"
+    );
+    assert_eq!(
+        user2_analyses[0].user_id, user2.id,
+        "User2 analysis should belong to user2"
+    );
 
     info!("✅ Agent analysis storage security verified - encrypted and user-isolated");
-    
+
     // Clean up agent context analysis records first to avoid foreign key constraint errors
     conn.interact(move |conn| {
         use diesel::delete;
         use scribe_backend::schema::agent_context_analysis;
-        
+
         delete(agent_context_analysis::table)
             .filter(agent_context_analysis::user_id.eq_any(&[user1.id, user2.id]))
             .execute(conn)
@@ -475,7 +527,7 @@ async fn test_agent_analysis_storage_security() {
     .await
     .expect("Failed to interact with database")
     .expect("Failed to delete agent context analysis records");
-    
+
     guard.cleanup().await.expect("Failed to cleanup");
 }
 
@@ -519,7 +571,7 @@ async fn test_search_tool_injection_protection() {
 
     for injection_query in injection_queries {
         info!("Testing injection query: '{}'", injection_query);
-        
+
         let injection_params = json!({
             "query": injection_query,
             "search_type": "all",
@@ -534,13 +586,16 @@ async fn test_search_tool_injection_protection() {
                 info!("Injection query handled safely: '{}'", injection_query);
             }
             Err(e) => {
-                info!("Injection query rejected (good): '{}' -> {}", injection_query, e);
+                info!(
+                    "Injection query rejected (good): '{}' -> {}",
+                    injection_query, e
+                );
                 // Verify it's a proper application error, not a database error indicating injection
                 let error_str = e.to_string();
                 assert!(
-                    !error_str.to_lowercase().contains("syntax error") &&
-                    !error_str.to_lowercase().contains("invalid query") &&
-                    !error_str.to_lowercase().contains("database error"),
+                    !error_str.to_lowercase().contains("syntax error")
+                        && !error_str.to_lowercase().contains("invalid query")
+                        && !error_str.to_lowercase().contains("database error"),
                     "Error suggests SQL injection vulnerability: {}",
                     error_str
                 );
@@ -577,19 +632,19 @@ async fn test_search_tool_ssrf_protection() {
 
     // Test SSRF attack vectors
     let ssrf_queries = vec![
-        "http://169.254.169.254/latest/meta-data/",  // AWS metadata
-        "file:///etc/passwd",                         // Local file access
-        "ftp://internal.server/secrets",             // Internal FTP
-        "ldap://internal.ldap/users",                // LDAP injection
-        "gopher://127.0.0.1:22/",                    // Gopher protocol
-        "dict://127.0.0.1:11211/",                   // Dictionary protocol
-        "http://localhost:8080/admin",               // Localhost access
-        "https://webhook.site/unique-id",            // External webhook
+        "http://169.254.169.254/latest/meta-data/", // AWS metadata
+        "file:///etc/passwd",                       // Local file access
+        "ftp://internal.server/secrets",            // Internal FTP
+        "ldap://internal.ldap/users",               // LDAP injection
+        "gopher://127.0.0.1:22/",                   // Gopher protocol
+        "dict://127.0.0.1:11211/",                  // Dictionary protocol
+        "http://localhost:8080/admin",              // Localhost access
+        "https://webhook.site/unique-id",           // External webhook
     ];
 
     for ssrf_query in ssrf_queries {
         info!("Testing SSRF query: '{}'", ssrf_query);
-        
+
         let search_params = json!({
             "query": ssrf_query,
             "search_type": "all",

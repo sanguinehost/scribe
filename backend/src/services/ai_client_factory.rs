@@ -54,12 +54,20 @@ impl AiClientFactory {
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         info!(%user_id, provider = ?provider, model_name = ?model_name, has_session_dek = session_dek.is_some(), "🔍 DEBUG: get_secure_client_for_provider called with params");
         let provider = provider.unwrap_or("gemini"); // Default to gemini if no provider specified
-        
+
         match provider {
             "local" | "llamacpp" => {
                 #[cfg(feature = "local-llm")]
                 {
-                    match self.create_secure_local_llm_client_for_model(user_id, model_name, session_dek, app_state).await {
+                    match self
+                        .create_secure_local_llm_client_for_model(
+                            user_id,
+                            model_name,
+                            session_dek,
+                            app_state,
+                        )
+                        .await
+                    {
                         Ok(client) => {
                             info!(%user_id, model_name = ?model_name, "Created secure local LLM client for user");
                             Ok(client)
@@ -101,12 +109,15 @@ impl AiClientFactory {
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         info!(%user_id, provider = ?provider, model_name = ?model_name, "🔍 DEBUG: get_client_for_provider called with params");
         let provider = provider.unwrap_or("gemini"); // Default to gemini if no provider specified
-        
+
         match provider {
             "local" | "llamacpp" => {
                 #[cfg(feature = "local-llm")]
                 {
-                    match self.create_local_llm_client_for_model(user_id, model_name).await {
+                    match self
+                        .create_local_llm_client_for_model(user_id, model_name)
+                        .await
+                    {
                         Ok(client) => {
                             info!(%user_id, model_name = ?model_name, "Created local LLM client for user");
                             Ok(client)
@@ -149,7 +160,9 @@ impl AiClientFactory {
             &self.pool,
             user_id,
             &self.config,
-        ).await {
+        )
+        .await
+        {
             Ok(settings) => settings,
             Err(e) => {
                 warn!(%user_id, error = ?e, "Failed to get user settings, using fallback client");
@@ -159,7 +172,7 @@ impl AiClientFactory {
 
         // Check if local LLM is enabled for this user
         let local_llm_enabled = user_settings.local_llm_enabled.unwrap_or(false);
-        
+
         if !local_llm_enabled {
             info!(%user_id, "Local LLM disabled for user, using fallback client");
             return Ok(self.fallback_client.clone());
@@ -202,11 +215,10 @@ impl AiClientFactory {
         model_name: Option<&str>,
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         // Get user settings for preferences
-        let user_settings = UserSettingsService::get_user_settings(
-            &self.pool,
-            user_id,
-            &self.config,
-        ).await.ok(); // It's OK if user settings don't exist, we'll use defaults
+        let user_settings =
+            UserSettingsService::get_user_settings(&self.pool, user_id, &self.config)
+                .await
+                .ok(); // It's OK if user settings don't exist, we'll use defaults
 
         // Get base config from environment
         let mut config = LlamaCppConfig::from_env();
@@ -229,10 +241,9 @@ impl AiClientFactory {
         }
 
         // Create the client
-        let client = LlamaCppClient::new(config).await
-            .map_err(|e| AppError::InternalServerErrorGeneric(
-                format!("Failed to create LlamaCpp client: {}", e)
-            ))?;
+        let client = LlamaCppClient::new(config).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to create LlamaCpp client: {}", e))
+        })?;
 
         Ok(Arc::new(client))
     }
@@ -247,11 +258,10 @@ impl AiClientFactory {
         app_state: &Arc<AppState>,
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         // Get user settings for preferences
-        let user_settings = UserSettingsService::get_user_settings(
-            &self.pool,
-            user_id,
-            &self.config,
-        ).await.ok(); // It's OK if user settings don't exist, we'll use defaults
+        let user_settings =
+            UserSettingsService::get_user_settings(&self.pool, user_id, &self.config)
+                .await
+                .ok(); // It's OK if user settings don't exist, we'll use defaults
 
         // Get base config from environment
         let mut config = LlamaCppConfig::from_env();
@@ -274,18 +284,15 @@ impl AiClientFactory {
         }
 
         // Create the underlying LlamaCpp client
-        let llamacpp_client = LlamaCppClient::new(config).await
-            .map_err(|e| AppError::InternalServerErrorGeneric(
-                format!("Failed to create LlamaCpp client: {}", e)
-            ))?;
+        let llamacpp_client = LlamaCppClient::new(config).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to create LlamaCpp client: {}", e))
+        })?;
 
         // Wrap with SecureLlmService if session_dek is provided
         if let Some(session_dek) = session_dek {
             info!(%user_id, "Wrapping LlamaCpp client with SecureLlmService for enhanced security");
-            let secure_service = SecureLlmService::new(
-                Arc::new(llamacpp_client), 
-                app_state.clone()
-            );
+            let secure_service =
+                SecureLlmService::new(Arc::new(llamacpp_client), app_state.clone());
             Ok(Arc::new(secure_service))
         } else {
             info!(%user_id, "No SessionDek provided, using bare LlamaCpp client");
@@ -313,10 +320,9 @@ impl AiClientFactory {
         }
 
         // Create the client
-        let client = LlamaCppClient::new(config).await
-            .map_err(|e| AppError::InternalServerErrorGeneric(
-                format!("Failed to create LlamaCpp client: {}", e)
-            ))?;
+        let client = LlamaCppClient::new(config).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to create LlamaCpp client: {}", e))
+        })?;
 
         Ok(Arc::new(client))
     }
@@ -338,7 +344,7 @@ impl AiClientFactory {
             if let Some(gpu_layers) = obj.get("gpu_layers").and_then(|v| v.as_i64()) {
                 config.gpu_layers = Some(gpu_layers as i32);
             }
-            
+
             // Apply threads if specified
             if let Some(threads) = obj.get("threads").and_then(|v| v.as_u64()) {
                 config.threads = Some(threads as usize);

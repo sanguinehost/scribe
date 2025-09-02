@@ -423,10 +423,7 @@ async fn get_chat_settings_success() {
         Some(BigDecimal::from_str("0.95").unwrap())
     );
     assert_eq!(settings_resp.seed, Some(12345_i32));
-    assert_eq!(
-        settings_resp.model_name,
-        "gemini-2.5-flash".to_string()
-    );
+    assert_eq!(settings_resp.model_name, "gemini-2.5-flash".to_string());
     assert_eq!(
         settings_resp.history_management_strategy,
         "truncate_summary"
@@ -469,12 +466,15 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
     let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -575,11 +575,11 @@ async fn get_chat_settings_defaults() {
 
     let created_chat_session = create_session_and_maybe_first_message(
         app_state_for_service,
-        session.user_id, // Use user ID from the session created by helper
-        Some(character.id), // character_id is now Option<Uuid>
+        session.user_id,     // Use user ID from the session created by helper
+        Some(character.id),  // character_id is now Option<Uuid>
         ChatMode::Character, // chat_mode
-        None,                              // active_custom_persona_id
-        None,                              // lorebook_ids
+        None,                // active_custom_persona_id
+        None,                // lorebook_ids
         user_dek_for_service_call.clone(), // Pass the created DEK
     )
     .await
@@ -1651,7 +1651,9 @@ async fn test_chat_chronicle_association() {
         .uri("/api/chronicles")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::COOKIE, auth_cookie.clone())
-        .body(Body::from(serde_json::to_string(&chronicle_payload).unwrap()))
+        .body(Body::from(
+            serde_json::to_string(&chronicle_payload).unwrap(),
+        ))
         .unwrap();
 
     let chronicle_response = test_app
@@ -1662,7 +1664,12 @@ async fn test_chat_chronicle_association() {
         .unwrap();
     assert_eq!(chronicle_response.status(), StatusCode::CREATED);
 
-    let chronicle_body = chronicle_response.into_body().collect().await.unwrap().to_bytes();
+    let chronicle_body = chronicle_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let chronicle_data: serde_json::Value = serde_json::from_slice(&chronicle_body).unwrap();
     let chronicle_id = chronicle_data["id"].as_str().unwrap();
     let chronicle_uuid = Uuid::parse_str(chronicle_id).unwrap();
@@ -1696,10 +1703,20 @@ async fn test_chat_chronicle_association() {
         .body(Body::from(serde_json::to_string(&update_data).unwrap()))
         .unwrap();
 
-    let update_response = test_app.router.clone().oneshot(update_request).await.unwrap();
+    let update_response = test_app
+        .router
+        .clone()
+        .oneshot(update_request)
+        .await
+        .unwrap();
     assert_eq!(update_response.status(), StatusCode::OK);
 
-    let update_body = update_response.into_body().collect().await.unwrap().to_bytes();
+    let update_body = update_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let settings_resp: ChatSettingsResponse =
         serde_json::from_slice(&update_body).expect("Failed to deserialize settings response");
 
@@ -1750,15 +1767,27 @@ async fn test_chat_chronicle_association() {
         .uri(format!("/api/chat/{}/settings", session.id))
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::COOKIE, auth_cookie.clone())
-        .body(Body::from(serde_json::to_string(&remove_update_data).unwrap()))
+        .body(Body::from(
+            serde_json::to_string(&remove_update_data).unwrap(),
+        ))
         .unwrap();
 
-    let remove_response = test_app.router.clone().oneshot(remove_request).await.unwrap();
+    let remove_response = test_app
+        .router
+        .clone()
+        .oneshot(remove_request)
+        .await
+        .unwrap();
     assert_eq!(remove_response.status(), StatusCode::OK);
 
-    let remove_body = remove_response.into_body().collect().await.unwrap().to_bytes();
-    let remove_settings_resp: ChatSettingsResponse =
-        serde_json::from_slice(&remove_body).expect("Failed to deserialize remove settings response");
+    let remove_body = remove_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let remove_settings_resp: ChatSettingsResponse = serde_json::from_slice(&remove_body)
+        .expect("Failed to deserialize remove settings response");
 
     // Verify the chronicle association was removed - should be None
     assert_eq!(remove_settings_resp.chronicle_id, None);

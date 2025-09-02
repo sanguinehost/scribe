@@ -4,32 +4,32 @@
 // Tests the end-to-end flow from chat messages through AI analysis to tool execution.
 
 use chrono::Utc;
+use diesel::{ExpressionMethods, RunQueryDsl};
 use reqwest::StatusCode;
+use secrecy::SecretBox;
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
-use secrecy::SecretBox;
-use diesel::{RunQueryDsl, ExpressionMethods};
 
 use scribe_backend::{
-    config::{NarrativeFeatureFlags, ExtractionMode},
+    auth::session_dek::SessionDek,
+    config::{ExtractionMode, NarrativeFeatureFlags},
     llm::{AiClient, EmbeddingClient},
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
         lorebook_dtos::CreateLorebookEntryPayload,
     },
+    schema::chat_sessions,
     services::{
+        ChronicleService, EncryptionService, LorebookService,
         agentic::{
-            AgenticNarrativeFactory, NarrativeAgentRunner, 
-            NarrativeWorkflowConfig, NarrativeWorkflowResult
+            AgenticNarrativeFactory, NarrativeAgentRunner, NarrativeWorkflowConfig,
+            NarrativeWorkflowResult,
         },
         extraction_dispatcher::{ExtractionDispatcher, ExtractionResult},
-        ChronicleService, LorebookService, EncryptionService,
     },
-    test_helpers::{spawn_app, MockAiClient, TestDataGuard, db::create_test_user},
-    auth::session_dek::SessionDek,
-    schema::chat_sessions,
+    test_helpers::{MockAiClient, TestDataGuard, db::create_test_user, spawn_app},
 };
 
 /// Helper to create a chat session in the database (required for foreign key constraint)
@@ -38,9 +38,11 @@ async fn create_test_chat_session(
     user_id: Uuid,
     session_id: Uuid,
 ) -> anyhow::Result<()> {
-    let conn = db_pool.get().await
+    let conn = db_pool
+        .get()
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
-    
+
     conn.interact(move |conn| {
         diesel::insert_into(chat_sessions::table)
             .values((
@@ -57,7 +59,7 @@ async fn create_test_chat_session(
     .await
     .map_err(|e| anyhow::anyhow!("Failed to interact with database: {}", e))?
     .map_err(|e| anyhow::anyhow!("Failed to insert chat session: {}", e))?;
-    
+
     Ok(())
 }
 
@@ -65,21 +67,29 @@ async fn create_test_chat_session(
 async fn test_complete_agentic_workflow_with_mock_responses() {
     let test_app = spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Create test user
-    let user = create_test_user(&test_app.db_pool, "test_user".to_string(), "password123".to_string()).await.unwrap();
+    let user = create_test_user(
+        &test_app.db_pool,
+        "test_user".to_string(),
+        "password123".to_string(),
+    )
+    .await
+    .unwrap();
     _guard.add_user(user.id);
     let user_id = user.id;
     let session_id = Uuid::new_v4();
 
     // Create chat session (required for foreign key constraint)
-    create_test_chat_session(&test_app.db_pool, user_id, session_id).await.unwrap();
+    create_test_chat_session(&test_app.db_pool, user_id, session_id)
+        .await
+        .unwrap();
 
     // Configure mock AI client with combined triage and planning response
     let combined_response = json!({
         "is_significant": true,
         "summary": "User introduces new character Alex and starts adventure",
-        "event_category": "PLOT", 
+        "event_category": "PLOT",
         "event_type": "DEVELOPMENT",
         "narrative_action": "BEGAN",
         "primary_agent": "Alex",
@@ -104,7 +114,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
                 "reasoning": "Record the beginning of Alex's adventure"
             },
             {
-                "tool_name": "create_lorebook_entry", 
+                "tool_name": "create_lorebook_entry",
                 "parameters": {
                     "name": "Alex the Wizard",
                     "content": "A young wizard starting their journey at the magical academy",
@@ -116,16 +126,18 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
         ]
     });
 
-    let mock_ai_client = Arc::new(MockAiClient::new_with_response(combined_response.to_string()));
+    let mock_ai_client = Arc::new(MockAiClient::new_with_response(
+        combined_response.to_string(),
+    ));
 
     // Create agentic system with mock AI client using the same pattern as working tests
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
     let lorebook_service = Arc::new(LorebookService::new(
-        test_app.db_pool.clone(), 
+        test_app.db_pool.clone(),
         Arc::new(EncryptionService::new()),
-        test_app.qdrant_service.clone()
+        test_app.qdrant_service.clone(),
     ));
-    
+
     let agentic_runner = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
         chronicle_service.clone(),
@@ -142,7 +154,10 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             id: Uuid::new_v4(),
             session_id,
             message_type: MessageRole::User,
-            content: "Hello! I want to start a new adventure where I play as a young wizard named Alex.".as_bytes().to_vec(),
+            content:
+                "Hello! I want to start a new adventure where I play as a young wizard named Alex."
+                    .as_bytes()
+                    .to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now(),
             user_id,
@@ -159,7 +174,10 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             id: Uuid::new_v4(),
             session_id,
             message_type: MessageRole::Assistant,
-            content: "Welcome, Alex! You find yourself at the entrance to an ancient magical academy...".as_bytes().to_vec(),
+            content:
+                "Welcome, Alex! You find yourself at the entrance to an ancient magical academy..."
+                    .as_bytes()
+                    .to_vec(),
             content_nonce: Some(vec![5, 6, 7, 8]),
             created_at: Utc::now(),
             user_id,
@@ -179,28 +197,41 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
     let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
     // Run the agentic workflow
-    let result = agentic_runner.process_narrative_event(
-        user_id,
-        session_id,
-        None, // No existing chronicle
-        &messages,
-        &session_dek,
-        None, // No persona context
-    ).await;
+    let result = agentic_runner
+        .process_narrative_event(
+            user_id,
+            session_id,
+            None, // No existing chronicle
+            &messages,
+            &session_dek,
+            None, // No persona context
+        )
+        .await;
 
     // Verify the workflow completed successfully
-    assert!(result.is_ok(), "Agentic workflow should complete successfully");
+    assert!(
+        result.is_ok(),
+        "Agentic workflow should complete successfully"
+    );
     let workflow_result = result.unwrap();
 
     // Verify triage and planning steps were executed
-    assert!(!workflow_result.execution_results.is_empty(), "Should have execution results");
-    assert!(!workflow_result.actions_taken.is_empty(), "Should have taken actions");
+    assert!(
+        !workflow_result.execution_results.is_empty(),
+        "Should have execution results"
+    );
+    assert!(
+        !workflow_result.actions_taken.is_empty(),
+        "Should have taken actions"
+    );
 
     // Verify actions were planned correctly
     let actions = &workflow_result.actions_taken;
     // Chronicle event is auto-created by the system, so we don't expect it in planned actions
     assert!(
-        actions.iter().any(|action| action.tool_name == "create_lorebook_entry"),
+        actions
+            .iter()
+            .any(|action| action.tool_name == "create_lorebook_entry"),
         "Should have planned lorebook entry creation"
     );
 
@@ -211,15 +242,23 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
 async fn test_extraction_dispatcher_with_agentic_mode() {
     let test_app = spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Create test user
-    let user = create_test_user(&test_app.db_pool, "test_user2".to_string(), "password123".to_string()).await.unwrap();
+    let user = create_test_user(
+        &test_app.db_pool,
+        "test_user2".to_string(),
+        "password123".to_string(),
+    )
+    .await
+    .unwrap();
     _guard.add_user(user.id);
     let user_id = user.id;
     let session_id = Uuid::new_v4();
 
     // Create chat session (required for foreign key constraint)
-    create_test_chat_session(&test_app.db_pool, user_id, session_id).await.unwrap();
+    create_test_chat_session(&test_app.db_pool, user_id, session_id)
+        .await
+        .unwrap();
 
     // Create feature flags for agentic mode
     let mut feature_flags = NarrativeFeatureFlags::default();
@@ -243,11 +282,11 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
     // Create agentic system using the same pattern as working tests
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
     let lorebook_service = Arc::new(LorebookService::new(
-        test_app.db_pool.clone(), 
+        test_app.db_pool.clone(),
         Arc::new(EncryptionService::new()),
-        test_app.qdrant_service.clone()
+        test_app.qdrant_service.clone(),
     ));
-    
+
     let agentic_runner = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
         chronicle_service.clone(),
@@ -259,52 +298,55 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
     );
 
     // Create extraction dispatcher
-    let dispatcher = ExtractionDispatcher::new(
-        Arc::new(feature_flags),
-        Some(Arc::new(agentic_runner)),
-    );
+    let dispatcher =
+        ExtractionDispatcher::new(Arc::new(feature_flags), Some(Arc::new(agentic_runner)));
 
     // Create test messages
-    let messages = vec![
-        ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
-            message_type: MessageRole::User,
-            content: "Alex looks around the magical academy courtyard nervously.".as_bytes().to_vec(),
-            content_nonce: Some(vec![1, 2, 3, 4]),
-            created_at: Utc::now(),
-            user_id,
-            prompt_tokens: Some(15),
-            completion_tokens: Some(0),
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
-            model_name: "gemini-2.5-pro".to_string(),
-            status: "completed".to_string(),
-            error_message: None,
-            superseded_at: None,
-        },
-    ];
+    let messages = vec![ChatMessage {
+        id: Uuid::new_v4(),
+        session_id,
+        message_type: MessageRole::User,
+        content: "Alex looks around the magical academy courtyard nervously."
+            .as_bytes()
+            .to_vec(),
+        content_nonce: Some(vec![1, 2, 3, 4]),
+        created_at: Utc::now(),
+        user_id,
+        prompt_tokens: Some(15),
+        completion_tokens: Some(0),
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
+        model_name: "gemini-2.5-pro".to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
+    }];
 
     // Create session DEK for testing
     let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
     // Run extraction through dispatcher
-    let result = dispatcher.extract_events_from_chat(
-        user_id,
-        session_id,
-        None,
-        &messages,
-        &session_dek,
-    ).await;
+    let result = dispatcher
+        .extract_events_from_chat(user_id, session_id, None, &messages, &session_dek)
+        .await;
 
     // Verify extraction succeeded
-    assert!(result.is_ok(), "Extraction should succeed through dispatcher");
+    assert!(
+        result.is_ok(),
+        "Extraction should succeed through dispatcher"
+    );
     let extraction_result = result.unwrap();
 
     assert!(extraction_result.success, "Extraction should be successful");
     assert_eq!(extraction_result.mode_used, ExtractionMode::AgenticOnly);
-    assert!(extraction_result.duration_ms > 0, "Should have measurable duration");
-    assert!(extraction_result.ai_calls_made > 0, "Should have made AI calls");
+    assert!(
+        extraction_result.duration_ms > 0,
+        "Should have measurable duration"
+    );
+    assert!(
+        extraction_result.ai_calls_made > 0,
+        "Should have made AI calls"
+    );
 
     println!("✓ Extraction dispatcher agentic mode test passed");
 }
@@ -313,15 +355,23 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
 async fn test_dual_mode_extraction_comparison() {
     let test_app = spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Create test user
-    let user = create_test_user(&test_app.db_pool, "test_user3".to_string(), "password123".to_string()).await.unwrap();
+    let user = create_test_user(
+        &test_app.db_pool,
+        "test_user3".to_string(),
+        "password123".to_string(),
+    )
+    .await
+    .unwrap();
     _guard.add_user(user.id);
     let user_id = user.id;
     let session_id = Uuid::new_v4();
 
     // Create chat session (required for foreign key constraint)
-    create_test_chat_session(&test_app.db_pool, user_id, session_id).await.unwrap();
+    create_test_chat_session(&test_app.db_pool, user_id, session_id)
+        .await
+        .unwrap();
 
     // Create feature flags for dual mode
     let mut feature_flags = NarrativeFeatureFlags::default();
@@ -345,11 +395,11 @@ async fn test_dual_mode_extraction_comparison() {
     // Create agentic system using the same pattern as working tests
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
     let lorebook_service = Arc::new(LorebookService::new(
-        test_app.db_pool.clone(), 
+        test_app.db_pool.clone(),
         Arc::new(EncryptionService::new()),
-        test_app.qdrant_service.clone()
+        test_app.qdrant_service.clone(),
     ));
-    
+
     let agentic_runner = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
         chronicle_service.clone(),
@@ -361,10 +411,8 @@ async fn test_dual_mode_extraction_comparison() {
     );
 
     // Create extraction dispatcher with dual mode
-    let dispatcher = ExtractionDispatcher::new(
-        Arc::new(feature_flags),
-        Some(Arc::new(agentic_runner)),
-    );
+    let dispatcher =
+        ExtractionDispatcher::new(Arc::new(feature_flags), Some(Arc::new(agentic_runner)));
 
     // Create test messages (mundane conversation)
     let messages = vec![
@@ -408,13 +456,9 @@ async fn test_dual_mode_extraction_comparison() {
     let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
     // Run dual mode extraction
-    let result = dispatcher.extract_events_from_chat(
-        user_id,
-        session_id,
-        None,
-        &messages,
-        &session_dek,
-    ).await;
+    let result = dispatcher
+        .extract_events_from_chat(user_id, session_id, None, &messages, &session_dek)
+        .await;
 
     // Verify dual mode ran (even though manual is placeholder)
     assert!(result.is_ok(), "Dual mode extraction should complete");
@@ -422,7 +466,10 @@ async fn test_dual_mode_extraction_comparison() {
 
     // In dual mode, should return agentic result if it succeeded
     assert_eq!(extraction_result.mode_used, ExtractionMode::AgenticOnly);
-    assert!(extraction_result.success, "Agentic extraction should succeed");
+    assert!(
+        extraction_result.success,
+        "Agentic extraction should succeed"
+    );
 
     println!("✓ Dual mode extraction comparison test passed");
 }
@@ -431,15 +478,23 @@ async fn test_dual_mode_extraction_comparison() {
 async fn test_agentic_workflow_with_json_parsing_failure() {
     let test_app = spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
-    
+
     // Create test user
-    let user = create_test_user(&test_app.db_pool, "test_user4".to_string(), "password123".to_string()).await.unwrap();
+    let user = create_test_user(
+        &test_app.db_pool,
+        "test_user4".to_string(),
+        "password123".to_string(),
+    )
+    .await
+    .unwrap();
     _guard.add_user(user.id);
     let user_id = user.id;
     let session_id = Uuid::new_v4();
 
     // Create chat session (required for foreign key constraint)
-    create_test_chat_session(&test_app.db_pool, user_id, session_id).await.unwrap();
+    create_test_chat_session(&test_app.db_pool, user_id, session_id)
+        .await
+        .unwrap();
 
     // Create feature flags with very short timeout
     let mut feature_flags = NarrativeFeatureFlags::default();
@@ -454,11 +509,11 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
     // Create agentic system using the same pattern as working tests
     let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
     let lorebook_service = Arc::new(LorebookService::new(
-        test_app.db_pool.clone(), 
+        test_app.db_pool.clone(),
         Arc::new(EncryptionService::new()),
-        test_app.qdrant_service.clone()
+        test_app.qdrant_service.clone(),
     ));
-    
+
     let agentic_runner = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
         chronicle_service.clone(),
@@ -470,49 +525,49 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
     );
 
     // Create extraction dispatcher
-    let dispatcher = ExtractionDispatcher::new(
-        Arc::new(feature_flags),
-        Some(Arc::new(agentic_runner)),
-    );
+    let dispatcher =
+        ExtractionDispatcher::new(Arc::new(feature_flags), Some(Arc::new(agentic_runner)));
 
     // Create test messages
-    let messages = vec![
-        ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
-            message_type: MessageRole::User,
-            content: "This should cause JSON parsing failure".as_bytes().to_vec(),
-            content_nonce: Some(vec![1, 2, 3, 4]),
-            created_at: Utc::now(),
-            user_id,
-            prompt_tokens: Some(5),
-            completion_tokens: Some(0),
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
-            model_name: "gemini-2.5-pro".to_string(),
-            status: "completed".to_string(),
-            error_message: None,
-            superseded_at: None,
-        },
-    ];
+    let messages = vec![ChatMessage {
+        id: Uuid::new_v4(),
+        session_id,
+        message_type: MessageRole::User,
+        content: "This should cause JSON parsing failure".as_bytes().to_vec(),
+        content_nonce: Some(vec![1, 2, 3, 4]),
+        created_at: Utc::now(),
+        user_id,
+        prompt_tokens: Some(5),
+        completion_tokens: Some(0),
+        raw_prompt_ciphertext: None,
+        raw_prompt_nonce: None,
+        model_name: "gemini-2.5-pro".to_string(),
+        status: "completed".to_string(),
+        error_message: None,
+        superseded_at: None,
+    }];
 
     // Create session DEK for testing
     let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
     // Run extraction (should fail due to JSON parsing error in mock AI response)
-    let result = dispatcher.extract_events_from_chat(
-        user_id,
-        session_id,
-        None,
-        &messages,
-        &session_dek,
-    ).await;
+    let result = dispatcher
+        .extract_events_from_chat(user_id, session_id, None, &messages, &session_dek)
+        .await;
 
     // Currently, JSON parsing errors cause the entire extraction to fail
     // This demonstrates a limitation where only timeouts trigger fallback, not other errors
-    assert!(result.is_err(), "Should fail due to JSON parsing error in mock AI response");
+    assert!(
+        result.is_err(),
+        "Should fail due to JSON parsing error in mock AI response"
+    );
     let error = result.unwrap_err();
-    assert!(error.to_string().contains("Failed to parse structured response"), "Error should mention JSON parsing failure");
+    assert!(
+        error
+            .to_string()
+            .contains("Failed to parse structured response"),
+        "Error should mention JSON parsing failure"
+    );
 
     println!("✓ Agentic workflow JSON parsing failure test passed");
 }
@@ -541,10 +596,7 @@ async fn test_feature_flag_user_rollout() {
     feature_flags.enable_auto_lorebook_creation = true;
     feature_flags.enable_auto_chronicle_creation = true;
 
-    let dispatcher = ExtractionDispatcher::new(
-        Arc::new(feature_flags.clone()),
-        None,
-    );
+    let dispatcher = ExtractionDispatcher::new(Arc::new(feature_flags.clone()), None);
 
     assert!(dispatcher.should_enable_realtime_extraction("test_user_1"));
     assert!(dispatcher.should_enable_auto_lorebook_creation("test_user_1"));
@@ -554,10 +606,7 @@ async fn test_feature_flag_user_rollout() {
     feature_flags.agentic_rollout_percentage = 0;
     feature_flags.force_enable_users = vec!["special_user".to_string()];
 
-    let dispatcher = ExtractionDispatcher::new(
-        Arc::new(feature_flags),
-        None,
-    );
+    let dispatcher = ExtractionDispatcher::new(Arc::new(feature_flags), None);
 
     assert!(!dispatcher.should_enable_realtime_extraction("regular_user"));
     assert!(dispatcher.should_enable_realtime_extraction("special_user"));

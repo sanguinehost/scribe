@@ -1423,12 +1423,15 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     let auth_backend_for_test = Arc::new(scribe_backend::auth::user_store::Backend::new(
         test_app.db_pool.clone(),
     ));
-    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),

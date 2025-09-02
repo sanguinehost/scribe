@@ -1,13 +1,13 @@
 // backend/src/llm/llamacpp/health.rs
 // Health monitoring and diagnostics for LlamaCpp server
 
-use crate::llm::llamacpp::{LocalLlmError, LlamaCppConfig};
+use crate::llm::llamacpp::{LlamaCppConfig, LocalLlmError};
 
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
-use tracing::{debug, info, warn, error, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 /// Health status of the LlamaCpp server
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,12 +88,12 @@ impl HealthChecker {
     /// Create a new health checker
     pub fn new(config: LlamaCppConfig) -> Self {
         let health_config = HealthCheckConfig::default();
-        
+
         let http_client = HttpClient::builder()
             .timeout(Duration::from_secs(health_config.timeout_seconds))
             .build()
             .expect("Failed to create HTTP client for health checker");
-        
+
         Self {
             config,
             health_config,
@@ -102,14 +102,14 @@ impl HealthChecker {
             server_start_time: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
-    
+
     /// Create a health checker with custom configuration
     pub fn new_with_config(config: LlamaCppConfig, health_config: HealthCheckConfig) -> Self {
         let http_client = HttpClient::builder()
             .timeout(Duration::from_secs(health_config.timeout_seconds))
             .build()
             .expect("Failed to create HTTP client for health checker");
-        
+
         Self {
             config,
             health_config,
@@ -118,7 +118,7 @@ impl HealthChecker {
             server_start_time: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
-    
+
     /// Perform a comprehensive health check
     #[instrument(skip(self))]
     pub async fn check_health(&self) -> Result<HealthStatus, LocalLlmError> {
@@ -135,22 +135,26 @@ impl HealthChecker {
             last_check_time: SystemTime::now(),
             uptime_seconds: None,
         };
-        
+
         debug!("Starting health check for LlamaCpp server");
-        
+
         // Check server responsiveness
         match self.check_server_responsive().await {
             Ok(responsive) => {
                 status.server_responsive = responsive;
                 if !responsive {
-                    status.error_messages.push("Server not responsive".to_string());
+                    status
+                        .error_messages
+                        .push("Server not responsive".to_string());
                 }
             }
             Err(e) => {
-                status.error_messages.push(format!("Server check failed: {}", e));
+                status
+                    .error_messages
+                    .push(format!("Server check failed: {}", e));
             }
         }
-        
+
         // Check if model is loaded (if server is responsive)
         if status.server_responsive && self.health_config.check_model_endpoint {
             match self.check_model_loaded().await {
@@ -161,57 +165,72 @@ impl HealthChecker {
                     }
                 }
                 Err(e) => {
-                    status.error_messages.push(format!("Model check failed: {}", e));
+                    status
+                        .error_messages
+                        .push(format!("Model check failed: {}", e));
                 }
             }
         }
-        
+
         // Check system resources
         if self.health_config.check_system_resources {
             if let Ok(memory_usage) = self.get_memory_usage().await {
                 status.memory_usage_mb = memory_usage;
             }
-            
+
             if let Ok(cpu_usage) = self.get_cpu_usage().await {
                 status.cpu_usage_percent = Some(cpu_usage);
             }
-            
+
             if let Ok(gpu_usage) = self.get_gpu_usage().await {
                 status.gpu_usage_percent = gpu_usage;
             }
         }
-        
+
         // Calculate uptime
         if let Ok(server_start) = self.server_start_time.read() {
             if let Some(start) = *server_start {
                 status.uptime_seconds = Some(start.elapsed().as_secs());
             }
         }
-        
+
         // Calculate response time
         status.response_time_ms = start_time.elapsed().as_millis() as u64;
-        
+
         // Determine overall health
-        status.is_healthy = status.server_responsive && 
-                          (status.model_loaded || !self.health_config.check_model_endpoint) &&
-                          status.error_messages.is_empty();
-        
+        status.is_healthy = status.server_responsive
+            && (status.model_loaded || !self.health_config.check_model_endpoint)
+            && status.error_messages.is_empty();
+
         // Update consecutive failures counter
         if status.is_healthy {
-            self.consecutive_failures.store(0, std::sync::atomic::Ordering::Relaxed);
+            self.consecutive_failures
+                .store(0, std::sync::atomic::Ordering::Relaxed);
         } else {
-            let failures = self.consecutive_failures.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            warn!("Health check failed ({} consecutive failures): {:?}", failures, status.error_messages);
+            let failures = self
+                .consecutive_failures
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
+            warn!(
+                "Health check failed ({} consecutive failures): {:?}",
+                failures, status.error_messages
+            );
         }
-        
-        debug!("Health check completed in {}ms, healthy: {}", status.response_time_ms, status.is_healthy);
+
+        debug!(
+            "Health check completed in {}ms, healthy: {}",
+            status.response_time_ms, status.is_healthy
+        );
         Ok(status)
     }
-    
+
     /// Check if the server is responsive
     async fn check_server_responsive(&self) -> Result<bool, LocalLlmError> {
-        let url = format!("http://{}:{}/health", self.config.server_host, self.config.server_port);
-        
+        let url = format!(
+            "http://{}:{}/health",
+            self.config.server_host, self.config.server_port
+        );
+
         match self.http_client.get(&url).send().await {
             Ok(response) => {
                 let is_success = response.status().is_success();
@@ -224,21 +243,28 @@ impl HealthChecker {
             }
         }
     }
-    
+
     /// Check if a model is currently loaded
     async fn check_model_loaded(&self) -> Result<bool, LocalLlmError> {
-        let url = format!("http://{}:{}/v1/models", self.config.server_host, self.config.server_port);
-        
+        let url = format!(
+            "http://{}:{}/v1/models",
+            self.config.server_host, self.config.server_port
+        );
+
         match self.http_client.get(&url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     if let Ok(models_response) = response.json::<ModelsResponse>().await {
                         let has_models = !models_response.data.is_empty();
-                        debug!("Models loaded: {}, count: {}", has_models, models_response.data.len());
+                        debug!(
+                            "Models loaded: {}, count: {}",
+                            has_models,
+                            models_response.data.len()
+                        );
                         return Ok(has_models);
                     }
                 }
-                
+
                 // Fallback: try the server info endpoint
                 self.check_server_info().await
             }
@@ -248,17 +274,23 @@ impl HealthChecker {
             }
         }
     }
-    
+
     /// Check server info endpoint as fallback
     async fn check_server_info(&self) -> Result<bool, LocalLlmError> {
-        let url = format!("http://{}:{}/v1/info", self.config.server_host, self.config.server_port);
-        
+        let url = format!(
+            "http://{}:{}/v1/info",
+            self.config.server_host, self.config.server_port
+        );
+
         match self.http_client.get(&url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     if let Ok(info) = response.json::<ServerInfoResponse>().await {
                         let has_model = !info.model.is_empty() && info.model != "unknown";
-                        debug!("Server info - model: '{}', status: '{}'", info.model, info.status);
+                        debug!(
+                            "Server info - model: '{}', status: '{}'",
+                            info.model, info.status
+                        );
                         return Ok(has_model);
                     }
                 }
@@ -267,45 +299,49 @@ impl HealthChecker {
             Err(_) => Ok(false),
         }
     }
-    
+
     /// Get current memory usage in MB
     async fn get_memory_usage(&self) -> Result<f32, LocalLlmError> {
         // Use the same function from metrics module
         Ok(crate::llm::llamacpp::metrics::get_current_memory_usage_mb())
     }
-    
+
     /// Get current CPU usage percentage
     async fn get_cpu_usage(&self) -> Result<f32, LocalLlmError> {
         // Try to get CPU usage from system
         #[cfg(feature = "local-llm")]
         {
             use sysinfo::System;
-            
+
             let mut system = System::new();
             system.refresh_cpu();
-            
+
             // Wait a bit for accurate CPU measurement
             tokio::time::sleep(Duration::from_millis(200)).await;
             system.refresh_cpu();
-            
-            let cpu_usage = system.cpus().iter()
-                .map(|cpu| cpu.cpu_usage())
-                .sum::<f32>() / system.cpus().len() as f32;
-            
+
+            let cpu_usage = system.cpus().iter().map(|cpu| cpu.cpu_usage()).sum::<f32>()
+                / system.cpus().len() as f32;
+
             Ok(cpu_usage)
         }
-        
+
         #[cfg(not(feature = "local-llm"))]
         {
-            Err(LocalLlmError::ServerUnavailable("sysinfo not available".to_string()))
+            Err(LocalLlmError::ServerUnavailable(
+                "sysinfo not available".to_string(),
+            ))
         }
     }
-    
+
     /// Get current GPU usage percentage (if available)
     async fn get_gpu_usage(&self) -> Result<Option<f32>, LocalLlmError> {
         // Try to get GPU usage using nvidia-smi
         match Command::new("nvidia-smi")
-            .args(&["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"])
+            .args(&[
+                "--query-gpu=utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ])
             .output()
             .await
         {
@@ -323,59 +359,66 @@ impl HealthChecker {
                 debug!("nvidia-smi not available for GPU monitoring");
             }
         }
-        
+
         Ok(None)
     }
-    
+
     /// Get number of consecutive health check failures
     pub fn get_consecutive_failures(&self) -> u32 {
-        self.consecutive_failures.load(std::sync::atomic::Ordering::Relaxed)
+        self.consecutive_failures
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
-    
+
     /// Check if the server should be considered failed
     pub fn is_server_failed(&self) -> bool {
         self.get_consecutive_failures() >= self.health_config.max_consecutive_failures
     }
-    
+
     /// Reset consecutive failures counter
     pub fn reset_failures(&self) {
-        self.consecutive_failures.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.consecutive_failures
+            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
-    
+
     /// Set server start time (for uptime calculation)
     pub fn set_server_start_time(&self, start_time: Instant) {
         if let Ok(mut server_start) = self.server_start_time.write() {
             *server_start = Some(start_time);
         }
     }
-    
+
     /// Perform a quick ping to check basic connectivity
     pub async fn ping(&self) -> Result<Duration, LocalLlmError> {
         let start = Instant::now();
-        let url = format!("http://{}:{}/health", self.config.server_host, self.config.server_port);
-        
+        let url = format!(
+            "http://{}:{}/health",
+            self.config.server_host, self.config.server_port
+        );
+
         match self.http_client.get(&url).send().await {
             Ok(response) => {
                 let duration = start.elapsed();
                 if response.status().is_success() {
                     Ok(duration)
                 } else {
-                    Err(LocalLlmError::ServerUnavailable(
-                        format!("Server returned status: {}", response.status())
-                    ))
+                    Err(LocalLlmError::ServerUnavailable(format!(
+                        "Server returned status: {}",
+                        response.status()
+                    )))
                 }
             }
-            Err(e) => Err(LocalLlmError::ServerUnavailable(
-                format!("Ping failed: {}", e)
-            )),
+            Err(e) => Err(LocalLlmError::ServerUnavailable(format!(
+                "Ping failed: {}",
+                e
+            ))),
         }
     }
-    
+
     /// Get health check configuration
     pub fn get_config(&self) -> &HealthCheckConfig {
         &self.health_config
     }
-    
+
     /// Update health check configuration
     pub fn update_config(&mut self, config: HealthCheckConfig) {
         self.health_config = config;
@@ -393,7 +436,7 @@ pub async fn quick_health_check(config: &LlamaCppConfig) -> Result<bool, LocalLl
 mod tests {
     use super::*;
     use std::time::Duration;
-    
+
     fn create_test_config() -> LlamaCppConfig {
         LlamaCppConfig {
             enabled: true,
@@ -412,20 +455,20 @@ mod tests {
             chat_template: None,
         }
     }
-    
+
     #[test]
     fn test_health_checker_creation() {
         let config = create_test_config();
         let checker = HealthChecker::new(config);
-        
+
         assert_eq!(checker.get_consecutive_failures(), 0);
         assert!(!checker.is_server_failed());
     }
-    
+
     #[test]
     fn test_health_config_defaults() {
         let config = HealthCheckConfig::default();
-        
+
         assert!(config.enabled);
         assert_eq!(config.check_interval_seconds, 30);
         assert_eq!(config.timeout_seconds, 10);
@@ -433,16 +476,16 @@ mod tests {
         assert!(config.check_model_endpoint);
         assert!(config.check_system_resources);
     }
-    
+
     #[tokio::test]
     async fn test_health_status_structure() {
         let config = create_test_config();
         let checker = HealthChecker::new(config);
-        
+
         // This will likely fail since there's no actual server running,
         // but we can test the structure
         let result = checker.check_health().await;
-        
+
         match result {
             Ok(status) => {
                 // If somehow successful, validate structure
@@ -455,49 +498,51 @@ mod tests {
             }
         }
     }
-    
+
     #[test]
     fn test_consecutive_failures() {
         let config = create_test_config();
         let checker = HealthChecker::new(config);
-        
+
         assert_eq!(checker.get_consecutive_failures(), 0);
         assert!(!checker.is_server_failed());
-        
+
         // Simulate failures by manually incrementing
         for _ in 0..3 {
-            checker.consecutive_failures.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            checker
+                .consecutive_failures
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        
+
         assert!(checker.is_server_failed());
-        
+
         checker.reset_failures();
         assert_eq!(checker.get_consecutive_failures(), 0);
         assert!(!checker.is_server_failed());
     }
-    
+
     #[test]
     fn test_server_start_time() {
         let config = create_test_config();
         let checker = HealthChecker::new(config);
-        
+
         let start_time = Instant::now();
         checker.set_server_start_time(start_time);
-        
+
         // We can't easily test the exact uptime calculation without waiting,
         // but we can verify the start time was set
         if let Ok(server_start) = checker.server_start_time.read() {
             assert!(server_start.is_some());
         }
     }
-    
+
     #[tokio::test]
     async fn test_memory_usage() {
         let config = create_test_config();
         let checker = HealthChecker::new(config);
-        
+
         let result = checker.get_memory_usage().await;
-        
+
         // Memory usage should always be available (even if 0.0 fallback)
         match result {
             Ok(usage) => {
@@ -508,14 +553,14 @@ mod tests {
             }
         }
     }
-    
+
     #[tokio::test]
     async fn test_quick_health_check() {
         let config = create_test_config();
-        
+
         // This will likely fail due to no server, but shouldn't panic
         let result = quick_health_check(&config).await;
-        
+
         match result {
             Ok(healthy) => {
                 // If successful, should be a boolean

@@ -47,7 +47,6 @@ pub struct UpdateUserRoleRequest {
     pub role: UserRole,
 }
 
-
 // Middleware to check if user is Admin
 fn require_admin(auth_session: &CurrentAuthSession) -> Result<(), AppError> {
     auth_session.user.as_ref().map_or_else(|| {
@@ -321,7 +320,6 @@ async fn update_user_role_handler(
 
     Ok(Json(user_detail).into_response())
 }
-
 
 pub fn admin_routes() -> Router<AppState> {
     Router::new()

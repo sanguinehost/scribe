@@ -2,6 +2,7 @@ use crate::{
     auth::user_store::Backend as AuthBackend,
     config::Config,
     llm::{AiClient, EmbeddingClient},
+    middleware::llm_security::LlmRateLimiter,
     services::{
         chat_override_service::ChatOverrideService,
         chronicle_service::ChronicleService,
@@ -18,12 +19,13 @@ use crate::{
     state::{AppState, AppStateServices, DbPool},
     text_processing::chunking::ChunkConfig,
     vector_db::qdrant_client::QdrantClientServiceTrait,
-    middleware::llm_security::LlmRateLimiter,
 };
 use std::sync::Arc;
 
 #[cfg(feature = "local-llm")]
-use crate::llm::llamacpp::{SecurityAuditLogger, ModelIntegrityVerifier, integrity::TrustedSources};
+use crate::llm::llamacpp::{
+    ModelIntegrityVerifier, SecurityAuditLogger, integrity::TrustedSources,
+};
 
 /// Builder for creating AppStateServices with sensible defaults and optional overrides
 pub struct AppStateServicesBuilder {
@@ -123,7 +125,6 @@ impl AppStateServicesBuilder {
         self
     }
 
-
     pub fn with_email_service(mut self, service: Arc<dyn EmailService + Send + Sync>) -> Self {
         self.email_service = Some(service);
         self
@@ -145,7 +146,6 @@ impl AppStateServicesBuilder {
         let auth_backend = self
             .auth_backend
             .unwrap_or_else(|| Arc::new(AuthBackend::new(self.db_pool.clone())));
-
 
         // Get or create email service
         let email_service = match self.email_service {
@@ -202,7 +202,7 @@ impl AppStateServicesBuilder {
 
         // For required external services, we need them to be provided
         let ai_client = self.ai_client.expect("AI client must be provided");
-        
+
         // Create AI client factory
         let ai_client_factory = Arc::new(crate::services::ai_client_factory::AiClientFactory::new(
             self.db_pool.clone(),
@@ -228,9 +228,7 @@ impl AppStateServicesBuilder {
         });
 
         // Create chronicle service for narrative intelligence
-        let _chronicle_service = Arc::new(ChronicleService::new(
-            self.db_pool.clone(),
-        ));
+        let _chronicle_service = Arc::new(ChronicleService::new(self.db_pool.clone()));
 
         // Get or create rate limiter
         let rate_limiter = self.rate_limiter.unwrap_or_else(|| {
@@ -263,10 +261,12 @@ impl AppStateServicesBuilder {
             #[cfg(feature = "local-llm")]
             security_audit_logger: Some(Arc::new(SecurityAuditLogger::new(10000))), // 10K events max
             #[cfg(feature = "local-llm")]
-            model_integrity_verifier: Some(Arc::new(ModelIntegrityVerifier::new(Some(TrustedSources::default())))),
+            model_integrity_verifier: Some(Arc::new(ModelIntegrityVerifier::new(Some(
+                TrustedSources::default(),
+            )))),
             // narrative_intelligence_service will be added after AppState is built
         };
-        
+
         Ok(services)
     }
 }
@@ -369,7 +369,6 @@ impl AppStateBuilder {
         }
     }
 
-
     pub fn with_email_service(self, service: Arc<dyn EmailService + Send + Sync>) -> Self {
         Self {
             services_builder: self.services_builder.with_email_service(service),
@@ -381,22 +380,21 @@ impl AppStateBuilder {
     pub async fn build(self) -> Result<AppState, Box<dyn std::error::Error + Send + Sync>> {
         let services = self.services_builder.build().await?;
         let mut app_state = AppState::new(self.pool, self.config, services);
-        
+
         // Now create the narrative intelligence service with the fully constructed AppState
-        let narrative_intelligence_service = Arc::new(
-            NarrativeIntelligenceService::for_development_with_deps(
+        let narrative_intelligence_service =
+            Arc::new(NarrativeIntelligenceService::for_development_with_deps(
                 app_state.ai_client.clone(),
                 Arc::new(ChronicleService::new(app_state.pool.clone())),
                 app_state.lorebook_service.clone(),
                 app_state.qdrant_service.clone(),
                 app_state.embedding_client.clone(),
                 Arc::new(app_state.clone()),
-            )
-        );
-        
+            ));
+
         // Set the narrative intelligence service
         app_state.set_narrative_intelligence_service(narrative_intelligence_service);
-        
+
         Ok(app_state)
     }
 }

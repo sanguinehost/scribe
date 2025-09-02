@@ -25,18 +25,22 @@ pub mod user_settings_service;
 
 // Re-export agentic components
 pub use agentic::{
-    AgenticNarrativeFactory, NarrativeAgentRunner, NarrativeWorkflowConfig, 
-    ScribeTool, ToolRegistry
+    AgenticNarrativeFactory, NarrativeAgentRunner, NarrativeWorkflowConfig, ScribeTool,
+    ToolRegistry,
 };
 
 pub use character_service::CharacterService;
 pub use chat_override_service::ChatOverrideService;
-pub use chronicle_deduplication_service::{ChronicleDeduplicationService, DeduplicationConfig, DuplicateDetectionResult};
+pub use chronicle_deduplication_service::{
+    ChronicleDeduplicationService, DeduplicationConfig, DuplicateDetectionResult,
+};
 pub use chronicle_service::ChronicleService;
 pub use email_service::{EmailService, create_email_service};
 pub use encryption_service::EncryptionService;
 pub use lorebook::LorebookService;
-pub use narrative_intelligence_service::{NarrativeIntelligenceService, NarrativeProcessingResult, NarrativeProcessingConfig};
+pub use narrative_intelligence_service::{
+    NarrativeIntelligenceService, NarrativeProcessingConfig, NarrativeProcessingResult,
+};
 pub use secure_llm_service::SecureLlmService;
 pub use user_persona_service::UserPersonaService;
 pub use user_settings_service::UserSettingsService;

@@ -11,7 +11,7 @@ use tower::ServiceExt;
 #[ignore] // Use real AI for this test
 async fn test_character_generation_with_lorebook_context() {
     let test_app = test_helpers::spawn_app(true, true, false).await; // Use real AI, mock vector DB
-    
+
     // Create test user and login
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
@@ -30,24 +30,44 @@ async fn test_character_generation_with_lorebook_context() {
             json!({
                 "identifier": "loreuser@example.com",
                 "password": "password123"
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+
     // Debug login response if it fails
     let login_status = login_response.status();
     if login_status != StatusCode::OK {
-        let login_body = login_response.into_body().collect().await.unwrap().to_bytes();
+        let login_body = login_response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
         let login_response_text = String::from_utf8(login_body.to_vec()).unwrap();
-        panic!("Login failed with status {}: {}", login_status, login_response_text);
+        panic!(
+            "Login failed with status {}: {}",
+            login_status, login_response_text
+        );
     }
 
     // Extract session cookie from login response
     let cookie_header = login_response.headers().get("set-cookie");
     let session_cookie = if let Some(cookie) = cookie_header {
-        cookie.to_str().unwrap().split(';').next().unwrap().to_string()
+        cookie
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string()
     } else {
         panic!("No session cookie found in login response");
     };
@@ -62,14 +82,25 @@ async fn test_character_generation_with_lorebook_context() {
             json!({
                 "name": "Lassenia World",
                 "description": "Fantasy world lore for character generation testing"
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let lorebook_response = test_app.router.clone().oneshot(create_lorebook_request).await.unwrap();
+    let lorebook_response = test_app
+        .router
+        .clone()
+        .oneshot(create_lorebook_request)
+        .await
+        .unwrap();
     assert_eq!(lorebook_response.status(), StatusCode::CREATED);
-    
-    let lorebook_body = lorebook_response.into_body().collect().await.unwrap().to_bytes();
+
+    let lorebook_body = lorebook_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let lorebook_data: serde_json::Value = serde_json::from_slice(&lorebook_body).unwrap();
     let lorebook_id = lorebook_data["id"].as_str().unwrap();
 
@@ -88,7 +119,12 @@ async fn test_character_generation_with_lorebook_context() {
         ))
         .unwrap();
 
-    let entry_response = test_app.router.clone().oneshot(create_entry_request).await.unwrap();
+    let entry_response = test_app
+        .router
+        .clone()
+        .oneshot(create_entry_request)
+        .await
+        .unwrap();
     assert_eq!(entry_response.status(), StatusCode::CREATED);
 
     // Add another related entry
@@ -106,14 +142,20 @@ async fn test_character_generation_with_lorebook_context() {
         ))
         .unwrap();
 
-    let entry2_response = test_app.router.clone().oneshot(create_entry2_request).await.unwrap();
+    let entry2_response = test_app
+        .router
+        .clone()
+        .oneshot(create_entry2_request)
+        .await
+        .unwrap();
     assert_eq!(entry2_response.status(), StatusCode::CREATED);
 
     // Wait a moment for embedding processing
     tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
 
     // Set up mock response for retrieve_relevant_chunks (called during character generation)
-    test_app.mock_embedding_pipeline_service
+    test_app
+        .mock_embedding_pipeline_service
         .add_retrieve_response(Ok(vec![]));
 
     // Step 3: Test character generation with lorebook context
@@ -137,50 +179,68 @@ async fn test_character_generation_with_lorebook_context() {
         ))
         .unwrap();
 
-    let generate_response = test_app.router.clone().oneshot(generate_request).await.unwrap();
-    
+    let generate_response = test_app
+        .router
+        .clone()
+        .oneshot(generate_request)
+        .await
+        .unwrap();
+
     let status = generate_response.status();
-    let body = generate_response.into_body().collect().await.unwrap().to_bytes();
+    let body = generate_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let response_text = String::from_utf8(body.to_vec()).unwrap();
-    
+
     println!("Generate response status: {}", status);
     println!("Generate response body: {}", response_text);
 
     // Assertions
     assert_eq!(status, StatusCode::OK, "Generation should succeed");
-    
-    let json_response: serde_json::Value = serde_json::from_str(&response_text)
-        .expect("Response should be valid JSON");
-    
-    assert!(json_response.get("content").is_some(), "Response should have 'content' field");
-    let content = json_response["content"].as_str().expect("Content should be string");
+
+    let json_response: serde_json::Value =
+        serde_json::from_str(&response_text).expect("Response should be valid JSON");
+
+    assert!(
+        json_response.get("content").is_some(),
+        "Response should have 'content' field"
+    );
+    let content = json_response["content"]
+        .as_str()
+        .expect("Content should be string");
     assert!(!content.trim().is_empty(), "Content should not be empty");
-    
+
     // Verify that lorebook context was integrated
     let content_lower = content.to_lowercase();
-    let has_character_elements = content_lower.contains("lassenia") 
-        || content_lower.contains("princess") 
+    let has_character_elements = content_lower.contains("lassenia")
+        || content_lower.contains("princess")
         || content_lower.contains("spirit");
-    let has_world_elements = content_lower.contains("ethereal") 
-        || content_lower.contains("kingdom") 
+    let has_world_elements = content_lower.contains("ethereal")
+        || content_lower.contains("kingdom")
         || content_lower.contains("crystalline");
-    
+
     // At least one type of lorebook context should be present
     assert!(
         has_character_elements || has_world_elements,
         "Generated content should incorporate lorebook context. Content: {}",
         content
     );
-    
+
     println!("✅ Successfully generated character description with lorebook context");
-    println!("Content preview: {}...", content.chars().take(200).collect::<String>());
+    println!(
+        "Content preview: {}...",
+        content.chars().take(200).collect::<String>()
+    );
 }
 
 #[tokio::test]
 #[ignore] // Use real AI for this test
 async fn test_alternate_greeting_generation_with_lorebook() {
     let test_app = test_helpers::spawn_app(true, true, false).await;
-    
+
     // Create test user and login
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
@@ -199,13 +259,27 @@ async fn test_alternate_greeting_generation_with_lorebook() {
             json!({
                 "identifier": "greetinguser@example.com",
                 "password": "password123"
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    let session_cookie = login_response.headers().get("set-cookie")
-        .unwrap().to_str().unwrap().split(';').next().unwrap().to_string();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    let session_cookie = login_response
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
 
     // Create lorebook with scenario-relevant content
     let create_lorebook_request = Request::builder()
@@ -217,12 +291,23 @@ async fn test_alternate_greeting_generation_with_lorebook() {
             json!({
                 "name": "Academy Scenarios",
                 "description": "Settings and scenarios for academy-based roleplay"
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let lorebook_response = test_app.router.clone().oneshot(create_lorebook_request).await.unwrap();
-    let lorebook_body = lorebook_response.into_body().collect().await.unwrap().to_bytes();
+    let lorebook_response = test_app
+        .router
+        .clone()
+        .oneshot(create_lorebook_request)
+        .await
+        .unwrap();
+    let lorebook_body = lorebook_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let lorebook_data: serde_json::Value = serde_json::from_slice(&lorebook_body).unwrap();
     let lorebook_id = lorebook_data["id"].as_str().unwrap();
 
@@ -241,14 +326,20 @@ async fn test_alternate_greeting_generation_with_lorebook() {
         ))
         .unwrap();
 
-    let entry_response = test_app.router.clone().oneshot(create_entry_request).await.unwrap();
+    let entry_response = test_app
+        .router
+        .clone()
+        .oneshot(create_entry_request)
+        .await
+        .unwrap();
     assert_eq!(entry_response.status(), StatusCode::CREATED);
 
     // Wait for embedding processing
     tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
 
     // Set up mock response for retrieve_relevant_chunks (called during character generation)
-    test_app.mock_embedding_pipeline_service
+    test_app
+        .mock_embedding_pipeline_service
         .add_retrieve_response(Ok(vec![]));
 
     // Test alternate greeting generation with lorebook context
@@ -274,39 +365,57 @@ async fn test_alternate_greeting_generation_with_lorebook() {
         ))
         .unwrap();
 
-    let generate_response = test_app.router.clone().oneshot(generate_request).await.unwrap();
-    
+    let generate_response = test_app
+        .router
+        .clone()
+        .oneshot(generate_request)
+        .await
+        .unwrap();
+
     let status = generate_response.status();
-    let body = generate_response.into_body().collect().await.unwrap().to_bytes();
+    let body = generate_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let response_text = String::from_utf8(body.to_vec()).unwrap();
-    
+
     println!("Alternate greeting response status: {}", status);
     println!("Alternate greeting response: {}", response_text);
 
     assert_eq!(status, StatusCode::OK);
-    
+
     let json_response: serde_json::Value = serde_json::from_str(&response_text).unwrap();
     let content = json_response["content"].as_str().unwrap();
-    
+
     // Verify the greeting incorporates lorebook context
     let content_lower = content.to_lowercase();
-    let has_library_context = content_lower.contains("library") 
-        || content_lower.contains("books") 
+    let has_library_context = content_lower.contains("library")
+        || content_lower.contains("books")
         || content_lower.contains("study");
-    let has_character_voice = content_lower.contains("aria") 
-        || content.contains("\""); // Should include dialogue
-    
-    assert!(has_library_context, "Alternate greeting should incorporate library context from lorebook");
-    assert!(has_character_voice, "Alternate greeting should maintain character voice");
-    assert!(content.len() > 100, "Alternate greeting should be substantial");
-    
+    let has_character_voice = content_lower.contains("aria") || content.contains("\""); // Should include dialogue
+
+    assert!(
+        has_library_context,
+        "Alternate greeting should incorporate library context from lorebook"
+    );
+    assert!(
+        has_character_voice,
+        "Alternate greeting should maintain character voice"
+    );
+    assert!(
+        content.len() > 100,
+        "Alternate greeting should be substantial"
+    );
+
     println!("✅ Successfully generated alternate greeting with lorebook context");
 }
 
 #[tokio::test]
 async fn test_character_generation_without_lorebook() {
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI for faster testing
-    
+
     // Create test user and login
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
@@ -324,13 +433,27 @@ async fn test_character_generation_without_lorebook() {
             json!({
                 "identifier": "nolorebook@example.com",
                 "password": "password123"
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    let session_cookie = login_response.headers().get("set-cookie")
-        .unwrap().to_str().unwrap().split(';').next().unwrap().to_string();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    let session_cookie = login_response
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
 
     // Test generation without lorebook_id (should still work)
     let generate_request = Request::builder()
@@ -348,28 +471,46 @@ async fn test_character_generation_without_lorebook() {
                 },
                 "generation_options": null,
                 "lorebook_id": null
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let generate_response = test_app.router.clone().oneshot(generate_request).await.unwrap();
-    
+    let generate_response = test_app
+        .router
+        .clone()
+        .oneshot(generate_request)
+        .await
+        .unwrap();
+
     let status = generate_response.status();
-    assert_eq!(status, StatusCode::OK, "Generation should work without lorebook");
-    
-    let body = generate_response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "Generation should work without lorebook"
+    );
+
+    let body = generate_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let response_text = String::from_utf8(body.to_vec()).unwrap();
     let json_response: serde_json::Value = serde_json::from_str(&response_text).unwrap();
-    
-    assert!(json_response.get("content").is_some(), "Should generate content without lorebook");
-    
+
+    assert!(
+        json_response.get("content").is_some(),
+        "Should generate content without lorebook"
+    );
+
     println!("✅ Character generation works correctly without lorebook");
 }
 
 #[tokio::test]
 async fn test_character_generation_with_invalid_lorebook_id() {
     let test_app = test_helpers::spawn_app(false, true, false).await;
-    
+
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "invalidlore@example.com".to_string(),
@@ -386,16 +527,31 @@ async fn test_character_generation_with_invalid_lorebook_id() {
             json!({
                 "identifier": "invalidlore@example.com",
                 "password": "password123"
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    let session_cookie = login_response.headers().get("set-cookie")
-        .unwrap().to_str().unwrap().split(';').next().unwrap().to_string();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    let session_cookie = login_response
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
 
     // Set up mock response for retrieve_relevant_chunks (will be called even with invalid lorebook ID)
-    test_app.mock_embedding_pipeline_service
+    test_app
+        .mock_embedding_pipeline_service
         .add_retrieve_response(Ok(vec![]));
 
     // The test uses mock AI - it should work with the default mock response
@@ -403,7 +559,7 @@ async fn test_character_generation_with_invalid_lorebook_id() {
 
     // Test with non-existent lorebook_id (should still generate, but without lorebook context)
     let fake_lorebook_id = "550e8400-e29b-41d4-a716-446655440000"; // Valid UUID format
-    
+
     let generate_request = Request::builder()
         .method(Method::POST)
         .uri("/api/characters/generate/field")
@@ -419,29 +575,47 @@ async fn test_character_generation_with_invalid_lorebook_id() {
                 },
                 "generation_options": null,
                 "lorebook_id": fake_lorebook_id
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let generate_response = test_app.router.clone().oneshot(generate_request).await.unwrap();
-    
+    let generate_response = test_app
+        .router
+        .clone()
+        .oneshot(generate_request)
+        .await
+        .unwrap();
+
     let status = generate_response.status();
     // Should still succeed - lorebook query failure should not break generation
-    assert_eq!(status, StatusCode::OK, "Generation should succeed even with invalid lorebook_id");
-    
-    let body = generate_response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "Generation should succeed even with invalid lorebook_id"
+    );
+
+    let body = generate_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let response_text = String::from_utf8(body.to_vec()).unwrap();
     let json_response: serde_json::Value = serde_json::from_str(&response_text).unwrap();
-    
-    assert!(json_response.get("content").is_some(), "Should generate content despite invalid lorebook");
-    
+
+    assert!(
+        json_response.get("content").is_some(),
+        "Should generate content despite invalid lorebook"
+    );
+
     println!("✅ Character generation gracefully handles invalid lorebook IDs");
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_request_validation_with_lorebook_integration() {
     let test_app = test_helpers::spawn_app(false, true, false).await;
-    
+
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "validation@example.com".to_string(),
@@ -458,13 +632,27 @@ async fn test_request_validation_with_lorebook_integration() {
             json!({
                 "identifier": "validation@example.com",
                 "password": "password123"
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    let session_cookie = login_response.headers().get("set-cookie")
-        .unwrap().to_str().unwrap().split(';').next().unwrap().to_string();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    let session_cookie = login_response
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
 
     // Test with malformed lorebook_id
     let generate_request = Request::builder()
@@ -475,19 +663,25 @@ async fn test_request_validation_with_lorebook_integration() {
         .body(Body::from(
             json!({
                 "field": "description",
-                "style": "auto", 
+                "style": "auto",
                 "user_prompt": "Test character",
                 "character_context": null,
                 "generation_options": null,
                 "lorebook_id": "not-a-valid-uuid"
-            }).to_string()
+            })
+            .to_string(),
         ))
         .unwrap();
 
-    let generate_response = test_app.router.clone().oneshot(generate_request).await.unwrap();
-    
+    let generate_response = test_app
+        .router
+        .clone()
+        .oneshot(generate_request)
+        .await
+        .unwrap();
+
     // Should return validation error for malformed UUID
     assert_eq!(generate_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    
+
     println!("✅ Request validation properly handles malformed lorebook_id");
 }

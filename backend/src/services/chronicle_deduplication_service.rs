@@ -1,18 +1,16 @@
 //! Chronicle Event Deduplication Service
-//! 
+//!
 //! Implements structured query-based de-duplication using Ars Fabula narrative ontology.
 //! This moves beyond simple semantic similarity to structured event reasoning.
 
-use tracing::{info, debug, instrument};
-use uuid::Uuid;
 use chrono::Duration;
-use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods};
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use tracing::{debug, info, instrument};
+use uuid::Uuid;
 
 use crate::{
-    errors::AppError,
-    models::chronicle_event::ChronicleEvent,
-    schema::chronicle_events::dsl as chronicle_events_dsl,
-    state::DbPool,
+    errors::AppError, models::chronicle_event::ChronicleEvent,
+    schema::chronicle_events::dsl as chronicle_events_dsl, state::DbPool,
 };
 
 /// Configuration for de-duplication behavior
@@ -31,7 +29,7 @@ pub struct DeduplicationConfig {
 impl Default for DeduplicationConfig {
     fn default() -> Self {
         Self {
-            time_window_minutes: 5, // 5 minute window
+            time_window_minutes: 5,       // 5 minute window
             actor_overlap_threshold: 0.6, // 60% actor overlap
             enable_action_similarity: true,
             max_events_to_check: 50,
@@ -73,11 +71,14 @@ impl ChronicleDeduplicationService {
         &self,
         new_event: &ChronicleEvent,
     ) -> Result<DuplicateDetectionResult, AppError> {
-        debug!("Checking for duplicates of event: {} at timestamp: {}", new_event.id, new_event.timestamp_iso8601);
+        debug!(
+            "Checking for duplicates of event: {} at timestamp: {}",
+            new_event.id, new_event.timestamp_iso8601
+        );
 
         // Get recent events from the same chronicle within the time window
         let candidate_events = self.get_candidate_events(new_event).await?;
-        
+
         if candidate_events.is_empty() {
             debug!("No candidate events found in time window for deduplication");
             return Ok(DuplicateDetectionResult {
@@ -116,14 +117,17 @@ impl ChronicleDeduplicationService {
         &self,
         new_event: &ChronicleEvent,
     ) -> Result<Vec<ChronicleEvent>, AppError> {
-        let connection = self.db_pool.get().await
-            .map_err(|e| AppError::DbPoolError(format!("Failed to get DB connection: {}", e)))?;
+        let connection =
+            self.db_pool.get().await.map_err(|e| {
+                AppError::DbPoolError(format!("Failed to get DB connection: {}", e))
+            })?;
 
         // Calculate time window - look backward only for deduplication
         // We want to find events that happened BEFORE this one within the time window
-        let time_window_start = new_event.timestamp_iso8601 - Duration::minutes(self.config.time_window_minutes);
+        let time_window_start =
+            new_event.timestamp_iso8601 - Duration::minutes(self.config.time_window_minutes);
         let time_window_end = new_event.timestamp_iso8601;
-        
+
         debug!(
             "Getting candidate events for timestamp {} with window {} minutes: {} to {}",
             new_event.timestamp_iso8601,
@@ -145,13 +149,18 @@ impl ChronicleDeduplicationService {
                     .filter(chronicle_events_dsl::chronicle_id.eq(chronicle_id))
                     .filter(chronicle_events_dsl::user_id.eq(user_id))
                     .filter(chronicle_events_dsl::id.ne(event_id)) // Exclude the new event itself
-                    .filter(chronicle_events_dsl::timestamp_iso8601.between(time_window_start, time_window_end))
+                    .filter(
+                        chronicle_events_dsl::timestamp_iso8601
+                            .between(time_window_start, time_window_end),
+                    )
                     .order(chronicle_events_dsl::timestamp_iso8601.desc())
                     .limit(max_events)
                     .load::<ChronicleEvent>(conn)
             })
             .await
-            .map_err(|e| AppError::DbInteractError(format!("Failed to interact with database: {}", e)))?
+            .map_err(|e| {
+                AppError::DbInteractError(format!("Failed to interact with database: {}", e))
+            })?
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         Ok(events)
@@ -163,7 +172,10 @@ impl ChronicleDeduplicationService {
         new_event: &ChronicleEvent,
         candidate: &ChronicleEvent,
     ) -> Result<Option<DuplicateDetectionResult>, AppError> {
-        debug!("Comparing events {} at {} and {} at {}", new_event.id, new_event.timestamp_iso8601, candidate.id, candidate.timestamp_iso8601);
+        debug!(
+            "Comparing events {} at {} and {} at {}",
+            new_event.id, new_event.timestamp_iso8601, candidate.id, candidate.timestamp_iso8601
+        );
 
         // Stage 0: Quick temporal check - if events are outside the time window, skip detailed analysis
         let temporal_score = self.calculate_temporal_similarity(new_event, candidate);
@@ -201,7 +213,11 @@ impl ChronicleDeduplicationService {
 
         Ok(Some(DuplicateDetectionResult {
             is_duplicate,
-            duplicate_event_id: if is_duplicate { Some(candidate.id) } else { None },
+            duplicate_event_id: if is_duplicate {
+                Some(candidate.id)
+            } else {
+                None
+            },
             confidence,
             reasoning,
         }))
@@ -211,43 +227,62 @@ impl ChronicleDeduplicationService {
     fn calculate_action_similarity(&self, event1: &ChronicleEvent, event2: &ChronicleEvent) -> f32 {
         let keywords1 = event1.get_keywords();
         let keywords2 = event2.get_keywords();
-        
+
         if keywords1.is_empty() && keywords2.is_empty() {
             return 0.5; // Both have no keywords
         }
-        
+
         if keywords1.is_empty() || keywords2.is_empty() {
             return 0.0; // One has keywords, other doesn't
         }
-        
+
         // Calculate keyword overlap
         let mut overlap_count = 0;
         for kw1 in &keywords1 {
-            if keywords2.iter().any(|kw2| kw1.to_lowercase() == kw2.to_lowercase()) {
+            if keywords2
+                .iter()
+                .any(|kw2| kw1.to_lowercase() == kw2.to_lowercase())
+            {
                 overlap_count += 1;
             }
         }
-        
+
         let total_keywords = (keywords1.len() + keywords2.len()) as f32;
         (overlap_count as f32 * 2.0) / total_keywords // Jaccard similarity
     }
 
     /// Calculate overlap between keywords (simplified from actor overlap)
-    async fn calculate_actor_overlap(&self, event1: &ChronicleEvent, event2: &ChronicleEvent) -> Result<f32, AppError> {
+    async fn calculate_actor_overlap(
+        &self,
+        event1: &ChronicleEvent,
+        event2: &ChronicleEvent,
+    ) -> Result<f32, AppError> {
         // For simplified chronicles, we use keyword overlap instead of actors
         let similarity = self.calculate_action_similarity(event1, event2);
         Ok(similarity)
     }
 
     /// Calculate temporal similarity between two events
-    fn calculate_temporal_similarity(&self, event1: &ChronicleEvent, event2: &ChronicleEvent) -> f32 {
-        let time_diff = (event1.timestamp_iso8601 - event2.timestamp_iso8601).num_minutes().abs();
+    fn calculate_temporal_similarity(
+        &self,
+        event1: &ChronicleEvent,
+        event2: &ChronicleEvent,
+    ) -> f32 {
+        let time_diff = (event1.timestamp_iso8601 - event2.timestamp_iso8601)
+            .num_minutes()
+            .abs();
         let max_window = self.config.time_window_minutes;
 
-        debug!("Temporal similarity check: time_diff={} minutes, max_window={} minutes", time_diff, max_window);
+        debug!(
+            "Temporal similarity check: time_diff={} minutes, max_window={} minutes",
+            time_diff, max_window
+        );
 
         if time_diff >= max_window {
-            debug!("Events outside temporal window ({}>={}), returning 0.0", time_diff, max_window);
+            debug!(
+                "Events outside temporal window ({}>={}), returning 0.0",
+                time_diff, max_window
+            );
             0.0
         } else {
             // Linear decay: closer in time = higher similarity
@@ -266,8 +301,10 @@ impl ChronicleDeduplicationService {
     ) -> Result<Vec<(Uuid, Uuid)>, AppError> {
         debug!("Finding duplicate events for chronicle {}", chronicle_id);
 
-        let connection = self.db_pool.get().await
-            .map_err(|e| AppError::DbPoolError(format!("Failed to get DB connection: {}", e)))?;
+        let connection =
+            self.db_pool.get().await.map_err(|e| {
+                AppError::DbPoolError(format!("Failed to get DB connection: {}", e))
+            })?;
 
         // Get all events for the chronicle
         let events = connection
@@ -279,7 +316,9 @@ impl ChronicleDeduplicationService {
                     .load::<ChronicleEvent>(conn)
             })
             .await
-            .map_err(|e| AppError::DbInteractError(format!("Failed to interact with database: {}", e)))?
+            .map_err(|e| {
+                AppError::DbInteractError(format!("Failed to interact with database: {}", e))
+            })?
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         let mut duplicates = Vec::new();
@@ -297,7 +336,9 @@ impl ChronicleDeduplicationService {
                 }
 
                 if let Some(result) = self.check_event_similarity(event1, event2).await? {
-                    if result.is_duplicate && result.confidence >= self.config.actor_overlap_threshold {
+                    if result.is_duplicate
+                        && result.confidence >= self.config.actor_overlap_threshold
+                    {
                         // Keep the earlier event, mark the later one as duplicate
                         duplicates.push((event1.id, event2.id));
                         info!(
@@ -324,7 +365,7 @@ mod tests {
     async fn test_deduplication_service_creation() {
         let test_app = crate::test_helpers::spawn_app(false, false, false).await;
         let pool = test_app.db_pool.clone();
-        
+
         let service = ChronicleDeduplicationService::new(pool, None);
         assert_eq!(service.config.time_window_minutes, 5);
         assert_eq!(service.config.actor_overlap_threshold, 0.6);
@@ -337,13 +378,31 @@ mod tests {
         let service = ChronicleDeduplicationService::new(pool, None);
 
         // Test exact match - now returns 0.5 because both events have no keywords
-        assert_eq!(service.calculate_action_similarity(&create_test_event("DISCOVERED"), &create_test_event("DISCOVERED")), 0.5);
+        assert_eq!(
+            service.calculate_action_similarity(
+                &create_test_event("DISCOVERED"),
+                &create_test_event("DISCOVERED")
+            ),
+            0.5
+        );
 
         // Test semantic similarity (both discovery actions) - now returns 0.5 because both have no keywords
-        assert_eq!(service.calculate_action_similarity(&create_test_event("DISCOVERED"), &create_test_event("FOUND")), 0.5);
+        assert_eq!(
+            service.calculate_action_similarity(
+                &create_test_event("DISCOVERED"),
+                &create_test_event("FOUND")
+            ),
+            0.5
+        );
 
         // Test no similarity - now returns 0.5 because both have no keywords
-        assert_eq!(service.calculate_action_similarity(&create_test_event("DISCOVERED"), &create_test_event("ATTACKED")), 0.5);
+        assert_eq!(
+            service.calculate_action_similarity(
+                &create_test_event("DISCOVERED"),
+                &create_test_event("ATTACKED")
+            ),
+            0.5
+        );
     }
 
     // DISABLED: Actors functionality was removed from ChronicleEvent model
@@ -357,7 +416,7 @@ mod tests {
     //         (Uuid::new_v4(), "AGENT"),
     //         (Uuid::new_v4(), "PATIENT"),
     //     ]);
-        
+
     //     let event2 = create_test_event_with_actors("DISCOVERED", vec![
     //         (event1.get_actors().unwrap()[0].entity_id, "AGENT"), // Same entity
     //         (Uuid::new_v4(), "WITNESS"), // Different entity
@@ -389,9 +448,16 @@ mod tests {
 
     fn create_test_event_with_actors(action: &str, actors: Vec<(Uuid, &str)>) -> ChronicleEvent {
         // Since actors are no longer a direct field, we can include them in the summary or keywords
-        let actors_summary = actors.iter().map(|(id, role)| format!("{}:{}", role, id)).collect::<Vec<_>>().join(", ");
-        let summary = format!("Test event with action: {} and actors: {}", action, actors_summary);
-        
+        let actors_summary = actors
+            .iter()
+            .map(|(id, role)| format!("{}:{}", role, id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let summary = format!(
+            "Test event with action: {} and actors: {}",
+            action, actors_summary
+        );
+
         ChronicleEvent {
             id: Uuid::new_v4(),
             chronicle_id: Uuid::new_v4(),

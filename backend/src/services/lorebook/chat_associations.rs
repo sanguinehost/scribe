@@ -331,7 +331,7 @@ impl LorebookService {
                                 let user_id_for_embedding_task = current_user_id;
                                 let is_enabled_for_embedding_task = entry.is_enabled; // Should be true here
                                 let is_constant_for_embedding_task = entry.is_constant;
-                                
+
                                 // Clone the SessionDek for the async task
                                 let session_dek_for_embedding = user_dek.map(|dek| {
                                     let dek_bytes = dek.expose_secret().clone();

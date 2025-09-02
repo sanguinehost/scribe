@@ -2,16 +2,11 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tracing::{info, instrument};
 
-use crate::{
-    AppState,
-    errors::AppError,
-};
+use crate::{AppState, errors::AppError};
 
 use super::{
-    types::*,
-    field_generator::FieldGenerator,
-    full_character_generator::FullCharacterGenerator,
-    enhancement_service::EnhancementService,
+    enhancement_service::EnhancementService, field_generator::FieldGenerator,
+    full_character_generator::FullCharacterGenerator, types::*,
 };
 
 /// Character generation tool for ScribeAssistant mode
@@ -32,17 +27,24 @@ impl CharacterGenerationTool {
 
     /// Execute a character generation tool call
     #[instrument(skip_all, fields(tool_name = %call.tool_name))]
-    pub async fn execute_tool_call(&self, call: CharacterGenerationToolCall, user_id: uuid::Uuid) -> Result<CharacterGenerationToolResponse, AppError> {
+    pub async fn execute_tool_call(
+        &self,
+        call: CharacterGenerationToolCall,
+        user_id: uuid::Uuid,
+    ) -> Result<CharacterGenerationToolResponse, AppError> {
         info!("Executing character generation tool: {}", call.tool_name);
 
         let result = match call.tool_name.as_str() {
-            "generate_character_field" => self.handle_generate_field(call.parameters, user_id).await,
+            "generate_character_field" => {
+                self.handle_generate_field(call.parameters, user_id).await
+            }
             "create_full_character" => self.handle_create_character(call.parameters, user_id).await,
             "enhance_character_field" => self.handle_enhance_field(call.parameters, user_id).await,
             "analyze_character_style" => self.handle_analyze_style(call.parameters).await,
-            _ => Err(AppError::InvalidInput(
-                format!("Unknown tool: {}", call.tool_name)
-            )),
+            _ => Err(AppError::InvalidInput(format!(
+                "Unknown tool: {}",
+                call.tool_name
+            ))),
         };
 
         match result {
@@ -62,41 +64,69 @@ impl CharacterGenerationTool {
     }
 
     /// Handle field generation tool call
-    async fn handle_generate_field(&self, parameters: serde_json::Value, user_id: uuid::Uuid) -> Result<serde_json::Value, AppError> {
-        let request: FieldGenerationRequest = serde_json::from_value(parameters)
-            .map_err(|e| AppError::InvalidInput(format!("Invalid field generation parameters: {}", e)))?;
+    async fn handle_generate_field(
+        &self,
+        parameters: serde_json::Value,
+        user_id: uuid::Uuid,
+    ) -> Result<serde_json::Value, AppError> {
+        let request: FieldGenerationRequest = serde_json::from_value(parameters).map_err(|e| {
+            AppError::InvalidInput(format!("Invalid field generation parameters: {}", e))
+        })?;
 
-        let result = self.field_generator.generate_field(request, user_id).await?;
+        let result = self
+            .field_generator
+            .generate_field(request, user_id)
+            .await?;
         Ok(serde_json::to_value(result)?)
     }
 
     /// Handle full character creation tool call
-    async fn handle_create_character(&self, parameters: serde_json::Value, user_id: uuid::Uuid) -> Result<serde_json::Value, AppError> {
-        let request: FullCharacterRequest = serde_json::from_value(parameters)
-            .map_err(|e| AppError::InvalidInput(format!("Invalid character creation parameters: {}", e)))?;
+    async fn handle_create_character(
+        &self,
+        parameters: serde_json::Value,
+        user_id: uuid::Uuid,
+    ) -> Result<serde_json::Value, AppError> {
+        let request: FullCharacterRequest = serde_json::from_value(parameters).map_err(|e| {
+            AppError::InvalidInput(format!("Invalid character creation parameters: {}", e))
+        })?;
 
-        let result = self.full_character_generator.generate_character(request, user_id).await?;
+        let result = self
+            .full_character_generator
+            .generate_character(request, user_id)
+            .await?;
         Ok(serde_json::to_value(result)?)
     }
 
     /// Handle field enhancement tool call
-    async fn handle_enhance_field(&self, parameters: serde_json::Value, user_id: uuid::Uuid) -> Result<serde_json::Value, AppError> {
-        let request: EnhancementRequest = serde_json::from_value(parameters)
-            .map_err(|e| AppError::InvalidInput(format!("Invalid enhancement parameters: {}", e)))?;
+    async fn handle_enhance_field(
+        &self,
+        parameters: serde_json::Value,
+        user_id: uuid::Uuid,
+    ) -> Result<serde_json::Value, AppError> {
+        let request: EnhancementRequest = serde_json::from_value(parameters).map_err(|e| {
+            AppError::InvalidInput(format!("Invalid enhancement parameters: {}", e))
+        })?;
 
-        let result = self.enhancement_service.enhance_field(request, user_id).await?;
+        let result = self
+            .enhancement_service
+            .enhance_field(request, user_id)
+            .await?;
         Ok(serde_json::to_value(result)?)
     }
 
     /// Handle style analysis tool call
-    async fn handle_analyze_style(&self, parameters: serde_json::Value) -> Result<serde_json::Value, AppError> {
+    async fn handle_analyze_style(
+        &self,
+        parameters: serde_json::Value,
+    ) -> Result<serde_json::Value, AppError> {
         #[derive(Deserialize)]
         struct StyleAnalysisParams {
             content: String,
         }
 
-        let params: StyleAnalysisParams = serde_json::from_value(parameters)
-            .map_err(|e| AppError::InvalidInput(format!("Invalid style analysis parameters: {}", e)))?;
+        let params: StyleAnalysisParams = serde_json::from_value(parameters).map_err(|e| {
+            AppError::InvalidInput(format!("Invalid style analysis parameters: {}", e))
+        })?;
 
         // Simplified style analysis - could be enhanced with ML or more sophisticated analysis
         let detected_style = self.detect_style(&params.content);
@@ -154,19 +184,22 @@ impl CharacterGenerationTool {
                 } else {
                     0.3
                 }
-            },
+            }
             DescriptionStyle::Group => {
                 if content.contains("Characters(") {
                     0.95
                 } else {
                     0.1
                 }
-            },
+            }
             DescriptionStyle::Profile => {
                 let field_indicators = ["Name:", "Age:", "Height:", "Weight:"];
-                let matches = field_indicators.iter().filter(|&&indicator| content.contains(indicator)).count();
+                let matches = field_indicators
+                    .iter()
+                    .filter(|&&indicator| content.contains(indicator))
+                    .count();
                 (matches as f32 / field_indicators.len() as f32).min(0.9)
-            },
+            }
             DescriptionStyle::Traits => 0.6, // Default medium confidence
             DescriptionStyle::Narrative => 0.7,
             DescriptionStyle::Auto => 0.1,
@@ -174,7 +207,11 @@ impl CharacterGenerationTool {
     }
 
     /// Get style indicators for the detected style
-    fn get_style_indicators(&self, content: &str, detected_style: &DescriptionStyle) -> Vec<String> {
+    fn get_style_indicators(
+        &self,
+        content: &str,
+        detected_style: &DescriptionStyle,
+    ) -> Vec<String> {
         let mut indicators = Vec::new();
 
         match detected_style {
@@ -185,12 +222,12 @@ impl CharacterGenerationTool {
                 if content.contains("{{user}}") {
                     indicators.push("Contains {{user}} placeholders".to_string());
                 }
-            },
+            }
             DescriptionStyle::Group => {
                 if content.contains("Characters(") {
                     indicators.push("Uses Characters() format".to_string());
                 }
-            },
+            }
             DescriptionStyle::Profile => {
                 let fields = ["Name:", "Age:", "Height:", "Weight:"];
                 for field in fields {
@@ -198,14 +235,14 @@ impl CharacterGenerationTool {
                         indicators.push(format!("Contains {} field", field));
                     }
                 }
-            },
+            }
             DescriptionStyle::Traits => {
                 indicators.push("Short, punchy sentences".to_string());
-            },
+            }
             DescriptionStyle::Narrative => {
                 indicators.push("Flowing prose style".to_string());
-            },
-            DescriptionStyle::Auto => {},
+            }
+            DescriptionStyle::Auto => {}
         }
 
         indicators
@@ -337,7 +374,7 @@ impl CharacterGenerationTool {
                     },
                     "required": ["field", "current_content", "enhancement_instructions"]
                 }
-            })
+            }),
         ]
     }
 }

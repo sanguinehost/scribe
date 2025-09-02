@@ -8,8 +8,8 @@ use scribe_backend::{
     crypto,
     models::{
         chronicle::{CreateChronicleRequest, UpdateChronicleRequest},
-        chronicle_event::{CreateEventRequest, EventSource, EventFilter},
-        users::{User, UserDbQuery, NewUser, UserRole, AccountStatus, SerializableSecretDek},
+        chronicle_event::{CreateEventRequest, EventFilter, EventSource},
+        users::{AccountStatus, NewUser, SerializableSecretDek, User, UserDbQuery, UserRole},
     },
     schema::users,
     services::ChronicleService,
@@ -49,10 +49,22 @@ mod unit_tests {
         assert_eq!(EventSource::System.to_string(), "SYSTEM");
 
         // Test parsing
-        assert_eq!("USER_ADDED".parse::<EventSource>().unwrap(), EventSource::UserAdded);
-        assert_eq!("AI_EXTRACTED".parse::<EventSource>().unwrap(), EventSource::AiExtracted);
-        assert_eq!("GAME_API".parse::<EventSource>().unwrap(), EventSource::GameApi);
-        assert_eq!("SYSTEM".parse::<EventSource>().unwrap(), EventSource::System);
+        assert_eq!(
+            "USER_ADDED".parse::<EventSource>().unwrap(),
+            EventSource::UserAdded
+        );
+        assert_eq!(
+            "AI_EXTRACTED".parse::<EventSource>().unwrap(),
+            EventSource::AiExtracted
+        );
+        assert_eq!(
+            "GAME_API".parse::<EventSource>().unwrap(),
+            EventSource::GameApi
+        );
+        assert_eq!(
+            "SYSTEM".parse::<EventSource>().unwrap(),
+            EventSource::System
+        );
 
         // Test invalid source
         assert!("INVALID".parse::<EventSource>().is_err());
@@ -64,7 +76,11 @@ mod unit_tests {
             event_type: "CHARACTER_INTERACTION".to_string(),
             summary: "Hero meets the mysterious bartender at the tavern".to_string(),
             source: EventSource::AiExtracted,
-            keywords: Some(vec!["Hero".to_string(), "Bartender".to_string(), "tavern".to_string()]),
+            keywords: Some(vec![
+                "Hero".to_string(),
+                "Bartender".to_string(),
+                "tavern".to_string(),
+            ]),
             timestamp_iso8601: None,
             chat_session_id: None,
         };
@@ -82,7 +98,8 @@ mod integration_tests {
 
     /// Helper to hash a password for tests
     fn hash_test_password(password: &str) -> String {
-        bcrypt::hash(password, bcrypt::DEFAULT_COST).expect("Failed to hash test password with bcrypt")
+        bcrypt::hash(password, bcrypt::DEFAULT_COST)
+            .expect("Failed to hash test password with bcrypt")
     }
 
     /// Helper to insert a unique test user with a known password hash
@@ -147,15 +164,19 @@ mod integration_tests {
         Ok(user)
     }
 
-    async fn setup_test_user(test_app: &scribe_backend::test_helpers::TestApp) -> AnyhowResult<User> {
+    async fn setup_test_user(
+        test_app: &scribe_backend::test_helpers::TestApp,
+    ) -> AnyhowResult<User> {
         let username = format!("testuser_{}", Uuid::new_v4().simple());
         let password = "TestPassword123!";
 
-        let conn = test_app.db_pool.get().await.context("Failed to get DB connection")?;
+        let conn = test_app
+            .db_pool
+            .get()
+            .await
+            .context("Failed to get DB connection")?;
         let user = conn
-            .interact(move |conn| {
-                insert_test_user_with_password(conn, &username, password)
-            })
+            .interact(move |conn| insert_test_user_with_password(conn, &username, password))
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create test user interaction: {e}"))?
             .map_err(|e| anyhow::anyhow!("Failed to create test user: {e}"))?;
@@ -209,7 +230,10 @@ mod integration_tests {
             .unwrap();
 
         assert_eq!(updated_chronicle.name, "Updated Campaign Name");
-        assert_eq!(updated_chronicle.description, Some("Updated description".to_string()));
+        assert_eq!(
+            updated_chronicle.description,
+            Some("Updated description".to_string())
+        );
 
         // Test: List User Chronicles
         let user_chronicles = chronicle_service
@@ -232,7 +256,10 @@ mod integration_tests {
             .await;
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), scribe_backend::errors::AppError::NotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            scribe_backend::errors::AppError::NotFound(_)
+        ));
     }
 
     #[tokio::test]
@@ -405,7 +432,7 @@ mod integration_tests {
             .unwrap();
 
         assert_eq!(chronicles_with_counts.len(), 1);
-        
+
         let chronicle_with_counts = &chronicles_with_counts[0];
         assert_eq!(chronicle_with_counts.chronicle.id, chronicle.id);
         assert_eq!(chronicle_with_counts.event_count, 3);
@@ -441,7 +468,10 @@ mod integration_tests {
             .await;
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), scribe_backend::errors::AppError::NotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            scribe_backend::errors::AppError::NotFound(_)
+        ));
 
         // Test: User2 tries to update User1's chronicle
         let update_request = UpdateChronicleRequest {
@@ -454,7 +484,10 @@ mod integration_tests {
             .await;
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), scribe_backend::errors::AppError::NotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            scribe_backend::errors::AppError::NotFound(_)
+        ));
 
         // Test: User2 tries to delete User1's chronicle
         let result = chronicle_service
@@ -462,7 +495,10 @@ mod integration_tests {
             .await;
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), scribe_backend::errors::AppError::NotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            scribe_backend::errors::AppError::NotFound(_)
+        ));
     }
 
     #[tokio::test]
@@ -483,7 +519,10 @@ mod integration_tests {
             .await;
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), scribe_backend::errors::AppError::NotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            scribe_backend::errors::AppError::NotFound(_)
+        ));
 
         // Test: Create event in nonexistent chronicle
         let event_request = CreateEventRequest {
@@ -500,7 +539,10 @@ mod integration_tests {
             .await;
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), scribe_backend::errors::AppError::NotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            scribe_backend::errors::AppError::NotFound(_)
+        ));
     }
 
     #[tokio::test]
@@ -545,12 +587,13 @@ mod integration_tests {
             .unwrap();
 
         // Verify that the event was also deleted (cascade)
-        let result = chronicle_service
-            .get_event(user.id, event.id)
-            .await;
+        let result = chronicle_service.get_event(user.id, event.id).await;
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), scribe_backend::errors::AppError::NotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            scribe_backend::errors::AppError::NotFound(_)
+        ));
     }
 
     #[tokio::test]
@@ -581,7 +624,8 @@ mod integration_tests {
         // Test: Create Event with Encryption (SessionDek provided)
         let encrypted_event_request = CreateEventRequest {
             event_type: "ENCRYPTED_EVENT".to_string(),
-            summary: "This is a secret summary with sensitive information about the hidden cave".to_string(),
+            summary: "This is a secret summary with sensitive information about the hidden cave"
+                .to_string(),
             source: EventSource::UserAdded,
             keywords: Some(vec!["secret".to_string(), "hidden cave".to_string()]),
             timestamp_iso8601: None,
@@ -589,19 +633,29 @@ mod integration_tests {
         };
 
         let encrypted_event = chronicle_service
-            .create_event(user.id, chronicle.id, encrypted_event_request.clone(), Some(&session_dek))
+            .create_event(
+                user.id,
+                chronicle.id,
+                encrypted_event_request.clone(),
+                Some(&session_dek),
+            )
             .await
             .unwrap();
 
         // Verify the event was created and has encrypted fields
-        assert_eq!(encrypted_event.event_type, encrypted_event_request.event_type);
+        assert_eq!(
+            encrypted_event.event_type,
+            encrypted_event_request.event_type
+        );
         assert_eq!(encrypted_event.summary, encrypted_event_request.summary); // Legacy field still has plaintext
         assert!(encrypted_event.has_encrypted_summary()); // Should have encrypted data
         assert!(encrypted_event.summary_encrypted.is_some());
         assert!(encrypted_event.summary_nonce.is_some());
 
         // Test: Decrypt the summary using the SessionDek
-        let decrypted_summary = encrypted_event.get_decrypted_summary(&session_dek.0).unwrap();
+        let decrypted_summary = encrypted_event
+            .get_decrypted_summary(&session_dek.0)
+            .unwrap();
         assert_eq!(decrypted_summary, encrypted_event_request.summary);
 
         // Test: Create Event without Encryption (SessionDek not provided)
@@ -615,19 +669,29 @@ mod integration_tests {
         };
 
         let unencrypted_event = chronicle_service
-            .create_event(user.id, chronicle.id, unencrypted_event_request.clone(), None)
+            .create_event(
+                user.id,
+                chronicle.id,
+                unencrypted_event_request.clone(),
+                None,
+            )
             .await
             .unwrap();
 
         // Verify the event was created without encrypted fields
-        assert_eq!(unencrypted_event.event_type, unencrypted_event_request.event_type);
+        assert_eq!(
+            unencrypted_event.event_type,
+            unencrypted_event_request.event_type
+        );
         assert_eq!(unencrypted_event.summary, unencrypted_event_request.summary);
         assert!(!unencrypted_event.has_encrypted_summary()); // Should NOT have encrypted data
         assert!(unencrypted_event.summary_encrypted.is_none());
         assert!(unencrypted_event.summary_nonce.is_none());
 
         // Test: Fallback to legacy plaintext when no encrypted version exists
-        let fallback_summary = unencrypted_event.get_decrypted_summary(&session_dek.0).unwrap();
+        let fallback_summary = unencrypted_event
+            .get_decrypted_summary(&session_dek.0)
+            .unwrap();
         assert_eq!(fallback_summary, unencrypted_event_request.summary);
     }
 }

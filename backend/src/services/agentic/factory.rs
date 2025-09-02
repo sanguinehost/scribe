@@ -12,8 +12,8 @@ use crate::{
 use super::{
     agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig},
     narrative_tools::{
-        CreateChronicleEventTool, CreateLorebookEntryTool,
-        AnalyzeTextSignificanceTool, SearchKnowledgeBaseTool, UpdateLorebookEntryTool
+        AnalyzeTextSignificanceTool, CreateChronicleEventTool, CreateLorebookEntryTool,
+        SearchKnowledgeBaseTool, UpdateLorebookEntryTool,
     },
     registry::ToolRegistry,
 };
@@ -54,7 +54,13 @@ impl AgenticNarrativeFactory {
             config.planning_model
         );
 
-        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service, app_state.token_counter.clone())
+        NarrativeAgentRunner::new(
+            ai_client,
+            registry,
+            config,
+            chronicle_service,
+            app_state.token_counter.clone(),
+        )
     }
 
     /// Create agentic narrative system with individual dependencies (no circular dependency)
@@ -62,18 +68,20 @@ impl AgenticNarrativeFactory {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<
+            dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync,
+        >,
         embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
         config: Option<NarrativeWorkflowConfig>,
     ) -> NarrativeAgentRunner {
         info!("Creating agentic narrative system with individual dependencies");
-        
+
         let config = config.unwrap_or_else(Self::create_production_config);
-        
+
         // Create tool registry
         let mut registry = ToolRegistry::new();
-        
+
         // Register tools with individual dependencies
         Self::register_core_tools_with_deps(
             &mut registry,
@@ -84,17 +92,23 @@ impl AgenticNarrativeFactory {
             embedding_client,
             app_state.clone(),
         );
-        
+
         let registry = Arc::new(registry);
-        
+
         info!(
             "Agentic system created with {} tools, using triage model: {}, planning model: {}",
             registry.list_tools().len(),
             config.triage_model,
             config.planning_model
         );
-        
-        NarrativeAgentRunner::new(ai_client, registry, config, chronicle_service, app_state.token_counter.clone())
+
+        NarrativeAgentRunner::new(
+            ai_client,
+            registry,
+            config,
+            chronicle_service,
+            app_state.token_counter.clone(),
+        )
     }
 
     /// Register all core tools in the registry
@@ -118,9 +132,7 @@ impl AgenticNarrativeFactory {
         ));
         registry.add_tool(create_event_tool);
 
-        let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(
-            lorebook_service.clone(),
-        ));
+        let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(lorebook_service.clone()));
         registry.add_tool(create_lorebook_tool);
 
         // Knowledge search tools - using existing embeddings infrastructure
@@ -147,7 +159,9 @@ impl AgenticNarrativeFactory {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<
+            dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync,
+        >,
         embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
     ) {
@@ -164,9 +178,7 @@ impl AgenticNarrativeFactory {
         ));
         registry.add_tool(create_event_tool);
 
-        let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(
-            lorebook_service.clone(),
-        ));
+        let create_lorebook_tool = Arc::new(CreateLorebookEntryTool::new(lorebook_service.clone()));
         registry.add_tool(create_lorebook_tool);
 
         // Knowledge search tools - using existing embeddings infrastructure
@@ -176,7 +188,7 @@ impl AgenticNarrativeFactory {
             app_state.clone(),
         ));
         registry.add_tool(search_tool);
-        
+
         // Lorebook management tools
         let update_lorebook_tool = Arc::new(UpdateLorebookEntryTool::new(
             lorebook_service.clone(),

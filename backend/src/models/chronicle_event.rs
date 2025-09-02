@@ -1,10 +1,10 @@
 use crate::schema::chronicle_events;
 use chrono::{DateTime, Utc};
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
-use secrecy::ExposeSecret;
 
 /// EventSource represents where a chronicle event originated from
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,7 +55,7 @@ pub struct ChronicleEvent {
     pub user_id: Uuid,
     pub event_type: String,
     pub summary: String, // Plaintext fallback (legacy)
-    pub source: String, // Will be converted to/from EventSource
+    pub source: String,  // Will be converted to/from EventSource
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(skip_serializing)]
@@ -79,17 +79,22 @@ impl ChronicleEvent {
 
     /// Get the decrypted summary using the provided DEK
     /// Falls back to legacy plaintext summary if encrypted version is not available
-    pub fn get_decrypted_summary(&self, dek: &secrecy::SecretBox<Vec<u8>>) -> Result<String, crate::errors::AppError> {
+    pub fn get_decrypted_summary(
+        &self,
+        dek: &secrecy::SecretBox<Vec<u8>>,
+    ) -> Result<String, crate::errors::AppError> {
         match (&self.summary_encrypted, &self.summary_nonce) {
             (Some(encrypted), Some(nonce)) => {
                 // Decrypt the summary
                 let decrypted_secret = crate::crypto::decrypt_gcm(encrypted, nonce, dek)
                     .map_err(|e| crate::errors::AppError::CryptoError(e.to_string()))?;
                 let decrypted_bytes = decrypted_secret.expose_secret();
-                String::from_utf8(decrypted_bytes.clone())
-                    .map_err(|e| crate::errors::AppError::SerializationError(
-                        format!("Failed to convert decrypted summary to UTF-8: {}", e)
+                String::from_utf8(decrypted_bytes.clone()).map_err(|e| {
+                    crate::errors::AppError::SerializationError(format!(
+                        "Failed to convert decrypted summary to UTF-8: {}",
+                        e
                     ))
+                })
             }
             _ => {
                 // Fall back to legacy plaintext summary
@@ -99,25 +104,34 @@ impl ChronicleEvent {
     }
 
     /// Get the decrypted keywords using the provided DEK
-    pub fn get_decrypted_keywords(&self, dek: &secrecy::SecretBox<Vec<u8>>) -> Result<Vec<String>, crate::errors::AppError> {
+    pub fn get_decrypted_keywords(
+        &self,
+        dek: &secrecy::SecretBox<Vec<u8>>,
+    ) -> Result<Vec<String>, crate::errors::AppError> {
         match (&self.keywords_encrypted, &self.keywords_nonce) {
             (Some(encrypted), Some(nonce)) => {
                 // Decrypt the keywords
                 let decrypted_secret = crate::crypto::decrypt_gcm(encrypted, nonce, dek)
                     .map_err(|e| crate::errors::AppError::CryptoError(e.to_string()))?;
                 let decrypted_bytes = decrypted_secret.expose_secret();
-                let keywords_json = String::from_utf8(decrypted_bytes.clone())
-                    .map_err(|e| crate::errors::AppError::SerializationError(
-                        format!("Failed to convert decrypted keywords to UTF-8: {}", e)
-                    ))?;
-                serde_json::from_str(&keywords_json)
-                    .map_err(|e| crate::errors::AppError::SerializationError(
-                        format!("Failed to parse decrypted keywords JSON: {}", e)
+                let keywords_json = String::from_utf8(decrypted_bytes.clone()).map_err(|e| {
+                    crate::errors::AppError::SerializationError(format!(
+                        "Failed to convert decrypted keywords to UTF-8: {}",
+                        e
                     ))
+                })?;
+                serde_json::from_str(&keywords_json).map_err(|e| {
+                    crate::errors::AppError::SerializationError(format!(
+                        "Failed to parse decrypted keywords JSON: {}",
+                        e
+                    ))
+                })
             }
             _ => {
                 // Fall back to plaintext keywords if available
-                Ok(self.keywords.as_ref()
+                Ok(self
+                    .keywords
+                    .as_ref()
                     .map(|k| k.iter().filter_map(|opt| opt.clone()).collect())
                     .unwrap_or_default())
             }
@@ -136,7 +150,8 @@ impl ChronicleEvent {
 
     /// Get keywords for display (returns empty vec if none)
     pub fn get_keywords(&self) -> Vec<String> {
-        self.keywords.as_ref()
+        self.keywords
+            .as_ref()
             .map(|k| k.iter().filter_map(|opt| opt.clone()).collect())
             .unwrap_or_default()
     }
@@ -149,9 +164,17 @@ impl ChronicleEvent {
 pub struct NewChronicleEvent {
     pub chronicle_id: Uuid,
     pub user_id: Uuid,
-    #[validate(length(min = 1, max = 100, message = "Event type must be between 1 and 100 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Event type must be between 1 and 100 characters"
+    ))]
     pub event_type: String,
-    #[validate(length(min = 1, max = 5000, message = "Event summary must be between 1 and 5000 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 5000,
+        message = "Event summary must be between 1 and 5000 characters"
+    ))]
     pub summary: String,
     pub source: String, // EventSource as string
     pub summary_encrypted: Option<Vec<u8>>,
@@ -213,9 +236,17 @@ impl NewChronicleEvent {
 /// UpdateChronicleEvent for updating existing events
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct UpdateChronicleEvent {
-    #[validate(length(min = 1, max = 100, message = "Event type must be between 1 and 100 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Event type must be between 1 and 100 characters"
+    ))]
     pub event_type: Option<String>,
-    #[validate(length(min = 1, max = 5000, message = "Event summary must be between 1 and 5000 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 5000,
+        message = "Event summary must be between 1 and 5000 characters"
+    ))]
     pub summary: Option<String>,
     pub source: Option<EventSource>,
     pub keywords: Option<Vec<String>>,
@@ -224,9 +255,17 @@ pub struct UpdateChronicleEvent {
 /// DTO for event creation from API
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct CreateEventRequest {
-    #[validate(length(min = 1, max = 100, message = "Event type must be between 1 and 100 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Event type must be between 1 and 100 characters"
+    ))]
     pub event_type: String,
-    #[validate(length(min = 1, max = 5000, message = "Event summary must be between 1 and 5000 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 5000,
+        message = "Event summary must be between 1 and 5000 characters"
+    ))]
     pub summary: String,
     #[serde(default = "default_event_source")]
     pub source: EventSource,
@@ -242,9 +281,17 @@ fn default_event_source() -> EventSource {
 /// DTO for event update from API
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct UpdateEventRequest {
-    #[validate(length(min = 1, max = 100, message = "Event type must be between 1 and 100 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Event type must be between 1 and 100 characters"
+    ))]
     pub event_type: Option<String>,
-    #[validate(length(min = 1, max = 5000, message = "Event summary must be between 1 and 5000 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 5000,
+        message = "Event summary must be between 1 and 5000 characters"
+    ))]
     pub summary: Option<String>,
     pub source: Option<EventSource>,
     pub keywords: Option<Vec<String>>,
@@ -299,7 +346,7 @@ impl Default for EventFilter {
 impl From<CreateEventRequest> for NewChronicleEvent {
     fn from(request: CreateEventRequest) -> Self {
         let timestamp = request.timestamp_iso8601.unwrap_or_else(Utc::now);
-        
+
         Self {
             chronicle_id: Uuid::nil(), // Will be set by the service
             user_id: Uuid::nil(),      // Will be set by the service

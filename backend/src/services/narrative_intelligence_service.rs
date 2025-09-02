@@ -1,5 +1,5 @@
 //! Narrative Intelligence Service - Main interface for the narrative context enrichment system
-//! 
+//!
 //! This service integrates with the single-agent context enrichment system to provide
 //! optional automatic chronicle and lorebook extraction during chat conversations.
 //!
@@ -9,27 +9,30 @@
 //! Design for scale: Currently handles 1:1 chat processing but architected to eventually
 //! handle thousands/millions of events via batch processing and event queues.
 
-use std::sync::Arc;
-use tracing::{info, warn, error, instrument};
-use uuid::Uuid;
 use serde_json::Value;
+use std::sync::Arc;
+use tracing::{error, info, instrument, warn};
+use uuid::Uuid;
 
 use crate::{
     auth::session_dek::SessionDek,
     errors::AppError,
     llm::{AiClient, EmbeddingClient},
-    models::{chats::ChatMessage, users::{User, UserDbQuery}},
+    models::{
+        chats::ChatMessage,
+        users::{User, UserDbQuery},
+    },
     schema::users::dsl as users_dsl,
     services::{
-        agentic::{NarrativeAgentRunner, AgenticNarrativeFactory, UserPersonaContext},
         ChronicleService, LorebookService,
+        agentic::{AgenticNarrativeFactory, NarrativeAgentRunner, UserPersonaContext},
         embeddings::RetrievedChunk,
     },
     state::AppState,
     vector_db::qdrant_client::QdrantClientServiceTrait,
 };
 
-use diesel::{QueryDsl, RunQueryDsl, OptionalExtension, ExpressionMethods};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 
 /// Result of narrative intelligence processing
 #[derive(Debug, Clone)]
@@ -86,13 +89,13 @@ impl Default for NarrativeProcessingConfig {
             min_confidence_threshold: 0.7,
             max_messages_to_analyze: 10,
             async_processing: false, // Start with synchronous for 1:1 chat
-            batch_size: 100, // For future use
+            batch_size: 100,         // For future use
         }
     }
 }
 
 /// Main service for narrative intelligence processing
-/// 
+///
 /// This service integrates the single-agent context enrichment system with the chat processing loop.
 /// It only processes conversations where the user has explicitly enabled chronicles for that chat session.
 /// It's designed to be flexible and scalable for future high-volume event processing.
@@ -117,11 +120,11 @@ impl NarrativeIntelligenceService {
         config: Option<NarrativeProcessingConfig>,
     ) -> Self {
         let config = config.unwrap_or_default();
-        
+
         // Create the context enrichment system using the factory
         // For development setup, always use dev config regardless of enabled status
         let workflow_config = Some(AgenticNarrativeFactory::create_dev_config());
-        
+
         let narrative_runner = AgenticNarrativeFactory::create_system_with_deps(
             ai_client,
             chronicle_service,
@@ -131,9 +134,12 @@ impl NarrativeIntelligenceService {
             app_state.clone(),
             workflow_config,
         );
-        
-        info!("Narrative Intelligence Service initialized with config: {:?}", config);
-        
+
+        info!(
+            "Narrative Intelligence Service initialized with config: {:?}",
+            config
+        );
+
         Self {
             narrative_runner,
             config,
@@ -150,7 +156,7 @@ impl NarrativeIntelligenceService {
         config: Option<NarrativeProcessingConfig>,
     ) -> Self {
         let config = config.unwrap_or_default();
-        
+
         // Create the context enrichment system using the factory
         // Use appropriate config based on the intended use
         let workflow_config = if config.enabled {
@@ -158,7 +164,7 @@ impl NarrativeIntelligenceService {
         } else {
             Some(AgenticNarrativeFactory::create_dev_config())
         };
-        
+
         let narrative_runner = AgenticNarrativeFactory::create_system(
             ai_client,
             chronicle_service,
@@ -166,9 +172,12 @@ impl NarrativeIntelligenceService {
             app_state.clone(),
             workflow_config,
         );
-        
-        info!("Narrative Intelligence Service initialized with config: {:?}", config);
-        
+
+        info!(
+            "Narrative Intelligence Service initialized with config: {:?}",
+            config
+        );
+
         Self {
             narrative_runner,
             config,
@@ -177,7 +186,7 @@ impl NarrativeIntelligenceService {
     }
 
     /// Main entry point for narrative processing during chat generation
-    /// 
+    ///
     /// This is called from the chat processing loop for chats with chronicle_id set (opt-in):
     /// - Handles 1:1 chat processing now
     /// - Can be extended for batch processing later
@@ -198,50 +207,60 @@ impl NarrativeIntelligenceService {
         session_dek: &SessionDek,
     ) -> Result<NarrativeProcessingResult, AppError> {
         let start_time = std::time::Instant::now();
-        
+
         // Early return if disabled
         if !self.config.enabled {
             return Ok(NarrativeProcessingResult::default());
         }
-        
+
         // Limit the number of messages we analyze
         let messages_to_analyze = if recent_messages.len() > self.config.max_messages_to_analyze {
             &recent_messages[recent_messages.len() - self.config.max_messages_to_analyze..]
         } else {
             recent_messages
         };
-        
+
         info!(
             "Processing narrative context for {} messages, {} existing RAG items",
             messages_to_analyze.len(),
             existing_rag_context.len()
         );
-        
+
         // Retrieve user's persona context for narrative intelligence
-        let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
-        
+        let persona_context = self
+            .get_user_persona_context(user_id, session_dek)
+            .await
+            .ok();
+
         // Execute the context enrichment workflow
-        match self.narrative_runner.process_narrative_event(
-            user_id,
-            session_id,
-            chronicle_id,
-            messages_to_analyze,
-            session_dek,
-            persona_context,
-        ).await {
+        match self
+            .narrative_runner
+            .process_narrative_event(
+                user_id,
+                session_id,
+                chronicle_id,
+                messages_to_analyze,
+                session_dek,
+                persona_context,
+            )
+            .await
+        {
             Ok(workflow_result) => {
                 let processing_time = start_time.elapsed().as_millis() as u64;
-                
+
                 let result = NarrativeProcessingResult {
                     is_significant: workflow_result.triage_result.is_significant,
                     confidence: workflow_result.triage_result.confidence as f64,
-                    narrative_insights: self.extract_narrative_insights(&workflow_result.execution_results),
+                    narrative_insights: self
+                        .extract_narrative_insights(&workflow_result.execution_results),
                     additional_context: Vec::new(), // Could extract from knowledge search results
-                    events_created: self.count_successful_events(&workflow_result.execution_results),
-                    entries_created: self.count_successful_entries(&workflow_result.execution_results),
+                    events_created: self
+                        .count_successful_events(&workflow_result.execution_results),
+                    entries_created: self
+                        .count_successful_entries(&workflow_result.execution_results),
                     processing_time_ms: processing_time,
                 };
-                
+
                 info!(
                     "Narrative processing completed: significant={}, confidence={:.2}, events={}, entries={}, time={}ms",
                     result.is_significant,
@@ -250,9 +269,9 @@ impl NarrativeIntelligenceService {
                     result.entries_created,
                     result.processing_time_ms
                 );
-                
+
                 Ok(result)
-            },
+            }
             Err(e) => {
                 error!("Narrative processing failed: {}", e);
                 // Don't fail the chat generation, just log and return empty result
@@ -261,9 +280,9 @@ impl NarrativeIntelligenceService {
             }
         }
     }
-    
+
     /// Process a batch of chat messages for re-chronicling
-    /// 
+    ///
     /// This method processes historical chat messages to extract chronicle events.
     /// It's designed specifically for the re-chronicle feature.
     pub async fn process_chat_history_batch(
@@ -277,40 +296,50 @@ impl NarrativeIntelligenceService {
         if messages.is_empty() {
             return Ok(NarrativeProcessingResult::default());
         }
-        
+
         info!(
             "Processing chat history batch for user {}: {} messages",
             user_id,
             messages.len()
         );
-        
+
         let start_time = std::time::Instant::now();
-        
+
         // Retrieve user's persona context for narrative intelligence
-        let persona_context = self.get_user_persona_context(user_id, session_dek).await.ok();
-        
+        let persona_context = self
+            .get_user_persona_context(user_id, session_dek)
+            .await
+            .ok();
+
         // Execute the context enrichment workflow for this batch of messages
-        match self.narrative_runner.process_narrative_event(
-            user_id,
-            session_id,
-            chronicle_id,
-            &messages,
-            session_dek,
-            persona_context,
-        ).await {
+        match self
+            .narrative_runner
+            .process_narrative_event(
+                user_id,
+                session_id,
+                chronicle_id,
+                &messages,
+                session_dek,
+                persona_context,
+            )
+            .await
+        {
             Ok(workflow_result) => {
                 let processing_time = start_time.elapsed().as_millis() as u64;
-                
+
                 let result = NarrativeProcessingResult {
                     is_significant: workflow_result.triage_result.is_significant,
                     confidence: workflow_result.triage_result.confidence as f64,
-                    narrative_insights: self.extract_narrative_insights(&workflow_result.execution_results),
+                    narrative_insights: self
+                        .extract_narrative_insights(&workflow_result.execution_results),
                     additional_context: Vec::new(),
-                    events_created: self.count_successful_events(&workflow_result.execution_results),
-                    entries_created: self.count_successful_entries(&workflow_result.execution_results),
+                    events_created: self
+                        .count_successful_events(&workflow_result.execution_results),
+                    entries_created: self
+                        .count_successful_entries(&workflow_result.execution_results),
                     processing_time_ms: processing_time,
                 };
-                
+
                 info!(
                     "Chat history batch processing completed: significant={}, confidence={:.2}, events={}, entries={}, time={}ms",
                     result.is_significant,
@@ -319,9 +348,9 @@ impl NarrativeIntelligenceService {
                     result.entries_created,
                     result.processing_time_ms
                 );
-                
+
                 Ok(result)
-            },
+            }
             Err(e) => {
                 error!("Chat history batch processing failed: {}", e);
                 // Don't fail the re-chronicle operation entirely
@@ -332,7 +361,7 @@ impl NarrativeIntelligenceService {
     }
 
     /// Future method for batch processing (game events, etc.)
-    /// 
+    ///
     /// This demonstrates the scalable architecture - same context enrichment system, different orchestration
     #[allow(dead_code)]
     pub async fn process_event_batch(
@@ -346,13 +375,13 @@ impl NarrativeIntelligenceService {
         // 2. Process each chunk through the same context enrichment system
         // 3. Use async processing queues
         // 4. Return aggregated results
-        
+
         warn!("Batch processing not yet implemented - designed for future game integration");
         Ok(Vec::new())
     }
-    
+
     /// Check if narrative processing should be enabled for this session
-    /// 
+    ///
     /// This allows for flexible configuration per user/session/chronicle
     #[allow(dead_code)]
     pub fn should_process_session(
@@ -365,11 +394,11 @@ impl NarrativeIntelligenceService {
         // For now, just use global config
         self.config.enabled
     }
-    
+
     /// Extract narrative insights from tool execution results
     fn extract_narrative_insights(&self, execution_results: &[Value]) -> Vec<String> {
         let mut insights = Vec::new();
-        
+
         for result in execution_results {
             if let Some(success) = result.get("success").and_then(|v| v.as_bool()) {
                 if success {
@@ -379,28 +408,34 @@ impl NarrativeIntelligenceService {
                 }
             }
         }
-        
+
         insights
     }
-    
+
     /// Count successful chronicle event creations
     fn count_successful_events(&self, execution_results: &[Value]) -> usize {
         execution_results
             .iter()
             .filter(|result| {
-                result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) &&
-                result.get("event_id").is_some()
+                result
+                    .get("success")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                    && result.get("event_id").is_some()
             })
             .count()
     }
-    
+
     /// Count successful lorebook entry creations
     fn count_successful_entries(&self, execution_results: &[Value]) -> usize {
         execution_results
             .iter()
             .filter(|result| {
-                result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) &&
-                result.get("entry_id").is_some()
+                result
+                    .get("success")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                    && result.get("entry_id").is_some()
             })
             .count()
     }
@@ -424,10 +459,18 @@ impl NarrativeIntelligenceService {
             async_processing: false,
             batch_size: 10,
         };
-        
-        Self::new_with_deps(ai_client, chronicle_service, lorebook_service, qdrant_service, embedding_client, app_state, Some(config))
+
+        Self::new_with_deps(
+            ai_client,
+            chronicle_service,
+            lorebook_service,
+            qdrant_service,
+            embedding_client,
+            app_state,
+            Some(config),
+        )
     }
-    
+
     /// Create service for production with individual dependencies
     pub fn for_production_with_deps(
         ai_client: Arc<dyn AiClient>,
@@ -438,7 +481,15 @@ impl NarrativeIntelligenceService {
         app_state: Arc<AppState>,
     ) -> Self {
         let config = NarrativeProcessingConfig::default();
-        Self::new_with_deps(ai_client, chronicle_service, lorebook_service, qdrant_service, embedding_client, app_state, Some(config))
+        Self::new_with_deps(
+            ai_client,
+            chronicle_service,
+            lorebook_service,
+            qdrant_service,
+            embedding_client,
+            app_state,
+            Some(config),
+        )
     }
 
     /// Create service for development/testing
@@ -455,10 +506,16 @@ impl NarrativeIntelligenceService {
             async_processing: false,
             batch_size: 10,
         };
-        
-        Self::new(ai_client, chronicle_service, lorebook_service, app_state, Some(config))
+
+        Self::new(
+            ai_client,
+            chronicle_service,
+            lorebook_service,
+            app_state,
+            Some(config),
+        )
     }
-    
+
     /// Create service for production
     pub fn for_production(
         ai_client: Arc<dyn AiClient>,
@@ -467,7 +524,13 @@ impl NarrativeIntelligenceService {
         app_state: Arc<AppState>,
     ) -> Self {
         let config = NarrativeProcessingConfig::default();
-        Self::new(ai_client, chronicle_service, lorebook_service, app_state, Some(config))
+        Self::new(
+            ai_client,
+            chronicle_service,
+            lorebook_service,
+            app_state,
+            Some(config),
+        )
     }
 
     /// Retrieve the user's current persona context for narrative intelligence
@@ -482,7 +545,7 @@ impl NarrativeIntelligenceService {
             .get()
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-            
+
         let user_db = conn
             .interact(move |db_conn| {
                 users_dsl::users
@@ -496,22 +559,30 @@ impl NarrativeIntelligenceService {
                     "DB interact join error for get_user_persona_context: {e}"
                 ))
             })??;
-            
+
         let user = match user_db {
             Some(user_db) => User::from(user_db),
-            None => return Err(AppError::NotFound(format!("User with ID {user_id} not found"))),
+            None => {
+                return Err(AppError::NotFound(format!(
+                    "User with ID {user_id} not found"
+                )));
+            }
         };
-        
+
         // If the user has a default persona, retrieve it
         if let Some(default_persona_id) = user.default_persona_id {
-            let persona_data = self.app_state.user_persona_service
+            let persona_data = self
+                .app_state
+                .user_persona_service
                 .get_user_persona(&user, Some(&session_dek.0), default_persona_id)
                 .await?;
-            
+
             Ok(UserPersonaContext::from(persona_data))
         } else {
             // User has no default persona set
-            Err(AppError::NotFound("User has no default persona set".to_string()))
+            Err(AppError::NotFound(
+                "User has no default persona set".to_string(),
+            ))
         }
     }
 }

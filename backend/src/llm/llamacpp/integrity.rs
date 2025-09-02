@@ -1,16 +1,16 @@
 // backend/src/llm/llamacpp/integrity.rs
 // Model file integrity verification and secure download management
 
-use crate::llm::llamacpp::{SecurityAuditLogger, SecurityEventType};
 use super::LocalLlmError;
 use crate::errors::AppError;
+use crate::llm::llamacpp::{SecurityAuditLogger, SecurityEventType};
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, Read, BufRead, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// Model integrity verification error types
@@ -18,22 +18,26 @@ use uuid::Uuid;
 pub enum IntegrityError {
     #[error("Model file not found: {path}")]
     ModelNotFound { path: String },
-    
+
     #[error("Checksum mismatch for {model_id}: expected {expected}, got {actual}")]
-    ChecksumMismatch { model_id: String, expected: String, actual: String },
-    
+    ChecksumMismatch {
+        model_id: String,
+        expected: String,
+        actual: String,
+    },
+
     #[error("Model signature verification failed: {reason}")]
     SignatureVerificationFailed { reason: String },
-    
+
     #[error("Model metadata corruption: {reason}")]
     MetadataCorruption { reason: String },
-    
+
     #[error("Untrusted model source: {0}")]
     UntrustedSource(String),
-    
+
     #[error("Model file corruption detected: {details}")]
     FileCorruption { details: String },
-    
+
     #[error("IO error during verification")]
     IoError(#[from] std::io::Error),
 }
@@ -70,10 +74,10 @@ pub struct ModelMetadata {
 /// Model quarantine status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum QuarantineStatus {
-    Clean,      // Verified and safe
-    Suspicious, // Requires additional verification
+    Clean,       // Verified and safe
+    Suspicious,  // Requires additional verification
     Quarantined, // Isolated, not safe to use
-    Unknown,    // Not yet verified
+    Unknown,     // Not yet verified
 }
 
 /// Verification record for audit trail
@@ -158,9 +162,16 @@ impl ModelIntegrityVerifier {
     }
 
     /// Verify model file integrity
-    pub async fn verify_model(&self, model_path: &Path, metadata: &mut ModelMetadata) -> Result<(), IntegrityError> {
-        info!("Starting integrity verification for model: {}", metadata.model_id);
-        
+    pub async fn verify_model(
+        &self,
+        model_path: &Path,
+        metadata: &mut ModelMetadata,
+    ) -> Result<(), IntegrityError> {
+        info!(
+            "Starting integrity verification for model: {}",
+            metadata.model_id
+        );
+
         let mut verification_record = VerificationRecord {
             timestamp: chrono::Utc::now(),
             verification_type: VerificationType::ChecksumVerification,
@@ -171,17 +182,24 @@ impl ModelIntegrityVerifier {
 
         // Verify file exists and is readable
         if !model_path.exists() {
-            let error = IntegrityError::ModelNotFound { 
-                path: model_path.display().to_string() 
+            let error = IntegrityError::ModelNotFound {
+                path: model_path.display().to_string(),
             };
-            self.log_security_event(&metadata.model_id, SecurityEventType::IntegrityCheckFailed, &error.to_string());
+            self.log_security_event(
+                &metadata.model_id,
+                SecurityEventType::IntegrityCheckFailed,
+                &error.to_string(),
+            );
             return Err(error);
         }
 
         // Verify checksum
         match self.verify_checksum(model_path, metadata).await {
             Ok(_) => {
-                info!("Checksum verification passed for model: {}", metadata.model_id);
+                info!(
+                    "Checksum verification passed for model: {}",
+                    metadata.model_id
+                );
             }
             Err(e) => {
                 verification_record.result = VerificationResult::Failed(e.to_string());
@@ -197,7 +215,10 @@ impl ModelIntegrityVerifier {
                 metadata.verification_history.push(verification_record);
                 return Err(e);
             } else {
-                warn!("Source verification failed but continuing in non-strict mode: {}", e);
+                warn!(
+                    "Source verification failed but continuing in non-strict mode: {}",
+                    e
+                );
                 verification_record.result = VerificationResult::Warning(e.to_string());
             }
         }
@@ -217,37 +238,43 @@ impl ModelIntegrityVerifier {
         // Update metadata with verification results
         metadata.verification_timestamp = Some(chrono::Utc::now());
         metadata.quarantine_status = QuarantineStatus::Clean;
-        
-        verification_record.details = "Full integrity verification completed successfully".to_string();
+
+        verification_record.details =
+            "Full integrity verification completed successfully".to_string();
         metadata.verification_history.push(verification_record);
 
-        info!("Integrity verification completed successfully for model: {}", metadata.model_id);
+        info!(
+            "Integrity verification completed successfully for model: {}",
+            metadata.model_id
+        );
         Ok(())
     }
 
     /// Verify file checksum
-    async fn verify_checksum(&self, model_path: &Path, metadata: &ModelMetadata) -> Result<(), IntegrityError> {
+    async fn verify_checksum(
+        &self,
+        model_path: &Path,
+        metadata: &ModelMetadata,
+    ) -> Result<(), IntegrityError> {
         debug!("Computing SHA256 checksum for: {}", model_path.display());
-        
-        let mut file = File::open(model_path)
-?;
+
+        let mut file = File::open(model_path)?;
 
         let mut hasher = Sha256::new();
         let mut buffer = [0; 8192]; // 8KB buffer for streaming hash computation
 
         loop {
-            let bytes_read = file.read(&mut buffer)
-    ?;
-            
+            let bytes_read = file.read(&mut buffer)?;
+
             if bytes_read == 0 {
                 break;
             }
-            
+
             hasher.update(&buffer[..bytes_read]);
         }
 
         let computed_hash = format!("{:x}", hasher.finalize());
-        
+
         // Check against expected hash if available
         if !metadata.sha256_hash.is_empty() {
             if computed_hash != metadata.sha256_hash {
@@ -256,7 +283,11 @@ impl ModelIntegrityVerifier {
                     expected: metadata.sha256_hash.clone(),
                     actual: computed_hash,
                 };
-                self.log_security_event(&metadata.model_id, SecurityEventType::IntegrityCheckFailed, &error.to_string());
+                self.log_security_event(
+                    &metadata.model_id,
+                    SecurityEventType::IntegrityCheckFailed,
+                    &error.to_string(),
+                );
                 return Err(error);
             }
         }
@@ -269,7 +300,11 @@ impl ModelIntegrityVerifier {
                     expected: expected_hash.clone(),
                     actual: computed_hash,
                 };
-                self.log_security_event(&metadata.model_id, SecurityEventType::IntegrityCheckFailed, &error.to_string());
+                self.log_security_event(
+                    &metadata.model_id,
+                    SecurityEventType::IntegrityCheckFailed,
+                    &error.to_string(),
+                );
                 return Err(error);
             }
         }
@@ -283,43 +318,57 @@ impl ModelIntegrityVerifier {
         // Parse URL to check domain
         if let Ok(url) = url::Url::parse(&metadata.download_url) {
             if let Some(host) = url.host_str() {
-                let is_trusted = self.trusted_sources.domains.iter()
+                let is_trusted = self
+                    .trusted_sources
+                    .domains
+                    .iter()
                     .any(|domain| host.contains(domain));
-                
+
                 if !is_trusted {
                     let error = IntegrityError::UntrustedSource(host.to_string());
-                    self.log_security_event(&metadata.model_id, SecurityEventType::ModelTampering, &error.to_string());
+                    self.log_security_event(
+                        &metadata.model_id,
+                        SecurityEventType::ModelTampering,
+                        &error.to_string(),
+                    );
                     return Err(error);
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// Verify GGUF file structure
-    fn verify_file_structure(&self, model_path: &Path, metadata: &ModelMetadata) -> Result<(), IntegrityError> {
-        let mut file = File::open(model_path)
-?;
+    fn verify_file_structure(
+        &self,
+        model_path: &Path,
+        metadata: &ModelMetadata,
+    ) -> Result<(), IntegrityError> {
+        let mut file = File::open(model_path)?;
 
         // Check GGUF magic number (first 4 bytes should be "GGUF")
         let mut magic = [0u8; 4];
         file.read_exact(&mut magic)
-            .map_err(|e| IntegrityError::FileCorruption { 
-                details: format!("Could not read magic number: {}", e) 
+            .map_err(|e| IntegrityError::FileCorruption {
+                details: format!("Could not read magic number: {}", e),
             })?;
 
         if &magic != b"GGUF" {
             let error = IntegrityError::FileCorruption {
                 details: "Invalid GGUF magic number".to_string(),
             };
-            self.log_security_event(&metadata.model_id, SecurityEventType::ModelTampering, &error.to_string());
+            self.log_security_event(
+                &metadata.model_id,
+                SecurityEventType::ModelTampering,
+                &error.to_string(),
+            );
             return Err(error);
         }
 
         // Additional structure checks could be added here
         // For now, we just verify the magic number
-        
+
         debug!("File structure verification passed for GGUF format");
         Ok(())
     }
@@ -336,17 +385,21 @@ impl ModelIntegrityVerifier {
             )
             .with_detail("model_id", model_id)
             .with_detail("details", details);
-            
+
             logger.log_event(event);
         }
     }
 
     /// Quarantine a suspicious model
-    pub fn quarantine_model(&self, metadata: &mut ModelMetadata, reason: &str) -> Result<(), IntegrityError> {
+    pub fn quarantine_model(
+        &self,
+        metadata: &mut ModelMetadata,
+        reason: &str,
+    ) -> Result<(), IntegrityError> {
         warn!("Quarantining model {}: {}", metadata.model_id, reason);
-        
+
         metadata.quarantine_status = QuarantineStatus::Quarantined;
-        
+
         let verification_record = VerificationRecord {
             timestamp: chrono::Utc::now(),
             verification_type: VerificationType::MalwareScanning,
@@ -354,11 +407,15 @@ impl ModelIntegrityVerifier {
             details: format!("Model quarantined: {}", reason),
             verifier_version: env!("CARGO_PKG_VERSION").to_string(),
         };
-        
+
         metadata.verification_history.push(verification_record);
-        
-        self.log_security_event(&metadata.model_id, SecurityEventType::ModelTampering, reason);
-        
+
+        self.log_security_event(
+            &metadata.model_id,
+            SecurityEventType::ModelTampering,
+            reason,
+        );
+
         Ok(())
     }
 
@@ -394,15 +451,15 @@ impl SecureModelRegistry {
     /// Load registry from disk
     pub fn load(&mut self) -> Result<(), IntegrityError> {
         if self.registry_path.exists() {
-            let file = File::open(&self.registry_path)
-    ?;
-            
+            let file = File::open(&self.registry_path)?;
+
             let reader = BufReader::new(file);
-            self.models = serde_json::from_reader(reader)
-                .map_err(|e| IntegrityError::MetadataCorruption { 
-                    reason: format!("Failed to parse registry: {}", e) 
-                })?;
-            
+            self.models = serde_json::from_reader(reader).map_err(|e| {
+                IntegrityError::MetadataCorruption {
+                    reason: format!("Failed to parse registry: {}", e),
+                }
+            })?;
+
             info!("Loaded {} models from registry", self.models.len());
         }
         Ok(())
@@ -414,34 +471,38 @@ impl SecureModelRegistry {
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&self.registry_path)
-?;
+            .open(&self.registry_path)?;
 
-        let json = serde_json::to_string_pretty(&self.models)
-            .map_err(|e| IntegrityError::MetadataCorruption { 
-                reason: format!("Failed to serialize registry: {}", e) 
-            })?;
+        let json = serde_json::to_string_pretty(&self.models).map_err(|e| {
+            IntegrityError::MetadataCorruption {
+                reason: format!("Failed to serialize registry: {}", e),
+            }
+        })?;
 
-        file.write_all(json.as_bytes())
-?;
+        file.write_all(json.as_bytes())?;
 
         debug!("Saved model registry with {} entries", self.models.len());
         Ok(())
     }
 
     /// Register a new model
-    pub async fn register_model(&mut self, mut metadata: ModelMetadata) -> Result<(), IntegrityError> {
+    pub async fn register_model(
+        &mut self,
+        mut metadata: ModelMetadata,
+    ) -> Result<(), IntegrityError> {
         let model_path = Path::new(&metadata.file_path).to_owned();
-        
+
         // Verify the model
-        self.verifier.verify_model(&model_path, &mut metadata).await?;
-        
+        self.verifier
+            .verify_model(&model_path, &mut metadata)
+            .await?;
+
         // Store in registry
         self.models.insert(metadata.model_id.clone(), metadata);
-        
+
         // Save registry
         self.save()?;
-        
+
         Ok(())
     }
 
@@ -476,16 +537,16 @@ mod tests {
     #[tokio::test]
     async fn test_checksum_verification() {
         let verifier = ModelIntegrityVerifier::new(None);
-        
+
         // Create a temporary file with known content
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(b"test content").unwrap();
-        
+
         // Compute expected hash for "test content"
         let mut hasher = Sha256::new();
         hasher.update(b"test content");
         let expected_hash = format!("{:x}", hasher.finalize());
-        
+
         let mut metadata = ModelMetadata {
             model_id: "test-model".to_string(),
             name: "Test Model".to_string(),
@@ -500,19 +561,29 @@ mod tests {
             quarantine_status: QuarantineStatus::Unknown,
             verification_history: Vec::new(),
         };
-        
+
         // Should pass with correct hash
-        assert!(verifier.verify_checksum(temp_file.path(), &metadata).await.is_ok());
-        
+        assert!(
+            verifier
+                .verify_checksum(temp_file.path(), &metadata)
+                .await
+                .is_ok()
+        );
+
         // Should fail with incorrect hash
         metadata.sha256_hash = "incorrect_hash".to_string();
-        assert!(verifier.verify_checksum(temp_file.path(), &metadata).await.is_err());
+        assert!(
+            verifier
+                .verify_checksum(temp_file.path(), &metadata)
+                .await
+                .is_err()
+        );
     }
 
     #[test]
     fn test_source_trust_verification() {
         let verifier = ModelIntegrityVerifier::new(None);
-        
+
         let trusted_metadata = ModelMetadata {
             model_id: "test".to_string(),
             name: "Test".to_string(),
@@ -527,12 +598,12 @@ mod tests {
             quarantine_status: QuarantineStatus::Unknown,
             verification_history: Vec::new(),
         };
-        
+
         let untrusted_metadata = ModelMetadata {
             download_url: "https://suspicious-site.com/model".to_string(),
             ..trusted_metadata.clone()
         };
-        
+
         assert!(verifier.verify_source_trust(&trusted_metadata).is_ok());
         assert!(verifier.verify_source_trust(&untrusted_metadata).is_err());
     }
@@ -540,7 +611,7 @@ mod tests {
     #[test]
     fn test_quarantine_status() {
         let verifier = ModelIntegrityVerifier::new(None).with_strict_mode(true);
-        
+
         let clean_model = ModelMetadata {
             model_id: "clean".to_string(),
             name: "Clean Model".to_string(),
@@ -555,12 +626,12 @@ mod tests {
             quarantine_status: QuarantineStatus::Clean,
             verification_history: Vec::new(),
         };
-        
+
         let quarantined_model = ModelMetadata {
             quarantine_status: QuarantineStatus::Quarantined,
             ..clean_model.clone()
         };
-        
+
         assert!(verifier.is_model_safe(&clean_model));
         assert!(!verifier.is_model_safe(&quarantined_model));
     }

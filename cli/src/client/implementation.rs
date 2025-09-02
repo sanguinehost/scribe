@@ -705,7 +705,6 @@ impl HttpClient for ReqwestClientWrapper {
         }
     }
 
-
     // Keep generate_response for mock compatibility if needed
 
     async fn generate_response(

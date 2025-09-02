@@ -37,10 +37,10 @@ use serde_json::json;
 use std::sync::Arc;
 use tracing::{error, info};
 // ExposeSecret already imported above
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // Added Deserialize
 use uuid::Uuid;
-use validator::Validate; // Remove unused Deserialize
-use chrono::{DateTime, Utc}; // Added for cursor-based pagination
+use validator::Validate; // Remove unused Deserialize // Added for cursor-based pagination
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -52,7 +52,10 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
         .route("/create_session", post(create_chat_handler)) // More distinct path for POST
         .route("/fetch/:id", get(get_chat_by_id_handler))
         .route("/remove/:id", delete(delete_chat_handler))
-        .route("/:id/deletion-analysis", get(get_chat_deletion_analysis_handler))
+        .route(
+            "/:id/deletion-analysis",
+            get(get_chat_deletion_analysis_handler),
+        )
         .route(
             "/by-character/:character_id",
             get(get_chats_by_character_handler),
@@ -68,7 +71,10 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             "/:id/settings",
             get(get_chat_settings_handler).put(update_chat_settings_handler),
         )
-        .route("/messages/:id", get(get_message_by_id_handler).delete(delete_message_handler))
+        .route(
+            "/messages/:id",
+            get(get_message_by_id_handler).delete(delete_message_handler),
+        )
         .route("/messages/:id/vote", post(vote_message_handler))
         .route(
             "/messages/:id/trailing",
@@ -380,7 +386,7 @@ pub async fn get_chat_by_id_handler(
 
 /// Get deletion analysis for a chat (chronicle info)
 /// Returns analysis information to help user make informed deletion decisions
-/// 
+///
 /// # Errors
 ///
 /// Returns an error if:
@@ -408,7 +414,9 @@ pub async fn get_chat_deletion_analysis_handler(
                 .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
                 .select(Chat::as_select())
                 .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}")))
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
+                })
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
@@ -465,7 +473,9 @@ pub async fn delete_chat_handler(
                 .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
                 .select(Chat::as_select())
                 .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}")))
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
+                })
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
@@ -484,11 +494,15 @@ pub async fn delete_chat_handler(
         match params.chronicle_action.as_str() {
             "delete_chronicle" => {
                 info!("Strategy: Delete entire chronicle and all events");
-                
+
                 // Clean up ALL chronicle event embeddings (not just from this chat)
                 if let Err(e) = state
                     .embedding_pipeline_service
-                    .delete_chronicle_events_by_chronicle_id(Arc::new(state.clone()), chronicle_id, user.id)
+                    .delete_chronicle_events_by_chronicle_id(
+                        Arc::new(state.clone()),
+                        chronicle_id,
+                        user.id,
+                    )
                     .await
                 {
                     error!(
@@ -502,35 +516,48 @@ pub async fn delete_chat_handler(
                 chronicle_service
                     .delete_chronicle_completely(user.id, chronicle_id)
                     .await?;
-                
+
                 info!("Chronicle {} deleted completely", chronicle_id);
             }
 
             "disassociate" => {
                 info!("Strategy: Disassociate chronicle events from chat (preserve events)");
-                
+
                 // First disassociate events from the chat (set chat_session_id to NULL)
                 let disassociated_count = chronicle_service
                     .disassociate_events_from_chat(user.id, id)
                     .await?;
-                
-                info!("Disassociated {} events from chat {}", disassociated_count, id);
-                
+
+                info!(
+                    "Disassociated {} events from chat {}",
+                    disassociated_count, id
+                );
+
                 // Note: We don't clean up embeddings because events are preserved
             }
 
             "delete_events" | _ => {
                 info!("Strategy: Delete only events created by this chat (default)");
-                
+
                 // Clean up embeddings for events from this specific chat
-                match chronicle_service.get_events_for_chat_session(user.id, id).await {
+                match chronicle_service
+                    .get_events_for_chat_session(user.id, id)
+                    .await
+                {
                     Ok(events) => {
-                        info!("Found {} chronicle events from this chat to clean up", events.len());
-                        
+                        info!(
+                            "Found {} chronicle events from this chat to clean up",
+                            events.len()
+                        );
+
                         for event in events {
                             if let Err(e) = state
                                 .embedding_pipeline_service
-                                .delete_chronicle_event_chunks(Arc::new(state.clone()), event.id, user.id)
+                                .delete_chronicle_event_chunks(
+                                    Arc::new(state.clone()),
+                                    event.id,
+                                    user.id,
+                                )
                                 .await
                             {
                                 error!(
@@ -540,7 +567,7 @@ pub async fn delete_chat_handler(
                                 );
                             }
                         }
-                    },
+                    }
                     Err(e) => {
                         error!(
                             chat_id = %id,
@@ -566,7 +593,10 @@ pub async fn delete_chat_handler(
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
-    info!("Successfully deleted chat session {} with strategy '{}'", id, params.chronicle_action);
+    info!(
+        "Successfully deleted chat session {} with strategy '{}'",
+        id, params.chronicle_action
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -727,12 +757,12 @@ async fn get_default_variant_content(
     user_id: Uuid,
     dek: &crate::auth::session_dek::SessionDek,
 ) -> Result<Option<String>, AppError> {
-    use crate::schema::message_variants;
     use crate::models::chats::MessageVariant;
+    use crate::schema::message_variants;
     use diesel::OptionalExtension; // Add this import for .optional()
 
     let conn = pool.get().await?;
-    
+
     let variant_opt = conn
         .interact(move |conn| {
             message_variants::table
@@ -767,14 +797,16 @@ async fn process_messages_for_response(
 
     for msg_db in messages_db {
         // First try to get variant 0 content, fall back to original message content
-        let content = match get_default_variant_content(pool.clone(), msg_db.id, user_id, dek).await? {
-            Some(variant_content) => variant_content,
-            None => {
-                // No variants exist, use original message content
-                let decrypted_client_message = msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
-                decrypted_client_message.content
-            }
-        };
+        let content =
+            match get_default_variant_content(pool.clone(), msg_db.id, user_id, dek).await? {
+                Some(variant_content) => variant_content,
+                None => {
+                    // No variants exist, use original message content
+                    let decrypted_client_message =
+                        msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
+                    decrypted_client_message.content
+                }
+            };
 
         // Update parts to use the variant content or original content
         let response_parts = msg_db
@@ -787,10 +819,7 @@ async fn process_messages_for_response(
             .unwrap_or_else(|| msg_db.message_type.to_string());
 
         // For raw_prompt, still decrypt from the original message
-        let raw_prompt = match (
-            &msg_db.raw_prompt_ciphertext,
-            &msg_db.raw_prompt_nonce,
-        ) {
+        let raw_prompt = match (&msg_db.raw_prompt_ciphertext, &msg_db.raw_prompt_nonce) {
             (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
                 crate::crypto::decrypt_gcm(ciphertext, nonce, &dek.0)
                     .ok()
@@ -1471,7 +1500,9 @@ pub async fn delete_message_handler(
                 .select(Message::as_select())
                 .first::<Message>(conn)
                 .map_err(|e| match e {
-                    diesel::result::Error::NotFound => AppError::NotFound("Message not found".to_string()),
+                    diesel::result::Error::NotFound => {
+                        AppError::NotFound("Message not found".to_string())
+                    }
                     _ => AppError::DatabaseQueryError(e.to_string()),
                 })
         })
@@ -1510,7 +1541,7 @@ pub async fn delete_message_handler(
             diesel::delete(
                 crate::schema::old_votes::table
                     .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id))
-                    .filter(crate::schema::old_votes::dsl::message_id.eq(message_id))
+                    .filter(crate::schema::old_votes::dsl::message_id.eq(message_id)),
             )
             .execute(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
@@ -1521,11 +1552,7 @@ pub async fn delete_message_handler(
     // Delete embeddings from Qdrant
     if let Err(e) = state
         .embedding_pipeline_service
-        .delete_message_chunks(
-            Arc::new(state.clone()),
-            vec![message_id],
-            user.id,
-        )
+        .delete_message_chunks(Arc::new(state.clone()), vec![message_id], user.id)
         .await
     {
         // Log error but don't fail the whole operation
@@ -1537,12 +1564,9 @@ pub async fn delete_message_handler(
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
         .interact(move |conn| {
-            diesel::delete(
-                chat_messages::table
-                    .filter(chat_messages::id.eq(message_id))
-            )
-            .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            diesel::delete(chat_messages::table.filter(chat_messages::id.eq(message_id)))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;

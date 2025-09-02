@@ -13,7 +13,6 @@ pub use clap::{Args as ClapArgs, Parser, Subcommand};
 pub use error::CliError;
 pub use uuid::Uuid; // Ensure CliError is available for MenuResult
 
-
 // --- Menu Navigation Enums and Types ---
 
 /// Enum to manage the current state of the interactive menu in main.rs

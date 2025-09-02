@@ -11,8 +11,8 @@ use scribe_backend::schema::{
 use scribe_backend::services::chat::generation::get_session_data_for_generation;
 use scribe_backend::services::{
     chat_override_service::ChatOverrideService, email_service::LoggingEmailService,
-    encryption_service::EncryptionService, hybrid_token_counter::HybridTokenCounter, 
-    lorebook::LorebookService, tokenizer_service::TokenizerService, 
+    encryption_service::EncryptionService, hybrid_token_counter::HybridTokenCounter,
+    lorebook::LorebookService, tokenizer_service::TokenizerService,
     user_persona_service::UserPersonaService,
 };
 use scribe_backend::state::{AppState, AppStateServices};
@@ -151,12 +151,15 @@ async fn test_frontend_history_vs_database_history() {
     let email_service = Arc::new(LoggingEmailService::new(
         "http://localhost:3000".to_string(),
     ));
-    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -328,12 +331,15 @@ async fn test_orphaned_message_exclusion_scenario() {
     let email_service = Arc::new(LoggingEmailService::new(
         "http://localhost:3000".to_string(),
     ));
-    let ai_client_factory = Arc::new(scribe_backend::services::ai_client_factory::AiClientFactory::new(
-        test_app.db_pool.clone(),
-        test_app.config.clone(),
-        test_app.ai_client.clone(),
-    ));
-    let rate_limiter = Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let ai_client_factory = Arc::new(
+        scribe_backend::services::ai_client_factory::AiClientFactory::new(
+            test_app.db_pool.clone(),
+            test_app.config.clone(),
+            test_app.ai_client.clone(),
+        ),
+    );
+    let rate_limiter =
+        Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -406,7 +412,8 @@ async fn test_orphaned_message_exclusion_scenario() {
     let calls = test_app.mock_embedding_pipeline_service.get_calls();
     println!("RAG calls made in frontend mode: {}", calls.len());
 
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = result;
+    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
+        result;
 
     // Should have exactly 3 messages from frontend history (excluding current message)
     assert_eq!(

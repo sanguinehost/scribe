@@ -1,11 +1,11 @@
 // backend/src/routes/chronicles.rs
 
 use axum::{
+    Router,
     extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
     routing::{delete, get, post},
-    Router,
 };
 use axum_login::AuthSession;
 use serde::{Deserialize, Serialize};
@@ -15,21 +15,19 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::{
-    auth::{
-        user_store::Backend as AuthBackend,
-        session_dek::SessionDek,
-    },
+    auth::{session_dek::SessionDek, user_store::Backend as AuthBackend},
     errors::AppError,
     models::{
         chats::ChatMessage,
         chronicle::{
-            CreateChronicleRequest, PlayerChronicle, PlayerChronicleWithCounts, UpdateChronicleRequest,
+            CreateChronicleRequest, PlayerChronicle, PlayerChronicleWithCounts,
+            UpdateChronicleRequest,
         },
-        chronicle_event::{ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, EventSource},
+        chronicle_event::{
+            ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, EventSource,
+        },
     },
-    services::{
-        ChronicleService,
-    },
+    services::ChronicleService,
     state::AppState,
 };
 
@@ -95,7 +93,6 @@ pub struct GenerateChronicleNameResponse {
     pub reasoning: Option<String>,
 }
 
-
 impl From<EventQuery> for EventFilter {
     fn from(query: EventQuery) -> Self {
         Self {
@@ -118,7 +115,12 @@ pub fn create_chronicles_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/", post(create_chronicle).get(list_chronicles))
         .route("/generate-name", post(generate_chronicle_name))
-        .route("/:chronicle_id", get(get_chronicle).put(update_chronicle).delete(delete_chronicle))
+        .route(
+            "/:chronicle_id",
+            get(get_chronicle)
+                .put(update_chronicle)
+                .delete(delete_chronicle),
+        )
         .route("/:chronicle_id/events", post(create_event).get(list_events))
         .route("/:chronicle_id/events/:event_id", delete(delete_event))
         .route("/:chronicle_id/re-chronicle", post(re_chronicle_from_chat))
@@ -135,10 +137,10 @@ async fn create_chronicle(
     Json(request): Json<CreateChronicleRequest>,
 ) -> Result<(StatusCode, Json<PlayerChronicle>), AppError> {
     info!("=== CREATE CHRONICLE HANDLER CALLED ===");
-    
+
     // Validate the request
     request.validate()?;
-    
+
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
@@ -167,9 +169,15 @@ async fn list_chronicles(
     info!("Listing chronicles for user {}", user.id);
 
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    let chronicles = chronicle_service.get_user_chronicles_with_counts(user.id).await?;
+    let chronicles = chronicle_service
+        .get_user_chronicles_with_counts(user.id)
+        .await?;
 
-    info!("Retrieved {} chronicles for user {}", chronicles.len(), user.id);
+    info!(
+        "Retrieved {} chronicles for user {}",
+        chronicles.len(),
+        user.id
+    );
     Ok(Json(chronicles))
 }
 
@@ -188,7 +196,9 @@ async fn get_chronicle(
     info!("Getting chronicle {} for user {}", chronicle_id, user.id);
 
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    let chronicle = chronicle_service.get_chronicle(user.id, chronicle_id).await?;
+    let chronicle = chronicle_service
+        .get_chronicle(user.id, chronicle_id)
+        .await?;
 
     info!("Successfully retrieved chronicle {}", chronicle_id);
     Ok(Json(chronicle))
@@ -204,7 +214,7 @@ async fn update_chronicle(
 ) -> Result<Json<PlayerChronicle>, AppError> {
     // Validate the request
     request.validate()?;
-    
+
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
@@ -213,7 +223,9 @@ async fn update_chronicle(
     info!("Updating chronicle {} for user {}", chronicle_id, user.id);
 
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    let chronicle = chronicle_service.update_chronicle(user.id, chronicle_id, request).await?;
+    let chronicle = chronicle_service
+        .update_chronicle(user.id, chronicle_id, request)
+        .await?;
 
     info!("Successfully updated chronicle {}", chronicle_id);
     Ok(Json(chronicle))
@@ -254,9 +266,14 @@ async fn delete_chronicle(
 
     // Now delete the chronicle from the database (this will CASCADE delete all chronicle_events)
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    chronicle_service.delete_chronicle(user.id, chronicle_id).await?;
+    chronicle_service
+        .delete_chronicle(user.id, chronicle_id)
+        .await?;
 
-    info!("Successfully deleted chronicle {} and all associated data", chronicle_id);
+    info!(
+        "Successfully deleted chronicle {} and all associated data",
+        chronicle_id
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -273,21 +290,30 @@ async fn create_event(
 ) -> Result<(StatusCode, Json<ChronicleEvent>), AppError> {
     // Validate the request
     request.validate()?;
-    
+
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
 
-    info!("Creating event in chronicle {} for user {}: {}", chronicle_id, user.id, request.event_type);
+    info!(
+        "Creating event in chronicle {} for user {}: {}",
+        chronicle_id, user.id, request.event_type
+    );
 
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    let mut event = chronicle_service.create_event(user.id, chronicle_id, request, Some(&session_dek)).await?;
+    let mut event = chronicle_service
+        .create_event(user.id, chronicle_id, request, Some(&session_dek))
+        .await?;
 
     // Embed the chronicle event for semantic search
     if let Err(e) = state
         .embedding_pipeline_service
-        .process_and_embed_chronicle_event(Arc::new(state.clone()), event.clone(), Some(&session_dek))
+        .process_and_embed_chronicle_event(
+            Arc::new(state.clone()),
+            event.clone(),
+            Some(&session_dek),
+        )
         .await
     {
         warn!(event_id = %event.id, error = %e, "Failed to embed chronicle event, but event was created successfully");
@@ -324,11 +350,16 @@ async fn list_events(
         AppError::Unauthorized("Authentication required".to_string())
     })?;
 
-    info!("Listing events for chronicle {} for user {}", chronicle_id, user.id);
+    info!(
+        "Listing events for chronicle {} for user {}",
+        chronicle_id, user.id
+    );
 
     let filter = EventFilter::from(query);
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    let mut events = chronicle_service.get_chronicle_events(user.id, chronicle_id, filter).await?;
+    let mut events = chronicle_service
+        .get_chronicle_events(user.id, chronicle_id, filter)
+        .await?;
 
     // Decrypt event summaries before returning
     for event in &mut events {
@@ -342,7 +373,11 @@ async fn list_events(
         }
     }
 
-    info!("Retrieved {} events for chronicle {}", events.len(), chronicle_id);
+    info!(
+        "Retrieved {} events for chronicle {}",
+        events.len(),
+        chronicle_id
+    );
     Ok(Json(events))
 }
 
@@ -358,7 +393,10 @@ async fn delete_event(
         AppError::Unauthorized("Authentication required".to_string())
     })?;
 
-    info!("Deleting event {} from chronicle {} for user {}", event_id, chronicle_id, user.id);
+    info!(
+        "Deleting event {} from chronicle {} for user {}",
+        event_id, chronicle_id, user.id
+    );
 
     let chronicle_service = ChronicleService::new(state.pool.clone());
     chronicle_service.delete_event(user.id, event_id).await?;
@@ -380,8 +418,8 @@ async fn delete_event(
 }
 
 /// Re-chronicle events from chat messages
-/// 
-/// This endpoint processes chat messages and extracts chronicle events using the 
+///
+/// This endpoint processes chat messages and extracts chronicle events using the
 /// narrative intelligence system. It can optionally purge existing events first.
 #[instrument(skip(auth_session, session_dek, state))]
 async fn re_chronicle_from_chat(
@@ -393,7 +431,7 @@ async fn re_chronicle_from_chat(
 ) -> Result<Json<ReChronicleResponse>, AppError> {
     // Validate the request
     request.validate()?;
-    
+
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
@@ -405,27 +443,30 @@ async fn re_chronicle_from_chat(
     );
 
     let chronicle_service = ChronicleService::new(state.pool.clone());
-    
+
     // Verify the chronicle exists and belongs to the user
-    let _chronicle = chronicle_service.get_chronicle(user.id, chronicle_id).await?;
-    
+    let _chronicle = chronicle_service
+        .get_chronicle(user.id, chronicle_id)
+        .await?;
+
     let mut events_purged = 0;
-    
+
     // Purge existing events if requested
     if request.purge_existing {
-        info!("Purging existing chronicle events for chronicle {}", chronicle_id);
-        let existing_events = chronicle_service.get_chronicle_events(
-            user.id,
-            chronicle_id,
-            EventFilter::default()
-        ).await?;
-        
+        info!(
+            "Purging existing chronicle events for chronicle {}",
+            chronicle_id
+        );
+        let existing_events = chronicle_service
+            .get_chronicle_events(user.id, chronicle_id, EventFilter::default())
+            .await?;
+
         events_purged = existing_events.len();
-        
+
         for event in existing_events {
             // Delete the event
             chronicle_service.delete_event(user.id, event.id).await?;
-            
+
             // Clean up embeddings
             if let Err(e) = state
                 .embedding_pipeline_service
@@ -435,13 +476,13 @@ async fn re_chronicle_from_chat(
                 warn!(event_id = %event.id, error = %e, "Failed to delete chronicle event embeddings during purge");
             }
         }
-        
+
         info!("Purged {} existing chronicle events", events_purged);
     }
-    
+
     // Get chat messages
     let messages = get_chat_messages(&state, request.chat_session_id, user.id).await?;
-    
+
     if messages.is_empty() {
         return Ok(Json(ReChronicleResponse {
             events_created: 0,
@@ -450,54 +491,62 @@ async fn re_chronicle_from_chat(
             summary: "No messages found in chat session".to_string(),
         }));
     }
-    
+
     // Filter messages by index range if specified
     let start_idx = request.start_message_index.unwrap_or(0);
     let end_idx = request.end_message_index.unwrap_or(messages.len());
-    
+
     let messages_to_process: Vec<_> = messages
         .into_iter()
         .enumerate()
         .filter(|(idx, _)| *idx >= start_idx && *idx < end_idx)
         .map(|(_, msg)| msg)
         .collect();
-    
+
     info!(
         "Processing {} messages from indices {} to {}",
         messages_to_process.len(),
         start_idx,
         end_idx
     );
-    
+
     let mut total_events_created = 0;
     let mut messages_processed = 0;
-    
+
     // Process messages in batches to provide context
     let batch_size = request.batch_size.min(50); // Cap at 50 for safety
-    
+
     for (batch_idx, batch) in messages_to_process.chunks(batch_size).enumerate() {
         info!(
             "Processing batch {} with {} messages",
             batch_idx,
             batch.len()
         );
-        
+
         // Get the narrative intelligence service
-        let narrative_service = state.narrative_intelligence_service.as_ref()
-            .ok_or_else(|| AppError::InternalServerErrorGeneric("Narrative intelligence service not available".to_string()))?;
-        
+        let narrative_service = state
+            .narrative_intelligence_service
+            .as_ref()
+            .ok_or_else(|| {
+                AppError::InternalServerErrorGeneric(
+                    "Narrative intelligence service not available".to_string(),
+                )
+            })?;
+
         // Process this batch of messages through the narrative intelligence system
-        let processing_result = narrative_service.process_chat_history_batch(
-            user.id,
-            request.chat_session_id,
-            Some(chronicle_id),
-            batch.to_vec(),
-            &session_dek,
-        ).await?;
-        
+        let processing_result = narrative_service
+            .process_chat_history_batch(
+                user.id,
+                request.chat_session_id,
+                Some(chronicle_id),
+                batch.to_vec(),
+                &session_dek,
+            )
+            .await?;
+
         total_events_created += processing_result.events_created;
         messages_processed += batch.len();
-        
+
         info!(
             "Batch {} complete: {} events created from {} messages",
             batch_idx,
@@ -505,16 +554,20 @@ async fn re_chronicle_from_chat(
             batch.len()
         );
     }
-    
+
     let summary = format!(
         "Re-chronicling complete: {} events created from {} messages{}",
         total_events_created,
         messages_processed,
-        if events_purged > 0 { format!(", {} existing events purged", events_purged) } else { String::new() }
+        if events_purged > 0 {
+            format!(", {} existing events purged", events_purged)
+        } else {
+            String::new()
+        }
     );
-    
+
     info!("{}", summary);
-    
+
     Ok(Json(ReChronicleResponse {
         events_created: total_events_created,
         messages_processed,
@@ -529,25 +582,28 @@ async fn get_character_name_for_session(
     chat_session_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<String>, AppError> {
-    use crate::schema::{chat_sessions, characters};
-    use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods, JoinOnDsl, NullableExpressionMethods};
-    
+    use crate::schema::{characters, chat_sessions};
+    use diesel::{ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, RunQueryDsl};
+
     let conn = state.pool.get().await?;
-    
-    let character_name = conn.interact(move |conn| {
-        chat_sessions::table
-            .left_join(characters::table.on(
-                chat_sessions::character_id.eq(characters::id.nullable())
-            ))
-            .filter(chat_sessions::id.eq(chat_session_id))
-            .filter(chat_sessions::user_id.eq(user_id))
-            .select(characters::name.nullable())
-            .first::<Option<String>>(conn)
-    })
-    .await
-    .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch character name: {}", e)))?;
-    
+
+    let character_name = conn
+        .interact(move |conn| {
+            chat_sessions::table
+                .left_join(
+                    characters::table.on(chat_sessions::character_id.eq(characters::id.nullable())),
+                )
+                .filter(chat_sessions::id.eq(chat_session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(characters::name.nullable())
+                .first::<Option<String>>(conn)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to fetch character name: {}", e))
+        })?;
+
     Ok(character_name)
 }
 
@@ -558,27 +614,32 @@ async fn get_chat_messages(
     user_id: Uuid,
 ) -> Result<Vec<ChatMessage>, AppError> {
     use crate::schema::{chat_messages, chat_sessions};
-    use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods, JoinOnDsl, SelectableHelper, BoolExpressionMethods};
-    
+    use diesel::{
+        BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl, RunQueryDsl,
+        SelectableHelper,
+    };
+
     let conn = state.pool.get().await?;
-    
-    let messages = conn.interact(move |conn| {
-        chat_messages::table
-            .inner_join(
-                chat_sessions::table.on(
-                    chat_messages::session_id.eq(chat_sessions::id)
-                        .and(chat_sessions::user_id.eq(user_id))
+
+    let messages = conn
+        .interact(move |conn| {
+            chat_messages::table
+                .inner_join(
+                    chat_sessions::table.on(chat_messages::session_id
+                        .eq(chat_sessions::id)
+                        .and(chat_sessions::user_id.eq(user_id))),
                 )
-            )
-            .filter(chat_messages::session_id.eq(chat_session_id))
-            .select(ChatMessage::as_select())
-            .order(chat_messages::created_at.asc())
-            .load::<ChatMessage>(conn)
-    })
-    .await
-    .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch chat messages: {}", e)))?;
-    
+                .filter(chat_messages::session_id.eq(chat_session_id))
+                .select(ChatMessage::as_select())
+                .order(chat_messages::created_at.asc())
+                .load::<ChatMessage>(conn)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to fetch chat messages: {}", e))
+        })?;
+
     Ok(messages)
 }
 
@@ -590,13 +651,13 @@ async fn generate_chronicle_name(
     State(state): State<AppState>,
     Json(request): Json<GenerateChronicleNameRequest>,
 ) -> Result<Json<GenerateChronicleNameResponse>, AppError> {
-    use diesel::prelude::*;
     use crate::schema::{chat_messages, chat_sessions};
     use crate::services::agentic::AgenticNarrativeFactory;
-    
+    use diesel::prelude::*;
+
     // Validate the request
     request.validate()?;
-    
+
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
@@ -612,14 +673,15 @@ async fn generate_chronicle_name(
         .pool
         .get()
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+        })?
         .interact(move |conn| {
             chat_messages::table
                 .inner_join(
-                    chat_sessions::table.on(
-                        chat_messages::session_id.eq(chat_sessions::id)
-                            .and(chat_sessions::user_id.eq(user.id))
-                    )
+                    chat_sessions::table.on(chat_messages::session_id
+                        .eq(chat_sessions::id)
+                        .and(chat_sessions::user_id.eq(user.id))),
                 )
                 .filter(chat_messages::session_id.eq(request.chat_session_id))
                 .select(ChatMessage::as_select())
@@ -628,21 +690,24 @@ async fn generate_chronicle_name(
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch chat messages: {}", e)))?;
-    
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to fetch chat messages: {}", e))
+        })?;
+
     if messages.is_empty() {
         return Err(AppError::NotFound(
-            "No messages found in the specified chat session".to_string()
+            "No messages found in the specified chat session".to_string(),
         ));
     }
-    
+
     // Fetch the character name if available
-    let character_name = get_character_name_for_session(&state, request.chat_session_id, user.id).await?;
-    
+    let character_name =
+        get_character_name_for_session(&state, request.chat_session_id, user.id).await?;
+
     // Create a NarrativeAgentRunner using the factory
     let chronicle_service = Arc::new(ChronicleService::new(state.pool.clone()));
     let app_state = Arc::new(state.clone());
-    
+
     let agent_runner = AgenticNarrativeFactory::create_system_with_deps(
         state.ai_client.clone(),
         chronicle_service.clone(),
@@ -652,16 +717,16 @@ async fn generate_chronicle_name(
         app_state,
         Some(AgenticNarrativeFactory::create_dev_config()),
     );
-    
+
     let generated_name = agent_runner
         .generate_chronicle_name_from_messages(&messages, &session_dek, character_name)
         .await?;
-    
+
     info!(
         "Successfully generated chronicle name '{}' for chat session {}",
         generated_name, request.chat_session_id
     );
-    
+
     Ok(Json(GenerateChronicleNameResponse {
         name: generated_name,
         reasoning: None, // We could extract this from the structured output if needed

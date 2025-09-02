@@ -56,11 +56,10 @@ pub struct Config {
     pub context_recent_history_token_budget: usize,
     #[serde(default = "default_context_rag_token_budget")]
     pub context_rag_token_budget: usize,
-    
+
     // Strategic Truncation Settings
     #[serde(default = "default_min_tail_messages_to_preserve")]
     pub min_tail_messages_to_preserve: usize,
-
 
     // Frontend URL
     #[serde(default = "default_frontend_base_url")]
@@ -70,11 +69,11 @@ pub struct Config {
     #[serde(default = "default_app_env")]
     pub app_env: String,
     pub from_email: Option<String>,
-    
+
     // Narrative Feature Flags
     #[serde(default)]
     pub narrative_flags: NarrativeFeatureFlags,
-    
+
     // Security Configuration
     #[serde(default)]
     pub security: SecurityConfig,
@@ -286,27 +285,27 @@ impl Config {
     pub fn load() -> Result<Self, anyhow::Error> {
         // Load config from environment variables using envy
         let mut config = envy::from_env::<Self>().map_err(anyhow::Error::from)?;
-        
+
         // Apply environment-specific defaults after loading
         config.apply_environment_defaults();
-        
+
         Ok(config)
     }
-    
+
     /// Apply environment-specific defaults based on the detected or configured environment
     pub fn apply_environment_defaults(&mut self) {
         let environment = self.environment.as_deref().unwrap_or("local");
-        
+
         // Set environment-specific defaults for Qdrant URL if not already set
         if self.qdrant_url.is_none() {
             self.qdrant_url = Some(match environment {
                 "staging" => "https://qdrant.staging.local:6334".to_string(),
-                "production" => "https://qdrant.production.local:6334".to_string(), 
+                "production" => "https://qdrant.production.local:6334".to_string(),
                 "container" => "https://qdrant:6334".to_string(),
                 "local" | _ => "https://localhost:6334".to_string(),
             });
         }
-        
+
         // Set environment-specific cookie security defaults
         if environment == "local" && self.session_cookie_secure {
             // For local development, default to non-secure cookies for easier testing

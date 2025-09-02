@@ -23,18 +23,32 @@ pub struct PlayerChronicle {
 #[diesel(table_name = player_chronicles)]
 pub struct NewPlayerChronicle {
     pub user_id: Uuid,
-    #[validate(length(min = 1, max = 255, message = "Chronicle name must be between 1 and 255 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 255,
+        message = "Chronicle name must be between 1 and 255 characters"
+    ))]
     pub name: String,
-    #[validate(length(max = 5000, message = "Chronicle description must be less than 5000 characters"))]
+    #[validate(length(
+        max = 5000,
+        message = "Chronicle description must be less than 5000 characters"
+    ))]
     pub description: Option<String>,
 }
 
 /// UpdatePlayerChronicle for updating existing chronicles
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct UpdatePlayerChronicle {
-    #[validate(length(min = 1, max = 255, message = "Chronicle name must be between 1 and 255 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 255,
+        message = "Chronicle name must be between 1 and 255 characters"
+    ))]
     pub name: Option<String>,
-    #[validate(length(max = 5000, message = "Chronicle description must be less than 5000 characters"))]
+    #[validate(length(
+        max = 5000,
+        message = "Chronicle description must be less than 5000 characters"
+    ))]
     pub description: Option<String>,
 }
 
@@ -50,18 +64,32 @@ pub struct PlayerChronicleWithCounts {
 /// DTO for chronicle creation from API
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct CreateChronicleRequest {
-    #[validate(length(min = 1, max = 255, message = "Chronicle name must be between 1 and 255 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 255,
+        message = "Chronicle name must be between 1 and 255 characters"
+    ))]
     pub name: String,
-    #[validate(length(max = 5000, message = "Chronicle description must be less than 5000 characters"))]
+    #[validate(length(
+        max = 5000,
+        message = "Chronicle description must be less than 5000 characters"
+    ))]
     pub description: Option<String>,
 }
 
 /// DTO for chronicle update from API
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct UpdateChronicleRequest {
-    #[validate(length(min = 1, max = 255, message = "Chronicle name must be between 1 and 255 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 255,
+        message = "Chronicle name must be between 1 and 255 characters"
+    ))]
     pub name: Option<String>,
-    #[validate(length(max = 5000, message = "Chronicle description must be less than 5000 characters"))]
+    #[validate(length(
+        max = 5000,
+        message = "Chronicle description must be less than 5000 characters"
+    ))]
     pub description: Option<String>,
 }
 

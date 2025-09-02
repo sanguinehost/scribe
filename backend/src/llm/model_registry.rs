@@ -44,13 +44,13 @@ impl ModelRegistry {
         let mut registry = Self {
             models: HashMap::new(),
         };
-        
+
         registry.register_cloud_models();
         registry.register_local_models();
-        
+
         registry
     }
-    
+
     /// Register Google Gemini cloud models
     fn register_cloud_models(&mut self) {
         // Gemini 2.5 Pro
@@ -71,7 +71,7 @@ impl ModelRegistry {
                 },
             },
         );
-        
+
         // Gemini 2.5 Flash
         self.models.insert(
             "gemini-2.5-flash".to_string(),
@@ -90,7 +90,7 @@ impl ModelRegistry {
                 },
             },
         );
-        
+
         // Gemini 2.5 Flash Lite
         self.models.insert(
             "gemini-2.5-flash-lite-preview-06-17".to_string(),
@@ -110,19 +110,19 @@ impl ModelRegistry {
             },
         );
     }
-    
+
     /// Register local LlamaCpp models
     fn register_local_models(&mut self) {
         #[cfg(feature = "local-llm")]
         {
             use crate::llm::llamacpp::hardware::ModelSelection;
-            
+
             for model in ModelSelection::all_models() {
                 let mut metadata = HashMap::new();
                 metadata.insert("model_family".to_string(), "local".to_string());
                 metadata.insert("filename".to_string(), model.filename().to_string());
                 metadata.insert("description".to_string(), model.description().to_string());
-                
+
                 self.models.insert(
                     model.model_id().to_string(),
                     ModelCapabilities {
@@ -137,17 +137,17 @@ impl ModelRegistry {
             }
         }
     }
-    
+
     /// Get model capabilities by model ID
     pub fn get_capabilities(&self, model_id: &str) -> Option<&ModelCapabilities> {
         self.models.get(model_id)
     }
-    
+
     /// Get all registered models
     pub fn get_all_models(&self) -> &HashMap<String, ModelCapabilities> {
         &self.models
     }
-    
+
     /// Get all cloud models
     pub fn get_cloud_models(&self) -> HashMap<String, &ModelCapabilities> {
         self.models
@@ -156,7 +156,7 @@ impl ModelRegistry {
             .map(|(id, caps)| (id.clone(), caps))
             .collect()
     }
-    
+
     /// Get all local models  
     pub fn get_local_models(&self) -> HashMap<String, &ModelCapabilities> {
         self.models
@@ -165,34 +165,39 @@ impl ModelRegistry {
             .map(|(id, caps)| (id.clone(), caps))
             .collect()
     }
-    
+
     /// Update the availability status of a model
     pub fn set_model_availability(&mut self, model_id: &str, is_available: bool) {
         if let Some(capabilities) = self.models.get_mut(model_id) {
             capabilities.is_available = is_available;
         }
     }
-    
+
     /// Set metadata for a model
     pub fn set_model_metadata(&mut self, model_id: &str, key: &str, value: &str) {
         if let Some(capabilities) = self.models.get_mut(model_id) {
-            capabilities.metadata.insert(key.to_string(), value.to_string());
+            capabilities
+                .metadata
+                .insert(key.to_string(), value.to_string());
         }
     }
-    
+
     /// Check if a model exists in the registry
     pub fn has_model(&self, model_id: &str) -> bool {
         self.models.contains_key(model_id)
     }
-    
+
     /// Get the recommended context settings for a model
-    pub fn get_recommended_context_settings(&self, model_id: &str) -> Option<RecommendedContextSettings> {
+    pub fn get_recommended_context_settings(
+        &self,
+        model_id: &str,
+    ) -> Option<RecommendedContextSettings> {
         let capabilities = self.get_capabilities(model_id)?;
-        
+
         // Calculate recommended token budgets based on context window size
         let context_window = capabilities.context_window_size;
         let total_limit = std::cmp::min(context_window, 200_000); // Cap at 200k for cost control
-        
+
         // Allocate budgets based on context size
         let (history_ratio, rag_ratio) = if total_limit <= 8000 {
             (0.7, 0.25) // Small context: prioritize recent history
@@ -203,7 +208,7 @@ impl ModelRegistry {
         } else {
             (0.55, 0.4) // Very large context: even more RAG
         };
-        
+
         Some(RecommendedContextSettings {
             total_token_limit: total_limit,
             recent_history_budget: (total_limit as f32 * history_ratio) as u32,
@@ -232,45 +237,47 @@ pub struct RecommendedContextSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_model_registry_creation() {
         let registry = ModelRegistry::new();
-        
+
         // Should have cloud models
         assert!(registry.has_model("gemini-2.5-pro"));
         assert!(registry.has_model("gemini-2.5-flash"));
         assert!(registry.has_model("gemini-2.5-flash-lite-preview-06-17"));
-        
+
         // Cloud models should have 1M context
         let gemini_pro = registry.get_capabilities("gemini-2.5-pro").unwrap();
         assert_eq!(gemini_pro.context_window_size, 1048576);
         assert!(!gemini_pro.is_local);
         assert_eq!(gemini_pro.provider, "google");
     }
-    
+
     #[cfg(feature = "local-llm")]
     #[test]
     fn test_local_models_registration() {
         let registry = ModelRegistry::new();
-        
+
         // Should have local models when feature is enabled
         assert!(registry.has_model("gpt-oss-20b-q4"));
         assert!(registry.has_model("qwen3-30b-a3b-thinking-q4"));
-        
+
         // Local models should have 131k context
         let gpt_oss = registry.get_capabilities("gpt-oss-20b-q4").unwrap();
         assert_eq!(gpt_oss.context_window_size, 131072);
         assert!(gpt_oss.is_local);
         assert_eq!(gpt_oss.provider, "llamacpp");
     }
-    
+
     #[test]
     fn test_recommended_context_settings() {
         let registry = ModelRegistry::new();
-        
+
         // Test Gemini model recommendations
-        let settings = registry.get_recommended_context_settings("gemini-2.5-pro").unwrap();
+        let settings = registry
+            .get_recommended_context_settings("gemini-2.5-pro")
+            .unwrap();
         assert_eq!(settings.total_token_limit, 200_000); // Capped at 200k
         assert!(settings.recent_history_budget > 0);
         assert!(settings.rag_budget > 0);

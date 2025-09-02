@@ -2,25 +2,27 @@
 // API routes for local LLM management
 
 use crate::{
-    auth::{user_store::Backend as AuthBackend, SessionDek},
+    auth::{SessionDek, user_store::Backend as AuthBackend},
     errors::AppError,
     models::user_settings::{UpdateUserSettingsRequest, UserSettingsResponse},
     services::user_settings_service::UserSettingsService,
     state::AppState,
 };
 use axum::{
+    Router,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{Json, Response, Sse, sse::Event},
     routing::{delete, get, post, put},
-    Router,
 };
 use axum_login::AuthSession;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "local-llm")]
-use crate::llm::llamacpp::{hardware::detect_hardware, ModelManager, LlamaCppClient};
+use crate::llm::llamacpp::{LlamaCppClient, ModelManager, hardware::detect_hardware};
+#[cfg(feature = "local-llm")]
+use futures::Stream;
 use std::sync::Arc;
 #[cfg(feature = "local-llm")]
 use std::time::Duration;
@@ -28,14 +30,12 @@ use std::time::Duration;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 #[cfg(feature = "local-llm")]
 use tracing::error;
-#[cfg(feature = "local-llm")]
-use futures::Stream;
 
 #[cfg(feature = "local-llm")]
 #[derive(Debug, Serialize)]
 pub struct LlmInfoResponse {
-    pub local_llm_enabled: bool, // Feature is available
-    pub server_running: bool, // Server is actually running
+    pub local_llm_enabled: bool,     // Feature is available
+    pub server_running: bool,        // Server is actually running
     pub hardware: serde_json::Value, // Hardware capabilities as JSON
     pub models: Vec<ModelInfo>,
     pub download_progress: Option<DownloadProgressInfo>,
@@ -82,7 +82,7 @@ pub struct ModelVariantInfo {
     pub compatible: bool,
     pub downloaded: bool,
     pub active: bool,
-    pub recommended: bool, // For smart recommendations
+    pub recommended: bool,     // For smart recommendations
     pub quality_level: String, // Very Compact, Compact, Balanced, Good Quality, etc.
 }
 
@@ -178,7 +178,10 @@ pub fn llm_router() -> Router<AppState> {
             .route("/preferences", put(update_user_preferences))
             // Model capabilities endpoints
             .route("/models/all", get(get_all_models))
-            .route("/models/:model_id/capabilities", get(get_model_capabilities))
+            .route(
+                "/models/:model_id/capabilities",
+                get(get_model_capabilities),
+            )
             // Server management endpoints
             .route("/server/status", get(get_server_status))
             .route("/server/restart", post(restart_server))
@@ -186,7 +189,7 @@ pub fn llm_router() -> Router<AppState> {
             .route("/models/switch/:model_id", post(switch_model))
             .route("/models/current", get(get_current_model))
     }
-    
+
     #[cfg(not(feature = "local-llm"))]
     {
         // Limited router when local-llm feature is disabled (preferences still work)
@@ -196,7 +199,10 @@ pub fn llm_router() -> Router<AppState> {
             .route("/preferences", put(update_user_preferences))
             // Model capabilities endpoints (cloud models only)
             .route("/models/all", get(get_all_models))
-            .route("/models/:model_id/capabilities", get(get_model_capabilities))
+            .route(
+                "/models/:model_id/capabilities",
+                get(get_model_capabilities),
+            )
     }
 }
 
@@ -207,38 +213,37 @@ async fn get_llm_info(
 ) -> Result<Json<LlmInfoResponse>, StatusCode> {
     // Verify user is authenticated
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
-    
+
     info!("Getting LLM system information");
-    
+
     // Detect hardware capabilities
-    let hardware = detect_hardware()
-        .map_err(|e| {
-            error!("Failed to detect hardware: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let hardware = detect_hardware().map_err(|e| {
+        error!("Failed to detect hardware: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Convert hardware to JSON for serialization
-    let hardware_json = serde_json::to_value(&hardware)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    
+    let hardware_json =
+        serde_json::to_value(&hardware).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     // Create ModelManager to get accurate model status
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let model_manager = ModelManager::new(config).await
-        .map_err(|e| {
-            error!("Failed to create ModelManager: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let model_manager = ModelManager::new(config).await.map_err(|e| {
+        error!("Failed to create ModelManager: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Get available models with accurate download/active status
-    let models = get_model_info_list_with_manager(&hardware, &model_manager).await
+    let models = get_model_info_list_with_manager(&hardware, &model_manager)
+        .await
         .map_err(|e| {
             error!("Failed to get model list: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    
+
     // Check if server is actually running by trying to connect
     let server_running = check_server_running().await;
-    
+
     Ok(Json(LlmInfoResponse {
         local_llm_enabled: true, // Feature is compiled and available
         server_running,
@@ -253,15 +258,18 @@ async fn get_llm_info(
 async fn check_server_running() -> bool {
     use reqwest::Client;
     use std::time::Duration;
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let url = format!("http://{}:{}/health", config.server_host, config.server_port);
-    
+    let url = format!(
+        "http://{}:{}/health",
+        config.server_host, config.server_port
+    );
+
     let client = Client::builder()
         .timeout(Duration::from_secs(2))
         .build()
         .unwrap_or_else(|_| Client::new());
-    
+
     match client.get(&url).send().await {
         Ok(response) => response.status().is_success(),
         Err(_) => false,
@@ -272,29 +280,34 @@ async fn check_server_running() -> bool {
 #[cfg(feature = "local-llm")]
 async fn get_model_info_list_with_manager(
     hardware: &crate::llm::llamacpp::hardware::HardwareCapabilities,
-    model_manager: &ModelManager
+    model_manager: &ModelManager,
 ) -> Result<Vec<ModelInfo>, crate::llm::llamacpp::LocalLlmError> {
     use crate::llm::llamacpp::hardware::ModelSelection;
-    
+
     // Start with ALL available models from ModelSelection
     let all_variants = ModelSelection::all_models();
-    debug!("ModelSelection::all_models() returned {} variants", all_variants.len());
-    
+    debug!(
+        "ModelSelection::all_models() returned {} variants",
+        all_variants.len()
+    );
+
     // Get the actual status from ModelManager for downloaded models
     let model_statuses = model_manager.list_models().await?;
     let active_model = model_manager.get_active_model();
-    debug!("ModelManager found {} downloaded models", model_statuses.len());
-    
+    debug!(
+        "ModelManager found {} downloaded models",
+        model_statuses.len()
+    );
+
     let mut models = Vec::new();
-    
+
     for variant in all_variants {
         let filename = variant.filename();
         let model_id = variant.model_id();
-        
+
         // Find corresponding status from ModelManager (if downloaded)
-        let model_status = model_statuses.iter()
-            .find(|status| status.name == filename);
-        
+        let model_status = model_statuses.iter().find(|status| status.name == filename);
+
         // Determine actual status
         let (downloaded, active, actual_size_gb) = if let Some(status) = model_status {
             let actual_size = if let Some(actual_bytes) = status.size_bytes {
@@ -306,10 +319,13 @@ async fn get_model_info_list_with_manager(
         } else {
             (false, false, variant.download_size_gb())
         };
-        
+
         // Check if this is the active model
-        let is_active = active || (active_model.as_ref().map_or(false, |am| am.contains(&filename)));
-        
+        let is_active = active
+            || (active_model
+                .as_ref()
+                .map_or(false, |am| am.contains(&filename)));
+
         models.push(ModelInfo {
             id: model_id,
             name: variant.base_model_name().to_string(),
@@ -319,8 +335,9 @@ async fn get_model_info_list_with_manager(
             compatible: is_model_compatible(hardware, &variant),
             downloaded,
             active: is_active,
-            description: format!("{} ({})", 
-                variant.base_model.description, 
+            description: format!(
+                "{} ({})",
+                variant.base_model.description,
                 variant.quantization.quality_description()
             ),
             context_window_size: variant.context_window_size(),
@@ -329,7 +346,7 @@ async fn get_model_info_list_with_manager(
             is_local: true,
         });
     }
-    
+
     debug!("Returning {} models to frontend", models.len());
     Ok(models)
 }
@@ -337,36 +354,37 @@ async fn get_model_info_list_with_manager(
 /// Check if a model is compatible with the current hardware
 #[cfg(feature = "local-llm")]
 fn is_model_compatible(
-    hardware: &crate::llm::llamacpp::hardware::HardwareCapabilities, 
-    model: &crate::llm::llamacpp::hardware::ModelSelection
+    hardware: &crate::llm::llamacpp::hardware::HardwareCapabilities,
+    model: &crate::llm::llamacpp::hardware::ModelSelection,
 ) -> bool {
     let requirements = &model.requirements;
-    
+
     // Check RAM requirements
     if hardware.available_ram_gb < requirements.min_ram_gb {
         return false;
     }
-    
+
     // Check VRAM requirements if the model needs GPU
     if let Some(min_vram) = requirements.min_vram_gb {
-        let has_sufficient_vram = hardware.gpu_info.iter().any(|gpu| {
-            gpu.vram_gb.map_or(false, |vram| vram >= min_vram)
-        });
+        let has_sufficient_vram = hardware
+            .gpu_info
+            .iter()
+            .any(|gpu| gpu.vram_gb.map_or(false, |vram| vram >= min_vram));
         if !has_sufficient_vram {
             return false;
         }
     }
-    
+
     // Check CPU cores
     if hardware.cpu_cores < requirements.min_cpu_cores {
         return false;
     }
-    
+
     // Check CUDA requirement
     if requirements.requires_cuda && !hardware.has_cuda {
         return false;
     }
-    
+
     true
 }
 
@@ -377,30 +395,33 @@ async fn build_grouped_models(
     model_manager: &ModelManager,
     recommendations: &[crate::llm::llamacpp::model_manager::ModelRecommendation],
 ) -> Result<Vec<GroupedModelInfo>, crate::llm::llamacpp::LocalLlmError> {
-    use crate::llm::llamacpp::hardware::{ModelSelection, BaseModel};
+    use crate::llm::llamacpp::hardware::{BaseModel, ModelSelection};
     use std::collections::HashMap;
-    
+
     // Get all model variants
     let all_variants = ModelSelection::all_models();
     let model_statuses = model_manager.list_models().await?;
     let active_model = model_manager.get_active_model();
-    
+
     // Create a lookup for recommendations
-    let rec_lookup: HashMap<String, &crate::llm::llamacpp::model_manager::ModelRecommendation> = 
-        recommendations.iter().map(|r| (r.model_name.clone(), r)).collect();
-    
+    let rec_lookup: HashMap<String, &crate::llm::llamacpp::model_manager::ModelRecommendation> =
+        recommendations
+            .iter()
+            .map(|r| (r.model_name.clone(), r))
+            .collect();
+
     // Group variants by base model
     let mut base_models: HashMap<String, BaseModel> = HashMap::new();
     let mut grouped_variants: HashMap<String, Vec<ModelVariantInfo>> = HashMap::new();
-    
+
     for variant in all_variants {
         let base_model_name = variant.base_model.name.clone();
         base_models.insert(base_model_name.clone(), variant.base_model.clone());
-        
+
         // Find corresponding model status
         let filename = variant.filename();
         let model_status = model_statuses.iter().find(|s| s.name == filename);
-        
+
         let (size_gb, downloaded) = if let Some(status) = model_status {
             let size_gb = if let Some(actual_bytes) = status.size_bytes {
                 actual_bytes as f32 / (1024.0 * 1024.0 * 1024.0)
@@ -411,15 +432,20 @@ async fn build_grouped_models(
         } else {
             (variant.download_size_gb(), false)
         };
-        
+
         // Calculate hardware compatibility correctly
         let compatible = is_model_compatible(hardware, &variant);
-        
-        let is_active = active_model.as_ref().map_or(false, |active| active == &filename);
+
+        let is_active = active_model
+            .as_ref()
+            .map_or(false, |active| active == &filename);
         let is_recommended = rec_lookup.contains_key(&filename);
-        
+
         let variant_info = ModelVariantInfo {
-            id: filename.strip_suffix(".gguf").unwrap_or(&filename).to_string(),
+            id: filename
+                .strip_suffix(".gguf")
+                .unwrap_or(&filename)
+                .to_string(),
             quantization: format!("{:?}", variant.quantization),
             filename,
             size_gb,
@@ -430,10 +456,13 @@ async fn build_grouped_models(
             recommended: is_recommended,
             quality_level: variant.quantization.quality_description().to_string(),
         };
-        
-        grouped_variants.entry(base_model_name).or_insert_with(Vec::new).push(variant_info);
+
+        grouped_variants
+            .entry(base_model_name)
+            .or_insert_with(Vec::new)
+            .push(variant_info);
     }
-    
+
     // Build final grouped models, sort variants by quality
     let mut result = Vec::new();
     for (base_name, base_model) in base_models {
@@ -452,7 +481,7 @@ async fn build_grouped_models(
                     }
                 }
             });
-            
+
             result.push(GroupedModelInfo {
                 base_model_id: base_name.clone(),
                 base_model_name: base_model.name,
@@ -464,30 +493,43 @@ async fn build_grouped_models(
             });
         }
     }
-    
+
     // Sort base models by parameter count (largest first)
     result.sort_by(|a, b| {
         let a_params = extract_param_number(&a.parameter_count);
         let b_params = extract_param_number(&b.parameter_count);
-        b_params.partial_cmp(&a_params).unwrap_or(std::cmp::Ordering::Equal)
+        b_params
+            .partial_cmp(&a_params)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
-    
+
     Ok(result)
 }
 
 /// Extract parameter count for sorting
 #[cfg(feature = "local-llm")]
 fn extract_param_number(param_str: &str) -> f32 {
-    if param_str.contains("70B") { 70.0 }
-    else if param_str.contains("30B") { 30.0 }
-    else if param_str.contains("27B") { 27.0 }
-    else if param_str.contains("20B") { 20.0 }
-    else if param_str.contains("14B") { 14.0 }
-    else if param_str.contains("8B") { 8.0 }
-    else if param_str.contains("7B") { 7.0 }
-    else if param_str.contains("3B") { 3.0 }
-    else if param_str.contains("1B") { 1.0 }
-    else { 0.0 }
+    if param_str.contains("70B") {
+        70.0
+    } else if param_str.contains("30B") {
+        30.0
+    } else if param_str.contains("27B") {
+        27.0
+    } else if param_str.contains("20B") {
+        20.0
+    } else if param_str.contains("14B") {
+        14.0
+    } else if param_str.contains("8B") {
+        8.0
+    } else if param_str.contains("7B") {
+        7.0
+    } else if param_str.contains("3B") {
+        3.0
+    } else if param_str.contains("1B") {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 /// Get quality rank for sorting (lower is better quality)
@@ -511,15 +553,17 @@ fn quality_rank(quantization: &str) -> u8 {
 
 /// Helper function to get model information list (legacy - kept for compatibility)
 #[cfg(feature = "local-llm")]
-async fn get_model_info_list(hardware: &crate::llm::llamacpp::hardware::HardwareCapabilities) -> Vec<ModelInfo> {
+async fn get_model_info_list(
+    hardware: &crate::llm::llamacpp::hardware::HardwareCapabilities,
+) -> Vec<ModelInfo> {
     use crate::llm::llamacpp::hardware::ModelSelection;
-    
+
     let mut models = Vec::new();
-    
+
     for model_variant in ModelSelection::all_models() {
         let requirements = model_variant.requirements();
         let filename = model_variant.filename();
-        
+
         // Check hardware compatibility
         let ram_ok = hardware.available_ram_gb >= requirements.min_ram_gb;
         let cpu_ok = hardware.cpu_cores >= requirements.min_cpu_cores;
@@ -531,15 +575,18 @@ async fn get_model_info_list(hardware: &crate::llm::llamacpp::hardware::Hardware
         } else {
             true // CPU-only model
         };
-        
+
         let compatible = ram_ok && cpu_ok && gpu_ok;
-        
+
         // Generate model ID from filename (remove .gguf extension)
-        let model_id = filename.strip_suffix(".gguf").unwrap_or(&filename).to_string();
-        
+        let model_id = filename
+            .strip_suffix(".gguf")
+            .unwrap_or(&filename)
+            .to_string();
+
         let size_gb = model_variant.download_size_bytes() as f32 / (1024.0 * 1024.0 * 1024.0);
         let vram_required = requirements.min_vram_gb.unwrap_or(0.0);
-        
+
         models.push(ModelInfo {
             id: model_id,
             name: filename.to_string(),
@@ -548,7 +595,7 @@ async fn get_model_info_list(hardware: &crate::llm::llamacpp::hardware::Hardware
             vram_required,
             compatible,
             downloaded: false, // TODO: Check if actually downloaded
-            active: false, // TODO: Check if currently active
+            active: false,     // TODO: Check if currently active
             description: model_variant.description().to_string(),
             context_window_size: model_variant.context_window_size(),
             max_output_tokens: model_variant.max_output_tokens(),
@@ -556,7 +603,7 @@ async fn get_model_info_list(hardware: &crate::llm::llamacpp::hardware::Hardware
             is_local: true,
         });
     }
-    
+
     models
 }
 
@@ -567,15 +614,14 @@ async fn download_model(
     Json(request): Json<DownloadModelRequest>,
 ) -> Result<Json<DownloadModelResponse>, StatusCode> {
     info!("Starting download for model: {}", request.model_id);
-    
+
     // Get model manager from app state
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let model_manager = ModelManager::new(config).await
-        .map_err(|e| {
-            error!("Failed to create model manager: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let model_manager = ModelManager::new(config).await.map_err(|e| {
+        error!("Failed to create model manager: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Find the requested model variant
     let model_variant = crate::llm::llamacpp::hardware::ModelSelection::all_models()
         .into_iter()
@@ -588,11 +634,14 @@ async fn download_model(
             error!("Model variant not found: {}", request.model_id);
             StatusCode::NOT_FOUND
         })?;
-    
+
     // Start download
     match model_manager.download_model(&model_variant).await {
         Ok(_path) => {
-            info!("Successfully started download for model: {}", request.model_id);
+            info!(
+                "Successfully started download for model: {}",
+                request.model_id
+            );
             Ok(Json(DownloadModelResponse {
                 success: true,
                 message: format!("Download started for model: {}", request.model_id),
@@ -617,21 +666,20 @@ async fn delete_model(
     Path(model_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("Deleting model: {}", model_id);
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let model_manager = ModelManager::new(config).await
-        .map_err(|e| {
-            error!("Failed to create model manager: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let model_manager = ModelManager::new(config).await.map_err(|e| {
+        error!("Failed to create model manager: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Convert model_id to filename if needed
     let model_filename = if model_id.ends_with(".gguf") {
         model_id.clone()
     } else {
         format!("{}.gguf", model_id)
     };
-    
+
     match model_manager.delete_model(&model_filename).await {
         Ok(()) => Ok(Json(serde_json::json!({
             "success": true,
@@ -654,22 +702,20 @@ async fn activate_model(
     Path(model_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("Activating model: {}", model_id);
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let client = LlamaCppClient::new(config)
-        .await
-        .map_err(|e| {
-            error!("Failed to create LlamaCpp client: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let client = LlamaCppClient::new(config).await.map_err(|e| {
+        error!("Failed to create LlamaCpp client: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Convert model_id to filename if needed
     let model_filename = if model_id.ends_with(".gguf") {
         model_id.clone()
     } else {
         format!("{}.gguf", model_id)
     };
-    
+
     match client.switch_model(&model_filename).await {
         Ok(()) => {
             info!("Model {} activated successfully", model_id);
@@ -694,15 +740,13 @@ async fn deactivate_model(
     State(_app_state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("Deactivating current local model");
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let client = LlamaCppClient::new(config)
-        .await
-        .map_err(|e| {
-            error!("Failed to create LlamaCpp client: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let client = LlamaCppClient::new(config).await.map_err(|e| {
+        error!("Failed to create LlamaCpp client: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     match client.shutdown().await {
         Ok(()) => {
             info!("Local model server stopped successfully");
@@ -727,15 +771,14 @@ async fn get_download_status(
     Path(model_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("Checking download status for model: {}", model_id);
-    
+
     // Get model manager
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let model_manager = ModelManager::new(config).await
-        .map_err(|e| {
-            error!("Failed to create model manager: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let model_manager = ModelManager::new(config).await.map_err(|e| {
+        error!("Failed to create model manager: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Find the requested model variant
     let model_variant = crate::llm::llamacpp::hardware::ModelSelection::all_models()
         .into_iter()
@@ -748,12 +791,12 @@ async fn get_download_status(
             error!("Model variant not found: {}", model_id);
             StatusCode::NOT_FOUND
         })?;
-    
+
     let filename = model_variant.filename();
     let models_dir = std::path::Path::new("models"); // Use same logic as model_manager
     let model_path = models_dir.join(&filename);
     let temp_path = model_path.with_extension("tmp");
-    
+
     let status = if model_path.exists() {
         "completed"
     } else if temp_path.exists() {
@@ -761,9 +804,9 @@ async fn get_download_status(
     } else {
         "not_started"
     };
-    
+
     info!("Download status for {}: {}", model_id, status);
-    
+
     Ok(Json(serde_json::json!({
         "model_id": model_id,
         "status": status,
@@ -774,21 +817,22 @@ async fn get_download_status(
 
 /// GET /api/llm/download/progress - Server-Sent Events for download progress
 #[cfg(feature = "local-llm")]
-async fn download_progress_stream() -> Sse<impl futures::Stream<Item = Result<Event, axum::Error>>> {
+async fn download_progress_stream() -> Sse<impl futures::Stream<Item = Result<Event, axum::Error>>>
+{
     info!("Client connected to download progress stream");
-    
+
     // Create a channel for sending progress updates
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    
+
     // Spawn a task to send periodic updates (placeholder)
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         let mut progress = 0;
-        
+
         loop {
             interval.tick().await;
             progress += 10;
-            
+
             let event_data = serde_json::json!({
                 "model_id": "example_model",
                 "total_bytes": 1000000,
@@ -796,21 +840,21 @@ async fn download_progress_stream() -> Sse<impl futures::Stream<Item = Result<Ev
                 "percentage": (progress as f32).min(100.0),
                 "speed_bytes_per_sec": 100000
             });
-            
+
             let event = Event::default()
                 .data(event_data.to_string())
                 .event("download_progress");
-            
+
             if tx.send(Ok(event)).is_err() {
                 break; // Client disconnected
             }
-            
+
             if progress >= 100 {
                 break;
             }
         }
     });
-    
+
     let stream = UnboundedReceiverStream::new(rx);
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -825,14 +869,13 @@ async fn get_model_recommendations(
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<crate::llm::llamacpp::model_manager::ModelRecommendation>>, StatusCode> {
     info!("Getting model recommendations");
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let model_manager = ModelManager::new(config).await
-        .map_err(|e| {
-            error!("Failed to create model manager: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let model_manager = ModelManager::new(config).await.map_err(|e| {
+        error!("Failed to create model manager: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     match model_manager.recommend_models().await {
         Ok(recommendations) => Ok(Json(recommendations)),
         Err(e) => {
@@ -848,14 +891,13 @@ async fn get_best_recommendation(
     State(app_state): State<AppState>,
 ) -> Result<Json<Option<crate::llm::llamacpp::model_manager::ModelRecommendation>>, StatusCode> {
     info!("Getting best model recommendation");
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let model_manager = ModelManager::new(config).await
-        .map_err(|e| {
-            error!("Failed to create model manager: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let model_manager = ModelManager::new(config).await.map_err(|e| {
+        error!("Failed to create model manager: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     match model_manager.get_best_recommendation().await {
         Ok(recommendation) => Ok(Json(recommendation)),
         Err(e) => {
@@ -873,60 +915,75 @@ async fn get_grouped_models(
 ) -> Result<Json<Vec<GroupedModelInfo>>, StatusCode> {
     // Verify user is authenticated
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
-    
+
     info!("Getting grouped models");
-    
+
     // Detect hardware capabilities
-    let hardware = detect_hardware()
-        .map_err(|e| {
-            error!("Failed to detect hardware: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let hardware = detect_hardware().map_err(|e| {
+        error!("Failed to detect hardware: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Create ModelManager to get accurate model status
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let model_manager = ModelManager::new(config).await
-        .map_err(|e| {
-            error!("Failed to create ModelManager: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let model_manager = ModelManager::new(config).await.map_err(|e| {
+        error!("Failed to create ModelManager: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Get recommendations for scoring
-    let recommendations = model_manager.recommend_models().await
-        .map_err(|e| {
-            error!("Failed to get recommendations: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let recommendations = model_manager.recommend_models().await.map_err(|e| {
+        error!("Failed to get recommendations: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Build grouped models
-    let mut grouped_models = build_grouped_models(&hardware, &model_manager, &recommendations).await
+    let mut grouped_models = build_grouped_models(&hardware, &model_manager, &recommendations)
+        .await
         .map_err(|e| {
             error!("Failed to build grouped models: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    
-    info!("get_grouped_models: Built {} model groups", grouped_models.len());
+
+    info!(
+        "get_grouped_models: Built {} model groups",
+        grouped_models.len()
+    );
     for group in &grouped_models {
-        info!("  Group: {} ({} variants)", group.base_model_name, group.variants.len());
+        info!(
+            "  Group: {} ({} variants)",
+            group.base_model_name,
+            group.variants.len()
+        );
         for variant in &group.variants {
             if variant.id.contains("gpt-oss-20b") {
-                info!("    GPT-OSS-20B variant: id={}, downloaded={}, compatible={}, filename={}", 
-                      variant.id, variant.downloaded, variant.compatible, variant.filename);
+                info!(
+                    "    GPT-OSS-20B variant: id={}, downloaded={}, compatible={}, filename={}",
+                    variant.id, variant.downloaded, variant.compatible, variant.filename
+                );
             } else {
-                debug!("    Variant: id={}, downloaded={}, compatible={}", 
-                       variant.id, variant.downloaded, variant.compatible);
+                debug!(
+                    "    Variant: id={}, downloaded={}, compatible={}",
+                    variant.id, variant.downloaded, variant.compatible
+                );
             }
         }
     }
-    
+
     // Apply filters based on query parameters
-    let show_incompatible = params.get("show_incompatible").map_or(true, |v| v == "true"); // Default to true
+    let show_incompatible = params
+        .get("show_incompatible")
+        .map_or(true, |v| v == "true"); // Default to true
     let only_downloaded = params.get("only_downloaded").map_or(false, |v| v == "true");
-    let only_recommended = params.get("only_recommended").map_or(false, |v| v == "true");
-    
-    info!("get_grouped_models: Applying filters - show_incompatible={}, only_downloaded={}, only_recommended={}", 
-          show_incompatible, only_downloaded, only_recommended);
-    
+    let only_recommended = params
+        .get("only_recommended")
+        .map_or(false, |v| v == "true");
+
+    info!(
+        "get_grouped_models: Applying filters - show_incompatible={}, only_downloaded={}, only_recommended={}",
+        show_incompatible, only_downloaded, only_recommended
+    );
+
     // Only filter if specific filters are requested
     if only_downloaded || only_recommended || !show_incompatible {
         for group in &mut grouped_models {
@@ -935,26 +992,37 @@ async fn get_grouped_models(
                 let compatible_check = show_incompatible || variant.compatible;
                 let downloaded_check = !only_downloaded || variant.downloaded;
                 let recommended_check = !only_recommended || variant.recommended;
-                
+
                 compatible_check && downloaded_check && recommended_check
             });
-            
+
             if group.variants.len() != original_count {
-                info!("  Group {} filtered: {} -> {} variants", 
-                      group.base_model_name, original_count, group.variants.len());
+                info!(
+                    "  Group {} filtered: {} -> {} variants",
+                    group.base_model_name,
+                    original_count,
+                    group.variants.len()
+                );
             }
         }
-        
+
         // Remove groups with no variants
         let original_group_count = grouped_models.len();
         grouped_models.retain(|group| !group.variants.is_empty());
-        
+
         if grouped_models.len() != original_group_count {
-            info!("  Removed empty groups: {} -> {}", original_group_count, grouped_models.len());
+            info!(
+                "  Removed empty groups: {} -> {}",
+                original_group_count,
+                grouped_models.len()
+            );
         }
     }
-    
-    info!("get_grouped_models: Returning {} model groups", grouped_models.len());
+
+    info!(
+        "get_grouped_models: Returning {} model groups",
+        grouped_models.len()
+    );
     Ok(Json(grouped_models))
 }
 
@@ -964,14 +1032,13 @@ async fn download_best_model(
     State(app_state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("Downloading and activating best model");
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let model_manager = ModelManager::new(config).await
-        .map_err(|e| {
-            error!("Failed to create model manager: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let model_manager = ModelManager::new(config).await.map_err(|e| {
+        error!("Failed to create model manager: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     match model_manager.download_best_model().await {
         Ok(model_name) => Ok(Json(serde_json::json!({
             "success": true,
@@ -994,7 +1061,7 @@ async fn get_llm_status(
 ) -> Result<Json<LlmStatusResponse>, StatusCode> {
     // Verify user is authenticated
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
-    
+
     #[cfg(feature = "local-llm")]
     {
         // Try to detect hardware to see if local LLM could work
@@ -1009,7 +1076,7 @@ async fn get_llm_status(
             })),
         }
     }
-    
+
     #[cfg(not(feature = "local-llm"))]
     {
         Ok(Json(LlmStatusResponse {
@@ -1028,17 +1095,21 @@ async fn test_llm(
     Json(request): Json<TestLlmRequest>,
 ) -> Result<Json<TestLlmResponse>, StatusCode> {
     info!("Testing LLM with prompt: {} (secure)", request.prompt);
-    
+
     let user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
-    
+
     // Use the secure AI client factory to get a properly wrapped client
-    let secure_client = match app_state.ai_client_factory.get_secure_client_for_provider(
-        user.id,
-        None, // Use default provider
-        request.model_id.as_deref(), 
-        Some(&session_dek),
-        &Arc::new(app_state.clone()),
-    ).await {
+    let secure_client = match app_state
+        .ai_client_factory
+        .get_secure_client_for_provider(
+            user.id,
+            None, // Use default provider
+            request.model_id.as_deref(),
+            Some(&session_dek),
+            &Arc::new(app_state.clone()),
+        )
+        .await
+    {
         Ok(client) => client,
         Err(e) => {
             error!("Failed to get secure AI client for user {}: {}", user.id, e);
@@ -1050,9 +1121,9 @@ async fn test_llm(
             }));
         }
     };
-    
+
     // Create a simple chat request
-    use genai::chat::{ChatRequest, ChatMessage, ChatRole, MessageContent};
+    use genai::chat::{ChatMessage, ChatRequest, ChatRole, MessageContent};
     let chat_request = ChatRequest {
         messages: vec![ChatMessage {
             role: ChatRole::User,
@@ -1061,19 +1132,27 @@ async fn test_llm(
         }],
         ..Default::default()
     };
-    
+
     let model_name = request.model_id.as_deref().unwrap_or("default");
-    match secure_client.exec_chat(model_name, chat_request, None).await {
+    match secure_client
+        .exec_chat(model_name, chat_request, None)
+        .await
+    {
         Ok(response) => {
             let model_used = request.model_id.unwrap_or_else(|| "default".to_string());
-            let response_text = response.contents.first()
+            let response_text = response
+                .contents
+                .first()
                 .and_then(|content| match content {
                     MessageContent::Text(text) => Some(text.clone()),
                     _ => None,
                 })
                 .unwrap_or_else(|| "No response content".to_string());
-                
-            info!("Secure LLM test completed successfully for user {}", user.id);
+
+            info!(
+                "Secure LLM test completed successfully for user {}",
+                user.id
+            );
             Ok(Json(TestLlmResponse {
                 success: true,
                 response: Some(response_text),
@@ -1099,14 +1178,13 @@ async fn get_user_preferences(
     State(app_state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<UserSettingsResponse>, AppError> {
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
-    let settings = UserSettingsService::get_user_settings(
-        &app_state.pool,
-        user.id,
-        &app_state.config,
-    ).await?;
-    
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    let settings =
+        UserSettingsService::get_user_settings(&app_state.pool, user.id, &app_state.config).await?;
+
     Ok(Json(settings))
 }
 
@@ -1116,15 +1194,18 @@ async fn update_user_preferences(
     auth_session: AuthSession<AuthBackend>,
     Json(request): Json<UpdateUserSettingsRequest>,
 ) -> Result<Json<UserSettingsResponse>, AppError> {
-    let user = auth_session.user.ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
     let updated_settings = UserSettingsService::update_user_settings(
         &app_state.pool,
         user.id,
         request,
         &app_state.config,
-    ).await?;
-    
+    )
+    .await?;
+
     Ok(Json(updated_settings))
 }
 
@@ -1134,16 +1215,14 @@ async fn get_server_status(
     State(app_state): State<AppState>,
 ) -> Result<Json<ServerStatusResponse>, StatusCode> {
     info!("Getting server status");
-    
+
     // Create a temporary client to check server status
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let client = LlamaCppClient::new(config)
-        .await
-        .map_err(|e| {
-            error!("Failed to create LlamaCpp client: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let client = LlamaCppClient::new(config).await.map_err(|e| {
+        error!("Failed to create LlamaCpp client: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     let server_info = client.get_server_status().await;
     Ok(Json(ServerStatusResponse {
         state: format!("{:?}", server_info.state),
@@ -1161,23 +1240,21 @@ async fn restart_server(
     auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<ServerActionResponse>, StatusCode> {
     info!("Restarting server");
-    
+
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let client = LlamaCppClient::new(config)
-        .await
-        .map_err(|e| {
-            error!("Failed to create LlamaCpp client: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let client = LlamaCppClient::new(config).await.map_err(|e| {
+        error!("Failed to create LlamaCpp client: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     match client.restart_server().await {
         Ok(()) => {
             // Get new status
             let server_info = client.get_server_status().await;
             let new_state = format!("{:?}", server_info.state);
-                
+
             Ok(Json(ServerActionResponse {
                 success: true,
                 message: "Server restarted successfully".to_string(),
@@ -1202,25 +1279,21 @@ async fn shutdown_server(
     auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<ServerActionResponse>, StatusCode> {
     info!("Shutting down server");
-    
+
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let client = LlamaCppClient::new(config)
-        .await
-        .map_err(|e| {
-            error!("Failed to create LlamaCpp client: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let client = LlamaCppClient::new(config).await.map_err(|e| {
+        error!("Failed to create LlamaCpp client: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     match client.shutdown().await {
-        Ok(()) => {
-            Ok(Json(ServerActionResponse {
-                success: true,
-                message: "Server shutdown successfully".to_string(),
-                new_state: Some("Stopped".to_string()),
-            }))
-        }
+        Ok(()) => Ok(Json(ServerActionResponse {
+            success: true,
+            message: "Server shutdown successfully".to_string(),
+            new_state: Some("Stopped".to_string()),
+        })),
         Err(e) => {
             error!("Failed to shutdown server: {}", e);
             Ok(Json(ServerActionResponse {
@@ -1240,30 +1313,28 @@ async fn switch_model(
     Path(model_id): Path<String>,
 ) -> Result<Json<ServerActionResponse>, StatusCode> {
     info!("Switching to model: {}", model_id);
-    
+
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let client = LlamaCppClient::new(config)
-        .await
-        .map_err(|e| {
-            error!("Failed to create LlamaCpp client: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let client = LlamaCppClient::new(config).await.map_err(|e| {
+        error!("Failed to create LlamaCpp client: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Convert model_id to filename if needed
     let model_filename = if model_id.ends_with(".gguf") {
         model_id.clone()
     } else {
         format!("{}.gguf", model_id)
     };
-    
+
     match client.switch_model(&model_filename).await {
         Ok(()) => {
             // Get new status to confirm the switch
             let server_info = client.get_server_status().await;
             let new_state = format!("{:?}", server_info.state);
-                
+
             Ok(Json(ServerActionResponse {
                 success: true,
                 message: format!("Successfully switched to model: {}", model_id),
@@ -1287,18 +1358,16 @@ async fn get_current_model(
     State(app_state): State<AppState>,
 ) -> Result<Json<CurrentModelResponse>, StatusCode> {
     info!("Getting current model");
-    
+
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
-    let client = LlamaCppClient::new(config)
-        .await
-        .map_err(|e| {
-            error!("Failed to create LlamaCpp client: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let client = LlamaCppClient::new(config).await.map_err(|e| {
+        error!("Failed to create LlamaCpp client: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     let current_model = client.get_current_model();
     let is_active = current_model.is_some();
-    
+
     Ok(Json(CurrentModelResponse {
         model_name: current_model.clone(),
         model_path: current_model.map(|name| format!("models/{}", name)),
@@ -1312,36 +1381,53 @@ async fn get_all_models(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // Verify user is authenticated
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
-    
+
     use crate::llm::ModelRegistry;
-    
+
     info!("Getting all available models");
-    
+
     let mut registry = ModelRegistry::new();
-    
+
     // First, populate the registry with ALL available models from ModelSelection
     #[cfg(feature = "local-llm")]
     {
         use crate::llm::llamacpp::hardware::ModelSelection;
-        
+
         for model_variant in ModelSelection::all_models() {
             let model_id = model_variant.model_id();
-            
+
             // Add model to registry with default availability (not downloaded)
             registry.set_model_availability(&model_id, false);
-            
+
             // Add metadata from ModelSelection
-            registry.set_model_metadata(&model_id, "size_gb", &model_variant.download_size_gb().to_string());
-            registry.set_model_metadata(&model_id, "vram_required", &model_variant.requirements.min_vram_gb.unwrap_or(0.0).to_string());
+            registry.set_model_metadata(
+                &model_id,
+                "size_gb",
+                &model_variant.download_size_gb().to_string(),
+            );
+            registry.set_model_metadata(
+                &model_id,
+                "vram_required",
+                &model_variant
+                    .requirements
+                    .min_vram_gb
+                    .unwrap_or(0.0)
+                    .to_string(),
+            );
             registry.set_model_metadata(&model_id, "filename", &model_variant.filename());
             registry.set_model_metadata(&model_id, "download_url", &model_variant.download_url());
-            registry.set_model_metadata(&model_id, "description", &format!("{} ({})", 
-                model_variant.base_model.description, 
-                model_variant.quantization.quality_description()
-            ));
+            registry.set_model_metadata(
+                &model_id,
+                "description",
+                &format!(
+                    "{} ({})",
+                    model_variant.base_model.description,
+                    model_variant.quantization.quality_description()
+                ),
+            );
         }
     }
-    
+
     // Now update local model availability based on actual download status
     #[cfg(feature = "local-llm")]
     {
@@ -1352,19 +1438,25 @@ async fn get_all_models(
                 for model_status in model_statuses {
                     // Find the corresponding ModelSelection variant to get the proper model ID
                     use crate::llm::llamacpp::hardware::ModelSelection;
-                    
-                    if let Some(model_variant) = ModelSelection::all_models().into_iter()
-                        .find(|variant| variant.filename() == model_status.name) {
-                        
+
+                    if let Some(model_variant) = ModelSelection::all_models()
+                        .into_iter()
+                        .find(|variant| variant.filename() == model_status.name)
+                    {
                         let model_id = model_variant.model_id();
                         // Update availability based on whether the model is actually downloaded
                         registry.set_model_availability(&model_id, model_status.is_downloaded);
-                        
+
                         // Add size information to metadata if the model is downloaded
                         if model_status.is_downloaded {
-                            let size_gb = model_status.size_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0 * 1024.0);
+                            let size_gb = model_status.size_bytes.unwrap_or(0) as f32
+                                / (1024.0 * 1024.0 * 1024.0);
                             registry.set_model_metadata(&model_id, "size_gb", &size_gb.to_string());
-                            registry.set_model_metadata(&model_id, "filename", model_status.name.as_str());
+                            registry.set_model_metadata(
+                                &model_id,
+                                "filename",
+                                model_status.name.as_str(),
+                            );
                         }
                     }
                 }
@@ -1375,12 +1467,12 @@ async fn get_all_models(
             warn!("Failed to create ModelManager for availability check");
         }
     }
-    
+
     let all_models = registry.get_all_models();
-    
+
     // Convert to a format suitable for the API
     let mut models_response = serde_json::Map::new();
-    
+
     for (model_id, capabilities) in all_models {
         let model_info = serde_json::json!({
             "id": model_id,
@@ -1391,10 +1483,10 @@ async fn get_all_models(
             "is_available": capabilities.is_available,
             "metadata": capabilities.metadata
         });
-        
+
         models_response.insert(model_id.clone(), model_info);
     }
-    
+
     Ok(Json(serde_json::Value::Object(models_response)))
 }
 
@@ -1406,11 +1498,11 @@ async fn get_model_capabilities(
     // Verify user is authenticated
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
     use crate::llm::ModelRegistry;
-    
+
     info!("Getting capabilities for model: {}", model_id);
-    
+
     let registry = ModelRegistry::new();
-    
+
     match registry.get_capabilities(&model_id) {
         Some(capabilities) => {
             let response = serde_json::json!({
@@ -1423,9 +1515,9 @@ async fn get_model_capabilities(
                 "metadata": capabilities.metadata,
                 "recommended_settings": registry.get_recommended_context_settings(&model_id)
             });
-            
+
             Ok(Json(response))
-        },
+        }
         None => {
             warn!("Model not found: {}", model_id);
             Err(StatusCode::NOT_FOUND)

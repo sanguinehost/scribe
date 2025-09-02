@@ -33,11 +33,11 @@ impl PerformanceMetrics {
     ) -> Self {
         let total_time = start_time.elapsed();
         let total_inference_time_ms = total_time.as_millis() as u64;
-        
+
         let time_to_first_token_ms = first_token_time
             .map(|ft| ft.duration_since(start_time).as_millis() as u64)
             .unwrap_or(total_inference_time_ms);
-            
+
         let tokens_per_second = if total_time.as_secs_f32() > 0.0 {
             completion_tokens as f32 / total_time.as_secs_f32()
         } else {
@@ -92,7 +92,7 @@ impl InMemoryMetricsCollector {
 
     fn cleanup_old_entries(&mut self) {
         let cutoff = std::time::SystemTime::now() - Duration::from_secs(3600); // Keep 1 hour
-        
+
         // Clean old metrics
         while let Some(front) = self.metrics.front() {
             if front.timestamp < cutoff {
@@ -101,7 +101,7 @@ impl InMemoryMetricsCollector {
                 break;
             }
         }
-        
+
         // Clean old errors
         while let Some((timestamp, _)) = self.errors.front() {
             if *timestamp < cutoff {
@@ -121,13 +121,13 @@ impl MetricsCollector for InMemoryMetricsCollector {
             metrics.total_inference_time_ms,
             metrics.time_to_first_token_ms
         );
-        
+
         self.total_requests += 1;
-        
+
         if self.metrics.len() >= self.max_history {
             self.metrics.pop_front();
         }
-        
+
         self.metrics.push_back(metrics);
         self.cleanup_old_entries();
     }
@@ -137,15 +137,16 @@ impl MetricsCollector for InMemoryMetricsCollector {
             return Duration::from_millis(0);
         }
 
-        let mut latencies: Vec<u64> = self.metrics
+        let mut latencies: Vec<u64> = self
+            .metrics
             .iter()
             .map(|m| m.total_inference_time_ms)
             .collect();
-        
+
         latencies.sort_unstable();
         let index = (latencies.len() as f64 * 0.95) as usize;
         let p95_ms = latencies.get(index.saturating_sub(1)).copied().unwrap_or(0);
-        
+
         Duration::from_millis(p95_ms)
     }
 
@@ -154,11 +155,8 @@ impl MetricsCollector for InMemoryMetricsCollector {
             return 0.0;
         }
 
-        let total_tokens: f32 = self.metrics
-            .iter()
-            .map(|m| m.tokens_per_second)
-            .sum();
-            
+        let total_tokens: f32 = self.metrics.iter().map(|m| m.tokens_per_second).sum();
+
         total_tokens / self.metrics.len() as f32
     }
 
@@ -167,11 +165,8 @@ impl MetricsCollector for InMemoryMetricsCollector {
             return 0.0;
         }
 
-        let total_depth: usize = self.metrics
-            .iter()
-            .map(|m| m.queue_depth)
-            .sum();
-            
+        let total_depth: usize = self.metrics.iter().map(|m| m.queue_depth).sum();
+
         total_depth as f32 / self.metrics.len() as f32
     }
 
@@ -190,14 +185,15 @@ impl MetricsCollector for InMemoryMetricsCollector {
         if self.total_requests == 0 {
             return 0.0;
         }
-        
+
         self.total_errors as f32 / self.total_requests as f32
     }
 
     fn record_error(&mut self, error_type: String) {
         self.total_errors += 1;
-        self.errors.push_back((std::time::SystemTime::now(), error_type));
-        
+        self.errors
+            .push_back((std::time::SystemTime::now(), error_type));
+
         if self.errors.len() > self.max_history {
             self.errors.pop_front();
         }
@@ -301,18 +297,18 @@ impl Default for MetricsSnapshot {
 pub fn get_current_memory_usage_mb() -> f32 {
     #[cfg(feature = "local-llm")]
     {
-        use sysinfo::{System, Pid};
-        
+        use sysinfo::{Pid, System};
+
         let mut system = System::new();
         if let Ok(current_pid) = sysinfo::get_current_pid() {
             system.refresh_process(current_pid);
-            
+
             if let Some(process) = system.process(current_pid) {
                 return process.memory() as f32 / (1024.0 * 1024.0); // Convert bytes to MB
             }
         }
     }
-    
+
     0.0 // Fallback if sysinfo is not available
 }
 
@@ -359,7 +355,7 @@ impl MetricsLogger {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(interval);
-            
+
             loop {
                 interval.tick().await;
                 metrics.log_stats();
@@ -378,7 +374,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         let first_token = Some(Instant::now());
         std::thread::sleep(Duration::from_millis(50));
-        
+
         let metrics = PerformanceMetrics::new(
             "test-model".to_string(),
             100,
@@ -400,19 +396,12 @@ mod tests {
     #[test]
     fn test_metrics_collector() {
         let mut collector = InMemoryMetricsCollector::new(10);
-        
-        let metrics = PerformanceMetrics::new(
-            "test".to_string(),
-            50,
-            25,
-            Instant::now(),
-            None,
-            256.0,
-            1,
-        );
-        
+
+        let metrics =
+            PerformanceMetrics::new("test".to_string(), 50, 25, Instant::now(), None, 256.0, 1);
+
         collector.record_inference(metrics.clone());
-        
+
         assert_eq!(collector.get_total_requests(), 1);
         assert!(collector.get_throughput() >= 0.0);
         assert_eq!(collector.get_memory_usage(), 256.0);
@@ -421,22 +410,15 @@ mod tests {
     #[test]
     fn test_p95_latency_calculation() {
         let mut collector = InMemoryMetricsCollector::new(100);
-        
+
         // Add metrics with known latencies
         for i in 0..100 {
             let start = Instant::now() - Duration::from_millis(i);
-            let metrics = PerformanceMetrics::new(
-                "test".to_string(),
-                10,
-                10,
-                start,
-                None,
-                100.0,
-                1,
-            );
+            let metrics =
+                PerformanceMetrics::new("test".to_string(), 10, 10, start, None, 100.0, 1);
             collector.record_inference(metrics);
         }
-        
+
         let p95 = collector.get_p95_latency();
         assert!(p95.as_millis() > 0);
     }
@@ -444,26 +426,19 @@ mod tests {
     #[test]
     fn test_error_rate_tracking() {
         let mut collector = InMemoryMetricsCollector::new(10);
-        
+
         // Record some successful requests
         for _ in 0..8 {
-            let metrics = PerformanceMetrics::new(
-                "test".to_string(),
-                10,
-                10,
-                Instant::now(),
-                None,
-                100.0,
-                1,
-            );
+            let metrics =
+                PerformanceMetrics::new("test".to_string(), 10, 10, Instant::now(), None, 100.0, 1);
             collector.record_inference(metrics);
         }
-        
+
         // Record some errors
         for _ in 0..2 {
             collector.record_error("timeout".to_string());
         }
-        
+
         let error_rate = collector.get_error_rate();
         assert!((error_rate - 0.2).abs() < 0.01); // 2 errors out of 10 total = 20%
     }
@@ -471,20 +446,13 @@ mod tests {
     #[test]
     fn test_thread_safe_metrics() {
         let metrics = LlamaCppMetrics::new();
-        
-        let perf_metrics = PerformanceMetrics::new(
-            "test".to_string(),
-            20,
-            15,
-            Instant::now(),
-            None,
-            128.0,
-            3,
-        );
-        
+
+        let perf_metrics =
+            PerformanceMetrics::new("test".to_string(), 20, 15, Instant::now(), None, 128.0, 3);
+
         metrics.record_inference(perf_metrics);
         metrics.record_error("test_error".to_string());
-        
+
         let stats = metrics.get_stats();
         assert_eq!(stats.total_requests, 1);
         assert!(stats.error_rate > 0.0);
@@ -503,7 +471,7 @@ mod tests {
 
         let json = serde_json::to_string(&snapshot).unwrap();
         let deserialized: MetricsSnapshot = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.p95_latency_ms, 500);
         assert!((deserialized.average_throughput - 10.5).abs() < 0.01);
     }

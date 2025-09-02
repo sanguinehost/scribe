@@ -2,15 +2,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{info, instrument};
 
-use crate::{
-    AppState,
-    errors::AppError,
-};
+use crate::{AppState, errors::AppError};
 
-use super::{
-    types::*,
-    field_generator::FieldGenerator,
-};
+use super::{field_generator::FieldGenerator, types::*};
 
 /// Service for generating complete characters from concepts
 pub struct FullCharacterGenerator {
@@ -21,15 +15,25 @@ pub struct FullCharacterGenerator {
 impl FullCharacterGenerator {
     pub fn new(state: Arc<AppState>) -> Self {
         let field_generator = FieldGenerator::new(state.clone());
-        Self { state, field_generator }
+        Self {
+            state,
+            field_generator,
+        }
     }
 
     /// Generate a complete character from a concept
     #[instrument(skip_all)]
-    pub async fn generate_character(&self, request: FullCharacterRequest, user_id: uuid::Uuid) -> Result<FullCharacterResult, AppError> {
+    pub async fn generate_character(
+        &self,
+        request: FullCharacterRequest,
+        user_id: uuid::Uuid,
+    ) -> Result<FullCharacterResult, AppError> {
         let start_time = Instant::now();
-        
-        info!("Starting full character generation for concept: {}", request.concept);
+
+        info!(
+            "Starting full character generation for concept: {}",
+            request.concept
+        );
 
         // For now, implement a simple approach that generates fields sequentially
         // In the future, this could be enhanced with a single structured output call
@@ -38,7 +42,8 @@ impl FullCharacterGenerator {
         // First, generate the core description based on the concept
         let description_request = FieldGenerationRequest {
             field: CharacterField::Description,
-            style: request.style_preferences
+            style: request
+                .style_preferences
                 .as_ref()
                 .and_then(|sp| sp.description_style.clone()),
             user_prompt: request.concept.clone(),
@@ -47,10 +52,15 @@ impl FullCharacterGenerator {
             lorebook_id: None, // Full character generation doesn't use lorebook by default
         };
 
-        let description_result = self.field_generator.generate_field(description_request, user_id).await?;
+        let description_result = self
+            .field_generator
+            .generate_field(description_request, user_id)
+            .await?;
 
         // Extract character name from description or generate one
-        let character_name = self.extract_or_generate_name(&description_result.content, &request.concept, user_id).await?;
+        let character_name = self
+            .extract_or_generate_name(&description_result.content, &request.concept, user_id)
+            .await?;
 
         // Build character context for subsequent generations
         let character_context = CharacterContext {
@@ -72,13 +82,19 @@ impl FullCharacterGenerator {
         let personality_request = FieldGenerationRequest {
             field: CharacterField::Personality,
             style: None, // Use auto for personality
-            user_prompt: format!("Generate a personality that fits this character: {}", request.concept),
+            user_prompt: format!(
+                "Generate a personality that fits this character: {}",
+                request.concept
+            ),
             character_context: Some(character_context.clone()),
             generation_options: request.generation_options.clone(),
             lorebook_id: None,
         };
 
-        let personality_result = self.field_generator.generate_field(personality_request, user_id).await?;
+        let personality_result = self
+            .field_generator
+            .generate_field(personality_request, user_id)
+            .await?;
 
         // Update context with personality
         let character_context = CharacterContext {
@@ -90,37 +106,55 @@ impl FullCharacterGenerator {
         let first_mes_request = FieldGenerationRequest {
             field: CharacterField::FirstMes,
             style: None,
-            user_prompt: format!("Generate an engaging first message for this character: {}", request.concept),
+            user_prompt: format!(
+                "Generate an engaging first message for this character: {}",
+                request.concept
+            ),
             character_context: Some(character_context.clone()),
             generation_options: request.generation_options.clone(),
             lorebook_id: None,
         };
 
-        let first_mes_result = self.field_generator.generate_field(first_mes_request, user_id).await?;
+        let first_mes_result = self
+            .field_generator
+            .generate_field(first_mes_request, user_id)
+            .await?;
 
         // Generate basic scenario
         let scenario_request = FieldGenerationRequest {
             field: CharacterField::Scenario,
             style: None,
-            user_prompt: format!("Generate a scenario/setting for this character: {}", request.concept),
+            user_prompt: format!(
+                "Generate a scenario/setting for this character: {}",
+                request.concept
+            ),
             character_context: Some(character_context.clone()),
             generation_options: request.generation_options.clone(),
             lorebook_id: None,
         };
 
-        let scenario_result = self.field_generator.generate_field(scenario_request, user_id).await?;
+        let scenario_result = self
+            .field_generator
+            .generate_field(scenario_request, user_id)
+            .await?;
 
         // Generate tags
         let tags_request = FieldGenerationRequest {
             field: CharacterField::Tags,
             style: None,
-            user_prompt: format!("Generate relevant tags for this character: {}", request.concept),
+            user_prompt: format!(
+                "Generate relevant tags for this character: {}",
+                request.concept
+            ),
             character_context: Some(character_context),
             generation_options: request.generation_options.clone(),
             lorebook_id: None,
         };
 
-        let tags_result = self.field_generator.generate_field(tags_request, user_id).await?;
+        let tags_result = self
+            .field_generator
+            .generate_field(tags_request, user_id)
+            .await?;
         let tags = self.parse_tags(&tags_result.content);
 
         // Calculate total generation time and tokens
@@ -152,19 +186,24 @@ impl FullCharacterGenerator {
             personality: Some(personality_result.content),
             scenario: Some(scenario_result.content),
             first_mes: first_mes_result.content,
-            mes_example: None, // Optional field for basic generation
+            mes_example: None,   // Optional field for basic generation
             system_prompt: None, // Optional field for basic generation
-            depth_prompt: None, // Optional field for basic generation
+            depth_prompt: None,  // Optional field for basic generation
             tags,
             metadata,
         })
     }
 
     /// Extract character name from description or generate one
-    async fn extract_or_generate_name(&self, description: &str, concept: &str, user_id: uuid::Uuid) -> Result<String, AppError> {
+    async fn extract_or_generate_name(
+        &self,
+        description: &str,
+        concept: &str,
+        user_id: uuid::Uuid,
+    ) -> Result<String, AppError> {
         // Simple name extraction - look for common patterns
         // This could be enhanced with better NLP or structured generation
-        
+
         // Try to find name patterns in description
         let patterns = [
             r"(?:Name:|name:|called|named)\s+([A-Z][a-z]+)",
@@ -186,7 +225,10 @@ impl FullCharacterGenerator {
         let name_request = FieldGenerationRequest {
             field: CharacterField::Description, // Reuse description field for name generation
             style: None,
-            user_prompt: format!("Generate just a name (first name only) for a character described as: {}", concept),
+            user_prompt: format!(
+                "Generate just a name (first name only) for a character described as: {}",
+                concept
+            ),
             character_context: None,
             generation_options: Some(GenerationOptions {
                 creativity_level: Some("medium".to_string()),
@@ -196,10 +238,14 @@ impl FullCharacterGenerator {
             lorebook_id: None,
         };
 
-        let name_result = self.field_generator.generate_field(name_request, user_id).await?;
-        
+        let name_result = self
+            .field_generator
+            .generate_field(name_request, user_id)
+            .await?;
+
         // Extract just the name from the generated content
-        let name = name_result.content
+        let name = name_result
+            .content
             .lines()
             .next()
             .unwrap_or(&name_result.content)

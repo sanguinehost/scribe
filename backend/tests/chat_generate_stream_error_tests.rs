@@ -179,7 +179,8 @@ async fn generate_chat_response_streaming_ai_error() {
                 "index": 0,
                 "content": "Partial ",
                 "checksum": 2858458310u32  // CRC32 checksum of "Partial "
-            }).to_string(),
+            })
+            .to_string(),
         },
         ParsedSseEvent {
             event: Some("error".to_string()),
@@ -1026,7 +1027,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 "index": 0,
                 "content": "Some initial content. ",
                 "checksum": 1635327112u32  // CRC32 checksum of "Some initial content. "
-            }).to_string(),
+            })
+            .to_string(),
         },
         ParsedSseEvent {
             event: Some("error".to_string()),

@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use crate::errors::AppError;
 use super::types::*;
+use crate::errors::AppError;
+use serde::{Deserialize, Serialize};
 
 /// Structured output schemas for different generation types
 /// These will be used with rust-genai structured output capabilities
@@ -39,9 +39,9 @@ pub struct EnhancementOutput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StyleAnalysisOutput {
     pub detected_style: DescriptionStyle,
-    pub confidence: f32, // 0.0 - 1.0
+    pub confidence: f32,               // 0.0 - 1.0
     pub style_indicators: Vec<String>, // What features indicated this style
-    pub recommendations: Vec<String>, // Suggestions for improvement
+    pub recommendations: Vec<String>,  // Suggestions for improvement
 }
 
 /// Validation functions for structured outputs
@@ -49,7 +49,7 @@ impl CharacterFieldOutput {
     pub fn validate(&self, field: &CharacterField) -> Result<(), AppError> {
         if self.content.trim().is_empty() {
             return Err(AppError::InvalidInput(
-                "Generated content cannot be empty".to_string()
+                "Generated content cannot be empty".to_string(),
             ));
         }
 
@@ -59,26 +59,27 @@ impl CharacterFieldOutput {
                 // For tags, content should be comma-separated or JSON array
                 if !self.content.contains(',') && !self.content.starts_with('[') {
                     return Err(AppError::InvalidInput(
-                        "Tags field should contain comma-separated values or JSON array".to_string()
+                        "Tags field should contain comma-separated values or JSON array"
+                            .to_string(),
                     ));
                 }
-            },
+            }
             CharacterField::FirstMes => {
                 // First message should be substantial
                 if self.content.len() < 20 {
                     return Err(AppError::InvalidInput(
-                        "First message should be at least 20 characters".to_string()
+                        "First message should be at least 20 characters".to_string(),
                     ));
                 }
-            },
+            }
             CharacterField::AlternateGreeting => {
                 // Alternate greeting should be substantial
                 if self.content.len() < 20 {
                     return Err(AppError::InvalidInput(
-                        "Alternate greeting should be at least 20 characters".to_string()
+                        "Alternate greeting should be at least 20 characters".to_string(),
                     ));
                 }
-            },
+            }
             _ => {} // Other fields have more flexible requirements
         }
 
@@ -90,25 +91,25 @@ impl FullCharacterOutput {
     pub fn validate(&self) -> Result<(), AppError> {
         if self.name.trim().is_empty() {
             return Err(AppError::InvalidInput(
-                "Character name cannot be empty".to_string()
+                "Character name cannot be empty".to_string(),
             ));
         }
 
         if self.description.trim().is_empty() {
             return Err(AppError::InvalidInput(
-                "Character description cannot be empty".to_string()
+                "Character description cannot be empty".to_string(),
             ));
         }
 
         if self.first_mes.trim().is_empty() {
             return Err(AppError::InvalidInput(
-                "First message cannot be empty".to_string()
+                "First message cannot be empty".to_string(),
             ));
         }
 
         if self.first_mes.len() < 20 {
             return Err(AppError::InvalidInput(
-                "First message should be at least 20 characters".to_string()
+                "First message should be at least 20 characters".to_string(),
             ));
         }
 

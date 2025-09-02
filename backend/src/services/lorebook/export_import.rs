@@ -462,7 +462,7 @@ impl LorebookService {
                             let dek_bytes = dek.expose_secret().clone();
                             secrecy::SecretBox::new(Box::new(dek_bytes))
                         });
-                        
+
                         let params = crate::services::embeddings::LorebookEntryParams {
                             original_lorebook_entry_id: inserted_entry.id,
                             lorebook_id: inserted_entry.lorebook_id,

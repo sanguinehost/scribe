@@ -31,7 +31,7 @@ use scribe_backend::routes::{
     chats,
     chronicles,
     documents::document_routes,
-    llm_routes::llm_router,        // Added for LLM management routes
+    llm_routes::llm_router,           // Added for LLM management routes
     lorebook_routes::lorebook_routes, // Added for lorebook routes
     user_persona_routes::user_personas_router, // Added for user persona routes
     user_settings_routes::user_settings_routes,
@@ -191,7 +191,9 @@ fn setup_database_pool(config: &Config) -> PgPool {
 // Initialize all services
 async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppStateServices> {
     #[cfg(feature = "local-llm")]
-    let mut llamacpp_server_manager: Option<Arc<scribe_backend::llm::llamacpp::LlamaCppServerManager>> = None;
+    let mut llamacpp_server_manager: Option<
+        Arc<scribe_backend::llm::llamacpp::LlamaCppServerManager>,
+    > = None;
     // --- Initialize GenAI Client Asynchronously ---
     let api_key = config
         .gemini_api_key
@@ -243,9 +245,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     ));
 
     // --- Initialize Chronicle Service ---
-    let chronicle_service = Arc::new(ChronicleService::new(
-        pool.clone(),
-    ));
+    let chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
@@ -261,39 +261,54 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     {
         use scribe_backend::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
         use tracing::{info, warn};
-        
+
         info!("Initializing local LLM server...");
         let llm_config = LlamaCppConfig::from_env();
-        
+
         if llm_config.enabled {
             match ModelManager::new(llm_config.clone()).await {
                 Ok(model_manager) => {
                     let model_manager_arc = Arc::new(model_manager);
-                    
+
                     // Check if there are any downloaded models
-                    let downloaded_models = model_manager_arc.list_models().await.unwrap_or_default();
-                    
+                    let downloaded_models =
+                        model_manager_arc.list_models().await.unwrap_or_default();
+
                     if downloaded_models.is_empty() {
-                        info!("No models downloaded yet. Local LLM UI will be available for model downloads.");
+                        info!(
+                            "No models downloaded yet. Local LLM UI will be available for model downloads."
+                        );
                     } else {
-                        info!("Found {} downloaded models. Server will start on-demand when a model is activated.", downloaded_models.len());
+                        info!(
+                            "Found {} downloaded models. Server will start on-demand when a model is activated.",
+                            downloaded_models.len()
+                        );
                     }
-                    
+
                     // Create server manager but don't start it - it will start on-demand
                     match LlamaCppServerManager::new(llm_config, model_manager_arc).await {
                         Ok(server_manager) => {
-                            let server_manager_arc: Arc<LlamaCppServerManager> = Arc::new(server_manager);
-                            info!("Local LLM server manager initialized. Server will start when a model is activated.");
+                            let server_manager_arc: Arc<LlamaCppServerManager> =
+                                Arc::new(server_manager);
+                            info!(
+                                "Local LLM server manager initialized. Server will start when a model is activated."
+                            );
                             // Store the server manager for UI management
                             llamacpp_server_manager = Some(server_manager_arc);
                         }
                         Err(e) => {
-                            warn!("Failed to initialize local LLM server manager: {}. Local LLM features will be unavailable.", e);
+                            warn!(
+                                "Failed to initialize local LLM server manager: {}. Local LLM features will be unavailable.",
+                                e
+                            );
                         }
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to initialize model manager: {}. Local LLM features will be unavailable.", e);
+                    warn!(
+                        "Failed to initialize model manager: {}. Local LLM features will be unavailable.",
+                        e
+                    );
                 }
             }
         } else {
@@ -326,10 +341,12 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
             .await?
         },
         ai_client_factory,
-        rate_limiter: Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(
-            config.security.max_requests_per_minute,
-            config.security.max_requests_per_hour,
-        )),
+        rate_limiter: Arc::new(
+            scribe_backend::middleware::llm_security::LlmRateLimiter::new(
+                config.security.max_requests_per_minute,
+                config.security.max_requests_per_hour,
+            ),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: llamacpp_server_manager,
         #[cfg(feature = "local-llm")]
@@ -337,7 +354,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None, // Will be set by the builder if needed
     };
-    
+
     Ok(services)
 }
 
@@ -473,19 +490,18 @@ fn setup_app_state_and_auth(
         AuthManagerLayerBuilder::new((*auth_backend).clone(), session_manager_layer).build();
 
     let mut app_state = AppState::new(pool.clone(), config.clone(), services);
-    
+
     // Initialize narrative intelligence service after AppState creation to avoid circular dependency
     let chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
-    let narrative_intelligence_service = Arc::new(
-        NarrativeIntelligenceService::for_production_with_deps(
+    let narrative_intelligence_service =
+        Arc::new(NarrativeIntelligenceService::for_production_with_deps(
             app_state.ai_client.clone(),
             chronicle_service,
             app_state.lorebook_service.clone(),
             app_state.qdrant_service.clone(),
             app_state.embedding_client.clone(),
             Arc::new(app_state.clone()),
-        )
-    );
+        ));
     app_state.set_narrative_intelligence_service(narrative_intelligence_service);
 
     Ok((app_state, auth_layer))
@@ -501,14 +517,20 @@ fn build_router(
             "/characters",
             characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         ) // 10MB limit for character uploads
-        .nest("/chat", chat_routes(app_state.clone())
-            .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit for chat history
-            .layer(axum::middleware::from_fn_with_state(
-                app_state.clone(),
-                scribe_backend::middleware::llm_security::llm_security_middleware,
-            )))
+        .nest(
+            "/chat",
+            chat_routes(app_state.clone())
+                .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit for chat history
+                .layer(axum::middleware::from_fn_with_state(
+                    app_state.clone(),
+                    scribe_backend::middleware::llm_security::llm_security_middleware,
+                )),
+        )
         .nest("/chats", chats::chat_routes())
-        .nest("/chronicles", chronicles::create_chronicles_router(app_state.clone()))
+        .nest(
+            "/chronicles",
+            chronicles::create_chronicles_router(app_state.clone()),
+        )
         .nest("/documents", document_routes())
         .nest("/llm", llm_router()) // LLM management routes
         .nest("/personas", user_personas_router(app_state.clone()))
@@ -571,7 +593,9 @@ fn build_router(
         .layer(CookieManagerLayer::new())
         .layer(auth_layer)
         .with_state(app_state)
-        .layer(axum_middleware::from_fn(scribe_backend::middleware::security_headers_middleware))
+        .layer(axum_middleware::from_fn(
+            scribe_backend::middleware::security_headers_middleware,
+        ))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
@@ -587,7 +611,7 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
 
     // Load TLS configuration based on environment
     let environment = config.environment.as_deref().unwrap_or("local");
-    
+
     let tls_config = match environment {
         "staging" | "production" => {
             // For AWS cloud environments, load certificates from environment variables
@@ -598,13 +622,14 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
             load_cloud_certificate()
                 .await
                 .context("Failed to load certificate for AWS cloud deployment")?
-        },
+        }
         "container" => {
             // For containerized development, try environment variables first, then files
             tracing::info!("Container environment detected, loading certificates");
-            
+
             // Try loading from environment variables first (preferred for containers)
-            if let (Ok(cert_pem), Ok(key_pem)) = (env::var("TLS_CERT_PEM"), env::var("TLS_KEY_PEM")) {
+            if let (Ok(cert_pem), Ok(key_pem)) = (env::var("TLS_CERT_PEM"), env::var("TLS_KEY_PEM"))
+            {
                 tracing::info!("Loading TLS certificates from environment variables for container");
                 RustlsConfig::from_pem(cert_pem.into_bytes(), key_pem.into_bytes())
                     .await
@@ -614,32 +639,39 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
                 tracing::info!("Loading TLS certificates from mounted files in container");
                 let cert_path = PathBuf::from("/app/certs/cert.pem");
                 let key_path = PathBuf::from("/app/certs/key.pem");
-                
+
                 RustlsConfig::from_pem_file(cert_path, key_path)
                     .await
                     .context("Failed to load TLS certificates from container files. Ensure certificates are mounted to /app/certs/")?
             }
-        },
+        }
         "local" | _ => {
             // For local development, support environment variable override for certificate paths
-            let (cert_path, key_path) = if let (Ok(cert_env), Ok(key_env)) = (env::var("TLS_CERT_PATH"), env::var("TLS_KEY_PATH")) {
+            let (cert_path, key_path) = if let (Ok(cert_env), Ok(key_env)) =
+                (env::var("TLS_CERT_PATH"), env::var("TLS_KEY_PATH"))
+            {
                 tracing::info!("Using TLS certificate paths from environment variables");
                 (PathBuf::from(cert_env), PathBuf::from(key_env))
             } else {
                 // Default to .certs directory
-                tracing::info!("Local environment detected, loading certificates from .certs directory");
-                
+                tracing::info!(
+                    "Local environment detected, loading certificates from .certs directory"
+                );
+
                 let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
                 let project_root = manifest_dir
                     .parent()
                     .context("Failed to get project root from manifest dir")?;
 
-                (project_root.join(".certs-backend/cert.pem"), project_root.join(".certs-backend/key.pem"))
+                (
+                    project_root.join(".certs-backend/cert.pem"),
+                    project_root.join(".certs-backend/key.pem"),
+                )
             };
 
             tracing::info!(
-                cert_path = %cert_path.display(), 
-                key_path = %key_path.display(), 
+                cert_path = %cert_path.display(),
+                key_path = %key_path.display(),
                 "Loading TLS certificates for local development"
             );
 
@@ -649,7 +681,11 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
         }
     };
 
-    tracing::info!("Starting HTTPS server with TLS certificates on {} (environment: {})", addr, environment);
+    tracing::info!(
+        "Starting HTTPS server with TLS certificates on {} (environment: {})",
+        addr,
+        environment
+    );
 
     axum_server::bind_rustls(addr, tls_config)
         .serve(app.into_make_service())

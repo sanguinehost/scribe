@@ -64,9 +64,9 @@ pub async fn create_message_variant(
     // Insert into database and update parent message status if needed
     let created_variant = conn
         .interact(move |conn| {
-            use crate::schema::chat_messages;
             use crate::models::chats::MessageStatus;
-            
+            use crate::schema::chat_messages;
+
             // Start a transaction to ensure atomicity
             conn.transaction(|trans_conn| {
                 // First, check the parent message status
@@ -75,13 +75,16 @@ pub async fn create_message_variant(
                     .select(chat_messages::status)
                     .first::<String>(trans_conn)
                     .map_err(|e| {
-                        AppError::DatabaseQueryError(format!("Failed to get parent message status: {e}"))
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to get parent message status: {e}"
+                        ))
                     })?;
-                
+
                 // If parent message has failed or partial status, update it to completed
                 // since we're creating a successful variant
-                if parent_status == MessageStatus::Failed.to_string() 
-                    || parent_status == MessageStatus::Partial.to_string() {
+                if parent_status == MessageStatus::Failed.to_string()
+                    || parent_status == MessageStatus::Partial.to_string()
+                {
                     diesel::update(chat_messages::table)
                         .filter(chat_messages::id.eq(message_id))
                         .set((
@@ -90,17 +93,21 @@ pub async fn create_message_variant(
                         ))
                         .execute(trans_conn)
                         .map_err(|e| {
-                            AppError::DatabaseQueryError(format!("Failed to update parent message status: {e}"))
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to update parent message status: {e}"
+                            ))
                         })?;
                 }
-                
+
                 // Now insert the variant
                 diesel::insert_into(message_variants::table)
                     .values(&new_variant)
                     .returning(MessageVariant::as_returning())
                     .get_result::<MessageVariant>(trans_conn)
                     .map_err(|e| {
-                        AppError::DatabaseQueryError(format!("Failed to create message variant: {e}"))
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to create message variant: {e}"
+                        ))
                     })
             })
         })
@@ -213,11 +220,11 @@ pub async fn get_active_variant_content(
     user_id: Uuid,
     dek: &SecretBox<Vec<u8>>,
 ) -> Result<Option<String>, AppError> {
-    use crate::schema::chat_messages;
     use crate::models::chats::MessageStatus;
-    
+    use crate::schema::chat_messages;
+
     let conn = state.pool.get().await?;
-    
+
     // First check the parent message status
     let parent_status = conn
         .interact(move |conn| {
@@ -231,15 +238,17 @@ pub async fn get_active_variant_content(
                 })
         })
         .await??;
-    
+
     // If parent message doesn't exist or is failed/partial, look for variants
     match parent_status {
-        Some(status) if status == MessageStatus::Failed.to_string() 
-            || status == MessageStatus::Partial.to_string() => {
+        Some(status)
+            if status == MessageStatus::Failed.to_string()
+                || status == MessageStatus::Partial.to_string() =>
+        {
             // Parent is failed/partial, get the latest variant
             let variants = get_message_variants(state, message_id, user_id, dek).await?;
             Ok(variants.last().map(|v| v.content.clone()))
-        },
+        }
         Some(_) => {
             // Parent is in good status, check if we have variants and return the latest
             let variants = get_message_variants(state, message_id, user_id, dek).await?;
@@ -250,7 +259,7 @@ pub async fn get_active_variant_content(
                 // Return the latest variant
                 Ok(variants.last().map(|v| v.content.clone()))
             }
-        },
+        }
         None => Ok(None),
     }
 }

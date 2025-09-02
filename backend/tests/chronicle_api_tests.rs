@@ -11,12 +11,15 @@ use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
     models::{
-        chronicle::{PlayerChronicle, CreateChronicleRequest, UpdateChronicleRequest, PlayerChronicleWithCounts},
+        chats::{Chat, ChatMode, DbInsertableChatMessage, MessageRole},
+        chronicle::{
+            CreateChronicleRequest, PlayerChronicle, PlayerChronicleWithCounts,
+            UpdateChronicleRequest,
+        },
         chronicle_event::{ChronicleEvent, CreateEventRequest, EventSource},
-        chats::{Chat, ChatMode, MessageRole, DbInsertableChatMessage},
     },
-    test_helpers::{self, TestDataGuard, TestApp},
     schema,
+    test_helpers::{self, TestApp, TestDataGuard},
 };
 use serde_json::json;
 use tower::util::ServiceExt;
@@ -27,14 +30,17 @@ fn extract_session_cookie(response: &Response) -> Option<String> {
     response
         .headers()
         .get(header::SET_COOKIE)?
-        .to_str().ok()?
+        .to_str()
+        .ok()?
         .split(';')
         .next()
         .map(|s| s.to_string())
 }
 
 // Helper function to parse JSON response
-async fn parse_json_response<T: serde::de::DeserializeOwned>(response: Response) -> AnyhowResult<T> {
+async fn parse_json_response<T: serde::de::DeserializeOwned>(
+    response: Response,
+) -> AnyhowResult<T> {
     let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = std::str::from_utf8(&body_bytes)?;
     serde_json::from_str(body_str).context("Failed to parse JSON response")
@@ -53,7 +59,8 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
         "password": password
     });
 
-    let register_response = test_app.router
+    let register_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -70,8 +77,8 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
     // Parse the registration response to get user_id
     let register_body_bytes = register_response.into_body().collect().await?.to_bytes();
     let register_body_str = std::str::from_utf8(&register_body_bytes)?;
-    let auth_response: serde_json::Value = serde_json::from_str(register_body_str)
-        .context("Failed to parse registration response")?;
+    let auth_response: serde_json::Value =
+        serde_json::from_str(register_body_str).context("Failed to parse registration response")?;
     let user_id = auth_response["user_id"]
         .as_str()
         .context("No user_id in registration response")?;
@@ -122,7 +129,8 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
         "password": password
     });
 
-    let login_response = test_app.router
+    let login_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -156,7 +164,8 @@ mod api_tests {
             description: Some("A grand tale of heroes and dragons".to_string()),
         };
 
-        let create_response = test_app.router
+        let create_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -171,14 +180,16 @@ mod api_tests {
             .unwrap();
 
         assert_eq!(create_response.status(), StatusCode::CREATED);
-        let created_chronicle: PlayerChronicle = parse_json_response(create_response).await.unwrap();
+        let created_chronicle: PlayerChronicle =
+            parse_json_response(create_response).await.unwrap();
 
         assert_eq!(created_chronicle.name, create_request.name);
         assert_eq!(created_chronicle.description, create_request.description);
         // User ID will be set by the authenticated session
 
         // Test: Get Chronicles List
-        let list_response = test_app.router
+        let list_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -192,7 +203,8 @@ mod api_tests {
             .unwrap();
 
         assert_eq!(list_response.status(), StatusCode::OK);
-        let chronicles: Vec<PlayerChronicleWithCounts> = parse_json_response(list_response).await.unwrap();
+        let chronicles: Vec<PlayerChronicleWithCounts> =
+            parse_json_response(list_response).await.unwrap();
 
         assert_eq!(chronicles.len(), 1);
         assert_eq!(chronicles[0].chronicle.id, created_chronicle.id);
@@ -200,7 +212,8 @@ mod api_tests {
         assert_eq!(chronicles[0].chat_session_count, 0);
 
         // Test: Get Specific Chronicle
-        let get_response = test_app.router
+        let get_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -223,7 +236,8 @@ mod api_tests {
             description: Some("An even grander tale".to_string()),
         };
 
-        let update_response = test_app.router
+        let update_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -238,13 +252,18 @@ mod api_tests {
             .unwrap();
 
         assert_eq!(update_response.status(), StatusCode::OK);
-        let updated_chronicle: PlayerChronicle = parse_json_response(update_response).await.unwrap();
+        let updated_chronicle: PlayerChronicle =
+            parse_json_response(update_response).await.unwrap();
 
         assert_eq!(updated_chronicle.name, "Updated Epic Adventure");
-        assert_eq!(updated_chronicle.description, Some("An even grander tale".to_string()));
+        assert_eq!(
+            updated_chronicle.description,
+            Some("An even grander tale".to_string())
+        );
 
         // Test: Delete Chronicle
-        let delete_response = test_app.router
+        let delete_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -260,7 +279,8 @@ mod api_tests {
         assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
         // Test: Verify Chronicle Deleted
-        let get_deleted_response = test_app.router
+        let get_deleted_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -288,7 +308,8 @@ mod api_tests {
             description: Some("For testing events".to_string()),
         };
 
-        let create_chronicle_response = test_app.router
+        let create_chronicle_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -296,13 +317,17 @@ mod api_tests {
                     .uri("/api/chronicles")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_chronicle_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_chronicle_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response).await.unwrap();
+        let chronicle: PlayerChronicle = parse_json_response(create_chronicle_response)
+            .await
+            .unwrap();
 
         // Test: Create Event
         let event_data = json!({
@@ -320,7 +345,8 @@ mod api_tests {
             chat_session_id: None,
         };
 
-        let create_event_response = test_app.router
+        let create_event_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -328,14 +354,17 @@ mod api_tests {
                     .uri(&format!("/api/chronicles/{}/events", chronicle.id))
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, &session_cookie)
-                    .body(Body::from(serde_json::to_string(&create_event_request).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&create_event_request).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
         assert_eq!(create_event_response.status(), StatusCode::CREATED);
-        let created_event: ChronicleEvent = parse_json_response(create_event_response).await.unwrap();
+        let created_event: ChronicleEvent =
+            parse_json_response(create_event_response).await.unwrap();
 
         assert_eq!(created_event.event_type, create_event_request.event_type);
         assert_eq!(created_event.summary, create_event_request.summary);
@@ -343,7 +372,8 @@ mod api_tests {
         assert_eq!(created_event.chronicle_id, chronicle.id);
 
         // Test: Get Chronicle Events
-        let get_events_response = test_app.router
+        let get_events_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -363,12 +393,16 @@ mod api_tests {
         assert_eq!(events[0].id, created_event.id);
 
         // Test: Get Events with Query Parameters (filtering)
-        let get_filtered_events_response = test_app.router
+        let get_filtered_events_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(&format!("/api/chronicles/{}/events?event_type=EXPLORATION&limit=10", chronicle.id))
+                    .uri(&format!(
+                        "/api/chronicles/{}/events?event_type=EXPLORATION&limit=10",
+                        chronicle.id
+                    ))
                     .header(header::COOKIE, &session_cookie)
                     .body(Body::empty())
                     .unwrap(),
@@ -377,18 +411,25 @@ mod api_tests {
             .unwrap();
 
         assert_eq!(get_filtered_events_response.status(), StatusCode::OK);
-        let filtered_events: Vec<ChronicleEvent> = parse_json_response(get_filtered_events_response).await.unwrap();
+        let filtered_events: Vec<ChronicleEvent> =
+            parse_json_response(get_filtered_events_response)
+                .await
+                .unwrap();
 
         assert_eq!(filtered_events.len(), 1);
         assert_eq!(filtered_events[0].id, created_event.id);
 
         // Test: Delete Event
-        let delete_event_response = test_app.router
+        let delete_event_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::DELETE)
-                    .uri(&format!("/api/chronicles/{}/events/{}", chronicle.id, created_event.id))
+                    .uri(&format!(
+                        "/api/chronicles/{}/events/{}",
+                        chronicle.id, created_event.id
+                    ))
                     .header(header::COOKIE, &session_cookie)
                     .body(Body::empty())
                     .unwrap(),
@@ -399,7 +440,8 @@ mod api_tests {
         assert_eq!(delete_event_response.status(), StatusCode::NO_CONTENT);
 
         // Test: Verify Event Deleted
-        let get_events_after_delete_response = test_app.router
+        let get_events_after_delete_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -412,7 +454,10 @@ mod api_tests {
             .await
             .unwrap();
 
-        let events_after_delete: Vec<ChronicleEvent> = parse_json_response(get_events_after_delete_response).await.unwrap();
+        let events_after_delete: Vec<ChronicleEvent> =
+            parse_json_response(get_events_after_delete_response)
+                .await
+                .unwrap();
         assert_eq!(events_after_delete.len(), 0);
     }
 
@@ -422,7 +467,8 @@ mod api_tests {
         let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
         // Test: Access without authentication
-        let unauth_response = test_app.router
+        let unauth_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -446,7 +492,8 @@ mod api_tests {
             description: Some("Should not be accessible by User2".to_string()),
         };
 
-        let create_response = test_app.router
+        let create_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -463,7 +510,8 @@ mod api_tests {
         let chronicle: PlayerChronicle = parse_json_response(create_response).await.unwrap();
 
         // Test: User2 tries to access User1's chronicle
-        let unauthorized_get_response = test_app.router
+        let unauthorized_get_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -488,7 +536,8 @@ mod api_tests {
             chat_session_id: None,
         };
 
-        let unauthorized_event_response = test_app.router
+        let unauthorized_event_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -517,7 +566,8 @@ mod api_tests {
             "description": "This should fail"
         });
 
-        let invalid_response = test_app.router
+        let invalid_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -538,7 +588,8 @@ mod api_tests {
             "description": "Missing name field"
         });
 
-        let incomplete_response = test_app.router
+        let incomplete_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -552,7 +603,10 @@ mod api_tests {
             .await
             .unwrap();
 
-        assert_eq!(incomplete_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            incomplete_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
     }
 
     #[tokio::test]
@@ -564,7 +618,8 @@ mod api_tests {
         let nonexistent_id = Uuid::new_v4();
 
         // Test: Get nonexistent chronicle
-        let get_response = test_app.router
+        let get_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -589,7 +644,8 @@ mod api_tests {
             chat_session_id: None,
         };
 
-        let event_response = test_app.router
+        let event_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -605,7 +661,4 @@ mod api_tests {
 
         assert_eq!(event_response.status(), StatusCode::NOT_FOUND);
     }
-
-
-
 }

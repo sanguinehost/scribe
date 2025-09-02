@@ -363,13 +363,15 @@ async fn perform_reasoning_chunk_stream_test(
                 "index": 0,
                 "content": "Final answer. ",
                 "checksum": 2464006979u32  // CRC32 checksum of "Final answer. "
-            }).to_string(),
+            })
+            .to_string(),
         },
         ParsedSseEvent {
             event: Some("message_saved".to_string()),
             data: serde_json::json!({
                 "message_id": "placeholder"  // Will be replaced with actual UUID pattern matching
-            }).to_string(),
+            })
+            .to_string(),
         },
         ParsedSseEvent {
             event: Some("content".to_string()),
@@ -377,7 +379,8 @@ async fn perform_reasoning_chunk_stream_test(
                 "index": 1,
                 "content": "",
                 "checksum": 0u32  // Empty content flush marker
-            }).to_string(),
+            })
+            .to_string(),
         },
         ParsedSseEvent {
             event: Some("done".to_string()),
@@ -470,12 +473,17 @@ fn verify_reasoning_stream_events(
                         i, expected.data
                     )
                 });
-            
+
             // Special handling for message_saved event - check UUID pattern instead of exact match
             if expected.event.as_deref() == Some("message_saved") {
-                assert!(actual_json.get("message_id").is_some(), 
-                        "message_saved event should have message_id field");
-                let message_id_str = actual_json.get("message_id").unwrap().as_str()
+                assert!(
+                    actual_json.get("message_id").is_some(),
+                    "message_saved event should have message_id field"
+                );
+                let message_id_str = actual_json
+                    .get("message_id")
+                    .unwrap()
+                    .as_str()
                     .expect("message_id should be a string");
                 // Verify it's a valid UUID format
                 uuid::Uuid::parse_str(message_id_str).expect("message_id should be a valid UUID");

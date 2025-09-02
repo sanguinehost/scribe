@@ -23,8 +23,8 @@ pub use gemini_embedding_client::BatchEmbeddingContentRequest;
 // Re-export LlamaCpp types when feature is enabled
 #[cfg(feature = "local-llm")]
 pub use llamacpp::{
-    LlamaCppClient, LlamaCppConfig, LocalLlmError,
-    ModelManager, ModelSelection, HardwareCapabilities
+    HardwareCapabilities, LlamaCppClient, LlamaCppConfig, LocalLlmError, ModelManager,
+    ModelSelection,
 };
 
 // Re-export model registry types

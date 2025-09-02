@@ -155,16 +155,16 @@ pub struct LorebookEntrySummaryResponse {
 pub struct UploadedLorebookEntry {
     pub key: Option<Vec<String>>, // Keywords/triggers, can be null in some ST exports
     pub keys: Option<Vec<String>>, // Alternative field name used in some SillyTavern exports
-    pub content: String,         // Entry content
-    pub comment: Option<String>, // Optional comment
-    pub disable: Option<bool>,   // true means disabled (will invert to is_enabled)
-    pub enabled: Option<bool>,   // true means enabled (alternative to disable field)
-    pub constant: Option<bool>,  // Maps to is_constant
-    pub order: Option<i32>, // Maps to insertion_order
+    pub content: String,          // Entry content
+    pub comment: Option<String>,  // Optional comment
+    pub disable: Option<bool>,    // true means disabled (will invert to is_enabled)
+    pub enabled: Option<bool>,    // true means enabled (alternative to disable field)
+    pub constant: Option<bool>,   // Maps to is_constant
+    pub order: Option<i32>,       // Maps to insertion_order
     pub insertion_order: Option<i32>, // Alternative field name used in some SillyTavern exports
     #[serde(deserialize_with = "deserialize_position")]
     pub position: Option<i32>, // 0=before prompt, 1=after prompt
-    pub uid: Option<i32>,        // Original SillyTavern UID
+    pub uid: Option<i32>,         // Original SillyTavern UID
     #[serde(skip_deserializing)]
     pub id: Option<i32>, // Ignore duplicate "id" field during deserialization
     #[serde(default, alias = "displayName")] // Added alias for compatibility
@@ -402,7 +402,6 @@ where
         )),
     }
 }
-
 
 // --- Lorebook Override DTOs ---
 

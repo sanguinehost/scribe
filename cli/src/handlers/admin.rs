@@ -230,4 +230,3 @@ pub async fn handle_lock_unlock_user_action<H: IoHandler, C: HttpClient>(
 
     Ok(())
 }
-

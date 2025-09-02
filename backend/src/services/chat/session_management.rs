@@ -371,12 +371,12 @@ fn encrypt_assistant_session_data(
 
     // Create system prompt for assistant mode
     let assistant_system_prompt = "You are Scribe Assistant, a helpful AI designed to assist with character creation, world-building, and narrative development. You can help users create compelling characters, develop rich backstories, design scenarios, and enhance their creative writing projects.";
-    
-    let (encrypted_system_prompt_bytes, sp_nonce_bytes) = 
-        crate::crypto::encrypt_gcm(assistant_system_prompt.as_bytes(), user_dek_secret_box.unwrap())
-            .map_err(|e| {
-                AppError::EncryptionError(format!("Failed to encrypt system prompt: {e}"))
-            })?;
+
+    let (encrypted_system_prompt_bytes, sp_nonce_bytes) = crate::crypto::encrypt_gcm(
+        assistant_system_prompt.as_bytes(),
+        user_dek_secret_box.unwrap(),
+    )
+    .map_err(|e| AppError::EncryptionError(format!("Failed to encrypt system prompt: {e}")))?;
 
     Ok((
         (encrypted_title_bytes, title_nonce_bytes),
@@ -403,8 +403,8 @@ fn encrypt_rpg_session_data(
 
     // Create system prompt for RPG mode
     let rpg_system_prompt = "You are a RPG Game Master, skilled in creating immersive tabletop role-playing experiences. You can manage game mechanics, track character stats, handle dice rolls, and create engaging narratives for players.";
-    
-    let (encrypted_system_prompt_bytes, sp_nonce_bytes) = 
+
+    let (encrypted_system_prompt_bytes, sp_nonce_bytes) =
         crate::crypto::encrypt_gcm(rpg_system_prompt.as_bytes(), user_dek_secret_box.unwrap())
             .map_err(|e| {
                 AppError::EncryptionError(format!("Failed to encrypt system prompt: {e}"))
@@ -568,18 +568,25 @@ fn create_session_in_transaction(
         determine_effective_persona_id(user_id, active_custom_persona_id, transaction_conn);
 
     // Handle different chat modes
-    let (character_opt, _sanitized_name, encrypted_title_bytes, title_nonce_bytes, encrypted_system_prompt_bytes, sp_nonce_bytes) = match chat_mode {
+    let (
+        character_opt,
+        _sanitized_name,
+        encrypted_title_bytes,
+        title_nonce_bytes,
+        encrypted_system_prompt_bytes,
+        sp_nonce_bytes,
+    ) = match chat_mode {
         ChatMode::Character => {
             // Character mode requires a character_id
             let character_id = character_id.ok_or_else(|| {
                 AppError::BadRequest("Character mode requires a character_id".to_string())
             })?;
-            
+
             let character = validate_and_get_character(character_id, user_id, transaction_conn)?;
             let sanitized_character_name = sanitize_character_name(&character)?;
-            
+
             info!(?character_id, %user_id, "Inserting new character chat session");
-            
+
             let (
                 (encrypted_title_bytes, title_nonce_bytes),
                 (encrypted_system_prompt_bytes, sp_nonce_bytes),
@@ -591,12 +598,19 @@ fn create_session_in_transaction(
                 user_dek_secret_box,
                 transaction_conn,
             )?;
-            
-            (Some(character), sanitized_character_name, encrypted_title_bytes, title_nonce_bytes, encrypted_system_prompt_bytes, sp_nonce_bytes)
-        },
+
+            (
+                Some(character),
+                sanitized_character_name,
+                encrypted_title_bytes,
+                title_nonce_bytes,
+                encrypted_system_prompt_bytes,
+                sp_nonce_bytes,
+            )
+        }
         ChatMode::ScribeAssistant => {
             info!(%user_id, "Inserting new Scribe Assistant chat session");
-            
+
             let session_title = "Scribe Assistant";
             let (
                 (encrypted_title_bytes, title_nonce_bytes),
@@ -608,12 +622,19 @@ fn create_session_in_transaction(
                 user_dek_secret_box,
                 transaction_conn,
             )?;
-            
-            (None, session_title.to_string(), encrypted_title_bytes, title_nonce_bytes, encrypted_system_prompt_bytes, sp_nonce_bytes)
-        },
+
+            (
+                None,
+                session_title.to_string(),
+                encrypted_title_bytes,
+                title_nonce_bytes,
+                encrypted_system_prompt_bytes,
+                sp_nonce_bytes,
+            )
+        }
         ChatMode::Rpg => {
             info!(%user_id, "Inserting new RPG chat session");
-            
+
             let session_title = "RPG Session";
             let (
                 (encrypted_title_bytes, title_nonce_bytes),
@@ -625,9 +646,16 @@ fn create_session_in_transaction(
                 user_dek_secret_box,
                 transaction_conn,
             )?;
-            
-            (None, session_title.to_string(), encrypted_title_bytes, title_nonce_bytes, encrypted_system_prompt_bytes, sp_nonce_bytes)
-        },
+
+            (
+                None,
+                session_title.to_string(),
+                encrypted_title_bytes,
+                title_nonce_bytes,
+                encrypted_system_prompt_bytes,
+                sp_nonce_bytes,
+            )
+        }
     };
 
     let new_session_id = Uuid::new_v4();
@@ -674,11 +702,7 @@ fn create_session_in_transaction(
         .map(|c| (c.first_mes, c.first_mes_nonce))
         .unwrap_or((None, None));
 
-    Ok((
-        fully_created_session,
-        first_mes,
-        first_mes_nonce,
-    ))
+    Ok((fully_created_session, first_mes, first_mes_nonce))
 }
 
 /// Processes the first message for a newly created session
@@ -925,7 +949,7 @@ pub async fn associate_chat_with_chronicle(
                 diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
                     .set(chat_sessions::player_chronicle_id.eq(Some(chronicle_id)))
                     .execute(conn)?;
-                
+
                 info!(
                     %session_id, %chronicle_id,
                     "Successfully associated chat session with chronicle"

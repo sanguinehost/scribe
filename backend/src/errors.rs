@@ -412,8 +412,8 @@ impl AppError {
             }
             Self::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
             Self::DekMissing => (
-                StatusCode::UNAUTHORIZED, 
-                "Data Encryption Key not available. Please sign in again.".to_string()
+                StatusCode::UNAUTHORIZED,
+                "Data Encryption Key not available. Please sign in again.".to_string(),
             ),
             Self::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
@@ -501,8 +501,16 @@ impl AppError {
 
     fn handle_gateway_error(app_error: Self) -> (StatusCode, String) {
         let (status, log_msg, user_msg) = match app_error {
-            Self::BadGateway(msg) => (StatusCode::BAD_GATEWAY, format!("Bad Gateway error: {msg}"), msg),
-            Self::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, format!("Service Unavailable: {msg}"), msg),
+            Self::BadGateway(msg) => (
+                StatusCode::BAD_GATEWAY,
+                format!("Bad Gateway error: {msg}"),
+                msg,
+            ),
+            Self::ServiceUnavailable(msg) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("Service Unavailable: {msg}"),
+                msg,
+            ),
             Self::GenerationError(e) => (
                 StatusCode::BAD_GATEWAY,
                 format!("LLM generation error: {e}"),
@@ -1521,6 +1529,9 @@ mod tests {
         let response = app_error.into_response();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Data Encryption Key not available. Please sign in again.");
+        assert_eq!(
+            body["error"],
+            "Data Encryption Key not available. Please sign in again."
+        );
     }
 }

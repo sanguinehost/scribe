@@ -1,10 +1,10 @@
-use axum::{Json, extract::State};
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
-use std::time::Instant;
-use std::collections::HashMap;
-use crate::state::AppState;
 use crate::errors::AppError;
+use crate::state::AppState;
+use axum::{Json, extract::State};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::Instant;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ComponentStatus {
@@ -75,7 +75,9 @@ impl HealthCheckResponse {
 }
 
 /// Enhanced health check endpoint with database and external service connectivity checks.
-pub async fn health_check(State(state): State<AppState>) -> Result<Json<HealthCheckResponse>, AppError> {
+pub async fn health_check(
+    State(state): State<AppState>,
+) -> Result<Json<HealthCheckResponse>, AppError> {
     tracing::debug!("Enhanced health check endpoint called");
     let mut health_response = HealthCheckResponse::new();
 
@@ -83,38 +85,55 @@ pub async fn health_check(State(state): State<AppState>) -> Result<Json<HealthCh
     let db_start = Instant::now();
     let db_health = check_database_health(&state).await;
     let db_duration = db_start.elapsed().as_millis() as u64;
-    
-    health_response.add_component("database".to_string(), ComponentHealthInfo {
-        status: if db_health.is_ok() { ComponentStatus::Ok } else { ComponentStatus::Unhealthy },
-        response_time_ms: Some(db_duration),
-        message: db_health.err().map(|e| e.to_string()),
-    });
+
+    health_response.add_component(
+        "database".to_string(),
+        ComponentHealthInfo {
+            status: if db_health.is_ok() {
+                ComponentStatus::Ok
+            } else {
+                ComponentStatus::Unhealthy
+            },
+            response_time_ms: Some(db_duration),
+            message: db_health.err().map(|e| e.to_string()),
+        },
+    );
 
     // Check Qdrant connectivity
     let qdrant_start = Instant::now();
     let qdrant_health = check_qdrant_health(&state).await;
     let qdrant_duration = qdrant_start.elapsed().as_millis() as u64;
-    
-    health_response.add_component("qdrant".to_string(), ComponentHealthInfo {
-        status: if qdrant_health.is_ok() { ComponentStatus::Ok } else { ComponentStatus::Degraded },
-        response_time_ms: Some(qdrant_duration),
-        message: qdrant_health.err().map(|e| e.to_string()),
-    });
+
+    health_response.add_component(
+        "qdrant".to_string(),
+        ComponentHealthInfo {
+            status: if qdrant_health.is_ok() {
+                ComponentStatus::Ok
+            } else {
+                ComponentStatus::Degraded
+            },
+            response_time_ms: Some(qdrant_duration),
+            message: qdrant_health.err().map(|e| e.to_string()),
+        },
+    );
 
     // Check system resources (disk space)
     let disk_health = check_disk_space().await;
-    health_response.add_component("disk_space".to_string(), ComponentHealthInfo {
-        status: match disk_health {
-            Ok(available_gb) if available_gb > 5.0 => ComponentStatus::Ok,
-            Ok(available_gb) if available_gb > 1.0 => ComponentStatus::Degraded,
-            _ => ComponentStatus::Unhealthy,
+    health_response.add_component(
+        "disk_space".to_string(),
+        ComponentHealthInfo {
+            status: match disk_health {
+                Ok(available_gb) if available_gb > 5.0 => ComponentStatus::Ok,
+                Ok(available_gb) if available_gb > 1.0 => ComponentStatus::Degraded,
+                _ => ComponentStatus::Unhealthy,
+            },
+            response_time_ms: None,
+            message: match disk_health {
+                Ok(available_gb) => Some(format!("Available: {:.1} GB", available_gb)),
+                Err(e) => Some(e.to_string()),
+            },
         },
-        response_time_ms: None,
-        message: match disk_health {
-            Ok(available_gb) => Some(format!("Available: {:.1} GB", available_gb)),
-            Err(e) => Some(e.to_string()),
-        },
-    });
+    );
 
     tracing::info!(
         overall_status = %health_response.status,
@@ -132,39 +151,56 @@ pub async fn health_check(State(state): State<AppState>) -> Result<Json<HealthCh
         }
         ComponentStatus::Unhealthy => {
             // Return 503 Service Unavailable for unhealthy status
-            Err(AppError::ServiceUnavailable("Service unhealthy".to_string()))
+            Err(AppError::ServiceUnavailable(
+                "Service unhealthy".to_string(),
+            ))
         }
     }
 }
 
 /// Check database connectivity by performing a simple query
-async fn check_database_health(state: &AppState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let conn = state.pool.get().await
+async fn check_database_health(
+    state: &AppState,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let conn = state
+        .pool
+        .get()
+        .await
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-    
+
     conn.interact(move |conn| {
-        use diesel::sql_query;
         use diesel::RunQueryDsl;
+        use diesel::sql_query;
         use diesel::sql_types::Integer;
-        
+
         #[derive(diesel::QueryableByName)]
         struct HealthCheck {
             #[diesel(sql_type = Integer)]
             result: i32,
         }
-        
+
         sql_query("SELECT 1 as result")
             .get_result::<HealthCheck>(conn)
             .map(|_| ())
             .map_err(|e| format!("Database health check failed: {}", e))
     })
     .await
-    .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) as Box<dyn std::error::Error + Send + Sync>)?
-    .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)) as Box<dyn std::error::Error + Send + Sync>)
+    .map_err(|e| {
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            e.to_string(),
+        )) as Box<dyn std::error::Error + Send + Sync>
+    })?
+    .map_err(|e| {
+        Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+            as Box<dyn std::error::Error + Send + Sync>
+    })
 }
 
 /// Check Qdrant connectivity by checking if the service is available
-async fn check_qdrant_health(state: &AppState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn check_qdrant_health(
+    state: &AppState,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Try to get health information from Qdrant
     match state.qdrant_service.health_check().await {
         Ok(_) => Ok(()),
@@ -175,25 +211,25 @@ async fn check_qdrant_health(state: &AppState) -> Result<(), Box<dyn std::error:
 /// Check available disk space
 async fn check_disk_space() -> Result<f64, Box<dyn std::error::Error + Send + Sync>> {
     use std::path::Path;
-    
+
     tokio::task::spawn_blocking(|| {
         // Use statvfs to get filesystem statistics
         let path = Path::new("/");
-        
+
         #[cfg(unix)]
         {
             use std::mem;
             use std::os::raw::c_char;
-            
+
             unsafe extern "C" {
                 fn statvfs(path: *const c_char, buf: *mut libc::statvfs) -> i32;
             }
-            
+
             let path_cstr = std::ffi::CString::new(path.to_str().unwrap_or("/"))?;
             let mut stat: libc::statvfs = unsafe { mem::zeroed() };
-            
+
             let result = unsafe { statvfs(path_cstr.as_ptr(), &mut stat) };
-            
+
             if result == 0 {
                 let available_bytes = stat.f_bavail as u64 * stat.f_frsize as u64;
                 let available_gb = available_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
@@ -202,7 +238,7 @@ async fn check_disk_space() -> Result<f64, Box<dyn std::error::Error + Send + Sy
                 Err("Failed to get disk statistics".into())
             }
         }
-        
+
         #[cfg(not(unix))]
         {
             // Fallback for non-Unix systems

@@ -59,7 +59,9 @@ pub async fn set_character_override(
 
             // Check that this is a character-based chat session
             let original_character_id = original_character_id_from_session.ok_or_else(|| {
-                AppError::BadRequest("Cannot create character overrides for non-character chat sessions".to_string())
+                AppError::BadRequest(
+                    "Cannot create character overrides for non-character chat sessions".to_string(),
+                )
             })?;
 
             // 2. Encrypt the value

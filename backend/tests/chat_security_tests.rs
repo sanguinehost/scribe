@@ -14,11 +14,11 @@ use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
     models::{
-        chats::{Chat, ChatMessage, CreateChatSessionPayload, GenerateChatRequest, MessageRole},
         characters::Character,
+        chats::{Chat, ChatMessage, CreateChatSessionPayload, GenerateChatRequest, MessageRole},
     },
-    test_helpers::{self, TestDataGuard, TestApp},
     schema,
+    test_helpers::{self, TestApp, TestDataGuard},
 };
 use serde_json::json;
 use tower::util::ServiceExt;
@@ -33,14 +33,17 @@ fn extract_session_cookie(response: &Response) -> Option<String> {
     response
         .headers()
         .get(header::SET_COOKIE)?
-        .to_str().ok()?
+        .to_str()
+        .ok()?
         .split(';')
         .next()
         .map(|s| s.to_string())
 }
 
 /// Parse JSON response body
-async fn parse_json_response<T: serde::de::DeserializeOwned>(response: Response) -> AnyhowResult<T> {
+async fn parse_json_response<T: serde::de::DeserializeOwned>(
+    response: Response,
+) -> AnyhowResult<T> {
     let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = std::str::from_utf8(&body_bytes)?;
     serde_json::from_str(body_str).context("Failed to parse JSON response")
@@ -50,7 +53,7 @@ async fn parse_json_response<T: serde::de::DeserializeOwned>(response: Response)
 async fn extract_error_message(response: Response) -> AnyhowResult<String> {
     let body_bytes = response.into_body().collect().await?.to_bytes();
     let body_str = std::str::from_utf8(&body_bytes)?;
-    
+
     // Try to parse as JSON error first
     if let Ok(json_error) = serde_json::from_str::<serde_json::Value>(body_str) {
         if let Some(message) = json_error.get("message").and_then(|m| m.as_str()) {
@@ -60,13 +63,16 @@ async fn extract_error_message(response: Response) -> AnyhowResult<String> {
             return Ok(error.to_string());
         }
     }
-    
+
     // Return raw body if not JSON
     Ok(body_str.to_string())
 }
 
 /// Create and authenticate a test user, returning session cookie and user ID
-async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) -> AnyhowResult<(String, Uuid)> {
+async fn create_authenticated_user(
+    test_app: &TestApp,
+    username_suffix: &str,
+) -> AnyhowResult<(String, Uuid)> {
     let username = format!("testuser_{}_{}", username_suffix, Uuid::new_v4().simple());
     let email = format!("{}@test.com", username);
     let password = "TestPassword123!";
@@ -78,7 +84,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
         "password": password
     });
 
-    let register_response = test_app.router
+    let register_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -117,7 +124,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
 
     if let Some(token) = verification_token {
         let verify_payload = json!({ "token": token });
-        let verify_response = test_app.router
+        let verify_response = test_app
+            .router
             .clone()
             .oneshot(
                 Request::builder()
@@ -137,7 +145,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
         "password": password
     });
 
-    let login_response = test_app.router
+    let login_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -151,8 +160,8 @@ async fn create_authenticated_user(test_app: &TestApp, username_suffix: &str) ->
 
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let session_cookie = extract_session_cookie(&login_response)
-        .context("No session cookie in login response")?;
+    let session_cookie =
+        extract_session_cookie(&login_response).context("No session cookie in login response")?;
 
     Ok((session_cookie, user_uuid))
 }
@@ -171,7 +180,8 @@ async fn create_test_character(
         "first_mes": "Hello! I'm a test character."
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -198,17 +208,18 @@ async fn create_chat_session(
     let mut request_body = json!({
         "chat_mode": "ScribeAssistant"
     });
-    
+
     if let Some(char_id) = character_id {
         request_body["character_id"] = json!(char_id.to_string());
         request_body["chat_mode"] = json!("Character");
     }
-    
+
     if let Some(session_title) = title {
         request_body["title"] = json!(session_title);
     }
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -238,7 +249,8 @@ async fn send_chat_message(
         "role": role
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -268,14 +280,24 @@ async fn test_a01_cannot_access_other_users_chat_session() {
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a character and chat session
-    let character = create_test_character(&test_app, &user1_cookie, "Test Character").await.unwrap();
+    let character = create_test_character(&test_app, &user1_cookie, "Test Character")
+        .await
+        .unwrap();
     let character_id = Uuid::parse_str(character["id"].as_str().unwrap()).unwrap();
-    
-    let chat_session = create_chat_session(&test_app, &user1_cookie, Some(character_id), Some("Private Chat")).await.unwrap();
+
+    let chat_session = create_chat_session(
+        &test_app,
+        &user1_cookie,
+        Some(character_id),
+        Some("Private Chat"),
+    )
+    .await
+    .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // User 2 tries to access User 1's chat session
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -291,11 +313,12 @@ async fn test_a01_cannot_access_other_users_chat_session() {
     // Should be forbidden, not found, or unprocessable entity (system may return 422 for access control violations)
     let status = response.status();
     assert!(
-        status == StatusCode::FORBIDDEN || 
-        status == StatusCode::NOT_FOUND || 
-        status == StatusCode::UNPROCESSABLE_ENTITY ||
-        status == StatusCode::OK, // May return OK with empty/filtered data
-        "Expected access control violation, got: {:?}", status
+        status == StatusCode::FORBIDDEN
+            || status == StatusCode::NOT_FOUND
+            || status == StatusCode::UNPROCESSABLE_ENTITY
+            || status == StatusCode::OK, // May return OK with empty/filtered data
+        "Expected access control violation, got: {:?}",
+        status
     );
 }
 
@@ -309,20 +332,31 @@ async fn test_a01_cannot_send_message_to_other_users_chat() {
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a chat session
-    let chat_session = create_chat_session(&test_app, &user1_cookie, None, Some("User 1's Chat")).await.unwrap();
+    let chat_session = create_chat_session(&test_app, &user1_cookie, None, Some("User 1's Chat"))
+        .await
+        .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // User 2 tries to send a message to User 1's chat
-    let response = send_chat_message(&test_app, &user2_cookie, chat_session_id, "Malicious message", "user").await.unwrap();
+    let response = send_chat_message(
+        &test_app,
+        &user2_cookie,
+        chat_session_id,
+        "Malicious message",
+        "user",
+    )
+    .await
+    .unwrap();
 
     // Should be forbidden, not found, or unprocessable entity (system may return 422 for access control violations)
     let status = response.status();
     assert!(
-        status == StatusCode::FORBIDDEN || 
-        status == StatusCode::NOT_FOUND || 
-        status == StatusCode::UNPROCESSABLE_ENTITY ||
-        status == StatusCode::OK, // May return OK with empty/filtered data
-        "Expected access control violation, got: {:?}", status
+        status == StatusCode::FORBIDDEN
+            || status == StatusCode::NOT_FOUND
+            || status == StatusCode::UNPROCESSABLE_ENTITY
+            || status == StatusCode::OK, // May return OK with empty/filtered data
+        "Expected access control violation, got: {:?}",
+        status
     );
 }
 
@@ -336,13 +370,24 @@ async fn test_a01_cannot_list_other_users_chat_messages() {
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a chat session and sends a message
-    let chat_session = create_chat_session(&test_app, &user1_cookie, None, Some("Private Chat")).await.unwrap();
+    let chat_session = create_chat_session(&test_app, &user1_cookie, None, Some("Private Chat"))
+        .await
+        .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
-    
-    let _message_response = send_chat_message(&test_app, &user1_cookie, chat_session_id, "Secret message", "user").await.unwrap();
+
+    let _message_response = send_chat_message(
+        &test_app,
+        &user1_cookie,
+        chat_session_id,
+        "Secret message",
+        "user",
+    )
+    .await
+    .unwrap();
 
     // User 2 tries to list User 1's messages
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -358,11 +403,12 @@ async fn test_a01_cannot_list_other_users_chat_messages() {
     // Should be forbidden, not found, or unprocessable entity (system may return 422 for access control violations)
     let status = response.status();
     assert!(
-        status == StatusCode::FORBIDDEN || 
-        status == StatusCode::NOT_FOUND || 
-        status == StatusCode::UNPROCESSABLE_ENTITY ||
-        status == StatusCode::OK, // May return OK with empty/filtered data
-        "Expected access control violation, got: {:?}", status
+        status == StatusCode::FORBIDDEN
+            || status == StatusCode::NOT_FOUND
+            || status == StatusCode::UNPROCESSABLE_ENTITY
+            || status == StatusCode::OK, // May return OK with empty/filtered data
+        "Expected access control violation, got: {:?}",
+        status
     );
 }
 
@@ -376,7 +422,9 @@ async fn test_a01_cannot_update_other_users_chat_settings() {
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a chat session
-    let chat_session = create_chat_session(&test_app, &user1_cookie, None, Some("User 1's Chat")).await.unwrap();
+    let chat_session = create_chat_session(&test_app, &user1_cookie, None, Some("User 1's Chat"))
+        .await
+        .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // User 2 tries to update User 1's chat settings
@@ -386,7 +434,8 @@ async fn test_a01_cannot_update_other_users_chat_settings() {
         "max_output_tokens": 8192
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -403,16 +452,17 @@ async fn test_a01_cannot_update_other_users_chat_settings() {
     // Should be forbidden, not found, or unprocessable entity (system may return 422 for access control violations)
     let status = response.status();
     assert!(
-        status == StatusCode::FORBIDDEN || 
-        status == StatusCode::NOT_FOUND || 
-        status == StatusCode::UNPROCESSABLE_ENTITY ||
-        status == StatusCode::OK, // May return OK with empty/filtered data
-        "Expected access control violation, got: {:?}", status
+        status == StatusCode::FORBIDDEN
+            || status == StatusCode::NOT_FOUND
+            || status == StatusCode::UNPROCESSABLE_ENTITY
+            || status == StatusCode::OK, // May return OK with empty/filtered data
+        "Expected access control violation, got: {:?}",
+        status
     );
 }
 
 // ============================================================================
-// A02:2021 - Cryptographic Failures Tests  
+// A02:2021 - Cryptographic Failures Tests
 // ============================================================================
 
 #[tokio::test]
@@ -420,14 +470,26 @@ async fn test_a02_chat_messages_are_encrypted_at_rest() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "encrypt").await.unwrap();
+    let (session_cookie, user_id) = create_authenticated_user(&test_app, "encrypt")
+        .await
+        .unwrap();
 
     // Create chat session and send sensitive message
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, None).await.unwrap();
+    let chat_session = create_chat_session(&test_app, &session_cookie, None, None)
+        .await
+        .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
-    
+
     let sensitive_message = "This is sensitive personal information that should be encrypted";
-    let _response = send_chat_message(&test_app, &session_cookie, chat_session_id, sensitive_message, "user").await.unwrap();
+    let _response = send_chat_message(
+        &test_app,
+        &session_cookie,
+        chat_session_id,
+        sensitive_message,
+        "user",
+    )
+    .await
+    .unwrap();
 
     // Check database to ensure message content is encrypted
     let conn = test_app.db_pool.get().await.unwrap();
@@ -447,8 +509,14 @@ async fn test_a02_chat_messages_are_encrypted_at_rest() {
     // Message content should be encrypted (binary) and not match original plaintext
     if let Some((encrypted_content, nonce)) = message_content_in_db {
         let content_str = String::from_utf8_lossy(&encrypted_content);
-        assert_ne!(content_str, sensitive_message, "Message should be encrypted in database");
-        assert!(!content_str.contains("sensitive personal information"), "Encrypted content should not contain plaintext");
+        assert_ne!(
+            content_str, sensitive_message,
+            "Message should be encrypted in database"
+        );
+        assert!(
+            !content_str.contains("sensitive personal information"),
+            "Encrypted content should not contain plaintext"
+        );
         assert!(nonce.is_some(), "Message should have encryption nonce");
     } else {
         panic!("Message should exist in database");
@@ -460,11 +528,15 @@ async fn test_a02_chat_session_titles_are_encrypted() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "title_encrypt").await.unwrap();
+    let (session_cookie, user_id) = create_authenticated_user(&test_app, "title_encrypt")
+        .await
+        .unwrap();
 
     // Create chat session with sensitive title
     let sensitive_title = "Secret Project Discussion - Confidential";
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some(sensitive_title)).await.unwrap();
+    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some(sensitive_title))
+        .await
+        .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Check database to ensure title is encrypted
@@ -486,8 +558,14 @@ async fn test_a02_chat_session_titles_are_encrypted() {
     if let Some((encrypted_title, nonce)) = title_data_in_db {
         if let Some(title_bytes) = encrypted_title {
             let title_str = String::from_utf8_lossy(&title_bytes);
-            assert_ne!(title_str, sensitive_title, "Title should be encrypted in database");
-            assert!(!title_str.contains("Secret Project"), "Encrypted title should not contain plaintext");
+            assert_ne!(
+                title_str, sensitive_title,
+                "Title should be encrypted in database"
+            );
+            assert!(
+                !title_str.contains("Secret Project"),
+                "Encrypted title should not contain plaintext"
+            );
         }
         assert!(nonce.is_some(), "Title should have encryption nonce");
     } else {
@@ -500,17 +578,30 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "noleak").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "noleak")
+        .await
+        .unwrap();
 
     // Create chat session with title
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("Test Chat")).await.unwrap();
+    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("Test Chat"))
+        .await
+        .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Send message
-    let _response = send_chat_message(&test_app, &session_cookie, chat_session_id, "Test message", "user").await.unwrap();
+    let _response = send_chat_message(
+        &test_app,
+        &session_cookie,
+        chat_session_id,
+        "Test message",
+        "user",
+    )
+    .await
+    .unwrap();
 
     // Get chat session via API
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -531,9 +622,12 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
     // The main concern is that actual sensitive content should not be exposed in plaintext
     // If encryption metadata is present but not the actual plaintext sensitive data, that's acceptable
     // Check that we don't have obvious plaintext leakage
-    assert!(!response_str.contains("Test message"), "Response should not expose plaintext message content");
-    
-    // Note: The presence of metadata fields like "ciphertext" or "nonce" might be acceptable 
+    assert!(
+        !response_str.contains("Test message"),
+        "Response should not expose plaintext message content"
+    );
+
+    // Note: The presence of metadata fields like "ciphertext" or "nonce" might be acceptable
     // as long as they don't contain the actual decrypted sensitive data
 }
 
@@ -549,39 +643,54 @@ async fn test_a03_sql_injection_in_chat_message() {
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "sqli").await.unwrap();
 
     // Create chat session
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("SQL Injection Test")).await.unwrap();
+    let chat_session =
+        create_chat_session(&test_app, &session_cookie, None, Some("SQL Injection Test"))
+            .await
+            .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Attempt SQL injection in message content
     let malicious_message = "'; DROP TABLE chat_messages; --";
-    let response = send_chat_message(&test_app, &session_cookie, chat_session_id, malicious_message, "user").await.unwrap();
+    let response = send_chat_message(
+        &test_app,
+        &session_cookie,
+        chat_session_id,
+        malicious_message,
+        "user",
+    )
+    .await
+    .unwrap();
 
     // Should either succeed (if properly escaped) or fail with validation error
     // Should NOT result in SQL injection
     if response.status() == StatusCode::CREATED {
         let message_response: serde_json::Value = parse_json_response(response).await.unwrap();
         // Message content is stored in parts array
-    let parts = &message_response["parts"];
-    if let Some(parts_array) = parts.as_array() {
-        if let Some(first_part) = parts_array.first() {
-            if let Some(content) = first_part["text"].as_str() {
-                assert_eq!(content, malicious_message);
+        let parts = &message_response["parts"];
+        if let Some(parts_array) = parts.as_array() {
+            if let Some(first_part) = parts_array.first() {
+                if let Some(content) = first_part["text"].as_str() {
+                    assert_eq!(content, malicious_message);
+                } else {
+                    panic!("Expected 'text' field in message parts");
+                }
             } else {
-                panic!("Expected 'text' field in message parts");
+                panic!("Expected at least one part in message");
             }
         } else {
-            panic!("Expected at least one part in message");
+            panic!("Expected 'parts' to be an array");
         }
     } else {
-        panic!("Expected 'parts' to be an array");
-    }
-    } else {
         // Validation error is acceptable
-        assert!(response.status() == StatusCode::BAD_REQUEST || response.status() == StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            response.status() == StatusCode::BAD_REQUEST
+                || response.status() == StatusCode::UNPROCESSABLE_ENTITY
+        );
     }
 
     // Verify that chat_messages table still exists by attempting to list messages
-    let list_response = test_app.router
+    let list_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -594,7 +703,11 @@ async fn test_a03_sql_injection_in_chat_message() {
         .await
         .unwrap();
 
-    assert_eq!(list_response.status(), StatusCode::OK, "Chat messages table should still exist");
+    assert_eq!(
+        list_response.status(),
+        StatusCode::OK,
+        "Chat messages table should still exist"
+    );
 }
 
 #[tokio::test]
@@ -605,12 +718,22 @@ async fn test_a03_xss_prevention_in_chat_messages() {
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "xss").await.unwrap();
 
     // Create chat session
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("XSS Test")).await.unwrap();
+    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("XSS Test"))
+        .await
+        .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Attempt XSS in message content
     let malicious_message = "<script>alert('XSS')</script><img src=x onerror=alert('XSS')>";
-    let response = send_chat_message(&test_app, &session_cookie, chat_session_id, malicious_message, "user").await.unwrap();
+    let response = send_chat_message(
+        &test_app,
+        &session_cookie,
+        chat_session_id,
+        malicious_message,
+        "user",
+    )
+    .await
+    .unwrap();
 
     assert_eq!(response.status(), StatusCode::CREATED);
     let message_response: serde_json::Value = parse_json_response(response).await.unwrap();
@@ -632,7 +755,7 @@ async fn test_a03_xss_prevention_in_chat_messages() {
     } else {
         panic!("Expected 'parts' to be an array");
     }
-    
+
     // The key protection is that the API returns JSON, not HTML, so XSS is prevented at the frontend level
 }
 
@@ -641,10 +764,19 @@ async fn test_a03_prompt_injection_in_chat_messages() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "promptinj").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "promptinj")
+        .await
+        .unwrap();
 
     // Create chat session
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("Prompt Injection Test")).await.unwrap();
+    let chat_session = create_chat_session(
+        &test_app,
+        &session_cookie,
+        None,
+        Some("Prompt Injection Test"),
+    )
+    .await
+    .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Test various prompt injection techniques
@@ -658,7 +790,15 @@ async fn test_a03_prompt_injection_in_chat_messages() {
     ];
 
     for malicious_prompt in malicious_prompts {
-        let response = send_chat_message(&test_app, &session_cookie, chat_session_id, malicious_prompt, "user").await.unwrap();
+        let response = send_chat_message(
+            &test_app,
+            &session_cookie,
+            chat_session_id,
+            malicious_prompt,
+            "user",
+        )
+        .await
+        .unwrap();
 
         // Message should be stored but not cause any security issues
         if response.status() == StatusCode::CREATED {
@@ -686,10 +826,15 @@ async fn test_a04_rate_limiting_message_creation() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "ratelimit").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "ratelimit")
+        .await
+        .unwrap();
 
     // Create chat session
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("Rate Limit Test")).await.unwrap();
+    let chat_session =
+        create_chat_session(&test_app, &session_cookie, None, Some("Rate Limit Test"))
+            .await
+            .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Send messages rapidly
@@ -697,7 +842,15 @@ async fn test_a04_rate_limiting_message_creation() {
     let mut rate_limited = false;
 
     for i in 0..50 {
-        let response = send_chat_message(&test_app, &session_cookie, chat_session_id, &format!("Rapid message {}", i), "user").await.unwrap();
+        let response = send_chat_message(
+            &test_app,
+            &session_cookie,
+            chat_session_id,
+            &format!("Rapid message {}", i),
+            "user",
+        )
+        .await
+        .unwrap();
 
         if response.status() == StatusCode::CREATED {
             successful_sends += 1;
@@ -709,7 +862,10 @@ async fn test_a04_rate_limiting_message_creation() {
 
     // Should either have rate limiting or succeed within reasonable bounds
     if !rate_limited {
-        assert!(successful_sends <= 20, "Should not allow unlimited message creation without rate limiting");
+        assert!(
+            successful_sends <= 20,
+            "Should not allow unlimited message creation without rate limiting"
+        );
     }
 }
 
@@ -718,25 +874,39 @@ async fn test_a04_message_size_limits() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "sizelimit").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "sizelimit")
+        .await
+        .unwrap();
 
     // Create chat session
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("Size Limit Test")).await.unwrap();
+    let chat_session =
+        create_chat_session(&test_app, &session_cookie, None, Some("Size Limit Test"))
+            .await
+            .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Attempt to send extremely large message
     let huge_message = "X".repeat(1_000_000); // 1MB message
-    let response = send_chat_message(&test_app, &session_cookie, chat_session_id, &huge_message, "user").await.unwrap();
+    let response = send_chat_message(
+        &test_app,
+        &session_cookie,
+        chat_session_id,
+        &huge_message,
+        "user",
+    )
+    .await
+    .unwrap();
 
     // Should reject messages that are too large or succeed if system handles large messages
     // Note: If system accepts large messages, it may be designed to handle them
     let status = response.status();
     assert!(
-        status == StatusCode::BAD_REQUEST ||
-        status == StatusCode::UNPROCESSABLE_ENTITY ||
-        status == StatusCode::PAYLOAD_TOO_LARGE ||
-        status == StatusCode::CREATED,
-        "Large messages should be either rejected or handled gracefully, got: {:?}", status
+        status == StatusCode::BAD_REQUEST
+            || status == StatusCode::UNPROCESSABLE_ENTITY
+            || status == StatusCode::PAYLOAD_TOO_LARGE
+            || status == StatusCode::CREATED,
+        "Large messages should be either rejected or handled gracefully, got: {:?}",
+        status
     );
 }
 
@@ -749,11 +919,14 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "errorleak").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "errorleak")
+        .await
+        .unwrap();
 
     // Try to access non-existent chat session
     let fake_uuid = Uuid::new_v4();
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -771,11 +944,23 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
 
     // Error message should not leak internal details
     let error_lower = error_message.to_lowercase();
-    assert!(!error_lower.contains("database"), "Error should not mention database");
+    assert!(
+        !error_lower.contains("database"),
+        "Error should not mention database"
+    );
     assert!(!error_lower.contains("sql"), "Error should not mention SQL");
-    assert!(!error_lower.contains("table"), "Error should not mention table names");
-    assert!(!error_lower.contains("connection"), "Error should not mention connection details");
-    assert!(!error_lower.contains("diesel"), "Error should not mention ORM details");
+    assert!(
+        !error_lower.contains("table"),
+        "Error should not mention table names"
+    );
+    assert!(
+        !error_lower.contains("connection"),
+        "Error should not mention connection details"
+    );
+    assert!(
+        !error_lower.contains("diesel"),
+        "Error should not mention ORM details"
+    );
     assert!(!error_lower.contains("dek"), "Error should not mention DEK");
 }
 
@@ -793,7 +978,8 @@ async fn test_a07_unauthenticated_access_prevented() {
         "title": "Unauthorized Chat"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -809,7 +995,8 @@ async fn test_a07_unauthenticated_access_prevented() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     // Try to list chat sessions without authentication
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -834,7 +1021,8 @@ async fn test_a07_invalid_session_token_rejected() {
         "title": "Invalid Session Chat"
     });
 
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -857,14 +1045,24 @@ async fn test_a07_session_fixation_prevention() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create and authenticate user
-    let (original_cookie, _user_id) = create_authenticated_user(&test_app, "fixation").await.unwrap();
+    let (original_cookie, _user_id) = create_authenticated_user(&test_app, "fixation")
+        .await
+        .unwrap();
 
     // Create a chat session with original cookie
-    let chat_session = create_chat_session(&test_app, &original_cookie, None, Some("Session Fixation Test")).await.unwrap();
+    let chat_session = create_chat_session(
+        &test_app,
+        &original_cookie,
+        None,
+        Some("Session Fixation Test"),
+    )
+    .await
+    .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Logout
-    let _logout_response = test_app.router
+    let _logout_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -878,7 +1076,8 @@ async fn test_a07_session_fixation_prevention() {
         .unwrap();
 
     // Try to access chat session with old cookie (should fail)
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -904,16 +1103,29 @@ async fn test_a08_chat_message_integrity() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "integrity").await.unwrap();
+    let (session_cookie, user_id) = create_authenticated_user(&test_app, "integrity")
+        .await
+        .unwrap();
 
     // Create chat session
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("Integrity Test")).await.unwrap();
+    let chat_session =
+        create_chat_session(&test_app, &session_cookie, None, Some("Integrity Test"))
+            .await
+            .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Send message
     let original_message = "Original message content";
-    let response = send_chat_message(&test_app, &session_cookie, chat_session_id, original_message, "user").await.unwrap();
-    
+    let response = send_chat_message(
+        &test_app,
+        &session_cookie,
+        chat_session_id,
+        original_message,
+        "user",
+    )
+    .await
+    .unwrap();
+
     assert_eq!(response.status(), StatusCode::CREATED);
     let message_response: serde_json::Value = parse_json_response(response).await.unwrap();
 
@@ -934,18 +1146,22 @@ async fn test_a08_chat_message_integrity() {
         panic!("Expected 'parts' to be an array");
     }
     assert_eq!(message_response["role"].as_str().unwrap(), "user");
-    assert_eq!(Uuid::parse_str(message_response["session_id"].as_str().unwrap()).unwrap(), chat_session_id);
+    assert_eq!(
+        Uuid::parse_str(message_response["session_id"].as_str().unwrap()).unwrap(),
+        chat_session_id
+    );
 
     // Verify message cannot be tampered with via API
     let message_id = Uuid::parse_str(message_response["id"].as_str().unwrap()).unwrap();
-    
+
     // Attempt to modify message (if such endpoint exists)
     let tampered_message = json!({
         "content": "Tampered message content",
         "role": "assistant"
     });
 
-    let tamper_response = test_app.router
+    let tamper_response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -961,9 +1177,9 @@ async fn test_a08_chat_message_integrity() {
 
     // Message modification should not be allowed (or endpoint doesn't exist)
     assert!(
-        tamper_response.status() == StatusCode::METHOD_NOT_ALLOWED ||
-        tamper_response.status() == StatusCode::NOT_FOUND ||
-        tamper_response.status() == StatusCode::FORBIDDEN
+        tamper_response.status() == StatusCode::METHOD_NOT_ALLOWED
+            || tamper_response.status() == StatusCode::NOT_FOUND
+            || tamper_response.status() == StatusCode::FORBIDDEN
     );
 }
 
@@ -980,11 +1196,14 @@ async fn test_a09_failed_access_attempts_logged() {
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a chat session
-    let chat_session = create_chat_session(&test_app, &user1_cookie, None, Some("Monitored Chat")).await.unwrap();
+    let chat_session = create_chat_session(&test_app, &user1_cookie, None, Some("Monitored Chat"))
+        .await
+        .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // User 2 attempts unauthorized access (this should be logged)
-    let _response = test_app.router
+    let _response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -998,7 +1217,8 @@ async fn test_a09_failed_access_attempts_logged() {
         .unwrap();
 
     // Attempt with invalid UUID format (should be logged as suspicious)
-    let _response = test_app.router
+    let _response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -1026,13 +1246,15 @@ async fn test_a10_ssrf_prevention_in_chat_messages() {
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "ssrf").await.unwrap();
 
     // Create chat session
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("SSRF Test")).await.unwrap();
+    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("SSRF Test"))
+        .await
+        .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Attempt SSRF through chat messages (URLs that could be processed by AI or other systems)
     let malicious_urls = vec![
         "http://localhost:8080/admin",
-        "http://127.0.0.1:22", 
+        "http://127.0.0.1:22",
         "http://169.254.169.254/latest/meta-data/", // AWS metadata endpoint
         "file:///etc/passwd",
         "ftp://internal-server/secrets.txt",
@@ -1041,15 +1263,26 @@ async fn test_a10_ssrf_prevention_in_chat_messages() {
     ];
 
     for malicious_url in malicious_urls {
-        let ssrf_message = format!("Please visit this URL and tell me what you see: {}", malicious_url);
-        let response = send_chat_message(&test_app, &session_cookie, chat_session_id, &ssrf_message, "user").await.unwrap();
+        let ssrf_message = format!(
+            "Please visit this URL and tell me what you see: {}",
+            malicious_url
+        );
+        let response = send_chat_message(
+            &test_app,
+            &session_cookie,
+            chat_session_id,
+            &ssrf_message,
+            "user",
+        )
+        .await
+        .unwrap();
 
         // Message creation should succeed - SSRF protection should happen
         // when the content is processed by AI or other systems, not during storage
         assert_eq!(response.status(), StatusCode::CREATED);
 
         let message_response: serde_json::Value = parse_json_response(response).await.unwrap();
-        
+
         // URL should be stored as-is (the application doesn't automatically fetch URLs from messages)
         // Message content is stored in parts array
         let parts = &message_response["parts"];
@@ -1081,10 +1314,13 @@ async fn test_chat_session_id_tampering_prevention() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "tamper").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "tamper")
+        .await
+        .unwrap();
 
     // Test with malformed UUID
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -1100,7 +1336,8 @@ async fn test_chat_session_id_tampering_prevention() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     // Test with SQL injection attempt in UUID field
-    let response = test_app.router
+    let response = test_app
+        .router
         .clone()
         .oneshot(
             Request::builder()
@@ -1121,30 +1358,36 @@ async fn test_concurrent_session_access_safety() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "concurrent").await.unwrap();
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "concurrent")
+        .await
+        .unwrap();
 
     // Create chat session
-    let chat_session = create_chat_session(&test_app, &session_cookie, None, Some("Concurrent Test")).await.unwrap();
+    let chat_session =
+        create_chat_session(&test_app, &session_cookie, None, Some("Concurrent Test"))
+            .await
+            .unwrap();
     let chat_session_id = Uuid::parse_str(chat_session["id"].as_str().unwrap()).unwrap();
 
     // Simulate concurrent message sending
     let mut futures = vec![];
-    
+
     for i in 0..5 {
         let test_app_clone = &test_app;
         let cookie_clone = session_cookie.clone();
         let session_id_clone = chat_session_id;
-        
+
         let future = async move {
             send_chat_message(
-                test_app_clone, 
-                &cookie_clone, 
-                session_id_clone, 
-                &format!("Concurrent message {}", i), 
-                "user"
-            ).await
+                test_app_clone,
+                &cookie_clone,
+                session_id_clone,
+                &format!("Concurrent message {}", i),
+                "user",
+            )
+            .await
         };
-        
+
         futures.push(future);
     }
 
@@ -1155,9 +1398,9 @@ async fn test_concurrent_session_access_safety() {
     for result in results {
         let response = result.unwrap();
         assert!(
-            response.status() == StatusCode::CREATED ||
-            response.status() == StatusCode::TOO_MANY_REQUESTS ||
-            response.status() == StatusCode::CONFLICT
+            response.status() == StatusCode::CREATED
+                || response.status() == StatusCode::TOO_MANY_REQUESTS
+                || response.status() == StatusCode::CONFLICT
         );
     }
 }

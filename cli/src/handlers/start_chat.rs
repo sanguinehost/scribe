@@ -244,9 +244,9 @@ pub async fn handle_start_chat_action<H: IoHandler, C: HttpClient>(
                 history_management_strategy: None,
                 history_management_limit: None,
                 model_name: Some(current_model.to_string()),
-            model_provider: None, // Will be determined by backend based on model
-                chronicle_id: None, // Not relevant for CLI
-                agent_mode: None, // Not used in CLI
+                model_provider: None, // Will be determined by backend based on model
+                chronicle_id: None,   // Not relevant for CLI
+                agent_mode: None,     // Not used in CLI
             };
 
             match client

@@ -496,12 +496,12 @@ fn apply_payload_to_builder(
         }
         None => {
             // For now, treat None as clearing the association
-            // In a more robust implementation, we'd use Option<Option<Uuid>> 
+            // In a more robust implementation, we'd use Option<Option<Uuid>>
             // to distinguish between "not provided" and "set to null"
             update_builder.player_chronicle_id = DatabaseUpdate::SetValue(None);
         }
     }
-    
+
     // Agent mode handling
     if let Some(mode) = payload.agent_mode {
         update_builder.agent_mode = DatabaseUpdate::SetValue(mode);
