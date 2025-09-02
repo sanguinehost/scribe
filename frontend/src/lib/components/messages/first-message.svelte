@@ -17,7 +17,9 @@
 		alternateGreetings = [],
 		currentGreetingIndex = 0,
 		character = null,
-		user = undefined
+		user = undefined,
+		substituteTemplateVariables = undefined,
+		userPersonaName = 'User'
 	}: {
 		message: ScribeChatMessage;
 		readonly: boolean;
@@ -26,6 +28,8 @@
 		currentGreetingIndex?: number;
 		character?: CharacterDataForClient | null; // Use CharacterDataForClient
 		user?: User | undefined; // Use User type
+		substituteTemplateVariables?: (text: string, characterName: string) => string;
+		userPersonaName?: string;
 	} = $props();
 
 	const dispatch = createEventDispatcher();
@@ -41,7 +45,14 @@
 	const hasMultipleGreetings = $derived(availableGreetings.length > 1);
 	const canGoPrevious = $derived(currentGreetingIndex > 0);
 	const canGoNext = $derived(currentGreetingIndex < availableGreetings.length - 1);
-	const currentGreeting = $derived(availableGreetings[currentGreetingIndex] || message.content);
+	// Apply template substitution to the current greeting, following character-overview.svelte pattern
+	const currentGreeting = $derived.by(() => {
+		const rawGreeting = availableGreetings[currentGreetingIndex] || message.content;
+		if (substituteTemplateVariables && character?.name) {
+			return substituteTemplateVariables(rawGreeting, character.name);
+		}
+		return rawGreeting;
+	});
 
 	function handlePreviousGreeting() {
 		if (canGoPrevious) {

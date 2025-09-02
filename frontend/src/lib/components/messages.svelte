@@ -49,7 +49,9 @@
 		onLoadMore,
 		isLoadingMore = false,
 		hasMoreMessages = false,
-		suppressAutoScroll = false
+		suppressAutoScroll = false,
+		substituteTemplateVariables = undefined,
+		userPersonaName = 'User'
 	}: {
 		readonly: boolean;
 		loading: boolean;
@@ -72,6 +74,8 @@
 		isLoadingMore?: boolean;
 		hasMoreMessages?: boolean;
 		suppressAutoScroll?: boolean;
+		substituteTemplateVariables?: (text: string, characterName: string) => string;
+		userPersonaName?: string;
 	} = $props();
 
 	// Track message count for performance optimization
@@ -473,6 +477,8 @@
 					on:greetingChanged={handleGreetingChanged}
 					{character}
 					{user}
+					{substituteTemplateVariables}
+					{userPersonaName}
 				/>
 			{:else}
 				{@const variants = messageVariants?.get(message.id)}
@@ -500,6 +506,8 @@
 					{onDeleteMessage}
 					{onPreviousVariant}
 					{onNextVariant}
+					{substituteTemplateVariables}
+					{userPersonaName}
 				/>
 			{/if}
 		{/each}

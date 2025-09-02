@@ -36,7 +36,9 @@
 		onPreviousVariant,
 		onNextVariant,
 		hasVariants = false,
-		variantInfo = null
+		variantInfo = null,
+		substituteTemplateVariables = undefined,
+		userPersonaName = 'User'
 	}: {
 		message: ScribeChatMessage;
 		readonly: boolean;
@@ -53,6 +55,8 @@
 		onNextVariant?: (messageId: string) => void;
 		hasVariants?: boolean;
 		variantInfo?: { current: number; total: number } | null;
+		substituteTemplateVariables?: (text: string, characterName: string) => string;
+		userPersonaName?: string;
 	} = $props();
 
 	// Component lifecycle tracking (reduced logging)
@@ -73,6 +77,14 @@
 	// Edit mode state
 	let isEditing = $state(false);
 	let editedContent = $state('');
+
+	// Apply template substitution to message content, following character-overview.svelte pattern
+	const processedContent = $derived.by(() => {
+		if (substituteTemplateVariables && character?.name) {
+			return substituteTemplateVariables(message.content, character.name);
+		}
+		return message.content;
+	});
 
 	// Avatar lightbox state
 	let avatarLightboxOpen = $state(false);
@@ -329,7 +341,7 @@
 								<!-- Show partial content if any was generated before the error -->
 								<div class="mt-3 border-t border-red-200 pt-3 dark:border-red-800">
 									<p class="mb-2 text-xs text-red-600 dark:text-red-400">Partial response:</p>
-									<Markdown md={message.content} />
+									<Markdown md={processedContent} />
 								</div>
 							{/if}
 						{:else}
@@ -346,7 +358,7 @@
 								<div
 									class="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
 								>
-									<Markdown md={message.content} />
+									<Markdown md={processedContent} />
 								</div>
 							{/if}
 						{/if}

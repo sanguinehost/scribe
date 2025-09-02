@@ -23,6 +23,7 @@
 	import ChronicleOptInDialog from './chronicle-opt-in-dialog.svelte';
 	import RegenerationModal, { type AnalysisMode } from './messages/regeneration-modal.svelte';
 	import { browser } from '$app/environment';
+	import { getCurrentUser } from '$lib/auth.svelte';
 
 	// Get reactive state from streaming service
 	// By directly accessing the $state properties of the service, we ensure reactivity.
@@ -567,6 +568,10 @@
 	});
 	let availablePersonas = $state<UserPersona[]>([]);
 
+	// User persona for template substitution
+	let currentUserPersona = $state<UserPersona | null>(null);
+	let userPersonaName = $state('User'); // Fallback to 'User'
+
 	// --- State for chat interface visibility ---
 	// The chat interface visibility now depends on the chat mode strategy
 	let shouldShowChatInterface = $state(false);
@@ -667,6 +672,27 @@
 		}
 	}
 
+	async function loadUserPersona() {
+		try {
+			const currentUser = getCurrentUser();
+			if (currentUser?.default_persona_id) {
+				const personaResult = await apiClient.getUserPersona(currentUser.default_persona_id);
+				if (personaResult.isOk()) {
+					currentUserPersona = personaResult.value;
+					userPersonaName = currentUserPersona.name || 'User';
+				} else {
+					console.warn('Failed to load user persona:', personaResult.error);
+					userPersonaName = currentUser.username || 'User';
+				}
+			} else if (currentUser?.username) {
+				userPersonaName = currentUser.username;
+			}
+		} catch (error) {
+			console.warn('Error loading user persona:', error);
+			userPersonaName = 'User';
+		}
+	}
+
 	// --- Get Current Chat Model ---
 	async function getCurrentChatModel() {
 		if (!chat?.id) return null;
@@ -738,6 +764,7 @@
 	// Load personas when component mounts (regardless of chat)
 	$effect(() => {
 		loadAvailablePersonas();
+		loadUserPersona();
 	});
 
 	// Load agent mode when chat changes
@@ -901,6 +928,12 @@
 		// Check if there are any user messages in the current messages
 		const hasUserMessage = streamingService.messages.some((msg) => msg.sender === 'user');
 		return !hasUserMessage;
+	}
+
+	// Template substitution for frontend preview - following character-overview.svelte pattern
+	function substituteTemplateVariables(text: string, characterName: string): string {
+		if (!text) return text;
+		return text.replace(/\{\{char\}\}/g, characterName).replace(/\{\{user\}\}/g, userPersonaName);
 	}
 
 	// Handle chronicle opt-in choice
@@ -1509,6 +1542,8 @@
 		{isLoadingMore}
 		{hasMoreMessages}
 		{suppressAutoScroll}
+		{substituteTemplateVariables}
+		{userPersonaName}
 	/>
 
 	<!-- Show Chat Interface (Get Suggestions + Input) Only When Inside Active Chat -->
