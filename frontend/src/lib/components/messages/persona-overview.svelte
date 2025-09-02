@@ -17,6 +17,7 @@
 	} from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ImageLightbox from '$lib/components/ui/image-lightbox.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -63,6 +64,9 @@
 	let editedSystemPrompt = $state('');
 	let editedMesExample = $state('');
 	let editedPostHistoryInstructions = $state('');
+
+	// Image lightbox state
+	let avatarLightboxOpen = $state(false);
 
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 
@@ -344,7 +348,10 @@
 				<Card class="border border-border shadow-sm">
 					<CardHeader class="px-6 py-6">
 						<div class="flex items-start space-x-6">
-							<Avatar class="h-24 w-24 border-2 border-muted">
+							<Avatar 
+								class="h-24 w-24 border-2 border-muted transition-transform hover:scale-105 {persona.avatar ? 'cursor-pointer' : ''}"
+								onclick={() => persona?.avatar && (avatarLightboxOpen = true)}
+							>
 								{#if persona.avatar}
 									<AvatarImage src={`${persona.avatar}?width=96&height=96`} alt={persona.name} />
 								{/if}
@@ -558,6 +565,15 @@
 		</AlertDialogFooter>
 	</AlertDialogContent>
 </AlertDialog>
+
+<!-- Avatar Image Lightbox -->
+{#if persona && persona.avatar}
+	<ImageLightbox
+		src={persona.avatar}
+		alt={persona.name}
+		bind:open={avatarLightboxOpen}
+	/>
+{/if}
 
 <style>
 	/* Override inline styles from HTML content to respect theme */

@@ -13,6 +13,7 @@
 	import { fly } from 'svelte/transition';
 	import type { ScribeChatMessage, User, ScribeCharacter, ScribeChatSession } from '$lib/types'; // Import User and ScribeCharacter
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
+	import ImageLightbox from '$lib/components/ui/image-lightbox.svelte';
 	import { env } from '$env/dynamic/public';
 	import { getLock } from '$lib/hooks/lock';
 	import { streamingService } from '$lib/services/StreamingService.svelte';
@@ -72,6 +73,11 @@
 	// Edit mode state
 	let isEditing = $state(false);
 	let editedContent = $state('');
+
+	// Avatar lightbox state
+	let avatarLightboxOpen = $state(false);
+	let avatarLightboxSrc = $state('');
+	let avatarLightboxAlt = $state('');
 
 	// Get scroll lock during component initialization
 	const scrollLock = getLock('messages-scroll');
@@ -183,19 +189,43 @@
 		<!-- Avatar container (simplified) -->
 		<div class="size-8 shrink-0">
 			{#if message.message_type === 'Assistant'}
-				<Avatar class="size-8">
+				<Avatar 
+					class="size-8 transition-transform hover:scale-105 {characterAvatarSrc ? 'cursor-pointer' : ''}"
+					onclick={() => {
+						if (characterAvatarSrc && character) {
+							avatarLightboxSrc = characterAvatarSrc;
+							avatarLightboxAlt = character.name;
+							avatarLightboxOpen = true;
+						}
+					}}
+				>
 					{#if characterAvatarSrc && character}
-						<AvatarImage src={characterAvatarSrc} alt={character.name} />
+						<AvatarImage 
+							src={characterAvatarSrc} 
+							alt={character.name} 
+						/>
 					{/if}
 					<AvatarFallback>
 						{getInitials(character?.name)}
 					</AvatarFallback>
 				</Avatar>
 			{:else if message.message_type === 'User'}
-				<Avatar class="size-8">
+				<Avatar 
+					class="size-8 transition-transform hover:scale-105 {user?.avatar ? 'cursor-pointer' : ''}"
+					onclick={() => {
+						if (user?.avatar) {
+							avatarLightboxSrc = user.avatar;
+							avatarLightboxAlt = user.username || 'User';
+							avatarLightboxOpen = true;
+						}
+					}}
+				>
 					{#if user?.avatar}
 						<!-- Assuming user.avatar will be a URL -->
-						<AvatarImage src={user.avatar} alt={user.username} />
+						<AvatarImage 
+							src={user.avatar} 
+							alt={user.username} 
+						/>
 					{/if}
 					<AvatarFallback>
 						{getInitials(user?.username)}
@@ -414,6 +444,18 @@
 		</div>
 	</div>
 </div>
+
+<!-- Avatar Lightbox -->
+<ImageLightbox
+	bind:open={avatarLightboxOpen}
+	src={avatarLightboxSrc}
+	alt={avatarLightboxAlt}
+	onClose={() => {
+		avatarLightboxOpen = false;
+		avatarLightboxSrc = '';
+		avatarLightboxAlt = '';
+	}}
+/>
 
 <style>
 	.loading-spinner {
