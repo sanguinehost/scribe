@@ -74,7 +74,8 @@
 			"esbuild"
 		],
 		"overrides": {
-			"cookie": "^0.7.2"
+			"cookie": "^0.7.2",
+			"devalue": "^5.3.2"
 		}
 	},
 	"packageManager": "pnpm@10.10.0",
