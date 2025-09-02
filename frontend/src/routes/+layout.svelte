@@ -35,7 +35,7 @@
 			.catch((error) => {
 				console.warn('LlmStore module load failed:', error);
 			});
-			
+
 		// Initialize model lifecycle store for local model management
 		import('$lib/stores/modelLifecycle.svelte')
 			.then(({ initGlobalModelLifecycleStore }) => {

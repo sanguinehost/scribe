@@ -43,7 +43,6 @@
 
 	// Constraint validation - only runs when dependencies change
 	$effect(() => {
-
 		// Clamp recent history budget
 		if (recent_history_budget > max_allowed) {
 			recent_history_budget = max_allowed;

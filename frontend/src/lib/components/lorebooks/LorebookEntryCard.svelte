@@ -141,7 +141,7 @@
 		<div class="space-y-3">
 			<!-- Content preview -->
 			<div class="text-sm">
-				<p class="leading-relaxed text-muted-foreground">
+				<p class="leading-relaxed text-foreground">
 					{truncateContent(entry.content)}
 				</p>
 			</div>

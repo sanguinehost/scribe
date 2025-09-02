@@ -41,7 +41,7 @@ export class ModelLifecycleStore {
 		if (!browser) return false;
 
 		this.state.isActivating = true;
-		
+
 		try {
 			const response = await fetch(`/api/llm/models/${modelId}/activate`, {
 				method: 'POST',
@@ -53,7 +53,7 @@ export class ModelLifecycleStore {
 			}
 
 			const result = await response.json();
-			
+
 			if (result.success) {
 				this.state.activeModel = modelId;
 				this.resetInactivityTimer();
@@ -87,7 +87,7 @@ export class ModelLifecycleStore {
 			}
 
 			const result = await response.json();
-			
+
 			if (result.success) {
 				this.state.activeModel = null;
 				this.clearInactivityTimer();
@@ -142,7 +142,7 @@ export class ModelLifecycleStore {
 
 		const elapsed = Date.now() - this.state.lastActivityTime;
 		const remaining = this.INACTIVITY_TIMEOUT - elapsed;
-		
+
 		return Math.max(0, remaining);
 	}
 

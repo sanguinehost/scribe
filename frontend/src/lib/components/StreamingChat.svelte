@@ -132,8 +132,12 @@
 
 			// Auto-activate local model if needed
 			if (model) {
-				const modelInfo = llmStore.models.find(m => m.id === model);
-				if (modelInfo?.isLocal && modelInfo.downloaded && !modelLifecycleStore.isModelActive(model)) {
+				const modelInfo = llmStore.models.find((m) => m.id === model);
+				if (
+					modelInfo?.isLocal &&
+					modelInfo.downloaded &&
+					!modelLifecycleStore.isModelActive(model)
+				) {
 					toast.info('Starting local model...');
 					const success = await modelLifecycleStore.activateModel(model);
 					if (!success) {
@@ -141,7 +145,7 @@
 						return;
 					}
 				}
-				
+
 				// Reset inactivity timer for any message sent (local or cloud)
 				if (modelInfo?.isLocal) {
 					modelLifecycleStore.resetInactivityTimer();
@@ -305,7 +309,7 @@
 														<button
 															type="button"
 															onclick={() => retryFailedMessage(message.id)}
-															class="mt-2 inline-flex items-center space-x-1 text-sm text-primary hover:underline"
+															class="mt-2 inline-flex items-center space-x-1 text-sm text-foreground hover:underline"
 														>
 															<svg
 																class="h-3 w-3"

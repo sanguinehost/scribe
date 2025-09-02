@@ -222,8 +222,7 @@
 		{ id: 'context', label: 'Context', icon: '🧠' },
 		...(ENABLE_LOCAL_LLM && llmStoreReactive?.localLlmFeatureAvailable
 			? [{ id: 'models', label: 'Local Models', icon: '💾' }]
-			: []),
-		{ id: 'application', label: 'Application', icon: '⚙️' }
+			: [])
 	]);
 </script>
 
@@ -372,7 +371,7 @@
 
 					<!-- Advanced Generation (Expandable) -->
 					<Card>
-						<CardHeader>
+						<CardHeader class={expandedSections.advanced ? '' : 'pb-6'}>
 							<div class="flex items-center justify-between">
 								<CardTitle class="text-lg">Advanced Generation</CardTitle>
 								<Button
@@ -433,7 +432,7 @@
 
 					<!-- Gemini-Specific (Expandable) -->
 					<Card>
-						<CardHeader>
+						<CardHeader class={expandedSections.gemini ? '' : 'pb-6'}>
 							<div class="flex items-center justify-between">
 								<CardTitle class="text-lg">Gemini-Specific Options</CardTitle>
 								<Button
@@ -468,6 +467,30 @@
 							</CardContent>
 						{/if}
 					</Card>
+
+					<!-- Text Streaming Speed -->
+					<Card>
+						<CardHeader>
+							<CardTitle class="text-lg">Streaming Options</CardTitle>
+						</CardHeader>
+						<CardContent class="space-y-4">
+							<div class="space-y-2">
+								<Label for="typing-speed">Text Streaming Speed</Label>
+								<Input
+									id="typing-speed"
+									type="number"
+									min="1"
+									max="200"
+									step="1"
+									bind:value={settings.typing_speed}
+								/>
+								<p class="text-xs text-muted-foreground">
+									Milliseconds between characters (lower = faster). Common values: 10 (very fast),
+									30 (default), 50 (slow)
+								</p>
+							</div>
+						</CardContent>
+					</Card>
 				{/if}
 
 				<!-- Context Tab -->
@@ -488,101 +511,6 @@
 					{/await}
 				{/if}
 
-				<!-- Application Tab -->
-				{#if activeTab === 'application'}
-					<Card>
-						<CardHeader>
-							<CardTitle class="text-lg">Appearance</CardTitle>
-						</CardHeader>
-						<CardContent class="space-y-4">
-							<div class="space-y-2">
-								<Label for="theme">Theme</Label>
-								<select
-									id="theme"
-									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-									bind:value={settings.theme}
-								>
-									<option value="system">System Default</option>
-									<option value="light">Light</option>
-									<option value="dark">Dark</option>
-								</select>
-							</div>
-						</CardContent>
-					</Card>
-
-					<Card>
-						<CardHeader>
-							<CardTitle class="text-lg">Behavior</CardTitle>
-						</CardHeader>
-						<CardContent class="space-y-4">
-							<div class="flex items-center space-x-2">
-								<Checkbox id="auto-save" bind:checked={settings.auto_save_chats} />
-								<Label for="auto-save">Auto-save chats</Label>
-							</div>
-
-							<div class="flex items-center space-x-2">
-								<Checkbox id="notifications" bind:checked={settings.notifications_enabled} />
-								<Label for="notifications">Enable notifications</Label>
-							</div>
-
-							<div class="space-y-2">
-								<Label for="typing-speed">Text Streaming Speed</Label>
-								<Input
-									id="typing-speed"
-									type="number"
-									min="1"
-									max="200"
-									step="1"
-									bind:value={settings.typing_speed}
-								/>
-								<p class="text-xs text-muted-foreground">
-									Milliseconds between characters (lower = faster). Common values: 10 (very fast),
-									30 (default), 50 (slow)
-								</p>
-							</div>
-
-							{#if ENABLE_LOCAL_LLM && llmStoreReactive?.localLlmFeatureAvailable}
-								<Separator />
-
-								<div class="flex items-center space-x-2">
-									<Checkbox id="local-llm" bind:checked={settings.local_llm_enabled} />
-									<Label for="local-llm">Enable Local LLM</Label>
-								</div>
-								<p class="text-xs text-muted-foreground">
-									Use local models when available instead of cloud API
-								</p>
-
-								{#if settings.local_llm_enabled && llmStoreReactive?.downloadedModels?.length > 0}
-									<div class="space-y-2">
-										<Label for="preferred-model">Preferred Local Model</Label>
-										<select
-											id="preferred-model"
-											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-											bind:value={settings.preferred_local_model}
-										>
-											<option value={null}>Auto-select best model</option>
-											{#each llmStoreReactive.downloadedModels as model}
-												<option value={model.id}>{model.name}</option>
-											{/each}
-										</select>
-										<p class="text-xs text-muted-foreground">
-											Choose a specific model or let the system pick automatically
-										</p>
-									</div>
-								{/if}
-
-								{#if settings.local_llm_enabled && llmStoreReactive?.downloadedModels?.length === 0}
-									<div class="rounded-lg border border-dashed p-4 text-center">
-										<p class="text-sm text-muted-foreground">
-											No local models downloaded. Visit the <strong>Local Models</strong> tab to download
-											models.
-										</p>
-									</div>
-								{/if}
-							{/if}
-						</CardContent>
-					</Card>
-				{/if}
 
 				<!-- Save Button -->
 				<div class="flex justify-end gap-4 border-t pt-6">

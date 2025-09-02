@@ -181,14 +181,14 @@
 			<div class="py-12 text-center">
 				<h2 class="mb-4 text-2xl font-bold text-destructive">Error</h2>
 				<p class="mb-4 text-muted-foreground">{error}</p>
-				<button onclick={handleBack} class="text-primary hover:underline">
+				<button onclick={handleBack} class="text-foreground hover:underline">
 					← Back to Lorebooks
 				</button>
 			</div>
 		{:else if !isLoading && !lorebook}
 			<div class="py-12 text-center">
 				<h2 class="mb-4 text-2xl font-bold text-muted-foreground">Lorebook Not Found</h2>
-				<button onclick={handleBack} class="text-primary hover:underline">
+				<button onclick={handleBack} class="text-foreground hover:underline">
 					← Back to Lorebooks
 				</button>
 			</div>

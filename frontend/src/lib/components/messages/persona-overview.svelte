@@ -341,8 +341,8 @@
 					</CardHeader>
 				</Card>
 			{:else if persona}
-				<Card class="border-0 shadow-none">
-					<CardHeader class="px-0">
+				<Card class="border border-border shadow-sm">
+					<CardHeader class="px-6 py-6">
 						<div class="flex items-start space-x-6">
 							<Avatar class="h-24 w-24 border-2 border-muted">
 								{#if persona.avatar}
@@ -432,9 +432,9 @@
 					</CardHeader>
 
 					{#if persona.scenario || persona.personality || persona.first_mes || persona.system_prompt}
-						<CardContent class="space-y-4 px-0">
+						<CardContent class="space-y-4 px-6 pb-6">
 							{#if persona.scenario}
-								<div class="rounded-lg bg-muted/50 p-4">
+								<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
 									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
 									<div
 										class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
@@ -449,7 +449,7 @@
 								</div>
 							{/if}
 							{#if persona.personality}
-								<div class="rounded-lg bg-muted/50 p-4">
+								<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
 									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
 									<div
 										class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
@@ -464,7 +464,7 @@
 								</div>
 							{/if}
 							{#if persona.first_mes}
-								<div class="rounded-lg bg-muted/50 p-4">
+								<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
 									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">First Message</h4>
 									<div
 										class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
@@ -479,7 +479,7 @@
 								</div>
 							{/if}
 							{#if persona.system_prompt}
-								<div class="rounded-lg bg-muted/50 p-4">
+								<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
 									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">System Prompt</h4>
 									<div
 										class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
@@ -494,7 +494,7 @@
 								</div>
 							{/if}
 							{#if persona.mes_example}
-								<div class="rounded-lg bg-muted/50 p-4">
+								<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
 									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Message Example</h4>
 									<div
 										class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
@@ -509,7 +509,7 @@
 								</div>
 							{/if}
 							{#if persona.post_history_instructions}
-								<div class="rounded-lg bg-muted/50 p-4">
+								<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
 									<h4 class="mb-2 text-sm font-semibold text-muted-foreground">
 										Post-History Instructions
 									</h4>

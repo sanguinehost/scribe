@@ -95,7 +95,7 @@
 	// Dynamic model list that includes local models when available
 	const availableModels = $derived(() => {
 		// Get all local models that are actually downloaded (available)
-		const localModels = llmStore.models.filter(m => m.isLocal && m.downloaded);
+		const localModels = llmStore.models.filter((m) => m.isLocal && m.downloaded);
 		return getAllAvailableModels(localModels);
 	});
 
@@ -167,17 +167,21 @@
 						<span>{chatModel.name}</span>
 						{#if chatModel.isLocal}
 							{@const isActive = modelLifecycleStore.isModelActive(chatModel.id)}
-							{@const isActivating = modelLifecycleStore.isActivating && modelLifecycleStore.activeModel === chatModel.id}
+							{@const isActivating =
+								modelLifecycleStore.isActivating &&
+								modelLifecycleStore.activeModel === chatModel.id}
 							<div class="flex items-center gap-1">
 								<span
-									class="rounded-full px-2 py-0.5 text-xs {isActive 
-										? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+									class="rounded-full px-2 py-0.5 text-xs {isActive
+										? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
 										: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}"
 								>
 									Local
 								</span>
 								{#if isActivating}
-									<div class="inline-block h-3 w-3 animate-spin rounded-full border border-green-500 border-t-transparent"></div>
+									<div
+										class="inline-block h-3 w-3 animate-spin rounded-full border border-green-500 border-t-transparent"
+									></div>
 								{:else if isActive}
 									<div class="h-2 w-2 rounded-full bg-green-500" title="Model is active"></div>
 								{:else}

@@ -57,6 +57,13 @@ const config: Config = {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				chart: {
+					'1': 'hsl(var(--chart-1))',
+					'2': 'hsl(var(--chart-2))',
+					'3': 'hsl(var(--chart-3))',
+					'4': 'hsl(var(--chart-4))',
+					'5': 'hsl(var(--chart-5))'
 				}
 			},
 			borderRadius: {
@@ -65,8 +72,9 @@ const config: Config = {
 				sm: 'calc(var(--radius) - 4px)'
 			},
 			fontFamily: {
-				sans: ['geist', ...fontFamily.sans],
-				mono: ['geist-mono', ...fontFamily.mono]
+				sans: ['Lato', 'geist', ...fontFamily.sans],
+				serif: ['Lora', ...fontFamily.serif],
+				mono: ['Fira Code', 'geist-mono', ...fontFamily.mono]
 			},
 			keyframes: {
 				'accordion-down': {
