@@ -393,87 +393,97 @@
 
 	// Create a single, reactive source of truth for display messages with object identity preservation
 	let displayMessages = $derived.by(() => {
-		const streamingMessages = streamingService.messages;
-		console.log('🔄 displayMessages derived:', {
-			streamingCount: streamingMessages.length,
-			firstMessage: streamingMessages[0]?.id,
-			lastMessage: streamingMessages[streamingMessages.length - 1]?.id
-		});
+		try {
+			const streamingMessages = streamingService.messages;
+			console.log('🔄 displayMessages derived:', {
+				streamingCount: streamingMessages.length,
+				firstMessage: streamingMessages[0]?.id,
+				lastMessage: streamingMessages[streamingMessages.length - 1]?.id
+			});
 
-		// Check if messages array actually changed to avoid unnecessary work
-		if (streamingMessages === lastStreamingMessages) {
-			console.log('⚠️ displayMessages: Using cached result, no change detected');
+			// Check if messages array actually changed to avoid unnecessary work
+			// Use both reference equality and length check for robustness
+			if (streamingMessages === lastStreamingMessages || 
+				(Array.isArray(lastStreamingMessages) && 
+				 streamingMessages.length === lastStreamingMessages.length &&
+				 streamingMessages.every((msg, idx) => msg === lastStreamingMessages[idx]))) {
+				console.log('⚠️ displayMessages: Using cached result, no change detected');
+				return Array.from(messageCache.values());
+			}
+
+			console.log('🔄 displayMessages: Processing new messages array');
+
+			const messages: ScribeChatMessage[] = [];
+			const newCache = new Map<string, ScribeChatMessage>();
+
+			streamingMessages.forEach((msg) => {
+				const cached = messageCache.get(msg.id);
+
+				// Check if message content/state actually changed (NEW: using displayedContent and isAnimating)
+				const isAnimatingOrLoading = msg.isAnimating ?? false;
+				const displayContent = msg.displayedContent ?? msg.content; // Fallback to full content if no displayedContent
+
+				const hasChanged =
+					!cached ||
+					cached.loading !== isAnimatingOrLoading ||
+					cached.content !== displayContent ||
+					cached.prompt_tokens !== msg.prompt_tokens ||
+					cached.completion_tokens !== msg.completion_tokens ||
+					cached.error !== msg.error;
+
+				if (hasChanged) {
+					// Only log when not animating to avoid spam
+					if (!msg.isAnimating) {
+						console.log(
+							`🔄 Message ${msg.id.slice(-8)} changed - displayed: ${displayContent.length}chars, full: ${msg.content.length}chars, tokens: ${msg.prompt_tokens}/${msg.completion_tokens}`
+						);
+					}
+
+					// Create new message object only if changed (NEW: using displayedContent for UI)
+					const newMessage: ScribeChatMessage = {
+						id: msg.id,
+						session_id: chat?.id ?? 'unknown-session',
+						message_type: msg.sender === 'user' ? ('User' as const) : ('Assistant' as const),
+						content: displayContent, // Use displayedContent for UI rendering
+						created_at: msg.created_at,
+						user_id: msg.sender === 'user' ? (user?.id ?? '') : '',
+						loading: isAnimatingOrLoading, // Use isAnimating for loading state
+						error: msg.error,
+						retryable: msg.retryable ?? false,
+						prompt_tokens: msg.prompt_tokens,
+						completion_tokens: msg.completion_tokens,
+						model_name: msg.model_name,
+						backend_id: msg.backend_id
+					};
+
+					newCache.set(msg.id, newMessage);
+					messages.push(newMessage);
+				} else {
+					// Reuse existing object to preserve identity
+					newCache.set(msg.id, cached);
+					messages.push(cached);
+				}
+			});
+
+			// Update cache and reference
+			messageCache = newCache;
+			lastStreamingMessages = streamingMessages;
+
+			// Sort messages by timestamp (oldest first) for proper chronological display
+			messages.sort((a, b) => {
+				const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+				const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+				return aTime - bTime;
+			});
+
+			// Only log when no messages are animating to avoid spam
+			const hasAnimatingMessages = streamingMessages.some((m) => m.isAnimating);
+			return messages;
+		} catch (error) {
+			console.error('❌ Error in displayMessages derived:', error);
+			// Return cached messages if available, otherwise return empty array
 			return Array.from(messageCache.values());
 		}
-
-		console.log('🔄 displayMessages: Processing new messages array');
-
-		const messages: ScribeChatMessage[] = [];
-		const newCache = new Map<string, ScribeChatMessage>();
-
-		streamingMessages.forEach((msg) => {
-			const cached = messageCache.get(msg.id);
-
-			// Check if message content/state actually changed (NEW: using displayedContent and isAnimating)
-			const isAnimatingOrLoading = msg.isAnimating ?? false;
-			const displayContent = msg.displayedContent ?? msg.content; // Fallback to full content if no displayedContent
-
-			const hasChanged =
-				!cached ||
-				cached.loading !== isAnimatingOrLoading ||
-				cached.content !== displayContent ||
-				cached.prompt_tokens !== msg.prompt_tokens ||
-				cached.completion_tokens !== msg.completion_tokens ||
-				cached.error !== msg.error;
-
-			if (hasChanged) {
-				// Only log when not animating to avoid spam
-				if (!msg.isAnimating) {
-					console.log(
-						`🔄 Message ${msg.id.slice(-8)} changed - displayed: ${displayContent.length}chars, full: ${msg.content.length}chars, tokens: ${msg.prompt_tokens}/${msg.completion_tokens}`
-					);
-				}
-
-				// Create new message object only if changed (NEW: using displayedContent for UI)
-				const newMessage: ScribeChatMessage = {
-					id: msg.id,
-					session_id: chat?.id ?? 'unknown-session',
-					message_type: msg.sender === 'user' ? ('User' as const) : ('Assistant' as const),
-					content: displayContent, // Use displayedContent for UI rendering
-					created_at: msg.created_at,
-					user_id: msg.sender === 'user' ? (user?.id ?? '') : '',
-					loading: isAnimatingOrLoading, // Use isAnimating for loading state
-					error: msg.error,
-					retryable: msg.retryable ?? false,
-					prompt_tokens: msg.prompt_tokens,
-					completion_tokens: msg.completion_tokens,
-					model_name: msg.model_name,
-					backend_id: msg.backend_id
-				};
-
-				newCache.set(msg.id, newMessage);
-				messages.push(newMessage);
-			} else {
-				// Reuse existing object to preserve identity
-				newCache.set(msg.id, cached);
-				messages.push(cached);
-			}
-		});
-
-		// Update cache and reference
-		messageCache = newCache;
-		lastStreamingMessages = streamingMessages;
-
-		// Sort messages by timestamp (oldest first) for proper chronological display
-		messages.sort((a, b) => {
-			const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-			const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-			return aTime - bTime;
-		});
-
-		// Only log when no messages are animating to avoid spam
-		const hasAnimatingMessages = streamingMessages.some((m) => m.isAnimating);
-		return messages;
 	});
 
 	// Removed attachments state as feature is disabled/not supported
@@ -1688,7 +1698,7 @@
 					{#if showTokenUsage && tokenCounter.data}
 						<div class="mt-2 flex justify-end">
 							<TokenUsageDisplay
-								promptTokens={tokenCounter.data.total}
+								promptTokens={tokenCounter.data?.total || 0}
 								completionTokens={0}
 								modelName={chat?.model_name}
 								loading={tokenCounter.loading}
