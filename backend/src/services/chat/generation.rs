@@ -803,9 +803,9 @@ pub async fn get_session_data_for_generation(
                         if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
                             &chunk.metadata
                         {
-                            debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), "  Raw older chat RAG chunk");
+                            debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_len = chunk.text.len(), "  Raw older chat RAG chunk");
                         } else {
-                            debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_preview = %chunk.text.chars().take(100).collect::<String>(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
+                            debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_len = chunk.text.len(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
                         }
                     }
 
@@ -1535,7 +1535,7 @@ pub async fn stream_ai_response_and_save_message(
                             || chunk_lower.contains("harmful content");
 
                         if is_likely_safety_refusal {
-                            warn!(session_id = %stream_session_id, content = %chunk.content, "Detected potential safety refusal in AI response");
+                            warn!(session_id = %stream_session_id, content_len = chunk.content.len(), "Detected potential safety refusal in AI response");
                         }
 
                         // Create structured chunk with integrity checking
@@ -1553,10 +1553,9 @@ pub async fn stream_ai_response_and_save_message(
                                     chunk_index = chunk_index,
                                     content_len = chunk.content.len(),
                                     checksum = checksum,
-                                    content_preview = &chunk.content.chars().take(50).collect::<String>(),
-                                    "🔥 BACKEND: Yielding chunk {} with content: '{}'",
+                                    "🔥 BACKEND: Yielding chunk {} (length: {} chars)",
                                     chunk_index,
-                                    &chunk.content.chars().take(30).collect::<String>()
+                                    chunk.content.len()
                                 );
                                 
                                 accumulated_content.push_str(&chunk.content);

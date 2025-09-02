@@ -29,6 +29,9 @@ pub enum AppError {
     #[error("Bad Gateway: {0}")]
     BadGateway(String), // For external service errors
 
+    #[error("Service Unavailable: {0}")]
+    ServiceUnavailable(String), // For service unavailability
+
     #[error("Invalid credentials")]
     InvalidCredentials, // Specific auth error
 
@@ -357,6 +360,7 @@ impl AppError {
         matches!(
             error,
             Self::BadGateway(_)
+                | Self::ServiceUnavailable(_)
                 | Self::GenerationError(_)
                 | Self::EmbeddingError(_)
                 | Self::VectorDbError(_)
@@ -496,17 +500,21 @@ impl AppError {
     }
 
     fn handle_gateway_error(app_error: Self) -> (StatusCode, String) {
-        let (log_msg, user_msg) = match app_error {
-            Self::BadGateway(msg) => (format!("Bad Gateway error: {msg}"), msg),
+        let (status, log_msg, user_msg) = match app_error {
+            Self::BadGateway(msg) => (StatusCode::BAD_GATEWAY, format!("Bad Gateway error: {msg}"), msg),
+            Self::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, format!("Service Unavailable: {msg}"), msg),
             Self::GenerationError(e) => (
+                StatusCode::BAD_GATEWAY,
                 format!("LLM generation error: {e}"),
                 "AI service request failed".to_string(),
             ),
             Self::EmbeddingError(e) => (
+                StatusCode::BAD_GATEWAY,
                 format!("LLM embedding error: {e}"),
                 "AI embedding service request failed".to_string(),
             ),
             Self::VectorDbError(e) => (
+                StatusCode::BAD_GATEWAY,
                 format!("Vector DB error: {e}"),
                 "Failed to process embeddings".to_string(),
             ),
@@ -514,7 +522,7 @@ impl AppError {
         };
 
         error!("{}", log_msg);
-        (StatusCode::BAD_GATEWAY, user_msg)
+        (status, user_msg)
     }
 
     fn handle_internal_server_error(app_error: Self) -> (StatusCode, String) {

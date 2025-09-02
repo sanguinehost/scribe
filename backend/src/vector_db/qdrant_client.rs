@@ -68,6 +68,8 @@ pub trait QdrantClientServiceTrait: Send + Sync {
         &self,
         point_id: PointId,
     ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError>;
+    /// Check if Qdrant service is healthy
+    async fn health_check(&self) -> Result<(), AppError>;
 }
 
 impl QdrantClientService {
@@ -908,6 +910,22 @@ impl QdrantClientServiceTrait for QdrantClientService {
         // get_points returns a GetResponse which has a Vec<RetrievedPoint>
         // We expect at most one point.
         Ok(response.result.into_iter().next())
+    }
+
+    #[instrument(skip(self), name = "qdrant_health_check")]
+    async fn health_check(&self) -> Result<(), AppError> {
+        // Try to get basic health information from Qdrant by listing collections
+        // This is a simple operation that checks connectivity
+        self.client
+            .list_collections()
+            .await
+            .map_err(|e| {
+                error!(error = %e, "Qdrant health check failed - cannot list collections");
+                AppError::VectorDbError(format!("Qdrant health check failed: {e}"))
+            })?;
+
+        info!("Qdrant health check successful - can list collections");
+        Ok(())
     }
 }
 

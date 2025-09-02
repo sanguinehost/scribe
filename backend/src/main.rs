@@ -519,7 +519,9 @@ fn build_router(
         .route_layer(login_required!(AuthBackend));
 
     // Health endpoint - not rate limited for monitoring purposes
-    let health_routes = Router::new().route("/api/health", get(health_check));
+    let health_routes = Router::new()
+        .route("/api/health", get(health_check))
+        .with_state(app_state.clone());
 
     // Rate-limited API routes (both public and protected)
     let rate_limited_api_routes = Router::new()
@@ -694,9 +696,6 @@ mod tests {
     // Remove import for unavailable module
     // use testcontainers_modules::postgres::Postgres;
 
-    #[tokio::test]
-    async fn test_health_check() {
-        let response = health_check().await;
-        assert_eq!(response.0.status, "ok");
-    }
+    // Note: Health check test moved to tests/health_check.rs for integration testing
+    // since the new health_check function requires AppState
 }

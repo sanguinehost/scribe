@@ -1046,6 +1046,15 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         // For now, returning Ok(None) to satisfy the trait.
         Ok(None)
     }
+
+    async fn health_check(&self) -> Result<(), AppError> {
+        // Mock health check always returns Ok
+        tracing::info!(
+            target: "mock_qdrant_client",
+            "MockQdrantClientService::health_check called - returning Ok(())"
+        );
+        Ok(())
+    }
 }
 
 // --- END Placeholder Mock Definitions ---
@@ -1565,7 +1574,9 @@ pub async fn spawn_app_with_rate_limiting_options(
     // It's accessible via app_state_inner.embedding_call_tracker if necessary.
 
     // Health endpoint - not rate limited for monitoring purposes (matches production)
-    let health_routes_for_test = Router::new().route("/api/health", get(health_check));
+    let health_routes_for_test = Router::new()
+        .route("/api/health", get(health_check))
+        .with_state(app_state_inner.clone());
 
     let protected_api_routes_for_test = Router::new()
         .nest(
