@@ -910,39 +910,8 @@ pub async fn generate_chat_response(
         v if v.contains(mime::APPLICATION_JSON.as_ref()) => {
             info!(%session_id, "Handling non-streaming JSON request. request_thinking={}", request_thinking);
 
-            // _user_message_to_save_for_db from get_session_data_for_generation contains the structured user message.
-            // For JSON path, we save the user message explicitly before calling AI.
-            // The content is current_user_content.
-
-            let dek_for_user_save_json = session_dek_arc.clone();
-            let _user_saved_message = match chat::message_handling::save_message(
-                chat::message_handling::SaveMessageParams {
-                    state: state_arc.clone(),
-                    session_id,
-                    user_id: user_id_value,
-                    message_type_enum: MessageRole::User,
-                    content: &current_user_content_text,
-                    role_str: Some("user".to_string()),
-                    parts: Some(json!([{"text": current_user_content_text}])),
-                    attachments: None,
-                    user_dek_secret_box: Some(dek_for_user_save_json),
-                    model_name: model_to_use.clone(),
-                    raw_prompt_debug: None, // User messages don't need raw prompt debug
-                    status: crate::models::chats::MessageStatus::Completed,
-                    error_message: None,
-                },
-            )
-            .await
-            {
-                Ok(saved_msg) => {
-                    debug!(message_id = %saved_msg.id, session_id = %session_id, "Successfully saved user message via chat_service (JSON path)");
-                    saved_msg
-                }
-                Err(e) => {
-                    error!(error = ?e, session_id = %session_id, "Error saving user message via chat_service (JSON path)");
-                    return Err(e);
-                }
-            };
+            // NOTE: User message was already saved above (around line 439) for agent analysis preprocessing
+            // We don't need to save it again here for the JSON path
 
             // RAG context is handled by build_final_llm_prompt.
             // The old RAG logic here is removed.
@@ -1341,10 +1310,33 @@ pub async fn generate_chat_response(
     }
 }
 
+/// Handler to get a chat session by ID
+#[instrument]
+pub async fn get_chat_session_handler(
+    State(state): State<AppState>,
+    Path(session_id): Path<Uuid>,
+    auth_session: CurrentAuthSession,
+) -> Result<Json<Chat>, AppError> {
+    let user = auth_session.user.ok_or_else(|| {
+        error!("User not found in session for session_id: {}", session_id);
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    let chat_session = chat::session_management::get_chat_session_by_id(
+        &state.pool,
+        user.id,
+        session_id,
+    )
+    .await?;
+
+    Ok(Json(chat_session))
+}
+
 pub fn chat_routes(state: AppState) -> Router<AppState> {
     info!("Entering chat_routes");
     Router::new()
         .route("/create_session", post(create_chat_session_handler))
+        .route("/sessions/:session_id", get(get_chat_session_handler))
         .route(
             "/:session_id/suggested-actions",
             post(generate_suggested_actions),

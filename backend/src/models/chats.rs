@@ -2,7 +2,7 @@ use crate::schema::{chat_messages, chat_sessions, message_variants};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
-use diesel::{PgConnection, ExpressionMethods, RunQueryDsl, QueryDsl, BoolExpressionMethods, NullableExpressionMethods};
+use diesel::{PgConnection, ExpressionMethods, RunQueryDsl, QueryDsl, BoolExpressionMethods};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 use uuid::Uuid;

@@ -30,6 +30,37 @@ use tracing::debug;
 use scribe_backend::crypto;
 use scribe_backend::models::users::User;
 
+// Helper function to authenticate and get auth cookie
+async fn authenticate_user(
+    router: &axum::Router<()>,
+    username: &str,
+    password: &str,
+) -> String {
+    let login_payload = json!({
+        "identifier": username,
+        "password": password
+    });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_string(&login_payload).unwrap()))
+        .unwrap();
+    let login_response = router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    assert_eq!(login_response.status(), StatusCode::OK);
+    login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("Set-Cookie header should be present")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
 /// Test creating a Character mode chat session (traditional mode)
 #[tokio::test]
 #[ignore] // For CI
@@ -42,6 +73,9 @@ async fn test_create_character_mode_chat_session() {
     )
     .await
     .expect("Failed to create test user");
+
+    // Authenticate user and get cookie
+    let auth_cookie = authenticate_user(&test_app.router, "chat_mode_user", "testpass").await;
 
     // Create a test character
     let character = test_helpers::db::create_test_character(
@@ -61,8 +95,9 @@ async fn test_create_character_mode_chat_session() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chat/session")
+        .uri("/api/chat/create_session")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, &auth_cookie)
         .body(Body::from(serde_json::to_string(&payload).unwrap()))
         .unwrap();
 
@@ -92,8 +127,9 @@ async fn test_create_character_mode_chat_session() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chat/session")
+        .uri("/api/chat/create_session")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, &auth_cookie)
         .body(Body::from(serde_json::to_string(&payload_default).unwrap()))
         .unwrap();
 
@@ -127,6 +163,9 @@ async fn test_create_scribe_assistant_mode_chat_session() {
     .await
     .expect("Failed to create test user");
 
+    // Authenticate user and get cookie
+    let auth_cookie = authenticate_user(&test_app.router, "assistant_user", "testpass").await;
+
     // Create ScribeAssistant mode session
     let payload = CreateChatSessionPayload {
         character_id: None, // No character for assistant mode
@@ -136,8 +175,9 @@ async fn test_create_scribe_assistant_mode_chat_session() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chat/session")
+        .uri("/api/chat/create_session")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, &auth_cookie)
         .body(Body::from(serde_json::to_string(&payload).unwrap()))
         .unwrap();
 
@@ -176,6 +216,9 @@ async fn test_create_rpg_mode_chat_session() {
     .await
     .expect("Failed to create test user");
 
+    // Authenticate user and get cookie
+    let auth_cookie = authenticate_user(&test_app.router, "rpg_user", "testpass").await;
+
     // Create RPG mode session
     let payload = CreateChatSessionPayload {
         character_id: None, // No character for RPG mode
@@ -185,8 +228,9 @@ async fn test_create_rpg_mode_chat_session() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chat/session")
+        .uri("/api/chat/create_session")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, &auth_cookie)
         .body(Body::from(serde_json::to_string(&payload).unwrap()))
         .unwrap();
 
@@ -225,6 +269,9 @@ async fn test_chat_mode_validation_errors() {
     .await
     .expect("Failed to create test user");
 
+    // Authenticate user and get cookie
+    let auth_cookie = authenticate_user(&test_app.router, "validation_user", "testpass").await;
+
     // Test 1: Character mode without character_id should fail
     let payload = CreateChatSessionPayload {
         character_id: None,
@@ -234,8 +281,9 @@ async fn test_chat_mode_validation_errors() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chat/session")
+        .uri("/api/chat/create_session")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, &auth_cookie)
         .body(Body::from(serde_json::to_string(&payload).unwrap()))
         .unwrap();
 
@@ -265,8 +313,9 @@ async fn test_chat_mode_validation_errors() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chat/session")
+        .uri("/api/chat/create_session")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, &auth_cookie)
         .body(Body::from(serde_json::to_string(&payload).unwrap()))
         .unwrap();
 
@@ -300,6 +349,9 @@ async fn test_character_operations_fail_for_non_character_modes() {
     .await
     .expect("Failed to create test user");
 
+    // Authenticate user and get cookie
+    let auth_cookie = authenticate_user(&test_app.router, "operation_user", "testpass").await;
+
     // Create a ScribeAssistant session
     let payload = CreateChatSessionPayload {
         character_id: None,
@@ -309,8 +361,9 @@ async fn test_character_operations_fail_for_non_character_modes() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/api/chat/session")
+        .uri("/api/chat/create_session")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, &auth_cookie)
         .body(Body::from(serde_json::to_string(&payload).unwrap()))
         .unwrap();
 
@@ -335,6 +388,7 @@ async fn test_character_operations_fail_for_non_character_modes() {
         .method(Method::POST)
         .uri(&format!("/api/chat/{}/generate", session.id))
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, &auth_cookie)
         .body(Body::from(serde_json::to_string(&generate_payload).unwrap()))
         .unwrap();
 
@@ -346,7 +400,7 @@ async fn test_character_operations_fail_for_non_character_modes() {
         .expect("Failed to execute request");
 
     // Should fail because generation is not yet implemented for non-character modes
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     // Test 2: Try to create character override (should fail)
     let override_payload = json!({
@@ -356,8 +410,9 @@ async fn test_character_operations_fail_for_non_character_modes() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri(&format!("/api/chat/{}/character-override", session.id))
+        .uri(&format!("/api/chat/overrides/{}", session.id))
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, &auth_cookie)
         .body(Body::from(serde_json::to_string(&override_payload).unwrap()))
         .unwrap();
 
@@ -376,7 +431,7 @@ async fn test_character_operations_fail_for_non_character_modes() {
 #[tokio::test]
 #[ignore] // For CI
 async fn test_chat_mode_persistence() {
-    let test_app = test_helpers::spawn_app(true, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(true, false, false).await;
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "persistence_user".to_string(),
@@ -384,6 +439,9 @@ async fn test_chat_mode_persistence() {
     )
     .await
     .expect("Failed to create test user");
+
+    // Authenticate user and get cookie
+    let auth_cookie = authenticate_user(&test_app.router, "persistence_user", "testpass").await;
 
     // Create sessions for each mode
     let modes = vec![
@@ -416,8 +474,9 @@ async fn test_chat_mode_persistence() {
 
         let request = Request::builder()
             .method(Method::POST)
-            .uri("/api/chat/session")
+            .uri("/api/chat/create_session")
             .header(header::CONTENT_TYPE, "application/json")
+            .header(header::COOKIE, &auth_cookie)
             .body(Body::from(serde_json::to_string(&payload).unwrap()))
             .unwrap();
 
@@ -443,6 +502,7 @@ async fn test_chat_mode_persistence() {
         let request = Request::builder()
             .method(Method::GET)
             .uri(&format!("/api/chat/sessions/{}", session_id))
+            .header(header::COOKIE, &auth_cookie)
             .body(Body::empty())
             .unwrap();
 

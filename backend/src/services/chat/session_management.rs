@@ -639,7 +639,7 @@ fn create_session_in_transaction(
         ChatSessionInsertParams {
             new_session_id,
             user_id,
-            character_id,
+            character_id: character_opt.as_ref().map(|c| c.id),
             chat_mode,
             encrypted_title_bytes,
             title_nonce_bytes,

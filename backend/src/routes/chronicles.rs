@@ -530,7 +530,7 @@ async fn get_character_name_for_session(
     user_id: Uuid,
 ) -> Result<Option<String>, AppError> {
     use crate::schema::{chat_sessions, characters};
-    use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods, JoinOnDsl, SelectableHelper, BoolExpressionMethods, NullableExpressionMethods};
+    use diesel::{QueryDsl, RunQueryDsl, ExpressionMethods, JoinOnDsl, NullableExpressionMethods};
     
     let conn = state.pool.get().await?;
     

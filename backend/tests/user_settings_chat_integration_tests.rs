@@ -68,6 +68,7 @@ async fn test_user_settings_auto_creation() {
     conn.interact(move |conn| {
         let db_settings: UserSettings = user_settings::table
             .filter(user_settings::user_id.eq(user_db.id))
+            .select(UserSettings::as_select())
             .first(conn)
             .expect("Settings should be saved to database");
 

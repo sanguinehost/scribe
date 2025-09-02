@@ -351,6 +351,7 @@ async fn perform_reasoning_chunk_stream_test(
     ];
 
     // Prepare expected events before moving mock_stream_items
+    // Content is now sent as structured JSON chunks with index and checksum
     let expected_events = vec![
         ParsedSseEvent {
             event: Some("thinking".to_string()),
@@ -358,7 +359,25 @@ async fn perform_reasoning_chunk_stream_test(
         },
         ParsedSseEvent {
             event: Some("content".to_string()),
-            data: "Final answer.".to_string(), // Remove trailing space to match actual events
+            data: serde_json::json!({
+                "index": 0,
+                "content": "Final answer. ",
+                "checksum": 2464006979u32  // CRC32 checksum of "Final answer. "
+            }).to_string(),
+        },
+        ParsedSseEvent {
+            event: Some("message_saved".to_string()),
+            data: serde_json::json!({
+                "message_id": "placeholder"  // Will be replaced with actual UUID pattern matching
+            }).to_string(),
+        },
+        ParsedSseEvent {
+            event: Some("content".to_string()),
+            data: serde_json::json!({
+                "index": 1,
+                "content": "",
+                "checksum": 0u32  // Empty content flush marker
+            }).to_string(),
         },
         ParsedSseEvent {
             event: Some("done".to_string()),
@@ -451,10 +470,21 @@ fn verify_reasoning_stream_events(
                         i, expected.data
                     )
                 });
-            assert_eq!(
-                actual_json, expected_json,
-                "Event data JSON mismatch at index {i}"
-            );
+            
+            // Special handling for message_saved event - check UUID pattern instead of exact match
+            if expected.event.as_deref() == Some("message_saved") {
+                assert!(actual_json.get("message_id").is_some(), 
+                        "message_saved event should have message_id field");
+                let message_id_str = actual_json.get("message_id").unwrap().as_str()
+                    .expect("message_id should be a string");
+                // Verify it's a valid UUID format
+                uuid::Uuid::parse_str(message_id_str).expect("message_id should be a valid UUID");
+            } else {
+                assert_eq!(
+                    actual_json, expected_json,
+                    "Event data JSON mismatch at index {i}"
+                );
+            }
         } else {
             assert_eq!(
                 actual.data, expected.data,

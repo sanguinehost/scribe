@@ -81,9 +81,9 @@ async fn test_character_generation_with_lorebook_context() {
         .header("cookie", &session_cookie)
         .body(Body::from(
             json!({
-                "name": "Lassenia Character Profile",
+                "entry_title": "Lassenia Character Profile",
                 "content": "Lassenia is the crown princess of the Ethereal Kingdom, known for her silver hair that glows faintly in moonlight and her ability to communicate with spirits. She stands tall at 5'8\" with piercing violet eyes that seem to see beyond the physical realm. Born with the rare gift of spirit magic, she serves as a bridge between the living and the dead.",
-                "keywords": ["Lassenia", "princess", "spirit magic", "silver hair", "violet eyes"]
+                "keys_text": "Lassenia, princess, spirit magic, silver hair, violet eyes"
             }).to_string()
         ))
         .unwrap();
@@ -99,9 +99,9 @@ async fn test_character_generation_with_lorebook_context() {
         .header("cookie", &session_cookie)
         .body(Body::from(
             json!({
-                "name": "Ethereal Kingdom",
+                "entry_title": "Ethereal Kingdom",
                 "content": "The Ethereal Kingdom exists at the crossroads between the material and spirit worlds. Its capital, Luminspire, is built from crystalline structures that amplify spiritual energy. The kingdom is ruled by those blessed with spirit magic, and the royal bloodline has maintained this gift for over a thousand years.",
-                "keywords": ["Ethereal Kingdom", "Luminspire", "spirit world", "crystalline", "royal bloodline"]
+                "keys_text": "Ethereal Kingdom, Luminspire, spirit world, crystalline, royal bloodline"
             }).to_string()
         ))
         .unwrap();
@@ -111,6 +111,10 @@ async fn test_character_generation_with_lorebook_context() {
 
     // Wait a moment for embedding processing
     tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+
+    // Set up mock response for retrieve_relevant_chunks (called during character generation)
+    test_app.mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![]));
 
     // Step 3: Test character generation with lorebook context
     let generate_request = Request::builder()
@@ -230,9 +234,9 @@ async fn test_alternate_greeting_generation_with_lorebook() {
         .header("cookie", &session_cookie)
         .body(Body::from(
             json!({
-                "name": "Mystic Academy Library",
+                "entry_title": "Mystic Academy Library",
                 "content": "The Grand Library of Mystic Academy contains thousands of ancient tomes and scrolls. Students often meet here for study sessions, but it's also where forbidden knowledge is hidden in the restricted section. The library is overseen by the stern but caring Librarian Thorne.",
-                "keywords": ["library", "academy", "study", "books", "forbidden knowledge", "Thorne"]
+                "keys_text": "library, academy, study, books, forbidden knowledge, Thorne"
             }).to_string()
         ))
         .unwrap();
@@ -242,6 +246,10 @@ async fn test_alternate_greeting_generation_with_lorebook() {
 
     // Wait for embedding processing
     tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+
+    // Set up mock response for retrieve_relevant_chunks (called during character generation)
+    test_app.mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![]));
 
     // Test alternate greeting generation with lorebook context
     let generate_request = Request::builder()
@@ -386,6 +394,13 @@ async fn test_character_generation_with_invalid_lorebook_id() {
     let session_cookie = login_response.headers().get("set-cookie")
         .unwrap().to_str().unwrap().split(';').next().unwrap().to_string();
 
+    // Set up mock response for retrieve_relevant_chunks (will be called even with invalid lorebook ID)
+    test_app.mock_embedding_pipeline_service
+        .add_retrieve_response(Ok(vec![]));
+
+    // The test uses mock AI - it should work with the default mock response
+    // No need to explicitly set response as MockAiClient returns "Mock AI response" by default
+
     // Test with non-existent lorebook_id (should still generate, but without lorebook context)
     let fake_lorebook_id = "550e8400-e29b-41d4-a716-446655440000"; // Valid UUID format
     
@@ -472,7 +487,7 @@ async fn test_request_validation_with_lorebook_integration() {
     let generate_response = test_app.router.clone().oneshot(generate_request).await.unwrap();
     
     // Should return validation error for malformed UUID
-    assert_eq!(generate_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(generate_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     
     println!("✅ Request validation properly handles malformed lorebook_id");
 }

@@ -562,7 +562,41 @@ pub async fn get_session_data_for_generation(
             .collect()
     } else {
         debug!(%session_id, "Using database-queried history ({} messages)", existing_messages_db_raw.len());
-        existing_messages_db_raw
+        
+        // Check if the last message in DB history matches the current user message being processed
+        // If so, exclude it to prevent duplication (the current user message is passed separately to the prompt builder)
+        if let Some(last_msg) = existing_messages_db_raw.last() {
+            // Check if it's a user message and content matches
+            if last_msg.message_type == MessageRole::User {
+                // Decrypt the message content to compare
+                let last_msg_content = match (last_msg.content_nonce.as_ref(), &user_dek_secret_box) {
+                    (Some(nonce_vec), Some(dek_arc)) if !last_msg.content.is_empty() && !nonce_vec.is_empty() => {
+                        // Decrypt the content
+                        match crate::crypto::decrypt_gcm(&last_msg.content, nonce_vec, dek_arc.as_ref()) {
+                            Ok(decrypted_bytes) => String::from_utf8_lossy(decrypted_bytes.expose_secret()).into_owned(),
+                            Err(_) => String::from_utf8_lossy(&last_msg.content).into_owned(), // Fallback to plaintext
+                        }
+                    }
+                    _ => String::from_utf8_lossy(&last_msg.content).into_owned(), // Content is plaintext
+                };
+                
+                // If the last DB message content matches the current user message, exclude it
+                if last_msg_content == user_message_content {
+                    debug!(%session_id, "Excluding last DB message as it matches current user message (preventing duplication)");
+                    if existing_messages_db_raw.len() > 1 {
+                        existing_messages_db_raw[..existing_messages_db_raw.len() - 1].to_vec()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    existing_messages_db_raw
+                }
+            } else {
+                existing_messages_db_raw
+            }
+        } else {
+            existing_messages_db_raw
+        }
     };
 
     // --- Retrieve User Settings for Context Management ---
@@ -1800,7 +1834,8 @@ pub async fn stream_ai_response_and_save_message(
         
         // Add a significant delay to ensure all content chunks are flushed through the SSE pipeline
         // This is critical to prevent the stream from ending before chunks reach the frontend
-        if !accumulated_content.is_empty() {
+        // Only do this for successful streams (not when an error occurred)
+        if !accumulated_content.is_empty() && !stream_error_occurred {
             info!(
                 total_chunks = chunk_index,
                 total_content_len = accumulated_content.len(),
@@ -1815,6 +1850,7 @@ pub async fn stream_ai_response_and_save_message(
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
             
             // Send a final "flush" event to ensure the pipeline is clear
+            // Only send this if the stream completed successfully (no error occurred)
             yield Ok(ScribeSseEvent::Content(serde_json::to_string(&super::types::StreamedChunk {
                 index: chunk_index,
                 content: String::new(), // Empty content as a flush marker

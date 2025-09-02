@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post, put},
+    routing::{get, put},
 };
 use axum_login::AuthSession;
 use chrono::{DateTime, Utc};

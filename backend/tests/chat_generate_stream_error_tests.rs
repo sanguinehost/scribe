@@ -171,10 +171,15 @@ async fn generate_chat_response_streaming_ai_error() {
     ];
 
     // Extract expected events before moving mock_stream_items
+    // Content is now sent as structured JSON chunks with index and checksum
     let expected_events = vec![
         ParsedSseEvent {
             event: Some("content".to_string()),
-            data: "Partial".to_string(), // Remove the trailing space to match actual events
+            data: serde_json::json!({
+                "index": 0,
+                "content": "Partial ",
+                "checksum": 2858458310u32  // CRC32 checksum of "Partial "
+            }).to_string(),
         },
         ParsedSseEvent {
             event: Some("error".to_string()),
@@ -1013,10 +1018,15 @@ async fn generate_chat_response_streaming_genai_json_error() {
     ];
 
     // Prepare expected events before moving mock_stream_items
+    // Content is now sent as structured JSON chunks with index and checksum
     let expected_events = vec![
         ParsedSseEvent {
             event: Some("content".to_string()),
-            data: "Some initial content.".to_string(), // Remove trailing space to match actual events
+            data: serde_json::json!({
+                "index": 0,
+                "content": "Some initial content. ",
+                "checksum": 1635327112u32  // CRC32 checksum of "Some initial content. "
+            }).to_string(),
         },
         ParsedSseEvent {
             event: Some("error".to_string()),

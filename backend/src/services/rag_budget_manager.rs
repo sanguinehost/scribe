@@ -217,7 +217,7 @@ impl DynamicRagSelector {
             };
             
             // Check if we can fit this chunk in the budget
-            if selected_chunks.is_empty() || used_tokens + chunk_tokens <= available_budget {
+            if used_tokens + chunk_tokens <= available_budget {
                 used_tokens += chunk_tokens;
                 
                 debug!(
