@@ -119,9 +119,25 @@ jobs:
       with:
         patterns: |
           -**/tests/**:*
+          -**/*_test.rs:*
+          -**/*_tests.rs:*
+          -**/test_*.rs:*
           -**/test_helpers.rs:*
+          -**/test_fixtures.rs:*
+          -**/src/**/tests.rs:*
+          -**/src/**/tests/**:*
         input: sarif-results/${{ matrix.language }}.sarif
         output: sarif-results/${{ matrix.language }}-filtered.sarif
+
+    - name: Debug SARIF filtering
+      if: steps.check-sarif.outputs.sarif-exists == 'true'
+      run: |
+        echo "Original SARIF results count:"
+        grep -c '"ruleId"' sarif-results/${{ matrix.language }}.sarif || echo "0"
+        echo "Filtered SARIF results count:"
+        grep -c '"ruleId"' sarif-results/${{ matrix.language }}-filtered.sarif || echo "0"
+        echo "Files sizes:"
+        ls -lh sarif-results/${{ matrix.language }}*.sarif
 
     - name: Upload filtered SARIF
       if: steps.check-sarif.outputs.sarif-exists == 'true'

@@ -585,7 +585,7 @@
 
 	// User persona for template substitution
 	let currentUserPersona = $state<UserPersona | null>(null);
-	let userPersonaName = $state('User'); // Fallback to 'User'
+	let userPersonaName = $derived(currentUserPersona?.name || 'User');
 
 	// --- State for chat interface visibility ---
 	// The chat interface visibility now depends on the chat mode strategy
@@ -694,17 +694,20 @@
 				const personaResult = await apiClient.getUserPersona(currentUser.default_persona_id);
 				if (personaResult.isOk()) {
 					currentUserPersona = personaResult.value;
-					userPersonaName = currentUserPersona.name || 'User';
 				} else {
 					console.warn('Failed to load user persona:', personaResult.error);
-					userPersonaName = currentUser.username || 'User';
+					// Create a fallback persona with username
+					if (currentUser.username) {
+						currentUserPersona = { name: currentUser.username } as UserPersona;
+					}
 				}
 			} else if (currentUser?.username) {
-				userPersonaName = currentUser.username;
+				// Create a fallback persona with username
+				currentUserPersona = { name: currentUser.username } as UserPersona;
 			}
 		} catch (error) {
 			console.warn('Error loading user persona:', error);
-			userPersonaName = 'User';
+			// currentUserPersona remains null, so userPersonaName will be 'User'
 		}
 	}
 
