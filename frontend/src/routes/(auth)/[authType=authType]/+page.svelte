@@ -66,17 +66,12 @@
 	<div class="flex w-full max-w-md flex-col gap-12 overflow-hidden rounded-2xl">
 		<div class="flex flex-col items-center justify-center gap-4 px-4 text-center sm:px-16">
 			<div class="flex flex-col items-center gap-3">
-				<div
-					class="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500"
-				>
-					<svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-						></path>
-					</svg>
+				<div class="h-12 w-12 rounded-xl overflow-hidden">
+					<img
+						src="/logo_mini.png"
+						alt="Sanguine Scribe Logo"
+						class="h-full w-full object-contain"
+					/>
 				</div>
 				<h1
 					class="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-2xl font-bold text-transparent dark:text-zinc-50"
