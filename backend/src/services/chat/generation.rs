@@ -1515,7 +1515,8 @@ pub async fn stream_ai_response_and_save_message(
         Err(e) => {
             error!(error = ?e, "Failed to initiate AI stream from chat_service");
             let error_stream = async_stream::stream! {
-                let error_msg = format!("LLM API error (chat_service): Failed to initiate stream - {e}");
+                let sanitized_error = crate::errors::sanitize_error_message(&e.to_string());
+                let error_msg = format!("LLM API error (chat_service): Failed to initiate stream - {sanitized_error}");
                 trace!(error_message = %error_msg, "Sending SSE 'error' event (initiation failed in service)");
                 yield Ok::<_, AppError>(ScribeSseEvent::Error(error_msg));
             };
@@ -1675,7 +1676,8 @@ pub async fn stream_ai_response_and_save_message(
                         } else if detailed_error.contains("GeminiError") {
                             "LLM API error: The AI service encountered a parsing error. Please try again or consider rephrasing your message.".to_string()
                         } else {
-                            format!("LLM API error: Failed to parse response from AI service - {}", detailed_error)
+                            let sanitized_error = crate::errors::sanitize_error_message(&detailed_error);
+                            format!("LLM API error: Failed to parse response from AI service - {}", sanitized_error)
                         }
                     } else if detailed_error.contains("safety") || detailed_error.contains("blocked") {
                         // Handle safety filter blocks
@@ -1687,7 +1689,8 @@ pub async fn stream_ai_response_and_save_message(
                         // Handle timeouts
                         "LLM API error: The request timed out. Please try again.".to_string()
                     } else {
-                        format!("LLM API error: {detailed_error}")
+                        let sanitized_error = crate::errors::sanitize_error_message(&detailed_error);
+                        format!("LLM API error: {sanitized_error}")
                     };
                     trace!(error_message = %client_error_message, "Sending SSE 'error' event from chat_service");
                     yield Ok(ScribeSseEvent::Error(client_error_message));
