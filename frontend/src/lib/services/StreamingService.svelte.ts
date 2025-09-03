@@ -341,6 +341,7 @@ class StreamingService {
 		model?: string;
 		agentMode?: string;
 		analysisMode?: 'existing' | 'refresh' | 'skip'; // For variant regeneration
+		isRegeneration?: boolean; // If true, don't add the user message again
 	}): Promise<void> {
 		// Connect to streaming service
 
@@ -364,15 +365,17 @@ class StreamingService {
 			shouldClose: false
 		};
 
-		// Add user message optimistically
-		const userMessage: StreamingMessage = {
-			id: crypto.randomUUID(),
-			content: params.userMessage,
-			displayedContent: params.userMessage, // User messages show immediately
-			sender: 'user',
-			created_at: new Date().toISOString()
-		};
-		this.messages = [...this.messages, userMessage];
+		// Add user message optimistically (skip for regeneration since it already exists)
+		if (!params.isRegeneration) {
+			const userMessage: StreamingMessage = {
+				id: crypto.randomUUID(),
+				content: params.userMessage,
+				displayedContent: params.userMessage, // User messages show immediately
+				sender: 'user',
+				created_at: new Date().toISOString()
+			};
+			this.messages = [...this.messages, userMessage];
+		}
 
 		// NEW ARCHITECTURE: Create assistant message with buffer-first approach
 		const assistantMessage: StreamingMessage = {

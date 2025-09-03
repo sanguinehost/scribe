@@ -1214,7 +1214,8 @@
 				history: historyToSend.slice(0, -1), // Exclude the last user message since it's passed separately
 				model: currentModel || undefined,
 				agentMode: agentMode,
-				analysisMode: analysisMode // Pass the analysis mode for regeneration
+				analysisMode: analysisMode, // Pass the analysis mode for regeneration
+				isRegeneration: true // Prevent duplicate user message
 			});
 
 			// Update chat preview after successful regeneration
