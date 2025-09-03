@@ -6,7 +6,7 @@ use aws_sdk_ses::{
 use std::error::Error as StdError;
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// Errors that can occur when sending emails
 #[derive(Error, Debug)]
@@ -19,6 +19,37 @@ pub enum EmailError {
 
 /// Result type for email operations
 pub type EmailResult<T> = Result<T, EmailError>;
+
+/// Helper function to redact sensitive tokens for logging
+/// Shows first 8 and last 4 characters, masks the middle
+fn redact_token(token: &str) -> String {
+    if token.len() <= 12 {
+        // For short tokens, show even less
+        format!("{}***", &token[..token.len().min(4)])
+    } else {
+        format!("{}***{}", &token[..8], &token[token.len() - 4..])
+    }
+}
+
+/// Helper function to partially mask email addresses for logging
+/// Shows first character and domain, masks the middle
+fn mask_email(email: &str) -> String {
+    if let Some(at_pos) = email.find('@') {
+        let (local, domain) = email.split_at(at_pos);
+        if local.len() <= 1 {
+            format!("***{}", domain)
+        } else {
+            format!("{}***{}", &local[..1], domain)
+        }
+    } else {
+        // Invalid email format, mask most of it
+        if email.len() <= 2 {
+            "***".to_string()
+        } else {
+            format!("{}***", &email[..1])
+        }
+    }
+}
 
 /// Trait defining email sending capabilities
 #[async_trait]
@@ -34,6 +65,10 @@ pub trait EmailService: Send + Sync {
 
 /// Development email service that logs verification links to console
 /// instead of sending actual emails
+/// 
+/// ⚠️  SECURITY WARNING: This service is for DEVELOPMENT ONLY!
+/// It logs email verification information to console and should NEVER be used in production.
+/// Sensitive data (emails, tokens) are redacted in logs but still visible in console output.
 #[derive(Debug, Clone)]
 pub struct LoggingEmailService {
     base_url: String,
@@ -54,21 +89,31 @@ impl EmailService for LoggingEmailService {
         username: &str,
         verification_token: &str,
     ) -> EmailResult<()> {
+        // Redact sensitive information for secure logging
+        let redacted_token = redact_token(verification_token);
+        let masked_email = mask_email(to_email);
+        let redacted_link = format!("{}/verify-email?token={}", self.base_url, redacted_token);
+        
+        // Create the actual verification link (not logged)
         let verification_link = format!(
             "{}/verify-email?token={}",
             self.base_url, verification_token
         );
 
-        info!(
-            to_email = %to_email,
+        // Log with redacted information at debug level
+        debug!(
+            to_email = %masked_email,
             username = %username,
-            verification_link = %verification_link,
-            "📧 EMAIL VERIFICATION (DEV MODE) - Click the link below to verify your account:"
+            verification_link = %redacted_link,
+            "📧 EMAIL VERIFICATION (DEV MODE) - Verification email would be sent (sensitive data redacted)"
         );
 
+        // Console output for development convenience - includes actual link for testing
+        // ⚠️ WARNING: Real verification token is visible in console for development purposes
         println!("\n🔗 EMAIL VERIFICATION LINK for {}:", username);
         println!("   {}", verification_link);
-        println!("   (This would normally be sent to: {})\n", to_email);
+        println!("   (This would normally be sent to: {})", to_email);
+        println!("   ⚠️  DEV MODE: Sensitive data visible in console but redacted in logs\n");
 
         Ok(())
     }
@@ -253,8 +298,54 @@ pub async fn create_email_service(
             Ok(Arc::new(service))
         }
         _ => {
-            info!("Creating logging email service for development");
+            info!("Creating logging email service for development - sensitive data will be redacted in logs");
             Ok(Arc::new(LoggingEmailService::new(base_url)))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_redact_token() {
+        // Test long token
+        let long_token = "abcdef1234567890wxyz1234567890";
+        let redacted = redact_token(long_token);
+        assert_eq!(redacted, "abcdef12***7890");
+        
+        // Test short token
+        let short_token = "abc123";
+        let redacted = redact_token(short_token);
+        assert_eq!(redacted, "abc1***");
+        
+        // Test very short token
+        let tiny_token = "ab";
+        let redacted = redact_token(tiny_token);
+        assert_eq!(redacted, "ab***");
+    }
+
+    #[test]
+    fn test_mask_email() {
+        // Test normal email
+        let email = "john.doe@example.com";
+        let masked = mask_email(email);
+        assert_eq!(masked, "j***@example.com");
+        
+        // Test single char local part
+        let email = "a@example.com";
+        let masked = mask_email(email);
+        assert_eq!(masked, "***@example.com");
+        
+        // Test invalid email (no @)
+        let email = "notanemail";
+        let masked = mask_email(email);
+        assert_eq!(masked, "n***");
+        
+        // Test very short invalid email
+        let email = "no";
+        let masked = mask_email(email);
+        assert_eq!(masked, "n***");
     }
 }
