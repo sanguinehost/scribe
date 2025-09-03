@@ -1445,20 +1445,11 @@
 		const userMessage = (streamingService.messages as StreamingMessage[])[userMessageIndex];
 		if (userMessage.sender !== 'user') return;
 
-		// Clear the error state and set to animating (NEW: use isAnimating instead of loading)
+		// Remove the failed assistant message and any messages after it
+		// This prevents the "Thinking..." state from getting stuck when streamingService creates a new message
 		const allMessages = [...(streamingService.messages as StreamingMessage[])];
-		allMessages[messageIndex] = {
-			...allMessages[messageIndex],
-			isAnimating: true,
-			error: undefined,
-			retryable: false,
-			content: '',
-			displayedContent: '' // Reset displayed content for animation
-		};
-
-		// Remove any messages after the failed one (they were dependent on the failed generation)
-		const messagesToRemove = allMessages.slice(messageIndex + 1);
-		streamingService.messages = allMessages.slice(0, messageIndex + 1);
+		const messagesToRemove = allMessages.slice(messageIndex); // Include the failed message
+		streamingService.messages = allMessages.slice(0, messageIndex); // Keep only up to the user message
 
 		// Clean up variant data for removed messages
 		for (const removedMsg of messagesToRemove) {
