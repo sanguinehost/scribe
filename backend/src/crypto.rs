@@ -255,9 +255,8 @@ mod tests {
             Err(CryptoError::Base64DecodeError(_)) => {
                 // This is the expected error path for a salt that fails base64 decoding.
             }
-            Ok(secret_val) => panic!(
-                "Expected CryptoError::Base64DecodeError for invalid salt, got Ok({:?})",
-                secret_val.expose_secret() // Expose for test display if absolutely needed, or just indicate Ok type
+            Ok(_) => panic!(
+                "Expected CryptoError::Base64DecodeError for invalid salt, got Ok(_)"
             ),
             Err(e) => {
                 panic!("Expected CryptoError::Base64DecodeError for invalid salt, got Err({e:?})")
