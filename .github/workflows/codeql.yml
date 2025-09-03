@@ -100,3 +100,20 @@ jobs:
       uses: github/codeql-action/analyze@v3
       with:
         category: "/language:${{matrix.language}}"
+        output: sarif-results
+        upload: false
+
+    - name: Filter SARIF to exclude test files
+      uses: advanced-security/filter-sarif@v1
+      with:
+        patterns: |
+          -**/tests/**:*
+          -**/test_helpers.rs:*
+        input: sarif-results/${{ matrix.language }}.sarif
+        output: sarif-results/${{ matrix.language }}-filtered.sarif
+
+    - name: Upload filtered SARIF
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: sarif-results/${{ matrix.language }}-filtered.sarif
+        category: "/language:${{matrix.language}}"
