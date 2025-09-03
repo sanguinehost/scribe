@@ -1572,6 +1572,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         analysis_mode: None,
     };
     // client is from login_user_via_api
+    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -1904,6 +1905,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         analysis_mode: None,
     };
     // client is from login_user_via_api
+    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2236,6 +2238,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         analysis_mode: None,
     };
     // client is from login_user_via_api
+    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2294,6 +2297,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
             usage: Usage::default(),
         }));
     // Client is reused from above
+    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let response_2 = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2594,6 +2598,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         analysis_mode: None,
     };
     // client is from login_user_via_api
+    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2926,6 +2931,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         analysis_mode: None,
     };
     // client is from login_user_via_api
+    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2984,6 +2990,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
             usage: Usage::default(),
         }));
     // Client is reused from above
+    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let response_2 = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -3043,7 +3050,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     tracing::info!("Created test user with ID: {}", user.id);
     let (client, auth_cookie) =
         test_helpers::login_user_via_api(&test_app, username, password).await;
-    tracing::info!("Logged in with auth cookie: {}", auth_cookie);
+    tracing::info!("Logged in successfully (cookie redacted for security)");
 
     // Create a test character
     tracing::info!("Creating test character");
@@ -3176,6 +3183,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     }
 
     // client is from login_user_via_api
+    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -3431,6 +3439,7 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
     };
 
     let client = reqwest::Client::new();
+    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe  
     let response = client
         .post(format!("{}/api/chat/{}/generate", test_app.address, uuid))
         .header(

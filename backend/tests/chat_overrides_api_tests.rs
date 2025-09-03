@@ -28,6 +28,7 @@ mod chat_overrides_api_tests {
 
         let request_url = format!("{}/api/chat/create_session", test_app.address);
 
+        // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
         let response = client
             .post(&request_url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
