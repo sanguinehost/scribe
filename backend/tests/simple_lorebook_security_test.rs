@@ -476,7 +476,6 @@ async fn test_lorebook_deletion_cleans_up_vectors() {
         "is_public": false
     });
 
-    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let create_response = client
         .post(format!("{}/api/lorebooks", test_app.address).as_str()) // Use test_app.address
         .header(reqwest::header::COOKIE, &auth_cookie) // Add auth_cookie
@@ -506,7 +505,6 @@ async fn test_lorebook_deletion_cleans_up_vectors() {
         "placement_hint": "before_prompt"
     });
 
-    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let create_entry_response = client
         .post(format!("{}/api/lorebooks/{}/entries", test_app.address, lorebook_id).as_str()) // Use test_app.address and include lorebook_id
         .header(reqwest::header::COOKIE, &auth_cookie) // Add auth_cookie
@@ -518,7 +516,6 @@ async fn test_lorebook_deletion_cleans_up_vectors() {
     assert!(create_entry_response.status().is_success()); // Changed is_ok() to is_success()
 
     // 3. Delete the lorebook
-    // codeql[cpp/cleartext-transmission] - Test code using localhost HTTP is safe
     let delete_response = client
         .delete(format!("{}/api/lorebooks/{}", test_app.address, lorebook_id).as_str()) // Use test_app.address
         .header(reqwest::header::COOKIE, &auth_cookie) // Add auth_cookie
