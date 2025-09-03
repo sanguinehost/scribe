@@ -284,6 +284,7 @@
 			threshold: 200,
 			debounce: 300
 		}}
+		on:loadmore={() => onLoadMore?.()}
 	>
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
 		{#if settingsStore.isVisible || settingsStore.isTransitioning}
