@@ -21,7 +21,8 @@
 		UserPersona,
 		UpdateChatSessionSettingsRequest,
 		ChatSessionSettingsResponse,
-		UserSettingsResponse // Import UserSettingsResponse
+		UserSettingsResponse, // Import UserSettingsResponse
+		CreateChronicleRequest
 	} from '$lib/types';
 	import {
 		chatModels,
@@ -88,6 +89,12 @@
 	let currentChronicleId = $state<string | null>(null);
 	let availableChronicles = $state<PlayerChronicleWithCounts[]>([]);
 	let isLoadingChronicles = $state(false);
+	
+	// Chronicle creation state
+	let showChronicleCreationForm = $state(false);
+	let newChronicleName = $state('');
+	let newChronicleDescription = $state('');
+	let isCreatingChronicle = $state(false);
 
 	// Override tracking
 	let hasOverrides = $derived(() => {
@@ -336,6 +343,49 @@
 			toast.error('Failed to update chronicle association');
 		}
 		isLoading = false;
+	}
+
+	async function createChronicle() {
+		if (!newChronicleName.trim()) {
+			toast.error('Chronicle name is required');
+			return;
+		}
+
+		isCreatingChronicle = true;
+		try {
+			const data: CreateChronicleRequest = {
+				name: newChronicleName.trim(),
+				description: newChronicleDescription.trim() || undefined
+			};
+
+			const result = await apiClient.createChronicle(data);
+			if (result.isOk()) {
+				toast.success('Chronicle created successfully');
+				// Refresh chronicles list
+				await loadChronicles();
+				// Auto-link the new chronicle to this chat if we have one
+				if (chat?.id) {
+					await updateChronicleAssociation(result.value.id);
+				}
+				// Reset form and hide it
+				newChronicleName = '';
+				newChronicleDescription = '';
+				showChronicleCreationForm = false;
+			} else {
+				toast.error('Failed to create chronicle');
+				console.error('Error creating chronicle:', result.error);
+			}
+		} catch (error) {
+			console.error('Error creating chronicle:', error);
+			toast.error('Failed to create chronicle');
+		}
+		isCreatingChronicle = false;
+	}
+
+	function cancelChronicleCreation() {
+		newChronicleName = '';
+		newChronicleDescription = '';
+		showChronicleCreationForm = false;
 	}
 
 	async function saveSettings() {
@@ -663,24 +713,80 @@
 									<Skeleton class="h-4 w-3/4" />
 								</div>
 							{:else}
-								<div class="space-y-2">
-									<Label for="chronicle-select">Link to Chronicle</Label>
-									<select
-										id="chronicle-select"
-										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={currentChronicleId}
-										onchange={(e) => updateChronicleAssociation(e.currentTarget.value || null)}
-									>
-										<option value={null}>No chronicle (unlinked)</option>
-										{#each availableChronicles as chronicle}
-											<option value={chronicle.id}>{chronicle.name}</option>
-										{/each}
-									</select>
-									<p class="text-xs text-muted-foreground">
-										Link this chat to a chronicle to organize related conversations and make them
-										available for RAG queries.
-									</p>
-									{#if currentChronicleId}
+								<div class="space-y-3">
+									{#if !showChronicleCreationForm}
+										<div class="space-y-2">
+											<div class="flex items-center justify-between">
+												<Label for="chronicle-select">Link to Chronicle</Label>
+												<Button
+													variant="outline"
+													size="sm"
+													onclick={() => (showChronicleCreationForm = true)}
+													disabled={isCreatingChronicle}
+												>
+													Create New
+												</Button>
+											</div>
+											<select
+												id="chronicle-select"
+												class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+												bind:value={currentChronicleId}
+												onchange={(e) => updateChronicleAssociation(e.currentTarget.value || null)}
+											>
+												<option value={null}>No chronicle (unlinked)</option>
+												{#each availableChronicles as chronicle}
+													<option value={chronicle.id}>{chronicle.name}</option>
+												{/each}
+											</select>
+											<p class="text-xs text-muted-foreground">
+												Link this chat to a chronicle to organize related conversations and make them
+												available for RAG queries.
+											</p>
+										</div>
+									{:else}
+										<!-- Chronicle Creation Form -->
+										<div class="space-y-3 rounded-md border p-3">
+											<div class="flex items-center justify-between">
+												<Label class="text-sm font-medium">Create New Chronicle</Label>
+												<Button
+													variant="ghost"
+													size="sm"
+													onclick={cancelChronicleCreation}
+													disabled={isCreatingChronicle}
+												>
+													Cancel
+												</Button>
+											</div>
+											<div class="space-y-2">
+												<Label for="chronicle-name">Name</Label>
+												<Input
+													id="chronicle-name"
+													bind:value={newChronicleName}
+													placeholder="Enter chronicle name..."
+													disabled={isCreatingChronicle}
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="chronicle-description">Description (optional)</Label>
+												<Textarea
+													id="chronicle-description"
+													bind:value={newChronicleDescription}
+													placeholder="Describe what this chronicle is about..."
+													disabled={isCreatingChronicle}
+													rows={3}
+												/>
+											</div>
+											<Button
+												onclick={createChronicle}
+												disabled={isCreatingChronicle || !newChronicleName.trim()}
+												class="w-full"
+											>
+												{isCreatingChronicle ? 'Creating...' : 'Create Chronicle'}
+											</Button>
+										</div>
+									{/if}
+
+									{#if currentChronicleId && !showChronicleCreationForm}
 										{@const linkedChronicle = availableChronicles.find(
 											(c) => c.id === currentChronicleId
 										)}

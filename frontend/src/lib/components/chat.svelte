@@ -67,6 +67,7 @@
 	let showChronicleOptIn = $state(false);
 	let pendingMessage = $state<string | null>(null);
 	let chroniclePreference: boolean | null = $state(null);
+	let hasExplicitChronicleChoice = $state(false); // Track if user made explicit choice for this session
 
 	// Regeneration modal state
 	let showRegenerationModal = $state(false);
@@ -94,6 +95,8 @@
 		if (chat?.id) {
 			selectedCharacterStore.clear();
 			selectedPersonaStore.clear();
+			// Reset explicit choice flag when switching to a new chat
+			hasExplicitChronicleChoice = false;
 		}
 	});
 
@@ -403,10 +406,12 @@
 
 			// Check if messages array actually changed to avoid unnecessary work
 			// Use both reference equality and length check for robustness
-			if (streamingMessages === lastStreamingMessages || 
-				(Array.isArray(lastStreamingMessages) && 
-				 streamingMessages.length === lastStreamingMessages.length &&
-				 streamingMessages.every((msg, idx) => msg === lastStreamingMessages[idx]))) {
+			if (
+				streamingMessages === lastStreamingMessages ||
+				(Array.isArray(lastStreamingMessages) &&
+					streamingMessages.length === lastStreamingMessages.length &&
+					streamingMessages.every((msg, idx) => msg === lastStreamingMessages[idx]))
+			) {
 				console.log('⚠️ displayMessages: Using cached result, no change detected');
 				return Array.from(messageCache.values());
 			}
@@ -948,6 +953,9 @@
 
 	// Handle chronicle opt-in choice
 	function handleChronicleChoice(enableChronicle: boolean, rememberChoice: boolean) {
+		// Mark that user made an explicit choice for this session
+		hasExplicitChronicleChoice = true;
+
 		if (rememberChoice && browser) {
 			localStorage.setItem('chroniclePreference', String(enableChronicle));
 			chroniclePreference = enableChronicle;
@@ -1038,15 +1046,26 @@
 		}
 
 		// Check if we need to show chronicle opt-in
-		// Show if: no chronicle, first user message, and no saved preference
-		if (!chat.player_chronicle_id && isFirstUserMessage() && chroniclePreference === null) {
+		// Show if: no chronicle, first user message, no saved preference, and no explicit choice made
+		if (
+			!chat.player_chronicle_id &&
+			isFirstUserMessage() &&
+			chroniclePreference === null &&
+			!hasExplicitChronicleChoice
+		) {
 			pendingMessage = content;
 			showChronicleOptIn = true;
 			return;
 		}
 
 		// If user has a saved preference and no chronicle, handle it automatically
-		if (!chat.player_chronicle_id && isFirstUserMessage() && chroniclePreference === true) {
+		// BUT only if they haven't made an explicit choice for this session
+		if (
+			!chat.player_chronicle_id &&
+			isFirstUserMessage() &&
+			chroniclePreference === true &&
+			!hasExplicitChronicleChoice
+		) {
 			await createChronicleForChat();
 		}
 

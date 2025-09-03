@@ -13,7 +13,6 @@ use crate::{
     llm::AiClient,
     models::{
         chats::{ChatMessage, MessageRole},
-        chronicle::CreateChronicleRequest,
         chronicle_event::CreateEventRequest,
     },
     services::{
@@ -276,63 +275,33 @@ RULES:
             }
         }
 
-        // Auto-create chronicle if needed (AFTER successful AI response)
-        if chronicle_id.is_none() {
-            info!(
-                "No chronicle found, auto-creating for chat session {}",
-                chat_session_id
-            );
-
-            // Get the character name from the chat session
-            let character_name = self
-                .get_character_name_for_session(chat_session_id)
-                .await
-                .ok()
-                .flatten();
-
-            // Generate a chronicle name
-            let chronicle_name = self
-                .generate_chronicle_name_from_messages(messages, session_dek, character_name)
-                .await?;
-            let chronicle_description = format!(
-                "Automatically created chronicle for chat session on {}",
-                chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
-            );
-
-            let chronicle_request = CreateChronicleRequest {
-                name: chronicle_name,
-                description: Some(chronicle_description),
-            };
-
-            let created_chronicle = self
-                .chronicle_service
-                .create_chronicle(user_id, chronicle_request)
-                .await?;
-            chronicle_id = Some(created_chronicle.id);
-            info!(
-                "Auto-created chronicle '{}': {}",
-                created_chronicle.name, created_chronicle.id
-            );
-
-            // Link the chat session to the chronicle
-            if let Err(e) = self
-                .chronicle_service
-                .link_chat_session(user_id, chat_session_id, created_chronicle.id)
-                .await
-            {
-                error!(
-                    "Failed to link chronicle {} to chat session {}: {}",
-                    created_chronicle.id, chat_session_id, e
+        // Skip chronicle event creation if no chronicle is linked to the session
+        // This respects the user's choice not to enable chronicles
+        let chronicle_id = match chronicle_id {
+            Some(id) => id,
+            None => {
+                info!(
+                    "No chronicle linked to chat session {}, skipping chronicle event creation",
+                    chat_session_id
                 );
+                // Return a default result indicating no chronicle processing was done
+                return Ok(NarrativeWorkflowResult {
+                    triage_result: TriageResult {
+                        is_significant: false,
+                        summary: "No chronicle linked - skipped processing".to_string(),
+                        event_type: "SKIPPED".to_string(),
+                        confidence: 0.0,
+                    },
+                    actions_taken,
+                    execution_results: vec![json!({
+                        "success": true,
+                        "skipped": true,
+                        "message": "No chronicle linked to session - skipped chronicle event creation"
+                    })],
+                    cost_estimate: 0.0,
+                });
             }
-        }
-
-        // We must have a chronicle_id at this point
-        let chronicle_id = chronicle_id.ok_or_else(|| {
-            AppError::InternalServerErrorGeneric(
-                "Chronicle ID not available after creation".to_string(),
-            )
-        })?;
+        };
 
         // Create the chronicle event directly
         let event_request = CreateEventRequest {
