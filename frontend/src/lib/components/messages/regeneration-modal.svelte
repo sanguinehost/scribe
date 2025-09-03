@@ -4,6 +4,7 @@
 	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import { RadioGroupItem } from '$lib/components/ui/radio-group';
 	import { Label } from '$lib/components/ui/label';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import { Zap, Brain, X } from 'lucide-svelte';
 
 	export type AnalysisMode = 'existing' | 'refresh' | 'skip';
@@ -14,17 +15,21 @@
 		onCancel
 	}: {
 		open: boolean;
-		onConfirm: (mode: AnalysisMode) => void;
+		onConfirm: (mode: AnalysisMode, guidance?: string) => void;
 		onCancel?: () => void;
 	} = $props();
 
 	let selectedMode = $state<AnalysisMode>('existing');
+	let guidance = $state('');
 
 	function handleConfirm() {
-		onConfirm(selectedMode);
+		// Pass guidance text if provided, otherwise undefined
+		const guidanceText = guidance.trim() || undefined;
+		onConfirm(selectedMode, guidanceText);
 		open = false;
 		// Reset to default for next time
 		selectedMode = 'existing';
+		guidance = '';
 	}
 
 	function handleCancel() {
@@ -32,6 +37,7 @@
 		open = false;
 		// Reset to default for next time
 		selectedMode = 'existing';
+		guidance = '';
 	}
 
 	function handleOpenChange(newOpen: boolean) {
@@ -39,6 +45,7 @@
 		if (!newOpen) {
 			// Reset when closing
 			selectedMode = 'existing';
+			guidance = '';
 		}
 	}
 </script>
@@ -107,6 +114,20 @@
 					</Label>
 				</div>
 			</RadioGroup.Root>
+
+			<!-- Optional Guidance Section -->
+			<div class="space-y-2 border-t pt-4">
+				<Label for="guidance" class="text-sm font-medium">Add guidance (optional)</Label>
+				<Textarea
+					id="guidance"
+					bind:value={guidance}
+					placeholder="e.g., 'Focus more on the emotional aspects' or 'Be more concise'"
+					class="min-h-[60px] resize-none text-sm"
+				/>
+				<p class="text-xs text-muted-foreground">
+					Provide optional instructions to guide how the AI should regenerate the response.
+				</p>
+			</div>
 		</div>
 
 		<Dialog.Footer>

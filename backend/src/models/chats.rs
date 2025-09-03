@@ -1392,6 +1392,7 @@ pub struct GenerateChatRequest {
     pub model: Option<String>,
     pub query_text_for_rag: Option<String>,
     pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
+    pub guidance: Option<String>, // Optional guidance text for regeneration steering
 }
 
 impl std::fmt::Debug for GenerateChatRequest {
@@ -1411,6 +1412,7 @@ impl std::fmt::Debug for GenerateChatRequest {
                 &self.query_text_for_rag.as_ref().map(|_| "[REDACTED]"),
             )
             .field("analysis_mode", &self.analysis_mode)
+            .field("guidance", &self.guidance.as_ref().map(|_| "[REDACTED]"))
             .finish()
     }
 }

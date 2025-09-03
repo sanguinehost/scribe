@@ -225,6 +225,7 @@ pub struct PromptBuildParams<'a> {
     pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>, // For decrypting character data
     pub user_persona_name: Option<String>,                 // For {{user}} template substitution
     pub agent_context: Option<String>,                     // Pre-processing agent context to inject
+    pub guidance: Option<String>,                          // Optional guidance for response generation
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -758,6 +759,7 @@ async fn build_final_prompt_strings(
     model_name: &str,
     agent_context: Option<&str>,
     user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
+    guidance: Option<&str>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Rebuild the meta system prompt based on final RAG items after truncation
     let has_final_rag_items = !calculation.rag_items_with_tokens.is_empty();
@@ -1189,7 +1191,7 @@ async fn build_final_prompt_strings(
     // Combine RAG context with the current user message
     let mut final_user_message = current_user_message.clone();
     if let MessageContent::Text(text_content) = final_user_message.content {
-        let formatted_content = if !rag_context_for_user_message.is_empty() {
+        let mut formatted_content = if !rag_context_for_user_message.is_empty() {
             format!(
                 "{}**[User Input]**\n{}",
                 rag_context_for_user_message, text_content
@@ -1197,6 +1199,13 @@ async fn build_final_prompt_strings(
         } else {
             format!("**[User Input]**\n{}", text_content)
         };
+        
+        // Add guidance if provided
+        if let Some(guidance_text) = guidance {
+            formatted_content.push_str("\n\n**[Regeneration Guidance]**\n");
+            formatted_content.push_str(guidance_text);
+        }
+        
         final_user_message.content = MessageContent::Text(formatted_content);
     } else {
         // Handle other MessageContent variants if necessary, or log a warning
@@ -1230,6 +1239,7 @@ pub async fn build_final_llm_prompt(
         &params.model_name,
         params.agent_context.as_deref(),
         params.user_dek,
+        params.guidance.as_deref(),
     )
     .await?;
 

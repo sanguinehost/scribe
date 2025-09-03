@@ -1167,7 +1167,8 @@
 	async function regenerateResponse(
 		_userMessageContent: string,
 		_originalMessageId?: string,
-		analysisMode: AnalysisMode = 'existing'
+		analysisMode: AnalysisMode = 'existing',
+		guidance?: string
 	) {
 		// DEBUG: Add stack trace to identify unwanted calls
 		console.log(
@@ -1215,7 +1216,8 @@
 				model: currentModel || undefined,
 				agentMode: agentMode,
 				analysisMode: analysisMode, // Pass the analysis mode for regeneration
-				isRegeneration: true // Prevent duplicate user message
+				isRegeneration: true, // Prevent duplicate user message
+				guidance: guidance // Pass guidance for regeneration steering
 			});
 
 			// Update chat preview after successful regeneration
@@ -1474,11 +1476,11 @@
 	}
 
 	// Handle regeneration modal confirmation
-	function handleRegenerationConfirm(mode: AnalysisMode) {
+	function handleRegenerationConfirm(mode: AnalysisMode, guidance?: string) {
 		if (!pendingRegenerationData) return;
 
 		const { userMessage, messageId } = pendingRegenerationData;
-		regenerateResponse(userMessage, messageId, mode);
+		regenerateResponse(userMessage, messageId, mode, guidance);
 
 		// Clear pending data
 		pendingRegenerationData = null;

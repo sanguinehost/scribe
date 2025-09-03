@@ -342,6 +342,7 @@ class StreamingService {
 		agentMode?: string;
 		analysisMode?: 'existing' | 'refresh' | 'skip'; // For variant regeneration
 		isRegeneration?: boolean; // If true, don't add the user message again
+		guidance?: string; // Optional guidance text for regeneration steering
 	}): Promise<void> {
 		// Connect to streaming service
 
@@ -417,6 +418,7 @@ class StreamingService {
 			model?: string;
 			agentMode?: string;
 			analysisMode?: 'existing' | 'refresh' | 'skip';
+			guidance?: string;
 		},
 		assistantMessageId: string
 	): Promise<void> {
@@ -427,7 +429,8 @@ class StreamingService {
 			history: [...params.history, { role: 'user' as const, content: params.userMessage }],
 			model: params.model,
 			agent_mode: params.agentMode,
-			analysis_mode: params.analysisMode // Pass analysis mode for regeneration
+			analysis_mode: params.analysisMode, // Pass analysis mode for regeneration
+			guidance: params.guidance // Pass optional guidance for regeneration steering
 		};
 
 		console.log('🚀 Starting fetchEventSource with URL:', apiUrl);

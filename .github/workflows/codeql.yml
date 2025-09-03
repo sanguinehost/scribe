@@ -103,7 +103,18 @@ jobs:
         output: sarif-results
         upload: false
 
+    - name: Check if SARIF file exists
+      id: check-sarif
+      run: |
+        if [ -f "sarif-results/${{ matrix.language }}.sarif" ]; then
+          echo "sarif-exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "sarif-exists=false" >> $GITHUB_OUTPUT
+          echo "No SARIF file found for ${{ matrix.language }}, skipping filter and upload steps"
+        fi
+
     - name: Filter SARIF to exclude test files
+      if: steps.check-sarif.outputs.sarif-exists == 'true'
       uses: advanced-security/filter-sarif@v1
       with:
         patterns: |
@@ -113,6 +124,7 @@ jobs:
         output: sarif-results/${{ matrix.language }}-filtered.sarif
 
     - name: Upload filtered SARIF
+      if: steps.check-sarif.outputs.sarif-exists == 'true'
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: sarif-results/${{ matrix.language }}-filtered.sarif

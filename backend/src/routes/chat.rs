@@ -634,6 +634,7 @@ pub async fn generate_chat_response(
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
             user_persona_name,                 // Pass user persona name for template substitution
             agent_context,                     // Pass agent context if available
+            guidance: payload.guidance.clone(), // Pass guidance for regeneration steering
         })
         .await
         {
@@ -1946,6 +1947,7 @@ pub async fn generate_suggested_actions(
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
             user_persona_name,                 // Pass user persona name for template substitution
             agent_context: None,               // No agent context for suggestions
+            guidance: None,                    // No guidance for suggestions
         })
         .await
         {
@@ -2627,6 +2629,7 @@ pub async fn impersonate_handler(
             "What should the user say in response to this conversation?".to_string(),
         ),
         analysis_mode: None, // Not applicable for suggested actions
+        guidance: None, // No guidance for impersonation
     };
 
     // Call the existing generate_chat_response handler logic but collect the response
