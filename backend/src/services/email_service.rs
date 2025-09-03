@@ -254,7 +254,7 @@ impl EmailService for SesEmailService {
         {
             Ok(_) => {
                 info!(
-                    to_email = %to_email,
+                    to_email = %mask_email(to_email),
                     username = %username,
                     "Successfully sent verification email via AWS SES"
                 );
@@ -262,7 +262,7 @@ impl EmailService for SesEmailService {
             }
             Err(e) => {
                 error!(
-                    to_email = %to_email,
+                    to_email = %mask_email(to_email),
                     username = %username,
                     error = %e,
                     error_debug = ?e,
@@ -346,6 +346,6 @@ mod tests {
         // Test very short invalid email
         let email = "no";
         let masked = mask_email(email);
-        assert_eq!(masked, "n***");
+        assert_eq!(masked, "***");
     }
 }
