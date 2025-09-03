@@ -1294,7 +1294,7 @@ async fn debug_system_prompt_encryption_decryption() {
         .unwrap()
         .unwrap();
 
-    println!("Created session: {:?}", session.id);
+    println!("Created session successfully");
 
     // Test 1: Update the system prompt
     let system_prompt_text = "You are a helpful assistant for debugging encryption.";

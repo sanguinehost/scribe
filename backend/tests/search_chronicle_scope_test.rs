@@ -18,9 +18,9 @@ async fn test_chronicle_scoped_search_compiles() {
     let chronicle_id = Uuid::new_v4();
     let session_id = Uuid::new_v4();
 
-    println!("Test user: {}", user_id);
-    println!("Test chronicle: {}", chronicle_id);
-    println!("Test session: {}", session_id);
+    println!("Test user created");
+    println!("Test chronicle created");
+    println!("Test session created");
 
     // Create the app state
     let app_state = app.create_app_state().await;
@@ -41,10 +41,7 @@ async fn test_chronicle_scoped_search_compiles() {
         "chronicle_id": chronicle_id.to_string()
     });
 
-    println!(
-        "\nTesting chronicle-scoped search with chronicle_id: {}",
-        chronicle_id
-    );
+    println!("\nTesting chronicle-scoped search");
 
     let result = search_tool.execute(&search_params).await;
 
@@ -77,10 +74,7 @@ async fn test_chronicle_scoped_search_compiles() {
         "session_id": session_id.to_string()
     });
 
-    println!(
-        "\nTesting session-scoped search with session_id: {}",
-        session_id
-    );
+    println!("\nTesting session-scoped search");
 
     let result_session = search_tool.execute(&search_params_session).await;
 

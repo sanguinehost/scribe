@@ -540,7 +540,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
     let test_username = format!("list_user_{}", Uuid::new_v4());
     let test_password = "password123";
 
-    println!("Test user: {test_username} / {test_password}");
+    println!("Test user: {test_username}");
 
     // Insert user with known password hash using the *new* helper
     let user = {
