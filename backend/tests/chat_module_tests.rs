@@ -337,6 +337,11 @@ mod get_session_data_for_generation_tests {
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: chrono::Utc::now(),
         };
 
         conn.interact(move |conn_insert| {
@@ -432,6 +437,10 @@ mod get_session_data_for_generation_tests {
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
         };
 
         conn.interact(move |conn_insert| {
@@ -1028,6 +1037,11 @@ mod get_session_data_for_generation_tests {
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: chrono::Utc::now(),
         };
         let inserted_user_id_trunc: Uuid = conn
             .interact(move |conn_insert_user| {
@@ -1090,6 +1104,10 @@ mod get_session_data_for_generation_tests {
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
         };
         conn.interact(move |conn_insert| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1304,6 +1322,11 @@ mod get_session_data_for_generation_tests {
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: chrono::Utc::now(),
         };
         let inserted_user_id_rag_total_limit: Uuid = conn
             .interact(move |conn_insert_user| {
@@ -1360,6 +1383,10 @@ mod get_session_data_for_generation_tests {
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1695,6 +1722,11 @@ mod get_session_data_for_generation_tests {
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: chrono::Utc::now(),
         };
         let inserted_user_id_rag_older_hist: Uuid = conn
             .interact(move |conn_insert_user| {
@@ -1751,6 +1783,10 @@ mod get_session_data_for_generation_tests {
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)

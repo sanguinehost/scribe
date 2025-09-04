@@ -860,6 +860,10 @@ fn test_chat_session_insert_and_query() {
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
         };
 
         let inserted_session: Chat = diesel::insert_into(chat_sessions::table)
@@ -988,6 +992,10 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     system_prompt_ciphertext: None,
                     system_prompt_nonce: None,
                     player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
                 };
                 diesel::insert_into(chat_sessions::table)
                     .values(&new_session)
@@ -1185,6 +1193,10 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     conn_setup

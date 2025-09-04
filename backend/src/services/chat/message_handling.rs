@@ -128,6 +128,9 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         status,
         error_message,
     } = params;
+    
+    // Clone model_name early for later use in token tracking
+    let model_name_for_tracking = model_name.clone();
 
     // Changed DbChatMessage to ChatMessage
     trace!(%session_id, %user_id, %message_type_enum, ?role_str, content_len = content.len(), dek_present = user_dek_secret_box.is_some(), %model_name, "Attempting to save message");
@@ -275,6 +278,41 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     debug!(message_id = %saved_message_db.id, %session_id, "Message saved to DB successfully.");
 
+    // Update cumulative token counts for both chat session and user
+    // Convert Option<i32> to i32, defaulting to 0 for None values
+    let prompt_tokens = prompt_tokens_val.unwrap_or(0);
+    let completion_tokens = completion_tokens_val.unwrap_or(0);
+
+    // Only update if we have at least some tokens to count
+    if prompt_tokens > 0 || completion_tokens > 0 {
+        info!(session_id = %session_id, user_id = %user_id, prompt_tokens = prompt_tokens, completion_tokens = completion_tokens, "Updating cumulative token counts");
+        
+        // Calculate estimated cost in cents based on model pricing
+        let estimated_cost_cents = calculate_token_cost_cents(prompt_tokens, completion_tokens, &model_name_for_tracking);
+        
+        let db_pool_for_tokens: DbPool = state.pool.clone();
+        let session_id_for_tokens = session_id;
+        let user_id_for_tokens = user_id;
+        
+        // Spawn async task to update token counts to avoid blocking message save
+        tokio::spawn(async move {
+            if let Err(e) = update_cumulative_token_counts(
+                &db_pool_for_tokens,
+                session_id_for_tokens,
+                user_id_for_tokens,
+                prompt_tokens,
+                completion_tokens,
+                estimated_cost_cents,
+            ).await {
+                error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, error = ?e, "Failed to update cumulative token counts");
+            } else {
+                info!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, "Successfully updated cumulative token counts");
+            }
+        });
+    } else {
+        debug!(session_id = %session_id, "No token counts to update (both prompt_tokens and completion_tokens are 0)");
+    }
+
     // Asynchronously trigger RAG processing if the message is from the user and RAG is enabled for the session/globally.
     // Asynchronously trigger RAG processing if the message is from the user
     // We'll always do this for tests too since the tests check for it
@@ -325,4 +363,90 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     }
 
     Ok(saved_message_db)
+}
+
+/// Calculate estimated cost in cents based on model pricing
+fn calculate_token_cost_cents(prompt_tokens: i32, completion_tokens: i32, model_name: &str) -> i32 {
+    // Gemini pricing (per 1M tokens) - Updated with correct official pricing
+    let (input_cost, output_cost) = match model_name {
+        "gemini-2.5-flash" | "gemini-2.5-flash-lite" => (0.3, 2.5),
+        "gemini-2.5-pro" => (1.25, 10.0), // For prompts <= 200k tokens
+        "gemini-2.5-flash-lite-preview" => (0.1, 0.4),
+        _ => {
+            // Default to flash pricing for unknown models
+            warn!("Unknown model '{}', using gemini-2.5-flash pricing", model_name);
+            (0.3, 2.5)
+        }
+    };
+
+    // Calculate cost in dollars and convert to cents
+    let input_cost_dollars = (prompt_tokens as f64 / 1_000_000.0) * input_cost;
+    let output_cost_dollars = (completion_tokens as f64 / 1_000_000.0) * output_cost;
+    let total_cost_dollars = input_cost_dollars + output_cost_dollars;
+    let total_cost_cents = (total_cost_dollars * 100.0).round() as i32;
+
+    trace!(model_name = model_name, prompt_tokens = prompt_tokens, completion_tokens = completion_tokens, 
+           input_cost_dollars = input_cost_dollars, output_cost_dollars = output_cost_dollars, 
+           total_cost_cents = total_cost_cents, "Calculated token cost");
+
+    total_cost_cents
+}
+
+/// Update cumulative token counts for both chat session and user
+async fn update_cumulative_token_counts(
+    pool: &crate::PgPool,
+    session_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+    prompt_tokens: i32,
+    completion_tokens: i32,
+    estimated_cost_cents: i32,
+) -> Result<(), AppError> {
+    use crate::schema::{chat_sessions, users};
+    use diesel::prelude::*;
+    
+    let conn = pool.get().await?;
+    
+    conn.interact(move |conn| {
+        // Start a transaction to ensure atomicity
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            // Update chat session cumulative counts
+            diesel::update(chat_sessions::table.find(session_id))
+                .set((
+                    chat_sessions::total_prompt_tokens.eq(
+                        chat_sessions::total_prompt_tokens + prompt_tokens
+                    ),
+                    chat_sessions::total_completion_tokens.eq(
+                        chat_sessions::total_completion_tokens + completion_tokens
+                    ),
+                    chat_sessions::estimated_cost_cents.eq(
+                        chat_sessions::estimated_cost_cents + estimated_cost_cents
+                    ),
+                    chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
+                ))
+                .execute(conn)?;
+
+            // Update user cumulative counts
+            diesel::update(users::table.find(user_id))
+                .set((
+                    users::total_prompt_tokens.eq(
+                        users::total_prompt_tokens + (prompt_tokens as i64)
+                    ),
+                    users::total_completion_tokens.eq(
+                        users::total_completion_tokens + (completion_tokens as i64)
+                    ),
+                    users::total_token_cost_cents.eq(
+                        users::total_token_cost_cents + (estimated_cost_cents as i64)
+                    ),
+                    users::token_usage_updated_at.eq(diesel::dsl::now),
+                ))
+                .execute(conn)?;
+
+            Ok(())
+        })
+    })
+    .await
+    .map_err(AppError::from)?
+    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+    Ok(())
 }

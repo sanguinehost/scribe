@@ -128,6 +128,11 @@ pub struct UserDbQuery {
     pub role: UserRole,
     pub account_status: AccountStatus,
     pub default_persona_id: Option<Uuid>,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
+    pub total_token_cost_cents: i64,
+    pub tokens_last_reset_at: Option<DateTime<Utc>>,
+    pub token_usage_updated_at: DateTime<Utc>,
 }
 
 impl std::fmt::Debug for UserDbQuery {
@@ -154,6 +159,11 @@ impl std::fmt::Debug for UserDbQuery {
             .field("role", &self.role)
             .field("account_status", &self.account_status)
             .field("default_persona_id", &self.default_persona_id)
+            .field("total_prompt_tokens", &self.total_prompt_tokens)
+            .field("total_completion_tokens", &self.total_completion_tokens)
+            .field("total_token_cost_cents", &self.total_token_cost_cents)
+            .field("tokens_last_reset_at", &self.tokens_last_reset_at)
+            .field("token_usage_updated_at", &self.token_usage_updated_at)
             .finish()
     }
 }
@@ -195,6 +205,11 @@ pub struct User {
     pub role: UserRole,
     pub account_status: Option<String>, // Added for CLI compatibility
     pub default_persona_id: Option<Uuid>,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
+    pub total_token_cost_cents: i64,
+    pub tokens_last_reset_at: Option<DateTime<Utc>>,
+    pub token_usage_updated_at: DateTime<Utc>,
 }
 
 // Manual Debug implementation for User
@@ -237,6 +252,11 @@ impl std::fmt::Debug for User {
             .field("role", &self.role)
             .field("account_status", &self.account_status)
             .field("default_persona_id", &self.default_persona_id)
+            .field("total_prompt_tokens", &self.total_prompt_tokens)
+            .field("total_completion_tokens", &self.total_completion_tokens)
+            .field("total_token_cost_cents", &self.total_token_cost_cents)
+            .field("tokens_last_reset_at", &self.tokens_last_reset_at)
+            .field("token_usage_updated_at", &self.token_usage_updated_at)
             .finish()
     }
 }
@@ -262,6 +282,11 @@ impl From<UserDbQuery> for User {
             role: user_from_db.role,
             account_status: Some(format!("{:?}", user_from_db.account_status).to_lowercase()),
             default_persona_id: user_from_db.default_persona_id,
+            total_prompt_tokens: user_from_db.total_prompt_tokens,
+            total_completion_tokens: user_from_db.total_completion_tokens,
+            total_token_cost_cents: user_from_db.total_token_cost_cents,
+            tokens_last_reset_at: user_from_db.tokens_last_reset_at,
+            token_usage_updated_at: user_from_db.token_usage_updated_at,
         }
     }
 }
@@ -288,6 +313,11 @@ impl Clone for User {
             role: self.role,
             account_status: self.account_status.clone(),
             default_persona_id: self.default_persona_id,
+            total_prompt_tokens: self.total_prompt_tokens,
+            total_completion_tokens: self.total_completion_tokens,
+            total_token_cost_cents: self.total_token_cost_cents,
+            tokens_last_reset_at: self.tokens_last_reset_at,
+            token_usage_updated_at: self.token_usage_updated_at,
         }
     }
 }
@@ -320,6 +350,11 @@ pub struct NewUser {
     pub recovery_dek_nonce: Option<Vec<u8>>,
     pub role: UserRole,
     pub account_status: AccountStatus,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
+    pub total_token_cost_cents: i64,
+    pub tokens_last_reset_at: Option<DateTime<Utc>>,
+    pub token_usage_updated_at: DateTime<Utc>,
 }
 
 impl std::fmt::Debug for NewUser {
@@ -342,6 +377,11 @@ impl std::fmt::Debug for NewUser {
             )
             .field("role", &self.role)
             .field("account_status", &self.account_status)
+            .field("total_prompt_tokens", &self.total_prompt_tokens)
+            .field("total_completion_tokens", &self.total_completion_tokens)
+            .field("total_token_cost_cents", &self.total_token_cost_cents)
+            .field("tokens_last_reset_at", &self.tokens_last_reset_at)
+            .field("token_usage_updated_at", &self.token_usage_updated_at)
             .finish()
     }
 }

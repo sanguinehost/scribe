@@ -319,6 +319,10 @@ diesel::table! {
         agent_mode -> Nullable<Varchar>,
         #[max_length = 50]
         model_provider -> Nullable<Varchar>,
+        total_prompt_tokens -> Int4,
+        total_completion_tokens -> Int4,
+        estimated_cost_cents -> Int4,
+        tokens_counted_at -> Timestamptz,
     }
 }
 
@@ -497,6 +501,24 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    usage_tracking (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        period_start -> Timestamptz,
+        period_end -> Timestamptz,
+        prompt_tokens_used -> Int8,
+        completion_tokens_used -> Int8,
+        estimated_cost_cents -> Int8,
+        model_breakdown -> Nullable<Jsonb>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     user_assets (id) {
         id -> Int4,
         user_id -> Uuid,
@@ -606,6 +628,11 @@ diesel::table! {
         role -> UserRole,
         account_status -> AccountStatus,
         default_persona_id -> Nullable<Uuid>,
+        total_prompt_tokens -> Int8,
+        total_completion_tokens -> Int8,
+        total_token_cost_cents -> Int8,
+        tokens_last_reset_at -> Nullable<Timestamptz>,
+        token_usage_updated_at -> Timestamptz,
     }
 }
 
@@ -643,6 +670,7 @@ diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
 diesel::joinable!(old_votes -> chat_sessions (chat_id));
 diesel::joinable!(player_chronicles -> users (user_id));
+diesel::joinable!(usage_tracking -> users (user_id));
 diesel::joinable!(user_assets -> user_personas (persona_id));
 diesel::joinable!(user_assets -> users (user_id));
 diesel::joinable!(user_settings -> users (user_id));
@@ -667,6 +695,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     old_votes,
     player_chronicles,
     sessions,
+    usage_tracking,
     user_assets,
     user_personas,
     user_settings,

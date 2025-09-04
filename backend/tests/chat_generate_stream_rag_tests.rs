@@ -120,6 +120,10 @@ async fn setup_rag_test_context() -> TestContext {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

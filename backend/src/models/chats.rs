@@ -117,6 +117,10 @@ pub struct Chat {
     pub chat_mode: ChatMode,
     pub player_chronicle_id: Option<Uuid>,
     pub agent_mode: Option<String>,
+    pub total_prompt_tokens: i32,
+    pub total_completion_tokens: i32,
+    pub estimated_cost_cents: i32,
+    pub tokens_counted_at: DateTime<Utc>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -175,6 +179,11 @@ impl std::fmt::Debug for Chat {
                 "active_impersonated_character_id",
                 &self.active_impersonated_character_id,
             )
+            // Token tracking fields
+            .field("total_prompt_tokens", &self.total_prompt_tokens)
+            .field("total_completion_tokens", &self.total_completion_tokens)
+            .field("estimated_cost_cents", &self.estimated_cost_cents)
+            .field("tokens_counted_at", &self.tokens_counted_at)
             .finish()
     }
 }
@@ -211,6 +220,11 @@ pub struct NewChat {
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub player_chronicle_id: Option<Uuid>,
+    // Token tracking fields with default values
+    pub total_prompt_tokens: i32,
+    pub total_completion_tokens: i32,
+    pub estimated_cost_cents: i32,
+    pub tokens_counted_at: DateTime<Utc>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -262,6 +276,12 @@ impl std::fmt::Debug for NewChat {
                     .as_ref()
                     .map(|_| "[REDACTED_BYTES]"),
             )
+            .field("player_chronicle_id", &self.player_chronicle_id)
+            // Token tracking fields
+            .field("total_prompt_tokens", &self.total_prompt_tokens)
+            .field("total_completion_tokens", &self.total_completion_tokens)
+            .field("estimated_cost_cents", &self.estimated_cost_cents)
+            .field("tokens_counted_at", &self.tokens_counted_at)
             .finish()
     }
 }

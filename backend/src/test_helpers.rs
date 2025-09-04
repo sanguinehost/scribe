@@ -132,11 +132,11 @@ pub struct MockAiClient {
 impl MockAiClient {
     #[must_use]
     pub fn new() -> Self {
-        // Initialize fields with default values
+        // Initialize fields with default values, using realistic token usage for testing
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            // Default to a simple OK response
+            // Default to a simple OK response with realistic token counts
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
@@ -144,7 +144,13 @@ impl MockAiClient {
                     "Mock AI response".to_string(),
                 )],
                 reasoning_content: None,
-                usage: Usage::default(),
+                usage: Usage {
+                    prompt_tokens: Some(20),      // Simulate ~20 tokens for prompt
+                    completion_tokens: Some(10),  // Simulate ~10 tokens for completion
+                    total_tokens: Some(30),       // Total of prompt + completion
+                    prompt_tokens_details: None,
+                    completion_tokens_details: None,
+                },
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -154,6 +160,10 @@ impl MockAiClient {
     /// Create a new MockAiClient with a specific response text
     #[must_use]
     pub fn new_with_response(response_text: String) -> Self {
+        // Estimate token count based on response text length (rough approximation: 1 token per 4 characters)
+        let completion_tokens = ((response_text.len() as f64 / 4.0).ceil() as i32).max(1);
+        let prompt_tokens = 15; // Default prompt token count
+        
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -162,7 +172,13 @@ impl MockAiClient {
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 contents: vec![genai::chat::MessageContent::Text(response_text)],
                 reasoning_content: None,
-                usage: Usage::default(),
+                usage: Usage {
+                    prompt_tokens: Some(prompt_tokens),
+                    completion_tokens: Some(completion_tokens),
+                    total_tokens: Some(prompt_tokens + completion_tokens),
+                    prompt_tokens_details: None,
+                    completion_tokens_details: None,
+                },
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -1800,6 +1816,11 @@ pub mod db {
             recovery_dek_nonce: None,
             role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
             account_status: AccountStatus::Active,      // Default to Active account status
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: chrono::Utc::now(),
         };
 
         let user_from_db: UserDbQuery = conn
@@ -1874,6 +1895,11 @@ pub mod db {
             recovery_dek_nonce: None,
             role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
             account_status: AccountStatus::Pending,     // Set to Pending for email verification
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: chrono::Utc::now(),
         };
 
         let user_from_db: UserDbQuery = conn

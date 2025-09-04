@@ -371,6 +371,10 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     info!(
@@ -960,6 +964,10 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
     let session: DbChat = {
         let interact_result = conn
@@ -1412,6 +1420,10 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     let result = conn
@@ -1759,6 +1771,10 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     let result = conn
@@ -2090,6 +2106,10 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     let result = conn
@@ -2484,6 +2504,10 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     let result = conn
@@ -2780,6 +2804,10 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     let result = conn
@@ -3088,6 +3116,10 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     let create_session_result = conn
@@ -3369,6 +3401,10 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     let conn_clone = test_app.db_pool.get().await?; // Re-acquire connection as it was moved
@@ -3534,6 +3570,10 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
     };
 
     let session: DbChat = {

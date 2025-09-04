@@ -1,6 +1,7 @@
 // backend/src/auth/user_store.rs
 use async_trait::async_trait;
 use axum_login::{AuthnBackend, UserId};
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::sync::Arc; // Keep Arc
@@ -330,6 +331,11 @@ pub async fn create_user_in_db(
         recovery_dek_nonce: None,
         role: crate::models::users::UserRole::User, // 'User' enum variant for DB
         account_status: AccountStatus::Active,      // Default to Active account status
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: chrono::Utc::now(),
     };
 
     let user_from_db: UserDbQuery = conn

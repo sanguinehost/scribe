@@ -233,6 +233,10 @@ async fn create_test_chat_session(
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
             };
 
             diesel::insert_into(schema::chat_sessions::table)
@@ -752,6 +756,10 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1144,6 +1152,10 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1502,6 +1514,10 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now(),
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)

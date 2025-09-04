@@ -17,6 +17,7 @@ use crate::models::chats::{
     Vote,                        // Now available
     VoteRequest,                 // Now available
 };
+use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::schema::{chat_messages, chat_sessions};
 use axum::{
@@ -32,7 +33,7 @@ use secrecy::SecretBox; // Ensure SecretBox is imported
 // Removed incorrect ValidatedJson import
 use crate::services::chat;
 use crate::state::AppState;
-use diesel::{ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper};
+use diesel::{ExpressionMethods, OptionalExtension, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde_json::json;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -85,6 +86,7 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             "/:id/character/overrides",
             post(set_chat_character_override_handler),
         )
+        .route("/:id/token-usage", get(get_chat_token_usage_handler))
 }
 
 /// Sets character overrides for a chat session.
@@ -1737,4 +1739,81 @@ pub struct DeleteChatQueryParams {
 
 fn default_chronicle_action() -> String {
     "delete_events".to_string()
+}
+
+/// Get token usage statistics for a specific chat session
+#[axum::debug_handler]
+async fn get_chat_token_usage_handler(
+    auth_session: CurrentAuthSession,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(chat_id = %id, "Getting chat token usage statistics");
+
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+    
+    // Fetch the chat session to verify ownership and get token statistics
+    let user_id = user.id;
+    let conn = state.pool.get().await.map_err(|e| {
+        tracing::error!("Failed to get database connection: {}", e);
+        AppError::DbPoolError(e.to_string())
+    })?;
+
+    let chat = conn
+        .interact(move |conn| {
+            chat_sessions::table
+                .select(Chat::as_select())
+                .filter(chat_sessions::id.eq(id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .first::<Chat>(conn)
+                .map_err(|e| match e {
+                    diesel::result::Error::NotFound => {
+                        AppError::NotFound("Chat not found or access denied".to_string())
+                    }
+                    _ => {
+                        tracing::error!("Database error querying chat: {}", e);
+                        AppError::DatabaseQueryError("Failed to query chat".to_string())
+                    }
+                })
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+    let total_tokens = chat.total_prompt_tokens + chat.total_completion_tokens;
+    let estimated_cost_dollars = chat.estimated_cost_cents as f64 / 100.0;
+
+    // Get the last used model from the most recent message in this chat
+    let conn_clone = state.pool.get().await.map_err(|e| {
+        tracing::error!("Failed to get second database connection: {}", e);
+        AppError::DbPoolError(e.to_string())
+    })?;
+
+    let model_name = conn_clone
+        .interact(move |conn| {
+            chat_messages::table
+                .select(chat_messages::model_name)
+                .filter(chat_messages::session_id.eq(id))
+                .order_by(chat_messages::created_at.desc())
+                .first::<String>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))??
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let token_usage = ChatTokenUsage {
+        chat_id: id,
+        total_prompt_tokens: chat.total_prompt_tokens,
+        total_completion_tokens: chat.total_completion_tokens,
+        total_tokens,
+        estimated_cost_cents: chat.estimated_cost_cents,
+        estimated_cost_dollars,
+        tokens_counted_at: chat.tokens_counted_at,
+        model_name,
+    };
+
+    Ok((StatusCode::OK, Json(token_usage)))
 }

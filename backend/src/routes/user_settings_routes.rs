@@ -17,7 +17,7 @@ use crate::{
     // models::{user_personas::UserPersona, users::User}, // UserPersona is unused
     auth::user_store::Backend as AuthBackend, // Import the backend
     errors::AppError,
-    models::{user_settings::UpdateUserSettingsRequest, users::User},
+    models::{user_settings::UpdateUserSettingsRequest, users::User, usage::TokenUsageSummary},
     services::{
         user_persona_service::UserPersonaService, user_settings_service::UserSettingsService,
     },
@@ -68,6 +68,7 @@ pub fn user_settings_routes(state: AppState) -> Router<AppState> {
             "/clear_default_persona",
             delete(clear_default_persona_handler),
         ) // Changed path for consistency and explicitness and distinctness
+        .route("/token-usage", get(get_user_token_usage_handler)) // Token usage statistics
         .layer(middleware::from_fn(user_settings_logging_middleware)) // Add logging middleware
         .with_state(state)
 }
@@ -184,6 +185,32 @@ async fn clear_default_persona_handler(
     UserPersonaService::set_default_persona(&app_state.pool, user.id, None).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+#[axum::debug_handler]
+async fn get_user_token_usage_handler(
+    auth_session: AuthSession<AuthBackend>,
+) -> Result<Response, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
+
+    debug!(user_id = %user.id, "Getting user token usage statistics");
+
+    let total_tokens = user.total_prompt_tokens + user.total_completion_tokens;
+    let total_cost_dollars = user.total_token_cost_cents as f64 / 100.0;
+
+    let token_usage = TokenUsageSummary {
+        total_prompt_tokens: user.total_prompt_tokens,
+        total_completion_tokens: user.total_completion_tokens,
+        total_tokens,
+        total_cost_cents: user.total_token_cost_cents,
+        total_cost_dollars,
+        tokens_last_reset_at: user.tokens_last_reset_at,
+        token_usage_updated_at: user.token_usage_updated_at,
+    };
+
+    Ok((StatusCode::OK, Json(token_usage)).into_response())
 }
 
 // TODO: Add tests for these handlers in a new file backend/tests/user_settings_api_tests.rs
