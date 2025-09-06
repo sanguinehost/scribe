@@ -91,7 +91,7 @@
 
 			{#if variantInfo}
 				<span class="px-1 text-[9px] text-muted-foreground">
-					{variantInfo.current + 1}/{variantInfo.total + 1}
+					{variantInfo.current}/{variantInfo.total}
 				</span>
 			{/if}
 
