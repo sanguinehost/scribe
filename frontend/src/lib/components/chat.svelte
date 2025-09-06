@@ -73,7 +73,7 @@
 	let showRegenerationModal = $state(false);
 	let pendingRegenerationData = $state<{ 
 		userMessage: string; 
-		messageId: string; 
+		messageId?: string; 
 		targetMessageIndex?: number; 
 		allMessages?: StreamingMessage[] 
 	} | null>(null);
@@ -1272,10 +1272,25 @@
 				console.log('🎯 Generating new response (not a variant)');
 			}
 			
+			// Fix for retry bug: Only slice history if the last message isn't already a user message
+			// This happens when retrying a failed message - the failed assistant message was removed,
+			// so history already ends with the user message we want to regenerate from
+			const lastHistoryMessage = historyToSend[historyToSend.length - 1];
+			const shouldSliceHistory = lastHistoryMessage?.role !== 'user';
+			const finalHistory = shouldSliceHistory ? historyToSend.slice(0, -1) : historyToSend;
+			
+			console.log('📋 History construction:', {
+				historyLength: historyToSend.length,
+				lastRole: lastHistoryMessage?.role,
+				shouldSlice: shouldSliceHistory,
+				finalHistoryLength: finalHistory.length,
+				finalLastRole: finalHistory[finalHistory.length - 1]?.role
+			});
+			
 			await streamingService.connect({
 				chatId: chat.id,
 				userMessage: lastUserMessage.content,
-				history: historyToSend.slice(0, -1), // Exclude the last user message since it's passed separately
+				history: finalHistory,
 				model: currentModel || undefined,
 				agentMode: agentMode,
 				analysisMode: analysisMode, // Pass the analysis mode for regeneration
