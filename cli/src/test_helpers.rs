@@ -1163,5 +1163,7 @@ pub fn mock_chat_message(
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 0,
+        current_variant_index: 0,
     }
 }

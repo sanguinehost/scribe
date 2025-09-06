@@ -521,6 +521,8 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         model: Some("gemini/mock-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     // Check session one last time before making chat generate request
@@ -1059,6 +1061,8 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         model: Some("gemini/mock-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let client = reqwest::Client::new(); // Initialize client
@@ -3464,6 +3468,8 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let client = reqwest::Client::new();

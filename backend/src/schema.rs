@@ -261,6 +261,8 @@ diesel::table! {
         status -> Varchar,
         error_message -> Nullable<Text>,
         superseded_at -> Nullable<Timestamptz>,
+        variant_count -> Int4,
+        current_variant_index -> Int4,
     }
 }
 

@@ -43,8 +43,6 @@
 		onDeleteMessage,
 		onPreviousVariant,
 		onNextVariant,
-		messageVariants,
-		currentVariantIndex,
 		onGreetingChanged,
 		onLoadMore,
 		isLoadingMore = false,
@@ -67,8 +65,7 @@
 		onDeleteMessage?: (messageId: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
 		onNextVariant?: (messageId: string) => void;
-		messageVariants?: Map<string, { content: string; timestamp: string }[]>;
-		currentVariantIndex?: Map<string, number>;
+		// Variant data is now included in message objects
 		onGreetingChanged?: (detail: { index: number; content: string }) => void;
 		onLoadMore?: () => void;
 		isLoadingMore?: boolean;
@@ -482,14 +479,20 @@
 					{userPersonaName}
 				/>
 			{:else}
-				{@const variants = messageVariants?.get(message.id)}
-				{@const currentIndex =
-					currentVariantIndex?.get(message.id) ??
-					((variants?.length ?? 0) > 0 ? (variants?.length ?? 1) - 1 : 0)}
-				{@const hasVariants = (variants?.length ?? 0) > 0 || currentIndex > 0}
+				{@const currentIndex = message.current_variant_index ?? 0}
+				{@const variantCount = message.variant_count ?? 0}
+				{@const hasVariants = variantCount > 0}
 				{@const variantInfo = hasVariants
-					? { current: currentIndex, total: (variants?.length ?? 1) - 1 }
+					? { current: currentIndex + 1, total: variantCount }
 					: null}
+
+				{#if hasVariants}
+					{console.log(`🔄 VARIANT DISPLAY - Message ${message.id}: variant_count=${variantCount}, current_variant_index=${currentIndex}, displaying=${currentIndex + 1}/${variantCount}, hasVariants=${hasVariants}`)}
+				{/if}
+				
+				{#if message.message_type === 'Assistant'}
+					{console.log(`🤖 ASSISTANT MESSAGE - ${message.id}: variant_count=${message.variant_count}, current_variant_index=${message.current_variant_index}, shouldShowChevrons=${variantCount > 0}`)}
+				{/if}
 
 				<Message
 					{message}

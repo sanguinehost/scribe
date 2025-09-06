@@ -280,6 +280,8 @@ pub(super) async fn handle_non_streaming_chat_response(
                     status: "completed".to_string(),
                     error_message: None,
                     superseded_at: None,
+                    variant_count: 0,
+                    current_variant_index: 0,
                 });
             }
 
@@ -307,6 +309,8 @@ pub(super) async fn handle_non_streaming_chat_response(
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 0,
+            current_variant_index: 0,
         });
     }
 
@@ -332,6 +336,8 @@ pub(super) async fn handle_non_streaming_chat_response(
                 status: "completed".to_string(),
                 error_message: None,
                 superseded_at: None,
+                variant_count: 0,
+                current_variant_index: 0,
             })
         }
         Err(e) => {

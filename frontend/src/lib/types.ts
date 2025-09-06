@@ -19,6 +19,7 @@ export interface Message {
 	session_id: string;
 	message_type: MessageRole;
 	role: string;
+	content: string; // Message content
 	parts: MessagePart[]; // serde_json::Value from backend
 	attachments: MessageAttachment[]; // serde_json::Value from backend
 	created_at: Date;
@@ -29,6 +30,31 @@ export interface Message {
 	status?: string; // Message status: streaming, completed, failed, partial, pending
 	error_message?: string | null; // Error message if generation failed
 	superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
+	// Variant metadata
+	variant_count: number; // Number of variants for this message
+	current_variant_index: number; // Currently selected variant index
+	is_variant: boolean; // Whether this is a variant of another message
+	parent_message_id?: string | null; // UUID of parent message if this is a variant
+	variants?: MessageVariantResponse[] | null; // Array of variants for this message
+}
+
+// Message variant response type
+export interface MessageVariantResponse {
+	index: number; // Variant index (0 for original)
+	content: string; // Variant content
+	created_at: string; // ISO 8601 timestamp
+	prompt_tokens?: number | null;
+	completion_tokens?: number | null;
+	model_name?: string | null;
+}
+
+// Request types for variant operations
+export interface CreateMessageVariantRequest {
+	content: string;
+}
+
+export interface SelectVariantRequest {
+	variant_index: number;
 }
 
 // Model capabilities interface
@@ -524,6 +550,12 @@ export interface ScribeChatMessage {
 	model_name?: string; // Model used for this specific message
 	status?: string; // Message status: streaming, completed, failed, partial, pending
 	superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
+	// Variant metadata
+	variant_count?: number; // Number of variants for this message
+	current_variant_index?: number; // Currently selected variant index
+	is_variant?: boolean; // Whether this is a variant of another message
+	parent_message_id?: string | null; // UUID of parent message if this is a variant
+	variants?: MessageVariantResponse[] | null; // Array of variants for this message
 }
 
 export type DocumentResponse = {

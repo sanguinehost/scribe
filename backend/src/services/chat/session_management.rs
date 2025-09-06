@@ -743,6 +743,7 @@ async fn process_first_message(
                                         raw_prompt_debug: None, // First message doesn't need raw prompt debug
                                         status: crate::models::chats::MessageStatus::Completed,
                                         error_message: None,
+                                        variant_of: None, // First message doesn't create variants
                                     })
                                     .await?;
                                     info!(session_id = %created_session.id, "Successfully called save_message for first_mes");

@@ -66,5 +66,7 @@ pub enum ScribeSseEvent {
     },
     MessageSaved {
         message_id: String,
+        variant_count: i32,
+        current_variant_index: i32,
     },
 }

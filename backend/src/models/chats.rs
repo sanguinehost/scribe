@@ -414,6 +414,8 @@ pub struct ChatMessage {
     pub status: String,
     pub error_message: Option<String>,
     pub superseded_at: Option<DateTime<Utc>>,
+    pub variant_count: i32,
+    pub current_variant_index: i32,
 }
 
 impl std::fmt::Debug for ChatMessage {
@@ -774,6 +776,8 @@ pub struct Message {
     pub status: String,
     pub error_message: Option<String>,
     pub superseded_at: Option<DateTime<Utc>>,
+    pub variant_count: i32,
+    pub current_variant_index: i32,
 }
 
 impl std::fmt::Debug for Message {
@@ -1186,6 +1190,8 @@ pub struct DbInsertableChatMessage {
     pub model_name: String,
     pub status: String,
     pub error_message: Option<String>,
+    pub variant_count: i32,
+    pub current_variant_index: i32,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1250,6 +1256,8 @@ impl DbInsertableChatMessage {
             raw_prompt_nonce: None,
             status: MessageStatus::Completed.to_string(),
             error_message: None,
+            variant_count: 0,
+            current_variant_index: 0,
         }
     }
 
@@ -1370,6 +1378,20 @@ impl std::fmt::Debug for CreateMessageVariantPayload {
     }
 }
 
+#[derive(Deserialize, Serialize, Validate)]
+pub struct SelectVariantRequest {
+    #[validate(range(min = 0))]
+    pub variant_index: i32,
+}
+
+impl std::fmt::Debug for SelectVariantRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SelectVariantRequest")
+            .field("variant_index", &self.variant_index)
+            .finish()
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct GenerateResponse {
     pub ai_message: ChatMessage,
@@ -1413,6 +1435,7 @@ pub struct GenerateChatRequest {
     pub query_text_for_rag: Option<String>,
     pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
     pub guidance: Option<String>, // Optional guidance text for regeneration steering
+    pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
 }
 
 impl std::fmt::Debug for GenerateChatRequest {
@@ -1433,6 +1456,7 @@ impl std::fmt::Debug for GenerateChatRequest {
             )
             .field("analysis_mode", &self.analysis_mode)
             .field("guidance", &self.guidance.as_ref().map(|_| "[REDACTED]"))
+            .field("variant_of", &self.variant_of)
             .finish()
     }
 }
@@ -1899,6 +1923,18 @@ impl std::fmt::Debug for SuggestedActionsResponse {
     }
 }
 
+// MessageVariant struct for API responses
+#[derive(Clone, Serialize, Deserialize)]
+pub struct MessageVariantResponse {
+    pub index: i32,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
+    pub model_name: Option<String>,
+}
+
+
 // MessageResponse struct for API responses
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MessageResponse {
@@ -1906,6 +1942,7 @@ pub struct MessageResponse {
     pub session_id: Uuid,
     pub message_type: MessageRole,
     pub role: String,
+    pub content: String,
     pub parts: serde_json::Value,
     pub attachments: serde_json::Value,
     pub created_at: DateTime<Utc>,
@@ -1913,6 +1950,17 @@ pub struct MessageResponse {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>, // Optional for backward compatibility with existing messages
+    pub status: String,
+    pub error_message: Option<String>,
+    
+    // Variant metadata
+    pub variant_count: i32,
+    pub current_variant_index: i32,
+    pub is_variant: bool,
+    pub parent_message_id: Option<Uuid>,
+    
+    // Optional: Complete variant data for immediate access
+    pub variants: Option<Vec<MessageVariantResponse>>,
 }
 
 impl std::fmt::Debug for MessageResponse {
@@ -1922,6 +1970,7 @@ impl std::fmt::Debug for MessageResponse {
             .field("session_id", &self.session_id)
             .field("message_type", &self.message_type)
             .field("role", &self.role)
+            .field("content", &"[REDACTED]")
             .field("parts", &"[REDACTED_JSON]")
             .field("attachments", &"[REDACTED_JSON]")
             .field("created_at", &self.created_at)
@@ -1929,6 +1978,12 @@ impl std::fmt::Debug for MessageResponse {
                 "raw_prompt",
                 &self.raw_prompt.as_ref().map(|_| "[REDACTED_RAW_PROMPT]"),
             )
+            .field("status", &self.status)
+            .field("variant_count", &self.variant_count)
+            .field("current_variant_index", &self.current_variant_index)
+            .field("is_variant", &self.is_variant)
+            .field("parent_message_id", &self.parent_message_id)
+            .field("variants", &self.variants.as_ref().map(|v| format!("[{} variants]", v.len())))
             .finish()
     }
 }

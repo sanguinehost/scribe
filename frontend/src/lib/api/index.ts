@@ -28,6 +28,9 @@ import type {
 	UpdateUserPersonaRequest,
 	CreateChatRequest,
 	CreateMessageRequest,
+	CreateMessageVariantRequest,
+	SelectVariantRequest,
+	MessageVariantResponse,
 	CreateDocumentRequest,
 	CreateSuggestionRequest,
 	DocumentResponse,
@@ -661,6 +664,31 @@ class ApiClient {
 		return this.fetch<void>(`/api/chats/messages/${id}`, {
 			method: 'DELETE'
 		});
+	}
+
+	// Message Variant methods
+	async createMessageVariant(
+		messageId: string,
+		data: CreateMessageVariantRequest
+	): Promise<Result<Message, ApiError>> {
+		return this.fetch<Message>(`/api/chat/messages/${messageId}/variants`, {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async selectMessageVariant(
+		messageId: string,
+		data: SelectVariantRequest
+	): Promise<Result<Message, ApiError>> {
+		return this.fetch<Message>(`/api/chat/messages/${messageId}/select-variant`, {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	}
+
+	async getMessageVariants(messageId: string): Promise<Result<MessageVariantResponse[], ApiError>> {
+		return this.fetch<MessageVariantResponse[]>(`/api/chat/messages/${messageId}/variants`);
 	}
 
 	// Vote methods

@@ -28,6 +28,11 @@ export interface StreamingMessage {
 	backend_id?: string; // For mapping back to ScribeChatMessage
 	status?: string; // Message status: streaming, completed, failed, partial, pending
 	superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
+	// Variant metadata
+	variant_count?: number; // Number of variants for this message
+	current_variant_index?: number; // Currently selected variant index
+	is_variant?: boolean; // Whether this is a variant of another message
+	parent_message_id?: string | null; // UUID of parent message if this is a variant
 }
 
 // Connection states following the architectural design
@@ -170,9 +175,7 @@ class StreamingService {
 		if (content) {
 			buffer.content += content;
 			buffer.expectedIndex = nextIndex;
-			console.log(
-				`📝 Updated buffer for ${messageId.slice(-8)}: ${buffer.content.length} total chars`
-			);
+			// Buffer updated with contiguous content
 		}
 	}
 
@@ -343,6 +346,8 @@ class StreamingService {
 		analysisMode?: 'existing' | 'refresh' | 'skip'; // For variant regeneration
 		isRegeneration?: boolean; // If true, don't add the user message again
 		guidance?: string; // Optional guidance text for regeneration steering
+		targetMessageId?: string; // If provided, update this message instead of creating new
+		variantOf?: string; // If provided, create this response as a variant of the specified message ID
 	}): Promise<void> {
 		// Connect to streaming service
 
@@ -378,22 +383,66 @@ class StreamingService {
 			this.messages = [...this.messages, userMessage];
 		}
 
-		// NEW ARCHITECTURE: Create assistant message with buffer-first approach
-		const assistantMessage: StreamingMessage = {
-			id: crypto.randomUUID(),
-			content: '', // Will be filled when buffering completes
-			displayedContent: '', // Will animate from empty to full content
-			sender: 'assistant',
-			created_at: new Date().toISOString(),
-			isAnimating: false // Will start animating after buffering
-		};
-		this.messages = [...this.messages, assistantMessage];
+		// NEW ARCHITECTURE: Create or update assistant message with buffer-first approach
+		let assistantMessage: StreamingMessage;
+		let assistantMessageId: string;
+
+		if (params.targetMessageId) {
+			// Variant mode: Update existing message
+			console.log('🔄 StreamingService: Variant mode - searching for targetMessageId:', params.targetMessageId);
+			console.log('🔄 StreamingService: Available messages:', this.messages.map(m => ({ id: m.id, backend_id: m.backend_id, sender: m.sender })));
+			
+			const existingMessageIndex = this.messages.findIndex(msg => msg.id === params.targetMessageId || msg.backend_id === params.targetMessageId);
+			if (existingMessageIndex === -1) {
+				console.error('❌ StreamingService: Target message not found for variant update:', params.targetMessageId);
+				throw new Error(`Target message ${params.targetMessageId} not found for variant update`);
+			}
+
+			console.log('✅ StreamingService: Found target message at index:', existingMessageIndex);
+			
+			// Update the existing message in place to preserve object identity and variant metadata
+			const existingMessage = this.messages[existingMessageIndex];
+			console.log('🔄 Preserving variant metadata:', {
+				variant_count: existingMessage.variant_count,
+				current_variant_index: existingMessage.current_variant_index
+			});
+			
+			// Reset fields for regeneration while preserving variant metadata and object identity
+			existingMessage.content = ''; // Will be filled when buffering completes
+			existingMessage.displayedContent = ''; // Will animate from empty to full content
+			existingMessage.isAnimating = false; // Will start animating after buffering
+			existingMessage.error = undefined; // Clear any existing error
+			existingMessage.retryable = false; // Clear retry state
+			// Preserve variant_count and current_variant_index - they will be updated by MessageSaved
+			
+			// Force Svelte reactivity by reassigning the array
+			this.messages = [...this.messages];
+			
+			assistantMessage = existingMessage;
+			
+			assistantMessageId = assistantMessage.id;
+			console.log('🎯 StreamingService: Using existing message ID for variant:', assistantMessageId);
+		} else {
+			// New message mode: Create new assistant message
+			console.log('🆕 StreamingService: Creating new message (no targetMessageId provided)');
+			assistantMessage = {
+				id: crypto.randomUUID(),
+				content: '', // Will be filled when buffering completes
+				displayedContent: '', // Will animate from empty to full content
+				sender: 'assistant',
+				created_at: new Date().toISOString(),
+				isAnimating: false // Will start animating after buffering
+			};
+			this.messages = [...this.messages, assistantMessage];
+			assistantMessageId = assistantMessage.id;
+			console.log('🆕 StreamingService: Created new message ID:', assistantMessageId);
+		}
 
 		// Track the current assistant message ID
-		this.currentAssistantMessageId = assistantMessage.id;
+		this.currentAssistantMessageId = assistantMessageId;
 
 		// Initialize buffer for this message
-		this.messageBuffers.set(assistantMessage.id, {
+		this.messageBuffers.set(assistantMessageId, {
 			content: '',
 			chunks: {},
 			expectedIndex: 0,
@@ -401,7 +450,17 @@ class StreamingService {
 		});
 
 		try {
-			await this.startEventStream(params, assistantMessage.id);
+			await this.startEventStream({
+				chatId: params.chatId,
+				userMessage: params.userMessage,
+				history: params.history,
+				model: params.model,
+				agentMode: params.agentMode,
+				analysisMode: params.analysisMode,
+				guidance: params.guidance,
+				variantOf: params.variantOf,
+				isRegeneration: params.isRegeneration
+			}, assistantMessageId);
 		} catch (error) {
 			this.handleConnectionError(error as Error);
 		}
@@ -419,18 +478,27 @@ class StreamingService {
 			agentMode?: string;
 			analysisMode?: 'existing' | 'refresh' | 'skip';
 			guidance?: string;
+			variantOf?: string;
+			isRegeneration?: boolean;
 		},
 		assistantMessageId: string
 	): Promise<void> {
 		const baseUrl = (env.PUBLIC_API_URL || '').trim();
 		const apiUrl = `${baseUrl}/api/chat/${params.chatId}/generate`;
 
+		// For regeneration/variants, don't append the user message again since it's already in history
+		// For new messages, append the user message to complete the conversation
+		const historyToSend = params.isRegeneration 
+			? params.history 
+			: [...params.history, { role: 'user' as const, content: params.userMessage }];
+
 		const requestBody = {
-			history: [...params.history, { role: 'user' as const, content: params.userMessage }],
+			history: historyToSend,
 			model: params.model,
 			agent_mode: params.agentMode,
 			analysis_mode: params.analysisMode, // Pass analysis mode for regeneration
-			guidance: params.guidance // Pass optional guidance for regeneration steering
+			guidance: params.guidance, // Pass optional guidance for regeneration steering
+			variant_of: params.variantOf // Pass variant_of for creating variants
 		};
 
 		console.log('🚀 Starting fetchEventSource with URL:', apiUrl);
@@ -534,9 +602,7 @@ class StreamingService {
 							if (messageBuffer) {
 								// Store chunk in buffer
 								messageBuffer.chunks[index] = content;
-								console.log(
-									`📦 Buffering chunk ${index} for ${messageId.slice(-8)}: ${content.length} chars`
-								);
+								// Buffering chunk ${index} (${content.length} chars)
 
 								// Check for gaps in chunks
 								const expectedIdx = messageBuffer.expectedIndex;
@@ -714,13 +780,18 @@ class StreamingService {
 				// Update buffer with backend ID
 				oldMessageBuffer.backend_id = actualMessageId;
 
-				// Transfer buffer to new ID
+				// Transfer buffer to new ID (only delete old if different ID)
 				this.messageBuffers.set(actualMessageId, oldMessageBuffer);
-				this.messageBuffers.delete(assistantMessageId);
-
-				console.log(
-					`💾 Transferred message buffer from ${assistantMessageId} to ${actualMessageId}`
-				);
+				if (assistantMessageId !== actualMessageId) {
+					this.messageBuffers.delete(assistantMessageId);
+					console.log(
+						`💾 Transferred message buffer from ${assistantMessageId} to ${actualMessageId}`
+					);
+				} else {
+					console.log(
+						`💾 Updated buffer for variant (same ID): ${actualMessageId}`
+					);
+				}
 
 				// Try to start animation if conditions are now met
 				this.tryStartAnimation(actualMessageId);
@@ -729,14 +800,61 @@ class StreamingService {
 			// Update tracked ID
 			this.currentAssistantMessageId = actualMessageId;
 
-			// Update message ID in messages array
-			this.messages = this.messages.map((msg) => {
-				if (msg.id === assistantMessageId) {
+			// Extract variant metadata from the message_saved event
+			const variantCount = messageData.variant_count ?? 0;
+			const currentVariantIndex = messageData.current_variant_index ?? 0;
+
+			// Update message ID and variant metadata in messages array while preserving object identity
+			let messageUpdated = false;
+			for (const msg of this.messages) {
+				// For variants, we need to match by either frontend ID or backend ID
+				if (msg.id === assistantMessageId || msg.backend_id === assistantMessageId) {
 					console.log(`💾 Updating message ID: ${assistantMessageId} → ${actualMessageId}`);
-					return { ...msg, id: actualMessageId };
+					console.log(`💾 Updating variant metadata: variant_count=${variantCount}, current_variant_index=${currentVariantIndex}`);
+					
+					// Update the existing object in place to maintain identity and reactivity
+					msg.id = actualMessageId;
+					msg.backend_id = actualMessageId;
+					msg.variant_count = variantCount;
+					msg.current_variant_index = currentVariantIndex;
+					
+					console.log(`💾 Updated message object in place:`, {
+						id: msg.id,
+						variant_count: msg.variant_count,
+						current_variant_index: msg.current_variant_index
+					});
+					messageUpdated = true;
+					break;
 				}
-				return msg;
+			}
+			
+			// Force Svelte reactivity if we updated a message
+			if (messageUpdated) {
+				this.messages = [...this.messages];
+			}
+			
+			// Verify the update took effect
+			const updatedMessage = this.messages.find(msg => msg.id === actualMessageId);
+			console.log(`💾 Verification - message in array:`, {
+				found: !!updatedMessage,
+				id: updatedMessage?.id,
+				variant_count: updatedMessage?.variant_count,
+				current_variant_index: updatedMessage?.current_variant_index
 			});
+
+			// Additional validation for variant metadata
+			if (updatedMessage && (variantCount > 0 || currentVariantIndex > 0)) {
+				const msgVariantCount = updatedMessage.variant_count ?? 0;
+				const msgCurrentIndex = updatedMessage.current_variant_index ?? 0;
+				console.log(`✅ VARIANT VALIDATION - Message ${actualMessageId} has variant data:`, {
+					variant_count: msgVariantCount,
+					current_variant_index: msgCurrentIndex,
+					shouldShowChevrons: msgVariantCount > 0,
+					displayString: msgVariantCount > 0 
+						? `${msgCurrentIndex + 1}/${msgVariantCount}`
+						: 'no variants'
+				});
+			}
 
 			// LEGACY: Also handle old buffer systems for compatibility
 			const oldBuffer = this.chunkBuffers.get(assistantMessageId);

@@ -203,6 +203,8 @@ async fn send_chat_request(
         model: Some("test-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let chat_request = Request::builder()

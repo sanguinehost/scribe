@@ -19,7 +19,10 @@ use crate::{
         MessageRole, // Changed NewChatMessagePayload to NewChatMessage
     },
     schema::{chat_messages, chat_sessions},
-    services::hybrid_token_counter::CountingMode,
+    services::{
+        chat::message_variants,
+        hybrid_token_counter::CountingMode,
+    },
     state::DbPool, // Changed db::Db to state::DbPool
 };
 
@@ -108,6 +111,7 @@ pub struct SaveMessageParams<'a> {
     pub raw_prompt_debug: Option<&'a str>, // Raw prompt for debugging (only for AI responses)
     pub status: crate::models::chats::MessageStatus, // Status of the message (streaming, completed, failed, partial)
     pub error_message: Option<String>,               // Error message if status is failed
+    pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -127,6 +131,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         raw_prompt_debug,
         status,
         error_message,
+        variant_of,
     } = params;
     
     // Clone model_name early for later use in token tracking
@@ -144,6 +149,56 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         return Err(AppError::BadRequest(
             "Cannot save an empty message.".to_string(),
         ));
+    }
+
+    // CRITICAL FIX: If variant_of is provided, create ONLY a variant, don't save a new message
+    if let Some(parent_message_id) = variant_of {
+        info!(parent_message_id = %parent_message_id, "Creating variant instead of new message");
+        
+        if let Some(dek_arc) = &user_dek_secret_box {
+            // Create the variant using the existing function
+            let variant_result = message_variants::create_message_variant(
+                state.clone(),
+                parent_message_id,
+                content, // Use the content directly (create_message_variant handles encryption)
+                user_id,
+                dek_arc,
+            ).await;
+            
+            match variant_result {
+                Ok(_variant) => {
+                    info!(parent_message_id = %parent_message_id, "Successfully created message variant");
+                    
+                    // Return the parent message with updated variant metadata
+                    // We need to fetch the updated parent message to return it
+                    let pool = state.pool.clone();
+                    let updated_parent = pool
+                        .get()
+                        .await
+                        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+                        .interact(move |conn| {
+                            use crate::schema::chat_messages::dsl::*;
+                            chat_messages
+                                .filter(id.eq(parent_message_id))
+                                .filter(user_id.eq(user_id))
+                                .select(ChatMessage::as_select())
+                                .first::<ChatMessage>(conn)
+                                .map_err(|e| AppError::DatabaseQueryError(format!("Parent message not found: {e}")))
+                        })
+                        .await
+                        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+                        
+                    return Ok(updated_parent);
+                },
+                Err(e) => {
+                    error!(parent_message_id = %parent_message_id, error = ?e, "Failed to create message variant");
+                    return Err(e);
+                }
+            }
+        } else {
+            error!(parent_message_id = %parent_message_id, "Cannot create variant without user DEK");
+            return Err(AppError::BadRequest("Cannot create variant without encryption key".to_string()));
+        }
     }
 
     // Calculate token counts

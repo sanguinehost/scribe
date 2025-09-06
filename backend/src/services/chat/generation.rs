@@ -553,6 +553,8 @@ pub async fn get_session_data_for_generation(
                     status: "completed".to_string(), // Frontend-provided history is considered completed
                     error_message: None,
                     superseded_at: None,
+                    variant_count: 0,
+                    current_variant_index: 0,
                 }
             })
             .collect()
@@ -1010,6 +1012,8 @@ pub async fn get_session_data_for_generation(
                 status: "completed".to_string(),           // First message is considered completed
                 error_message: None,
                 superseded_at: None,
+                variant_count: 0,
+                current_variant_index: 0,
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
@@ -1085,6 +1089,7 @@ pub struct StreamAiParams {
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
     pub character_name: Option<String>,    // For prefill generation
     pub player_chronicle_id: Option<Uuid>, // For narrative processing
+    pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -1318,6 +1323,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             user_dek: params.user_dek.clone(),
             character_name: params.character_name.clone(),
             player_chronicle_id: params.player_chronicle_id,
+            variant_of: params.variant_of,
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
@@ -1384,6 +1390,7 @@ pub async fn stream_ai_response_and_save_message(
         user_dek,
         character_name: _, // Ignore character_name in the actual generation function
         player_chronicle_id,
+        variant_of,
     } = params;
 
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
@@ -1644,6 +1651,7 @@ pub async fn stream_ai_response_and_save_message(
                                 raw_prompt_debug: None, // No raw prompt for partial/error saves
                                 status: crate::models::chats::MessageStatus::Partial,
                                 error_message: Some("Stream interrupted - partial content saved".to_string()),
+                                variant_of,
                            }).await {
                                 Ok(saved_message) => {
                                     debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
@@ -1734,6 +1742,7 @@ pub async fn stream_ai_response_and_save_message(
                     raw_prompt_debug: Some(&raw_prompt_debug),
                     status: crate::models::chats::MessageStatus::Completed,
                     error_message: None,
+                    variant_of,
                 }).await {
                     Ok(saved_message) => {
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");
@@ -1742,6 +1751,8 @@ pub async fn stream_ai_response_and_save_message(
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Sending message ID through channel");
                         let _ = token_sender_clone.send(ScribeSseEvent::MessageSaved {
                             message_id: saved_message.id.to_string(),
+                            variant_count: saved_message.variant_count,
+                            current_variant_index: saved_message.current_variant_index,
                         });
 
                         // Send token usage data through the channel

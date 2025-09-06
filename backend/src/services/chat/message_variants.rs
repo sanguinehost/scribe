@@ -6,7 +6,7 @@ use crate::schema::message_variants;
 use crate::state::AppState;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
-use secrecy::SecretBox;
+use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -43,63 +43,117 @@ pub async fn get_message_variants(
     Ok(decrypted_variants)
 }
 
-/// Create a new variant for a message
+/// Create a new variant for a message and return the updated parent message
 pub async fn create_message_variant(
     state: Arc<AppState>,
     message_id: Uuid,
     content: &str,
     user_id: Uuid,
     dek: &SecretBox<Vec<u8>>,
-) -> Result<MessageVariantDto, AppError> {
+) -> Result<crate::models::chats::MessageResponse, AppError> {
+    tracing::info!(
+        "🆕 Creating new variant for message {} with content length {}",
+        message_id,
+        content.len()
+    );
     let conn = state.pool.get().await?;
 
     // Get the next variant index first
     let next_index = conn
         .interact(move |conn| get_next_variant_index(&mut *conn, message_id))
         .await??;
+    
+    tracing::info!(
+        "🔢 Next variant index for message {}: {}",
+        message_id,
+        next_index
+    );
 
     // Create new variant with encryption outside the closure
     let new_variant = NewMessageVariant::new(message_id, next_index, content, user_id, dek)?;
+    
+    // Clone the DEK for use in the closure (create a new SecretBox from the exposed secret)
+    let dek_for_closure = SecretBox::new(Box::new(dek.expose_secret().clone()));
 
-    // Insert into database and update parent message status if needed
-    let created_variant = conn
+    // Insert variant and update parent message in transaction
+    let updated_message = conn
         .interact(move |conn| {
-            use crate::models::chats::MessageStatus;
+            use crate::models::chats::{MessageStatus, Message};
             use crate::schema::chat_messages;
 
             // Start a transaction to ensure atomicity
-            conn.transaction(|trans_conn| {
-                // First, check the parent message status
-                let parent_status: String = chat_messages::table
+            conn.transaction::<Message, AppError, _>(|trans_conn| {
+                // First, get the current parent message
+                let parent_message = chat_messages::table
                     .filter(chat_messages::id.eq(message_id))
-                    .select(chat_messages::status)
-                    .first::<String>(trans_conn)
+                    .select(Message::as_select())
+                    .first::<Message>(trans_conn)
                     .map_err(|e| {
                         AppError::DatabaseQueryError(format!(
-                            "Failed to get parent message status: {e}"
+                            "Failed to get parent message: {e}"
                         ))
                     })?;
 
-                // If parent message has failed or partial status, update it to completed
-                // since we're creating a successful variant
-                if parent_status == MessageStatus::Failed.to_string()
-                    || parent_status == MessageStatus::Partial.to_string()
-                {
-                    diesel::update(chat_messages::table)
-                        .filter(chat_messages::id.eq(message_id))
-                        .set((
-                            chat_messages::status.eq(MessageStatus::Completed.to_string()),
-                            chat_messages::error_message.eq(None::<String>),
-                        ))
+                // If this is the first variant (index 1), store the original content as variant 0
+                let final_variant_count = if next_index == 1 {
+                    tracing::info!(
+                        "🆕 Creating first variant for message {}, storing original as variant 0",
+                        message_id
+                    );
+                    
+                    // Decrypt the original message content to store as variant 0
+                    let original_content = if let Some(nonce) = &parent_message.content_nonce {
+                        // Message is encrypted, decrypt it
+                        match crate::crypto::decrypt_gcm(&parent_message.content, nonce, &dek_for_closure) {
+                            Ok(decrypted_secret_box) => {
+                                let decrypted_bytes = decrypted_secret_box.expose_secret();
+                                String::from_utf8(decrypted_bytes.clone())
+                                    .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8: {e}")))?
+                            },
+                            Err(e) => return Err(AppError::DecryptionError(format!(
+                                "Failed to decrypt original message content: {e}"
+                            ))),
+                        }
+                    } else {
+                        // Message is not encrypted (legacy or test data)
+                        String::from_utf8(parent_message.content.clone())
+                            .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8 in unencrypted message: {e}")))?
+                    };
+
+                    // Create variant 0 with original content
+                    let original_variant = NewMessageVariant::new(
+                        message_id,
+                        0, // Original message is variant 0
+                        &original_content,
+                        user_id,
+                        &dek_for_closure,
+                    ).map_err(|e| AppError::DatabaseQueryError(format!(
+                        "Failed to create original variant: {e}"
+                    )))?;
+
+                    // Insert original variant
+                    diesel::insert_into(message_variants::table)
+                        .values(&original_variant)
                         .execute(trans_conn)
                         .map_err(|e| {
                             AppError::DatabaseQueryError(format!(
-                                "Failed to update parent message status: {e}"
+                                "Failed to insert original variant: {e}"
                             ))
                         })?;
-                }
 
-                // Now insert the variant
+                    tracing::info!(
+                        "✅ Stored original content as variant 0 for message {}",
+                        message_id
+                    );
+
+                    // Total count includes original (0) + first variant (1) = 2
+                    2
+                } else {
+                    // Not the first variant, just increment the count
+                    parent_message.variant_count + 1
+                };
+
+                // Insert the new variant
                 diesel::insert_into(message_variants::table)
                     .values(&new_variant)
                     .returning(MessageVariant::as_returning())
@@ -108,13 +162,80 @@ pub async fn create_message_variant(
                         AppError::DatabaseQueryError(format!(
                             "Failed to create message variant: {e}"
                         ))
-                    })
+                    })?;
+
+                // Update parent message with new variant count and set current variant to the new one
+                let new_variant_count = final_variant_count;
+                tracing::info!(
+                    "📊 Updating parent message {}: variant_count {} → {}, current_variant_index → {}",
+                    message_id,
+                    parent_message.variant_count,
+                    new_variant_count,
+                    next_index
+                );
+                let updated_parent = diesel::update(chat_messages::table)
+                    .filter(chat_messages::id.eq(message_id))
+                    .set((
+                        chat_messages::variant_count.eq(new_variant_count),
+                        chat_messages::current_variant_index.eq(next_index),
+                        chat_messages::status.eq(MessageStatus::Completed.to_string()),
+                        chat_messages::error_message.eq(None::<String>),
+                    ))
+                    .returning(Message::as_returning())
+                    .get_result::<Message>(trans_conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to update parent message: {e}"
+                        ))
+                    })?;
+
+                tracing::info!(
+                    "✅ Successfully created variant {} for message {} (total variants: {})",
+                    next_index,
+                    message_id,
+                    new_variant_count
+                );
+                Ok(updated_parent)
             })
         })
         .await??;
 
-    // Return decrypted DTO
-    MessageVariantDto::from_model(created_variant, dek)
+    // Get the content for the current variant (the newly created one)
+    let current_content = if next_index == 0 {
+        // Should not happen since variants start from index 1, but handle it
+        let client_message = updated_message.clone().into_decrypted_for_client(Some(dek))?;
+        client_message.content
+    } else {
+        // Use the content we just created
+        content.to_string()
+    };
+
+    // Build and return MessageResponse
+    let response = crate::models::chats::MessageResponse {
+        id: updated_message.id,
+        session_id: updated_message.session_id,
+        message_type: updated_message.message_type,
+        role: updated_message
+            .role
+            .unwrap_or_else(|| updated_message.message_type.to_string()),
+        content: current_content,
+        parts: updated_message.parts.unwrap_or_else(|| serde_json::json!([])),
+        attachments: updated_message.attachments.unwrap_or_else(|| serde_json::json!([])),
+        created_at: updated_message.created_at,
+        raw_prompt: None, // Don't expose raw prompts in variant creation
+        prompt_tokens: updated_message.prompt_tokens,
+        completion_tokens: updated_message.completion_tokens,
+        model_name: Some(updated_message.model_name),
+        status: updated_message.status,
+        error_message: updated_message.error_message,
+        variant_count: updated_message.variant_count,
+        current_variant_index: updated_message.current_variant_index,
+        is_variant: false,
+        parent_message_id: None,
+        variants: None, // Don't include full variant data in creation response
+    };
+
+    Ok(response)
 }
 
 /// Get a specific variant by message ID and variant index
@@ -209,7 +330,7 @@ fn get_next_variant_index(conn: &mut PgConnection, message_id: Uuid) -> Result<i
             AppError::DatabaseQueryError(format!("Failed to get max variant index: {e}"))
         })?;
 
-    Ok(max_index.map_or(0, |max| max + 1))
+    Ok(max_index.map_or(1, |max| max + 1))
 }
 
 /// Get the active variant content for a message (non-failed/partial)
@@ -299,4 +420,122 @@ pub async fn ensure_original_variant_exists(
     }
 
     Ok(())
+}
+
+/// Select a specific variant for a message by updating the current_variant_index
+pub async fn select_message_variant(
+    state: Arc<AppState>,
+    message_id: Uuid,
+    variant_index: i32,
+    user_id: Uuid,
+    dek: &SecretBox<Vec<u8>>,
+) -> Result<crate::models::chats::MessageResponse, AppError> {
+    use crate::models::chats::Message;
+    use crate::schema::chat_messages;
+    
+    let conn = state.pool.get().await?;
+
+    // First get the parent message to validate user ownership and variant bounds
+    let parent_message = conn
+        .interact(move |conn| {
+            chat_messages::table
+                .filter(chat_messages::id.eq(message_id))
+                .filter(chat_messages::user_id.eq(user_id))
+                .select(Message::as_select())
+                .first::<Message>(conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to get parent message: {e}"))
+                })
+        })
+        .await??;
+
+    // Validate variant_index bounds
+    if variant_index < 0 || variant_index >= parent_message.variant_count {
+        return Err(AppError::BadRequest(format!(
+            "Variant index {} is out of bounds. Message has {} variants (0-{})",
+            variant_index, 
+            parent_message.variant_count, // Total number of variants
+            parent_message.variant_count - 1 // Highest valid index
+        )));
+    }
+
+    // Get variant content - if index 0, use original message content; otherwise get from variants table
+    let variant_content = if variant_index == 0 {
+        // Index 0 is the original message content - decrypt from parent message
+        use crate::crypto;
+        
+        // Get the nonce for the parent message content
+        let nonce_bytes = parent_message.content_nonce
+            .as_ref()
+            .ok_or_else(|| AppError::DecryptionError("Missing content nonce for parent message".to_string()))?;
+        
+        let decrypted_content = crypto::decrypt_gcm(&parent_message.content, nonce_bytes, dek).map_err(|e| {
+            AppError::DecryptionError(format!("Failed to decrypt original message content: {e}"))
+        })?;
+        String::from_utf8(decrypted_content.expose_secret().clone()).map_err(|e| {
+            AppError::DecryptionError(format!("Failed to decode original message content: {e}"))
+        })?
+    } else {
+        // Get content from variants table
+        let variant_dto = get_message_variant_by_index(
+            state.clone(),
+            message_id,
+            variant_index,
+            user_id,
+            dek,
+        ).await?;
+        
+        match variant_dto {
+            Some(dto) => dto.content,
+            None => {
+                return Err(AppError::BadRequest(format!(
+                    "Variant with index {} not found", variant_index
+                )));
+            }
+        }
+    };
+
+    // Update the parent message's current_variant_index
+    let updated_message = conn
+        .interact(move |conn| {
+            diesel::update(chat_messages::table)
+                .filter(chat_messages::id.eq(message_id))
+                .filter(chat_messages::user_id.eq(user_id))
+                .set(chat_messages::current_variant_index.eq(variant_index))
+                .returning(Message::as_returning())
+                .get_result::<Message>(conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!(
+                        "Failed to update current variant index: {e}"
+                    ))
+                })
+        })
+        .await??;
+
+    // Build and return MessageResponse with the selected variant content
+    let response = crate::models::chats::MessageResponse {
+        id: updated_message.id,
+        session_id: updated_message.session_id,
+        message_type: updated_message.message_type,
+        role: updated_message
+            .role
+            .unwrap_or_else(|| updated_message.message_type.to_string()),
+        content: variant_content, // Use the selected variant's content
+        parts: updated_message.parts.unwrap_or_else(|| serde_json::json!([])),
+        attachments: updated_message.attachments.unwrap_or_else(|| serde_json::json!([])),
+        created_at: updated_message.created_at,
+        raw_prompt: None, // Don't expose raw prompts in variant selection
+        prompt_tokens: updated_message.prompt_tokens,
+        completion_tokens: updated_message.completion_tokens,
+        model_name: Some(updated_message.model_name),
+        status: updated_message.status,
+        error_message: updated_message.error_message,
+        variant_count: updated_message.variant_count,
+        current_variant_index: updated_message.current_variant_index,
+        is_variant: false,
+        parent_message_id: None,
+        variants: None, // Don't include full variant data in selection response
+    };
+
+    Ok(response)
 }

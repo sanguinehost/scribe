@@ -438,32 +438,64 @@ pub async fn generate_chat_response(
     }
 
     // Save the user message first to get its ID for agent analysis association
-    let saved_user_message = match chat::message_handling::save_message(
-        chat::message_handling::SaveMessageParams {
-            state: state_arc.clone(),
+    // SKIP user message creation if we're creating a variant (user message already exists)
+    let saved_user_message = if payload.variant_of.is_some() {
+        // For variants, we don't save a new user message since it already exists
+        // Instead, we need to find the existing user message that prompted the original response
+        debug!(session_id = %session_id, variant_of = ?payload.variant_of, "Skipping user message save for variant creation - user message already exists");
+        
+        // For now, we'll create a placeholder since the agent analysis expects a user message
+        // In the future, we might want to find the actual user message that prompted the variant
+        use crate::models::chats::{ChatMessage, MessageRole as DbMessageRole};
+        ChatMessage {
+            id: uuid::Uuid::new_v4(), // Temporary ID
             session_id,
             user_id: user_id_value,
-            message_type_enum: MessageRole::User,
-            content: &current_user_content_text,
-            role_str: user_message_struct_to_save.role.clone(),
-            parts: user_message_struct_to_save.parts.clone(),
-            attachments: user_message_struct_to_save.attachments.clone(),
-            user_dek_secret_box: Some(session_dek_arc.clone()),
+            message_type: DbMessageRole::User,
+            content: current_user_content_text.as_bytes().to_vec(),
+            content_nonce: None,
+            created_at: chrono::Utc::now(),
+            prompt_tokens: None,
+            completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
             model_name: model_to_use.clone(),
-            raw_prompt_debug: None, // User messages don't need raw prompt debug
-            status: crate::models::chats::MessageStatus::Completed,
+            status: "completed".to_string(),
             error_message: None,
-        },
-    )
-    .await
-    {
-        Ok(saved_msg) => {
-            debug!(message_id = %saved_msg.id, session_id = %session_id, message_status = ?saved_msg.status, "Successfully saved user message for agent analysis");
-            saved_msg
+            superseded_at: None,
+            variant_count: 0,
+            current_variant_index: 0,
         }
-        Err(e) => {
-            error!(error = ?e, session_id = %session_id, "Error saving user message");
-            return Err(e);
+    } else {
+        // Normal flow: save new user message
+        match chat::message_handling::save_message(
+            chat::message_handling::SaveMessageParams {
+                state: state_arc.clone(),
+                session_id,
+                user_id: user_id_value,
+                message_type_enum: MessageRole::User,
+                content: &current_user_content_text,
+                role_str: user_message_struct_to_save.role.clone(),
+                parts: user_message_struct_to_save.parts.clone(),
+                attachments: user_message_struct_to_save.attachments.clone(),
+                user_dek_secret_box: Some(session_dek_arc.clone()),
+                model_name: model_to_use.clone(),
+                raw_prompt_debug: None, // User messages don't need raw prompt debug
+                status: crate::models::chats::MessageStatus::Completed,
+                error_message: None,
+                variant_of: None, // User messages don't create variants
+            },
+        )
+        .await
+        {
+            Ok(saved_msg) => {
+                debug!(message_id = %saved_msg.id, session_id = %session_id, message_status = ?saved_msg.status, "Successfully saved user message for agent analysis");
+                saved_msg
+            }
+            Err(e) => {
+                error!(error = ?e, session_id = %session_id, "Error saving user message");
+                return Err(e);
+            }
         }
     };
 
@@ -690,6 +722,7 @@ pub async fn generate_chat_response(
                     user_dek: dek_for_stream_service,
                     character_name: Some(character_db_model.name.clone()),
                     player_chronicle_id,
+                    variant_of: payload.variant_of,
                 },
             )
             .await
@@ -731,7 +764,7 @@ pub async fn generate_chat_response(
                                             });
                                             Event::default().event("token_usage").data(token_data.to_string())
                                         }
-                                        ScribeSseEvent::MessageSaved { message_id } => {
+                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
                                                 assistant_message_id = Some(msg_uuid);
@@ -778,7 +811,9 @@ pub async fn generate_chat_response(
                                                 }
                                             }
                                             let message_data = serde_json::json!({
-                                                "message_id": message_id
+                                                "message_id": message_id,
+                                                "variant_count": variant_count,
+                                                "current_variant_index": current_variant_index
                                             });
                                             Event::default().event("message_saved").data(message_data.to_string())
                                         }
@@ -1031,6 +1066,7 @@ pub async fn generate_chat_response(
                                 raw_prompt_debug: None, // Non-stream AI responses don't include raw prompt debug
                                 status: crate::models::chats::MessageStatus::Completed,
                                 error_message: None,
+                                variant_of: payload.variant_of, // Use variant_of from request payload
                             },
                         )
                         .await
@@ -1247,6 +1283,7 @@ pub async fn generate_chat_response(
                     user_dek: dek_for_fallback_stream_service,
                     character_name: Some(character_db_model.name.clone()),
                     player_chronicle_id,
+                    variant_of: payload.variant_of,
                 },
             )
             .await
@@ -1282,13 +1319,15 @@ pub async fn generate_chat_response(
                                             });
                                             Event::default().event("token_usage").data(token_data.to_string())
                                         }
-                                        ScribeSseEvent::MessageSaved { message_id } => {
+                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
                                                 assistant_message_id = Some(msg_uuid);
                                             }
                                             let message_data = serde_json::json!({
-                                                "message_id": message_id
+                                                "message_id": message_id,
+                                                "variant_count": variant_count,
+                                                "current_variant_index": current_variant_index
                                             });
                                             Event::default().event("message_saved").data(message_data.to_string())
                                         }
@@ -1390,6 +1429,10 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
         .route(
             "/messages/:message_id/variants/count",
             get(get_variant_count_handler),
+        )
+        .route(
+            "/messages/:message_id/select-variant",
+            post(select_message_variant_handler),
         )
         .with_state(state)
 }
@@ -1618,7 +1661,7 @@ async fn create_message_variant_handler(
     session_dek: SessionDek,
     Path(message_id): Path<Uuid>,
     Json(payload): Json<CreateMessageVariantPayload>,
-) -> Result<(StatusCode, Json<MessageVariantDto>), AppError> {
+) -> Result<(StatusCode, Json<crate::models::chats::MessageResponse>), AppError> {
     let user = auth_session
         .user
         .as_ref()
@@ -2435,6 +2478,7 @@ pub async fn expand_text_handler(
         user_dek: user_dek_arc,
         character_name: None,      // Text expansion doesn't have a character
         player_chronicle_id: None, // Text expansion doesn't involve chronicle processing
+        variant_of: None,          // Text expansion doesn't create variants
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -2630,6 +2674,7 @@ pub async fn impersonate_handler(
         ),
         analysis_mode: None, // Not applicable for suggested actions
         guidance: None, // No guidance for impersonation
+        variant_of: None, // Impersonation doesn't create variants
     };
 
     // Call the existing generate_chat_response handler logic but collect the response
@@ -2744,6 +2789,7 @@ pub async fn impersonate_handler(
         user_dek: user_dek_arc,
         character_name: None,      // Impersonation doesn't have a character
         player_chronicle_id: None, // Impersonation doesn't involve chronicle processing
+        variant_of: None,          // Impersonation doesn't create variants
     };
 
     // Generate the response using the full pipeline
@@ -2830,3 +2876,35 @@ pub async fn impersonate_handler(
 // ============================================================================
 // Message Variant Handlers
 // ============================================================================
+
+/// Select a specific variant for a message
+async fn select_message_variant_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Path(message_id): Path<Uuid>,
+    session_dek: SessionDek,
+    Json(payload): Json<crate::models::chats::SelectVariantRequest>,
+) -> Result<Json<crate::models::chats::MessageResponse>, AppError> {
+    // Validate payload
+    payload.validate().map_err(|e| {
+        AppError::BadRequest(format!("Invalid request: {}", e))
+    })?;
+
+    let user = auth_session
+        .user
+        .as_ref()
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
+
+    let dek = &session_dek.0;
+
+    let response = crate::services::chat::message_variants::select_message_variant(
+        Arc::new(state),
+        message_id,
+        payload.variant_index,
+        user.id,
+        &dek,
+    )
+    .await?;
+
+    Ok(Json(response))
+}

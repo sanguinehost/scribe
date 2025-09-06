@@ -35,6 +35,8 @@ async fn generate_chat_response_streaming_unauthorized() {
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
     let request = Request::builder()
         .method(Method::POST)
@@ -117,6 +119,8 @@ async fn generate_chat_response_streaming_not_found() {
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
     let request = Request::builder()
         .method(Method::POST)
@@ -288,6 +292,8 @@ async fn generate_chat_response_streaming_forbidden() {
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
     let request = Request::builder()
         .method(Method::POST)

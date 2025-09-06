@@ -71,7 +71,12 @@
 
 	// Regeneration modal state
 	let showRegenerationModal = $state(false);
-	let pendingRegenerationData = $state<{ userMessage: string; messageId: string } | null>(null);
+	let pendingRegenerationData = $state<{ 
+		userMessage: string; 
+		messageId: string; 
+		targetMessageIndex?: number; 
+		allMessages?: StreamingMessage[] 
+	} | null>(null);
 
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
@@ -105,9 +110,7 @@
 	// This component will populate the service with initial messages on load,
 	// and derive its display messages directly from the service's state.
 
-	// Message variants storage: messageId -> array of variant contents
-	let messageVariants = $state<Map<string, { content: string; timestamp: string }[]>>(new Map());
-	let currentVariantIndex = $state<Map<string, number>>(new Map());
+	// Message variants are now handled by the backend and included in message metadata
 
 	// This single effect handles both populating messages for the current chat
 	// and cleaning them up when the chat changes or the component is destroyed.
@@ -147,6 +150,18 @@
 				} else {
 					// Flatten all loaded batches into a single array
 					const allLoadedMessages = loadedMessagesBatches.flat();
+					
+					console.log('🔄 Processing initial messages for chat:', {
+						currentChatId,
+						totalMessages: allLoadedMessages.length,
+						batchCount: loadedMessagesBatches.length
+					});
+					
+					// Log details of each message to identify duplicates
+					allLoadedMessages.forEach((msg, idx) => {
+						console.log(`📋 Initial Message ${idx}: id=${msg.id}, type=${msg.message_type}, variant_count=${msg.variant_count}, current_variant_index=${msg.current_variant_index}`);
+					});
+					
 					newInitialMessages = allLoadedMessages.map(
 						(msg) =>
 							({
@@ -163,7 +178,11 @@
 								model_name: msg.model_name,
 								backend_id: msg.backend_id,
 								status: msg.status,
-								superseded_at: msg.superseded_at
+								superseded_at: msg.superseded_at,
+								variant_count: msg.variant_count,
+								current_variant_index: msg.current_variant_index,
+								is_variant: msg.is_variant,
+								parent_message_id: msg.parent_message_id
 							}) as StreamingMessage
 					);
 				}
@@ -231,6 +250,11 @@
 					currentStreamingCount: streamingService.messages.length
 				});
 
+				// Log detailed message info to identify duplicates
+				newMessages.forEach((msg, idx) => {
+					console.log(`📋 Message ${idx}: id=${msg.id}, type=${msg.message_type}, variant_count=${msg.variant_count}, current_variant_index=${msg.current_variant_index}`);
+				});
+
 				// Convert to ScribeChatMessage format
 				const convertedMessages: ScribeChatMessage[] = newMessages.map(
 					(rawMsg): ScribeChatMessage => ({
@@ -256,7 +280,12 @@
 						completion_tokens: rawMsg.completion_tokens,
 						model_name: rawMsg.model_name,
 						status: rawMsg.status,
-						superseded_at: rawMsg.superseded_at
+						superseded_at: rawMsg.superseded_at,
+						// Variant metadata
+						variant_count: rawMsg.variant_count,
+						current_variant_index: rawMsg.current_variant_index,
+						is_variant: rawMsg.is_variant,
+						parent_message_id: rawMsg.parent_message_id
 					})
 				);
 
@@ -295,7 +324,12 @@
 							model_name: msg.model_name,
 							backend_id: msg.backend_id,
 							status: msg.status,
-							superseded_at: msg.superseded_at
+							superseded_at: msg.superseded_at,
+							// Variant metadata
+							variant_count: msg.variant_count,
+							current_variant_index: msg.current_variant_index,
+							is_variant: msg.is_variant,
+							parent_message_id: msg.parent_message_id
 						})
 					);
 
@@ -354,7 +388,14 @@
 							prompt_tokens: msg.prompt_tokens || undefined,
 							completion_tokens: msg.completion_tokens || undefined,
 							model_name: msg.model_name,
-							backend_id: msg.backend_id
+							backend_id: msg.backend_id,
+							status: msg.status,
+							superseded_at: msg.superseded_at,
+							// Variant metadata
+							variant_count: msg.variant_count,
+							current_variant_index: msg.current_variant_index,
+							is_variant: msg.is_variant,
+							parent_message_id: msg.parent_message_id
 						})
 					);
 
@@ -398,11 +439,7 @@
 	let displayMessages = $derived.by(() => {
 		try {
 			const streamingMessages = streamingService.messages;
-			console.log('🔄 displayMessages derived:', {
-				streamingCount: streamingMessages.length,
-				firstMessage: streamingMessages[0]?.id,
-				lastMessage: streamingMessages[streamingMessages.length - 1]?.id
-			});
+			// Derived displayMessages calculation
 
 			// Check if messages array actually changed to avoid unnecessary work
 			// Use both reference equality and length check for robustness
@@ -412,11 +449,11 @@
 					streamingMessages.length === lastStreamingMessages.length &&
 					streamingMessages.every((msg, idx) => msg === lastStreamingMessages[idx]))
 			) {
-				console.log('⚠️ displayMessages: Using cached result, no change detected');
+				// Using cached result - no change detected
 				return Array.from(messageCache.values());
 			}
 
-			console.log('🔄 displayMessages: Processing new messages array');
+			// Processing new messages array
 
 			const messages: ScribeChatMessage[] = [];
 			const newCache = new Map<string, ScribeChatMessage>();
@@ -434,15 +471,12 @@
 					cached.content !== displayContent ||
 					cached.prompt_tokens !== msg.prompt_tokens ||
 					cached.completion_tokens !== msg.completion_tokens ||
-					cached.error !== msg.error;
+					cached.error !== msg.error ||
+					cached.variant_count !== msg.variant_count ||
+					cached.current_variant_index !== msg.current_variant_index;
 
 				if (hasChanged) {
-					// Only log when not animating to avoid spam
-					if (!msg.isAnimating) {
-						console.log(
-							`🔄 Message ${msg.id.slice(-8)} changed - displayed: ${displayContent.length}chars, full: ${msg.content.length}chars, tokens: ${msg.prompt_tokens}/${msg.completion_tokens}`
-						);
-					}
+					// Message content changed
 
 					// Create new message object only if changed (NEW: using displayedContent for UI)
 					const newMessage: ScribeChatMessage = {
@@ -458,7 +492,12 @@
 						prompt_tokens: msg.prompt_tokens,
 						completion_tokens: msg.completion_tokens,
 						model_name: msg.model_name,
-						backend_id: msg.backend_id
+						backend_id: msg.backend_id,
+						// Include variant metadata for proper UI display
+						variant_count: msg.variant_count,
+						current_variant_index: msg.current_variant_index,
+						is_variant: msg.is_variant,
+						parent_message_id: msg.parent_message_id
 					};
 
 					newCache.set(msg.id, newMessage);
@@ -1169,19 +1208,10 @@
 	// Regenerate AI response without adding a new user message - using StreamingService
 	async function regenerateResponse(
 		_userMessageContent: string,
-		_originalMessageId?: string,
+		originalMessageId?: string,
 		analysisMode: AnalysisMode = 'existing',
 		guidance?: string
 	) {
-		// DEBUG: Add stack trace to identify unwanted calls
-		console.log(
-			'🚨 regenerateResponse called for message:',
-			_originalMessageId,
-			'with analysis mode:',
-			analysisMode
-		);
-		console.log('🚨 regenerateResponse STACK TRACE:', new Error().stack);
-
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
 			return;
@@ -1192,6 +1222,8 @@
 			toast.warning('Please wait for the current message to complete.');
 			return;
 		}
+
+		// The backend will handle variant creation when we pass variant_of parameter
 
 		// Build the history - messages array already has the right messages after we removed the assistant message
 		// Just convert to API format (NEW: use isAnimating instead of loading)
@@ -1212,6 +1244,31 @@
 		try {
 			// Use StreamingService for regeneration - it will handle the streaming
 			const currentModel = await getCurrentChatModel();
+			
+			// Find the target message in the streaming service for variant update
+			let targetMessageIdForVariant: string | undefined;
+			if (originalMessageId) {
+				const currentMessages = streamingService.messages as StreamingMessage[];
+				console.log('🔍 Searching for originalMessageId:', originalMessageId);
+				console.log('🔍 Current messages:', currentMessages.map(m => ({ id: m.id, backend_id: m.backend_id, sender: m.sender })));
+				
+				const targetMessage = currentMessages.find(msg => 
+					msg.backend_id === originalMessageId || msg.id === originalMessageId
+				);
+				if (targetMessage) {
+					targetMessageIdForVariant = targetMessage.id; // Use frontend ID for variant update
+					console.log('🎯 Found target message for variant update:', targetMessageIdForVariant);
+				} else {
+					console.warn('⚠️ Target message not found for variant update:', originalMessageId);
+				}
+			}
+
+			if (originalMessageId) {
+				console.log('🎯 Generating new variant for message:', originalMessageId);
+			} else {
+				console.log('🎯 Generating new response (not a variant)');
+			}
+			
 			await streamingService.connect({
 				chatId: chat.id,
 				userMessage: lastUserMessage.content,
@@ -1220,7 +1277,9 @@
 				agentMode: agentMode,
 				analysisMode: analysisMode, // Pass the analysis mode for regeneration
 				isRegeneration: true, // Prevent duplicate user message
-				guidance: guidance // Pass guidance for regeneration steering
+				guidance: guidance, // Pass guidance for regeneration steering
+				targetMessageId: targetMessageIdForVariant, // Pass target message ID for variant update
+				variantOf: originalMessageId // Create response as variant of original message
 			});
 
 			// Update chat preview after successful regeneration
@@ -1245,11 +1304,7 @@
 	}
 
 	// Message action handlers
-	async function handleRetryMessage(messageId: string) {
-		// DEBUG: Add stack trace to identify unwanted calls
-		console.log('🚨 handleRetryMessage called for:', messageId);
-		console.log('🚨 handleRetryMessage STACK TRACE:', new Error().stack);
-
+	function handleRetryMessage(messageId: string) {
 		if (!chat?.id || isLoading) return;
 
 		console.log('Retry message:', messageId);
@@ -1263,21 +1318,6 @@
 		const targetMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
 		if (targetMessage.sender !== 'assistant') return;
 
-		// Initialize variants array if this is the first retry
-		let variants = messageVariants.get(messageId) || [];
-
-		// If this is the first retry (no variants exist), save the original message as index 0
-		if (variants.length === 0 && targetMessage.content.trim()) {
-			variants.push({
-				content: targetMessage.content,
-				timestamp: targetMessage.created_at || new Date().toISOString()
-			});
-			messageVariants.set(messageId, variants);
-		}
-
-		// Don't update the current index yet - wait until the new variant is actually generated
-		// This keeps the UI showing the current count (e.g., 2/2) until the new one exists
-
 		// Find the previous user message to regenerate from
 		const userMessageIndex = messageIndex - 1;
 		if (userMessageIndex < 0) return;
@@ -1285,33 +1325,18 @@
 		const userMessage = (streamingService.messages as StreamingMessage[])[userMessageIndex];
 		if (userMessage.sender !== 'user') return;
 
-		// Remove the assistant message and any messages after it
-		const allMessages = [...(streamingService.messages as StreamingMessage[])];
-		const removedMessages = allMessages.slice(messageIndex);
-		streamingService.messages = allMessages.slice(0, messageIndex);
-
-		// Clean up variant data for any messages that will be removed (except the one we're regenerating)
-		for (const removedMsg of removedMessages) {
-			if (removedMsg.id !== messageId) {
-				messageVariants.delete(removedMsg.id);
-				currentVariantIndex.delete(removedMsg.id);
-			}
-		}
-
-		// Delete trailing messages from backend (including embeddings)
-		// Only delete messages after the one we're regenerating
-		const messagesToDelete = removedMessages.filter((msg) => msg.id !== messageId);
-		if (messagesToDelete.length > 0 && messagesToDelete[0].backend_id) {
-			try {
-				await apiClient.deleteTrailingMessages(messagesToDelete[0].backend_id);
-			} catch (err) {
-				console.warn('Failed to delete trailing messages from backend:', err);
-				// Continue with regeneration even if cleanup fails
-			}
-		}
-
-		// Show the regeneration modal to let user choose analysis mode
-		pendingRegenerationData = { userMessage: userMessage.content, messageId };
+		// DEFER CHANGES: Only collect data for the modal, don't modify anything yet
+		// Pass the backend_id if available for variant creation
+		const backendMessageId = targetMessage.backend_id || messageId;
+		
+		// Store the data needed for cleanup after modal confirmation
+		pendingRegenerationData = { 
+			userMessage: userMessage.content, 
+			messageId: backendMessageId,
+			// Store additional data needed for cleanup
+			targetMessageIndex: messageIndex,
+			allMessages: [...(streamingService.messages as StreamingMessage[])]
+		};
 		showRegenerationModal = true;
 	}
 
@@ -1354,14 +1379,7 @@
 		// Clear all subsequent messages (everything after this user message)
 		streamingService.messages = allMessages.slice(0, messageIndex + 1);
 
-		// Clear any variant data for removed messages
-		const keptMessageIds = new Set(streamingService.messages.map((m: StreamingMessage) => m.id));
-		for (const [variantMessageId] of messageVariants) {
-			if (!keptMessageIds.has(variantMessageId)) {
-				messageVariants.delete(variantMessageId);
-				currentVariantIndex.delete(variantMessageId);
-			}
-		}
+		// Variant data is now managed by the backend
 
 		// Delete trailing messages from backend (including embeddings)
 		if (removedMessages.length > 0 && removedMessages[0].backend_id) {
@@ -1378,54 +1396,111 @@
 		generateAIResponse();
 	}
 
-	function handlePreviousVariant(messageId: string) {
-		console.log('Previous variant:', messageId);
+	async function handlePreviousVariant(messageId: string) {
+		console.log('⬅️ Previous variant:', messageId);
 
-		const variants = messageVariants.get(messageId);
-		const currentIndex = currentVariantIndex.get(messageId) ?? 0;
+		// Find the message to get current variant info (check both frontend ID and backend ID)
+		const message = streamingService.messages.find((msg) => 
+			msg.id === messageId || msg.backend_id === messageId
+		);
+		if (!message || (message.current_variant_index ?? 0) <= 0) return;
 
 		// Can't go back if we're at index 0 (original message)
-		if (currentIndex <= 0) return;
-
+		const currentIndex = message.current_variant_index ?? 0;
 		const newIndex = currentIndex - 1;
-		currentVariantIndex.set(messageId, newIndex);
 
-		// Update the message content with the previous variant
-		if (variants && newIndex < variants.length) {
-			streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) => {
-				if (msg.id === messageId) {
-					return { ...msg, content: variants[newIndex].content };
-				}
-				return msg;
-			});
+		try {
+			// Use backend ID for API call if available, otherwise use frontend ID
+			const apiMessageId = message.backend_id || messageId;
+			const result = await apiClient.selectMessageVariant(apiMessageId, { variant_index: newIndex });
+
+			if (result.isOk()) {
+				const updatedMessage = result.value;
+				// Update the message in the streaming service (match by frontend or backend ID)
+				streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) => {
+					if (msg.id === messageId || msg.backend_id === messageId) {
+						return { 
+							...msg, 
+							content: updatedMessage.content,
+							current_variant_index: updatedMessage.current_variant_index,
+							displayedContent: updatedMessage.content
+						};
+					}
+					return msg;
+				});
+			} else {
+				console.error('Failed to select previous variant:', result.error);
+				toast.error('Failed to switch to previous variant');
+			}
+		} catch (err) {
+			console.error('Failed to select previous variant:', err);
+			toast.error('Failed to switch to previous variant');
 		}
 	}
 
-	function handleNextVariant(messageId: string) {
-		// DEBUG: Add stack trace to identify unwanted calls
-		console.log('🚨 handleNextVariant called for:', messageId);
-		console.log('🚨 handleNextVariant STACK TRACE:', new Error().stack);
+	async function handleNextVariant(messageId: string) {
+		// Find the message to get current variant info (check both frontend ID and backend ID)
+		const message = streamingService.messages.find((msg) => 
+			msg.id === messageId || msg.backend_id === messageId
+		);
+		if (!message) return;
 
-		console.log('Next variant / Regenerate:', messageId);
-
-		const variants = messageVariants.get(messageId) || [];
-		const currentIndex = currentVariantIndex.get(messageId) ?? 0;
+		const currentIndex = message.current_variant_index ?? 0;
+		const variantCount = message.variant_count ?? 0;
+		
+		console.log(`➡️ Next variant: messageId=${messageId}, currentIndex=${currentIndex}, variantCount=${variantCount}`);
 
 		// If we have saved variants and we're not at the latest one
-		if (variants.length > 0 && currentIndex < variants.length - 1) {
+		if (variantCount > 0 && currentIndex < variantCount - 1) {
 			// Show next variant
 			const newIndex = currentIndex + 1;
-			currentVariantIndex.set(messageId, newIndex);
 
-			streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) => {
-				if (msg.id === messageId) {
-					return { ...msg, content: variants[newIndex].content };
+			try {
+				// Use backend ID for API call if available, otherwise use frontend ID
+				const apiMessageId = message.backend_id || messageId;
+				const result = await apiClient.selectMessageVariant(apiMessageId, { variant_index: newIndex });
+
+				if (result.isOk()) {
+					const updatedMessage = result.value;
+					// Update the message in the streaming service (match by frontend or backend ID)
+					streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) => {
+						if (msg.id === messageId || msg.backend_id === messageId) {
+							return { 
+								...msg, 
+								content: updatedMessage.content,
+								current_variant_index: updatedMessage.current_variant_index,
+								displayedContent: updatedMessage.content
+							};
+						}
+						return msg;
+					});
+				} else {
+					console.error('Failed to select next variant:', result.error);
+					toast.error('Failed to switch to next variant');
 				}
-				return msg;
-			});
+			} catch (err) {
+				console.error('Failed to select next variant:', err);
+				toast.error('Failed to switch to next variant');
+			}
 		} else {
-			// No more variants, generate a new one
-			handleRetryMessage(messageId);
+			// No more variants, generate a new one as a variant (not a retry)
+			// Find the current message and the user message before it
+			const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+				(msg) => msg.id === messageId || msg.backend_id === messageId
+			);
+			
+			if (messageIndex > 0) {
+				const userMessage = (streamingService.messages as StreamingMessage[])[messageIndex - 1];
+				if (userMessage.sender === 'user') {
+					// Show regeneration modal for variant generation
+					const backendMessageId = message.backend_id || messageId;
+					pendingRegenerationData = { 
+						userMessage: userMessage.content, 
+						messageId: backendMessageId 
+					};
+					showRegenerationModal = true;
+				}
+			}
 		}
 	}
 
@@ -1457,11 +1532,7 @@
 		const messagesToRemove = allMessages.slice(messageIndex); // Include the failed message
 		streamingService.messages = allMessages.slice(0, messageIndex); // Keep only up to the user message
 
-		// Clean up variant data for removed messages
-		for (const removedMsg of messagesToRemove) {
-			messageVariants.delete(removedMsg.id);
-			currentVariantIndex.delete(removedMsg.id);
-		}
+		// Variant data is now managed by the backend
 
 		// Delete trailing messages from backend if they exist
 		if (messagesToRemove.length > 0 && messagesToRemove[0].backend_id) {
@@ -1474,15 +1545,39 @@
 		}
 
 		// Show the regeneration modal to let user choose analysis mode (for retry after error)
-		pendingRegenerationData = { userMessage: userMessage.content, messageId };
+		// Don't pass messageId for retry - this should be a fresh regeneration, not a variant
+		pendingRegenerationData = { userMessage: userMessage.content, messageId: undefined };
 		showRegenerationModal = true;
 	}
 
 	// Handle regeneration modal confirmation
-	function handleRegenerationConfirm(mode: AnalysisMode, guidance?: string) {
+	async function handleRegenerationConfirm(mode: AnalysisMode, guidance?: string) {
 		if (!pendingRegenerationData) return;
 
-		const { userMessage, messageId } = pendingRegenerationData;
+		const { userMessage, messageId, targetMessageIndex, allMessages } = pendingRegenerationData;
+
+		// NOW perform the cleanup that was deferred from handleRetryMessage
+		// (This will NOT run for variant generation since those fields aren't set)
+		if (targetMessageIndex !== undefined && allMessages) {
+			console.log('🧹 Performing retry cleanup - deleting trailing messages');
+			// Only delete trailing messages from backend (messages after the one we're regenerating)
+			const messagesToDeleteFromBackend = allMessages.slice(targetMessageIndex + 1); // Messages AFTER the target
+			
+			if (messagesToDeleteFromBackend.length > 0 && messagesToDeleteFromBackend[0].backend_id) {
+				try {
+					await apiClient.deleteTrailingMessages(messagesToDeleteFromBackend[0].backend_id);
+				} catch (err) {
+					console.warn('Failed to delete trailing messages from backend:', err);
+					// Continue with regeneration even if cleanup fails
+				}
+			}
+
+			// Remove trailing messages from UI (but keep the target message for variant update)
+			streamingService.messages = allMessages.slice(0, targetMessageIndex + 1);
+		} else {
+			console.log('🎯 Generating new variant - no cleanup needed');
+		}
+
 		regenerateResponse(userMessage, messageId, mode, guidance);
 
 		// Clear pending data
@@ -1515,9 +1610,7 @@
 		allMessages.splice(messageIndex, 1);
 		streamingService.messages = allMessages;
 
-		// Clean up variant data for deleted message
-		messageVariants.delete(messageId);
-		currentVariantIndex.delete(messageId);
+		// Variant data is now managed by the backend
 
 		// Delete from backend if it has a backend ID
 		if (messageToDelete?.backend_id || messageToDelete?.id) {
@@ -1537,13 +1630,7 @@
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
 	<ChatHeader {user} {chat} {readonly} />
 	{#key displayMessages.length}
-		{console.log('🎯 About to render Messages component:', {
-			displayMessagesCount: displayMessages.length,
-			isLoadingMore,
-			hasMoreMessages,
-			firstDisplayMessage: displayMessages[0]?.id,
-			lastDisplayMessage: displayMessages[displayMessages.length - 1]?.id
-		})}
+		<!-- Messages component render key -->
 	{/key}
 
 	<Messages
@@ -1554,8 +1641,6 @@
 		{character}
 		{chat}
 		{user}
-		{messageVariants}
-		{currentVariantIndex}
 		onRetryMessage={handleRetryMessage}
 		onRetryFailedMessage={handleRetryFailedMessage}
 		onEditMessage={handleEditMessage}

@@ -203,6 +203,8 @@ async fn perform_empty_response_stream_test(
         model: Some("test-stream-empty-resp-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -411,6 +413,8 @@ async fn perform_reasoning_chunk_stream_test(
         model: Some("test-stream-reasoning-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -837,6 +841,8 @@ async fn perform_real_client_stream_test_and_verify(
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()

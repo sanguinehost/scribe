@@ -371,6 +371,7 @@ impl HttpClient for ReqwestClientWrapper {
             query_text_for_rag: None,
             analysis_mode: None,
             guidance: None,
+            variant_of: None,
         };
 
         tracing::info!(target: "scribe_cli::client::implementation", %url, chat_id = %chat_id, model = ?model_name, "Sending non-streaming message via HttpClient");
@@ -424,6 +425,7 @@ impl HttpClient for ReqwestClientWrapper {
             query_text_for_rag: None,
             analysis_mode: None,
             guidance: None,
+            variant_of: None,
         };
 
         // Build the request manually to use with EventSource

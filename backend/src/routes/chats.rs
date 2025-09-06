@@ -12,6 +12,7 @@ use crate::models::chats::{
     Message,
     MessageResponse, // Now available
     MessageRole,
+    SelectVariantRequest, // Added for variant selection
     UpdateChatSettingsRequest,
     UpdateChatVisibilityRequest, // Now available
     Vote,                        // Now available
@@ -76,6 +77,7 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             "/messages/:id",
             get(get_message_by_id_handler).delete(delete_message_handler),
         )
+        .route("/messages/:id/select-variant", post(select_message_variant_handler))
         .route("/messages/:id/vote", post(vote_message_handler))
         .route(
             "/messages/:id/trailing",
@@ -734,11 +736,21 @@ async fn fetch_paginated_chat_messages(
 
             match &result {
                 Ok(messages) => {
-                    tracing::debug!(
-                        "Found {} paginated messages for chat {}",
+                    tracing::info!(
+                        "📥 Found {} paginated messages for chat {}",
                         messages.len(),
                         chat_id
-                    )
+                    );
+                    for msg in messages {
+                        tracing::info!(
+                            "📋 Message: id={}, type={}, variant_count={}, current_variant_index={}, status={}",
+                            msg.id,
+                            msg.message_type,
+                            msg.variant_count,
+                            msg.current_variant_index,
+                            msg.status
+                        );
+                    }
                 }
                 Err(e) => tracing::error!("Error fetching paginated messages: {}", e),
             }
@@ -788,6 +800,7 @@ async fn get_default_variant_content(
     }
 }
 
+
 /// Helper function to decrypt and transform messages for client response with variant support
 async fn process_messages_for_response(
     messages_db: Vec<Message>,
@@ -795,20 +808,49 @@ async fn process_messages_for_response(
     pool: PgPool,
     user_id: Uuid,
 ) -> Result<Vec<MessageResponse>, AppError> {
+    tracing::info!("🔄 Processing {} messages for response", messages_db.len());
     let mut responses = Vec::new();
 
     for msg_db in messages_db {
-        // First try to get variant 0 content, fall back to original message content
-        let content =
-            match get_default_variant_content(pool.clone(), msg_db.id, user_id, dek).await? {
-                Some(variant_content) => variant_content,
+        tracing::info!(
+            "🔄 Processing message: id={}, type={}, variant_count={}, current_variant_index={}",
+            msg_db.id,
+            msg_db.message_type,
+            msg_db.variant_count,
+            msg_db.current_variant_index
+        );
+        // Get content based on the current variant index, not always variant 0
+        let content = if msg_db.current_variant_index == 0 {
+            // Index 0 means original message content
+            tracing::info!("📄 Using original content for message {}", msg_db.id);
+            let decrypted_client_message =
+                msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
+            decrypted_client_message.content
+        } else {
+            // Get the specific variant content based on current_variant_index
+            tracing::info!(
+                "🎯 Getting variant {} content for message {}",
+                msg_db.current_variant_index,
+                msg_db.id
+            );
+            match get_variant_content_by_index(pool.clone(), msg_db.id, msg_db.current_variant_index, user_id, dek).await? {
+                Some(variant_content) => {
+                    tracing::info!("✅ Found variant content for message {}", msg_db.id);
+                    variant_content
+                },
                 None => {
-                    // No variants exist, use original message content
+                    // Fallback to original message content if variant not found
+                    tracing::warn!(
+                        "⚠️ Variant {} not found for message {}, falling back to original",
+                        msg_db.current_variant_index,
+                        msg_db.id
+                    );
                     let decrypted_client_message =
                         msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
                     decrypted_client_message.content
                 }
-            };
+            }
+        };
 
         // Update parts to use the variant content or original content
         let response_parts = msg_db
@@ -832,19 +874,37 @@ async fn process_messages_for_response(
             _ => None,
         };
 
-        responses.push(MessageResponse {
+        let message_response = MessageResponse {
             id: msg_db.id,
             session_id: msg_db.session_id,
             message_type: msg_db.message_type,
             role: response_role,
+            content,
             parts: response_parts,
             attachments: response_attachments,
             created_at: msg_db.created_at,
             raw_prompt,
             prompt_tokens: msg_db.prompt_tokens,
             completion_tokens: msg_db.completion_tokens,
-            model_name: Some(msg_db.model_name), // Added model_name from database record
-        });
+            model_name: Some(msg_db.model_name),
+            status: msg_db.status,
+            error_message: msg_db.error_message,
+            variant_count: msg_db.variant_count,
+            current_variant_index: msg_db.current_variant_index,
+            is_variant: msg_db.variant_count > 0, // True if this message has variants
+            parent_message_id: None, // TODO: Add parent_message_id to Message struct
+            variants: None, // TODO: Load actual variants
+        };
+        
+        tracing::info!(
+            "📤 Sending message response: id={}, variant_count={}, current_variant_index={}, is_variant={}",
+            message_response.id,
+            message_response.variant_count,
+            message_response.current_variant_index,
+            message_response.is_variant
+        );
+        
+        responses.push(message_response);
     }
 
     Ok(responses)
@@ -984,6 +1044,7 @@ pub async fn create_message_handler(
             raw_prompt_debug: None, // Manual message creation doesn't need raw prompt debug
             status: crate::models::chats::MessageStatus::Completed,
             error_message: None,
+            variant_of: None, // Manual message creation doesn't create variants
         })
         .await?;
 
@@ -1007,9 +1068,11 @@ pub async fn create_message_handler(
         raw_prompt_ciphertext: saved_db_message.raw_prompt_ciphertext,
         raw_prompt_nonce: saved_db_message.raw_prompt_nonce,
         model_name: saved_db_message.model_name.clone(),
-        status: saved_db_message.status,
-        error_message: saved_db_message.error_message,
+        status: saved_db_message.status.clone(),
+        error_message: saved_db_message.error_message.clone(),
         superseded_at: saved_db_message.superseded_at,
+        variant_count: saved_db_message.variant_count,
+        current_variant_index: saved_db_message.current_variant_index,
     };
     let client_message =
         message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;
@@ -1025,13 +1088,21 @@ pub async fn create_message_handler(
         session_id: client_message.session_id, // Renamed from chat_id
         message_type: client_message.message_type,
         role: payload.role, // Keep original role string from request for response consistency with frontend expectations
+        content: client_message.content,
         parts: response_parts,
         attachments: response_attachments,
         created_at: client_message.created_at,
         raw_prompt: client_message.raw_prompt,
         prompt_tokens: saved_db_message.prompt_tokens,
         completion_tokens: saved_db_message.completion_tokens,
-        model_name: Some(saved_db_message.model_name), // Added model_name from database record
+        model_name: Some(saved_db_message.model_name.clone()),
+        status: saved_db_message.status.clone(),
+        error_message: saved_db_message.error_message.clone(),
+        variant_count: saved_db_message.variant_count,
+        current_variant_index: saved_db_message.current_variant_index,
+        is_variant: false,
+        parent_message_id: None,
+        variants: None,
     };
 
     Ok((StatusCode::CREATED, Json(response)))
@@ -1184,13 +1255,21 @@ pub async fn get_message_by_id_handler(
         role: message_db
             .role
             .unwrap_or_else(|| message_db.message_type.to_string()),
+        content: decrypted_content_string,
         parts: response_parts,
         attachments: message_db.attachments.unwrap_or_else(|| json!([])),
         created_at: message_db.created_at,
         raw_prompt: decrypted_raw_prompt,
         prompt_tokens: message_db.prompt_tokens,
         completion_tokens: message_db.completion_tokens,
-        model_name: Some(message_db.model_name), // Added model_name from database record
+        model_name: Some(message_db.model_name),
+        status: message_db.status,
+        error_message: message_db.error_message,
+        variant_count: message_db.variant_count,
+        current_variant_index: message_db.current_variant_index,
+        is_variant: false,
+        parent_message_id: None,
+        variants: None,
     };
 
     Ok(Json(response))
@@ -1816,4 +1895,144 @@ async fn get_chat_token_usage_handler(
     };
 
     Ok((StatusCode::OK, Json(token_usage)))
+}
+
+/// Select a variant for a message
+/// Updates the current_variant_index and returns the message with new content
+pub async fn select_message_variant_handler(
+    auth_session: CurrentAuthSession,
+    State(state): State<AppState>,
+    Path(message_id): Path<Uuid>,
+    dek: SessionDek, // Added SessionDek extractor
+    Json(payload): Json<SelectVariantRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    let pool = state.pool.clone();
+
+    // Verify the message exists and user has access 
+    let message_db = pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            chat_messages::table
+                .filter(chat_messages::id.eq(message_id))
+                .filter(chat_messages::user_id.eq(user.id))
+                .select(Message::as_select())
+                .first::<Message>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound("Message not found".to_string()))?;
+
+    // Validate variant index
+    if payload.variant_index < 0 || payload.variant_index >= message_db.variant_count {
+        return Err(AppError::BadRequest(format!(
+            "Invalid variant index: {}. Message has {} variants (0-{})",
+            payload.variant_index,
+            message_db.variant_count,
+            message_db.variant_count - 1
+        )));
+    }
+
+    // Update the current_variant_index in the database
+    let pool_clone = pool.clone();
+    let updated_message = pool_clone
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| -> Result<Message, AppError> {
+            diesel::update(chat_messages::table.filter(chat_messages::id.eq(message_id)))
+                .set(chat_messages::current_variant_index.eq(payload.variant_index))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            // Get the updated message
+            chat_messages::table
+                .filter(chat_messages::id.eq(message_id))
+                .select(Message::as_select())
+                .first::<Message>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+    // Get the content for the selected variant
+    let content = if payload.variant_index == 0 {
+        // Variant 0 means use original message content
+        let client_message = updated_message.clone().into_decrypted_for_client(Some(&dek.0))?;
+        client_message.content
+    } else {
+        // Get content from the variants table
+        get_variant_content_by_index(pool.clone(), message_id, payload.variant_index, user.id, &dek)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Variant not found".to_string()))?
+    };
+
+    // Return the updated message response
+    let response = MessageResponse {
+        id: updated_message.id,
+        session_id: updated_message.session_id,
+        message_type: updated_message.message_type,
+        role: updated_message
+            .role
+            .unwrap_or_else(|| updated_message.message_type.to_string()),
+        content,
+        parts: updated_message.parts.unwrap_or_else(|| json!([])),
+        attachments: updated_message.attachments.unwrap_or_else(|| json!([])),
+        created_at: updated_message.created_at,
+        raw_prompt: None, // Don't expose raw prompts in variant selection
+        prompt_tokens: updated_message.prompt_tokens,
+        completion_tokens: updated_message.completion_tokens,
+        model_name: Some(updated_message.model_name),
+        status: updated_message.status,
+        error_message: updated_message.error_message,
+        variant_count: updated_message.variant_count,
+        current_variant_index: updated_message.current_variant_index,
+        is_variant: false,
+        parent_message_id: None,
+        variants: None, // Don't include full variant data in selection response
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+/// Helper function to get variant content by index
+async fn get_variant_content_by_index(
+    pool: PgPool,
+    message_id: Uuid,
+    variant_index: i32,
+    user_id: Uuid,
+    dek: &SessionDek,
+) -> Result<Option<String>, AppError> {
+    use crate::schema::message_variants;
+
+    let dek_ref = &dek.0;
+    let variant_opt = pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        .interact(move |conn| {
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .filter(message_variants::user_id.eq(user_id))
+                .filter(message_variants::variant_index.eq(variant_index))
+                .first::<crate::models::chats::MessageVariant>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+    if let Some(variant) = variant_opt {
+        let content = variant.decrypt_content(dek_ref)?;
+        Ok(Some(content))
+    } else {
+        Ok(None)
+    }
 }
