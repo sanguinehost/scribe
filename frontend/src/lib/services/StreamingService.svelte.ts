@@ -20,6 +20,7 @@ export interface StreamingMessage {
 	sender: 'user' | 'assistant';
 	created_at: string;
 	isAnimating?: boolean; // Currently playing typewriter animation
+	isRegenerating?: boolean; // Currently regenerating this message (shows loading indicator)
 	error?: string;
 	retryable?: boolean;
 	prompt_tokens?: number;
@@ -211,6 +212,7 @@ class StreamingService {
 					content: buffer.content,
 					displayedContent: '', // Start animation from empty
 					isAnimating: true,
+					isRegenerating: false, // Clear regeneration flag when animation starts
 					prompt_tokens: buffer.prompt_tokens,
 					completion_tokens: buffer.completion_tokens,
 					model_name: buffer.model_name,
@@ -407,18 +409,22 @@ class StreamingService {
 				current_variant_index: existingMessage.current_variant_index
 			});
 			
-			// Reset fields for regeneration while preserving variant metadata and object identity
-			existingMessage.content = ''; // Will be filled when buffering completes
-			existingMessage.displayedContent = ''; // Will animate from empty to full content
-			existingMessage.isAnimating = false; // Will start animating after buffering
-			existingMessage.error = undefined; // Clear any existing error
-			existingMessage.retryable = false; // Clear retry state
-			// Preserve variant_count and current_variant_index - they will be updated by MessageSaved
-			
+			// Replace message object entirely to ensure Svelte reactivity (not in-place modification)
+			this.messages[existingMessageIndex] = {
+				...existingMessage,      // Spread all existing properties  
+				content: '',             // Clear content - will be filled when buffering completes
+				displayedContent: '',    // Clear displayed content - will animate from empty  
+				isAnimating: false,      // Keep false - animation starts later
+				isRegenerating: true,    // Flag to show loading indicator during regeneration
+				error: undefined,        // Clear any existing error
+				retryable: false        // Clear retry state
+				// variant_count and current_variant_index preserved from spread
+			};
 			// Force Svelte reactivity by reassigning the array
 			this.messages = [...this.messages];
 			
-			assistantMessage = existingMessage;
+			// Use the new message reference
+			assistantMessage = this.messages[existingMessageIndex];
 			
 			assistantMessageId = assistantMessage.id;
 			console.log('🎯 StreamingService: Using existing message ID for variant:', assistantMessageId);

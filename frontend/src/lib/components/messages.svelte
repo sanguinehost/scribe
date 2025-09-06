@@ -486,13 +486,6 @@
 					? { current: currentIndex + 1, total: variantCount }
 					: null}
 
-				{#if hasVariants}
-					{console.log(`🔄 VARIANT DISPLAY - Message ${message.id}: variant_count=${variantCount}, current_variant_index=${currentIndex}, displaying=${currentIndex + 1}/${variantCount}, hasVariants=${hasVariants}`)}
-				{/if}
-				
-				{#if message.message_type === 'Assistant'}
-					{console.log(`🤖 ASSISTANT MESSAGE - ${message.id}: variant_count=${message.variant_count}, current_variant_index=${message.current_variant_index}, shouldShowChevrons=${variantCount > 0}`)}
-				{/if}
 
 				<Message
 					{message}

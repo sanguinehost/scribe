@@ -31,8 +31,9 @@
 	// Always use markdown rendering for consistency
 	let displayContent = $derived(message.displayedContent ?? message.content);
 
-	// Show loading only when we truly have no meaningful content
+	// Show loading when either no content OR actively regenerating
 	let hasTextContent = $derived(displayContent.replace(/\s/g, '').length > 0);
+	let shouldShowLoading = $derived(!hasTextContent || message.isRegenerating === true);
 </script>
 
 <div
@@ -40,8 +41,8 @@
 	class:typewriter={shouldAnimate}
 	style="--char-count: {charCount}; --cursor-color: {cursorColor}; --animation-duration: {animationDuration}"
 >
-	<!-- Show loading spinner when no actual text content -->
-	{#if !hasTextContent}
+	<!-- Show loading spinner when no content or regenerating -->
+	{#if shouldShowLoading}
 		<div class="flex items-center gap-2 py-2 text-muted-foreground">
 			<div class="loading-spinner"></div>
 			<span class="text-sm">Thinking...</span>

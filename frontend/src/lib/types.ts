@@ -556,6 +556,8 @@ export interface ScribeChatMessage {
 	is_variant?: boolean; // Whether this is a variant of another message
 	parent_message_id?: string | null; // UUID of parent message if this is a variant
 	variants?: MessageVariantResponse[] | null; // Array of variants for this message
+	// UI state
+	isRegenerating?: boolean; // Currently regenerating this message (shows loading indicator)
 }
 
 export type DocumentResponse = {

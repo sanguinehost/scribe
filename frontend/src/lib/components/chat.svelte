@@ -473,7 +473,8 @@
 					cached.completion_tokens !== msg.completion_tokens ||
 					cached.error !== msg.error ||
 					cached.variant_count !== msg.variant_count ||
-					cached.current_variant_index !== msg.current_variant_index;
+					cached.current_variant_index !== msg.current_variant_index ||
+					(cached as any).isRegenerating !== msg.isRegenerating;
 
 				if (hasChanged) {
 					// Message content changed
@@ -497,7 +498,9 @@
 						variant_count: msg.variant_count,
 						current_variant_index: msg.current_variant_index,
 						is_variant: msg.is_variant,
-						parent_message_id: msg.parent_message_id
+						parent_message_id: msg.parent_message_id,
+						// Include regeneration flag for loading indicator
+						isRegenerating: msg.isRegenerating
 					};
 
 					newCache.set(msg.id, newMessage);
@@ -1555,6 +1558,30 @@
 		if (!pendingRegenerationData) return;
 
 		const { userMessage, messageId, targetMessageIndex, allMessages } = pendingRegenerationData;
+		
+		// IMMEDIATELY set loading state for variant generation (instant feedback)
+		if (messageId) {
+			const existingMessageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+				(msg) => msg.id === messageId || msg.backend_id === messageId
+			);
+			
+			if (existingMessageIndex !== -1) {
+				const existingMessage = streamingService.messages[existingMessageIndex];
+				
+				// Set immediate loading state
+				streamingService.messages[existingMessageIndex] = {
+					...existingMessage,
+					content: '',
+					displayedContent: '',
+					isRegenerating: true,
+					error: undefined,
+					retryable: false
+				};
+				
+				// Force Svelte reactivity
+				streamingService.messages = [...streamingService.messages];
+			}
+		}
 
 		// NOW perform the cleanup that was deferred from handleRetryMessage
 		// (This will NOT run for variant generation since those fields aren't set)
