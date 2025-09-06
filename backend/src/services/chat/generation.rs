@@ -642,32 +642,24 @@ pub async fn get_session_data_for_generation(
     // Iterate newest to oldest (reverse of DB query order)
     for db_msg_raw in final_messages_for_processing.iter().rev() {
         debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, "Processing message for recent history.");
-        let decrypted_content_str = match (db_msg_raw.content_nonce.as_ref(), &user_dek_secret_box)
-        {
-            (Some(nonce_vec), Some(dek_arc))
-                if !db_msg_raw.content.is_empty() && !nonce_vec.is_empty() =>
-            {
-                let decrypted_bytes_secret =
-                    crate::crypto::decrypt_gcm(&db_msg_raw.content, nonce_vec, dek_arc.as_ref())
-                        .map_err(|e| {
-                            AppError::DecryptionError(format!(
-                                "Failed to decrypt message {}: {e}",
-                                db_msg_raw.id
-                            ))
-                        })?;
-                String::from_utf8(decrypted_bytes_secret.expose_secret().clone()).map_err(|e| {
-                    AppError::InternalServerErrorGeneric(format!(
-                        "Invalid UTF-8 in decrypted message {}: {e}",
+        // Use variant-aware content retrieval - respects current_variant_index
+        let decrypted_content_str = if let Some(dek_arc) = &user_dek_secret_box {
+            get_message_content_with_variant(db_msg_raw, &state.pool, user_id, dek_arc.as_ref())
+                .await
+                .map_err(|e| {
+                    AppError::DecryptionError(format!(
+                        "Failed to get variant-aware content for message {}: {e}",
                         db_msg_raw.id
                     ))
                 })?
-            }
-            _ => String::from_utf8(db_msg_raw.content.clone()).map_err(|e| {
+        } else {
+            // Fallback for cases without DEK
+            String::from_utf8(db_msg_raw.content.clone()).map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Invalid UTF-8 in plaintext message {}: {e}",
                     db_msg_raw.id
                 ))
-            })?,
+            })?
         };
 
         if decrypted_content_str.trim().is_empty() {
@@ -1995,4 +1987,92 @@ fn build_raw_prompt_debug(
     writeln!(&mut debug_prompt, "```").unwrap();
 
     debug_prompt
+}
+
+/// Helper function to get message content respecting variant selection
+/// Returns the selected variant content if current_variant_index > 0, otherwise original content
+async fn get_message_content_with_variant(
+    message: &DbChatMessage,
+    pool: &deadpool_diesel::postgres::Pool,
+    user_id: Uuid,
+    dek: &secrecy::SecretBox<Vec<u8>>,
+) -> Result<String, AppError> {
+    if message.current_variant_index == 0 {
+        // Index 0 means original message content - decrypt from message
+        match message.content_nonce.as_ref() {
+            Some(nonce) if !nonce.is_empty() => {
+                // Message is encrypted, decrypt it
+                match crate::crypto::decrypt_gcm(&message.content, nonce, dek) {
+                    Ok(decrypted_secret_box) => {
+                        let decrypted_bytes = decrypted_secret_box.expose_secret();
+                        String::from_utf8(decrypted_bytes.clone())
+                            .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8: {e}")))
+                    }
+                    Err(e) => Err(AppError::DecryptionError(format!(
+                        "Failed to decrypt message content: {e}"
+                    ))),
+                }
+            }
+            _ => {
+                // Message is not encrypted (legacy or test data)
+                String::from_utf8(message.content.clone())
+                    .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8 in unencrypted message: {e}")))
+            }
+        }
+    } else {
+        // Get variant content from variants table
+        use crate::schema::message_variants;
+        use crate::models::chats::MessageVariant;
+        use diesel::prelude::*;
+
+        let message_id = message.id;
+        let current_variant_index = message.current_variant_index;
+        
+        let variant_opt = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?
+            .interact(move |conn| {
+                message_variants::table
+                    .filter(message_variants::parent_message_id.eq(message_id))
+                    .filter(message_variants::user_id.eq(user_id))
+                    .filter(message_variants::variant_index.eq(current_variant_index))
+                    .first::<MessageVariant>(conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        if let Some(variant) = variant_opt {
+            // Decrypt variant content
+            variant.decrypt_content(dek)
+        } else {
+            // Fallback to original message content if variant not found
+            tracing::warn!(
+                "Variant {} not found for message {}, falling back to original content",
+                message.current_variant_index,
+                message.id
+            );
+            
+            match message.content_nonce.as_ref() {
+                Some(nonce) if !nonce.is_empty() => {
+                    match crate::crypto::decrypt_gcm(&message.content, nonce, dek) {
+                        Ok(decrypted_secret_box) => {
+                            let decrypted_bytes = decrypted_secret_box.expose_secret();
+                            String::from_utf8(decrypted_bytes.clone())
+                                .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8: {e}")))
+                        }
+                        Err(e) => Err(AppError::DecryptionError(format!(
+                            "Failed to decrypt original message content: {e}"
+                        ))),
+                    }
+                }
+                _ => {
+                    String::from_utf8(message.content.clone())
+                        .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8 in unencrypted message: {e}")))
+                }
+            }
+        }
+    }
 }
