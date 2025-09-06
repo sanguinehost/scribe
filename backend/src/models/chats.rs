@@ -84,6 +84,8 @@ pub type SettingsTuple = (
     Option<Uuid>, // player_chronicle_id
     // -- Agent Mode --
     Option<String>, // agent_mode
+    // -- Active Persona --
+    Option<Uuid>, // active_custom_persona_id
 ); // Close the tuple definition
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_sessions)]
@@ -1643,6 +1645,8 @@ pub struct ChatSettingsResponse {
     pub chronicle_id: Option<Uuid>,
     // Agent mode for context enrichment
     pub agent_mode: Option<String>,
+    // Active custom persona for this chat session
+    pub active_custom_persona_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -1672,6 +1676,8 @@ impl std::fmt::Debug for ChatSettingsResponse {
                 &self.gemini_enable_code_execution,
             )
             .field("chronicle_id", &self.chronicle_id)
+            .field("agent_mode", &self.agent_mode)
+            .field("active_custom_persona_id", &self.active_custom_persona_id)
             .finish()
     }
 }
@@ -1695,6 +1701,7 @@ impl From<Chat> for ChatSettingsResponse {
             gemini_enable_code_execution: chat.gemini_enable_code_execution,
             chronicle_id: chat.player_chronicle_id,
             agent_mode: chat.agent_mode,
+            active_custom_persona_id: chat.active_custom_persona_id,
         }
     }
 }
@@ -1735,6 +1742,8 @@ pub struct UpdateChatSettingsRequest {
     // Agent mode for context enrichment
     #[validate(custom(function = "validate_optional_agent_mode"))]
     pub agent_mode: Option<String>,
+    // Active custom persona for this chat session
+    pub active_custom_persona_id: Option<Uuid>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -1764,6 +1773,8 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
                 &self.gemini_enable_code_execution,
             )
             .field("chronicle_id", &self.chronicle_id)
+            .field("agent_mode", &self.agent_mode)
+            .field("active_custom_persona_id", &self.active_custom_persona_id)
             .finish()
     }
 }
@@ -2439,6 +2450,7 @@ mod tests {
             gemini_enable_code_execution: None,
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
+            active_custom_persona_id: None,
         }
     }
 
@@ -2494,6 +2506,7 @@ mod tests {
             gemini_enable_code_execution: None,
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
+            active_custom_persona_id: None,
         }
     }
 

@@ -86,6 +86,7 @@ struct ChatSessionUpdateBuilder {
     gemini_enable_code_execution: DatabaseUpdate<bool>,
     player_chronicle_id: DatabaseUpdate<Option<Uuid>>,
     agent_mode: DatabaseUpdate<String>,
+    active_custom_persona_id: DatabaseUpdate<Option<Uuid>>,
     updated_at: DatabaseUpdate<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -159,6 +160,11 @@ impl ChatSessionUpdateBuilder {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
             },
+            active_custom_persona_id: match self.active_custom_persona_id {
+                DatabaseUpdate::SetValue(v) => Some(v),
+                DatabaseUpdate::SetNull => Some(None),
+                DatabaseUpdate::NoChange => None,
+            },
             updated_at: match self.updated_at {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
@@ -187,6 +193,7 @@ impl ChatSessionUpdateBuilder {
             || !matches!(self.gemini_enable_code_execution, DatabaseUpdate::NoChange)
             || !matches!(self.player_chronicle_id, DatabaseUpdate::NoChange)
             || !matches!(self.agent_mode, DatabaseUpdate::NoChange)
+            || !matches!(self.active_custom_persona_id, DatabaseUpdate::NoChange)
     }
 }
 
@@ -217,6 +224,7 @@ struct ChatSessionUpdateChangeset {
     gemini_enable_code_execution: Option<bool>,
     player_chronicle_id: Option<Option<Uuid>>,
     agent_mode: Option<String>,
+    active_custom_persona_id: Option<Option<Uuid>>,
     updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 /// Verifies session ownership and returns the owner ID
@@ -337,6 +345,7 @@ pub async fn get_session_settings(
                 chat_sessions::gemini_enable_code_execution,
                 chat_sessions::player_chronicle_id,
                 chat_sessions::agent_mode,
+                chat_sessions::active_custom_persona_id,
             ))
             .first::<SettingsTuple>(conn)
             .map_err(|e| {
@@ -362,6 +371,7 @@ pub async fn get_session_settings(
             gemini_enable_code_execution,
             player_chronicle_id,
             agent_mode,
+            active_custom_persona_id,
         ) = settings_tuple;
 
         let decrypted_system_prompt = decrypt_system_prompt(
@@ -394,6 +404,7 @@ pub async fn get_session_settings(
             gemini_enable_code_execution,
             chronicle_id: player_chronicle_id,
             agent_mode,
+            active_custom_persona_id,
         };
 
         info!(%session_id, %user_id, 
@@ -505,6 +516,19 @@ fn apply_payload_to_builder(
     // Agent mode handling
     if let Some(mode) = payload.agent_mode {
         update_builder.agent_mode = DatabaseUpdate::SetValue(mode);
+    }
+
+    // Active custom persona handling
+    match payload.active_custom_persona_id {
+        Some(persona_id) => {
+            update_builder.active_custom_persona_id = DatabaseUpdate::SetValue(Some(persona_id));
+        }
+        None => {
+            // For now, treat None as clearing the persona association
+            // In a more robust implementation, we'd use Option<Option<Uuid>>
+            // to distinguish between "not provided" and "set to null"
+            update_builder.active_custom_persona_id = DatabaseUpdate::SetValue(None);
+        }
     }
 
     Ok(update_builder)

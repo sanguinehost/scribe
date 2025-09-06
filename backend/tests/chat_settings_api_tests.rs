@@ -329,6 +329,10 @@ async fn setup_chat_settings_test_env(
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            estimated_cost_cents: 0,
+            tokens_counted_at: Utc::now(),
         },
     };
 
@@ -813,6 +817,10 @@ async fn setup_update_test_env(
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: Utc::now(),
     };
     let session: DbChat = test_app
         .db_pool
@@ -865,6 +873,7 @@ async fn update_chat_settings_success_full() {
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
+        active_custom_persona_id: None,
     };
 
     let request = Request::builder()
@@ -957,6 +966,7 @@ async fn update_chat_settings_success_partial() {
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
+        active_custom_persona_id: None,
     };
 
     let request = Request::builder()
@@ -1070,6 +1080,7 @@ async fn update_chat_settings_forbidden() {
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
+        active_custom_persona_id: None,
     };
 
     // User2 tries to update user1's chat session settings
@@ -1138,6 +1149,7 @@ async fn update_chat_settings_not_found() {
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
+        active_custom_persona_id: None,
     };
 
     let request = Request::builder()
@@ -1193,6 +1205,7 @@ async fn update_chat_settings_unauthorized() {
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
+        active_custom_persona_id: None,
     };
 
     let request = Request::builder()
@@ -1328,6 +1341,7 @@ async fn debug_system_prompt_encryption_decryption() {
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
+        active_custom_persona_id: None,
     };
 
     println!(
@@ -1561,6 +1575,7 @@ async fn test_actual_api_route_for_system_prompt() {
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
+        active_custom_persona_id: None,
     };
 
     println!(
@@ -1709,6 +1724,7 @@ async fn test_chat_chronicle_association() {
         chronicle_id: Some(chronicle_uuid),
         agent_mode: None,
         model_provider: None,
+        active_custom_persona_id: None,
     };
 
     let update_request = Request::builder()
@@ -1776,6 +1792,7 @@ async fn test_chat_chronicle_association() {
         chronicle_id: None, // This should clear the association
         agent_mode: None,
         model_provider: None,
+        active_custom_persona_id: None,
     };
 
     let remove_request = Request::builder()

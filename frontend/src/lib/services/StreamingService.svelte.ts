@@ -391,43 +391,57 @@ class StreamingService {
 
 		if (params.targetMessageId) {
 			// Variant mode: Update existing message
-			console.log('🔄 StreamingService: Variant mode - searching for targetMessageId:', params.targetMessageId);
-			console.log('🔄 StreamingService: Available messages:', this.messages.map(m => ({ id: m.id, backend_id: m.backend_id, sender: m.sender })));
-			
-			const existingMessageIndex = this.messages.findIndex(msg => msg.id === params.targetMessageId || msg.backend_id === params.targetMessageId);
+			console.log(
+				'🔄 StreamingService: Variant mode - searching for targetMessageId:',
+				params.targetMessageId
+			);
+			console.log(
+				'🔄 StreamingService: Available messages:',
+				this.messages.map((m) => ({ id: m.id, backend_id: m.backend_id, sender: m.sender }))
+			);
+
+			const existingMessageIndex = this.messages.findIndex(
+				(msg) => msg.id === params.targetMessageId || msg.backend_id === params.targetMessageId
+			);
 			if (existingMessageIndex === -1) {
-				console.error('❌ StreamingService: Target message not found for variant update:', params.targetMessageId);
+				console.error(
+					'❌ StreamingService: Target message not found for variant update:',
+					params.targetMessageId
+				);
 				throw new Error(`Target message ${params.targetMessageId} not found for variant update`);
 			}
 
 			console.log('✅ StreamingService: Found target message at index:', existingMessageIndex);
-			
+
 			// Update the existing message in place to preserve object identity and variant metadata
 			const existingMessage = this.messages[existingMessageIndex];
 			console.log('🔄 Preserving variant metadata:', {
 				variant_count: existingMessage.variant_count,
 				current_variant_index: existingMessage.current_variant_index
 			});
-			
+
 			// Replace message object entirely to ensure Svelte reactivity (not in-place modification)
 			this.messages[existingMessageIndex] = {
-				...existingMessage,      // Spread all existing properties  
-				content: '',             // Clear content - will be filled when buffering completes
-				displayedContent: '',    // Clear displayed content - will animate from empty  
-				isAnimating: false,      // Keep false - animation starts later
-				isRegenerating: true,    // Flag to show loading indicator during regeneration
-				error: undefined,        // Clear any existing error
-				retryable: false        // Clear retry state
+				...existingMessage, // Spread all existing properties
+				content: '', // Clear content - will be filled when buffering completes
+				displayedContent: '', // Clear displayed content - will animate from empty
+				isAnimating: false, // Keep false - animation starts later
+				isRegenerating: true, // Flag to show loading indicator during regeneration
+				error: undefined, // Clear any existing error
+				retryable: false // Clear retry state
 				// variant_count and current_variant_index preserved from spread
 			};
 			// Force Svelte reactivity by reassigning the array
 			this.messages = [...this.messages];
-			
+
 			// Use the new message reference
 			assistantMessage = this.messages[existingMessageIndex];
-			
+
 			assistantMessageId = assistantMessage.id;
-			console.log('🎯 StreamingService: Using existing message ID for variant:', assistantMessageId);
+			console.log(
+				'🎯 StreamingService: Using existing message ID for variant:',
+				assistantMessageId
+			);
 		} else {
 			// New message mode: Create new assistant message
 			console.log('🆕 StreamingService: Creating new message (no targetMessageId provided)');
@@ -456,17 +470,20 @@ class StreamingService {
 		});
 
 		try {
-			await this.startEventStream({
-				chatId: params.chatId,
-				userMessage: params.userMessage,
-				history: params.history,
-				model: params.model,
-				agentMode: params.agentMode,
-				analysisMode: params.analysisMode,
-				guidance: params.guidance,
-				variantOf: params.variantOf,
-				isRegeneration: params.isRegeneration
-			}, assistantMessageId);
+			await this.startEventStream(
+				{
+					chatId: params.chatId,
+					userMessage: params.userMessage,
+					history: params.history,
+					model: params.model,
+					agentMode: params.agentMode,
+					analysisMode: params.analysisMode,
+					guidance: params.guidance,
+					variantOf: params.variantOf,
+					isRegeneration: params.isRegeneration
+				},
+				assistantMessageId
+			);
 		} catch (error) {
 			this.handleConnectionError(error as Error);
 		}
@@ -494,9 +511,33 @@ class StreamingService {
 
 		// For regeneration/variants, don't append the user message again since it's already in history
 		// For new messages, append the user message to complete the conversation
-		const historyToSend = params.isRegeneration 
-			? params.history 
+		const historyToSend = params.isRegeneration
+			? params.history
 			: [...params.history, { role: 'user' as const, content: params.userMessage }];
+
+		// Validate history before sending request
+		if (historyToSend.length === 0) {
+			throw new Error('History cannot be empty');
+		}
+
+		const lastMessage = historyToSend[historyToSend.length - 1];
+		if (lastMessage.role !== 'user') {
+			console.error('❌ Invalid history: Last message must be from user', {
+				historyLength: historyToSend.length,
+				lastMessage,
+				isRegeneration: params.isRegeneration,
+				fullHistory: historyToSend
+			});
+			throw new Error(
+				`Invalid conversation history: Last message must be from 'user', but got '${lastMessage.role}'. This is a frontend bug that should be reported.`
+			);
+		}
+
+		console.log('✅ History validation passed:', {
+			historyLength: historyToSend.length,
+			lastMessageRole: lastMessage.role,
+			isRegeneration: params.isRegeneration
+		});
 
 		const requestBody = {
 			history: historyToSend,
@@ -533,9 +574,36 @@ class StreamingService {
 					throw new Error('Authentication failed');
 				} else {
 					const errorText = await response.text().catch(() => 'Unknown error');
-					throw new Error(
-						`Connection failed: ${response.status} ${response.statusText} - ${errorText}`
-					);
+
+					// Handle different types of 400 errors
+					if (response.status === 400) {
+						if (
+							errorText.includes("last message in the payload's history must be from the 'user'")
+						) {
+							// This is a validation error - don't retry, fail immediately
+							console.error('❌ Backend validation error: History validation failed');
+							const error = new Error(
+								`Backend validation failed: ${errorText}. This suggests a frontend bug in history construction.`
+							);
+							// Don't mark for cleanup - just fail immediately
+							throw error;
+						} else {
+							// Other 400 errors might be retryable (e.g. temporary server issues)
+							throw new Error(
+								`Client error: ${response.status} ${response.statusText} - ${errorText}`
+							);
+						}
+					} else if (response.status >= 500) {
+						// Server errors are typically retryable
+						throw new Error(
+							`Server error: ${response.status} ${response.statusText} - ${errorText}`
+						);
+					} else {
+						// Other client errors (4xx) are typically not retryable
+						throw new Error(
+							`Connection failed: ${response.status} ${response.statusText} - ${errorText}`
+						);
+					}
 				}
 			},
 
@@ -568,7 +636,7 @@ class StreamingService {
 				if (this.shouldRetry(error)) {
 					const delay = this.calculateRetryDelay();
 					console.log(
-						`Retrying in ${delay}ms (attempt ${this.retryCount + 1}/${this.config.maxRetries})`
+						`Retrying in ${delay}ms (attempt ${this.retryCount}/${this.config.maxRetries})`
 					);
 					return delay; // Return delay to trigger retry
 				} else {
@@ -794,9 +862,7 @@ class StreamingService {
 						`💾 Transferred message buffer from ${assistantMessageId} to ${actualMessageId}`
 					);
 				} else {
-					console.log(
-						`💾 Updated buffer for variant (same ID): ${actualMessageId}`
-					);
+					console.log(`💾 Updated buffer for variant (same ID): ${actualMessageId}`);
 				}
 
 				// Try to start animation if conditions are now met
@@ -816,14 +882,16 @@ class StreamingService {
 				// For variants, we need to match by either frontend ID or backend ID
 				if (msg.id === assistantMessageId || msg.backend_id === assistantMessageId) {
 					console.log(`💾 Updating message ID: ${assistantMessageId} → ${actualMessageId}`);
-					console.log(`💾 Updating variant metadata: variant_count=${variantCount}, current_variant_index=${currentVariantIndex}`);
-					
+					console.log(
+						`💾 Updating variant metadata: variant_count=${variantCount}, current_variant_index=${currentVariantIndex}`
+					);
+
 					// Update the existing object in place to maintain identity and reactivity
 					msg.id = actualMessageId;
 					msg.backend_id = actualMessageId;
 					msg.variant_count = variantCount;
 					msg.current_variant_index = currentVariantIndex;
-					
+
 					console.log(`💾 Updated message object in place:`, {
 						id: msg.id,
 						variant_count: msg.variant_count,
@@ -833,14 +901,14 @@ class StreamingService {
 					break;
 				}
 			}
-			
+
 			// Force Svelte reactivity if we updated a message
 			if (messageUpdated) {
 				this.messages = [...this.messages];
 			}
-			
+
 			// Verify the update took effect
-			const updatedMessage = this.messages.find(msg => msg.id === actualMessageId);
+			const updatedMessage = this.messages.find((msg) => msg.id === actualMessageId);
 			console.log(`💾 Verification - message in array:`, {
 				found: !!updatedMessage,
 				id: updatedMessage?.id,
@@ -856,9 +924,8 @@ class StreamingService {
 					variant_count: msgVariantCount,
 					current_variant_index: msgCurrentIndex,
 					shouldShowChevrons: msgVariantCount > 0,
-					displayString: msgVariantCount > 0 
-						? `${msgCurrentIndex + 1}/${msgVariantCount}`
-						: 'no variants'
+					displayString:
+						msgVariantCount > 0 ? `${msgCurrentIndex + 1}/${msgVariantCount}` : 'no variants'
 				});
 			}
 
@@ -1102,6 +1169,47 @@ class StreamingService {
 			return false;
 		}
 
+		// Don't retry validation errors - these are frontend bugs that need to be fixed, not retried
+		if (
+			error?.message?.includes('last message') ||
+			error?.message?.includes('Invalid conversation history') ||
+			error?.message?.includes('Backend validation failed')
+		) {
+			console.warn('🚫 Not retrying validation error:', error.message);
+			return false;
+		}
+
+		// Don't retry most 4xx client errors (except some specific cases)
+		if (error?.message?.includes('Connection failed:') && error?.message?.includes('4')) {
+			// Parse the status code to be more specific
+			const statusMatch = error.message.match(/(\d{3})/);
+			if (statusMatch) {
+				const statusCode = parseInt(statusMatch[1]);
+				if (statusCode >= 400 && statusCode < 500 && statusCode !== 429) {
+					console.warn(`🚫 Not retrying client error ${statusCode}:`, error.message);
+					return false;
+				}
+			}
+		}
+
+		// Retry server errors (5xx) and rate limiting (429)
+		if (error?.message?.includes('Server error:') || error?.message?.includes('429')) {
+			console.log('🔄 Retrying server error or rate limit:', error.message);
+			this.retryCount++;
+			return true;
+		}
+
+		// Retry network errors and timeouts
+		if (
+			error?.message?.includes('timeout') ||
+			error?.message?.includes('network') ||
+			error?.name === 'TypeError'
+		) {
+			console.log('🔄 Retrying network/timeout error:', error.message);
+			this.retryCount++;
+			return true;
+		}
+
 		this.retryCount++;
 		return true;
 	}
@@ -1116,6 +1224,33 @@ class StreamingService {
 
 		// Exponential backoff: delay * 2^(retryCount - 1)
 		return this.config.retryDelayMs * Math.pow(2, this.retryCount - 1);
+	}
+
+	/**
+	 * Remove a failed assistant message that was created but never successfully started streaming
+	 */
+	private removeFailedAssistantMessage(messageId: string): void {
+		console.log('🗑️ Removing failed assistant message:', messageId);
+
+		// Remove from messages array
+		this.messages = this.messages.filter((msg) => msg.id !== messageId);
+
+		// Clean up associated buffers and state
+		this.messageBuffers.delete(messageId);
+		this.clearTyping(messageId);
+		this.clearChunkBuffer(messageId);
+
+		// Clear interval if it exists
+		const intervalId = this.animationIntervals.get(messageId);
+		if (intervalId) {
+			clearInterval(intervalId);
+			this.animationIntervals.delete(messageId);
+		}
+
+		// Clear current assistant message ID if it matches
+		if (this.currentAssistantMessageId === messageId) {
+			this.currentAssistantMessageId = null;
+		}
 	}
 
 	/**
