@@ -852,10 +852,9 @@ async fn process_messages_for_response(
             }
         };
 
-        // Update parts to use the variant content or original content
-        let response_parts = msg_db
-            .parts
-            .unwrap_or_else(|| json!([{"text": content.clone()}]));
+        // Always reconstruct parts from the current content (original or variant)
+        // This ensures the frontend gets the correct variant content, not the original parts
+        let response_parts = json!([{"text": content.clone()}]);
         let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]));
 
         let response_role = msg_db
