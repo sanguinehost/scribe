@@ -78,7 +78,9 @@ import type {
 	ModelActionResponse,
 	GroupedModelInfo,
 	ModelVariantInfo,
-	HardwareCapabilities
+	HardwareCapabilities,
+	PromptTemplateInfo,
+	PromptTemplateListResponse
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -1370,6 +1372,22 @@ class ApiClient {
 	 */
 	async getAllModels(): Promise<Result<Record<string, any>, ApiError>> {
 		return this.fetch<Record<string, any>>('/api/llm/models/all');
+	}
+
+	// Template Management Methods
+
+	/**
+	 * Get all available prompt templates
+	 */
+	async getPromptTemplates(): Promise<Result<PromptTemplateListResponse, ApiError>> {
+		return this.fetch<PromptTemplateListResponse>('/api/templates');
+	}
+
+	/**
+	 * Get information for a specific prompt template
+	 */
+	async getPromptTemplateInfo(templateId: string): Promise<Result<PromptTemplateInfo, ApiError>> {
+		return this.fetch<PromptTemplateInfo>(`/api/templates/${encodeURIComponent(templateId)}`);
 	}
 
 	// Create an EventSource for download progress (Server-Sent Events)

@@ -2783,6 +2783,7 @@ pub async fn set_history_settings(
         chronicle_id: None,
         agent_mode: None,
         active_custom_persona_id: None,
+        prompt_template_id: None,
     };
 
     let client = reqwest::Client::new();

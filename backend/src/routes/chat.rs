@@ -26,11 +26,11 @@ use crate::prompt_builder;
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
 use crate::services::ChronicleService;
+use crate::services::chat;
 use crate::services::agentic::{
     context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
     narrative_tools::SearchKnowledgeBaseTool,
 };
-use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
 use crate::services::hybrid_token_counter::CountingMode;
 use secrecy::ExposeSecret; // Added for ExposeSecret
@@ -651,6 +651,15 @@ pub async fn generate_chat_response(
     // Clone gen_ai_recent_history before moving it, as we'll need it later for post-processing
     let gen_ai_recent_history_for_agent = gen_ai_recent_history.clone();
 
+    // Get session settings to retrieve the prompt template ID
+    let session_settings = chat::settings::get_session_settings(
+        &state_arc.pool,
+        user_id_value,
+        session_id,
+        Some(&*session_dek_arc),
+    ).await?;
+    let prompt_template_id = session_settings.prompt_template_id;
+
     // Call the new prompt builder
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
@@ -667,6 +676,7 @@ pub async fn generate_chat_response(
             user_persona_name,                 // Pass user persona name for template substitution
             agent_context,                     // Pass agent context if available
             guidance: payload.guidance.clone(), // Pass guidance for regeneration steering
+            prompt_template_id,
         })
         .await
         {
@@ -1991,6 +2001,7 @@ pub async fn generate_suggested_actions(
             user_persona_name,                 // Pass user persona name for template substitution
             agent_context: None,               // No agent context for suggestions
             guidance: None,                    // No guidance for suggestions
+            prompt_template_id: None,          // Use default template for suggestions
         })
         .await
         {

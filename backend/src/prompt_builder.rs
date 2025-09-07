@@ -2,6 +2,7 @@ use crate::{
     config::Config,
     errors::AppError,
     models::characters::CharacterMetadata,
+    prompt_templates::TEMPLATE_MANAGER,
     services::{
         embeddings::RetrievedChunk,
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
@@ -11,6 +12,7 @@ use genai::chat::ChatMessage as GenAiChatMessage;
 use genai::chat::ContentPart as Part; // This is the Part type from the genai crate
 use genai::chat::MessageContent; // This is an enum from the genai crate
 use secrecy::ExposeSecret;
+use serde_json;
 use std::fmt::Write;
 use std::sync::Arc;
 use tracing::{debug, error, warn};
@@ -83,6 +85,37 @@ pub fn build_prompt_with_rag(
     }
 
     Ok(prompt)
+}
+
+/// Decrypts a single character field and returns it as a string
+fn decrypt_character_field(
+    ciphertext: &Option<Vec<u8>>,
+    nonce: &Option<Vec<u8>>,
+    dek: Option<&secrecy::SecretBox<Vec<u8>>>,
+    character_name: &str,
+    user_persona_name: Option<&str>,
+) -> Option<String> {
+    if let (Some(ct), Some(n), Some(dek_key)) = (ciphertext, nonce, dek) {
+        if !ct.is_empty() {
+            match crate::crypto::decrypt_gcm(ct, n, dek_key) {
+                Ok(plaintext_bytes) => {
+                    let plaintext = String::from_utf8_lossy(plaintext_bytes.expose_secret());
+                    if !plaintext.is_empty() {
+                        let substituted_text = replace_template_variables(
+                            &plaintext,
+                            Some(character_name),
+                            user_persona_name,
+                        );
+                        return Some(substituted_text);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to decrypt character field: {}", e);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Builds the character-specific information string for the system prompt.
@@ -226,6 +259,7 @@ pub struct PromptBuildParams<'a> {
     pub user_persona_name: Option<String>,                 // For {{user}} template substitution
     pub agent_context: Option<String>,                     // Pre-processing agent context to inject
     pub guidance: Option<String>,                          // Optional guidance for response generation
+    pub prompt_template_id: Option<String>,                // Template ID for conversation style
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -770,6 +804,338 @@ pub(crate) fn apply_token_limits(
     Ok(calculation)
 }
 
+/// Builds the RAG context string from calculation data
+fn build_rag_context_string(
+    calculation: &TokenCalculation,
+    user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
+) -> String {
+    if calculation.rag_items_with_tokens.is_empty() {
+        return String::new();
+    }
+
+    let mut rag_context = String::new();
+
+    // Separate chronicle events and other RAG items
+    let mut chronicle_events = Vec::new();
+    let mut other_rag_items = Vec::new();
+
+    for (rag_item, _tokens) in &calculation.rag_items_with_tokens {
+        match &rag_item.metadata {
+            crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
+                chronicle_events.push(rag_item);
+            }
+            _ => {
+                other_rag_items.push(rag_item);
+            }
+        }
+    }
+
+    // Add chronicle events in a long_term_memory section
+    if !chronicle_events.is_empty() {
+        rag_context.push_str("<long_term_memory>\n");
+        for rag_item in &chronicle_events {
+            if let crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_meta) =
+                &rag_item.metadata
+            {
+                // Try to parse the text as JSON to extract rich chronicle data
+                if let Ok(event_data) =
+                    serde_json::from_str::<serde_json::Value>(&rag_item.text)
+                {
+                    write!(
+                        rag_context,
+                        "<chronicle_event type=\"{}\" timestamp=\"{}\"",
+                        escape_xml(&chronicle_meta.event_type),
+                        chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC")
+                    )
+                    .unwrap();
+
+                    // Add action if available
+                    if let Some(action) = event_data.get("action").and_then(|a| a.as_str()) {
+                        write!(rag_context, " action=\"{}\"", escape_xml(action)).unwrap();
+                    }
+
+                    // Add modality if available
+                    if let Some(modality) = event_data.get("modality").and_then(|m| m.as_str()) {
+                        write!(rag_context, " modality=\"{}\"", escape_xml(modality)).unwrap();
+                    }
+
+                    writeln!(rag_context, ">").unwrap();
+
+                    // Add actors if available
+                    if let Some(actors) = event_data.get("actors").and_then(|a| a.as_array()) {
+                        if !actors.is_empty() {
+                            writeln!(rag_context, "    <actors>").unwrap();
+                            for actor in actors {
+                                if let (Some(id), Some(role)) = (
+                                    actor.get("id").and_then(|i| i.as_str()),
+                                    actor.get("role").and_then(|r| r.as_str()),
+                                ) {
+                                    let details = actor
+                                        .get("details")
+                                        .and_then(|d| d.as_str())
+                                        .unwrap_or("");
+                                    writeln!(
+                                        rag_context,
+                                        "        <actor id=\"{}\" role=\"{}\">{}</actor>",
+                                        escape_xml(id),
+                                        escape_xml(role),
+                                        escape_xml(details)
+                                    )
+                                    .unwrap();
+                                }
+                            }
+                            writeln!(rag_context, "    </actors>").unwrap();
+                        }
+                    }
+
+                    // Add valence changes if available
+                    if let Some(valence) = event_data.get("valence").and_then(|v| v.as_array()) {
+                        if !valence.is_empty() {
+                            writeln!(rag_context, "    <valence>").unwrap();
+                            for change in valence {
+                                if let (Some(target), Some(change_type), Some(delta)) = (
+                                    change.get("target").and_then(|t| t.as_str()),
+                                    change.get("type").and_then(|t| t.as_str()),
+                                    change.get("change").and_then(|c| c.as_f64()),
+                                ) {
+                                    writeln!(
+                                        rag_context,
+                                        "        <change target=\"{}\" type=\"{}\" delta=\"{:+.1}\"/>",
+                                        escape_xml(target),
+                                        escape_xml(change_type),
+                                        delta
+                                    )
+                                    .unwrap();
+                                }
+                            }
+                            writeln!(rag_context, "    </valence>").unwrap();
+                        }
+                    }
+
+                    // Add context data if available
+                    if let Some(context) = event_data.get("context_data").and_then(|c| c.as_object()) {
+                        if !context.is_empty() {
+                            write!(rag_context, "    <context").unwrap();
+                            for (key, value) in context {
+                                if let Some(val_str) = value.as_str() {
+                                    write!(
+                                        rag_context,
+                                        " {}=\"{}\"",
+                                        escape_xml(key),
+                                        escape_xml(val_str)
+                                    )
+                                    .unwrap();
+                                }
+                            }
+                            writeln!(rag_context, "/>").unwrap();
+                        }
+                    }
+
+                    // Add causality if available
+                    if let Some(causality) = event_data.get("causality").and_then(|c| c.as_object()) {
+                        let has_caused_by = causality
+                            .get("causedBy")
+                            .and_then(|cb| cb.as_array())
+                            .map(|a| !a.is_empty())
+                            .unwrap_or(false);
+                        let has_causes = causality
+                            .get("causes")
+                            .and_then(|c| c.as_array())
+                            .map(|a| !a.is_empty())
+                            .unwrap_or(false);
+
+                        if has_caused_by || has_causes {
+                            writeln!(rag_context, "    <causality>").unwrap();
+
+                            if let Some(caused_by) = causality.get("causedBy").and_then(|cb| cb.as_array()) {
+                                for cause_id in caused_by {
+                                    if let Some(id_str) = cause_id.as_str() {
+                                        writeln!(
+                                            rag_context,
+                                            "        <caused_by>{}</caused_by>",
+                                            escape_xml(id_str)
+                                        )
+                                        .unwrap();
+                                    }
+                                }
+                            }
+
+                            if let Some(causes) = causality.get("causes").and_then(|c| c.as_array()) {
+                                for effect_id in causes {
+                                    if let Some(id_str) = effect_id.as_str() {
+                                        writeln!(
+                                            rag_context,
+                                            "        <causes>{}</causes>",
+                                            escape_xml(id_str)
+                                        )
+                                        .unwrap();
+                                    }
+                                }
+                            }
+
+                            writeln!(rag_context, "    </causality>").unwrap();
+                        }
+                    }
+
+                    // Add summary - try to get it from the event data first, fall back to rag_item.text
+                    let summary = event_data
+                        .get("summary")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or_else(|| rag_item.text.trim());
+                    writeln!(rag_context, "    <summary>{}</summary>", escape_xml(summary))
+                        .unwrap();
+
+                    writeln!(rag_context, "</chronicle_event>").unwrap();
+                } else {
+                    // Fallback to simple format if JSON parsing fails
+                    warn!(
+                        "Failed to parse chronicle event JSON for event type: {}",
+                        chronicle_meta.event_type
+                    );
+                    writeln!(
+                        rag_context,
+                        "<chronicle_event type=\"{}\" timestamp=\"{}\" status=\"unparseable\">[Chronicle data corrupted or truncated - raw text length: {} chars]</chronicle_event>",
+                        escape_xml(&chronicle_meta.event_type),
+                        chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
+                        rag_item.text.len()
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        rag_context.push_str("</long_term_memory>\n\n");
+    }
+
+    // Add regular RAG items (lorebooks and chat history) in lorebook_entries section
+    if !other_rag_items.is_empty() {
+        rag_context.push_str("<lorebook_entries>\n");
+
+        for rag_item in &other_rag_items {
+            match &rag_item.metadata {
+                crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
+                    writeln!(
+                        rag_context,
+                        "<chat_history speaker=\"{}\">{}</chat_history>",
+                        escape_xml(&chat_meta.speaker),
+                        escape_xml(rag_item.text.trim())
+                    )
+                    .unwrap();
+                }
+                crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) => {
+                    // Decrypt content if encrypted fields are present
+                    let content = if let (Some(ref encrypted_chunk), Some(ref nonce)) = (
+                        lorebook_meta.encrypted_chunk_text.as_ref(),
+                        lorebook_meta.chunk_text_nonce.as_ref(),
+                    ) {
+                        // We have encrypted content
+                        if let Some(ref session_dek) = user_dek {
+                            // We have the DEK to decrypt
+                            match crate::crypto::decrypt_gcm(encrypted_chunk, nonce, session_dek) {
+                                Ok(decrypted_secret) => {
+                                    let decrypted_bytes =
+                                        secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                    String::from_utf8_lossy(decrypted_bytes).to_string()
+                                }
+                                Err(e) => {
+                                    warn!("Failed to decrypt lorebook content: {}", e);
+                                    // Fall back to plaintext field if available
+                                    if lorebook_meta.chunk_text != "[encrypted]" {
+                                        lorebook_meta.chunk_text.clone()
+                                    } else {
+                                        "[decryption failed]".to_string()
+                                    }
+                                }
+                            }
+                        } else {
+                            // No DEK available, return placeholder or plaintext
+                            if lorebook_meta.chunk_text != "[encrypted]" {
+                                lorebook_meta.chunk_text.clone()
+                            } else {
+                                "[encrypted - no DEK available]".to_string()
+                            }
+                        }
+                    } else {
+                        // Legacy plaintext mode
+                        lorebook_meta.chunk_text.clone()
+                    };
+
+                    // Decrypt title if encrypted fields are present
+                    let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
+                        lorebook_meta.encrypted_title.as_ref(),
+                        lorebook_meta.title_nonce.as_ref(),
+                    ) {
+                        // We have encrypted title
+                        if let Some(ref session_dek) = user_dek {
+                            match crate::crypto::decrypt_gcm(encrypted_title, title_nonce, session_dek)
+                            {
+                                Ok(decrypted_secret) => {
+                                    let decrypted_bytes =
+                                        secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                    let decrypted_title =
+                                        String::from_utf8_lossy(decrypted_bytes).to_string();
+                                    // Handle empty decrypted titles
+                                    if decrypted_title.trim().is_empty() {
+                                        "Untitled".to_string()
+                                    } else {
+                                        decrypted_title
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to decrypt lorebook title: {}", e);
+                                    // Handle empty fallback titles
+                                    lorebook_meta
+                                        .entry_title
+                                        .clone()
+                                        .and_then(|t| {
+                                            if t.trim().is_empty() { None } else { Some(t) }
+                                        })
+                                        .unwrap_or_else(|| "[decryption failed]".to_string())
+                                }
+                            }
+                        } else {
+                            // Handle empty fallback titles
+                            lorebook_meta
+                                .entry_title
+                                .clone()
+                                .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                                .unwrap_or_else(|| "[encrypted - no DEK]".to_string())
+                        }
+                    } else {
+                        // Handle empty unencrypted titles
+                        lorebook_meta
+                            .entry_title
+                            .clone()
+                            .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                            .unwrap_or_else(|| "Untitled".to_string())
+                    };
+
+                    write!(rag_context, "<lorebook_entry").unwrap();
+
+                    write!(rag_context, " title=\"{}\"", escape_xml(&title)).unwrap();
+
+                    if let Some(keywords) = &lorebook_meta.keywords {
+                        if !keywords.is_empty() {
+                            let keywords_str = keywords.join(", ");
+                            write!(rag_context, " keywords=\"{}\"", escape_xml(&keywords_str))
+                                .unwrap();
+                        }
+                    }
+
+                    writeln!(rag_context, ">{}</lorebook_entry>", escape_xml(content.trim()))
+                        .unwrap();
+                }
+                crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
+                    // Already handled above
+                }
+            }
+        }
+
+        rag_context.push_str("</lorebook_entries>\n\n");
+    }
+
+    rag_context.trim_end().to_string()
+}
+
 async fn build_final_prompt_strings(
     calculation: &TokenCalculation,
     current_user_message: &GenAiChatMessage,
@@ -779,50 +1145,98 @@ async fn build_final_prompt_strings(
     agent_context: Option<&str>,
     user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
     guidance: Option<&str>,
+    template_id: Option<&str>,
+    user_persona_name: Option<&str>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
-    // Rebuild the meta system prompt based on final RAG items after truncation
-    let has_final_rag_items = !calculation.rag_items_with_tokens.is_empty();
-    let has_persona_override = !calculation.persona_override_prompt_str.is_empty();
-    let has_character_definition = !calculation.character_definition_str.is_empty();
-    let has_character_details = !calculation.character_details_str.is_empty();
-
-    let (final_meta_system_prompt, _) = build_meta_system_prompt(
-        character_metadata,
-        has_final_rag_items,
-        has_persona_override,
-        has_character_definition,
-        has_character_details,
-        token_counter,
-        model_name,
-    )
-    .await?;
-
-    // Assemble the final system prompt with structured sections as promised
-    let mut final_system_prompt = final_meta_system_prompt;
-
-    // Add persona override prompt if present
+    // Use the template system to build the final system prompt
+    let template_id = template_id.unwrap_or("neutral_roleplay");
+    
+    debug!(template_id = %template_id, "Building final prompt with template");
+    
+    // Build RAG context string
+    let rag_context_string = build_rag_context_string(calculation, user_dek);
+    
+    // Extract character personality and description if available
+    let (character_personality, character_description) = if let Some(char_meta) = character_metadata {
+        let personality = decrypt_character_field(
+            &char_meta.personality,
+            &char_meta.personality_nonce,
+            user_dek,
+            &char_meta.name,
+            None, // TODO: get from user persona
+        );
+        let description = decrypt_character_field(
+            &char_meta.description,
+            &char_meta.description_nonce,
+            user_dek,
+            &char_meta.name,
+            None, // TODO: get from user persona
+        );
+        (personality, description)
+    } else {
+        (None, None)
+    };
+    
+    // Add agent context to RAG if available
+    let enhanced_rag_context = if let Some(agent_ctx) = agent_context {
+        if !agent_ctx.is_empty() {
+            if rag_context_string.is_empty() {
+                format!("<agent_context>\n{}\n</agent_context>", escape_xml(agent_ctx))
+            } else {
+                format!("{}\n\n<agent_context>\n{}\n</agent_context>", rag_context_string, escape_xml(agent_ctx))
+            }
+        } else {
+            rag_context_string
+        }
+    } else {
+        rag_context_string
+    };
+    
+    // Build context for template rendering
+    let mut template_context = serde_json::json!({
+        "user": {
+            "name": user_persona_name.unwrap_or("User")
+        }
+    });
+    
+    // Add character information if available
+    if let Some(char_meta) = character_metadata {
+        let mut char_obj = serde_json::json!({
+            "name": char_meta.name
+        });
+        
+        if let Some(personality) = character_personality {
+            char_obj["personality"] = serde_json::Value::String(personality);
+        }
+        
+        if let Some(description) = character_description {
+            char_obj["description"] = serde_json::Value::String(description);
+        }
+        
+        template_context["char"] = char_obj;
+    }
+    
+    // Add persona override if available
     if !calculation.persona_override_prompt_str.is_empty() {
-        final_system_prompt.push_str("\n\n<persona_override_prompt>\n");
-        final_system_prompt.push_str(&calculation.persona_override_prompt_str);
-        final_system_prompt.push_str("\n</persona_override_prompt>");
+        template_context["persona_override"] = serde_json::Value::String(calculation.persona_override_prompt_str.clone());
     }
-
-    // Add system instructions if present
+    
+    // Add character definition if available
     if !calculation.character_definition_str.is_empty() {
-        final_system_prompt.push_str("\n\n<system_instructions>\n");
-        final_system_prompt.push_str(&calculation.character_definition_str);
-        final_system_prompt.push_str("\n</system_instructions>");
+        template_context["character_definition"] = serde_json::Value::String(calculation.character_definition_str.clone());
     }
-
-    // Add character profile if present
+    
+    // Add character details if available
     if !calculation.character_details_str.is_empty() {
-        final_system_prompt.push_str("\n\n<character_profile>\n");
-        final_system_prompt.push_str(&calculation.character_details_str);
-        final_system_prompt.push_str("\n</character_profile>");
+        template_context["character_details"] = serde_json::Value::String(calculation.character_details_str.clone());
+    }
+    
+    // Add RAG context if available
+    if !enhanced_rag_context.is_empty() {
+        template_context["rag_context"] = serde_json::Value::String(enhanced_rag_context.clone());
     }
 
-    // End system prompt cleanly
-    final_system_prompt.push_str("\n");
+    let final_system_prompt = TEMPLATE_MANAGER.render(template_id, template_context)?;
 
     // Assemble the final message list
     let mut final_message_list = Vec::new();
@@ -832,392 +1246,13 @@ async fn build_final_prompt_strings(
         final_message_list.push(history_msg.clone());
     }
 
-    // Prepend RAG context to the current user message
-    let mut rag_context_for_user_message = String::new();
-    if !calculation.rag_items_with_tokens.is_empty() {
-        // Separate chronicle events and other RAG items
-        let mut chronicle_events = Vec::new();
-        let mut other_rag_items = Vec::new();
-
-        for (rag_item, tokens) in &calculation.rag_items_with_tokens {
-            match &rag_item.metadata {
-                crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
-                    chronicle_events.push((rag_item, tokens));
-                }
-                _ => {
-                    other_rag_items.push((rag_item, tokens));
-                }
-            }
-        }
-
-        // Add chronicle events in a long_term_memory section
-        if !chronicle_events.is_empty() {
-            rag_context_for_user_message.push_str("<long_term_memory>\n");
-            for (rag_item, _) in &chronicle_events {
-                if let crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_meta) =
-                    &rag_item.metadata
-                {
-                    // Try to parse the text as JSON to extract rich chronicle data
-                    if let Ok(event_data) =
-                        serde_json::from_str::<serde_json::Value>(&rag_item.text)
-                    {
-                        write!(
-                            rag_context_for_user_message,
-                            "<chronicle_event type=\"{}\" timestamp=\"{}\"",
-                            escape_xml(&chronicle_meta.event_type),
-                            chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC")
-                        )
-                        .unwrap();
-
-                        // Add action if available
-                        if let Some(action) = event_data.get("action").and_then(|a| a.as_str()) {
-                            write!(
-                                rag_context_for_user_message,
-                                " action=\"{}\"",
-                                escape_xml(action)
-                            )
-                            .unwrap();
-                        }
-
-                        // Add modality if available
-                        if let Some(modality) = event_data.get("modality").and_then(|m| m.as_str())
-                        {
-                            write!(
-                                rag_context_for_user_message,
-                                " modality=\"{}\"",
-                                escape_xml(modality)
-                            )
-                            .unwrap();
-                        }
-
-                        writeln!(rag_context_for_user_message, ">").unwrap();
-
-                        // Add actors if available
-                        if let Some(actors) = event_data.get("actors").and_then(|a| a.as_array()) {
-                            if !actors.is_empty() {
-                                writeln!(rag_context_for_user_message, "    <actors>").unwrap();
-                                for actor in actors {
-                                    if let (Some(id), Some(role)) = (
-                                        actor.get("id").and_then(|i| i.as_str()),
-                                        actor.get("role").and_then(|r| r.as_str()),
-                                    ) {
-                                        let details = actor
-                                            .get("details")
-                                            .and_then(|d| d.as_str())
-                                            .unwrap_or("");
-                                        writeln!(
-                                            rag_context_for_user_message,
-                                            "        <actor id=\"{}\" role=\"{}\">{}</actor>",
-                                            escape_xml(id),
-                                            escape_xml(role),
-                                            escape_xml(details)
-                                        )
-                                        .unwrap();
-                                    }
-                                }
-                                writeln!(rag_context_for_user_message, "    </actors>").unwrap();
-                            }
-                        }
-
-                        // Add valence changes if available
-                        if let Some(valence) = event_data.get("valence").and_then(|v| v.as_array())
-                        {
-                            if !valence.is_empty() {
-                                writeln!(rag_context_for_user_message, "    <valence>").unwrap();
-                                for change in valence {
-                                    if let (Some(target), Some(change_type), Some(delta)) = (
-                                        change.get("target").and_then(|t| t.as_str()),
-                                        change.get("type").and_then(|t| t.as_str()),
-                                        change.get("change").and_then(|c| c.as_f64()),
-                                    ) {
-                                        writeln!(
-                                            rag_context_for_user_message,
-                                            "        <change target=\"{}\" type=\"{}\" delta=\"{:+.1}\"/>",
-                                            escape_xml(target),
-                                            escape_xml(change_type),
-                                            delta
-                                        )
-                                        .unwrap();
-                                    }
-                                }
-                                writeln!(rag_context_for_user_message, "    </valence>").unwrap();
-                            }
-                        }
-
-                        // Add context data if available
-                        if let Some(context) =
-                            event_data.get("context_data").and_then(|c| c.as_object())
-                        {
-                            if !context.is_empty() {
-                                write!(rag_context_for_user_message, "    <context").unwrap();
-                                for (key, value) in context {
-                                    if let Some(val_str) = value.as_str() {
-                                        write!(
-                                            rag_context_for_user_message,
-                                            " {}=\"{}\"",
-                                            escape_xml(key),
-                                            escape_xml(val_str)
-                                        )
-                                        .unwrap();
-                                    }
-                                }
-                                writeln!(rag_context_for_user_message, "/>").unwrap();
-                            }
-                        }
-
-                        // Add causality if available
-                        if let Some(causality) =
-                            event_data.get("causality").and_then(|c| c.as_object())
-                        {
-                            let has_caused_by = causality
-                                .get("causedBy")
-                                .and_then(|cb| cb.as_array())
-                                .map(|a| !a.is_empty())
-                                .unwrap_or(false);
-                            let has_causes = causality
-                                .get("causes")
-                                .and_then(|c| c.as_array())
-                                .map(|a| !a.is_empty())
-                                .unwrap_or(false);
-
-                            if has_caused_by || has_causes {
-                                writeln!(rag_context_for_user_message, "    <causality>").unwrap();
-
-                                if let Some(caused_by) =
-                                    causality.get("causedBy").and_then(|cb| cb.as_array())
-                                {
-                                    for cause_id in caused_by {
-                                        if let Some(id_str) = cause_id.as_str() {
-                                            writeln!(
-                                                rag_context_for_user_message,
-                                                "        <caused_by>{}</caused_by>",
-                                                escape_xml(id_str)
-                                            )
-                                            .unwrap();
-                                        }
-                                    }
-                                }
-
-                                if let Some(causes) =
-                                    causality.get("causes").and_then(|c| c.as_array())
-                                {
-                                    for effect_id in causes {
-                                        if let Some(id_str) = effect_id.as_str() {
-                                            writeln!(
-                                                rag_context_for_user_message,
-                                                "        <causes>{}</causes>",
-                                                escape_xml(id_str)
-                                            )
-                                            .unwrap();
-                                        }
-                                    }
-                                }
-
-                                writeln!(rag_context_for_user_message, "    </causality>").unwrap();
-                            }
-                        }
-
-                        // Add summary - try to get it from the event data first, fall back to rag_item.text
-                        let summary = event_data
-                            .get("summary")
-                            .and_then(|s| s.as_str())
-                            .unwrap_or_else(|| rag_item.text.trim());
-                        writeln!(
-                            rag_context_for_user_message,
-                            "    <summary>{}</summary>",
-                            escape_xml(summary)
-                        )
-                        .unwrap();
-
-                        writeln!(rag_context_for_user_message, "</chronicle_event>").unwrap();
-                    } else {
-                        // Fallback to simple format if JSON parsing fails
-                        warn!(
-                            "Failed to parse chronicle event JSON for event type: {}",
-                            chronicle_meta.event_type
-                        );
-                        writeln!(
-                            rag_context_for_user_message,
-                            "<chronicle_event type=\"{}\" timestamp=\"{}\" status=\"unparseable\">[Chronicle data corrupted or truncated - raw text length: {} chars]</chronicle_event>",
-                            escape_xml(&chronicle_meta.event_type),
-                            chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
-                            rag_item.text.len()
-                        )
-                        .unwrap();
-                    }
-                }
-            }
-            rag_context_for_user_message.push_str("</long_term_memory>\n\n");
-        }
-
-        // Add regular RAG items (lorebooks and chat history) in lorebook_entries section
-        if !other_rag_items.is_empty() {
-            rag_context_for_user_message.push_str("<lorebook_entries>\n");
-
-            for (rag_item, _) in &other_rag_items {
-                match &rag_item.metadata {
-                    crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
-                        writeln!(
-                            rag_context_for_user_message,
-                            "<chat_history speaker=\"{}\">{}</chat_history>",
-                            escape_xml(&chat_meta.speaker),
-                            escape_xml(rag_item.text.trim())
-                        )
-                        .unwrap();
-                    }
-                    crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) => {
-                        // Decrypt content if encrypted fields are present
-                        let content = if let (Some(ref encrypted_chunk), Some(ref nonce)) = (
-                            lorebook_meta.encrypted_chunk_text.as_ref(),
-                            lorebook_meta.chunk_text_nonce.as_ref(),
-                        ) {
-                            // We have encrypted content
-                            if let Some(ref session_dek) = user_dek {
-                                // We have the DEK to decrypt
-                                match crate::crypto::decrypt_gcm(
-                                    encrypted_chunk,
-                                    nonce,
-                                    session_dek,
-                                ) {
-                                    Ok(decrypted_secret) => {
-                                        let decrypted_bytes =
-                                            secrecy::ExposeSecret::expose_secret(&decrypted_secret);
-                                        String::from_utf8_lossy(decrypted_bytes).to_string()
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to decrypt lorebook content: {}", e);
-                                        // Fall back to plaintext field if available
-                                        if lorebook_meta.chunk_text != "[encrypted]" {
-                                            lorebook_meta.chunk_text.clone()
-                                        } else {
-                                            "[decryption failed]".to_string()
-                                        }
-                                    }
-                                }
-                            } else {
-                                // No DEK available, return placeholder or plaintext
-                                if lorebook_meta.chunk_text != "[encrypted]" {
-                                    lorebook_meta.chunk_text.clone()
-                                } else {
-                                    "[encrypted - no DEK available]".to_string()
-                                }
-                            }
-                        } else {
-                            // Legacy plaintext mode
-                            lorebook_meta.chunk_text.clone()
-                        };
-
-                        // Decrypt title if encrypted fields are present
-                        let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
-                            lorebook_meta.encrypted_title.as_ref(),
-                            lorebook_meta.title_nonce.as_ref(),
-                        ) {
-                            // We have encrypted title
-                            if let Some(ref session_dek) = user_dek {
-                                match crate::crypto::decrypt_gcm(
-                                    encrypted_title,
-                                    title_nonce,
-                                    session_dek,
-                                ) {
-                                    Ok(decrypted_secret) => {
-                                        let decrypted_bytes =
-                                            secrecy::ExposeSecret::expose_secret(&decrypted_secret);
-                                        let decrypted_title =
-                                            String::from_utf8_lossy(decrypted_bytes).to_string();
-                                        // Handle empty decrypted titles
-                                        if decrypted_title.trim().is_empty() {
-                                            "Untitled".to_string()
-                                        } else {
-                                            decrypted_title
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to decrypt lorebook title: {}", e);
-                                        // Handle empty fallback titles
-                                        lorebook_meta
-                                            .entry_title
-                                            .clone()
-                                            .and_then(|t| {
-                                                if t.trim().is_empty() { None } else { Some(t) }
-                                            })
-                                            .unwrap_or_else(|| "[decryption failed]".to_string())
-                                    }
-                                }
-                            } else {
-                                // Handle empty fallback titles
-                                lorebook_meta
-                                    .entry_title
-                                    .clone()
-                                    .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
-                                    .unwrap_or_else(|| "[encrypted - no DEK]".to_string())
-                            }
-                        } else {
-                            // Handle empty unencrypted titles
-                            lorebook_meta
-                                .entry_title
-                                .clone()
-                                .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
-                                .unwrap_or_else(|| "Untitled".to_string())
-                        };
-
-                        write!(rag_context_for_user_message, "<lorebook_entry").unwrap();
-
-                        write!(
-                            rag_context_for_user_message,
-                            " title=\"{}\"",
-                            escape_xml(&title)
-                        )
-                        .unwrap();
-
-                        if let Some(keywords) = &lorebook_meta.keywords {
-                            if !keywords.is_empty() {
-                                let keywords_str = keywords.join(", ");
-                                write!(
-                                    rag_context_for_user_message,
-                                    " keywords=\"{}\"",
-                                    escape_xml(&keywords_str)
-                                )
-                                .unwrap();
-                            }
-                        }
-
-                        writeln!(
-                            rag_context_for_user_message,
-                            ">{}</lorebook_entry>",
-                            escape_xml(content.trim())
-                        )
-                        .unwrap();
-                    }
-                    crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
-                        // Already handled above
-                    }
-                }
-            }
-
-            rag_context_for_user_message.push_str("</lorebook_entries>\n\n");
-        }
-    }
-
-    // Add agent context if available from pre-processing analysis
-    if let Some(agent_ctx) = agent_context {
-        if !agent_ctx.is_empty() {
-            rag_context_for_user_message.push_str("<agent_context>\n");
-            rag_context_for_user_message.push_str(&escape_xml(agent_ctx));
-            rag_context_for_user_message.push_str("\n</agent_context>\n\n");
-        }
-    }
-
-    // Combine RAG context with the current user message
+    // Format current user message with guidance if provided
     let mut final_user_message = current_user_message.clone();
     if let MessageContent::Text(text_content) = final_user_message.content {
-        let mut formatted_content = if !rag_context_for_user_message.is_empty() {
-            format!(
-                "{}**[User Input]**\n{}",
-                rag_context_for_user_message, text_content
-            )
-        } else {
-            format!("**[User Input]**\n{}", text_content)
-        };
+        let mut formatted_content = String::new();
+        
+        // Add the user input
+        formatted_content.push_str(&format!("**[User Input]**\n{}", text_content));
         
         // Add guidance if provided
         if let Some(guidance_text) = guidance {
@@ -1228,7 +1263,7 @@ async fn build_final_prompt_strings(
         final_user_message.content = MessageContent::Text(formatted_content);
     } else {
         // Handle other MessageContent variants if necessary, or log a warning
-        warn!("User message is not plain text, RAG context not prepended.");
+        warn!("User message is not plain text, formatting not applied.");
     }
 
     final_message_list.push(final_user_message);
@@ -1259,6 +1294,8 @@ pub async fn build_final_llm_prompt(
         params.agent_context.as_deref(),
         params.user_dek,
         params.guidance.as_deref(),
+        params.prompt_template_id.as_deref(),
+        params.user_persona_name.as_deref(),
     )
     .await?;
 

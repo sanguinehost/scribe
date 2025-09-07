@@ -37,6 +37,7 @@
 	import LorebookSelectionDialog from '$lib/components/shared/LorebookSelectionDialog.svelte';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
 	import ContextConfiguratorCompact from '$lib/components/shared/ContextConfiguratorCompact.svelte';
+	import TemplateSelector from '$lib/components/shared/TemplateSelector.svelte';
 
 	let {
 		chat,
@@ -68,7 +69,8 @@
 		context_total_token_limit: DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT, // Will be set from global or chat settings
 		context_recent_history_budget: DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, // Will be set from global or chat settings
 		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET, // Will be set from global or chat settings
-		agent_mode: 'disabled' as 'disabled' | 'pre_processing' | 'post_processing' // Context enrichment agent mode
+		agent_mode: 'disabled' as 'disabled' | 'pre_processing' | 'post_processing', // Context enrichment agent mode
+		prompt_template_id: 'neutral_roleplay' // Will be set from global or chat settings
 	});
 
 	// Expandable sections
@@ -76,6 +78,7 @@
 		persona: true,
 		lorebooks: true,
 		chronicles: true,
+		templates: true,
 		generation: false,
 		advanced: false
 	});
@@ -175,7 +178,8 @@
 					DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
 				context_rag_budget:
 					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET,
-				agent_mode: 'disabled'
+				agent_mode: 'disabled',
+				prompt_template_id: 'neutral_roleplay'
 			};
 		}
 	});
@@ -226,7 +230,8 @@
 					globalUserSettings?.default_context_rag_budget ??
 					DEFAULT_CONTEXT_RAG_BUDGET,
 				agent_mode:
-					(settings.agent_mode as 'pre_processing' | 'post_processing' | 'disabled') ?? 'disabled'
+					(settings.agent_mode as 'pre_processing' | 'post_processing' | 'disabled') ?? 'disabled',
+				prompt_template_id: settings.prompt_template_id ?? 'neutral_roleplay'
 			};
 
 			// IMPORTANT: Update currentChronicleId from the fresh backend settings
@@ -409,7 +414,8 @@
 				context_recent_history_budget: localSettings.context_recent_history_budget,
 				context_rag_budget: localSettings.context_rag_budget,
 				chronicle_id: currentChronicleId,
-				agent_mode: localSettings.agent_mode
+				agent_mode: localSettings.agent_mode,
+				prompt_template_id: localSettings.prompt_template_id
 			};
 
 			const result = await apiClient.updateChatSessionSettings(chat.id, updateRequest);
@@ -456,6 +462,33 @@
 		} catch (error) {
 			console.error('Failed to change persona:', error);
 			toast.error('Failed to change persona');
+		}
+	}
+
+	async function handleTemplateChange(templateId: string) {
+		if (!chat?.id) return;
+
+		try {
+			localSettings.prompt_template_id = templateId;
+			
+			const result = await apiClient.updateChatSessionSettings(chat.id, {
+				prompt_template_id: templateId
+			});
+
+			if (result.isOk()) {
+				toast.success('Prompt template updated');
+				dispatch('settingsUpdated', { prompt_template_id: templateId });
+			} else {
+				console.error('Failed to update template:', result.error);
+				toast.error('Failed to update prompt template');
+				// Revert the local setting
+				await loadChatSettings();
+			}
+		} catch (error) {
+			console.error('Failed to change template:', error);
+			toast.error('Failed to change template');
+			// Revert the local setting
+			await loadChatSettings();
 		}
 	}
 
@@ -681,6 +714,34 @@
 								</select>
 								<p class="text-xs text-muted-foreground">Override the user persona for this chat</p>
 							</div>
+						</CardContent>
+					{/if}
+				</Card>
+
+				<!-- Prompt Template Selection -->
+				<Card>
+					<CardHeader
+						onclick={() => (expandedSections.templates = !expandedSections.templates)}
+						class="cursor-pointer {expandedSections.templates ? '' : 'pb-6'}"
+					>
+						<div class="flex items-center justify-between">
+							<CardTitle class="text-base">Prompt Style</CardTitle>
+							{#if expandedSections.templates}
+								<ChevronUp />
+							{:else}
+								<ChevronDown />
+							{/if}
+						</div>
+					</CardHeader>
+					{#if expandedSections.templates}
+						<CardContent class="space-y-3">
+							<TemplateSelector
+								bind:selectedTemplateId={localSettings.prompt_template_id}
+								onTemplateChange={handleTemplateChange}
+								currentChatMode={chat?.chat_mode || 'Character'}
+								showCompatibility={true}
+								disabled={isLoading}
+							/>
 						</CardContent>
 					{/if}
 				</Card>

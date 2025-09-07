@@ -991,6 +991,11 @@ pub fn mock_user(username: &str) -> User {
         account_status: Some("active".to_string()),          // Default to active account
         recovery_phrase: None,                               // Recovery phrase not stored in DB
         default_persona_id: None,
+        token_usage_updated_at: Utc::now(),
+        tokens_last_reset_at: Some(Utc::now()),
+        total_completion_tokens: 0,
+        total_prompt_tokens: 0,
+        total_token_cost_cents: 0,
     }
 }
 
@@ -1106,6 +1111,11 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         active_impersonated_character_id: None,
         player_chronicle_id: None, // Not used in CLI tests
         agent_mode: None,
+        estimated_cost_cents: 0,
+        prompt_template_id: "neutral_roleplay".to_string(),
+        tokens_counted_at: Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
     }
 }
 

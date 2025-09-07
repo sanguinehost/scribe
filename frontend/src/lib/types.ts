@@ -616,6 +616,7 @@ export interface UpdateChatSessionSettingsRequest {
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
 	agent_mode?: string | null;
+	prompt_template_id?: string | null;
 }
 
 export interface ChatSessionSettingsResponse {
@@ -641,6 +642,7 @@ export interface ChatSessionSettingsResponse {
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
 	agent_mode?: string | null;
+	prompt_template_id?: string | null;
 }
 
 // Types for Global User Settings
@@ -1105,4 +1107,24 @@ export interface GpuInfo {
 	vram_gb?: number | null;
 	cuda_capable: boolean;
 	device_id: number;
+}
+
+// Prompt Template Types
+
+export interface TemplateCompatibility {
+	requires_character: boolean;
+	supports_rag: boolean;
+	supports_personas: boolean;
+}
+
+export interface PromptTemplateInfo {
+	id: string;
+	version: string;
+	name: string;
+	description: string;
+	compatibility: TemplateCompatibility;
+}
+
+export interface PromptTemplateListResponse {
+	templates: PromptTemplateInfo[];
 }

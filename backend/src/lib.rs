@@ -8,6 +8,7 @@ pub mod logging;
 pub mod middleware;
 pub mod models;
 pub mod prompt_builder;
+pub mod prompt_templates;
 pub mod routes;
 pub mod schema;
 pub mod services;

@@ -1440,8 +1440,6 @@ pub async fn stream_ai_response_and_save_message(
                 .with_reasoning_effort(ReasoningEffort::Budget(u32::try_from(budget).unwrap_or(0)));
         }
     }
-    // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
-    // The `gemini_enable_code_execution` variable will still affect tool declaration logic below.
 
     // Disable all safety filters to prevent content filtering errors
     let safety_settings = create_unrestricted_safety_settings();
