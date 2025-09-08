@@ -48,7 +48,7 @@
 		<div class="space-y-2 p-4">
 			{#each Array(3) as _}
 				<div class="animate-pulse">
-					<div class="h-10 rounded bg-muted"></div>
+					<div class="h-10 rounded bg-primary/5 border border-primary/10"></div>
 				</div>
 			{/each}
 		</div>
@@ -56,9 +56,9 @@
 		<!-- Empty state -->
 		<div class="flex flex-1 items-center justify-center p-4">
 			<div class="text-center">
-				<BookOpen class="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+				<BookOpen class="mx-auto mb-2 h-8 w-8 text-primary/50" />
 				<p class="mb-2 text-sm text-muted-foreground">No lorebooks yet</p>
-				<Button variant="outline" size="sm" onclick={handleViewAll}>
+				<Button variant="outline" size="sm" onclick={handleViewAll} class="border-primary/20 hover:bg-primary/10 hover:border-primary/30">
 					<Plus class="mr-1 h-4 w-4" />
 					Create First
 				</Button>
@@ -75,15 +75,15 @@
 							out:slideAndFade={{ y: -20, duration: 200 }}
 						>
 							<button
-								class="group w-full rounded-md p-2 text-left transition-colors hover:bg-muted"
+								class="group w-full rounded-md p-2 text-left transition-colors hover:bg-primary/10 hover:border-primary/20 border border-transparent"
 								onclick={() => handleSelectLorebook(lorebook.id)}
 							>
 								<div class="flex items-center gap-2">
-									<BookOpen class="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+									<BookOpen class="h-4 w-4 text-primary/70 group-hover:text-primary" />
 									<div class="min-w-0 flex-1">
-										<div class="truncate text-sm font-medium">{lorebook.name}</div>
+										<div class="truncate text-sm font-medium group-hover:text-primary">{lorebook.name}</div>
 										{#if lorebook.description}
-											<div class="truncate text-xs text-muted-foreground">
+											<div class="truncate text-xs text-muted-foreground group-hover:text-primary/80">
 												{lorebook.description}
 											</div>
 										{/if}

@@ -739,8 +739,9 @@
 								bind:selectedTemplateId={localSettings.prompt_template_id}
 								onTemplateChange={handleTemplateChange}
 								currentChatMode={chat?.chat_mode || 'Character'}
-								showCompatibility={true}
+								showCompatibility={false}
 								disabled={isLoading}
+								hideLabel={true}
 							/>
 						</CardContent>
 					{/if}

@@ -98,6 +98,8 @@ icu_locid = "1.5"
 
 validator = { version = "0.20", features = ["derive"] }
 regex = "1.10.4"
+blake3 = "1.5.1"
+nanoid = "0.4.0"
 # Add missing dependencies needed by test_helpers
 tonic = "0.12.3"
 testcontainers = "0.23.3"

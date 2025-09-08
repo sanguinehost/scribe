@@ -15,13 +15,15 @@
 		onTemplateChange,
 		disabled = false,
 		showCompatibility = true,
-		currentChatMode = 'Character'
+		currentChatMode = 'Character',
+		hideLabel = false
 	}: {
 		selectedTemplateId?: string;
 		onTemplateChange?: (templateId: string) => void;
 		disabled?: boolean;
 		showCompatibility?: boolean;
 		currentChatMode?: string;
+		hideLabel?: boolean;
 	} = $props();
 
 	let availableTemplates = $state<PromptTemplateInfo[]>([]);
@@ -146,7 +148,9 @@
 </script>
 
 <div class="space-y-3">
-	<Label class="text-sm font-medium">Prompt Style</Label>
+	{#if !hideLabel}
+		<Label class="text-sm font-medium">Prompt Style</Label>
+	{/if}
 
 	{#if isLoading}
 		<div class="space-y-2">
@@ -158,34 +162,24 @@
 			<!-- Selected Template Display -->
 			<Button
 				variant="outline"
-				class="h-auto w-full justify-between p-3 text-left"
+				class="h-auto w-full justify-between p-3 text-left overflow-hidden"
 				{disabled}
 				onclick={toggleDropdown}
 			>
-				<div class="flex flex-col items-start gap-1">
-					<div class="flex items-center gap-2">
-						<span class="font-medium">
-							{selectedTemplate?.name || 'Select Template'}
-						</span>
-						{#if selectedTemplate && showCompatibility}
-							{@const badge = getCompatibilityBadge(selectedTemplate)}
-							{#if badge === 'Recommended'}
-								<Badge variant="default" class="text-xs">Recommended</Badge>
-							{:else if badge === 'Limited'}
-								<Badge variant="secondary" class="text-xs">Limited</Badge>
-							{/if}
-						{/if}
-					</div>
+				<div class="flex flex-col items-start gap-1 min-w-0 flex-1 overflow-hidden">
+					<span class="font-medium truncate w-full">
+						{selectedTemplate?.name || 'Select Template'}
+					</span>
 					{#if selectedTemplate}
-						<span class="text-xs text-muted-foreground">
+						<span class="text-xs text-muted-foreground truncate w-full">
 							{selectedTemplate.description}
 						</span>
 					{/if}
 				</div>
 				{#if isDropdownOpen}
-					<ChevronUp class="h-4 w-4 opacity-50" />
+					<ChevronUp class="h-4 w-4 opacity-50 shrink-0" />
 				{:else}
-					<ChevronDown class="h-4 w-4 opacity-50" />
+					<ChevronDown class="h-4 w-4 opacity-50 shrink-0" />
 				{/if}
 			</Button>
 
@@ -195,37 +189,18 @@
 					class="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-auto rounded-md border bg-popover p-1 shadow-md"
 				>
 					{#each availableTemplates as template (template.id)}
-						{@const badge = getCompatibilityBadge(template)}
 						<button
 							type="button"
-							class="flex w-full flex-col items-start gap-1 rounded-sm px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground {selectedTemplateId ===
+							class="flex w-full flex-col items-start gap-1 rounded-sm px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground overflow-hidden {selectedTemplateId ===
 							template.id
 								? 'bg-accent text-accent-foreground'
 								: ''}"
 							onclick={() => handleTemplateSelect(template)}
 						>
-							<div class="flex items-center gap-2">
-								<span class="font-medium">{template.name}</span>
-								{#if badge === 'Recommended'}
-									<Badge variant="default" class="text-xs">Recommended</Badge>
-								{:else if badge === 'Limited'}
-									<Badge variant="secondary" class="text-xs">Limited</Badge>
-								{/if}
-							</div>
-							<span class="text-left text-xs text-muted-foreground">
+							<span class="font-medium truncate w-full text-left">{template.name}</span>
+							<span class="text-left text-xs text-muted-foreground truncate w-full">
 								{template.description}
 							</span>
-
-							<!-- Compatibility info -->
-							{#if showCompatibility}
-								<span class="text-xs text-muted-foreground">
-									{#if template.compatibility.requires_character}
-										Best for character conversations
-									{:else}
-										Best for general conversations
-									{/if}
-								</span>
-							{/if}
 						</button>
 					{/each}
 

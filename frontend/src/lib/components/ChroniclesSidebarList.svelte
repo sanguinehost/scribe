@@ -84,7 +84,7 @@
 		<div class="space-y-2 p-4">
 			{#each Array(3) as _}
 				<div class="animate-pulse">
-					<div class="h-10 rounded bg-muted"></div>
+					<div class="h-10 rounded bg-primary/5 border border-primary/10"></div>
 				</div>
 			{/each}
 		</div>
@@ -92,9 +92,9 @@
 		<!-- Empty state -->
 		<div class="flex flex-1 items-center justify-center p-4">
 			<div class="text-center">
-				<ScrollText class="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+				<ScrollText class="mx-auto mb-2 h-8 w-8 text-primary/50" />
 				<p class="mb-2 text-sm text-muted-foreground">No chronicles yet</p>
-				<Button variant="outline" size="sm" onclick={handleCreateChronicle}>
+				<Button variant="outline" size="sm" onclick={handleCreateChronicle} class="border-primary/20 hover:bg-primary/10 hover:border-primary/30">
 					<Plus class="mr-1 h-4 w-4" />
 					Create First
 				</Button>
@@ -111,14 +111,14 @@
 							out:slideAndFade={{ y: -20, duration: 200 }}
 						>
 							<button
-								class="group w-full rounded-md p-2 text-left transition-colors hover:bg-muted"
+								class="group w-full rounded-md p-2 text-left transition-colors hover:bg-primary/10 hover:border-primary/20 border border-transparent"
 								onclick={() => handleSelectChronicle(chronicle.id)}
 							>
 								<div class="flex items-center gap-2">
-									<ScrollText class="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+									<ScrollText class="h-4 w-4 text-primary/70 group-hover:text-primary" />
 									<div class="min-w-0 flex-1">
-										<div class="truncate text-sm font-medium">{chronicle.name}</div>
-										<div class="flex items-center gap-4 text-xs text-muted-foreground">
+										<div class="truncate text-sm font-medium group-hover:text-primary">{chronicle.name}</div>
+										<div class="flex items-center gap-4 text-xs text-muted-foreground group-hover:text-primary/70">
 											<span>{chronicle.event_count} events</span>
 											<span>{chronicle.chat_session_count} chats</span>
 										</div>
