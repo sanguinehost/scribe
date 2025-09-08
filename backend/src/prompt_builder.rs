@@ -1235,6 +1235,11 @@ async fn build_final_prompt_strings(
     if !enhanced_rag_context.is_empty() {
         template_context["rag_context"] = serde_json::Value::String(enhanced_rag_context.clone());
     }
+    
+    // Add agent context as separate template variable for sections list generation
+    if let Some(agent_ctx) = agent_context {
+        template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string());
+    }
 
     let final_system_prompt = TEMPLATE_MANAGER.render(template_id, template_context)?;
 
