@@ -75,15 +75,15 @@
 							out:slideAndFade={{ y: -20, duration: 200 }}
 						>
 							<button
-								class="group w-full rounded-md p-2 text-left transition-colors hover:bg-primary/10 hover:border-primary/20 border border-transparent"
+								class="group w-full rounded-md p-2 text-left transition-colors bg-muted/50 border-border/40 border hover:bg-muted/70 hover:border-primary"
 								onclick={() => handleSelectLorebook(lorebook.id)}
 							>
 								<div class="flex items-center gap-2">
-									<BookOpen class="h-4 w-4 text-primary/70 group-hover:text-primary" />
+									<BookOpen class="h-4 w-4 text-primary/70" />
 									<div class="min-w-0 flex-1">
-										<div class="truncate text-sm font-medium group-hover:text-primary">{lorebook.name}</div>
+										<div class="truncate text-sm font-medium">{lorebook.name}</div>
 										{#if lorebook.description}
-											<div class="truncate text-xs text-muted-foreground group-hover:text-primary/80">
+											<div class="truncate text-xs text-muted-foreground">
 												{lorebook.description}
 											</div>
 										{/if}

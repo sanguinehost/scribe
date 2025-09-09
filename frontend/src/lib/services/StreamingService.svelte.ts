@@ -265,6 +265,72 @@ class StreamingService {
 	}
 
 	/**
+	 * Parse multiple JSON chunks that may be concatenated in a single string
+	 */
+	private parseMultipleJsonChunks(data: string): StreamedChunk[] {
+		const chunks: StreamedChunk[] = [];
+		let remaining = data.trim();
+		
+		while (remaining.length > 0) {
+			try {
+				// Find the end of the current JSON object by counting braces
+				let braceCount = 0;
+				let inString = false;
+				let escaped = false;
+				let jsonEnd = -1;
+				
+				for (let i = 0; i < remaining.length; i++) {
+					const char = remaining[i];
+					
+					if (escaped) {
+						escaped = false;
+						continue;
+					}
+					
+					if (char === '\\' && inString) {
+						escaped = true;
+						continue;
+					}
+					
+					if (char === '"') {
+						inString = !inString;
+						continue;
+					}
+					
+					if (!inString) {
+						if (char === '{') {
+							braceCount++;
+						} else if (char === '}') {
+							braceCount--;
+							if (braceCount === 0) {
+								jsonEnd = i + 1;
+								break;
+							}
+						}
+					}
+				}
+				
+				if (jsonEnd === -1) {
+					// No complete JSON object found
+					console.warn('Incomplete JSON chunk found:', remaining.substring(0, 100) + '...');
+					break;
+				}
+				
+				const jsonStr = remaining.substring(0, jsonEnd);
+				const chunk = JSON.parse(jsonStr);
+				chunks.push(chunk);
+				
+				remaining = remaining.substring(jsonEnd).trim();
+			} catch (e) {
+				console.error('Failed to parse JSON chunk:', e, 'Remaining:', remaining.substring(0, 100));
+				break;
+			}
+		}
+		
+		return chunks;
+	}
+
+	/**
 	 * Simple CRC32 calculation for chunk verification
 	 * Note: This should match the rust crc32fast implementation
 	 */
@@ -657,40 +723,43 @@ class StreamingService {
 				case 'content':
 					if (event.data) {
 						try {
-							// Parse structured chunk
-							const chunk: StreamedChunk = JSON.parse(event.data);
-							const { index, content, checksum } = chunk;
-
-							// Verify checksum
-							const calculatedChecksum = this.calculateChecksum(content);
-							if (calculatedChecksum !== checksum) {
-								console.error(
-									`🔍 Checksum mismatch for chunk ${index}. Expected: ${checksum}, Got: ${calculatedChecksum}`
-								);
-							}
-
-							// NEW ARCHITECTURE: Buffer chunks without immediate UI updates
+							// Parse multiple JSON chunks that may be concatenated in a single SSE event
+							const chunks = this.parseMultipleJsonChunks(event.data);
+							
 							const messageId = this.currentAssistantMessageId || assistantMessageId;
 							const messageBuffer = this.messageBuffers.get(messageId);
+							
+							if (!messageBuffer) {
+								console.warn(`No buffer found for message ${messageId}`);
+								break;
+							}
 
-							if (messageBuffer) {
+							// Process each parsed chunk
+							for (const chunk of chunks) {
+								const { index, content, checksum } = chunk;
+
+								// Verify checksum
+								const calculatedChecksum = this.calculateChecksum(content);
+								if (calculatedChecksum !== checksum) {
+									console.error(
+										`🔍 Checksum mismatch for chunk ${index}. Expected: ${checksum}, Got: ${calculatedChecksum}`
+									);
+								}
+
 								// Store chunk in buffer
 								messageBuffer.chunks[index] = content;
-								// Buffering chunk ${index} (${content.length} chars)
 
 								// Check for gaps in chunks
 								const expectedIdx = messageBuffer.expectedIndex;
 								if (index > expectedIdx) {
 									console.log(`⚠️ Chunk gap: expected ${expectedIdx}, got ${index}`);
 								}
-
-								// Update buffer content if we have contiguous chunks
-								this.updateBufferContent(messageId);
-							} else {
-								console.warn(`No buffer found for message ${messageId}`);
 							}
+
+							// Update buffer content if we have contiguous chunks
+							this.updateBufferContent(messageId);
 						} catch (e) {
-							console.error('Failed to parse structured chunk:', e);
+							console.error('Failed to parse structured chunks:', e, 'Raw data:', event.data);
 							// For fallback, still buffer the raw content
 							const messageId = this.currentAssistantMessageId || assistantMessageId;
 							const messageBuffer = this.messageBuffers.get(messageId);
