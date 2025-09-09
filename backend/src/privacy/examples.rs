@@ -4,7 +4,7 @@
 /// to protect user privacy while maintaining debuggability.
 
 use crate::privacy::logging::{loggable_user_id, loggable_session_id, sanitize_content, sanitize_system_prompt};
-use crate::privacy::{privacy_info, privacy_debug, privacy_warn, privacy_error};
+use crate::{privacy_info, privacy_debug, privacy_warn, privacy_error};
 use uuid::Uuid;
 
 /// Example 1: AI Client Factory logging transformation
@@ -194,11 +194,11 @@ pub fn show_transformation_patterns() {
     println!("   AFTER:  privacy_debug!(session_id = %loggable_session_id(session_id), \"Session started\");\n");
     
     println!("3. Content Logging:");
-    println!("   BEFORE: debug!(\"User message: {}\", content);");
+    println!("   BEFORE: debug!(\"User message: {{}}\", content);");
     println!("   AFTER:  privacy_debug!(content = %sanitize_content(content), \"User message received\");\n");
     
     println!("4. System Prompt Logging:");
-    println!("   BEFORE: debug!(\"System prompt: {}\", prompt);");
+    println!("   BEFORE: debug!(\"System prompt: {{}}\", prompt);");
     println!("   AFTER:  privacy_debug!(system_prompt = %sanitize_system_prompt(prompt), \"Using system prompt\");\n");
     
     println!("5. Personal Info Logging:");
@@ -206,7 +206,7 @@ pub fn show_transformation_patterns() {
     println!("   AFTER:  privacy_info!(email = \"<email-redacted>\", username = \"<username-redacted>\", \"User registered\");\n");
     
     println!("6. Error Logging:");
-    println!("   BEFORE: error!(error = ?e, \"Database error: {}\", e);");
+    println!("   BEFORE: error!(error = ?e, \"Database error: {{}}\", e);");
     println!("   AFTER:  privacy_error!(error_type = \"database_connection\", \"Database operation failed\");\n");
 }
 

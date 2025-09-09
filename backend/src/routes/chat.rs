@@ -2504,7 +2504,17 @@ pub async fn expand_text_handler(
             Ok(event) => {
                 match event {
                     chat::types::ScribeSseEvent::Content(content) => {
-                        expanded_text.push_str(&content);
+                        // Parse the JSON-serialized StreamedChunk to extract the actual content
+                        match serde_json::from_str::<chat::types::StreamedChunk>(&content) {
+                            Ok(chunk) => {
+                                expanded_text.push_str(&chunk.content);
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse StreamedChunk in expand_text: {}", e);
+                                // Fallback: treat as plain text (shouldn't happen with current implementation)
+                                expanded_text.push_str(&content);
+                            }
+                        }
                     }
                     chat::types::ScribeSseEvent::Error(error_msg) => {
                         error!("Error in expansion stream: {}", error_msg);
@@ -2815,7 +2825,17 @@ pub async fn impersonate_handler(
             Ok(event) => {
                 match event {
                     chat::types::ScribeSseEvent::Content(content) => {
-                        generated_response.push_str(&content);
+                        // Parse the JSON-serialized StreamedChunk to extract the actual content
+                        match serde_json::from_str::<chat::types::StreamedChunk>(&content) {
+                            Ok(chunk) => {
+                                generated_response.push_str(&chunk.content);
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse StreamedChunk in impersonate: {}", e);
+                                // Fallback: treat as plain text (shouldn't happen with current implementation)
+                                generated_response.push_str(&content);
+                            }
+                        }
                     }
                     chat::types::ScribeSseEvent::Error(error_msg) => {
                         error!("Error in impersonation stream: {}", error_msg);
