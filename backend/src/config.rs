@@ -77,6 +77,11 @@ pub struct Config {
     // Security Configuration
     #[serde(default)]
     pub security: SecurityConfig,
+
+    // Payment Configuration (only with payment feature)
+    #[cfg(feature = "payment")]
+    #[serde(default)]
+    pub payment: PaymentConfig,
 }
 
 impl std::fmt::Debug for Config {
@@ -269,6 +274,92 @@ fn default_security_logging_enabled() -> bool {
     true // Security logging enabled by default
 }
 
+// Payment configuration (only with payment feature)
+#[cfg(feature = "payment")]
+#[derive(Deserialize, Clone)]
+pub struct PaymentConfig {
+    /// Paddle API key for payment processing
+    pub paddle_api_key: Option<String>,
+    
+    /// Paddle webhook secret for signature verification
+    pub paddle_webhook_secret: Option<String>,
+    
+    /// Whether to use Paddle sandbox mode (for development/testing)
+    #[serde(default = "default_paddle_sandbox_mode")]
+    pub paddle_sandbox_mode: bool,
+    
+    /// Base URL for payment completion redirects (e.g., https://scribe.sanguinehost.com)
+    #[serde(default = "default_payment_base_url")]
+    pub payment_base_url: String,
+    
+    /// Free tier monthly token limit
+    #[serde(default = "default_free_tier_token_limit")]
+    pub free_tier_token_limit: i64,
+    
+    /// Whether to enforce payment limits (can disable for testing)
+    #[serde(default = "default_enforce_limits")]
+    pub enforce_limits: bool,
+    
+    /// Grace period in days after subscription expires
+    #[serde(default = "default_grace_period_days")]
+    pub grace_period_days: i32,
+}
+
+#[cfg(feature = "payment")]
+impl std::fmt::Debug for PaymentConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PaymentConfig")
+            .field("paddle_api_key", &self.paddle_api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("paddle_webhook_secret", &self.paddle_webhook_secret.as_ref().map(|_| "[REDACTED]"))
+            .field("paddle_sandbox_mode", &self.paddle_sandbox_mode)
+            .field("payment_base_url", &self.payment_base_url)
+            .field("free_tier_token_limit", &self.free_tier_token_limit)
+            .field("enforce_limits", &self.enforce_limits)
+            .field("grace_period_days", &self.grace_period_days)
+            .finish()
+    }
+}
+
+#[cfg(feature = "payment")]
+impl Default for PaymentConfig {
+    fn default() -> Self {
+        Self {
+            paddle_api_key: None,
+            paddle_webhook_secret: None,
+            paddle_sandbox_mode: default_paddle_sandbox_mode(),
+            payment_base_url: default_payment_base_url(),
+            free_tier_token_limit: default_free_tier_token_limit(),
+            enforce_limits: default_enforce_limits(),
+            grace_period_days: default_grace_period_days(),
+        }
+    }
+}
+
+#[cfg(feature = "payment")]
+fn default_paddle_sandbox_mode() -> bool {
+    true // Default to sandbox mode for safety
+}
+
+#[cfg(feature = "payment")]
+fn default_payment_base_url() -> String {
+    "https://localhost:8080".to_string() // Default for local development
+}
+
+#[cfg(feature = "payment")]
+fn default_free_tier_token_limit() -> i64 {
+    50000 // 50K tokens per month for free tier
+}
+
+#[cfg(feature = "payment")]
+fn default_enforce_limits() -> bool {
+    false // Default to not enforcing limits (for development)
+}
+
+#[cfg(feature = "payment")]
+fn default_grace_period_days() -> i32 {
+    7 // 7 days grace period after subscription expires
+}
+
 impl Config {
     /// Loads configuration from environment variables.
     ///
@@ -346,6 +437,8 @@ impl Default for Config {
             from_email: None,
             narrative_flags: NarrativeFeatureFlags::default(),
             security: SecurityConfig::default(),
+            #[cfg(feature = "payment")]
+            payment: PaymentConfig::default(),
         }
     }
 }

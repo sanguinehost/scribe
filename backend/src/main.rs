@@ -1,7 +1,7 @@
 use axum::{
     Router,
     extract::DefaultBodyLimit,
-    routing::get, // Remove post
+    routing::{get, post},
 };
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
@@ -33,6 +33,7 @@ use scribe_backend::routes::{
     documents::document_routes,
     llm_routes::llm_router,           // Added for LLM management routes
     lorebook_routes::lorebook_routes, // Added for lorebook routes
+    payment::{payment_routes, payment_webhook_routes}, // Added for payment routes
     templates,                        // Added for template routes
     user_persona_routes::user_personas_router, // Added for user persona routes
     user_settings_routes::user_settings_routes,
@@ -534,6 +535,7 @@ fn build_router(
         )
         .nest("/documents", document_routes())
         .nest("/llm", llm_router()) // LLM management routes
+        .nest("/payment", payment_routes()) // Payment routes
         .nest("/personas", user_personas_router(app_state.clone()))
         .nest("/user-settings", user_settings_routes(app_state.clone()))
         .nest("/", lorebook_routes())
@@ -547,7 +549,7 @@ fn build_router(
         .route("/api/health", get(health_check))
         .with_state(app_state.clone());
 
-    // Rate-limited API routes (both public and protected)
+    // Rate-limited API routes (both public and protected, but excluding webhooks)
     let rate_limited_api_routes = Router::new()
         .nest("/auth", auth_routes()) // Auth routes under /api/auth
         .merge(protected_api_routes) // Protected routes under /api
@@ -561,6 +563,13 @@ fn build_router(
                     .unwrap(),
             ),
         });
+
+    // Webhook routes (no authentication, no rate limiting - signature verified in handler)
+    tracing::info!("🎯 Setting up webhook routes in main.rs");
+    let webhook_routes = Router::new()
+        .nest("/api/payment", payment_webhook_routes()) // Webhook routes under /api/payment
+        .with_state(app_state.clone());
+    tracing::info!("🎯 Webhook routes configured");
 
     // Configure CORS for the frontend
     // With the proxy pattern, requests will appear to come from staging.scribe.sanguinehost.com
@@ -588,12 +597,19 @@ fn build_router(
         ])
         .allow_credentials(true);
 
+    // Build authenticated API routes with auth layer
+    let authenticated_api = Router::new()
+        .nest("/api", rate_limited_api_routes) // All authenticated API routes are rate limited
+        .layer(auth_layer) // Auth layer only on authenticated routes
+        .with_state(app_state.clone());
+
+    // Combine all routes
     Router::new()
         .merge(health_routes) // Health endpoint not rate limited
-        .nest("/api", rate_limited_api_routes) // All other API routes are rate limited
+        .merge(webhook_routes) // Webhook routes without auth
+        .merge(authenticated_api) // Regular API with auth
         .layer(cors)
         .layer(CookieManagerLayer::new())
-        .layer(auth_layer)
         .with_state(app_state)
         .layer(axum_middleware::from_fn(
             scribe_backend::middleware::security_headers_middleware,

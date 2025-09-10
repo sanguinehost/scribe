@@ -1,6 +1,10 @@
 // backend/src/test_helpers.rs
 // Contains helper functions and structs for integration testing within the src directory.
 
+// Payment test helpers (only with payment feature)
+#[cfg(feature = "payment")]
+pub mod payment_test_helpers;
+
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
@@ -29,6 +33,7 @@ use crate::{
         documents::document_routes,
         health::health_check,
         lorebook_routes, // Added lorebook_routes
+        payment as payment_routes, // Added payment_routes
         user_persona_routes,
         user_settings_routes,
     },
@@ -1617,11 +1622,21 @@ pub async fn spawn_app_with_rate_limiting_options(
             "/user-settings",
             user_settings_routes::user_settings_routes(app_state_inner.clone()),
         ) // Add user settings routes
+        .nest("/payment", payment_routes::payment_routes()) // Add payment routes
         .nest("/", lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
         .route_layer(middleware::from_fn_with_state(
             app_state_inner.clone(),
             auth_log_wrapper,
         ));
+
+    // Webhook routes (no authentication, no rate limiting - signature verified in handler)
+    #[cfg(feature = "payment")]
+    let webhook_routes_for_test = Router::new()
+        .nest("/api/payment", payment_routes::payment_webhook_routes()) // Webhook routes under /api/payment
+        .with_state(app_state_inner.clone());
+    
+    #[cfg(not(feature = "payment"))]
+    let webhook_routes_for_test = Router::new();
 
     // Rate-limited API routes (both auth and protected routes)
     let rate_limited_api_routes = Router::new()
@@ -1640,6 +1655,7 @@ pub async fn spawn_app_with_rate_limiting_options(
 
     let router_for_server = Router::new() // Renamed to avoid conflict with router field in TestApp
         .merge(health_routes_for_test) // Health endpoint not rate limited
+        .merge(webhook_routes_for_test) // Webhook routes without auth
         .nest("/api", rate_limited_api_routes) // All other API routes are rate limited
         .layer(CookieManagerLayer::new())
         .layer(auth_layer) // Re-enabled auth layer

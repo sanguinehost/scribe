@@ -6,7 +6,8 @@ edition = "2024"
 [features]
 default = []
 local-llm = ["dep:sysinfo", "dep:nix", "dep:which", "dep:tempfile"]
-production = []  # Explicitly excludes local-llm code
+payment = ["dep:hmac", "dep:subtle"]  # Payment processing dependencies (reqwest and serde_json already available)
+production = ["payment"]  # Include payment in production builds
 
 [[bin]]
 name = "re_embed_chronicles"
@@ -137,6 +138,10 @@ aws-sdk-ses = "1.75.0"
 
 # Rate limiting
 tower_governor = "0.5.0"
+
+# Payment processing (optional - only with payment feature)
+hmac = { version = "0.12", optional = true }  # For webhook signature verification
+subtle = { version = "2.5", optional = true }  # For constant-time comparisons
 
 [dev-dependencies]
 axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Mirror main deps features for tests, ADDED tokio feature

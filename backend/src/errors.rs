@@ -232,6 +232,23 @@ pub enum AppError {
     #[error("Text processing error: {0}")]
     TextProcessingError(String),
 
+    // Payment System Errors (gated behind payment feature)
+    #[cfg(feature = "payment")]
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+
+    #[cfg(feature = "payment")]
+    #[error("External service error: {0}")]
+    ExternalServiceError(String),
+
+    #[cfg(feature = "payment")]
+    #[error("JSON parse error: {0}")]
+    JsonParseError(String),
+
+    #[cfg(feature = "payment")]
+    #[error("Invalid webhook signature: {0}")]
+    InvalidWebhookSignature(String),
+
     #[error("Validation error: {0}")]
     ValidationError(#[from] ValidationErrors),
 }
@@ -394,6 +411,8 @@ impl AppError {
                 | Self::UuidError(_)
                 | Self::AuthError(_)
                 | Self::WebSocketReceiveError(_)
+                | Self::InvalidWebhookSignature(_)
+                | Self::ConfigurationError(_)
         )
     }
 
@@ -436,6 +455,8 @@ impl AppError {
                 | Self::UsernameTaken
                 | Self::EmailTaken
                 | Self::RateLimited(_)
+                | Self::InvalidWebhookSignature(_)
+                | Self::ConfigurationError(_)
         )
     }
 
@@ -478,6 +499,8 @@ impl AppError {
                         .unwrap_or_default()
                 ),
             ),
+            Self::InvalidWebhookSignature(msg) => (StatusCode::BAD_REQUEST, msg),
+            Self::ConfigurationError(msg) => (StatusCode::BAD_REQUEST, msg),
             _ => unreachable!("Non-simple client error passed to handle_simple_client_error"),
         }
     }

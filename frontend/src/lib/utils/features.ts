@@ -6,7 +6,7 @@
  * during the build process, reducing bundle size and attack surface.
  */
 
-import { PUBLIC_ENABLE_LOCAL_LLM } from '$env/static/public';
+import { PUBLIC_ENABLE_LOCAL_LLM, PUBLIC_ENABLE_PAYMENTS } from '$env/static/public';
 
 /**
  * Whether local LLM features should be included in the build
@@ -15,10 +15,17 @@ import { PUBLIC_ENABLE_LOCAL_LLM } from '$env/static/public';
 export const ENABLE_LOCAL_LLM = PUBLIC_ENABLE_LOCAL_LLM === 'true';
 
 /**
+ * Whether payment and billing features should be included in the build
+ * This includes subscription management, usage tracking, and billing UI
+ */
+export const ENABLE_PAYMENTS = PUBLIC_ENABLE_PAYMENTS === 'true';
+
+/**
  * Type-safe feature flags object
  */
 export const FEATURES = {
-	localLlm: ENABLE_LOCAL_LLM
+	localLlm: ENABLE_LOCAL_LLM,
+	payments: ENABLE_PAYMENTS
 } as const;
 
 /**

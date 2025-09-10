@@ -12,6 +12,9 @@ pub mod documents;
 pub mod email_verification;
 pub mod lorebook_dtos;
 pub mod lorebooks;
+#[cfg(feature = "payment")]
+pub mod payment;
+pub mod sql_types;
 pub mod usage;
 pub mod user_assets;
 pub mod user_personas;
@@ -32,6 +35,8 @@ pub use documents::*;
 pub use email_verification::*;
 pub use lorebook_dtos::*;
 pub use lorebooks::*;
+#[cfg(feature = "payment")]
+pub use payment::*;
 pub use usage::*;
 pub use user_assets::{NewUserAsset, UserAsset};
 pub use user_personas::*;

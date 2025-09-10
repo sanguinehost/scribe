@@ -15,6 +15,9 @@ pub mod sql_types {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     agent_context_analysis (id) {
         id -> Uuid,
         chat_session_id -> Uuid,
@@ -47,6 +50,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     character_assets (id) {
         id -> Int4,
         character_id -> Uuid,
@@ -66,6 +72,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     character_lorebooks (character_id, lorebook_id) {
         character_id -> Uuid,
         lorebook_id -> Uuid,
@@ -76,6 +85,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     characters (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -188,6 +200,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chat_character_lorebook_overrides (id) {
         id -> Uuid,
         chat_session_id -> Uuid,
@@ -201,6 +216,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chat_character_overrides (id) {
         id -> Uuid,
         chat_session_id -> Uuid,
@@ -216,6 +234,7 @@ diesel::table! {
 
 diesel::table! {
     use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
     use super::sql_types::MessageType;
 
     chat_messages (id) {
@@ -248,6 +267,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chat_session_lorebooks (chat_session_id, lorebook_id) {
         chat_session_id -> Uuid,
         lorebook_id -> Uuid,
@@ -258,6 +280,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chat_sessions (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -306,6 +331,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chronicle_events (id) {
         id -> Uuid,
         chronicle_id -> Uuid,
@@ -328,6 +356,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     email_verification_tokens (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -338,6 +369,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     lorebook_entries (id) {
         is_enabled -> Bool,
         insertion_order -> Int4,
@@ -366,6 +400,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     lorebooks (id) {
         #[max_length = 255]
         name -> Varchar,
@@ -381,6 +418,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     message_variants (id) {
         id -> Uuid,
         parent_message_id -> Uuid,
@@ -394,6 +434,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     old_documents (id, created_at) {
         id -> Uuid,
         created_at -> Timestamptz,
@@ -405,6 +448,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     old_suggestions (id) {
         id -> Uuid,
         document_id -> Uuid,
@@ -419,6 +465,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     old_votes (chat_id, message_id) {
         chat_id -> Uuid,
         message_id -> Uuid,
@@ -427,6 +476,72 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    payment_usage_tracking (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        subscription_id -> Nullable<Uuid>,
+        tokens_used -> Int4,
+        tokens_limit -> Nullable<Int4>,
+        period_start -> Timestamptz,
+        period_end -> Timestamptz,
+        metadata_encrypted -> Nullable<Bytea>,
+        metadata_nonce -> Nullable<Bytea>,
+        created_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    payments (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        subscription_id -> Nullable<Uuid>,
+        #[max_length = 255]
+        paddle_transaction_id -> Nullable<Varchar>,
+        amount_cents -> Int4,
+        #[max_length = 3]
+        currency -> Nullable<Varchar>,
+        #[max_length = 50]
+        status -> Varchar,
+        failure_reason_encrypted -> Nullable<Bytea>,
+        failure_reason_nonce -> Nullable<Bytea>,
+        #[max_length = 512]
+        paddle_receipt_url -> Nullable<Varchar>,
+        created_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    plan_features (plan_type) {
+        #[max_length = 50]
+        plan_type -> Varchar,
+        monthly_token_limit -> Nullable<Int4>,
+        characters_limit -> Nullable<Int4>,
+        lorebooks_limit -> Nullable<Int4>,
+        price_cents -> Nullable<Int4>,
+        #[max_length = 255]
+        paddle_price_id -> Nullable<Varchar>,
+        features -> Nullable<Jsonb>,
+        #[max_length = 100]
+        display_name -> Varchar,
+        description -> Nullable<Text>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     player_chronicles (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -439,6 +554,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     sessions (id) {
         id -> Text,
         expires -> Nullable<Timestamptz>,
@@ -447,6 +565,33 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    subscriptions (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        #[max_length = 255]
+        paddle_customer_id -> Nullable<Varchar>,
+        #[max_length = 255]
+        paddle_subscription_id -> Nullable<Varchar>,
+        #[max_length = 50]
+        plan_type -> Varchar,
+        #[max_length = 50]
+        status -> Varchar,
+        current_period_start -> Timestamptz,
+        current_period_end -> Timestamptz,
+        cancel_at_period_end -> Nullable<Bool>,
+        trial_end -> Nullable<Timestamptz>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     usage_tracking (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -462,6 +607,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     user_assets (id) {
         id -> Int4,
         user_id -> Uuid,
@@ -482,6 +630,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     user_personas (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -510,6 +661,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     user_settings (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -543,6 +697,7 @@ diesel::table! {
 
 diesel::table! {
     use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
     use super::sql_types::UserRole;
     use super::sql_types::AccountStatus;
 
@@ -605,7 +760,13 @@ diesel::joinable!(old_documents -> users (user_id));
 diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
 diesel::joinable!(old_votes -> chat_sessions (chat_id));
+diesel::joinable!(payment_usage_tracking -> subscriptions (subscription_id));
+diesel::joinable!(payment_usage_tracking -> users (user_id));
+diesel::joinable!(payments -> subscriptions (subscription_id));
+diesel::joinable!(payments -> users (user_id));
 diesel::joinable!(player_chronicles -> users (user_id));
+diesel::joinable!(subscriptions -> plan_features (plan_type));
+diesel::joinable!(subscriptions -> users (user_id));
 diesel::joinable!(usage_tracking -> users (user_id));
 diesel::joinable!(user_assets -> user_personas (persona_id));
 diesel::joinable!(user_assets -> users (user_id));
@@ -629,8 +790,12 @@ diesel::allow_tables_to_appear_in_same_query!(
     old_documents,
     old_suggestions,
     old_votes,
+    payment_usage_tracking,
+    payments,
+    plan_features,
     player_chronicles,
     sessions,
+    subscriptions,
     usage_tracking,
     user_assets,
     user_personas,

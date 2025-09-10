@@ -263,6 +263,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         // Mock Embedding Client to return a dummy vector
@@ -305,6 +307,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2])); // Needs to be called for each chunk
@@ -348,6 +352,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         let result = state
@@ -386,6 +392,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -432,6 +440,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.3, 0.4]));
@@ -607,6 +617,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_qdrant.set_search_response(Ok(vec![]));
@@ -644,6 +656,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -677,6 +691,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -712,6 +728,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -751,6 +769,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_qdrant.set_upsert_response(Err(AppError::VectorDbError(
@@ -798,6 +818,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -852,6 +874,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -914,6 +938,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -970,6 +996,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1022,6 +1050,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
