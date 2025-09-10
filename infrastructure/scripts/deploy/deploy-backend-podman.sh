@@ -27,6 +27,7 @@ ECS_CLUSTER="$ENVIRONMENT-scribe-cluster"
 BACKEND_SERVICE="$ENVIRONMENT-scribe-backend"
 QDRANT_SERVICE="$ENVIRONMENT-scribe-qdrant"
 NO_CACHE=${NO_CACHE:-false}
+FEATURES=${FEATURES:-""}
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -53,6 +54,7 @@ usage() {
     echo "  --environment ENV     Environment (staging|production, default: staging)"
     echo "  --region REGION       AWS region (default: us-east-1)"
     echo "  --account-id ID       AWS account ID (auto-detected if not provided)"
+    echo "  --features FEATURES   Rust features to enable (e.g., 'payment')"
     echo "  --no-cache            Build without cache"
     echo "  --backend-only        Deploy only the backend service"
     echo "  --qdrant-only         Deploy only the Qdrant service"
@@ -63,6 +65,7 @@ usage() {
     echo "  AWS_REGION            Override default region"
     echo "  AWS_ACCOUNT_ID        Override AWS account ID"
     echo "  ENVIRONMENT           Override environment"
+    echo "  FEATURES              Override Rust features"
     echo "  NO_CACHE              Set to true to disable cache"
     exit 1
 }
@@ -86,6 +89,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --account-id)
             AWS_ACCOUNT_ID="$2"
+            shift 2
+            ;;
+        --features)
+            FEATURES="$2"
             shift 2
             ;;
         --no-cache)
@@ -167,6 +174,11 @@ build_backend() {
     BUILD_CMD="$BUILD_CMD -t scribe-backend:latest"
     BUILD_CMD="$BUILD_CMD -t $ECR_BACKEND_REPO:latest"
     
+    if [ -n "$FEATURES" ]; then
+        BUILD_CMD="$BUILD_CMD --build-arg FEATURES='$FEATURES'"
+        log_info "Building with features: $FEATURES"
+    fi
+    
     if [ "$NO_CACHE" = true ]; then
         BUILD_CMD="$BUILD_CMD --no-cache"
         log_info "Building with --no-cache option"
@@ -241,6 +253,7 @@ main() {
     log_info "  Environment: $ENVIRONMENT"
     log_info "  AWS Region: $AWS_REGION"
     log_info "  AWS Account ID: $AWS_ACCOUNT_ID"
+    log_info "  Features: ${FEATURES:-'default'}"
     log_info "  Backend only: $BACKEND_ONLY"
     log_info "  Qdrant only: $QDRANT_ONLY"
     

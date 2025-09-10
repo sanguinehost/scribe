@@ -1,6 +1,9 @@
 # Build stage
 FROM rust:1.87-slim AS builder
 
+# Build arguments
+ARG FEATURES=""
+
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
@@ -31,11 +34,18 @@ COPY backend/migrations ./backend/migrations
 # Copy diesel.toml
 COPY backend/diesel.toml ./backend/
 
-# Copy tokenizer resources
+# Copy tokenizer resources and data files
 COPY backend/resources ./backend/resources
+COPY backend/data ./backend/data
 
-# Build the application
-RUN cargo build --release --bin scribe-backend
+# Build the application with optional features
+RUN if [ -n "$FEATURES" ]; then \
+        echo "Building with features: $FEATURES" && \
+        cargo build --release --bin scribe-backend --features "$FEATURES"; \
+    else \
+        echo "Building with default features" && \
+        cargo build --release --bin scribe-backend; \
+    fi
 
 # Runtime stage - Using Debian for broader compatibility
 FROM debian:bookworm-slim
@@ -59,9 +69,10 @@ COPY --from=builder --chown=1001:1001 /app/target/release/scribe-backend /app/sc
 # Copy migrations (needed for runtime migration checks)  
 COPY --from=builder --chown=1001:1001 /app/backend/migrations /app/migrations
 
-# Create backend directory structure and copy resources
-RUN mkdir -p /app/backend/resources
+# Create backend directory structure and copy resources and data
+RUN mkdir -p /app/backend/resources /app/backend/data
 COPY --from=builder --chown=1001:1001 /app/backend/resources /app/backend/resources
+COPY --from=builder --chown=1001:1001 /app/backend/data /app/backend/data
 
 # Copy CA certificate and add to system trust store for inter-service TLS trust
 COPY --chown=root:root .certs-backend/ca.pem /usr/local/share/ca-certificates/scribe-ca.crt

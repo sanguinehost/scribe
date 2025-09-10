@@ -142,8 +142,18 @@ module "secrets" {
   encryption_key     = random_password.encryption_key.result
   session_secret     = random_password.session_secret.result
   cookie_signing_key = local.cookie_signing_key_hex
-  tls_cert_pem       = file("${path.module}/../../../../.internal-certs/internal-cert.pem")
-  tls_key_pem        = file("${path.module}/../../../../.internal-certs/internal-key.pem")
+  tls_cert_pem       = file("${path.module}/../../../../.certs-backend/cert.pem")
+  tls_key_pem        = file("${path.module}/../../../../.certs-backend/key.pem")
+
+  # Payment configuration (optional)
+  enable_payments             = var.enable_payments
+  paddle_api_key             = var.paddle_api_key
+  paddle_webhook_secret      = var.paddle_webhook_secret
+  paddle_sandbox_mode        = var.paddle_sandbox_mode
+  payment_base_url           = var.payment_base_url != "" ? var.payment_base_url : "https://${local.api_domain}"
+  free_tier_token_limit      = var.free_tier_token_limit
+  enforce_payment_limits     = var.enforce_payment_limits
+  payment_grace_period_days  = var.payment_grace_period_days
 }
 
 # Application Load Balancer module

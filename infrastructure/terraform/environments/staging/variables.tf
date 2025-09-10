@@ -242,3 +242,54 @@ variable "qdrant_api_key" {
   sensitive   = true
   default     = ""
 }
+
+# Payment configuration (optional - only used if payment features are enabled)
+variable "enable_payments" {
+  description = "Whether to enable payment features in the deployment"
+  type        = bool
+  default     = false
+}
+
+variable "paddle_api_key" {
+  description = "Paddle API key for payment processing (required if enable_payments is true)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_webhook_secret" {
+  description = "Paddle webhook secret for signature verification (required if enable_payments is true)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_sandbox_mode" {
+  description = "Whether to use Paddle sandbox mode (recommended for staging)"
+  type        = bool
+  default     = true
+}
+
+variable "payment_base_url" {
+  description = "Base URL for payment completion redirects (will be computed from domain if not specified)"
+  type        = string
+  default     = ""
+}
+
+variable "free_tier_token_limit" {
+  description = "Monthly token limit for free tier users"
+  type        = number
+  default     = 50000
+}
+
+variable "enforce_payment_limits" {
+  description = "Whether to enforce payment limits (can disable for testing)"
+  type        = bool
+  default     = false  # Disabled by default for staging
+}
+
+variable "payment_grace_period_days" {
+  description = "Grace period in days after subscription expires"
+  type        = number
+  default     = 7
+}

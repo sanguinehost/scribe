@@ -5,7 +5,11 @@
 	"framework": "sveltekit",
 	"build": {
 		"env": {
-			"VITE_BUILD_SKIP_TYPE_CHECK": "true"
+			"VITE_BUILD_SKIP_TYPE_CHECK": "true",
+			"PUBLIC_ENABLE_PAYMENTS": "true"
 		}
+	},
+	"env": {
+		"PUBLIC_ENABLE_PAYMENTS": "true"
 	}
 }

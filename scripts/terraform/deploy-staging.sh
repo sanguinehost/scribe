@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TERRAFORM_DIR="$PROJECT_ROOT/terraform/environments/staging"
+TERRAFORM_DIR="$PROJECT_ROOT/infrastructure/terraform/environments/staging"
 
 # Colors for output
 RED='\033[0;31m'
@@ -59,6 +59,17 @@ check_prerequisites() {
         log_error "terraform.tfvars not found in $TERRAFORM_DIR"
         log_info "Please copy terraform.tfvars.example to terraform.tfvars and customize the values."
         exit 1
+    fi
+    
+    # Check for payment configuration
+    if grep -q "enable_payments.*=.*true" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null; then
+        log_info "Payment features are ENABLED in terraform.tfvars"
+        if grep -q "paddle_api_key.*=.*your-paddle-" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null; then
+            log_warning "⚠️  Payment features enabled but API keys contain placeholder values"
+            log_warning "    Make sure to set real Paddle API keys before deploying"
+        fi
+    else
+        log_info "Payment features are disabled in terraform.tfvars"
     fi
     
     log_success "All prerequisites met"
@@ -140,10 +151,36 @@ main() {
     log_success "🎉 Staging environment deployed successfully!"
     log_info "Next steps:"
     echo "1. DNS records are auto-configured if using Route 53 for sanguinehost.com"
-    echo "2. Build and deploy backend: ./scripts/deploy-backend.sh"
+    
+    # Check if payment features are enabled for deployment instructions
+    if grep -q "enable_payments.*=.*true" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null; then
+        echo "2. Build and deploy backend WITH payment features:"
+        echo "   ./scripts/deploy-backend.sh --features payment"
+        echo "   OR: FEATURES=payment ./scripts/deploy-backend.sh"
+    else
+        echo "2. Build and deploy backend (without payment features):"
+        echo "   ./scripts/deploy-backend.sh"
+    fi
+    
     echo "3. Run database migrations: ./scripts/run-migrations.sh"  
-    echo "4. Deploy frontend: cd frontend && pnpm build && pnpm vercel deploy --prebuilt --prod"
+    
+    if grep -q "enable_payments.*=.*true" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null; then
+        echo "4. Deploy frontend WITH payment features:"
+        echo "   ./scripts/deploy-frontend-vercel.sh --environment staging --production"
+    else
+        echo "4. Deploy frontend (without payment features):"
+        echo "   ./scripts/deploy-frontend-vercel.sh --disable-payments --environment staging --production"
+    fi
+    
     echo "5. Test the complete application at: https://staging.scribe.sanguinehost.com"
+    
+    if grep -q "enable_payments.*=.*true" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null; then
+        echo ""
+        log_info "💳 Payment Features Enabled:"
+        echo "   - Test payment flow at: https://staging.scribe.sanguinehost.com/pricing"
+        echo "   - Check webhook processing in backend logs"
+        echo "   - Verify payment completion at: https://staging.scribe.sanguinehost.com/pay"
+    fi
 }
 
 # Handle script arguments

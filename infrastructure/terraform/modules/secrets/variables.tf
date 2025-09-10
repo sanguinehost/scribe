@@ -99,3 +99,54 @@ variable "from_email" {
   type        = string
   default     = ""
 }
+
+# Payment configuration variables (optional)
+variable "enable_payments" {
+  description = "Whether to enable payment features"
+  type        = bool
+  default     = false
+}
+
+variable "paddle_api_key" {
+  description = "Paddle API key for payment processing"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_webhook_secret" {
+  description = "Paddle webhook secret for signature verification"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_sandbox_mode" {
+  description = "Whether to use Paddle sandbox mode"
+  type        = bool
+  default     = true
+}
+
+variable "payment_base_url" {
+  description = "Base URL for payment completion redirects"
+  type        = string
+  default     = ""
+}
+
+variable "free_tier_token_limit" {
+  description = "Monthly token limit for free tier users"
+  type        = number
+  default     = 50000
+}
+
+variable "enforce_payment_limits" {
+  description = "Whether to enforce payment limits"
+  type        = bool
+  default     = false
+}
+
+variable "payment_grace_period_days" {
+  description = "Grace period in days after subscription expires"
+  type        = number
+  default     = 7
+}

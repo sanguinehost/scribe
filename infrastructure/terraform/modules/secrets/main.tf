@@ -42,7 +42,7 @@ resource "aws_secretsmanager_secret" "app_secrets" {
 
 resource "aws_secretsmanager_secret_version" "app_secrets" {
   secret_id = aws_secretsmanager_secret.app_secrets.id
-  secret_string = jsonencode({
+  secret_string = jsonencode(merge({
     gemini_api_key      = var.gemini_api_key
     qdrant_api_key      = var.qdrant_api_key
     jwt_secret          = var.jwt_secret
@@ -52,5 +52,14 @@ resource "aws_secretsmanager_secret_version" "app_secrets" {
     tls_cert_pem        = var.tls_cert_pem
     tls_key_pem         = var.tls_key_pem
     from_email          = var.from_email
-  })
+  }, var.enable_payments ? {
+    # Payment configuration (only included if payments are enabled)
+    paddle_api_key           = var.paddle_api_key
+    paddle_webhook_secret    = var.paddle_webhook_secret
+    paddle_sandbox_mode      = tostring(var.paddle_sandbox_mode)
+    payment_base_url         = var.payment_base_url
+    free_tier_token_limit    = tostring(var.free_tier_token_limit)
+    enforce_payment_limits   = tostring(var.enforce_payment_limits)
+    payment_grace_period_days = tostring(var.payment_grace_period_days)
+  } : {}))
 }

@@ -3,7 +3,8 @@
 	import { ThemeProvider } from '@sejohnson/svelte-themes';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
-	import { ENABLE_LOCAL_LLM } from '$lib/utils/features';
+	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS } from '$lib/utils/features';
+	import { PaddleLoader } from '$lib/components/payment';
 	import {
 		initializeAuth,
 		setAuthenticated,
@@ -171,5 +172,8 @@
 
 <ThemeProvider attribute="class" disableTransitionOnChange>
 	<Toaster position="top-center" />
+	{#if ENABLE_PAYMENTS}
+		<PaddleLoader />
+	{/if}
 	{@render children()}
 </ThemeProvider>
