@@ -26,7 +26,7 @@ use crate::{
     errors::AppError,
     models::payment::{PlanFeatures, Subscription, SubscriptionStatus},
     services::payment::{
-        paddle_service::{CreateTransactionRequest, CreateTransactionResponse, TransactionItem, TransactionCheckout},
+        paddle_service::{CreateTransactionRequest, CreateTransactionResponse, TransactionItem, TransactionCheckout, PaddleWebhook, PaddleEventType},
         PaddleService, SubscriptionService, UsageTrackingService
     },
     state::AppState,
@@ -112,14 +112,77 @@ pub async fn get_subscription(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    // TODO: This is a simplified implementation for now
-    // The full implementation would use the payment services, but they need to be 
-    // refactored to work with the deadpool connection pattern
+    
+    // Get database connection
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+    
+    // Create subscription service
+    let subscription_service = SubscriptionService::new(
+        (*app_state.config).clone(),
+        (*app_state.encryption_service).clone()
+    );
+    
+    // Get subscription from database
+    let user_id = user.id;
+    let subscription_service_clone = subscription_service.clone();
+    let subscription = conn
+        .interact(move |conn| {
+            futures::executor::block_on(subscription_service_clone.get_user_subscription(conn, user_id))
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get subscription: {}", e)))?;
+    
+    // Get plan features if subscription exists
+    let plan_features = if let Some(ref sub) = subscription {
+        let plan_type = sub.plan_type.clone();
+        let subscription_service_clone = subscription_service.clone();
+        conn
+            .interact(move |conn| {
+                futures::executor::block_on(subscription_service_clone.get_plan_features(conn, &plan_type))
+            })
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
+    } else {
+        // Default to free plan features
+        let subscription_service_clone = subscription_service.clone();
+        conn
+            .interact(move |conn| {
+                futures::executor::block_on(subscription_service_clone.get_plan_features(conn, "free"))
+            })
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get free plan features: {}", e)))?
+    };
+    
+    // Calculate usage limits
+    let usage_limits = if let Some(ref features) = plan_features {
+        // For now, return simple usage limits calculation
+        // In a real system, this would query actual usage from usage_tracking table
+        let now = chrono::Utc::now();
+        let period_start = now;
+        let period_end = now + chrono::Duration::days(30);
+        
+        Some(UsageLimitsResponse {
+            tokens_remaining: features.monthly_token_limit.unwrap_or(0),
+            tokens_limit: features.monthly_token_limit.unwrap_or(0),
+            period_start,
+            period_end,
+            is_unlimited: features.monthly_token_limit.is_none(),
+        })
+    } else {
+        None
+    };
     
     Ok(Json(SubscriptionResponse {
-        subscription: None, // TODO: Implement subscription lookup
-        plan_features: None, // TODO: Implement plan features lookup
-        usage_limits: None,  // TODO: Implement usage limits calculation
+        subscription,
+        plan_features,
+        usage_limits,
     }))
 }
 
@@ -303,12 +366,34 @@ pub async fn paddle_webhook(
     // 3. Verify webhook signature
     paddle_service.verify_webhook_signature(&body, signature)?;
     
-    // 4. Parse JSON payload
-    let _webhook_data: serde_json::Value = serde_json::from_slice(&body)
+    // 4. Parse JSON payload as PaddleWebhook
+    let webhook_data: PaddleWebhook = serde_json::from_slice(&body)
         .map_err(|e| AppError::BadRequest(format!("Invalid JSON payload: {}", e)))?;
     
-    // 5. Process webhook (TODO: implement actual processing)
-    tracing::info!("🎯 Webhook signature verified and payload parsed successfully");
+    tracing::info!("🎯 Processing webhook event: {:?} with ID: {}", 
+        webhook_data.event_type, webhook_data.event_id);
+    
+    // 5. Process webhook based on event type
+    match webhook_data.event_type {
+        PaddleEventType::TransactionCompleted => {
+            process_transaction_completed(app_state, &webhook_data).await?;
+        }
+        PaddleEventType::SubscriptionCreated => {
+            process_subscription_created(app_state, &webhook_data).await?;
+        }
+        PaddleEventType::SubscriptionUpdated => {
+            process_subscription_updated(app_state, &webhook_data).await?;
+        }
+        PaddleEventType::SubscriptionCancelled => {
+            process_subscription_cancelled(app_state, &webhook_data).await?;
+        }
+        _ => {
+            tracing::info!("🎯 Webhook event type {:?} not processed - acknowledged", 
+                webhook_data.event_type);
+        }
+    }
+    
+    tracing::info!("🎯 Webhook processed successfully");
     
     Ok(Json(WebhookResponse {
         success: true,
@@ -345,7 +430,90 @@ pub async fn handle_pay_page(
     }
 }
 
-// TODO: Implement webhook handlers when payment services are integrated with deadpool pattern
+/// Process transaction.completed webhook event
+#[cfg(feature = "payment")]
+async fn process_transaction_completed(
+    app_state: AppState, 
+    webhook_data: &PaddleWebhook
+) -> Result<(), AppError> {
+    tracing::info!("🎯 Processing transaction.completed webhook: {}", webhook_data.event_id);
+    
+    // Extract transaction data from the webhook payload
+    let transaction_data = webhook_data.data.get("transaction")
+        .ok_or_else(|| AppError::BadRequest("Missing transaction data in webhook".to_string()))?;
+    
+    let transaction_id = transaction_data.get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("Missing transaction ID in webhook".to_string()))?;
+    
+    let customer_id = transaction_data.get("customer_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("Missing customer_id in webhook".to_string()))?;
+    
+    let status = transaction_data.get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    
+    tracing::info!("🎯 Transaction details - ID: {}, Customer: {}, Status: {}", 
+        transaction_id, customer_id, status);
+    
+    // Only process completed transactions
+    if status != "completed" {
+        tracing::info!("🎯 Transaction {} not completed (status: {}), skipping", transaction_id, status);
+        return Ok(());
+    }
+    
+    // For now, we need the customer's email to find the user
+    // In a real implementation, we'd store customer_id -> user_id mapping
+    // For transaction-based payments (no subscriptions), we might create a subscription record
+    // based on the transaction details and price_id
+    
+    tracing::info!("🎯 Transaction {} completed successfully but subscription creation not yet implemented", transaction_id);
+    
+    Ok(())
+}
+
+/// Process subscription.created webhook event
+#[cfg(feature = "payment")]
+async fn process_subscription_created(
+    app_state: AppState,
+    webhook_data: &PaddleWebhook
+) -> Result<(), AppError> {
+    tracing::info!("🎯 Processing subscription.created webhook: {}", webhook_data.event_id);
+    
+    // For subscription-based billing (future enhancement)
+    tracing::info!("🎯 Subscription creation processing not yet implemented");
+    
+    Ok(())
+}
+
+/// Process subscription.updated webhook event
+#[cfg(feature = "payment")]
+async fn process_subscription_updated(
+    app_state: AppState,
+    webhook_data: &PaddleWebhook
+) -> Result<(), AppError> {
+    tracing::info!("🎯 Processing subscription.updated webhook: {}", webhook_data.event_id);
+    
+    // For subscription updates (status changes, renewals, etc.)
+    tracing::info!("🎯 Subscription update processing not yet implemented");
+    
+    Ok(())
+}
+
+/// Process subscription.cancelled webhook event
+#[cfg(feature = "payment")]
+async fn process_subscription_cancelled(
+    app_state: AppState,
+    webhook_data: &PaddleWebhook
+) -> Result<(), AppError> {
+    tracing::info!("🎯 Processing subscription.cancelled webhook: {}", webhook_data.event_id);
+    
+    // For subscription cancellations
+    tracing::info!("🎯 Subscription cancellation processing not yet implemented");
+    
+    Ok(())
+}
 
 /// Create authenticated payment routes (require login)
 #[cfg(feature = "payment")]

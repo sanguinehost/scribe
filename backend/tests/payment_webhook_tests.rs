@@ -414,6 +414,7 @@ mod payment_webhook_tests {
             paddle_api_key: Some("test_key".to_string()),
             paddle_webhook_secret: Some("test_secret".to_string()),
             paddle_sandbox_mode: true,
+            payment_base_url: "https://localhost:8080/api/payment".to_string(),
             free_tier_token_limit: 50000,
             enforce_limits: false,
             grace_period_days: 7,
