@@ -9,13 +9,14 @@
 	import { Checkbox } from '../ui/checkbox';
 	import { toast } from 'svelte-sonner';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
-	import { ENABLE_LOCAL_LLM } from '$lib/utils/features';
+	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { chatModels, DEFAULT_CHAT_MODEL } from '$lib/ai/models';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
 	import { apiClient } from '$lib/api';
 	import type { UserSettingsResponse, UpdateUserSettingsRequest } from '$lib/types';
+	import { MembershipSettings } from '$lib/components/membership';
 
 	const settingsStore = SettingsStore.fromContext();
 
@@ -36,8 +37,8 @@
 	// Make llmStore reactive
 	const llmStoreReactive = $derived(llmStore);
 
-	// Tab state
-	let activeTab = $state('generation');
+	// Tab state - Default to membership if payments enabled, otherwise generation
+	let activeTab = $state(ENABLE_PAYMENTS ? 'membership' : 'generation');
 
 	// Consolidated settings state
 	let isLoading = $state(false);
@@ -218,6 +219,7 @@
 
 	// Dynamic tabs based on feature flags and runtime availability
 	const tabs = $derived([
+		...(ENABLE_PAYMENTS ? [{ id: 'membership', label: 'Membership', icon: '💳' }] : []),
 		{ id: 'generation', label: 'Generation', icon: '🎛️' },
 		{ id: 'context', label: 'Context', icon: '🧠' },
 		...(ENABLE_LOCAL_LLM && llmStoreReactive?.localLlmFeatureAvailable
@@ -279,6 +281,20 @@
 			</div>
 
 			<div class="space-y-6">
+				<!-- Membership Tab -->
+				{#if activeTab === 'membership' && ENABLE_PAYMENTS}
+					<div class="space-y-6">
+						<Card>
+							<CardHeader>
+								<CardTitle class="text-lg">Subscription & Billing</CardTitle>
+							</CardHeader>
+							<CardContent>
+								<MembershipSettings />
+							</CardContent>
+						</Card>
+					</div>
+				{/if}
+
 				<!-- Generation Tab -->
 				{#if activeTab === 'generation'}
 					<!-- Model Selection -->

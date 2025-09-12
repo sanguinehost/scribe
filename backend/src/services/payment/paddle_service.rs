@@ -282,7 +282,7 @@ impl PaddleService {
             .map_err(|e| AppError::JsonParseError(format!("Failed to parse webhook payload: {}", e)))
     }
 
-    /// Create a Paddle customer
+    /// Create a Paddle customer or get existing one
     ///
     /// # Errors
     ///
@@ -321,6 +321,22 @@ impl PaddleService {
 
         if !response.status().is_success() {
             let error_body = response.text().await.unwrap_or_default();
+            
+            // Check if this is a "customer_already_exists" error
+            if error_body.contains("customer_already_exists") {
+                // Try to extract the existing customer ID from the error message
+                if let Some(customer_id) = self.extract_customer_id_from_error(&error_body) {
+                    info!(customer_id = %customer_id, email = %email, "Using existing Paddle customer");
+                    return Ok(PaddleCustomer {
+                        id: customer_id,
+                        email: Some(email.to_string()),
+                        name: name.map(|s| s.to_string()),
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                    });
+                }
+            }
+            
             return Err(AppError::ExternalServiceError(format!(
                 "Paddle API error: {}",
                 error_body
@@ -336,6 +352,26 @@ impl PaddleService {
 
         info!(customer_id = %customer.id, email = %email, "Created Paddle customer");
         Ok(customer)
+    }
+
+    /// Extract customer ID from "customer_already_exists" error message
+    fn extract_customer_id_from_error(&self, error_body: &str) -> Option<String> {
+        // Error format: "customer email conflicts with customer of id ctm_01k4w5czs63fx0jb421rz6n45z"
+        if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(error_body) {
+            if let Some(detail) = error_json["error"]["detail"].as_str() {
+                // Look for pattern "customer of id <customer_id>"
+                if let Some(start) = detail.find("customer of id ") {
+                    let id_start = start + "customer of id ".len();
+                    let id_part = &detail[id_start..];
+                    // Customer IDs end at the first whitespace or end of string
+                    let customer_id = id_part.split_whitespace().next().unwrap_or("");
+                    if !customer_id.is_empty() && customer_id.starts_with("ctm_") {
+                        return Some(customer_id.to_string());
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Create a transaction for checkout

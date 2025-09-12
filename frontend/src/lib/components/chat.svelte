@@ -24,6 +24,9 @@
 	import RegenerationModal, { type AnalysisMode } from './messages/regeneration-modal.svelte';
 	import { browser } from '$app/environment';
 	import { getCurrentUser } from '$lib/auth.svelte';
+	import { subscriptionStore } from '$lib/stores/subscription.svelte';
+	import { UpgradePrompt } from './membership';
+	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 
 	// Get reactive state from streaming service
 	// By directly accessing the $state properties of the service, we ensure reactivity.
@@ -77,6 +80,9 @@
 		targetMessageIndex?: number; 
 		allMessages?: StreamingMessage[] 
 	} | null>(null);
+
+	// Upgrade prompt modal state
+	let showUpgradePrompt = $state(false);
 
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
@@ -821,6 +827,15 @@
 		}
 	}
 
+	// Function to handle token limit reached - show upgrade prompt instead of toast
+	function handleTokenLimitReached() {
+		if (ENABLE_PAYMENTS && subscriptionStore.isAtLimit) {
+			showUpgradePrompt = true;
+			return true; // Indicate that limit was reached
+		}
+		return false; // No limit reached
+	}
+
 	// Load personas when component mounts (regardless of chat)
 	$effect(() => {
 		loadAvailablePersonas();
@@ -1123,6 +1138,11 @@
 			return;
 		}
 
+		// Check token limits if payments are enabled
+		if (handleTokenLimitReached()) {
+			return;
+		}
+
 		// Build history from the single source of truth (NEW: use isAnimating instead of loading)
 		const existingHistoryForApi = (streamingService.messages as StreamingMessage[])
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
@@ -1162,6 +1182,11 @@
 
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
+			return;
+		}
+
+		// Check token limits if payments are enabled
+		if (handleTokenLimitReached()) {
 			return;
 		}
 
@@ -1217,6 +1242,11 @@
 	) {
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
+			return;
+		}
+
+		// Check token limits if payments are enabled
+		if (handleTokenLimitReached()) {
 			return;
 		}
 
@@ -1824,6 +1854,21 @@
 				}}
 			>
 				{#if !readonly}
+					<!-- Upgrade Banner for Token Limit Warning -->
+					{#if ENABLE_PAYMENTS && (subscriptionStore.isAtLimit || subscriptionStore.isNearLimit)}
+						<div class="mb-3">
+							<UpgradePrompt
+								variant="banner"
+								title={subscriptionStore.isAtLimit ? "Token Limit Reached" : "Near Token Limit"}
+								message={subscriptionStore.isAtLimit 
+									? "You've reached your monthly token limit. Upgrade to continue chatting."
+									: "You're approaching your monthly token limit. Consider upgrading to avoid interruptions."
+								}
+								showCloseButton={!subscriptionStore.isAtLimit}
+							/>
+						</div>
+					{/if}
+
 					<MultimodalInput
 						bind:value={chatInput}
 						{isLoading}
@@ -1911,3 +1956,12 @@
 	onConfirm={handleRegenerationConfirm}
 	onCancel={handleRegenerationCancel}
 />
+
+<!-- Upgrade Prompt Modal -->
+{#if showUpgradePrompt}
+	<UpgradePrompt
+		variant="modal"
+		on:close={() => showUpgradePrompt = false}
+		on:upgrade={() => showUpgradePrompt = false}
+	/>
+{/if}

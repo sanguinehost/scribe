@@ -1128,3 +1128,80 @@ export interface PromptTemplateInfo {
 export interface PromptTemplateListResponse {
 	templates: PromptTemplateInfo[];
 }
+
+// ============================================================================
+// Payment & Subscription Types
+// ============================================================================
+
+export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing' | 'unpaid' | 'incomplete';
+export type PlanType = 'free' | 'pro' | 'enterprise';
+
+export interface Subscription {
+	id: string;
+	user_id: string;
+	paddle_customer_id?: string;
+	paddle_subscription_id?: string;
+	plan_type: PlanType;
+	status: SubscriptionStatus;
+	current_period_start: string; // ISO date
+	current_period_end: string; // ISO date
+	cancel_at_period_end?: boolean;
+	trial_end?: string; // ISO date
+	created_at?: string; // ISO date
+	updated_at?: string; // ISO date
+}
+
+export interface PlanFeatures {
+	plan_type: PlanType;
+	monthly_token_limit?: number;
+	characters_limit?: number;
+	lorebooks_limit?: number;
+	price_cents?: number;
+	paddle_price_id?: string;
+	features?: Record<string, any>;
+	display_name: string;
+	description?: string;
+	created_at?: string; // ISO date
+	updated_at?: string; // ISO date
+}
+
+export interface UsageLimitsResponse {
+	tokens_remaining: number;
+	tokens_limit: number;
+	period_start: string; // ISO date
+	period_end: string; // ISO date
+	is_unlimited: boolean;
+}
+
+export interface SubscriptionResponse {
+	subscription?: Subscription;
+	plan_features?: PlanFeatures;
+	usage_limits?: UsageLimitsResponse;
+}
+
+export interface PlansResponse {
+	plans: PlanFeatures[];
+}
+
+export interface CreatePaymentRequest {
+	plan_type: PlanType;
+	success_url?: string;
+	cancel_url?: string;
+}
+
+export interface CreatePaymentResponse {
+	transaction_id: string;
+	checkout_url: string;
+	status: string;
+}
+
+export interface CancelSubscriptionRequest {
+	immediate?: boolean;
+}
+
+// Extended User type with subscription info
+export interface UserWithSubscription extends User {
+	subscription?: Subscription;
+	plan_features?: PlanFeatures;
+	usage_limits?: UsageLimitsResponse;
+}

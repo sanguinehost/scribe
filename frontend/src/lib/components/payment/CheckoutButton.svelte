@@ -10,6 +10,7 @@
 	export let loading: boolean = false;
 	export let buttonText: string = 'Subscribe';
 	export let buttonClass: string = 'btn-primary';
+	export let urgent: boolean = false; // Add urgent styling for critical situations
 
 	// State
 	let checkoutLoading = false;
@@ -37,29 +38,47 @@
 		try {
 			// Check if Paddle is loaded
 			if (!window.Paddle) {
-				throw new Error('Paddle.js not loaded. Please refresh the page.');
+				throw new Error('Payment system not ready. Please refresh the page and try again.');
 			}
 
-			// Create payment transaction via our API using fetch directly
-			const response = await fetch('/api/payment/payment', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					plan_type: planType,
-					success_url: `${window.location.origin}/pay`,
-					cancel_url: `${window.location.origin}/pricing`
-				})
+			// Create payment transaction via our API using the apiClient
+			const result = await apiClient.createPayment({
+				plan_type: planType,
+				success_url: `${window.location.origin}/pay`,
+				cancel_url: window.location.href // Return to current page on cancel
 			});
 
-			if (!response.ok) {
-				const errorData = await response.json();
-				throw new Error(errorData.message || 'Failed to create payment');
+			// Handle API client errors
+			if (result.isErr()) {
+				const error = result.error;
+				let errorMessage = 'Failed to create payment';
+				
+				// Handle specific error types from API client
+				if (error.type === 'RESPONSE_ERROR' && error.status) {
+					switch (error.status) {
+						case 401:
+							errorMessage = 'Please sign in to upgrade your plan';
+							break;
+						case 403:
+							errorMessage = 'You do not have permission to create a subscription';
+							break;
+						case 429:
+							errorMessage = 'Too many requests. Please try again in a moment';
+							break;
+						case 500:
+							errorMessage = 'Server error. Please try again later';
+							break;
+						default:
+							errorMessage = `Payment service error (${error.status})`;
+					}
+				} else {
+					errorMessage = error.message || errorMessage;
+				}
+				
+				throw new Error(errorMessage);
 			}
 
-			const paymentData = await response.json();
+			const paymentData = result.value;
 			const checkoutUrl = paymentData.checkout_url;
 
 			if (!checkoutUrl) {
@@ -67,6 +86,9 @@
 			}
 
 			dispatch('checkout-success', { checkoutUrl });
+
+			// Add a small delay to show the "Redirecting..." state
+			await new Promise(resolve => setTimeout(resolve, 500));
 
 			// Redirect to Paddle checkout
 			window.location.href = checkoutUrl;
@@ -77,25 +99,32 @@
 			checkoutError = errorMessage;
 			dispatch('checkout-error', { error: errorMessage });
 		} finally {
-			checkoutLoading = false;
+			// Only reset loading if we're not redirecting (in case of error)
+			if (checkoutError) {
+				checkoutLoading = false;
+			}
 		}
 	}
 
 	// Determine if button should be disabled
 	$: isDisabled = disabled || loading || checkoutLoading || !ENABLE_PAYMENTS;
-	$: displayText = checkoutLoading ? 'Redirecting...' : loading ? 'Loading...' : buttonText;
+	$: displayText = checkoutLoading ? 'Redirecting to checkout...' : loading ? 'Loading...' : buttonText;
+	$: showSpinner = checkoutLoading || loading;
 </script>
 
 {#if ENABLE_PAYMENTS}
 	<button
-		class={buttonClass}
+		class="{buttonClass} {urgent ? 'urgent-pulse' : ''}"
 		class:loading={checkoutLoading}
 		class:disabled={isDisabled}
 		disabled={isDisabled}
 		on:click={handleCheckout}
 		type="button"
 	>
-		{displayText}
+		{#if showSpinner}
+			<div class="spinner" aria-hidden="true"></div>
+		{/if}
+		<span class:ml-2={showSpinner}>{displayText}</span>
 	</button>
 
 	{#if checkoutError}
@@ -112,13 +141,37 @@
 
 <style>
 	.loading {
-		opacity: 0.6;
+		opacity: 0.8;
 		cursor: not-allowed;
+		position: relative;
 	}
 	
 	.disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
+	}
+	
+	.spinner {
+		display: inline-block;
+		width: 16px;
+		height: 16px;
+		border: 2px solid transparent;
+		border-top: 2px solid currentColor;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+	
+	.ml-2 {
+		margin-left: 0.5rem;
+	}
+	
+	@keyframes spin {
+		0% {
+			transform: rotate(0deg);
+		}
+		100% {
+			transform: rotate(360deg);
+		}
 	}
 	
 	.error-message {
@@ -139,5 +192,33 @@
 		border: none;
 		cursor: not-allowed;
 		opacity: 0.5;
+	}
+
+	/* Dark mode error styling */
+	:global(.dark) .error-message {
+		background-color: #451a03;
+		border-color: #7c2d12;
+		color: #f87171;
+	}
+
+	/* Urgent pulsing animation for critical situations */
+	.urgent-pulse {
+		animation: urgentPulse 1.5s ease-in-out infinite;
+		box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+	}
+
+	@keyframes urgentPulse {
+		0% {
+			transform: scale(1);
+			box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+		}
+		50% {
+			transform: scale(1.02);
+			box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+		}
+		100% {
+			transform: scale(1);
+			box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+		}
 	}
 </style>

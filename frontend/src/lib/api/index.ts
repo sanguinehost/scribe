@@ -80,7 +80,14 @@ import type {
 	ModelVariantInfo,
 	HardwareCapabilities,
 	PromptTemplateInfo,
-	PromptTemplateListResponse
+	PromptTemplateListResponse,
+	// Payment types
+	SubscriptionResponse,
+	UsageLimitsResponse,
+	PlansResponse,
+	CreatePaymentRequest,
+	CreatePaymentResponse,
+	CancelSubscriptionRequest
 } from '$lib/types';
 import {
 	setConnectionError,
@@ -1402,6 +1409,61 @@ class ApiClient {
 		const url = `${this.baseUrl}/api/llm/download/progress`;
 		return new EventSource(url, {
 			withCredentials: true // Include cookies for authentication
+		});
+	}
+
+	// ============================================================================
+	// Payment & Subscription Methods
+	// ============================================================================
+
+	/**
+	 * Get current user's subscription information
+	 */
+	async getSubscription(): Promise<Result<SubscriptionResponse, ApiError>> {
+		return this.fetch<SubscriptionResponse>('/api/payment/subscription');
+	}
+
+	/**
+	 * Get current user's usage information and limits
+	 */
+	async getUsage(): Promise<Result<UsageLimitsResponse, ApiError>> {
+		return this.fetch<UsageLimitsResponse>('/api/payment/usage');
+	}
+
+	/**
+	 * Get available subscription plans
+	 */
+	async getPlans(): Promise<Result<PlansResponse, ApiError>> {
+		return this.fetch<PlansResponse>('/api/payment/plans');
+	}
+
+	/**
+	 * Create a payment transaction for subscription
+	 */
+	async createPayment(request: CreatePaymentRequest): Promise<Result<CreatePaymentResponse, ApiError>> {
+		return this.fetch<CreatePaymentResponse>('/api/payment/payment', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	/**
+	 * Cancel current subscription
+	 */
+	async cancelSubscription(request: CancelSubscriptionRequest = {}): Promise<Result<SubscriptionResponse, ApiError>> {
+		return this.fetch<SubscriptionResponse>('/api/payment/subscription/cancel', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	/**
+	 * Reactivate cancelled subscription
+	 */
+	async reactivateSubscription(): Promise<Result<SubscriptionResponse, ApiError>> {
+		return this.fetch<SubscriptionResponse>('/api/payment/subscription/reactivate', {
+			method: 'POST',
+			body: JSON.stringify({})
 		});
 	}
 }

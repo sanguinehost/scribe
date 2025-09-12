@@ -71,8 +71,9 @@ pub struct CreateSubscriptionRequest {
 #[cfg(feature = "payment")]
 #[derive(Deserialize)]
 pub struct CreatePaymentRequest {
-    pub price_id: String,
-    pub return_url: Option<String>,
+    pub plan_type: String,
+    pub success_url: Option<String>,
+    pub cancel_url: Option<String>,
 }
 
 #[cfg(feature = "payment")]
@@ -156,9 +157,13 @@ pub async fn create_payment(
     State(app_state): State<AppState>,
     Json(request): Json<CreatePaymentRequest>,
 ) -> Result<Json<CreatePaymentResponse>, AppError> {
+    tracing::info!("🎯 CREATE_PAYMENT HANDLER ENTERED - plan_type: {}", request.plan_type);
+    
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+    
+    tracing::info!("🎯 CREATE_PAYMENT - User authenticated: {}", user.id);
 
     // Create or get existing customer
     let paddle_service = PaddleService::new(app_state.config.payment.clone());
@@ -166,18 +171,45 @@ pub async fn create_payment(
         .create_customer(&user.email, Some(&user.username))
         .await?;
 
+    // Look up plan features from database to get paddle_price_id
+    let subscription_service = SubscriptionService::new(
+        (*app_state.config).clone(),
+        (*app_state.encryption_service).clone()
+    );
+    
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+    
+    let plan_type_clone = request.plan_type.clone();
+    let subscription_service_clone = subscription_service.clone();
+    let plan_features = conn
+        .interact(move |conn| {
+            futures::executor::block_on(subscription_service_clone.get_plan_features(conn, &plan_type_clone))
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database query failed: {}", e)))?
+        .ok_or_else(|| AppError::BadRequest(format!("Invalid plan type: {}", request.plan_type)))?;
+    
+    let price_id = plan_features
+        .paddle_price_id
+        .ok_or_else(|| AppError::BadRequest(format!("Plan '{}' does not have a configured paddle_price_id", request.plan_type)))?;
+
     // Create transaction request
     let transaction_request = CreateTransactionRequest {
         customer_id: customer.id,
         items: vec![TransactionItem {
-            price_id: request.price_id,
+            price_id: price_id.to_string(),
             quantity: 1,
         }],
         collection_mode: "automatic".to_string(), // Automatic checkout
-        checkout: request.return_url.map(|url| TransactionCheckout {
+        checkout: Some(TransactionCheckout {
             url: None, // Use default payment base URL
-            success_url: Some(url),
-            cancel_url: None,
+            success_url: request.success_url.clone(),
+            cancel_url: request.cancel_url.clone(),
         }),
     };
 

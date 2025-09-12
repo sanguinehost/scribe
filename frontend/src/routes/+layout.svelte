@@ -5,6 +5,7 @@
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { PaddleLoader } from '$lib/components/payment';
+	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import {
 		initializeAuth,
 		setAuthenticated,
@@ -67,6 +68,11 @@
 			// or if we want to re-verify on client-side navigation to a page with this layout.
 			// It's designed to be safe to call even if already authenticated.
 			await initializeAuth();
+			
+			// Initialize subscription store after auth is ready and payments are enabled
+			if (ENABLE_PAYMENTS && getIsAuthenticated()) {
+				subscriptionStore.initialize();
+			}
 			// Initialization logging removed for production
 		})();
 
@@ -76,6 +82,12 @@
 				'[Layout] Global auth:invalidated event received (legacy), redirecting to signin'
 			);
 			setUnauthenticated();
+			
+			// Clear subscription data when auth is invalidated
+			if (ENABLE_PAYMENTS) {
+				subscriptionStore.clearData();
+			}
+			
 			goto('/signin');
 		};
 
@@ -139,6 +151,11 @@
 					.catch((e) => {
 						console.warn('Failed to retry LlmStore after auth success:', e);
 					});
+			}
+			
+			// Initialize subscription store when authentication succeeds
+			if (ENABLE_PAYMENTS) {
+				subscriptionStore.initialize();
 			}
 		};
 

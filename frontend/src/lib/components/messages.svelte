@@ -9,7 +9,8 @@
 	import ChronicleOverview from './messages/chronicle-overview.svelte';
 	import ChroniclesListOverview from './messages/chronicles-list-overview.svelte';
 	import ChronicleCreation from './messages/chronicle-creation.svelte';
-	import Settings from './settings/Settings.svelte';
+	import SettingsOverview from './messages/settings-overview.svelte';
+import Settings from './settings/Settings.svelte';
 	import { onMount } from 'svelte';
 	import Message from './messages/message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
@@ -281,7 +282,7 @@
 			threshold: 200,
 			debounce: 300
 		}}
-		on:loadmore={() => onLoadMore?.()}
+		onloadmore={() => onLoadMore?.()}
 	>
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
 		{#if settingsStore.isVisible || settingsStore.isTransitioning}
@@ -296,7 +297,11 @@
 						in:fade={{ duration: 400 }}
 						out:fade={{ duration: 300 }}
 					>
-						<Settings />
+						{#if settingsStore.viewMode === 'consolidated'}
+							<Settings />
+						{:else}
+							<SettingsOverview />
+						{/if}
 					</div>
 				</div>
 			</div>

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
+	import { PUBLIC_PADDLE_CLIENT_SIDE_TOKEN } from '$env/static/public';
 
 	let paddleLoaded = false;
 	let paddleError: string | null = null;
@@ -12,6 +13,13 @@
 	 */
 	onMount(async () => {
 		if (!browser || !ENABLE_PAYMENTS) {
+			return;
+		}
+
+		// Check if we have the required token
+		if (!PUBLIC_PADDLE_CLIENT_SIDE_TOKEN) {
+			paddleError = 'Paddle client-side token not configured';
+			console.error('PUBLIC_PADDLE_CLIENT_SIDE_TOKEN environment variable is required');
 			return;
 		}
 
@@ -34,22 +42,15 @@
 				document.head.appendChild(script);
 			});
 
-			// Initialize Paddle with environment detection
-			const isDevelopment = window.location.hostname === 'localhost';
-			const isStaging = window.location.hostname.includes('staging');
-			
-			// Use sandbox for development and staging
-			const environment = isDevelopment || isStaging ? 'sandbox' : 'production';
-			
+			// Initialize Paddle with token (environment is auto-detected from token prefix)
 			if (window.Paddle) {
 				window.Paddle.Initialize({
-					environment,
-					// Paddle will auto-detect the domain for webhook URLs
+					token: PUBLIC_PADDLE_CLIENT_SIDE_TOKEN,
 				});
 			}
 
 			paddleLoaded = true;
-			console.log(`Paddle.js loaded successfully in ${environment} mode`);
+			console.log(`Paddle.js loaded successfully with token: ${PUBLIC_PADDLE_CLIENT_SIDE_TOKEN.substring(0, 8)}...`);
 
 		} catch (error) {
 			console.error('Failed to load Paddle.js:', error);

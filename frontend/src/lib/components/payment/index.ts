@@ -13,18 +13,3 @@ export interface PaymentPlan {
 	popular?: boolean;
 }
 
-// Paddle types for TypeScript support
-declare global {
-	interface Window {
-		Paddle?: {
-			Initialize: (config: { environment: 'sandbox' | 'production' }) => void;
-			Checkout: {
-				open: (options: {
-					items: Array<{ priceId: string; quantity: number }>;
-					successUrl?: string;
-					customData?: Record<string, any>;
-				}) => void;
-			};
-		} | undefined;
-	}
-}

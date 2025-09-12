@@ -377,6 +377,14 @@ impl Config {
         // Load config from environment variables using envy
         let mut config = envy::from_env::<Self>().map_err(anyhow::Error::from)?;
 
+        // Manually load PaymentConfig since envy doesn't handle nested structs with prefixes well
+        #[cfg(feature = "payment")]
+        {
+            config.payment = envy::prefixed("PAYMENT_")
+                .from_env::<PaymentConfig>()
+                .map_err(|e| anyhow::anyhow!("Failed to load PaymentConfig: {}", e))?;
+        }
+
         // Apply environment-specific defaults after loading
         config.apply_environment_defaults();
 
