@@ -384,6 +384,23 @@ pub fn get_user(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthErro
         .map_err(AuthError::from)
 }
 
+// Function to find user by email
+#[instrument(skip(conn), err)]
+pub fn find_user_by_email(
+    conn: &mut PgConnection,
+    email: &str,
+) -> Result<User, AuthError> {
+    info!("Finding user by email"); // Don't log email for privacy
+    
+    let user_db_query = users::table
+        .filter(users::email.eq(email))
+        .select(UserDbQuery::as_select())
+        .first::<UserDbQuery>(conn)
+        .map_err(AuthError::from)?;
+    
+    Ok(User::from(user_db_query))
+}
+
 // Function to verify user credentials
 #[instrument(skip(conn, password), err)]
 pub fn verify_credentials(

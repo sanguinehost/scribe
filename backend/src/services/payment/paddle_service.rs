@@ -25,11 +25,10 @@ pub struct PaddleService {
 }
 
 /// Paddle webhook event types
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub enum PaddleEventType {
     SubscriptionCreated,
-    SubscriptionUpdated,
+    SubscriptionUpdated,  
     SubscriptionCancelled,
     TransactionCompleted,
     TransactionFailed,
@@ -37,11 +36,45 @@ pub enum PaddleEventType {
     CustomerUpdated,
 }
 
+impl<'de> Deserialize<'de> for PaddleEventType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            // Snake case variants
+            "subscription_created" | "subscription.created" => Ok(PaddleEventType::SubscriptionCreated),
+            "subscription_updated" | "subscription.updated" => Ok(PaddleEventType::SubscriptionUpdated),
+            "subscription_cancelled" | "subscription.cancelled" | "subscription_canceled" | "subscription.canceled" => Ok(PaddleEventType::SubscriptionCancelled),
+            "transaction_completed" | "transaction.completed" => Ok(PaddleEventType::TransactionCompleted),
+            "transaction_failed" | "transaction.failed" => Ok(PaddleEventType::TransactionFailed),
+            "customer_created" | "customer.created" => Ok(PaddleEventType::CustomerCreated),
+            "customer_updated" | "customer.updated" => Ok(PaddleEventType::CustomerUpdated),
+            _ => {
+                tracing::warn!("🎯 Unknown Paddle event type received: {}", s);
+                Err(serde::de::Error::unknown_variant(&s, &[
+                    "subscription_created", "subscription.created",
+                    "subscription_updated", "subscription.updated", 
+                    "subscription_cancelled", "subscription.cancelled",
+                    "transaction_completed", "transaction.completed",
+                    "transaction_failed", "transaction.failed",
+                    "customer_created", "customer.created",
+                    "customer_updated", "customer.updated"
+                ]))
+            }
+        }
+    }
+}
+
 /// Paddle webhook payload structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PaddleWebhook {
+    #[serde(alias = "eventType", alias = "type")]
     pub event_type: PaddleEventType,
+    #[serde(alias = "eventId", alias = "id")]
     pub event_id: String,
+    #[serde(alias = "occurredAt", alias = "timestamp")]
     pub occurred_at: DateTime<Utc>,
     pub data: serde_json::Value,
 }
@@ -110,6 +143,8 @@ pub struct CreateTransactionRequest {
     pub items: Vec<TransactionItem>,
     pub collection_mode: String, // "automatic" for checkout, "manual" for invoice
     pub checkout: Option<TransactionCheckout>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_details: Option<TransactionBillingDetails>,
 }
 
 /// Transaction item
@@ -125,6 +160,21 @@ pub struct TransactionCheckout {
     pub url: Option<String>, // Override default payment URL
     pub success_url: Option<String>,
     pub cancel_url: Option<String>,
+}
+
+/// Transaction billing details (only for manual collection mode)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TransactionBillingDetails {
+    pub payment_terms: PaymentTerms,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_checkout: Option<bool>,
+}
+
+/// Payment terms for manual collection mode
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PaymentTerms {
+    pub interval: String, // "day", "week", "month", "year"
+    pub frequency: i32,   // Number of intervals
 }
 
 /// Create transaction response
@@ -242,32 +292,90 @@ impl PaddleService {
             .config
             .paddle_webhook_secret
             .as_ref()
-            .ok_or_else(|| AppError::ConfigurationError("Paddle webhook secret not configured".to_string()))?;
+            .ok_or_else(|| {
+                tracing::error!("🎯 WEBHOOK SECRET ERROR: Paddle webhook secret not configured in PaymentConfig");
+                AppError::ConfigurationError("Paddle webhook secret not configured".to_string())
+            })?;
+
+        // Log webhook secret info for debugging (don't log actual secret)
+        tracing::info!("🎯 Using webhook secret of length: {} chars", webhook_secret.len());
+        tracing::info!("🎯 Webhook secret starts with: {}...", &webhook_secret.chars().take(4).collect::<String>());
+
+        // Parse Paddle signature format: "ts=<timestamp>;h1=<signature>"
+        tracing::info!("🎯 Raw signature header: {}", signature);
+
+        let mut timestamp = None;
+        let mut h1_signature = None;
+
+        for part in signature.split(';') {
+            if let Some((key, value)) = part.split_once('=') {
+                match key {
+                    "ts" => timestamp = Some(value),
+                    "h1" => h1_signature = Some(value),
+                    _ => {
+                        tracing::warn!("🎯 Unknown signature component: {}={}", key, value);
+                    }
+                }
+            }
+        }
+
+        let timestamp = timestamp.ok_or_else(|| {
+            tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Missing timestamp in signature");
+            AppError::InvalidWebhookSignature("Missing timestamp in signature".to_string())
+        })?;
+
+        let h1_signature = h1_signature.ok_or_else(|| {
+            tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Missing h1 signature component");
+            AppError::InvalidWebhookSignature("Missing h1 signature component".to_string())
+        })?;
+
+        tracing::info!("🎯 Parsed timestamp: {}", timestamp);
+        tracing::info!("🎯 Parsed h1 signature: {}", h1_signature);
+
+        // Create signed payload: timestamp:request_body
+        let payload_string = String::from_utf8_lossy(payload);
+        let signed_payload = format!("{}:{}", timestamp, payload_string);
+        tracing::info!("🎯 Signed payload length: {} bytes", signed_payload.len());
 
         // Use HMAC-SHA256 to verify the signature
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
-        
+
         type HmacSha256 = Hmac<Sha256>;
-        
+
         let mut mac = HmacSha256::new_from_slice(webhook_secret.as_bytes())
-            .map_err(|e| AppError::InvalidWebhookSignature(format!("Invalid webhook secret: {}", e)))?;
-        
-        mac.update(payload);
-        
+            .map_err(|e| {
+                tracing::error!("🎯 WEBHOOK SECRET ERROR: Invalid webhook secret format: {}", e);
+                AppError::InvalidWebhookSignature(format!("Invalid webhook secret: {}", e))
+            })?;
+
+        mac.update(signed_payload.as_bytes());
+
         // Paddle sends signatures as hex-encoded strings
         let expected_signature = hex::encode(mac.finalize().into_bytes());
-        
-        // Compare signatures in constant time
+
+        tracing::info!("🎯 Expected h1 signature: {}", expected_signature);
+
+        // Compare h1 signature in constant time
         use subtle::ConstantTimeEq;
-        let signature_bytes = hex::decode(signature)
-            .map_err(|_| AppError::InvalidWebhookSignature("Invalid signature format".to_string()))?;
+        let received_bytes = hex::decode(h1_signature)
+            .map_err(|e| {
+                tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Failed to decode h1 signature: {}", e);
+                AppError::InvalidWebhookSignature("Invalid h1 signature format".to_string())
+            })?;
         let expected_bytes = hex::decode(&expected_signature)
-            .map_err(|_| AppError::InvalidWebhookSignature("Invalid expected signature format".to_string()))?;
-            
-        if signature_bytes.ct_eq(&expected_bytes).into() {
+            .map_err(|e| {
+                tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Failed to decode expected signature: {}", e);
+                AppError::InvalidWebhookSignature("Invalid expected signature format".to_string())
+            })?;
+
+        if received_bytes.ct_eq(&expected_bytes).into() {
+            tracing::info!("🎯 Webhook signature verification SUCCESS");
             Ok(())
         } else {
+            tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Signature verification FAILED");
+            tracing::error!("🎯 Expected: {}", expected_signature);
+            tracing::error!("🎯 Received: {}", h1_signature);
             Err(AppError::InvalidWebhookSignature("Signature mismatch".to_string()))
         }
     }

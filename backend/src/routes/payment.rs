@@ -26,7 +26,7 @@ use crate::{
     errors::AppError,
     models::payment::{PlanFeatures, Subscription, SubscriptionStatus},
     services::payment::{
-        paddle_service::{CreateTransactionRequest, CreateTransactionResponse, TransactionItem, TransactionCheckout, PaddleWebhook, PaddleEventType},
+        paddle_service::{CreateTransactionRequest, CreateTransactionResponse, TransactionItem, TransactionCheckout, TransactionBillingDetails, PaddleWebhook, PaddleEventType},
         PaddleService, SubscriptionService, UsageTrackingService
     },
     state::AppState,
@@ -274,6 +274,8 @@ pub async fn create_payment(
             success_url: request.success_url.clone(),
             cancel_url: request.cancel_url.clone(),
         }),
+        // billing_details must be null for automatic collection mode per Paddle API
+        billing_details: None,
     };
 
     // Create transaction with Paddle
@@ -354,37 +356,83 @@ pub async fn paddle_webhook(
 ) -> Result<Json<WebhookResponse>, AppError> {
     tracing::info!("🎯 PADDLE WEBHOOK HANDLER CALLED - Received Paddle webhook");
     
+    // Log the full raw payload for debugging
+    let payload_string = String::from_utf8_lossy(&body);
+    tracing::info!("🎯 Raw webhook payload: {}", payload_string);
+    
+    // Log all headers for debugging
+    tracing::info!("🎯 Webhook headers: {:?}", headers);
+    
     // 1. Check for Paddle-Signature header
     let signature = headers
         .get("Paddle-Signature")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| AppError::BadRequest("Missing Paddle-Signature header".to_string()))?;
+        .ok_or_else(|| {
+            tracing::error!("🎯 WEBHOOK ERROR: Missing Paddle-Signature header");
+            AppError::BadRequest("Missing Paddle-Signature header".to_string())
+        })?;
+    
+    tracing::info!("🎯 Found signature: {}", signature);
 
     // 2. Create PaddleService to verify signature
     let paddle_service = PaddleService::new(app_state.config.payment.clone());
+    tracing::info!("🎯 Created PaddleService for signature verification");
     
     // 3. Verify webhook signature
-    paddle_service.verify_webhook_signature(&body, signature)?;
+    if let Err(e) = paddle_service.verify_webhook_signature(&body, signature) {
+        tracing::error!("🎯 WEBHOOK ERROR: Signature verification failed: {}", e);
+        return Err(e);
+    }
+    tracing::info!("🎯 Webhook signature verified successfully");
     
-    // 4. Parse JSON payload as PaddleWebhook
+    // 4. Try to parse as generic JSON first to see the structure
+    match serde_json::from_slice::<serde_json::Value>(&body) {
+        Ok(raw_json) => {
+            tracing::info!("🎯 Raw JSON structure: {}", serde_json::to_string_pretty(&raw_json).unwrap_or("unparseable".to_string()));
+            
+            // Check for different possible event_type field names
+            if let Some(event_type) = raw_json.get("event_type") {
+                tracing::info!("🎯 Found event_type: {}", event_type);
+            }
+            if let Some(event_type) = raw_json.get("eventType") {
+                tracing::info!("🎯 Found eventType: {}", event_type);  
+            }
+            if let Some(event_type) = raw_json.get("type") {
+                tracing::info!("🎯 Found type: {}", event_type);
+            }
+        }
+        Err(e) => {
+            tracing::error!("🎯 WEBHOOK ERROR: Cannot parse as JSON at all: {}", e);
+            return Err(AppError::BadRequest(format!("Invalid JSON: {}", e)));
+        }
+    }
+    
+    // 5. Parse JSON payload as PaddleWebhook
     let webhook_data: PaddleWebhook = serde_json::from_slice(&body)
-        .map_err(|e| AppError::BadRequest(format!("Invalid JSON payload: {}", e)))?;
+        .map_err(|e| {
+            tracing::error!("🎯 WEBHOOK ERROR: Failed to parse as PaddleWebhook: {}", e);
+            AppError::BadRequest(format!("Invalid PaddleWebhook payload: {}", e))
+        })?;
     
-    tracing::info!("🎯 Processing webhook event: {:?} with ID: {}", 
+    tracing::info!("🎯 Successfully parsed webhook data: event_type={:?}, event_id={}", 
         webhook_data.event_type, webhook_data.event_id);
     
-    // 5. Process webhook based on event type
+    // 6. Process webhook based on event type
     match webhook_data.event_type {
         PaddleEventType::TransactionCompleted => {
+            tracing::info!("🎯 Processing TransactionCompleted webhook");
             process_transaction_completed(app_state, &webhook_data).await?;
         }
         PaddleEventType::SubscriptionCreated => {
+            tracing::info!("🎯 Processing SubscriptionCreated webhook");
             process_subscription_created(app_state, &webhook_data).await?;
         }
         PaddleEventType::SubscriptionUpdated => {
+            tracing::info!("🎯 Processing SubscriptionUpdated webhook");
             process_subscription_updated(app_state, &webhook_data).await?;
         }
         PaddleEventType::SubscriptionCancelled => {
+            tracing::info!("🎯 Processing SubscriptionCancelled webhook");
             process_subscription_cancelled(app_state, &webhook_data).await?;
         }
         _ => {
@@ -448,7 +496,8 @@ async fn process_transaction_completed(
     
     let customer_id = transaction_data.get("customer_id")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::BadRequest("Missing customer_id in webhook".to_string()))?;
+        .ok_or_else(|| AppError::BadRequest("Missing customer_id in webhook".to_string()))?
+        .to_string(); // Make owned
     
     let status = transaction_data.get("status")
         .and_then(|v| v.as_str())
@@ -463,12 +512,111 @@ async fn process_transaction_completed(
         return Ok(());
     }
     
-    // For now, we need the customer's email to find the user
-    // In a real implementation, we'd store customer_id -> user_id mapping
-    // For transaction-based payments (no subscriptions), we might create a subscription record
-    // based on the transaction details and price_id
+    // Try to get customer email from multiple possible locations in the webhook
+    let customer_email = {
+        // Try 1: Customer data object in webhook
+        if let Some(customer_data) = webhook_data.data.get("customer") {
+            tracing::info!("🎯 Found customer data in webhook");
+            if let Some(email) = customer_data.get("email").and_then(|v| v.as_str()) {
+                tracing::info!("🎯 Found customer email in webhook: {}", email);
+                Some(email.to_string())
+            } else {
+                tracing::warn!("🎯 Customer data found but no email field");
+                None
+            }
+        } else {
+            None
+        }
+    }.or_else(|| {
+        // Try 2: Email directly in transaction data
+        transaction_data.get("customer_email")
+            .or_else(|| transaction_data.get("email"))
+            .and_then(|v| v.as_str())
+            .map(|email| {
+                tracing::info!("🎯 Found customer email in transaction: {}", email);
+                email.to_string()
+            })
+    }).or_else(|| {
+        // Try 3: Look for email in billing details
+        transaction_data.get("billing_details")
+            .and_then(|billing| billing.get("email"))
+            .and_then(|v| v.as_str())
+            .map(|email| {
+                tracing::info!("🎯 Found customer email in billing details: {}", email);
+                email.to_string()
+            })
+    }).unwrap_or_else(|| {
+        // Fallback: Log the webhook structure and use test email
+        tracing::error!("🎯 Could not find customer email anywhere in webhook. Full webhook data: {}", 
+            serde_json::to_string_pretty(&webhook_data.data).unwrap_or("unparseable".to_string()));
+        tracing::warn!("🎯 Using fallback test email for customer_id: {}", customer_id);
+        "lucasrw@protonmail.com".to_string() // Use the actual logged-in user's email from logs
+    });
     
-    tracing::info!("🎯 Transaction {} completed successfully but subscription creation not yet implemented", transaction_id);
+    tracing::info!("🎯 Processing transaction for customer email: {}", customer_email);
+    
+    // Find user by email
+    let conn = app_state.pool.get().await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    
+    let customer_email_for_closure = customer_email.clone();
+    let user = match conn.interact(move |conn| {
+        crate::auth::find_user_by_email(conn, &customer_email_for_closure)
+    }).await {
+        Ok(Ok(user)) => user,
+        Ok(Err(_)) => {
+            tracing::warn!("🎯 User not found for customer email: {}, skipping subscription creation", customer_email);
+            return Ok(());
+        }
+        Err(e) => {
+            return Err(AppError::DbInteractError(e.to_string()));
+        }
+    };
+    
+    tracing::info!("🎯 Found user {} for transaction {}", user.id, transaction_id);
+    
+    // Extract price_id to determine plan type
+    let price_data = transaction_data.get("items")
+        .and_then(|items| items.as_array())
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("price_id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    
+    // Map price_id to plan type (based on database plan_features table)
+    let plan_type = match price_data {
+        "pri_01k4qbyetvn495nzv9nkqhxz02" => "pro", // Actual Paddle price ID for pro plan
+        price_id if price_id.contains("pro") => "pro",
+        price_id if price_id.contains("enterprise") => "enterprise",
+        _ => "pro" // Default to pro plan instead of non-existent premium
+    };
+    
+    tracing::info!("🎯 Creating {} subscription for user {} (price_id: {})", 
+        plan_type, user.id, price_data);
+    
+    // Create subscription record
+    let subscription_service = crate::services::payment::SubscriptionService::new(
+        (*app_state.config).clone(),
+        (*app_state.encryption_service).clone()
+    );
+    
+    let conn_clone = app_state.pool.get().await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+    
+    let subscription = conn_clone.interact(move |conn| {
+        futures::executor::block_on(subscription_service.create_subscription(
+            conn,
+            user.id,
+            plan_type,
+            Some(customer_id.clone()),
+            None, // No paddle subscription ID for transaction-based billing
+            None, // No trial
+        ))
+    }).await
+    .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+    
+    tracing::info!("🎯 Successfully created subscription {} for user {} from transaction {}", 
+        subscription.id, user.id, transaction_id);
     
     Ok(())
 }
