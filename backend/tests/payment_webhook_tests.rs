@@ -19,16 +19,30 @@ mod payment_webhook_tests {
     use serde_json::json;
     use std::env;
 
-    /// Helper to create a valid webhook signature for testing
+    /// Helper to create a valid webhook signature for testing in Paddle format
     fn create_webhook_signature(payload: &str, secret: &str) -> String {
+        create_webhook_signature_with_timestamp(payload, secret, None)
+    }
+
+    /// Helper to create a valid webhook signature with optional fixed timestamp for deterministic tests
+    fn create_webhook_signature_with_timestamp(payload: &str, secret: &str, timestamp: Option<i64>) -> String {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
         type HmacSha256 = Hmac<Sha256>;
-        
+
+        // Use provided timestamp or current time
+        let timestamp = timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp());
+
+        // Create signed payload in Paddle format: timestamp:request_body
+        let signed_payload = format!("{}:{}", timestamp, payload);
+
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
             .expect("HMAC can take key of any size");
-        mac.update(payload.as_bytes());
-        hex::encode(mac.finalize().into_bytes())
+        mac.update(signed_payload.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+
+        // Return Paddle signature format: ts=timestamp;h1=signature
+        format!("ts={};h1={}", timestamp, signature)
     }
 
     /// Helper to create a test webhook payload
@@ -399,13 +413,18 @@ mod payment_webhook_tests {
     fn test_signature_creation_consistency() {
         let payload = "test payload";
         let secret = "test_secret";
-        
-        let signature1 = create_webhook_signature(payload, secret);
-        let signature2 = create_webhook_signature(payload, secret);
-        
+        let fixed_timestamp = 1234567890; // Fixed timestamp for deterministic tests
+
+        let signature1 = create_webhook_signature_with_timestamp(payload, secret, Some(fixed_timestamp));
+        let signature2 = create_webhook_signature_with_timestamp(payload, secret, Some(fixed_timestamp));
+
         assert_eq!(signature1, signature2, "Signature creation should be deterministic");
         assert!(!signature1.is_empty(), "Signature should not be empty");
-        assert_eq!(signature1.len(), 64, "HMAC-SHA256 signature should be 64 hex characters");
+
+        // Paddle format: "ts=1234567890;h1=<64_char_hex_signature>"
+        // Expected length: 3 + 10 + 4 + 64 = 81 characters
+        assert_eq!(signature1.len(), 81, "Paddle signature should be 81 characters (ts=timestamp;h1=64_hex_chars)");
+        assert!(signature1.starts_with("ts=1234567890;h1="), "Signature should have correct Paddle format");
     }
 
     #[test]

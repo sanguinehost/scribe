@@ -55,20 +55,25 @@ mod payment_integration_tests {
         let service = PaddleService::new(config);
         
         let payload = b"test payload";
-        
-        // Generate expected signature using HMAC-SHA256
+
+        // Generate expected signature using HMAC-SHA256 in Paddle format
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
         type HmacSha256 = Hmac<Sha256>;
-        
+
         let webhook_secret = env::var("PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
-        
+
+        // Create Paddle format signature: ts=timestamp;h1=signature
+        let timestamp = chrono::Utc::now().timestamp();
+        let signed_payload = format!("{}:{}", timestamp, String::from_utf8_lossy(payload));
+
         let mut mac = HmacSha256::new_from_slice(webhook_secret.as_bytes())
             .expect("HMAC can take key of any size");
-        mac.update(payload);
-        let expected_signature = hex::encode(mac.finalize().into_bytes());
-        
+        mac.update(signed_payload.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+        let expected_signature = format!("ts={};h1={}", timestamp, signature);
+
         // Test with correct signature
         let result = service.verify_webhook_signature(payload, &expected_signature);
         assert!(result.is_ok(), "Valid signature should pass verification");
@@ -124,6 +129,7 @@ mod payment_integration_tests {
             ("subscription_cancelled", PaddleEventType::SubscriptionCancelled),
             ("transaction_completed", PaddleEventType::TransactionCompleted),
             ("transaction_failed", PaddleEventType::TransactionFailed),
+            ("transaction_canceled", PaddleEventType::TransactionCanceled),
             ("customer_created", PaddleEventType::CustomerCreated),
             ("customer_updated", PaddleEventType::CustomerUpdated),
         ];
@@ -204,6 +210,7 @@ mod payment_integration_tests {
                         success_url: Some("https://localhost:8080/pay".to_string()),
                         cancel_url: Some("https://localhost:5173/cancel".to_string()),
                     }),
+                    billing_details: None, // Must be null for automatic collection per Paddle API
                 };
                 
                 let result = service.create_transaction(&transaction_request).await;
@@ -271,6 +278,7 @@ mod payment_integration_tests {
                         success_url: Some("https://localhost:8080/pay".to_string()),
                         cancel_url: Some("https://localhost:5173/cancel".to_string()),
                     }),
+                    billing_details: None, // Must be null for automatic collection per Paddle API
                 };
                 
                 let result = service.create_transaction(&transaction_request).await;

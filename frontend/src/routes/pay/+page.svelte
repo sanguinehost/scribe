@@ -17,10 +17,20 @@
 			return;
 		}
 
+		// Debug logging to understand what Paddle sends back
+		console.log('🎯 PAYMENT SUCCESS PAGE DEBUG:');
+		console.log('Full URL:', $page.url.href);
+		console.log('Search params:', $page.url.search);
+
 		// Get transaction ID and status from URL parameters
 		const urlParams = new URLSearchParams($page.url.search);
+		console.log('All URL params:', Object.fromEntries(urlParams.entries()));
+
 		transactionId = urlParams.get('transaction_id') || urlParams.get('_ptxn');
 		status = urlParams.get('status');
+
+		console.log('Extracted transaction ID:', transactionId);
+		console.log('Extracted status:', status);
 
 		if (transactionId) {
 			// Transaction completion detected

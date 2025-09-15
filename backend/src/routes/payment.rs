@@ -220,32 +220,61 @@ pub async fn create_payment(
     State(app_state): State<AppState>,
     Json(request): Json<CreatePaymentRequest>,
 ) -> Result<Json<CreatePaymentResponse>, AppError> {
-    tracing::info!("🎯 CREATE_PAYMENT HANDLER ENTERED - plan_type: {}", request.plan_type);
-    
+    tracing::info!(
+        plan_type = %request.plan_type,
+        success_url = %request.success_url.as_deref().unwrap_or("None"),
+        cancel_url = %request.cancel_url.as_deref().unwrap_or("None"),
+        "🎯 CREATE_PAYMENT: Handler entered"
+    );
+
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
-    tracing::info!("🎯 CREATE_PAYMENT - User authenticated: {}", user.id);
+
+    tracing::info!(
+        user_id = %user.id,
+        user_email = %user.email,
+        user_username = %user.username,
+        "🎯 CREATE_PAYMENT: User authenticated"
+    );
 
     // Create or get existing customer
+    tracing::debug!("🎯 CREATE_PAYMENT: Creating PaddleService with payment config");
     let paddle_service = PaddleService::new(app_state.config.payment.clone());
+
+    tracing::debug!(
+        customer_email = %user.email,
+        customer_name = %user.username,
+        "🎯 CREATE_PAYMENT: Creating/getting Paddle customer"
+    );
     let customer = paddle_service
         .create_customer(&user.email, Some(&user.username))
         .await?;
 
+    tracing::info!(
+        customer_id = %customer.id,
+        customer_email = ?customer.email,
+        "🎯 CREATE_PAYMENT: Paddle customer resolved"
+    );
+
     // Look up plan features from database to get paddle_price_id
+    tracing::debug!("🎯 CREATE_PAYMENT: Creating subscription service");
     let subscription_service = SubscriptionService::new(
         (*app_state.config).clone(),
         (*app_state.encryption_service).clone()
     );
-    
+
+    tracing::debug!("🎯 CREATE_PAYMENT: Getting database connection");
     let conn = app_state
         .pool
         .get()
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
-    
+        .map_err(|e| {
+            tracing::error!(error = %e, "🎯 CREATE_PAYMENT: Failed to get database connection");
+            AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+        })?;
+
+    tracing::debug!(plan_type = %request.plan_type, "🎯 CREATE_PAYMENT: Looking up plan features");
     let plan_type_clone = request.plan_type.clone();
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
@@ -253,17 +282,35 @@ pub async fn create_payment(
             futures::executor::block_on(subscription_service_clone.get_plan_features(conn, &plan_type_clone))
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-        .map_err(|e| AppError::DatabaseQueryError(format!("Database query failed: {}", e)))?
-        .ok_or_else(|| AppError::BadRequest(format!("Invalid plan type: {}", request.plan_type)))?;
-    
+        .map_err(|e| {
+            tracing::error!(error = %e, "🎯 CREATE_PAYMENT: Database interaction failed");
+            AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
+        })?
+        .map_err(|e| {
+            tracing::error!(error = %e, "🎯 CREATE_PAYMENT: Database query failed");
+            AppError::DatabaseQueryError(format!("Database query failed: {}", e))
+        })?
+        .ok_or_else(|| {
+            tracing::error!(plan_type = %request.plan_type, "🎯 CREATE_PAYMENT: Invalid plan type");
+            AppError::BadRequest(format!("Invalid plan type: {}", request.plan_type))
+        })?;
+
+    tracing::debug!(
+        plan_type = %request.plan_type,
+        paddle_price_id = ?plan_features.paddle_price_id,
+        "🎯 CREATE_PAYMENT: Plan features loaded"
+    );
+
     let price_id = plan_features
         .paddle_price_id
-        .ok_or_else(|| AppError::BadRequest(format!("Plan '{}' does not have a configured paddle_price_id", request.plan_type)))?;
+        .ok_or_else(|| {
+            tracing::error!(plan_type = %request.plan_type, "🎯 CREATE_PAYMENT: No paddle_price_id configured for plan");
+            AppError::BadRequest(format!("Plan '{}' does not have a configured paddle_price_id", request.plan_type))
+        })?;
 
     // Create transaction request
     let transaction_request = CreateTransactionRequest {
-        customer_id: customer.id,
+        customer_id: customer.id.clone(),
         items: vec![TransactionItem {
             price_id: price_id.to_string(),
             quantity: 1,
@@ -278,10 +325,36 @@ pub async fn create_payment(
         billing_details: None,
     };
 
+    tracing::info!(
+        customer_id = %customer.id,
+        price_id = %price_id,
+        collection_mode = %transaction_request.collection_mode,
+        success_url = ?request.success_url,
+        cancel_url = ?request.cancel_url,
+        "🎯 CREATE_PAYMENT: About to create Paddle transaction"
+    );
+
     // Create transaction with Paddle
     let transaction = paddle_service
         .create_transaction(&transaction_request)
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error = %e,
+                customer_id = %customer.id,
+                price_id = %price_id,
+                "🎯 CREATE_PAYMENT: Failed to create Paddle transaction"
+            );
+            e
+        })?;
+
+    tracing::info!(
+        transaction_id = %transaction.transaction_id,
+        checkout_url = %transaction.checkout_url,
+        status = %transaction.status,
+        customer_id = %customer.id,
+        "🎯 CREATE_PAYMENT: Successfully created transaction, returning response"
+    );
 
     Ok(Json(CreatePaymentResponse {
         transaction_id: transaction.transaction_id,

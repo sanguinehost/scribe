@@ -389,31 +389,60 @@ impl AppError {
     }
 
     const fn is_client_error(error: &Self) -> bool {
-        matches!(
-            error,
-            Self::BadRequest(_)
-                | Self::InvalidInput(_)
-                | Self::InvalidCredentials
-                | Self::Unauthorized(_)
-                | Self::DekMissing
-                | Self::Forbidden(_)
-                | Self::NotFound(_)
-                | Self::UserNotFound
-                | Self::SessionNotFound
-                | Self::Conflict(_)
-                | Self::UsernameTaken
-                | Self::EmailTaken
-                | Self::RateLimited(_)
-                | Self::FileUploadError(_)
-                | Self::CharacterParseError(_)
-                | Self::CharacterParsingError(_)
-                | Self::ParseIntError(_)
-                | Self::UuidError(_)
-                | Self::AuthError(_)
-                | Self::WebSocketReceiveError(_)
-                | Self::InvalidWebhookSignature(_)
-                | Self::ConfigurationError(_)
-        )
+        #[cfg(feature = "payment")]
+        {
+            matches!(
+                error,
+                Self::BadRequest(_)
+                    | Self::InvalidInput(_)
+                    | Self::InvalidCredentials
+                    | Self::Unauthorized(_)
+                    | Self::DekMissing
+                    | Self::Forbidden(_)
+                    | Self::NotFound(_)
+                    | Self::UserNotFound
+                    | Self::SessionNotFound
+                    | Self::Conflict(_)
+                    | Self::UsernameTaken
+                    | Self::EmailTaken
+                    | Self::RateLimited(_)
+                    | Self::FileUploadError(_)
+                    | Self::CharacterParseError(_)
+                    | Self::CharacterParsingError(_)
+                    | Self::ParseIntError(_)
+                    | Self::UuidError(_)
+                    | Self::AuthError(_)
+                    | Self::WebSocketReceiveError(_)
+                    | Self::InvalidWebhookSignature(_)
+                    | Self::ConfigurationError(_)
+            )
+        }
+        #[cfg(not(feature = "payment"))]
+        {
+            matches!(
+                error,
+                Self::BadRequest(_)
+                    | Self::InvalidInput(_)
+                    | Self::InvalidCredentials
+                    | Self::Unauthorized(_)
+                    | Self::DekMissing
+                    | Self::Forbidden(_)
+                    | Self::NotFound(_)
+                    | Self::UserNotFound
+                    | Self::SessionNotFound
+                    | Self::Conflict(_)
+                    | Self::UsernameTaken
+                    | Self::EmailTaken
+                    | Self::RateLimited(_)
+                    | Self::FileUploadError(_)
+                    | Self::CharacterParseError(_)
+                    | Self::CharacterParsingError(_)
+                    | Self::ParseIntError(_)
+                    | Self::UuidError(_)
+                    | Self::AuthError(_)
+                    | Self::WebSocketReceiveError(_)
+            )
+        }
     }
 
     const fn is_gateway_error(error: &Self) -> bool {
@@ -440,24 +469,46 @@ impl AppError {
     }
 
     const fn is_simple_client_error(error: &Self) -> bool {
-        matches!(
-            error,
-            Self::BadRequest(_)
-                | Self::InvalidInput(_)
-                | Self::InvalidCredentials
-                | Self::Unauthorized(_)
-                | Self::DekMissing
-                | Self::Forbidden(_)
-                | Self::NotFound(_)
-                | Self::UserNotFound
-                | Self::SessionNotFound
-                | Self::Conflict(_)
-                | Self::UsernameTaken
-                | Self::EmailTaken
-                | Self::RateLimited(_)
-                | Self::InvalidWebhookSignature(_)
-                | Self::ConfigurationError(_)
-        )
+        #[cfg(feature = "payment")]
+        {
+            matches!(
+                error,
+                Self::BadRequest(_)
+                    | Self::InvalidInput(_)
+                    | Self::InvalidCredentials
+                    | Self::Unauthorized(_)
+                    | Self::DekMissing
+                    | Self::Forbidden(_)
+                    | Self::NotFound(_)
+                    | Self::UserNotFound
+                    | Self::SessionNotFound
+                    | Self::Conflict(_)
+                    | Self::UsernameTaken
+                    | Self::EmailTaken
+                    | Self::RateLimited(_)
+                    | Self::InvalidWebhookSignature(_)
+                    | Self::ConfigurationError(_)
+            )
+        }
+        #[cfg(not(feature = "payment"))]
+        {
+            matches!(
+                error,
+                Self::BadRequest(_)
+                    | Self::InvalidInput(_)
+                    | Self::InvalidCredentials
+                    | Self::Unauthorized(_)
+                    | Self::DekMissing
+                    | Self::Forbidden(_)
+                    | Self::NotFound(_)
+                    | Self::UserNotFound
+                    | Self::SessionNotFound
+                    | Self::Conflict(_)
+                    | Self::UsernameTaken
+                    | Self::EmailTaken
+                    | Self::RateLimited(_)
+            )
+        }
     }
 
     const fn is_logged_client_error(error: &Self) -> bool {
@@ -499,7 +550,9 @@ impl AppError {
                         .unwrap_or_default()
                 ),
             ),
+            #[cfg(feature = "payment")]
             Self::InvalidWebhookSignature(msg) => (StatusCode::BAD_REQUEST, msg),
+            #[cfg(feature = "payment")]
             Self::ConfigurationError(msg) => (StatusCode::BAD_REQUEST, msg),
             _ => unreachable!("Non-simple client error passed to handle_simple_client_error"),
         }

@@ -28,10 +28,11 @@ pub struct PaddleService {
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub enum PaddleEventType {
     SubscriptionCreated,
-    SubscriptionUpdated,  
+    SubscriptionUpdated,
     SubscriptionCancelled,
     TransactionCompleted,
     TransactionFailed,
+    TransactionCanceled,
     CustomerCreated,
     CustomerUpdated,
 }
@@ -49,16 +50,18 @@ impl<'de> Deserialize<'de> for PaddleEventType {
             "subscription_cancelled" | "subscription.cancelled" | "subscription_canceled" | "subscription.canceled" => Ok(PaddleEventType::SubscriptionCancelled),
             "transaction_completed" | "transaction.completed" => Ok(PaddleEventType::TransactionCompleted),
             "transaction_failed" | "transaction.failed" => Ok(PaddleEventType::TransactionFailed),
+            "transaction_canceled" | "transaction.canceled" => Ok(PaddleEventType::TransactionCanceled),
             "customer_created" | "customer.created" => Ok(PaddleEventType::CustomerCreated),
             "customer_updated" | "customer.updated" => Ok(PaddleEventType::CustomerUpdated),
             _ => {
                 tracing::warn!("🎯 Unknown Paddle event type received: {}", s);
                 Err(serde::de::Error::unknown_variant(&s, &[
                     "subscription_created", "subscription.created",
-                    "subscription_updated", "subscription.updated", 
+                    "subscription_updated", "subscription.updated",
                     "subscription_cancelled", "subscription.cancelled",
                     "transaction_completed", "transaction.completed",
                     "transaction_failed", "transaction.failed",
+                    "transaction_canceled", "transaction.canceled",
                     "customer_created", "customer.created",
                     "customer_updated", "customer.updated"
                 ]))
@@ -503,6 +506,26 @@ impl PaddleService {
             "https://api.paddle.com"
         };
 
+        // Log comprehensive debugging information
+        debug!(
+            sandbox_mode = %self.config.paddle_sandbox_mode,
+            base_url = %base_url,
+            api_key_prefix = %&api_key[..std::cmp::min(12, api_key.len())],
+            customer_id = %request.customer_id,
+            collection_mode = %request.collection_mode,
+            items_count = %request.items.len(),
+            payment_base_url = %self.config.payment_base_url,
+            "Preparing Paddle transaction creation request"
+        );
+
+        // Log the full request payload (but mask sensitive data)
+        let request_json = serde_json::to_string_pretty(request)
+            .unwrap_or_else(|_| "Failed to serialize request".to_string());
+        debug!(
+            request_payload = %request_json,
+            "Paddle transaction request payload"
+        );
+
         let response = self
             .client
             .post(&format!("{}/transactions", base_url))
@@ -510,42 +533,147 @@ impl PaddleService {
             .json(request)
             .send()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Paddle API request failed: {}", e)))?;
+            .map_err(|e| {
+                error!(
+                    error = %e,
+                    base_url = %base_url,
+                    "Paddle API request failed during HTTP call"
+                );
+                AppError::ExternalServiceError(format!("Paddle API request failed: {}", e))
+            })?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        debug!(
+            status = %status,
+            headers = ?headers,
+            "Received response from Paddle API"
+        );
+
+        if !status.is_success() {
             let error_body = response.text().await.unwrap_or_default();
+            error!(
+                status = %status,
+                error_body = %error_body,
+                base_url = %base_url,
+                customer_id = %request.customer_id,
+                "Paddle API returned error response"
+            );
             return Err(AppError::ExternalServiceError(format!(
-                "Paddle API error: {}",
+                "Paddle API error ({}): {}",
+                status,
                 error_body
             )));
         }
 
         let response_text = response.text().await.unwrap_or_default();
-        
+
+        debug!(
+            response_body = %response_text,
+            "Raw response body from Paddle API"
+        );
+
+        // DETAILED LOGGING: Parse response as raw JSON first to see structure
+        if let Ok(raw_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
+            info!(
+                raw_json = %serde_json::to_string_pretty(&raw_json).unwrap_or_else(|_| "Invalid JSON".to_string()),
+                "🎯 RAW PADDLE RESPONSE STRUCTURE"
+            );
+
+            // Check if data field exists
+            if let Some(data) = raw_json.get("data") {
+                info!("🎯 DATA FIELD EXISTS in Paddle response");
+
+                // Check checkout field specifically
+                if let Some(checkout) = data.get("checkout") {
+                    info!(
+                        checkout_field = %serde_json::to_string(checkout).unwrap_or_else(|_| "Invalid checkout".to_string()),
+                        "🎯 CHECKOUT FIELD FOUND in data"
+                    );
+                } else {
+                    warn!("🎯 NO CHECKOUT FIELD found in data object");
+                }
+            } else {
+                warn!("🎯 NO DATA FIELD found in Paddle response");
+            }
+        } else {
+            error!("🎯 Failed to parse response as JSON: {}", response_text);
+        }
+
         // Paddle wraps the response in a "data" field
         let wrapper: PaddleApiResponse<PaddleTransaction> = serde_json::from_str(&response_text)
-            .map_err(|e| AppError::JsonParseError(format!("Failed to parse transaction response '{}': {}", response_text, e)))?;
-        
+            .map_err(|e| {
+                error!(
+                    error = %e,
+                    response_text = %response_text,
+                    "Failed to parse Paddle transaction response"
+                );
+                AppError::JsonParseError(format!("Failed to parse transaction response '{}': {}", response_text, e))
+            })?;
+
         let transaction = wrapper.data;
-        
-        // Extract checkout URL from transaction
-        let checkout_url = transaction.checkout
-            .and_then(|checkout| checkout.url)
-            .unwrap_or_else(|| format!("{}/pay?_ptxn={}", 
-                &self.config.payment_base_url, 
-                transaction.id));
+
+        info!(
+            transaction_id = %transaction.id,
+            transaction_status = %transaction.status,
+            transaction_checkout = ?transaction.checkout,
+            "🎯 PARSED PADDLE TRANSACTION"
+        );
+
+        // Extract checkout URL from transaction with detailed logging
+        let checkout_url = match &transaction.checkout {
+            Some(checkout) => {
+                info!("🎯 Transaction has checkout field");
+                match &checkout.url {
+                    Some(url) => {
+                        info!(checkout_url = %url, "🎯 Found checkout URL from Paddle");
+                        url.clone()
+                    },
+                    None => {
+                        warn!("🎯 Checkout field exists but URL is None - using fallback");
+                        let fallback_url = format!("{}/pay?_ptxn={}",
+                            &self.config.payment_base_url,
+                            transaction.id);
+                        info!(
+                            fallback_url = %fallback_url,
+                            transaction_id = %transaction.id,
+                            payment_base_url = %self.config.payment_base_url,
+                            "🎯 Using fallback checkout URL (checkout field exists but no URL)"
+                        );
+                        fallback_url
+                    }
+                }
+            },
+            None => {
+                warn!("🎯 No checkout field in transaction - using fallback");
+                let fallback_url = format!("{}/pay?_ptxn={}",
+                    &self.config.payment_base_url,
+                    transaction.id);
+                info!(
+                    fallback_url = %fallback_url,
+                    transaction_id = %transaction.id,
+                    payment_base_url = %self.config.payment_base_url,
+                    "🎯 Using fallback checkout URL (no checkout field)"
+                );
+                fallback_url
+            }
+        };
 
         let transaction_response = CreateTransactionResponse {
             transaction_id: transaction.id.clone(),
-            checkout_url,
+            checkout_url: checkout_url.clone(),
             status: transaction.status.clone(),
         };
 
         info!(
             transaction_id = %transaction_response.transaction_id,
             customer_id = %request.customer_id,
-            "Created Paddle transaction"
+            checkout_url = %checkout_url,
+            status = %transaction_response.status,
+            "Successfully created Paddle transaction"
         );
+
         Ok(transaction_response)
     }
 

@@ -44,7 +44,7 @@
 			// Create payment transaction via our API using the apiClient
 			const result = await apiClient.createPayment({
 				plan_type: planType,
-				success_url: `${window.location.origin}/pay`,
+				success_url: `${window.location.origin}/pay?transaction_id={transaction_id}`,
 				cancel_url: window.location.href // Return to current page on cancel
 			});
 
