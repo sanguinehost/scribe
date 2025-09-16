@@ -9,7 +9,7 @@ export async function load({ cookies, locals }) {
 	if (!user) {
 		redirect(307, '/signin');
 	}
-	const sidebarCollapsed = cookies.get('sidebar:state') !== 'true';
+	const sidebarCollapsed = cookies.get('sidebar:state') === 'false';
 
 	let modelId = cookies.get('selected-model');
 	if (!modelId || !chatModels.find((model) => model.id === modelId)) {
