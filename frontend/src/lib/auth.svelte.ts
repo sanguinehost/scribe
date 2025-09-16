@@ -423,11 +423,20 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 					'statusCode' in result.error &&
 					result.error.statusCode === 401
 				) {
-					// Session expired - clear user and show specific message
-					console.log(
-						`[${new Date().toISOString()}] auth.svelte.ts: Session expired (401). Logging out user.`
-					);
-					setSessionExpired();
+					// Check if this is a session expiry (had a user) or first-time visitor (no user)
+					if (auth.user) {
+						// Session expired - clear user and show specific message
+						console.log(
+							`[${new Date().toISOString()}] auth.svelte.ts: Session expired (401). Logging out user.`
+						);
+						setSessionExpired();
+					} else {
+						// First-time visitor or already logged out - just set unauthenticated without notification
+						console.log(
+							`[${new Date().toISOString()}] auth.svelte.ts: Not authenticated (401). No previous session.`
+						);
+						setUnauthenticated();
+					}
 				} else {
 					// For other API errors, treat as unauthenticated
 					setUnauthenticated();

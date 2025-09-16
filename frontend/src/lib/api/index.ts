@@ -171,17 +171,31 @@ class ApiClient {
 
 					// Only update auth store and redirect if we're in the browser
 					if (browser) {
-						if (isDekMissingError) {
-							console.log(
-								`[${new Date().toISOString()}] ApiClient.fetch: 401 DEK Missing. Server likely restarted, performing comprehensive logout.`
-							);
+						// Import auth state check
+						const { getCurrentUser } = await import('$lib/auth.svelte');
+						const currentUser = getCurrentUser();
+
+						// Only show "session expired" if there was actually a user logged in
+						if (currentUser) {
+							if (isDekMissingError) {
+								console.log(
+									`[${new Date().toISOString()}] ApiClient.fetch: 401 DEK Missing. Server likely restarted, performing comprehensive logout.`
+								);
+							} else {
+								console.log(
+									`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Session expired, performing comprehensive logout.`
+								);
+							}
+							// Use comprehensive logout that clears both state and cookies
+							await performLogout('expired', true);
 						} else {
+							// User wasn't logged in anyway, just log without showing notification
 							console.log(
-								`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Session expired, performing comprehensive logout.`
+								`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. User not authenticated.`
 							);
+							// Still perform logout to clean up any stale state, but without notification
+							await performLogout('expired', false);
 						}
-						// Use comprehensive logout that clears both state and cookies
-						await performLogout('expired', true);
 					} else {
 						console.log(
 							`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized on server-side fetch. Not redirecting.`

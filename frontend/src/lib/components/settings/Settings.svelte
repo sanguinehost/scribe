@@ -522,8 +522,8 @@
 
 				<!-- Models Tab (Local LLM) -->
 				{#if activeTab === 'models' && ENABLE_LOCAL_LLM}
-					{#await import('$lib/components/models/ModelManager.svelte') then { default: ModelManager }}
-						<ModelManager />
+					{#await import('$lib/components/model-selector.svelte') then { default: ModelSelector }}
+						<ModelSelector />
 					{/await}
 				{/if}
 
