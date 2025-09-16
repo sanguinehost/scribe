@@ -88,14 +88,18 @@ plan_deployment() {
     log_info "Planning deployment..."
     cd "$TERRAFORM_DIR"
     terraform plan -out=staging.tfplan
-    
-    echo
-    log_warning "Please review the plan above before proceeding."
-    read -p "Do you want to continue with the deployment? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Deployment cancelled by user."
-        exit 0
+
+    if [[ "$AUTO_APPROVE" != "true" ]]; then
+        echo
+        log_warning "Please review the plan above before proceeding."
+        read -p "Do you want to continue with the deployment? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Deployment cancelled by user."
+            exit 0
+        fi
+    else
+        log_info "Auto-approve enabled, proceeding with deployment..."
     fi
 }
 
@@ -103,7 +107,10 @@ plan_deployment() {
 apply_deployment() {
     log_info "Applying deployment..."
     cd "$TERRAFORM_DIR"
+
+    # Apply the plan - it's already been reviewed/approved in plan_deployment
     terraform apply staging.tfplan
+
     log_success "Deployment completed successfully"
 }
 
@@ -184,6 +191,12 @@ main() {
 }
 
 # Handle script arguments
+AUTO_APPROVE="${AUTO_APPROVE:-false}"
+if [[ "$1" == "--auto-approve" ]] || [[ "$2" == "--auto-approve" ]]; then
+    AUTO_APPROVE="true"
+    shift  # Remove --auto-approve from arguments
+fi
+
 case "${1:-deploy}" in
     "deploy")
         main
@@ -210,11 +223,19 @@ case "${1:-deploy}" in
         terraform output
         ;;
     *)
-        echo "Usage: $0 [deploy|plan|destroy|output]"
+        echo "Usage: $0 [--auto-approve] [deploy|plan|destroy|output]"
         echo "  deploy  - Deploy the staging environment (default)"
         echo "  plan    - Plan the deployment without applying"
         echo "  destroy - Destroy the staging environment"
         echo "  output  - Show terraform outputs"
+        echo ""
+        echo "Options:"
+        echo "  --auto-approve  - Apply changes without confirmation prompt"
+        echo ""
+        echo "Examples:"
+        echo "  $0                    # Interactive deployment"
+        echo "  $0 --auto-approve     # Automatic deployment"
+        echo "  $0 plan               # Just show the plan"
         exit 1
         ;;
 esac

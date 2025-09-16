@@ -37,6 +37,13 @@ resource "aws_lb_target_group" "backend_tg_https" {
     protocol            = "HTTPS"
   }
 
+  # Enable stickiness to ensure users stay on the same backend instance
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400  # 24 hours in seconds
+    enabled         = true
+  }
+
   lifecycle {
     create_before_destroy = true
   }

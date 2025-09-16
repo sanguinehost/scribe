@@ -21,7 +21,7 @@ app_subdomain    = "scribe"          # Application subdomain
 # private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
 
 # Database configuration
-postgres_version             = "15.4"
+postgres_version             = "16.3"
 db_instance_class           = "db.t4g.micro"  # Free tier eligible
 allocated_storage           = 20
 max_allocated_storage       = 100
@@ -64,6 +64,10 @@ gemini_api_key = "your-gemini-api-key-here"
 # paddle_sandbox_mode = true  # Use false for production
 # payment_base_url = ""  # Will be computed from domain if not specified
 # enforce_payment_limits = false  # Set to true to actually enforce limits
+
+# Tailscale configuration (REQUIRED for VPN access to private resources)
+# Get auth key from https://login.tailscale.com/admin/settings/keys
+# tailscale_auth_key = "tskey-auth-YOUR-KEY-HERE"
 
 # Example of setting payment variables via environment variables instead:
 # export TF_VAR_enable_payments=true

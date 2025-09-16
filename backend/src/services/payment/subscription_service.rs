@@ -66,6 +66,7 @@ impl SubscriptionService {
         };
 
         let new_subscription = NewSubscription {
+            id: Uuid::new_v4(),
             user_id,
             paddle_customer_id,
             paddle_subscription_id,
@@ -140,8 +141,8 @@ impl SubscriptionService {
         subscription_id: Uuid,
         updates: UpdateSubscription,
     ) -> Result<Subscription, AppError> {
-        let mut update_data = updates;
-        update_data.updated_at = Some(Utc::now());
+        let update_data = updates;
+        // UpdateSubscription doesn't track updated_at (handled by DB)
 
         let subscription = diesel::update(subscriptions::table.find(subscription_id))
             .set(&update_data)
@@ -163,13 +164,11 @@ impl SubscriptionService {
             UpdateSubscription {
                 status: Some(SubscriptionStatus::Cancelled.to_string()),
                 cancel_at_period_end: Some(true),
-                updated_at: Some(Utc::now()),
                 ..Default::default()
             }
         } else {
             UpdateSubscription {
                 cancel_at_period_end: Some(true),
-                updated_at: Some(Utc::now()),
                 ..Default::default()
             }
         };
@@ -186,7 +185,6 @@ impl SubscriptionService {
         let updates = UpdateSubscription {
             status: Some(SubscriptionStatus::Active.to_string()),
             cancel_at_period_end: Some(false),
-            updated_at: Some(Utc::now()),
             ..Default::default()
         };
 
@@ -205,7 +203,6 @@ impl SubscriptionService {
             current_period_start: Some(period_start),
             current_period_end: Some(period_end),
             status: Some(SubscriptionStatus::Active.to_string()),
-            updated_at: Some(Utc::now()),
             ..Default::default()
         };
 
@@ -271,7 +268,6 @@ impl SubscriptionService {
         {
             let mut updates = UpdateSubscription {
                 status: Some(status.to_string()),
-                updated_at: Some(Utc::now()),
                 ..Default::default()
             };
 
@@ -346,7 +342,6 @@ impl Default for UpdateSubscription {
             current_period_end: None,
             cancel_at_period_end: None,
             trial_end: None,
-            updated_at: None,
         }
     }
 }

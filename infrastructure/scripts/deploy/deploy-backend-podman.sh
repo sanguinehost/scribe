@@ -183,8 +183,8 @@ build_backend() {
         BUILD_CMD="$BUILD_CMD --no-cache"
         log_info "Building with --no-cache option"
     fi
-    
-    BUILD_CMD="$BUILD_CMD $BACKEND_DIR"
+
+    BUILD_CMD="$BUILD_CMD ."
     
     log_info "Build command: $BUILD_CMD"
     if eval "$BUILD_CMD"; then

@@ -92,6 +92,8 @@ impl UsageTrackingService {
             let updates = UpdatePaymentUsageTracking {
                 tokens_used: Some(new_total),
                 tokens_limit: None, // Keep existing limit
+                period_start: None, // Keep existing period
+                period_end: None,   // Keep existing period
                 metadata_encrypted: encrypted_metadata,
                 metadata_nonce,
             };
@@ -118,6 +120,7 @@ impl UsageTrackingService {
         };
 
         let new_usage = NewPaymentUsageTracking {
+            id: Uuid::new_v4(),
             user_id,
             subscription_id,
             tokens_used,
