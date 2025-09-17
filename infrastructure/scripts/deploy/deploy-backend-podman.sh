@@ -21,11 +21,7 @@ CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-podman}
 AWS_REGION=${AWS_REGION:-us-east-1}
 AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "UNKNOWN")}
 ENVIRONMENT=${ENVIRONMENT:-staging}
-ECR_BACKEND_REPO="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ENVIRONMENT-scribe-backend"
-ECR_QDRANT_REPO="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ENVIRONMENT-scribe-qdrant"
-ECS_CLUSTER="$ENVIRONMENT-scribe-cluster"
-BACKEND_SERVICE="$ENVIRONMENT-scribe-backend"
-QDRANT_SERVICE="$ENVIRONMENT-scribe-qdrant"
+# ECR URLs will be set after argument parsing
 NO_CACHE=${NO_CACHE:-false}
 FEATURES=${FEATURES:-""}
 
@@ -116,6 +112,13 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Set ECR URLs after argument parsing
+ECR_BACKEND_REPO="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ENVIRONMENT-scribe-backend"
+ECR_QDRANT_REPO="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ENVIRONMENT-scribe-qdrant"
+ECS_CLUSTER="$ENVIRONMENT-scribe-cluster"
+BACKEND_SERVICE="$ENVIRONMENT-scribe-backend"
+QDRANT_SERVICE="$ENVIRONMENT-scribe-qdrant"
 
 # Validate runtime
 if ! command -v "$CONTAINER_RUNTIME" &> /dev/null; then

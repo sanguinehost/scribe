@@ -43,7 +43,7 @@
 			});
 
 			// Initialize Paddle with token (environment is auto-detected from token prefix)
-			if (window.Paddle) {
+			if (window.Paddle?.Initialize) {
 				window.Paddle.Initialize({
 					token: PUBLIC_PADDLE_CLIENT_SIDE_TOKEN,
 				});

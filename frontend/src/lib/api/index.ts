@@ -1462,6 +1462,13 @@ class ApiClient {
 	}
 
 	/**
+	 * Verify a transaction and create/update subscription if valid
+	 */
+	async verifyTransaction(transactionId: string): Promise<Result<any, ApiError>> {
+		return this.fetch<any>(`/api/payment/transaction/${transactionId}/verify`);
+	}
+
+	/**
 	 * Cancel current subscription
 	 */
 	async cancelSubscription(request: CancelSubscriptionRequest = {}): Promise<Result<SubscriptionResponse, ApiError>> {

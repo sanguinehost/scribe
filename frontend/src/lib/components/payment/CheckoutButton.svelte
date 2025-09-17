@@ -3,6 +3,7 @@
 	import { browser } from '$app/environment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { apiClient } from '$lib/api';
+	import type { PlanType } from '$lib/types';
 
 	// Props
 	export let planType: string = 'pro';
@@ -43,7 +44,7 @@
 
 			// Create payment transaction via our API using the apiClient
 			const result = await apiClient.createPayment({
-				plan_type: planType,
+				plan_type: planType as PlanType,
 				success_url: `${window.location.origin}/pay?transaction_id={transaction_id}`,
 				cancel_url: window.location.href // Return to current page on cancel
 			});
@@ -54,7 +55,7 @@
 				let errorMessage = 'Failed to create payment';
 				
 				// Handle specific error types from API client
-				if (error.type === 'RESPONSE_ERROR' && error.status) {
+				if ('status' in error && error.status) {
 					switch (error.status) {
 						case 401:
 							errorMessage = 'Please sign in to upgrade your plan';

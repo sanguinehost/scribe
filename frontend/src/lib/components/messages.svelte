@@ -270,6 +270,7 @@ import Settings from './settings/Settings.svelte';
 </script>
 
 <Tooltip.Provider>
+	<!-- @ts-ignore - on:loadmore is a custom event from infiniteScroll action -->
 	<div
 		bind:this={containerRef}
 		class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(mounted &&
@@ -282,7 +283,7 @@ import Settings from './settings/Settings.svelte';
 			threshold: 200,
 			debounce: 300
 		}}
-		onloadmore={() => onLoadMore?.()}
+		on:loadmore={() => onLoadMore?.()}
 	>
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
 		{#if settingsStore.isVisible || settingsStore.isTransitioning}

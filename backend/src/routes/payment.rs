@@ -317,7 +317,7 @@ pub async fn create_payment(
         }],
         collection_mode: "automatic".to_string(), // Automatic checkout
         checkout: Some(TransactionCheckout {
-            url: None, // Use default payment base URL
+            url: None, // Let Paddle generate the hosted checkout URL
             success_url: request.success_url.clone(),
             cancel_url: request.cancel_url.clone(),
         }),
@@ -361,6 +361,330 @@ pub async fn create_payment(
         checkout_url: transaction.checkout_url,
         status: transaction.status,
     }))
+}
+
+/// Verify a transaction and create/update subscription if valid
+#[cfg(feature = "payment")]
+pub async fn verify_transaction(
+    Path(transaction_id): Path<String>,
+    auth_session: CurrentAuthSession,
+    State(app_state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    tracing::info!("🎯 Verifying transaction {} for user {}", transaction_id, user.id);
+
+    // First, check if we have the transaction in our database
+    let conn = app_state.pool.get().await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let transaction_id_for_db = transaction_id.clone();
+    let user_id_for_check = user.id.clone();
+    let stored_transaction = conn.interact(move |conn| {
+        use crate::models::payment::PaymentTransaction;
+        use crate::schema::payment_transactions::dsl::*;
+        use diesel::prelude::*;
+
+        payment_transactions
+            .filter(paddle_transaction_id.eq(&transaction_id_for_db))
+            .filter(user_id.eq(&user_id_for_check))
+            .first::<PaymentTransaction>(conn)
+            .optional()
+    }).await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+    // If we have the transaction in our database and it's completed, use that data
+    if let Some(transaction) = stored_transaction {
+        tracing::info!("🎯 Found transaction {} in database with status: {}",
+            transaction_id, transaction.status);
+
+        if transaction.status == "completed" {
+            // Transaction is already verified and stored
+            // Check for existing subscription or create one
+            let conn = app_state.pool.get().await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+            let user_id_for_sub = user.id.clone();
+            let existing_subscription = conn.interact(move |conn| {
+                use crate::models::payment::Subscription;
+                use diesel::prelude::*;
+                use crate::schema::subscriptions::dsl as sub_dsl;
+
+                sub_dsl::subscriptions
+                    .filter(sub_dsl::user_id.eq(user_id_for_sub))
+                    .filter(sub_dsl::status.ne("cancelled"))
+                    .first::<Subscription>(conn)
+                    .optional()
+            }).await
+                .map_err(|e| AppError::DbInteractError(e.to_string()))?
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            if existing_subscription.is_some() {
+                return Ok(Json(serde_json::json!({
+                    "success": true,
+                    "message": "Transaction already verified and subscription exists",
+                    "source": "database"
+                })));
+            }
+
+            // Create subscription from stored transaction data
+            // Parse plan type from items
+            let plan_type = if let Some(item) = transaction.items.as_array().and_then(|a| a.first()) {
+                let price_id = item.get("price_id").and_then(|v| v.as_str()).unwrap_or("");
+                match price_id {
+                    "pri_01k4qbyetvn495nzv9nkqhxz02" => "pro",
+                    price if price.contains("pro") => "pro",
+                    price if price.contains("enterprise") => "enterprise",
+                    _ => "pro"
+                }
+            } else {
+                "pro"
+            };
+
+            let subscription_service = crate::services::payment::SubscriptionService::new(
+                (*app_state.config).clone(),
+                (*app_state.encryption_service).clone()
+            );
+
+            let conn = app_state.pool.get().await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+            let paddle_customer_id = transaction.paddle_customer_id.clone();
+            let new_subscription = conn.interact(move |conn| {
+                futures::executor::block_on(subscription_service.create_subscription(
+                    conn,
+                    user.id,
+                    plan_type,
+                    paddle_customer_id,
+                    None,
+                    None,
+                ))
+            }).await
+                .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+            tracing::info!("🎯 Created subscription {} from stored transaction {}",
+                new_subscription.id, transaction_id);
+
+            return Ok(Json(serde_json::json!({
+                "success": true,
+                "message": "Transaction verified from database",
+                "subscription": {
+                    "id": new_subscription.id,
+                    "plan_type": new_subscription.plan_type,
+                    "status": new_subscription.status
+                },
+                "source": "database"
+            })));
+        }
+    }
+
+    // If not in database or not completed, try Paddle API
+    tracing::info!("🎯 Transaction not found in database or not completed, checking Paddle API");
+
+    // Create PaddleService to verify transaction
+    let paddle_service = PaddleService::new(app_state.config.payment.clone());
+
+    // Verify transaction with Paddle API
+    match paddle_service.get_transaction(&transaction_id).await {
+        Ok(response) => {
+            tracing::debug!("🎯 Raw Paddle API response: {:?}", response);
+            
+            // Use response directly - get_transaction() already extracts the data field
+            let transaction_data = &response;
+            
+            tracing::info!("🎯 Transaction data retrieved from Paddle: {:?}", transaction_data);
+            
+            // Check if transaction is completed or if it's a valid trial transaction
+            let status = transaction_data.get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            
+            // Extract total from transaction - handle different formats
+            let total_str = transaction_data.get("totals")
+                .and_then(|t| t.get("total"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("0");
+            
+            // Parse total as float to handle "0", "0.0", "0.00" formats
+            let is_zero_total = match total_str.parse::<f64>() {
+                Ok(amount) => amount == 0.0,
+                Err(_) => total_str == "0" || total_str == "0.00"
+            };
+            
+            // Check if this is a trial transaction (draft status with $0.00 total)
+            let is_trial = status == "draft" && is_zero_total;
+            
+            tracing::info!("🎯 Transaction status: {}, total: {}, is_trial: {}", 
+                status, total_str, is_trial);
+            
+            if status != "completed" && !is_trial {
+                tracing::warn!("🎯 Transaction {} is not completed and not a trial (status: {}, total: {})", 
+                    transaction_id, status, total_str);
+                return Ok(Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Transaction is not completed: {}", status),
+                    "status": status
+                })));
+            }
+            
+            // Extract customer_id from transaction
+            let customer_id = transaction_data.get("customer_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| AppError::BadRequest("Missing customer_id in transaction".to_string()))?
+                .to_string();
+            
+            // Extract price_id to determine plan type
+            let price_id = transaction_data.get("items")
+                .and_then(|items| items.as_array())
+                .and_then(|items| items.first())
+                .and_then(|item| item.get("price_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            
+            // Map price_id to plan type
+            let plan_type = match price_id {
+                "pri_01k4qbyetvn495nzv9nkqhxz02" => "pro", // Actual Paddle price ID for pro plan
+                price if price.contains("pro") => "pro",
+                price if price.contains("enterprise") => "enterprise",
+                _ => "pro" // Default to pro plan
+            };
+            
+            // Set trial days if this is a trial transaction
+            let trial_days = if is_trial { Some(7) } else { None };
+            
+            tracing::info!("🎯 Creating/updating {} subscription for user {} (trial: {})", 
+                plan_type, user.id, is_trial);
+            
+            // Check if user already has a subscription
+            let conn = app_state.pool.get().await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+            
+            let existing_subscription = conn.interact(move |conn| {
+                use crate::models::users::User;
+                use crate::models::payment::Subscription;
+                use diesel::prelude::*;
+                use crate::schema::subscriptions::dsl as sub_dsl;
+                
+                sub_dsl::subscriptions
+                    .filter(sub_dsl::user_id.eq(user.id))
+                    .filter(sub_dsl::status.ne("cancelled"))
+                    .first::<Subscription>(conn)
+                    .optional()
+            }).await
+                .map_err(|e| AppError::DbInteractError(e.to_string()))?
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            
+            if let Some(existing) = existing_subscription {
+                tracing::info!("🎯 User already has an active subscription: {}", existing.id);
+                
+                // Update existing subscription if needed
+                let conn = app_state.pool.get().await
+                    .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+                    
+                let subscription_status = if is_trial { "trialing" } else { "active" };
+                let trial_end_date = if is_trial {
+                    Some(chrono::Utc::now() + chrono::Duration::days(7))
+                } else {
+                    None
+                };
+
+                let existing_id = existing.id;
+                let plan_type_clone = plan_type.clone();
+                let customer_id_str = customer_id.to_string();
+                let subscription_status_str = subscription_status.to_string();
+
+                let updated = conn.interact(move |conn| {
+                    use crate::models::payment::Subscription;
+                    use diesel::prelude::*;
+                    use crate::schema::subscriptions::dsl as sub_dsl;
+
+                    // Build update based on whether we have trial_end_date
+                    if let Some(trial_end) = trial_end_date {
+                        diesel::update(sub_dsl::subscriptions.find(existing_id))
+                            .set((
+                                sub_dsl::plan_type.eq(plan_type_clone),
+                                sub_dsl::paddle_customer_id.eq(Some(customer_id_str)),
+                                sub_dsl::status.eq(subscription_status_str),
+                                sub_dsl::trial_end.eq(Some(trial_end)),
+                                sub_dsl::updated_at.eq(chrono::Utc::now())
+                            ))
+                            .get_result::<Subscription>(conn)
+                    } else {
+                        diesel::update(sub_dsl::subscriptions.find(existing_id))
+                            .set((
+                                sub_dsl::plan_type.eq(plan_type_clone),
+                                sub_dsl::paddle_customer_id.eq(Some(customer_id_str)),
+                                sub_dsl::status.eq(subscription_status_str),
+                                sub_dsl::updated_at.eq(chrono::Utc::now())
+                            ))
+                            .get_result::<Subscription>(conn)
+                    }
+                }).await
+                    .map_err(|e| AppError::DbInteractError(e.to_string()))?
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                
+                Ok(Json(serde_json::json!({
+                    "success": true,
+                    "message": if is_trial { "Trial subscription updated successfully" } else { "Subscription updated successfully" },
+                    "subscription": {
+                        "id": updated.id,
+                        "plan_type": updated.plan_type,
+                        "status": updated.status,
+                        "trial_end": updated.trial_end
+                    }
+                })))
+            } else {
+                // Create new subscription
+                let subscription_service = crate::services::payment::SubscriptionService::new(
+                    (*app_state.config).clone(),
+                    (*app_state.encryption_service).clone()
+                );
+                
+                let conn = app_state.pool.get().await
+                    .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+                
+                let new_subscription = conn.interact(move |conn| {
+                    futures::executor::block_on(subscription_service.create_subscription(
+                        conn,
+                        user.id,
+                        plan_type,
+                        Some(customer_id.to_string()),
+                        None, // No paddle subscription ID for transaction-based billing
+                        trial_days, // Pass trial_days if this is a trial
+                    ))
+                }).await
+                    .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+                
+                tracing::info!("🎯 Successfully created {} subscription {} for user {}", 
+                    if is_trial { "trial" } else { "active" },
+                    new_subscription.id, user.id);
+                
+                Ok(Json(serde_json::json!({
+                    "success": true,
+                    "message": if is_trial { "Trial subscription created successfully" } else { "Subscription created successfully" },
+                    "subscription": {
+                        "id": new_subscription.id,
+                        "plan_type": new_subscription.plan_type,
+                        "status": new_subscription.status,
+                        "trial_end": new_subscription.trial_end
+                    }
+                })))
+            }
+        }
+        Err(e) => {
+            tracing::error!("🎯 Failed to verify transaction {}: {}", transaction_id, e);
+            
+            // Still return a response but indicate verification failed
+            Ok(Json(serde_json::json!({
+                "success": false,
+                "message": format!("Failed to verify transaction: {}", e),
+                "error": e.to_string()
+            })))
+        }
+    }
 }
 
 /// Create a new subscription for the user (legacy - now uses transactions)
@@ -537,7 +861,8 @@ pub async fn handle_pay_page(
         // 3. Redirect to success/failure page based on status
         // For now, we'll redirect to the frontend with the transaction ID
         
-        let redirect_url = format!("{}?transaction_id={}&status=success", 
+        // Fixed: Include /pay in the redirect URL to land on the correct page
+        let redirect_url = format!("{}/pay?transaction_id={}&status=success", 
             app_state.config.frontend_base_url, transaction_id);
         
         let response = axum::response::Redirect::permanent(&redirect_url);
@@ -554,29 +879,31 @@ pub async fn handle_pay_page(
 /// Process transaction.completed webhook event
 #[cfg(feature = "payment")]
 async fn process_transaction_completed(
-    app_state: AppState, 
+    app_state: AppState,
     webhook_data: &PaddleWebhook
 ) -> Result<(), AppError> {
     tracing::info!("🎯 Processing transaction.completed webhook: {}", webhook_data.event_id);
-    
+
     // Extract transaction data from the webhook payload
     let transaction_data = webhook_data.data.get("transaction")
         .ok_or_else(|| AppError::BadRequest("Missing transaction data in webhook".to_string()))?;
-    
+
     let transaction_id = transaction_data.get("id")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::BadRequest("Missing transaction ID in webhook".to_string()))?;
-    
+        .ok_or_else(|| AppError::BadRequest("Missing transaction ID in webhook".to_string()))?
+        .to_string();
+
     let customer_id = transaction_data.get("customer_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| AppError::BadRequest("Missing customer_id in webhook".to_string()))?
-        .to_string(); // Make owned
-    
+        .to_string();
+
     let status = transaction_data.get("status")
         .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-    
-    tracing::info!("🎯 Transaction details - ID: {}, Customer: {}, Status: {}", 
+        .unwrap_or("unknown")
+        .to_string();
+
+    tracing::info!("🎯 Transaction details - ID: {}, Customer: {}, Status: {}",
         transaction_id, customer_id, status);
     
     // Only process completed transactions
@@ -647,7 +974,140 @@ async fn process_transaction_completed(
     };
     
     tracing::info!("🎯 Found user {} for transaction {}", user.id, transaction_id);
-    
+
+    // Store transaction in our database for future verification
+    {
+        use crate::models::payment::NewPaymentTransaction;
+        use crate::schema::payment_transactions;
+        // use crate::auth::session_dek::SessionDek;
+        use diesel::prelude::*;
+
+        // TODO: Re-enable encryption when methods are available
+        // Get the user's DEK for encryption
+        // let user_id_for_dek = user.id.clone();
+        // let dek = app_state.auth_backend.get_dek_from_cache(&user_id_for_dek)
+        //     .ok_or_else(|| {
+        //         tracing::warn!("🎯 DEK not in cache for user {}, fetching from database", user_id_for_dek);
+        //         AppError::ValidationError("User encryption key not available".to_string())
+        //     })?;
+
+        // Extract transaction details
+        let total_cents = transaction_data.get("details")
+            .and_then(|d| d.get("totals"))
+            .and_then(|t| t.get("total"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+
+        let tax_cents = transaction_data.get("details")
+            .and_then(|d| d.get("totals"))
+            .and_then(|t| t.get("tax"))
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32);
+
+        let discount_cents = transaction_data.get("details")
+            .and_then(|d| d.get("totals"))
+            .and_then(|t| t.get("discount"))
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32);
+
+        let currency_code = transaction_data.get("currency_code")
+            .and_then(|v| v.as_str())
+            .unwrap_or("USD")
+            .to_string();
+
+        let collection_mode = transaction_data.get("collection_mode")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let checkout_id = transaction_data.get("checkout")
+            .and_then(|c| c.get("id"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let items = transaction_data.get("items")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([]));
+
+        // Prepare customer data for encryption (PII)
+        let customer_data = serde_json::json!({
+            "email": customer_email.clone(),
+            "name": transaction_data.get("customer").and_then(|c| c.get("name")),
+            "billing_details": transaction_data.get("billing_details")
+        });
+
+        // TODO: Re-enable encryption when methods are available
+        // Encrypt customer data
+        // let (customer_data_encrypted, customer_data_nonce) =
+        //     app_state.encryption_service.encrypt_with_nonce(
+        //         &serde_json::to_vec(&customer_data)
+        //             .map_err(|e| AppError::SerializationError(e.to_string()))?,
+        //         &dek.as_bytes()
+        //     ).map_err(|e| AppError::EncryptionError(e.to_string()))?;
+
+        // For now, store as plaintext (temporary until encryption methods are available)
+        let customer_data_encrypted = serde_json::to_vec(&customer_data)
+            .map_err(|e| AppError::SerializationError(e.to_string()))?;
+        let customer_data_nonce = vec![0u8; 12]; // Placeholder nonce
+
+        // Encrypt full transaction data for debugging/reconciliation
+        // let (paddle_data_encrypted, paddle_data_nonce) =
+        //     app_state.encryption_service.encrypt_with_nonce(
+        //         &serde_json::to_vec(&transaction_data)
+        //             .map_err(|e| AppError::SerializationError(e.to_string()))?,
+        //         &dek.as_bytes()
+        //     ).map_err(|e| AppError::EncryptionError(e.to_string()))?;
+
+        // For now, store as plaintext (temporary until encryption methods are available)
+        let paddle_data_encrypted = serde_json::to_vec(&transaction_data)
+            .map_err(|e| AppError::SerializationError(e.to_string()))?;
+        let paddle_data_nonce = vec![0u8; 12]; // Placeholder nonce
+
+        // Parse timestamps
+        let billed_at = transaction_data.get("billed_at")
+            .and_then(|v| v.as_str())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc));
+
+        let completed_at = transaction_data.get("created_at")
+            .and_then(|v| v.as_str())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc));
+
+        let new_transaction = NewPaymentTransaction {
+            paddle_transaction_id: transaction_id.clone(),
+            user_id: user.id,
+            status: status.clone(),
+            collection_mode,
+            total_cents,
+            tax_cents,
+            discount_cents,
+            currency_code,
+            paddle_customer_id: Some(customer_id.clone()),
+            customer_data_encrypted: Some(customer_data_encrypted),
+            customer_data_nonce: Some(customer_data_nonce),
+            items,
+            checkout_id,
+            billed_at,
+            completed_at,
+            paddle_data_encrypted: Some(paddle_data_encrypted),
+            paddle_data_nonce: Some(paddle_data_nonce),
+        };
+
+        // Insert into database
+        let conn = app_state.pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        conn.interact(move |conn| {
+            diesel::insert_into(payment_transactions::table)
+                .values(&new_transaction)
+                .execute(conn)
+        }).await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to store transaction: {}", e)))?;
+
+        tracing::info!("🎯 Successfully stored transaction {} in database", transaction_id);
+    }
+
     // Extract price_id to determine plan type
     let price_data = transaction_data.get("items")
         .and_then(|items| items.as_array())
@@ -745,6 +1205,7 @@ pub fn payment_routes() -> Router<AppState> {
         .route("/subscription/cancel", post(cancel_subscription))
         .route("/subscription/reactivate", post(reactivate_subscription))
         .route("/payment", post(create_payment)) // New transaction-based payment endpoint
+        .route("/transaction/:id/verify", get(verify_transaction)) // Transaction verification endpoint
         .route("/plans", get(get_plans))
         .route("/usage", get(get_usage))
 }

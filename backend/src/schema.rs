@@ -520,6 +520,40 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    payment_transactions (id) {
+        id -> Uuid,
+        #[max_length = 255]
+        paddle_transaction_id -> Varchar,
+        user_id -> Uuid,
+        #[max_length = 50]
+        status -> Varchar,
+        #[max_length = 50]
+        collection_mode -> Nullable<Varchar>,
+        total_cents -> Int4,
+        tax_cents -> Nullable<Int4>,
+        discount_cents -> Nullable<Int4>,
+        #[max_length = 3]
+        currency_code -> Varchar,
+        #[max_length = 255]
+        paddle_customer_id -> Nullable<Varchar>,
+        customer_data_encrypted -> Nullable<Bytea>,
+        customer_data_nonce -> Nullable<Bytea>,
+        items -> Jsonb,
+        #[max_length = 255]
+        checkout_id -> Nullable<Varchar>,
+        billed_at -> Nullable<Timestamptz>,
+        completed_at -> Nullable<Timestamptz>,
+        paddle_data_encrypted -> Nullable<Bytea>,
+        paddle_data_nonce -> Nullable<Bytea>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     plan_features (plan_type) {
         #[max_length = 50]
         plan_type -> Varchar,
@@ -764,6 +798,7 @@ diesel::joinable!(payment_usage_tracking -> subscriptions (subscription_id));
 diesel::joinable!(payment_usage_tracking -> users (user_id));
 diesel::joinable!(payments -> subscriptions (subscription_id));
 diesel::joinable!(payments -> users (user_id));
+diesel::joinable!(payment_transactions -> users (user_id));
 diesel::joinable!(player_chronicles -> users (user_id));
 diesel::joinable!(subscriptions -> plan_features (plan_type));
 diesel::joinable!(subscriptions -> users (user_id));
@@ -792,6 +827,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     old_votes,
     payment_usage_tracking,
     payments,
+    payment_transactions,
     plan_features,
     player_chronicles,
     sessions,

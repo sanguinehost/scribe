@@ -196,6 +196,8 @@ pub struct PaddleTransaction {
     pub status: String,
     pub collection_mode: String,
     pub checkout: Option<PaddleTransactionCheckout>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkout_url: Option<String>, // Paddle returns this at the root level for automatic collection mode
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub items: Vec<PaddleTransactionItem>,
@@ -622,42 +624,43 @@ impl PaddleService {
         );
 
         // Extract checkout URL from transaction with detailed logging
-        let checkout_url = match &transaction.checkout {
-            Some(checkout) => {
-                info!("🎯 Transaction has checkout field");
-                match &checkout.url {
-                    Some(url) => {
-                        info!(checkout_url = %url, "🎯 Found checkout URL from Paddle");
-                        url.clone()
-                    },
-                    None => {
-                        warn!("🎯 Checkout field exists but URL is None - using fallback");
-                        let fallback_url = format!("{}/pay?_ptxn={}",
-                            &self.config.payment_base_url,
-                            transaction.id);
-                        info!(
-                            fallback_url = %fallback_url,
-                            transaction_id = %transaction.id,
-                            payment_base_url = %self.config.payment_base_url,
-                            "🎯 Using fallback checkout URL (checkout field exists but no URL)"
-                        );
-                        fallback_url
-                    }
+        // Paddle returns checkout_url at root level for automatic collection mode
+        let checkout_url = if let Some(url) = &transaction.checkout_url {
+            info!(checkout_url = %url, "🎯 Found checkout URL from Paddle at root level");
+            url.clone()
+        } else if let Some(checkout) = &transaction.checkout {
+            info!("🎯 Transaction has checkout field, checking for nested URL");
+            match &checkout.url {
+                Some(url) => {
+                    info!(checkout_url = %url, "🎯 Found checkout URL from Paddle in checkout field");
+                    url.clone()
+                },
+                None => {
+                    warn!("🎯 Checkout field exists but URL is None - using fallback");
+                    let fallback_url = format!("{}/pay?_ptxn={}",
+                        &self.config.payment_base_url,
+                        transaction.id);
+                    info!(
+                        fallback_url = %fallback_url,
+                        transaction_id = %transaction.id,
+                        payment_base_url = %self.config.payment_base_url,
+                        "🎯 Using fallback checkout URL (checkout field exists but no URL)"
+                    );
+                    fallback_url
                 }
-            },
-            None => {
-                warn!("🎯 No checkout field in transaction - using fallback");
-                let fallback_url = format!("{}/pay?_ptxn={}",
-                    &self.config.payment_base_url,
-                    transaction.id);
-                info!(
-                    fallback_url = %fallback_url,
-                    transaction_id = %transaction.id,
-                    payment_base_url = %self.config.payment_base_url,
-                    "🎯 Using fallback checkout URL (no checkout field)"
-                );
-                fallback_url
             }
+        } else {
+            warn!("🎯 No checkout_url at root level and no checkout field in transaction - using fallback");
+            let fallback_url = format!("{}/pay?_ptxn={}",
+                &self.config.payment_base_url,
+                transaction.id);
+            info!(
+                fallback_url = %fallback_url,
+                transaction_id = %transaction.id,
+                payment_base_url = %self.config.payment_base_url,
+                "🎯 Using fallback checkout URL (no checkout data found)"
+            );
+            fallback_url
         };
 
         let transaction_response = CreateTransactionResponse {
@@ -778,6 +781,72 @@ impl PaddleService {
 
         debug!(subscription_id = %subscription_id, "Retrieved Paddle subscription");
         Ok(subscription)
+    }
+
+    /// Get a transaction by ID from Paddle
+    pub async fn get_transaction(
+        &self,
+        transaction_id: &str,
+    ) -> Result<serde_json::Value, AppError> {
+        let api_key = self
+            .config
+            .paddle_api_key
+            .as_ref()
+            .ok_or_else(|| AppError::ConfigurationError("Paddle API key not configured".to_string()))?;
+
+        let api_url = if self.config.paddle_sandbox_mode {
+            "https://sandbox-api.paddle.com"
+        } else {
+            "https://api.paddle.com"
+        };
+
+        let url = format!(
+            "{}/transactions/{}", 
+            api_url,
+            transaction_id
+        );
+
+        tracing::info!("🎯 Getting transaction {} from Paddle API", transaction_id);
+
+        let response = self.client
+            .get(&url)
+            .bearer_auth(api_key)
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get transaction from Paddle: {}", e);
+                AppError::ExternalServiceError(format!("Failed to get transaction from Paddle: {}", e))
+            })?;
+
+        let status = response.status();
+        let response_text = response.text().await.map_err(|e| {
+            tracing::error!("Failed to read Paddle response: {}", e);
+            AppError::ExternalServiceError(format!("Failed to read Paddle response: {}", e))
+        })?;
+
+        tracing::info!("🎯 Paddle transaction response status: {}, body: {}", status, response_text);
+
+        if !status.is_success() {
+            tracing::error!("Paddle API error (status {}): {}", status, response_text);
+            return Err(AppError::ExternalServiceError(format!(
+                "Paddle API error: {} - {}",
+                status, response_text
+            )));
+        }
+
+        // Parse response as JSON
+        let response_json: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| {
+                tracing::error!("Failed to parse Paddle response: {}", e);
+                AppError::ExternalServiceError(format!("Failed to parse Paddle response: {}", e))
+            })?;
+
+        // Extract data field if it exists
+        if let Some(data) = response_json.get("data") {
+            Ok(data.clone())
+        } else {
+            Ok(response_json)
+        }
     }
 
     /// Cancel a subscription

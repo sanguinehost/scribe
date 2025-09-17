@@ -14,8 +14,8 @@
 		onClose?: () => void;
 	} = $props();
 
-	let lightboxElement: HTMLDivElement;
-	let imageElement: HTMLImageElement;
+	let lightboxElement = $state<HTMLDivElement>();
+	let imageElement = $state<HTMLImageElement>();
 	let isImageLoaded = $state(false);
 	let isImageError = $state(false);
 

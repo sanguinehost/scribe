@@ -34,7 +34,7 @@
 	});
 
 	// Calculate max allowed tokens (derived from model and total limit)
-	const max_allowed = $derived(() => Math.min(total_token_limit, maxContextSize));
+	const max_allowed = $derived(Math.min(total_token_limit, maxContextSize()));
 
 	// Load model capabilities on mount
 	onMount(() => {

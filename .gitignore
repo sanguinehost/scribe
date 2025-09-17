@@ -62,3 +62,4 @@ uploads/
 
 # Downloaded LLM models (GGUF files)
 models/
+.vercel
