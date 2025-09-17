@@ -303,6 +303,39 @@ pub struct PaymentConfig {
     /// Grace period in days after subscription expires
     #[serde(default = "default_grace_period_days")]
     pub grace_period_days: i32,
+
+    // Credit System Configuration
+    /// Path to subscription tiers JSON configuration file
+    #[serde(default = "default_subscription_config_path")]
+    pub subscription_config_path: String,
+
+    /// Enable credit system (feature flag)
+    #[serde(default = "default_credits_enabled")]
+    pub credits_enabled: bool,
+
+    /// Enable soft limits (feature flag)
+    #[serde(default = "default_soft_limits_enabled")]
+    pub soft_limits_enabled: bool,
+
+    /// Days until credits expire (0 = never)
+    #[serde(default = "default_credit_expiry_days")]
+    pub credit_expiry_days: u32,
+
+    /// Minimum credits that can be purchased
+    #[serde(default = "default_min_credit_purchase")]
+    pub min_credit_purchase: u32,
+
+    /// Maximum credit balance allowed
+    #[serde(default = "default_max_credit_balance")]
+    pub max_credit_balance: u32,
+
+    /// Enable daily usage tracking
+    #[serde(default = "default_usage_tracking_enabled")]
+    pub usage_tracking_enabled: bool,
+
+    /// Daily usage reset time (UTC hour, 0-23)
+    #[serde(default = "default_usage_reset_hour_utc")]
+    pub usage_reset_hour_utc: u8,
 }
 
 #[cfg(feature = "payment")]
@@ -316,6 +349,14 @@ impl std::fmt::Debug for PaymentConfig {
             .field("free_tier_token_limit", &self.free_tier_token_limit)
             .field("enforce_limits", &self.enforce_limits)
             .field("grace_period_days", &self.grace_period_days)
+            .field("subscription_config_path", &self.subscription_config_path)
+            .field("credits_enabled", &self.credits_enabled)
+            .field("soft_limits_enabled", &self.soft_limits_enabled)
+            .field("credit_expiry_days", &self.credit_expiry_days)
+            .field("min_credit_purchase", &self.min_credit_purchase)
+            .field("max_credit_balance", &self.max_credit_balance)
+            .field("usage_tracking_enabled", &self.usage_tracking_enabled)
+            .field("usage_reset_hour_utc", &self.usage_reset_hour_utc)
             .finish()
     }
 }
@@ -331,6 +372,14 @@ impl Default for PaymentConfig {
             free_tier_token_limit: default_free_tier_token_limit(),
             enforce_limits: default_enforce_limits(),
             grace_period_days: default_grace_period_days(),
+            subscription_config_path: default_subscription_config_path(),
+            credits_enabled: default_credits_enabled(),
+            soft_limits_enabled: default_soft_limits_enabled(),
+            credit_expiry_days: default_credit_expiry_days(),
+            min_credit_purchase: default_min_credit_purchase(),
+            max_credit_balance: default_max_credit_balance(),
+            usage_tracking_enabled: default_usage_tracking_enabled(),
+            usage_reset_hour_utc: default_usage_reset_hour_utc(),
         }
     }
 }
@@ -358,6 +407,46 @@ fn default_enforce_limits() -> bool {
 #[cfg(feature = "payment")]
 fn default_grace_period_days() -> i32 {
     7 // 7 days grace period after subscription expires
+}
+
+#[cfg(feature = "payment")]
+fn default_subscription_config_path() -> String {
+    "./config/subscription_tiers.json".to_string()
+}
+
+#[cfg(feature = "payment")]
+fn default_credits_enabled() -> bool {
+    false // Credit system disabled by default (gradual rollout)
+}
+
+#[cfg(feature = "payment")]
+fn default_soft_limits_enabled() -> bool {
+    false // Soft limits disabled by default (gradual rollout)
+}
+
+#[cfg(feature = "payment")]
+fn default_credit_expiry_days() -> u32 {
+    0 // Credits never expire by default
+}
+
+#[cfg(feature = "payment")]
+fn default_min_credit_purchase() -> u32 {
+    250 // Minimum 250 credits per purchase
+}
+
+#[cfg(feature = "payment")]
+fn default_max_credit_balance() -> u32 {
+    100000 // Maximum 100,000 credit balance
+}
+
+#[cfg(feature = "payment")]
+fn default_usage_tracking_enabled() -> bool {
+    true // Usage tracking enabled by default
+}
+
+#[cfg(feature = "payment")]
+fn default_usage_reset_hour_utc() -> u8 {
+    0 // Reset at midnight UTC
 }
 
 impl Config {
