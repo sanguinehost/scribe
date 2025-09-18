@@ -539,6 +539,28 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    payment_audit_logs (id) {
+        id -> Uuid,
+        #[max_length = 64]
+        user_id_hash -> Varchar,
+        #[max_length = 50]
+        event_type -> Varchar,
+        amount -> Nullable<Int4>,
+        #[max_length = 30]
+        event_category -> Varchar,
+        success -> Bool,
+        #[max_length = 50]
+        error_code -> Nullable<Varchar>,
+        #[max_length = 64]
+        external_reference_hash -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     payment_transactions (id) {
         id -> Uuid,
         #[max_length = 255]
@@ -913,6 +935,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     old_documents,
     old_suggestions,
     old_votes,
+    payment_audit_logs,
     payment_transactions,
     payment_usage_tracking,
     payments,

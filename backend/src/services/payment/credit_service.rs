@@ -4,6 +4,7 @@ use crate::errors::AppError;
 use crate::models::credit::{CreditBalance, CreditTransaction, NewCreditTransaction};
 use crate::models::users::UserDbQuery;
 use crate::schema::{credit_transactions, user_credits, users};
+use crate::services::payment::{PaymentAuditService, AuditEventType};
 use chrono::{DateTime, Utc, Datelike};
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
@@ -20,9 +21,11 @@ use uuid::Uuid;
 /// - Credit consumption
 /// - Monthly credit grants for subscriptions
 /// - Transaction history with user DEK encryption
+/// - Privacy-focused audit logging
 #[derive(Clone)]
 pub struct CreditService {
     config: Arc<Config>,
+    audit_service: PaymentAuditService,
 }
 
 /// Helper struct for encrypted transaction data
@@ -37,6 +40,7 @@ impl CreditService {
     pub fn new(config: Arc<Config>) -> Self {
         Self {
             config,
+            audit_service: PaymentAuditService::new(),
         }
     }
 
@@ -149,7 +153,7 @@ impl CreditService {
         };
 
         // Update balance and record transaction in a single transaction
-        conn.transaction::<_, AppError, _>(|conn| {
+        let result = conn.transaction::<_, AppError, _>(|conn| {
             // Insert transaction
             diesel::insert_into(credit_transactions::table)
                 .values(&transaction)
@@ -176,7 +180,20 @@ impl CreditService {
                     error!("Failed to update credit balance: {}", e);
                     AppError::DatabaseQueryError(e.to_string())
                 })
-        })
+        })?;
+
+        // Log the credit addition in audit log (privacy-focused)
+        // Don't fail the transaction if audit logging fails
+        if let Err(e) = self.audit_service.log_credit_operation(
+            conn,
+            user_id,
+            AuditEventType::CreditAdded,
+            amount,
+        ) {
+            error!("Failed to audit log credit addition: {}", e);
+        }
+
+        Ok(result)
     }
 
     /// Deduct credits from user account (usage)
@@ -229,7 +246,7 @@ impl CreditService {
         };
 
         // Update balance and record transaction
-        conn.transaction::<_, AppError, _>(|conn| {
+        let result = conn.transaction::<_, AppError, _>(|conn| {
             // Insert transaction
             diesel::insert_into(credit_transactions::table)
                 .values(&transaction)
@@ -252,7 +269,20 @@ impl CreditService {
                     error!("Failed to update credit balance: {}", e);
                     AppError::DatabaseQueryError(e.to_string())
                 })
-        })
+        })?;
+
+        // Log the credit deduction in audit log (privacy-focused)
+        // Don't fail the transaction if audit logging fails
+        if let Err(e) = self.audit_service.log_credit_operation(
+            conn,
+            user_id,
+            AuditEventType::CreditDeducted,
+            amount,
+        ) {
+            error!("Failed to audit log credit deduction: {}", e);
+        }
+
+        Ok(result)
     }
 
     /// Grant monthly credits based on subscription tier
@@ -392,7 +422,7 @@ impl CreditService {
         let total_credits = package.credits + bonus_credits;
 
         // Add credits to user account
-        self.add_credits(
+        let result = self.add_credits(
             conn,
             user_id,
             total_credits,
@@ -406,7 +436,21 @@ impl CreditService {
                 "total_credits": total_credits,
                 "price_cents": package.price_cents
             })),
-        )
+        )?;
+
+        // Log the payment processed event (separate from credit addition)
+        if let Err(e) = self.audit_service.log_payment_event(
+            conn,
+            user_id,
+            package.price_cents,
+            true, // success
+            None, // no error code
+            Some(paddle_transaction_id),
+        ) {
+            error!("Failed to audit log payment event: {}", e);
+        }
+
+        Ok(result)
     }
 
     /// Encrypt transaction data with user's DEK

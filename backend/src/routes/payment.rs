@@ -19,6 +19,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "payment")]
 use uuid::Uuid;
+#[cfg(feature = "payment")]
+use tracing::error;
 
 #[cfg(feature = "payment")]
 use crate::{
@@ -27,7 +29,8 @@ use crate::{
     models::payment::{PlanFeatures, Subscription, SubscriptionStatus},
     services::payment::{
         paddle_service::{CreateTransactionRequest, CreateTransactionResponse, TransactionItem, TransactionCheckout, TransactionBillingDetails, PaddleWebhook, PaddleEventType},
-        PaddleService, SubscriptionService, UsageTrackingService
+        PaddleService, SubscriptionService, UsageTrackingService,
+        PaymentAuditService, AuditEventType,
     },
     state::AppState,
 };
@@ -781,7 +784,10 @@ pub async fn paddle_webhook(
         return Err(e);
     }
     tracing::info!("🎯 Webhook signature verified successfully");
-    
+
+    // Create audit service for logging webhook events
+    let audit_service = PaymentAuditService::new();
+
     // 4. Try to parse as generic JSON first to see the structure
     match serde_json::from_slice::<serde_json::Value>(&body) {
         Ok(raw_json) => {
@@ -810,10 +816,36 @@ pub async fn paddle_webhook(
             tracing::error!("🎯 WEBHOOK ERROR: Failed to parse as PaddleWebhook: {}", e);
             AppError::BadRequest(format!("Invalid PaddleWebhook payload: {}", e))
         })?;
-    
-    tracing::info!("🎯 Successfully parsed webhook data: event_type={:?}, event_id={}", 
+
+    tracing::info!("🎯 Successfully parsed webhook data: event_type={:?}, event_id={}",
         webhook_data.event_type, webhook_data.event_id);
-    
+
+    // Log webhook event to audit log (privacy-focused)
+    {
+        let conn = app_state.pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let event_type_str = format!("{:?}", webhook_data.event_type);
+        let external_ref = webhook_data.data.get("transaction")
+            .and_then(|t| t.get("id"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        if let Err(e) = conn.interact(move |conn| {
+            audit_service.log_webhook_event(
+                conn,
+                &event_type_str,
+                external_ref.as_deref(),
+            )
+        }).await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))
+            .and_then(|r| r)
+        {
+            error!("Failed to audit log webhook event: {}", e);
+            // Don't fail the webhook processing if audit logging fails
+        }
+    }
+
     // 6. Process webhook based on event type
     match webhook_data.event_type {
         PaddleEventType::TransactionCompleted => {
@@ -1148,9 +1180,40 @@ async fn process_transaction_completed(
     }).await
     .map_err(|e| AppError::DbInteractError(e.to_string()))??;
     
-    tracing::info!("🎯 Successfully created subscription {} for user {} from transaction {}", 
+    tracing::info!("🎯 Successfully created subscription {} for user {} from transaction {}",
         subscription.id, user.id, transaction_id);
-    
+
+    // Log successful payment event to audit log
+    {
+        // Get amount from transaction data
+        let total_cents = transaction_data.get("details")
+            .and_then(|d| d.get("totals"))
+            .and_then(|t| t.get("total"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+
+        let audit_service = PaymentAuditService::new();
+        let conn = app_state.pool.get().await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        if let Err(e) = conn.interact(move |conn| {
+            audit_service.log_payment_event(
+                conn,
+                user.id,
+                total_cents,
+                true, // success
+                None, // no error code
+                Some(&transaction_id),
+            )
+        }).await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))
+            .and_then(|r| r)
+        {
+            error!("Failed to audit log payment event: {}", e);
+            // Don't fail the webhook processing if audit logging fails
+        }
+    }
+
     Ok(())
 }
 

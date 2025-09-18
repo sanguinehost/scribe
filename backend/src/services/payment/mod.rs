@@ -4,6 +4,9 @@
 //! When the payment feature is disabled, this module is completely excluded from compilation.
 
 #[cfg(feature = "payment")]
+pub mod audit_service;
+
+#[cfg(feature = "payment")]
 pub mod credit_service;
 
 #[cfg(feature = "payment")]
@@ -32,3 +35,6 @@ pub use subscription_service::SubscriptionService;
 
 #[cfg(feature = "payment")]
 pub use usage_tracking_service::UsageTrackingService;
+
+#[cfg(feature = "payment")]
+pub use audit_service::{PaymentAuditService, AuditEventType};
