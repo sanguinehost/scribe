@@ -8,6 +8,8 @@ pub mod chat_override;
 pub mod chats;
 pub mod chronicle;
 pub mod chronicle_event;
+#[cfg(feature = "payment")]
+pub mod credit;
 pub mod documents;
 pub mod email_verification;
 pub mod lorebook_dtos;
@@ -31,6 +33,8 @@ pub use chat_override::*;
 pub use chats::*;
 pub use chronicle::*;
 pub use chronicle_event::*;
+#[cfg(feature = "payment")]
+pub use credit::*;
 pub use documents::*;
 pub use email_verification::*;
 pub use lorebook_dtos::*;
