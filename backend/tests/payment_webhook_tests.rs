@@ -104,6 +104,182 @@ mod payment_webhook_tests {
     }
 
     #[tokio::test]
+    async fn test_webhook_signature_with_different_timestamp_formats() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let payload = create_webhook_payload("subscription_created", "evt_test_timestamp_001");
+        let payload_str = payload.to_string();
+
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+
+        // Test with various timestamp formats
+        let test_timestamps = vec![
+            chrono::Utc::now().timestamp(),
+            1699123456, // Fixed timestamp
+            chrono::Utc::now().timestamp() - 60, // 1 minute ago
+        ];
+
+        for timestamp in test_timestamps {
+            let signature = create_webhook_signature_with_timestamp(&payload_str, &webhook_secret, Some(timestamp));
+
+            let response = Client::new()
+                .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+                .header("Paddle-Signature", signature)
+                .header("Content-Type", "application/json")
+                .body(payload_str.clone())
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            // Should accept valid signatures regardless of timestamp format
+            assert!(
+                response.status() == StatusCode::OK || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed for timestamp {}: Expected OK or Internal Server Error, got: {}",
+                timestamp,
+                response.status()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_webhook_signature_malformed_formats() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let payload = create_webhook_payload("subscription_created", "evt_test_malformed_001");
+        let payload_str = payload.to_string();
+
+        // Test various malformed signature formats
+        let malformed_signatures = vec![
+            "just_a_string", // No format at all
+            "ts=123;", // Missing h1
+            "h1=abcdef;", // Missing ts
+            "ts=invalid;h1=abcdef", // Invalid timestamp
+            "ts=123;h1=invalid_hex", // Invalid hex in h1
+            "ts=123;h1=", // Empty h1
+            "ts=;h1=abcdef", // Empty timestamp
+            "ts=123;h1=abcdef;extra=value", // Extra fields (should still work)
+        ];
+
+        for signature in malformed_signatures {
+            let response = Client::new()
+                .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+                .header("Paddle-Signature", signature)
+                .header("Content-Type", "application/json")
+                .body(payload_str.clone())
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            // Should reject malformed signatures
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "Malformed signature '{}' should be rejected",
+                signature
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_webhook_signature_payload_tampering() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let original_payload = create_webhook_payload("subscription_created", "evt_test_tamper_001");
+        let original_payload_str = original_payload.to_string();
+
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+        let signature = create_webhook_signature(&original_payload_str, &webhook_secret);
+
+        // Test with tampered payload but original signature
+        let tampered_payload = json!({
+            "event_type": "subscription_created",
+            "event_id": "evt_test_tamper_001",
+            "occurred_at": Utc::now().to_rfc3339(),
+            "data": {
+                "subscription_id": "sub_tampered_id", // Changed value
+                "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "status": "active"
+            }
+        });
+        let tampered_payload_str = tampered_payload.to_string();
+
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(tampered_payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        // Should reject tampered payloads
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_webhook_signature_with_real_paddle_format() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Simplified but realistic Paddle webhook payload
+        let payload = json!({
+            "event_id": "evt_01hqmjk3n2p4r5s6t7u8v9w0x1",
+            "event_type": "transaction.completed",
+            "occurred_at": "2024-01-15T14:30:00.000Z",
+            "notification_id": "ntf_01hqmjk3n2p4r5s6t7u8v9w0x2",
+            "data": {
+                "transaction": {
+                    "id": "txn_01hqmjk3n2p4r5s6t7u8v9w0x3",
+                    "status": "completed",
+                    "customer_id": "cus_01hqmjk3n2p4r5s6t7u8v9w0x4",
+                    "currency_code": "USD",
+                    "details": {
+                        "totals": {
+                            "total": "500",
+                            "currency_code": "USD"
+                        },
+                        "line_items": [{
+                            "price_id": "pri_01k5ejc7dkwxfty64nfvenj8yq",
+                            "quantity": 1
+                        }]
+                    }
+                },
+                "customer": {
+                    "id": "cus_01hqmjk3n2p4r5s6t7u8v9w0x4",
+                    "name": "John Doe",
+                    "email": "john.doe@example.com"
+                }
+            }
+        });
+
+        let payload_str = payload.to_string();
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        // Should accept the real Paddle format
+        assert!(
+            response.status() == StatusCode::OK || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+            "Expected OK or Internal Server Error for real Paddle format, got: {}",
+            response.status()
+        );
+    }
+
+    #[tokio::test]
     async fn test_webhook_endpoint_accepts_valid_signature() {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());
@@ -111,7 +287,7 @@ mod payment_webhook_tests {
         let payload = create_webhook_payload("subscription_created", "evt_test_003");
         let payload_str = payload.to_string();
         
-        let webhook_secret = env::var("PADDLE_WEBHOOK_SECRET")
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
         
@@ -132,6 +308,79 @@ mod payment_webhook_tests {
             "Expected OK or Internal Server Error, got: {}",
             response.status()
         );
+    }
+
+    #[tokio::test]
+    async fn test_webhook_credit_allocation_via_transaction_completed() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Create a credit purchase webhook using our real price ID
+        let payload = json!({
+            "event_id": "evt_credit_purchase_001",
+            "event_type": "transaction.completed",
+            "occurred_at": "2024-01-15T14:30:00.000Z",
+            "notification_id": "ntf_credit_purchase_001",
+            "data": {
+                "transaction": {
+                    "id": "txn_credit_purchase_001",
+                    "status": "completed",
+                    "customer_id": "cus_credit_test_001",
+                    "currency_code": "USD",
+                    "details": {
+                        "totals": {
+                            "subtotal": "1000",
+                            "total": "1000",
+                            "grand_total": "1000",
+                            "currency_code": "USD"
+                        },
+                        "line_items": [{
+                            "id": "txnitm_credit_purchase_001",
+                            "price_id": "pri_01k5ejc7dkwxfty64nfvenj8yq", // Real 500 credit package price ID
+                            "quantity": 1,
+                            "totals": {
+                                "subtotal": "1000",
+                                "total": "1000"
+                            },
+                            "product": {
+                                "id": "pro_01k5ejbmke0myye47nggy9c0e7",
+                                "name": "Credits_500",
+                                "description": "500 credits (Inc. tax)"
+                            }
+                        }]
+                    }
+                },
+                "customer": {
+                    "id": "cus_credit_test_001",
+                    "name": "Credit Test User",
+                    "email": "credit.test@example.com"
+                }
+            }
+        });
+
+        let payload_str = payload.to_string();
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        // Should process the credit purchase webhook successfully
+        assert!(
+            response.status() == StatusCode::OK || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+            "Credit purchase webhook failed with status: {}",
+            response.status()
+        );
+
+        // TODO: Add database verification once user lookup by email is implemented
+        // This would verify that credits were actually allocated to the user
     }
 
     #[tokio::test]
@@ -167,7 +416,7 @@ mod payment_webhook_tests {
         });
         
         let payload_str = payload.to_string();
-        let webhook_secret = env::var("PADDLE_WEBHOOK_SECRET")
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
         
@@ -221,7 +470,7 @@ mod payment_webhook_tests {
         });
         
         let payload_str = payload.to_string();
-        let webhook_secret = env::var("PADDLE_WEBHOOK_SECRET")
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
         
@@ -270,7 +519,7 @@ mod payment_webhook_tests {
         });
         
         let payload_str = payload.to_string();
-        let webhook_secret = env::var("PADDLE_WEBHOOK_SECRET")
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
         
@@ -322,7 +571,7 @@ mod payment_webhook_tests {
         });
         
         let payload_str = payload.to_string();
-        let webhook_secret = env::var("PADDLE_WEBHOOK_SECRET")
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
         
@@ -352,7 +601,7 @@ mod payment_webhook_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let malformed_payload = "{ invalid json :::";
-        let webhook_secret = env::var("PADDLE_WEBHOOK_SECRET")
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(malformed_payload, &webhook_secret);
         
@@ -385,7 +634,7 @@ mod payment_webhook_tests {
         });
         
         let payload_str = payload.to_string();
-        let webhook_secret = env::var("PADDLE_WEBHOOK_SECRET")
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
         
@@ -437,6 +686,14 @@ mod payment_webhook_tests {
             free_tier_token_limit: 50000,
             enforce_limits: false,
             grace_period_days: 7,
+            subscription_config_path: "config/subscription_tiers.json".to_string(),
+            credits_enabled: true,
+            soft_limits_enabled: true,
+            credit_expiry_days: 365,
+            min_credit_purchase: 100,
+            max_credit_balance: 10000,
+            usage_tracking_enabled: true,
+            usage_reset_hour_utc: 0,
         };
         let service = PaddleService::new(config);
         

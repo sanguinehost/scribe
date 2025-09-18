@@ -233,6 +233,263 @@ pub async fn webhook_rate_limit_middleware(
     next.run(request).await
 }
 
+/// Credit checking middleware for chat generation endpoints
+/// This middleware checks if the user has sufficient credits for Pro model usage
+pub async fn credit_check_middleware(
+    request: Request,
+    next: Next,
+) -> Response {
+    // Only apply credit checking to the generate endpoint
+    let uri_path = request.uri().path();
+    if !uri_path.contains("/generate") {
+        return next.run(request).await;
+    }
+
+    // Check if payment feature is enabled
+    #[cfg(not(feature = "payment"))]
+    {
+        return next.run(request).await;
+    }
+
+    #[cfg(feature = "payment")]
+    {
+        use crate::services::payment::{CreditService, SoftLimitService};
+        use crate::auth::user_store::Backend as AuthBackend;
+        use axum_login::AuthSession;
+        use crate::AppState;
+        use axum::extract::State;
+        use axum::http::StatusCode;
+        use axum::response::IntoResponse;
+        use axum::Json;
+        use serde_json::{json, Value};
+        use std::sync::Arc;
+
+        // Extract app state from request extensions
+        let Some(state) = request.extensions().get::<Arc<AppState>>().cloned() else {
+            // If we can't get state, continue without checking
+            return next.run(request).await;
+        };
+
+        // Extract auth session to get user ID
+        let Some(auth_session) = request.extensions().get::<AuthSession<AuthBackend>>().cloned() else {
+            // No auth session, continue (will be rejected by auth middleware anyway)
+            return next.run(request).await;
+        };
+
+        // Get user ID from session
+        let Some(user) = auth_session.user else {
+            // Not logged in, continue (will be rejected by auth middleware)
+            return next.run(request).await;
+        };
+
+        // Check soft limits if enabled
+        let soft_limit_service = SoftLimitService::new(state.config.clone());
+        if soft_limit_service.is_enabled() {
+            // Get database connection
+            let Ok(conn) = state.pool.get().await else {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "error": "Database connection error"
+                    }))
+                ).into_response();
+            };
+
+            // Check soft limit status
+            let user_id = user.id;
+            let check_result = conn.interact(move |conn| {
+                // Get or create daily usage
+                let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
+
+                // Get user's subscription tier (default to "free" if not found)
+                let tier = "free"; // TODO: Get actual tier from subscription service
+
+                // Get daily limit for tier
+                let daily_limit = soft_limit_service.get_daily_limit(tier);
+
+                // Calculate usage percentage
+                let usage_percentage = (usage.message_count as f32 / daily_limit as f32 * 100.0) as i32;
+
+                // Check if soft limit is exceeded
+                if usage.message_count >= daily_limit {
+                    // Check if hard limit grace period has passed
+                    if usage.soft_limit_triggered_at.is_some() {
+                        // For now, we'll allow with warning (could enforce hard stop here)
+                        Ok::<_, AppError>((true, usage_percentage, true)) // (has_limit, percentage, is_over_limit)
+                    } else {
+                        // First time hitting limit
+                        Ok::<_, AppError>((true, usage_percentage, true))
+                    }
+                } else {
+                    Ok::<_, AppError>((true, usage_percentage, false))
+                }
+            }).await;
+
+            match check_result {
+                Ok(Ok((has_limit, usage_percentage, is_over_limit))) => {
+                    if is_over_limit {
+                        // Add warning header but continue (soft limit, not hard limit)
+                        warn!(
+                            user_id = %user.id,
+                            usage_percentage = usage_percentage,
+                            "User exceeded daily soft limit"
+                        );
+                        // Could return 429 Too Many Requests here for hard enforcement
+                        // For now, we'll continue and let the handler decide
+                    }
+                },
+                Ok(Err(e)) => {
+                    warn!("Failed to check soft limits: {}", e);
+                    // Continue on error - don't block the request
+                },
+                Err(e) => {
+                    warn!("Database interaction error checking soft limits: {}", e);
+                    // Continue on error - don't block the request
+                }
+            }
+        }
+
+        // Continue with request - actual credit checking happens in generate_chat_response
+        next.run(request).await
+    }
+}
+
+/// Soft limit enforcement middleware for daily usage limits
+#[cfg(feature = "payment")]
+pub async fn soft_limit_enforcement_middleware(
+    request: Request,
+    next: Next,
+) -> Response {
+    use crate::services::payment::{SoftLimitService, SubscriptionService};
+    use crate::auth::user_store::Backend as AuthBackend;
+    use axum_login::AuthSession;
+    use crate::AppState;
+    use axum::http::{StatusCode, HeaderMap, HeaderValue};
+    use axum::response::IntoResponse;
+    use axum::Json;
+    use serde_json::json;
+    use std::sync::Arc;
+
+    // Only apply to generate endpoints
+    let uri_path = request.uri().path();
+    if !uri_path.contains("/generate") {
+        return next.run(request).await;
+    }
+
+    // Extract app state
+    let Some(state) = request.extensions().get::<Arc<AppState>>().cloned() else {
+        return next.run(request).await;
+    };
+
+    // Extract auth session
+    let Some(auth_session) = request.extensions().get::<AuthSession<AuthBackend>>().cloned() else {
+        return next.run(request).await;
+    };
+
+    // Get user
+    let Some(user) = auth_session.user else {
+        return next.run(request).await;
+    };
+
+    let soft_limit_service = SoftLimitService::new(state.config.clone());
+    if !soft_limit_service.is_enabled() {
+        return next.run(request).await;
+    }
+
+    // Check soft limits
+    let Ok(conn) = state.pool.get().await else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "error": "Service temporarily unavailable"
+            }))
+        ).into_response();
+    };
+
+    let user_id = user.id;
+    let state_clone = state.clone();
+
+    let check_result = conn.interact(move |conn| {
+        // Get daily usage
+        let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
+
+        // Get user's subscription tier (simplified for now)
+        // TODO: Integrate with actual subscription service when encryption service is available
+        let tier = "free".to_string();
+
+        // Get daily limit
+        let daily_limit = soft_limit_service.get_daily_limit(&tier);
+
+        // Calculate throttle delay based on usage
+        let usage_percentage = (usage.message_count as f32 / daily_limit as f32 * 100.0) as u32;
+        let throttle_delay = if usage_percentage > 100 {
+            // Progressive throttling after limit
+            let over_percentage = usage_percentage - 100;
+            Some(std::time::Duration::from_millis((over_percentage * 100) as u64))
+        } else if usage_percentage > 80 {
+            // Mild throttling near limit
+            Some(std::time::Duration::from_millis(100))
+        } else {
+            None
+        };
+
+        Ok::<_, AppError>((usage.message_count, daily_limit, throttle_delay, tier))
+    }).await;
+
+    match check_result {
+        Ok(Ok((current_usage, limit, throttle_info, tier))) => {
+            // Add headers with usage info
+            let mut response = next.run(request).await;
+            let headers = response.headers_mut();
+
+            if let Ok(limit_value) = HeaderValue::from_str(&limit.to_string()) {
+                headers.insert("X-Daily-Limit", limit_value);
+            }
+            if let Ok(usage_value) = HeaderValue::from_str(&current_usage.to_string()) {
+                headers.insert("X-Daily-Usage", usage_value);
+            }
+            if let Ok(tier_value) = HeaderValue::from_str(&tier) {
+                headers.insert("X-Subscription-Tier", tier_value);
+            }
+
+            if let Some(delay) = throttle_info {
+                // Apply throttle delay
+                if delay.as_secs() > 0 {
+                    tokio::time::sleep(delay).await;
+                }
+
+                if let Ok(throttle_value) = HeaderValue::from_str(&format!("{}ms", delay.as_millis())) {
+                    headers.insert("X-Throttle-Applied", throttle_value);
+                }
+
+                // If significantly over limit, return 429
+                if current_usage > limit * 2 {
+                    return (
+                        StatusCode::TOO_MANY_REQUESTS,
+                        Json(json!({
+                            "error": "Daily message limit exceeded",
+                            "limit": limit,
+                            "current": current_usage,
+                            "tier": tier,
+                            "reset_time": "00:00 UTC"
+                        }))
+                    ).into_response();
+                }
+            }
+
+            response
+        },
+        Ok(Err(e)) => {
+            warn!("Soft limit check failed: {}", e);
+            next.run(request).await
+        },
+        Err(e) => {
+            warn!("Database error during soft limit check: {}", e);
+            next.run(request).await
+        }
+    }
+}
+
 /// Middleware to log rate limit violations
 pub async fn rate_limit_logger(
     request: Request,

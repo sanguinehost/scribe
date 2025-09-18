@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::crypto::{decrypt_gcm, encrypt_gcm};
 use crate::errors::AppError;
-use crate::models::credit::{CreditBalance, CreditTransaction, NewCreditTransaction};
+use crate::models::credit::{CreditBalance, CreditTransaction, NewCreditBalance, NewCreditTransaction};
 use crate::models::users::UserDbQuery;
 use crate::schema::{credit_transactions, user_credits, users};
 use crate::services::payment::{PaymentAuditService, AuditEventType};
@@ -82,7 +82,6 @@ impl CreditService {
         user_id: Uuid,
     ) -> Result<CreditBalance, AppError> {
         use crate::schema::user_credits;
-        use crate::models::credit::NewCreditBalance;
 
         let new_balance = NewCreditBalance {
             user_id,
@@ -283,6 +282,287 @@ impl CreditService {
         }
 
         Ok(result)
+    }
+
+    /// Reserve credits for a pending operation (creates a pending transaction)
+    /// Returns a reservation ID that must be used to confirm or refund
+    pub fn reserve_credits(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        amount: i32,
+        description: &str,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(CreditBalance, Uuid), AppError> {
+        if !self.is_enabled() {
+            return Err(AppError::BadRequest("Credit system is not enabled".to_string()));
+        }
+
+        if amount <= 0 {
+            return Err(AppError::BadRequest("Amount must be positive".to_string()));
+        }
+
+        // Get current balance with a row lock to prevent concurrent modifications
+        use crate::schema::user_credits::dsl;
+        let balance_option = dsl::user_credits
+            .find(user_id)
+            .for_update() // Lock the row for this transaction
+            .first(conn)
+            .optional()
+            .map_err(|e| {
+                error!("Failed to query credit balance with lock: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        let mut balance: CreditBalance = match balance_option {
+            Some(b) => b,
+            None => {
+                // Create initial balance if not exists
+                let new_balance = NewCreditBalance {
+                    user_id,
+                    balance: 0,
+                    lifetime_earned: 0,
+                    lifetime_spent: 0,
+                    last_monthly_grant: None,
+                };
+
+                diesel::insert_into(dsl::user_credits)
+                    .values(&new_balance)
+                    .get_result::<CreditBalance>(conn)
+                    .map_err(|e| {
+                        error!("Failed to create initial credit balance: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?
+            }
+        };
+
+        // Check sufficient balance
+        if balance.balance < amount {
+            return Err(AppError::BadRequest(format!(
+                "Insufficient credits. Balance: {}, Required: {}",
+                balance.balance, amount
+            )));
+        }
+
+        // Update balance (deduct reserved amount)
+        let new_balance = balance.balance - amount;
+        let reservation_id = Uuid::new_v4();
+
+        // Encrypt transaction data with user DEK
+        let mut metadata_with_status = metadata.unwrap_or_else(|| json!({}));
+        metadata_with_status["status"] = json!("pending");
+        metadata_with_status["reservation_id"] = json!(reservation_id.to_string());
+
+        let encrypted_data = self.encrypt_transaction_data(conn, user_id, description, Some(metadata_with_status))?;
+
+        // Create pending transaction record
+        let transaction = NewCreditTransaction {
+            id: reservation_id,
+            user_id,
+            amount: -amount, // Negative for deductions
+            balance_after: new_balance,
+            transaction_type: "pending".to_string(),
+            description_encrypted: encrypted_data.description_encrypted,
+            description_nonce: encrypted_data.description_nonce,
+            metadata_encrypted: encrypted_data.metadata_encrypted,
+            metadata_nonce: encrypted_data.metadata_nonce,
+            reference_id: Some(reservation_id.to_string()),
+            created_at: Some(Utc::now()),
+        };
+
+        // Update balance and record pending transaction
+        let result = conn.transaction::<_, AppError, _>(|conn| {
+            // Insert pending transaction
+            diesel::insert_into(credit_transactions::table)
+                .values(&transaction)
+                .execute(conn)
+                .map_err(|e| {
+                    error!("Failed to insert pending credit transaction: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+
+            // Update user balance
+            balance.balance = new_balance;
+            balance.updated_at = Some(Utc::now());
+
+            diesel::update(dsl::user_credits.find(user_id))
+                .set(&balance)
+                .get_result(conn)
+                .map_err(|e| {
+                    error!("Failed to update credit balance for reservation: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })
+        })?;
+
+        info!(
+            "Reserved {} credits for user {} (reservation: {})",
+            amount, user_id, reservation_id
+        );
+
+        Ok((result, reservation_id))
+    }
+
+    /// Confirm a credit reservation (converts pending to confirmed)
+    pub fn confirm_reservation(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        reservation_id: Uuid,
+    ) -> Result<CreditBalance, AppError> {
+        use crate::schema::credit_transactions::dsl;
+
+        // Find the pending transaction
+        let transaction: CreditTransaction = dsl::credit_transactions
+            .filter(dsl::id.eq(reservation_id))
+            .filter(dsl::user_id.eq(user_id))
+            .filter(dsl::transaction_type.eq("pending"))
+            .first(conn)
+            .map_err(|e| {
+                error!("Failed to find pending transaction {}: {}", reservation_id, e);
+                AppError::NotFound(format!("Reservation {} not found", reservation_id))
+            })?;
+
+        // Update transaction to confirmed
+        diesel::update(dsl::credit_transactions.find(reservation_id))
+            .set(dsl::transaction_type.eq("usage"))
+            .execute(conn)
+            .map_err(|e| {
+                error!("Failed to confirm reservation {}: {}", reservation_id, e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Update lifetime spent
+        use crate::schema::user_credits;
+        let mut balance: CreditBalance = user_credits::dsl::user_credits
+            .find(user_id)
+            .first(conn)
+            .map_err(|e| {
+                error!("Failed to get balance for confirmation: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        balance.lifetime_spent += transaction.amount.abs();
+        balance.updated_at = Some(Utc::now());
+
+        let updated_balance: CreditBalance = diesel::update(user_credits::dsl::user_credits.find(user_id))
+            .set(&balance)
+            .get_result(conn)
+            .map_err(|e| {
+                error!("Failed to update lifetime spent: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Log the confirmed credit deduction in audit log
+        if let Err(e) = self.audit_service.log_credit_operation(
+            conn,
+            user_id,
+            AuditEventType::CreditDeducted,
+            transaction.amount.abs(),
+        ) {
+            error!("Failed to audit log confirmed credit deduction: {}", e);
+        }
+
+        info!(
+            "Confirmed credit reservation {} for user {}",
+            reservation_id, user_id
+        );
+
+        Ok(updated_balance)
+    }
+
+    /// Refund a credit reservation (returns credits and marks transaction as refunded)
+    pub fn refund_reservation(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        reservation_id: Uuid,
+        reason: &str,
+    ) -> Result<CreditBalance, AppError> {
+        use crate::schema::credit_transactions::dsl;
+
+        // Find the pending transaction
+        let transaction: CreditTransaction = dsl::credit_transactions
+            .filter(dsl::id.eq(reservation_id))
+            .filter(dsl::user_id.eq(user_id))
+            .filter(dsl::transaction_type.eq("pending"))
+            .first(conn)
+            .map_err(|e| {
+                error!("Failed to find pending transaction for refund {}: {}", reservation_id, e);
+                AppError::NotFound(format!("Reservation {} not found", reservation_id))
+            })?;
+
+        let refund_amount = transaction.amount.abs();
+
+        // Update transaction to refunded
+        diesel::update(dsl::credit_transactions.find(reservation_id))
+            .set(dsl::transaction_type.eq("refunded"))
+            .execute(conn)
+            .map_err(|e| {
+                error!("Failed to mark reservation as refunded {}: {}", reservation_id, e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Return credits to user balance
+        use crate::schema::user_credits;
+        let mut balance: CreditBalance = user_credits::dsl::user_credits
+            .find(user_id)
+            .first(conn)
+            .map_err(|e| {
+                error!("Failed to get balance for refund: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        balance.balance += refund_amount;
+        balance.updated_at = Some(Utc::now());
+
+        let updated_balance: CreditBalance = diesel::update(user_credits::dsl::user_credits.find(user_id))
+            .set(&balance)
+            .get_result(conn)
+            .map_err(|e| {
+                error!("Failed to refund credits: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Create refund transaction record
+        let refund_description = format!("Refund: {}", reason);
+        let encrypted_data = self.encrypt_transaction_data(
+            conn,
+            user_id,
+            &refund_description,
+            Some(json!({
+                "original_reservation": reservation_id.to_string(),
+                "reason": reason
+            }))
+        )?;
+
+        let refund_transaction = NewCreditTransaction {
+            id: Uuid::new_v4(),
+            user_id,
+            amount: refund_amount as i32, // Positive for refunds
+            balance_after: updated_balance.balance,
+            transaction_type: "refund".to_string(),
+            description_encrypted: encrypted_data.description_encrypted,
+            description_nonce: encrypted_data.description_nonce,
+            metadata_encrypted: encrypted_data.metadata_encrypted,
+            metadata_nonce: encrypted_data.metadata_nonce,
+            reference_id: Some(reservation_id.to_string()),
+            created_at: Some(Utc::now()),
+        };
+
+        diesel::insert_into(credit_transactions::table)
+            .values(&refund_transaction)
+            .execute(conn)
+            .map_err(|e| {
+                error!("Failed to insert refund transaction: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        info!(
+            "Refunded {} credits for reservation {} (user: {}, reason: {})",
+            refund_amount, reservation_id, user_id, reason
+        );
+
+        Ok(updated_balance)
     }
 
     /// Grant monthly credits based on subscription tier

@@ -10,6 +10,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { User } from '$lib/types'; // Updated import path
 	import type { ScribeChatSession } from '$lib/types'; // Use Scribe type
+	import CreditBalance from '$lib/components/credits/CreditBalance.svelte';
 
 	let {
 		user,
@@ -142,7 +143,8 @@
 	{/if}
 
 	{#if !readonly && chat}
-		<div class="ml-auto">
+		<div class="ml-auto flex items-center gap-2">
+			<CreditBalance compact={true} showPurchaseButton={false} />
 			<ModelSelector {chat} class="" />
 		</div>
 	{/if}

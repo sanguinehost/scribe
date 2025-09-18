@@ -138,6 +138,15 @@ async fn main_request_logging_middleware(req: AxumRequest, next: Next) -> AxumRe
 async fn main() -> Result<()> {
     initialize_runtime();
     let config = Arc::new(Config::load().context("Failed to load configuration")?);
+    
+    // Validate configuration on startup
+    #[cfg(feature = "payment")]
+    {
+        tracing::info!("Validating payment system configuration...");
+        config.validate().context("Configuration validation failed")?;
+        tracing::info!("Payment system configuration validation passed");
+    }
+    
     let pool = setup_database_pool(&config);
     run_migrations(&pool).await?;
 
@@ -521,12 +530,23 @@ fn build_router(
         ) // 10MB limit for character uploads
         .nest(
             "/chat",
-            chat_routes(app_state.clone())
-                .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit for chat history
-                .layer(axum::middleware::from_fn_with_state(
+            {
+                let mut routes = chat_routes(app_state.clone())
+                    .layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
+
+                // Add soft limit enforcement before LLM security
+                #[cfg(feature = "payment")]
+                {
+                    routes = routes.layer(axum::middleware::from_fn(
+                        scribe_backend::middleware::soft_limit_enforcement_middleware,
+                    ));
+                }
+
+                routes.layer(axum::middleware::from_fn_with_state(
                     app_state.clone(),
                     scribe_backend::middleware::llm_security::llm_security_middleware,
-                )),
+                ))
+            },
         )
         .nest("/chats", chats::chat_routes())
         .nest(

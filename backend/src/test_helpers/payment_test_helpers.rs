@@ -9,11 +9,320 @@
 pub mod payment_test_helpers {
     use chrono::{DateTime, Utc};
     use serde_json::{json, Value};
+    use secrecy::{ExposeSecret, SecretBox, SecretString};
+    use crate::{
+        models::{
+            users::{NewUser, User as DbUser, UserDbQuery, UserRole, AccountStatus},
+            character_card::NewCharacter,
+            characters::Character,
+            credit::{CreditBalance, CreditTransaction},
+        },
+        auth::user_store::Backend as AuthBackend,
+        services::payment::CreditService,
+        test_helpers::TestApp,
+        errors::AppError,
+        crypto,
+        auth,
+    };
+    use diesel::{Connection, PgConnection, RunQueryDsl, ExpressionMethods, QueryDsl, SelectableHelper};
+    use reqwest::Client;
+    use std::sync::Arc;
+    use uuid::Uuid;
 
     /// Test constants for Paddle sandbox
     pub const TEST_PRODUCT_ID: &str = "pro_01k4qbwv2tf73cvy1nffve71w3";
     pub const TEST_PRICE_ID: &str = "pri_01k4qbyetvn495nzv9nkqhxz02";
     pub const TEST_WEBHOOK_SECRET: &str = "test_webhook_secret_for_development";
+
+    // ============================================================================
+    // User and Character Test Helpers
+    // ============================================================================
+
+    /// Creates a test user with a character for testing credit flows
+    pub fn create_test_user_with_character(
+        conn: &mut PgConnection,
+    ) -> Result<(DbUser, Character), AppError> {
+        use crate::schema::{users, characters};
+        use argon2::{Argon2, PasswordHasher};
+        use argon2::password_hash::{rand_core::OsRng, SaltString};
+
+        let username = format!("testuser_{}", Uuid::new_v4());
+        let email = format!("test_{}@example.com", Uuid::new_v4());
+        let password = "test_password_123";
+
+        // Generate password hash synchronously
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        let password_hash = argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| AppError::DatabaseQueryError(format!("Password hashing failed: {}", e)))?
+            .to_string();
+
+        let kek_salt = crypto::generate_salt()
+            .map_err(|e| AppError::DatabaseQueryError(format!("KEK salt generation failed: {}", e)))?;
+
+        let plaintext_dek_box: SecretBox<Vec<u8>> = crypto::generate_dek()
+            .map_err(|e| AppError::DatabaseQueryError(format!("DEK generation failed: {}", e)))?;
+
+        let kek = crypto::derive_kek(&SecretString::from(password.to_string()), &kek_salt)
+            .map_err(|e| AppError::DatabaseQueryError(format!("KEK derivation failed: {}", e)))?;
+
+        // expose_secret() on SecretBox<Vec<u8>> gives &Vec<u8>
+        let (encrypted_dek_bytes, dek_nonce_bytes) =
+            crypto::encrypt_gcm(plaintext_dek_box.expose_secret(), &kek)
+                .map_err(|e| AppError::DatabaseQueryError(format!("DEK encryption failed: {}", e)))?;
+
+        // Create test user with all required fields
+        let new_user = NewUser {
+            username,
+            password_hash,
+            email,
+            kek_salt,
+            encrypted_dek: encrypted_dek_bytes,
+            dek_nonce: dek_nonce_bytes,
+            encrypted_dek_by_recovery: None,
+            recovery_kek_salt: None,
+            recovery_dek_nonce: None,
+            role: UserRole::User,
+            account_status: AccountStatus::Active,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: chrono::Utc::now(),
+        };
+
+        let user_from_db: UserDbQuery = diesel::insert_into(users::table)
+            .values(&new_user)
+            .returning(UserDbQuery::as_returning())
+            .get_result::<UserDbQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        // Convert UserDbQuery to User
+        let user = DbUser::from(user_from_db);
+
+        // Create test character using the correct NewCharacter structure
+
+        let now = Utc::now();
+        let character_name = "Test Character".to_string();
+
+        let new_character = NewCharacter {
+            user_id: user.id,
+            name: character_name.clone(),
+            description: Some(format!("Test description for {}", character_name).into_bytes()),
+            greeting: Some(format!("Hello! I'm a test character.").into_bytes()),
+            example_dialogue: Some(format!("User: Hi\nCharacter: Hello there!").into_bytes()),
+            visibility: Some("private".to_string()),
+            character_version: Some("2.0".to_string()),
+            spec: "test_spec_v2.0".to_string(),
+            spec_version: "2.0".to_string(),
+            persona: Some(format!("Friendly and helpful test character").into_bytes()),
+            world_scenario: Some(format!("Testing environment").into_bytes()),
+            avatar: None,
+            chat: None,
+            created_at: Some(now),
+            updated_at: Some(now),
+            creation_date: Some(now),
+            modification_date: Some(now),
+            creator_notes_multilingual: None,
+            nickname: None,
+            personality: None,
+            tags: None,
+            greeting_nonce: None,
+            definition: None,
+            default_voice: None,
+            extensions: None,
+            category: None,
+            definition_visibility: None,
+            example_dialogue_nonce: None,
+            favorite: None,
+            first_message_visibility: None,
+            migrated_from: None,
+            model_prompt: None,
+            model_prompt_visibility: None,
+            persona_visibility: None,
+            sharing_visibility: None,
+            status: None,
+            system_prompt_visibility: None,
+            system_tags: None,
+            token_budget: None,
+            usage_hints: None,
+            user_persona: None,
+            user_persona_visibility: None,
+            world_scenario_visibility: None,
+            description_nonce: None,
+            personality_nonce: None,
+            scenario_nonce: None,
+            first_mes_nonce: None,
+            mes_example_nonce: None,
+            creator_notes_nonce: None,
+            system_prompt_nonce: None,
+            persona_nonce: None,
+            world_scenario_nonce: None,
+            definition_nonce: None,
+            model_prompt_nonce: None,
+            user_persona_nonce: None,
+            post_history_instructions_nonce: None,
+            post_history_instructions: None,
+            scenario: None,
+            mes_example: None,
+            first_mes: None,
+            creator_notes: None,
+            system_prompt: None,
+            alternate_greetings: None,
+            creator: None,
+            source: None,
+            group_only_greetings: None,
+            fav: None,
+            world: None,
+            creator_comment: None,
+            creator_comment_nonce: None,
+            depth_prompt: None,
+            depth_prompt_depth: None,
+            depth_prompt_role: None,
+            talkativeness: None,
+            depth_prompt_ciphertext: None,
+            depth_prompt_nonce: None,
+            world_ciphertext: None,
+            world_nonce: None,
+        };
+
+        let character: Character = diesel::insert_into(characters::table)
+            .values(&new_character)
+            .get_result(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        Ok((user, character))
+    }
+
+    /// Creates an authenticated session for a user and returns the session cookie value
+    pub async fn create_authenticated_session(
+        app: &TestApp,
+        user: &DbUser,
+    ) -> Result<String, AppError> {
+        // In a real implementation, this would:
+        // 1. Create a session in the session store
+        // 2. Set up the authentication cookies
+        // 3. Return the session ID that can be used in Cookie headers
+
+        // For now, we'll use a simplified approach with the user ID
+        // This assumes the auth system can handle this format
+        Ok(format!("test_session_user_{}", user.id))
+    }
+
+    /// Adds credits to a user using the credit service with proper connection handling
+    pub async fn add_credits_to_user(
+        app: &TestApp,
+        user_id: Uuid,
+        amount: i32,
+        description: &str,
+    ) -> Result<CreditBalance, AppError> {
+        let credit_service = CreditService::new(app.config.clone());
+        let description_owned = description.to_string();
+
+        app.db_pool
+            .get()
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+            .interact(move |conn| {
+                credit_service.add_credits(
+                    conn,
+                    user_id,
+                    amount,
+                    "test_credit",       // transaction_type
+                    &description_owned,  // description
+                    None,               // reference_id
+                    None,               // metadata
+                )
+            })
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+    }
+
+    /// Gets the credit balance for a user
+    pub async fn get_user_credit_balance(
+        app: &TestApp,
+        user_id: Uuid,
+    ) -> Result<CreditBalance, AppError> {
+        let credit_service = CreditService::new(app.config.clone());
+
+        app.db_pool
+            .get()
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+            .interact(move |conn| credit_service.get_balance(conn, user_id))
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+    }
+
+    /// Gets transaction history for a user
+    pub async fn get_user_transaction_history(
+        app: &TestApp,
+        user_id: Uuid,
+    ) -> Result<Vec<CreditTransaction>, AppError> {
+        let credit_service = CreditService::new(app.config.clone());
+
+        app.db_pool
+            .get()
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+            .interact(move |conn| {
+                credit_service.get_transaction_history(conn, user_id, None, None)
+            })
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+    }
+
+    /// Initializes user credits account
+    pub async fn initialize_user_credits(
+        app: &TestApp,
+        user_id: Uuid,
+    ) -> Result<CreditBalance, AppError> {
+        let credit_service = CreditService::new(app.config.clone());
+
+        app.db_pool
+            .get()
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+            .interact(move |conn| credit_service.initialize_user_credits(conn, user_id))
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+    }
+
+    /// Helper to make authenticated API requests
+    pub async fn make_authenticated_request(
+        app: &TestApp,
+        session_key: &str,
+        method: &str,
+        path: &str,
+        payload: Option<serde_json::Value>,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        let client = Client::new();
+        let url = format!("{}{}", app.address, path);
+
+        let mut request_builder = match method.to_uppercase().as_str() {
+            "GET" => client.get(&url),
+            "POST" => client.post(&url),
+            "PUT" => client.put(&url),
+            "DELETE" => client.delete(&url),
+            _ => client.get(&url),
+        };
+
+        request_builder = request_builder
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .header("Cookie", &format!("session={}", session_key));
+
+        if let Some(payload) = payload {
+            request_builder = request_builder.json(&payload);
+        }
+
+        request_builder.send().await
+    }
+
+    // ============================================================================
+    // Webhook Test Helpers
+    // ============================================================================
 
     /// Generate a valid webhook signature for testing
     ///

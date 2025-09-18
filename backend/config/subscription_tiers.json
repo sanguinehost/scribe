@@ -40,9 +40,9 @@
       "display_name": "Basic",
       "description": "For serious character AI enthusiasts and creators",
       "price_monthly": 10.00,
-      "price_yearly": 96.00,
+      "price_yearly": 100.00,
       "paddle_price_id_monthly": "pri_01k4qbyetvn495nzv9nkqhxz02",
-      "paddle_price_id_yearly": null,
+      "paddle_price_id_yearly": "pri_01k5ejs7h9zmw4d888r3pjjqna",
       "limits": {
         "daily_messages": 100,
         "daily_limit_type": "soft",
@@ -76,9 +76,9 @@
       "display_name": "Premium",
       "description": "Professional roleplay & storytelling platform",
       "price_monthly": 25.00,
-      "price_yearly": 240.00,
-      "paddle_price_id_monthly": "pri_01k4qc2gwxyzabc123def456",
-      "paddle_price_id_yearly": "pri_01k4qc3hijklabc789ghi012",
+      "price_yearly": 250.00,
+      "paddle_price_id_monthly": "pri_01k5ej7wzvpcj6j65vcbpam6t4",
+      "paddle_price_id_yearly": "pri_01k5ejva0cwqzbtgzd2c9qk0d4",
       "limits": {
         "daily_messages": 200,
         "daily_limit_type": "soft",
@@ -121,15 +121,15 @@
         "credits": 250,
         "price": 5.00,
         "bonus_percentage": 0,
-        "paddle_price_id": "pri_credits_250"
+        "paddle_price_id": "pri_01k5ej9f8281rvnzybmpxc9hpm"
       },
       {
-        "id": "credits_550",
+        "id": "credits_500",
         "name": "Value Pack",
-        "credits": 550,
+        "credits": 500,
         "price": 10.00,
-        "bonus_percentage": 10,
-        "paddle_price_id": "pri_credits_550"
+        "bonus_percentage": 0,
+        "paddle_price_id": "pri_01k5ejc7dkwxfty64nfvenj8yq"
       },
       {
         "id": "credits_1500",
@@ -137,7 +137,7 @@
         "credits": 1500,
         "price": 25.00,
         "bonus_percentage": 20,
-        "paddle_price_id": "pri_credits_1500"
+        "paddle_price_id": "pri_01k5ejdg0hzzem86wzd28zmd2q"
       },
       {
         "id": "credits_3500",
@@ -145,7 +145,7 @@
         "credits": 3500,
         "price": 50.00,
         "bonus_percentage": 40,
-        "paddle_price_id": "pri_credits_3500"
+        "paddle_price_id": "pri_01k5ejenme5xjtje37jwfpbxe2"
       },
       {
         "id": "credits_8000",
@@ -153,7 +153,7 @@
         "credits": 8000,
         "price": 100.00,
         "bonus_percentage": 60,
-        "paddle_price_id": "pri_credits_8000"
+        "paddle_price_id": "pri_01k5ejfy6t65v6d28fqf0c4kmr"
       }
     ],
     "model_costs": {
@@ -218,9 +218,9 @@
     "credit_negative_allowance": 10
   },
   "feature_flags": {
-    "credits_enabled": false,
-    "soft_limits_enabled": false,
-    "legacy_token_system": true,
+    "credits_enabled": true,
+    "soft_limits_enabled": true,
+    "legacy_token_system": false,
     "migration_mode": false
   }
 }

@@ -416,12 +416,18 @@ fn default_subscription_config_path() -> String {
 
 #[cfg(feature = "payment")]
 fn default_credits_enabled() -> bool {
-    false // Credit system disabled by default (gradual rollout)
+    std::env::var("CREDITS_ENABLED")
+        .ok()
+        .and_then(|val| val.parse::<bool>().ok())
+        .unwrap_or(false) // Credit system disabled by default (gradual rollout)
 }
 
 #[cfg(feature = "payment")]
 fn default_soft_limits_enabled() -> bool {
-    false // Soft limits disabled by default (gradual rollout)
+    std::env::var("SOFT_LIMITS_ENABLED")
+        .ok()
+        .and_then(|val| val.parse::<bool>().ok())
+        .unwrap_or(false) // Soft limits disabled by default (gradual rollout)
 }
 
 #[cfg(feature = "payment")]
@@ -499,6 +505,214 @@ impl Config {
             // For local development, default to non-secure cookies for easier testing
             self.session_cookie_secure = false;
         }
+    }
+
+    /// Validates the configuration for correctness and completeness
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any configuration settings are invalid or missing
+    pub fn validate(&self) -> Result<(), anyhow::Error> {
+        // Validate payment configuration if feature is enabled
+        #[cfg(feature = "payment")]
+        {
+            self.validate_payment_config()?;
+        }
+
+        Ok(())
+    }
+
+    /// Validates payment-specific configuration
+    #[cfg(feature = "payment")]
+    fn validate_payment_config(&self) -> Result<(), anyhow::Error> {
+        // Check if subscription config file exists and is valid
+        if !std::path::Path::new(&self.payment.subscription_config_path).exists() {
+            return Err(anyhow::anyhow!(
+                "Subscription config file not found at: {}",
+                self.payment.subscription_config_path
+            ));
+        }
+
+        // Load and validate subscription configuration
+        let config_content = std::fs::read_to_string(&self.payment.subscription_config_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read subscription config: {}", e))?;
+
+        let tiers_config: serde_json::Value = serde_json::from_str(&config_content)
+            .map_err(|e| anyhow::anyhow!("Invalid subscription config JSON: {}", e))?;
+
+        // Validate required sections exist
+        if !tiers_config.get("tiers").is_some() {
+            return Err(anyhow::anyhow!("Missing 'tiers' section in subscription config"));
+        }
+
+        if !tiers_config.get("credit_system").is_some() {
+            return Err(anyhow::anyhow!("Missing 'credit_system' section in subscription config"));
+        }
+
+        if !tiers_config.get("feature_flags").is_some() {
+            return Err(anyhow::anyhow!("Missing 'feature_flags' section in subscription config"));
+        }
+
+        // Validate each tier has required fields
+        let tiers = tiers_config["tiers"].as_object()
+            .ok_or_else(|| anyhow::anyhow!("'tiers' must be an object"))?;
+
+        for (tier_name, tier_config) in tiers {
+            self.validate_tier_config(tier_name, tier_config)?;
+        }
+
+        // Validate credit system configuration
+        let credit_system = &tiers_config["credit_system"];
+        self.validate_credit_system_config(credit_system)?;
+
+        // Validate feature flags
+        let feature_flags = &tiers_config["feature_flags"];
+        self.validate_feature_flags(feature_flags)?;
+
+        tracing::info!("Payment configuration validation passed");
+        Ok(())
+    }
+
+    #[cfg(feature = "payment")]
+    fn validate_tier_config(&self, tier_name: &str, tier_config: &serde_json::Value) -> Result<(), anyhow::Error> {
+        // Required fields for all tiers
+        let required_fields = ["display_name", "limits", "credits", "models"];
+        for field in &required_fields {
+            if tier_config.get(field).is_none() {
+                return Err(anyhow::anyhow!(
+                    "Tier '{}' missing required field: '{}'",
+                    tier_name, field
+                ));
+            }
+        }
+
+        // Validate limits section
+        let limits = &tier_config["limits"];
+        let required_limit_fields = ["daily_messages", "daily_limit_type", "context_tokens"];
+        for field in &required_limit_fields {
+            if limits.get(field).is_none() {
+                return Err(anyhow::anyhow!(
+                    "Tier '{}' limits missing required field: '{}'",
+                    tier_name, field
+                ));
+            }
+        }
+
+        // Validate daily_messages is a positive number
+        if let Some(daily_messages) = limits["daily_messages"].as_i64() {
+            if daily_messages <= 0 {
+                return Err(anyhow::anyhow!(
+                    "Tier '{}' daily_messages must be positive, got: {}",
+                    tier_name, daily_messages
+                ));
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "Tier '{}' daily_messages must be a number",
+                tier_name
+            ));
+        }
+
+        // Validate context_tokens is positive
+        if let Some(context_tokens) = limits["context_tokens"].as_i64() {
+            if context_tokens <= 0 {
+                return Err(anyhow::anyhow!(
+                    "Tier '{}' context_tokens must be positive, got: {}",
+                    tier_name, context_tokens
+                ));
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "Tier '{}' context_tokens must be a number",
+                tier_name
+            ));
+        }
+
+        // Validate daily_limit_type is valid
+        if let Some(limit_type) = limits["daily_limit_type"].as_str() {
+            if !["hard", "soft"].contains(&limit_type) {
+                return Err(anyhow::anyhow!(
+                    "Tier '{}' daily_limit_type must be 'hard' or 'soft', got: '{}'",
+                    tier_name, limit_type
+                ));
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "Tier '{}' daily_limit_type must be a string",
+                tier_name
+            ));
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "payment")]
+    fn validate_credit_system_config(&self, credit_system: &serde_json::Value) -> Result<(), anyhow::Error> {
+        // Check required fields
+        if credit_system.get("enabled").is_none() {
+            return Err(anyhow::anyhow!("Credit system missing 'enabled' field"));
+        }
+
+        if credit_system.get("model_costs").is_none() {
+            return Err(anyhow::anyhow!("Credit system missing 'model_costs' field"));
+        }
+
+        // Validate model costs are non-negative
+        let model_costs = credit_system["model_costs"].as_object()
+            .ok_or_else(|| anyhow::anyhow!("'model_costs' must be an object"))?;
+
+        for (model_name, cost) in model_costs {
+            if let Some(cost_value) = cost.as_i64() {
+                if cost_value < 0 {
+                    return Err(anyhow::anyhow!(
+                        "Model '{}' cost must be non-negative, got: {}",
+                        model_name, cost_value
+                    ));
+                }
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Model '{}' cost must be a number",
+                    model_name
+                ));
+            }
+        }
+
+        // Validate supported models are present
+        let supported_models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"];
+        for model in &supported_models {
+            if !model_costs.contains_key(*model) {
+                return Err(anyhow::anyhow!(
+                    "Model costs missing supported model: '{}'",
+                    model
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "payment")]
+    fn validate_feature_flags(&self, feature_flags: &serde_json::Value) -> Result<(), anyhow::Error> {
+        // Check required feature flags exist
+        let required_flags = ["credits_enabled", "soft_limits_enabled"];
+        for flag in &required_flags {
+            if feature_flags.get(flag).is_none() {
+                return Err(anyhow::anyhow!(
+                    "Feature flags missing required flag: '{}'",
+                    flag
+                ));
+            }
+
+            // Ensure they are booleans
+            if !feature_flags[flag].is_boolean() {
+                return Err(anyhow::anyhow!(
+                    "Feature flag '{}' must be a boolean",
+                    flag
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 

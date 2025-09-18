@@ -384,6 +384,152 @@ pub async fn generate_chat_response(
         .unwrap_or_else(|| gen_model_name_from_service.clone());
     debug!(%model_to_use, "Determined final model to use for AI calls.");
 
+    // CREDIT SYSTEM INTEGRATION - Check credits and subscription limits
+    // Define credit reservation variable outside feature gate for use in confirmation/refund
+    #[cfg(feature = "payment")]
+    let mut credit_reservation: Option<(crate::services::payment::CreditService, Uuid, i32)> = None;
+    #[cfg(not(feature = "payment"))]
+    let credit_reservation: Option<((), (), i32)> = None;
+
+    #[cfg(feature = "payment")]
+    {
+        use crate::services::payment::{CreditService, SubscriptionService, UsageTrackingService};
+        use crate::services::encryption_service::EncryptionService;
+        
+        let conn = state_arc.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        
+        // Get user's subscription tier  
+        let subscription_service = SubscriptionService::new(state_arc.config.as_ref().clone(), EncryptionService::new());
+        let user_subscription = conn.interact(move |conn| {
+            // Use async block wrapper since the service method is async
+            futures::executor::block_on(subscription_service.get_user_subscription(conn, user_id_value))
+        }).await.map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        
+        let user_tier = user_subscription.as_ref().map(|s| s.plan_type.as_str()).unwrap_or("free");
+        debug!(%session_id, %user_tier, "User subscription tier determined");
+        
+        // Load subscription tier configuration
+        let config_path = std::path::Path::new("config/subscription_tiers.json");
+        let config_content = std::fs::read_to_string(config_path)
+            .map_err(|_| AppError::InternalServerErrorGeneric("Failed to load subscription tiers config".to_string()))?;
+        let tiers_config: serde_json::Value = serde_json::from_str(&config_content)
+            .map_err(|_| AppError::InternalServerErrorGeneric("Failed to parse subscription tiers config".to_string()))?;
+        
+        let tier_config = tiers_config["tiers"][user_tier].clone();
+        if tier_config.is_null() {
+            return Err(AppError::InternalServerErrorGeneric(format!("Unknown subscription tier: {}", user_tier)));
+        }
+        
+        // Check if this model requires credits based on tier and usage
+        let model_costs = &tiers_config["credit_system"]["model_costs"];
+        let base_model_cost = model_costs[&model_to_use].as_i64().unwrap_or(0) as i32;
+        
+        let mut credits_required = 0;
+        let mut should_track_usage = false;
+        
+        match user_tier {
+            "free" => {
+                // Free tier: Flash/Flash-Lite free until token limit, gemini-2.5-pro blocked/requires credits
+                if model_to_use == "gemini-2.5-pro" {
+                    if base_model_cost > 0 {
+                        credits_required = base_model_cost;
+                    } else {
+                        return Err(AppError::BadRequest("Premium model requires subscription or credits".to_string()));
+                    }
+                }
+                should_track_usage = true; // Track usage to enforce daily limits
+            },
+            "basic" | "premium" => {
+                // Paid tiers: Check if user has exceeded their included usage
+                should_track_usage = true;
+                
+                // For gemini-2.5-pro, always require credits regardless of tier
+                if model_to_use == "gemini-2.5-pro" {
+                    credits_required = base_model_cost;
+                } else {
+                    // For Flash/Flash-Lite, check if user has exceeded included usage
+                    let daily_messages_limit = tier_config["limits"]["daily_messages"].as_i64().unwrap_or(0) as i32;
+                    
+                    // Get current daily usage (simplified check - in production would need proper usage tracking)
+                    let usage_service = UsageTrackingService::new(state_arc.config.as_ref().clone(), EncryptionService::new());
+                    let subscription_id = user_subscription.as_ref().map(|s| s.id);
+                    let current_usage = conn.interact(move |conn| {
+                        futures::executor::block_on(usage_service.get_current_usage(conn, user_id_value, subscription_id))
+                    }).await.map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+                    
+                    let messages_used_today = current_usage.map(|u| u.tokens_used).unwrap_or(0); // Simplified - should track messages not tokens
+                    
+                    if messages_used_today >= daily_messages_limit {
+                        // Exceeded included usage, require credits for any model (soft limit bypass)
+                        credits_required = if base_model_cost > 0 { base_model_cost } else { 10 }; // Default cost for Flash models when over limit
+                    }
+                }
+            },
+            _ => {
+                return Err(AppError::InternalServerErrorGeneric(format!("Unsupported subscription tier: {}", user_tier)));
+            }
+        }
+
+        // Reserve credits if required (will be confirmed after successful LLM call or refunded on failure)
+        credit_reservation = if credits_required > 0 {
+            let credit_service = CreditService::new(state_arc.config.clone());
+
+            if !credit_service.is_enabled() {
+                return Err(AppError::BadRequest("Credit system is not enabled".to_string()));
+            }
+
+            // Reserve credits atomically
+            let description = format!("AI model usage: {} for session {}", model_to_use, session_id);
+            let metadata = serde_json::json!({
+                "session_id": session_id,
+                "character_id": char_id,
+                "model": model_to_use,
+                "tier": user_tier
+            });
+
+            let credit_service_clone = credit_service.clone();
+            let model_name_clone = model_to_use.clone();
+            let reservation = conn.interact(move |conn| {
+                credit_service_clone.reserve_credits(
+                    conn,
+                    user_id_value,
+                    credits_required,
+                    &description,
+                    Some(metadata)
+                )
+            }).await.map_err(|e| {
+                error!("Database interaction error during credit reservation: {}", e);
+                AppError::InternalServerErrorGeneric(e.to_string())
+            })?.map_err(|e| {
+                // If reservation fails due to insufficient credits, provide helpful message
+                if let AppError::BadRequest(msg) = &e {
+                    if msg.contains("Insufficient credits") {
+                        return AppError::BadRequest(format!(
+                            "Insufficient credits for {}. {}. Please purchase more credits or use a different model.",
+                            model_name_clone, msg
+                        ));
+                    }
+                }
+                e
+            })?;
+
+            info!(
+                %session_id,
+                %user_id_value,
+                %credits_required,
+                reservation_id = %reservation.1,
+                %model_to_use,
+                "Credits reserved for AI model usage"
+            );
+
+            Some((credit_service, reservation.1, credits_required))
+        } else {
+            None
+        };
+
+        debug!(%session_id, %credits_required, %should_track_usage, has_reservation = credit_reservation.is_some(), "Credit reservation completed");
+    }
+
     // Convert DbChatMessage history to GenAiChatMessage history
     let mut gen_ai_recent_history: Vec<GenAiChatMessage> = Vec::new();
     for db_msg in managed_db_history {
@@ -1044,6 +1190,59 @@ pub async fn generate_chat_response(
                 Ok(chat_response) => {
                     debug!(%session_id, "Received successful non-streaming AI response (JSON path)");
 
+                    // Confirm credit reservation on successful LLM response
+                    #[cfg(feature = "payment")]
+                    if let Some((credit_service, reservation_id, _credits_amount)) = &credit_reservation {
+                        let conn_result = state_arc.pool.get().await;
+                        match conn_result {
+                            Ok(conn) => {
+                                let service_clone = credit_service.clone();
+                                let reservation_id_clone = *reservation_id; // Copy the UUID
+                                let confirm_result = conn.interact(move |conn| {
+                                    service_clone.confirm_reservation(conn, user_id_value, reservation_id_clone)
+                                }).await;
+
+                                match confirm_result {
+                                    Ok(Ok(balance)) => {
+                                        info!(
+                                            %session_id,
+                                            %reservation_id,
+                                            new_balance = balance.balance,
+                                            "Credit reservation confirmed after successful LLM response"
+                                        );
+                                    },
+                                    Ok(Err(e)) => {
+                                        error!(
+                                            %session_id,
+                                            %reservation_id,
+                                            error = %e,
+                                            "Failed to confirm credit reservation - credits may be stuck in pending state"
+                                        );
+                                        // Continue processing - don't fail the request over confirmation failure
+                                    },
+                                    Err(e) => {
+                                        error!(
+                                            %session_id,
+                                            %reservation_id,
+                                            error = %e,
+                                            "Database error confirming credit reservation"
+                                        );
+                                        // Continue processing
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                error!(
+                                    %session_id,
+                                    %reservation_id,
+                                    error = %e,
+                                    "Failed to get database connection for credit confirmation"
+                                );
+                                // Continue processing - credits will remain in pending state
+                            }
+                        }
+                    }
+
                     let response_content = chat_response
                         .contents
                         .into_iter()
@@ -1234,6 +1433,65 @@ pub async fn generate_chat_response(
                 Err(e) => {
                     let error_str = e.to_string();
                     error!(error = ?e, %session_id, "AI generation failed for non-streaming request (JSON path)");
+
+                    // Refund credit reservation on LLM failure
+                    #[cfg(feature = "payment")]
+                    if let Some((credit_service, reservation_id, credits_amount)) = &credit_reservation {
+                        let conn_result = state_arc.pool.get().await;
+                        match conn_result {
+                            Ok(conn) => {
+                                let service_clone = credit_service.clone();
+                                let reservation_id_clone = *reservation_id; // Copy the UUID
+                                let error_reason = format!("LLM call failed: {}", error_str);
+                                let refund_result = conn.interact(move |conn| {
+                                    service_clone.refund_reservation(
+                                        conn,
+                                        user_id_value,
+                                        reservation_id_clone,
+                                        &error_reason
+                                    )
+                                }).await;
+
+                                match refund_result {
+                                    Ok(Ok(balance)) => {
+                                        info!(
+                                            %session_id,
+                                            %reservation_id,
+                                            refunded_amount = credits_amount,
+                                            new_balance = balance.balance,
+                                            "Credit reservation refunded due to LLM failure"
+                                        );
+                                    },
+                                    Ok(Err(e)) => {
+                                        error!(
+                                            %session_id,
+                                            %reservation_id,
+                                            error = %e,
+                                            "Failed to refund credit reservation after LLM failure"
+                                        );
+                                        // Continue with error handling - user loses credits but gets error message
+                                    },
+                                    Err(e) => {
+                                        error!(
+                                            %session_id,
+                                            %reservation_id,
+                                            error = %e,
+                                            "Database error refunding credit reservation"
+                                        );
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                error!(
+                                    %session_id,
+                                    %reservation_id,
+                                    error = %e,
+                                    "Failed to get database connection for credit refund"
+                                );
+                                // Credits will remain in pending state - may need manual cleanup
+                            }
+                        }
+                    }
 
                     // Provide more specific error messages for common issues
                     if error_str.contains("PropertyNotFound(\"/content/parts\")")

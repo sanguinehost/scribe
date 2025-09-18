@@ -1460,6 +1460,13 @@ pub async fn spawn_app_with_rate_limiting_options(
         ));
     }
     config_loader.port = 0;
+
+    // Enable credit system for integration tests
+    #[cfg(feature = "payment")]
+    {
+        config_loader.payment.credits_enabled = true;
+    }
+
     let config_arc = Arc::new(config_loader);
 
     let (ai_client_for_state, mock_ai_client_for_test_app): (
