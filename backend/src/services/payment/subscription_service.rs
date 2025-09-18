@@ -76,6 +76,9 @@ impl SubscriptionService {
             current_period_end: period_end,
             cancel_at_period_end: Some(false),
             trial_end,
+            credits_allocated_this_period: Some(false),
+            soft_limit_override: None,
+            last_credit_grant: None,
         };
 
         let subscription = diesel::insert_into(subscriptions::table)
@@ -342,6 +345,9 @@ impl Default for UpdateSubscription {
             current_period_end: None,
             cancel_at_period_end: None,
             trial_end: None,
+            credits_allocated_this_period: None,
+            soft_limit_override: None,
+            last_credit_grant: None,
         }
     }
 }
