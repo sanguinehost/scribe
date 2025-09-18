@@ -30,23 +30,26 @@ mod feature_flag_tests {
         // Create service with credits disabled in config
         let mut config = (*app.config).clone();
         config.payment.credits_enabled = false;
-        let service = CreditService::new(Arc::new(config));
+        let config = Arc::new(config);
 
+        let service = CreditService::new(config.clone());
         assert!(!service.is_enabled());
 
         // Operations should fail when disabled
-        let mut conn = app.db_pool.get().await.expect("Failed to get connection");
         let user_id = Uuid::new_v4();
-
-        let result = service.add_credits(
-            &mut conn,
-            user_id,
-            100,
-            "test",
-            "Should fail",
-            None,
-            None,
-        );
+        
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let result = conn.interact(move |conn| {
+            service.add_credits(
+                conn,
+                user_id,
+                100,
+                "test",
+                "Should fail",
+                None,
+                None,
+            )
+        }).await.expect("Failed to interact");
 
         assert!(result.is_err());
         if let Err(e) = result {
@@ -62,26 +65,75 @@ mod feature_flag_tests {
         // Create service with credits enabled in config
         let mut config = (*app.config).clone();
         config.payment.credits_enabled = true;
-        let service = CreditService::new(Arc::new(config));
+        let config = Arc::new(config);
+        
+        let user_id = Uuid::new_v4();
 
+        // Create test user first
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        conn.interact(move |conn| {
+            use diesel::prelude::*;
+            use scribe_backend::schema::users;
+            
+            // Check if user exists first
+            let exists: Result<i64, _> = users::table
+                .filter(users::id.eq(user_id))
+                .count()
+                .get_result(conn);
+                
+            if let Ok(count) = exists {
+                if count > 0 {
+                    return Ok(()) as Result<(), diesel::result::Error>;
+                }
+            }
+            
+            // Create user with raw SQL to handle enums
+            diesel::sql_query(
+                "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
+                 dek_nonce, role, account_status, total_prompt_tokens, total_completion_tokens,
+                 total_token_cost_cents, token_usage_updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Text, _>(format!("test_user_{}", user_id))
+            .bind::<diesel::sql_types::Text, _>(format!("test_{}@example.com", user_id))
+            .bind::<diesel::sql_types::Text, _>("test_hash")
+            .bind::<diesel::sql_types::Text, _>("test_salt")
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 32])
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 12])
+            .bind::<diesel::sql_types::Text, _>("User")
+            .bind::<diesel::sql_types::Text, _>("active")
+            .bind::<diesel::sql_types::Int8, _>(0i64)
+            .bind::<diesel::sql_types::Int8, _>(0i64)
+            .bind::<diesel::sql_types::Int8, _>(0i64)
+            .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now())
+            .execute(conn)?;
+            Ok(())
+        }).await.expect("Failed to interact").expect("Failed to create user");
+
+        let service = CreditService::new(config.clone());
         assert!(service.is_enabled());
 
         // Initialize and add credits should work
-        let mut conn = app.db_pool.get().await.expect("Failed to get connection");
-        let user_id = Uuid::new_v4();
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        conn.interact(move |conn| {
+            service.initialize_user_credits(conn, user_id)
+        }).await.expect("Failed to interact").expect("Should initialize when enabled");
 
-        service.initialize_user_credits(&mut *conn, user_id)
-            .expect("Should initialize when enabled");
-
-        let balance = service.add_credits(
-            &mut *conn,
-            user_id,
-            100,
-            "test",
-            "Test credits",
-            None,
-            None,
-        ).expect("Should add credits when enabled");
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let balance = conn.interact(move |conn| {
+            let service = CreditService::new(config);
+            service.add_credits(
+                conn,
+                user_id,
+                100,
+                "test",
+                "Test credits",
+                None,
+                None,
+            )
+        }).await.expect("Failed to interact").expect("Should add credits when enabled");
 
         assert_eq!(balance.balance, 100);
     }
@@ -94,26 +146,63 @@ mod feature_flag_tests {
         // Create service with soft limits disabled in config
         let mut config = (*app.config).clone();
         config.payment.soft_limits_enabled = false;
-        let service = SoftLimitService::new(Arc::new(config));
-
-        assert!(!service.is_enabled());
-
-        let mut conn = app.db_pool.get().await.expect("Failed to get connection");
+        let config = Arc::new(config);
+        
         let user_id = Uuid::new_v4();
 
+        // Create test user first
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        conn.interact(move |conn| {
+            use diesel::prelude::*;
+            diesel::sql_query(
+                "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
+                 dek_nonce, role, account_status, total_prompt_tokens, total_completion_tokens,
+                 total_token_cost_cents, token_usage_updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Text, _>(format!("test_user_{}", user_id))
+            .bind::<diesel::sql_types::Text, _>(format!("test_{}@example.com", user_id))
+            .bind::<diesel::sql_types::Text, _>("test_hash")
+            .bind::<diesel::sql_types::Text, _>("test_salt")
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 32])
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 12])
+            .bind::<diesel::sql_types::Text, _>("User")
+            .bind::<diesel::sql_types::Text, _>("active")
+            .bind::<diesel::sql_types::Int8, _>(0i64)
+            .bind::<diesel::sql_types::Int8, _>(0i64)
+            .bind::<diesel::sql_types::Int8, _>(0i64)
+            .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now())
+            .execute(conn)?;
+            Ok::<_, diesel::result::Error>(())
+        }).await.expect("Failed to interact").expect("Failed to create user");
+
+        let service = SoftLimitService::new(config.clone());
+        assert!(!service.is_enabled());
+
         // Should still track usage even when disabled
-        let usage = service.record_usage(&mut *conn, user_id, "gemini-2.5-flash", 1000)
-            .expect("Should track usage even when disabled");
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let usage = conn.interact(move |conn| {
+            service.record_usage(conn, user_id, "gemini-2.5-flash", 1000)
+        }).await.expect("Failed to interact").expect("Should track usage even when disabled");
         assert_eq!(usage.message_count, 1);
 
         // But should not throttle
-        let throttle = service.should_throttle(&mut *conn, user_id)
-            .expect("Should check throttle");
+        let config_clone = config.clone();
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let throttle = conn.interact(move |conn| {
+            let service = SoftLimitService::new(config_clone);
+            service.should_throttle(conn, user_id)
+        }).await.expect("Failed to interact").expect("Should check throttle");
         assert!(throttle.is_none(), "Should not throttle when disabled");
 
         // And should return no limit
-        let remaining = service.get_remaining_messages(&mut *conn, user_id)
-            .expect("Should get remaining");
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let remaining = conn.interact(move |conn| {
+            let service = SoftLimitService::new(config);
+            service.get_remaining_messages(conn, user_id)
+        }).await.expect("Failed to interact").expect("Should get remaining");
         assert_eq!(remaining, None, "Should have no limit when disabled");
     }
 
@@ -125,26 +214,66 @@ mod feature_flag_tests {
         // Create service with soft limits enabled in config
         let mut config = (*app.config).clone();
         config.payment.soft_limits_enabled = true;
-        let service = SoftLimitService::new(Arc::new(config));
-
-        assert!(service.is_enabled());
-
-        let mut conn = app.db_pool.get().await.expect("Failed to get connection");
+        let config = Arc::new(config);
+        
         let user_id = Uuid::new_v4();
 
+        // Create test user first
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        conn.interact(move |conn| {
+            use diesel::prelude::*;
+            diesel::sql_query(
+                "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
+                 dek_nonce, role, account_status, total_prompt_tokens, total_completion_tokens,
+                 total_token_cost_cents, token_usage_updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Text, _>(format!("test_user_{}", user_id))
+            .bind::<diesel::sql_types::Text, _>(format!("test_{}@example.com", user_id))
+            .bind::<diesel::sql_types::Text, _>("test_hash")
+            .bind::<diesel::sql_types::Text, _>("test_salt")
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 32])
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 12])
+            .bind::<diesel::sql_types::Text, _>("User")
+            .bind::<diesel::sql_types::Text, _>("active")
+            .bind::<diesel::sql_types::Int8, _>(0i64)
+            .bind::<diesel::sql_types::Int8, _>(0i64)
+            .bind::<diesel::sql_types::Int8, _>(0i64)
+            .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now())
+            .execute(conn)?;
+            Ok::<_, diesel::result::Error>(())
+        }).await.expect("Failed to interact").expect("Failed to create user");
+
+        let service = SoftLimitService::new(config.clone());
+        assert!(service.is_enabled());
+
         // Should have remaining messages for free tier
-        let remaining = service.get_remaining_messages(&mut *conn, user_id)
-            .expect("Should get remaining");
+        let config_clone = config.clone();
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let remaining = conn.interact(move |conn| {
+            let service = SoftLimitService::new(config_clone);
+            service.get_remaining_messages(conn, user_id)
+        }).await.expect("Failed to interact").expect("Should get remaining");
         assert_eq!(remaining, Some(25), "Free tier should have 25 messages");
 
         // Record usage up to limit
         for _ in 0..25 {
-            service.record_usage(&mut *conn, user_id, "gemini-2.5-flash", 100).unwrap();
+            let config_clone = config.clone();
+            let conn = app.db_pool.get().await.expect("Failed to get connection");
+            conn.interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.record_usage(conn, user_id, "gemini-2.5-flash", 100)
+            }).await.expect("Failed to interact").unwrap();
         }
 
         // Should now be throttled
-        let throttle = service.should_throttle(&mut *conn, user_id)
-            .expect("Should check throttle");
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let throttle = conn.interact(move |conn| {
+            let service = SoftLimitService::new(config);
+            service.should_throttle(conn, user_id)
+        }).await.expect("Failed to interact").expect("Should check throttle");
         assert!(throttle.is_some(), "Should throttle after limit reached");
     }
 

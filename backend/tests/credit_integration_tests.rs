@@ -83,26 +83,26 @@ mod credit_integration_tests {
 
         // Create subscription for user
         let encryption_service = EncryptionService::new();
+        let config_for_sub = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         let sub = conn.interact(move |conn| {
-            let subscription_service = SubscriptionService::new(config.clone().as_ref().clone(), encryption_service);
+            let subscription_service = SubscriptionService::new(config_for_sub.as_ref().clone(), encryption_service);
 
             // Create subscription
             let new_sub = NewSubscription {
+                id: Uuid::new_v4(),
                 user_id,
                 plan_type: "basic".to_string(),
                 paddle_subscription_id: Some("test_sub_123".to_string()),
                 paddle_customer_id: Some("test_customer_123".to_string()),
-                paddle_plan_id: Some("test_plan_basic".to_string()),
                 status: "active".to_string(),
                 current_period_start: Utc::now(),
                 current_period_end: Utc::now() + Duration::days(30),
-                cancel_at_period_end: false,
-                canceled_at: None,
+                cancel_at_period_end: Some(false),
                 trial_end: None,
-                credits_allocated_this_period: false,
+                credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
-                metadata: None,
+                soft_limit_override: None,
             };
 
             use scribe_backend::schema::subscriptions::dsl;
@@ -245,12 +245,14 @@ mod credit_integration_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         let package = conn.interact(move |conn| {
             let new_package = NewCreditPackage {
+                package_id: "starter_pack".to_string(),
                 name: "Starter Pack".to_string(),
-                description: Some("Get started with 500 credits".to_string()),
                 credits: 500,
-                price_usd: 499, // $4.99
+                price_cents: 499, // $4.99
+                bonus_percentage: None,
                 paddle_price_id: Some("price_test_123".to_string()),
-                is_active: true,
+                active: Some(true),
+                display_order: None,
             };
 
             use scribe_backend::schema::credit_packages::dsl;
@@ -275,19 +277,15 @@ mod credit_integration_tests {
             credit_service.process_credit_purchase(
                 conn,
                 user_id,
-                500,
-                499,
+                &package.package_id,
                 "trans_test_123",
-                Some(json!({
-                    "package_id": package.id,
-                    "package_name": package.name
-                })),
             )
         }).await.expect("Failed to interact").expect("Failed to process purchase");
 
         assert_eq!(balance.balance, 500);
-        assert_eq!(balance.lifetime_purchased, 500);
+        // Note: lifetime_purchased field doesn't exist in CreditBalance
         assert_eq!(balance.lifetime_earned, 500); // Purchased credits count as earned
+        assert_eq!(balance.lifetime_spent, 0); // No credits spent yet
     }
 
     #[tokio::test]
@@ -309,13 +307,26 @@ mod credit_integration_tests {
         conn.interact(move |conn| {
             let credit_service = CreditService::new(config_clone.clone());
             credit_service.initialize_user_credits(conn, user_id)?;
+            // Create a package and process purchase
+            let package_id = "initial_pack";
+            diesel::sql_query(
+                "INSERT INTO credit_packages (id, package_id, name, credits, price_cents, active)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (package_id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(Uuid::new_v4())
+            .bind::<diesel::sql_types::Text, _>(package_id)
+            .bind::<diesel::sql_types::Text, _>("Initial Pack")
+            .bind::<diesel::sql_types::Int4, _>(1000)
+            .bind::<diesel::sql_types::Int4, _>(999)
+            .bind::<diesel::sql_types::Bool, _>(true)
+            .execute(conn)?;
+
             credit_service.process_credit_purchase(
                 conn,
                 user_id,
-                1000,
-                999,
+                package_id,
                 "trans_initial",
-                None,
             )
         }).await.expect("Failed to interact").expect("Failed to add initial credits");
 
@@ -329,7 +340,7 @@ mod credit_integration_tests {
 
         // Should have both purchased and granted credits
         assert!(balance.balance > 1000);
-        assert_eq!(balance.lifetime_purchased, 1000);
+        // Note: lifetime_purchased field doesn't exist in CreditBalance
         assert!(balance.lifetime_earned > 1000); // Includes monthly grant
         assert!(balance.last_monthly_grant.is_some());
 

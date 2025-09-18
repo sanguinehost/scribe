@@ -415,6 +415,7 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
+        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
 
         // Soft limits disabled by default
         let config = app.config.clone();
