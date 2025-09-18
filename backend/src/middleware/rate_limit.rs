@@ -59,6 +59,21 @@ pub fn create_template_rate_limiter() -> SimpleRateLimiter {
     SimpleRateLimiter::new(30, Duration::from_secs(60)) // 30 requests per minute
 }
 
+/// Rate limiter for credit purchase endpoints (very restrictive)
+pub fn create_credit_purchase_rate_limiter() -> SimpleRateLimiter {
+    SimpleRateLimiter::new(5, Duration::from_secs(3600)) // 5 purchases per hour
+}
+
+/// Rate limiter for subscription management endpoints (restrictive)
+pub fn create_subscription_rate_limiter() -> SimpleRateLimiter {
+    SimpleRateLimiter::new(3, Duration::from_secs(3600)) // 3 operations per hour
+}
+
+/// Rate limiter for webhook endpoints (allow more for reliability)
+pub fn create_webhook_rate_limiter() -> SimpleRateLimiter {
+    SimpleRateLimiter::new(100, Duration::from_secs(60)) // 100 webhooks per minute
+}
+
 /// Rate limiter middleware for template endpoints
 pub async fn template_rate_limit_middleware(
     request: Request,
@@ -104,6 +119,117 @@ pub async fn template_rate_limit_middleware(
     }
 
     // Continue with request
+    next.run(request).await
+}
+
+/// Rate limiter middleware for credit purchase endpoints
+pub async fn credit_purchase_rate_limit_middleware(
+    request: Request,
+    next: Next,
+) -> Response {
+    static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
+    let limiter = RATE_LIMITER.get_or_init(|| create_credit_purchase_rate_limiter());
+
+    // Extract client identifier
+    let client_ip = if let Some(forwarded) = request.headers().get("x-forwarded-for") {
+        forwarded.to_str().unwrap_or("unknown").to_string()
+    } else if let Some(socket_addr) = request.extensions().get::<SocketAddr>() {
+        socket_addr.ip().to_string()
+    } else {
+        "unknown".to_string()
+    };
+
+    // Check rate limit
+    if !limiter.is_allowed(&client_ip) {
+        warn!(client_ip = %client_ip, "Credit purchase rate limit exceeded");
+
+        let mut response = Response::new(
+            "Too Many Requests - Please wait before purchasing more credits".into()
+        );
+        *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
+
+        response.headers_mut().insert("X-RateLimit-Limit", "5".parse().unwrap());
+        response.headers_mut().insert("X-RateLimit-Window", "3600".parse().unwrap());
+        response.headers_mut().insert("Retry-After", "3600".parse().unwrap());
+
+        return response;
+    }
+
+    next.run(request).await
+}
+
+/// Rate limiter middleware for subscription management endpoints
+pub async fn subscription_rate_limit_middleware(
+    request: Request,
+    next: Next,
+) -> Response {
+    static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
+    let limiter = RATE_LIMITER.get_or_init(|| create_subscription_rate_limiter());
+
+    // Extract client identifier
+    let client_ip = if let Some(forwarded) = request.headers().get("x-forwarded-for") {
+        forwarded.to_str().unwrap_or("unknown").to_string()
+    } else if let Some(socket_addr) = request.extensions().get::<SocketAddr>() {
+        socket_addr.ip().to_string()
+    } else {
+        "unknown".to_string()
+    };
+
+    // Check rate limit
+    if !limiter.is_allowed(&client_ip) {
+        warn!(client_ip = %client_ip, "Subscription management rate limit exceeded");
+
+        let mut response = Response::new(
+            "Too Many Requests - Please wait before modifying subscription".into()
+        );
+        *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
+
+        response.headers_mut().insert("X-RateLimit-Limit", "3".parse().unwrap());
+        response.headers_mut().insert("X-RateLimit-Window", "3600".parse().unwrap());
+        response.headers_mut().insert("Retry-After", "3600".parse().unwrap());
+
+        return response;
+    }
+
+    next.run(request).await
+}
+
+/// Rate limiter middleware for webhook endpoints
+pub async fn webhook_rate_limit_middleware(
+    request: Request,
+    next: Next,
+) -> Response {
+    static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
+    let limiter = RATE_LIMITER.get_or_init(|| create_webhook_rate_limiter());
+
+    // Extract client identifier (for webhooks, use signature or user-agent)
+    let client_id = if let Some(signature) = request.headers().get("paddle-signature") {
+        // Use first 16 chars of signature as identifier
+        signature.to_str().unwrap_or("unknown").chars().take(16).collect::<String>()
+    } else if let Some(forwarded) = request.headers().get("x-forwarded-for") {
+        forwarded.to_str().unwrap_or("unknown").to_string()
+    } else if let Some(socket_addr) = request.extensions().get::<SocketAddr>() {
+        socket_addr.ip().to_string()
+    } else {
+        "unknown".to_string()
+    };
+
+    // Check rate limit
+    if !limiter.is_allowed(&client_id) {
+        warn!(client_id = %client_id, "Webhook rate limit exceeded");
+
+        let mut response = Response::new(
+            "Too Many Requests - Webhook rate limit exceeded".into()
+        );
+        *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
+
+        response.headers_mut().insert("X-RateLimit-Limit", "100".parse().unwrap());
+        response.headers_mut().insert("X-RateLimit-Window", "60".parse().unwrap());
+        response.headers_mut().insert("Retry-After", "60".parse().unwrap());
+
+        return response;
+    }
+
     next.run(request).await
 }
 

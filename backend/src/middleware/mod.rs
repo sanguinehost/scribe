@@ -16,4 +16,6 @@ pub use plan_enforcement::{
 pub use rate_limit::{
     SimpleRateLimiter, create_template_rate_limiter, template_rate_limit_middleware,
     rate_limit_logger, security_headers,
+    credit_purchase_rate_limit_middleware, subscription_rate_limit_middleware,
+    webhook_rate_limit_middleware,
 };

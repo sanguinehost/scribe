@@ -27,10 +27,11 @@ use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
     models::payment::{PlanFeatures, Subscription, SubscriptionStatus},
+    models::credit::{CreditBalance, CreditTransaction, CreditPackage},
     services::payment::{
         paddle_service::{CreateTransactionRequest, CreateTransactionResponse, TransactionItem, TransactionCheckout, TransactionBillingDetails, PaddleWebhook, PaddleEventType},
         PaddleService, SubscriptionService, UsageTrackingService,
-        PaymentAuditService, AuditEventType,
+        PaymentAuditService, AuditEventType, CreditService,
     },
     state::AppState,
 };
@@ -104,6 +105,54 @@ pub struct PayQuery {
 pub struct WebhookResponse {
     pub success: bool,
     pub message: String,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Serialize)]
+pub struct CreditBalanceResponse {
+    pub balance: i32,
+    pub lifetime_earned: i32,
+    pub lifetime_spent: i32,
+    pub last_monthly_grant: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Serialize)]
+pub struct CreditTransactionResponse {
+    pub id: Uuid,
+    pub amount: i32,
+    pub balance_after: i32,
+    pub transaction_type: String,
+    pub description: String,  // Decrypted
+    pub metadata: Option<serde_json::Value>,  // Decrypted
+    pub reference_id: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Serialize)]
+pub struct CreditPackagesResponse {
+    pub packages: Vec<CreditPackage>,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Deserialize)]
+pub struct PurchaseCreditsRequest {
+    pub package_id: String,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Serialize)]
+pub struct PurchaseCreditsResponse {
+    pub checkout_url: String,
+    pub transaction_id: String,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Deserialize)]
+pub struct TransactionListQuery {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 /// Get current user's subscription information
@@ -1259,26 +1308,249 @@ async fn process_subscription_cancelled(
     Ok(())
 }
 
+/// Get current user's credit balance
+#[cfg(feature = "payment")]
+pub async fn get_credit_balance(
+    auth_session: CurrentAuthSession,
+    State(app_state): State<AppState>,
+) -> Result<Json<CreditBalanceResponse>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+
+    let credit_service = CreditService::new(app_state.config.clone());
+
+    let user_id = user.id;
+    let balance = conn
+        .interact(move |conn| {
+            credit_service.get_balance(conn, user_id)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get credit balance: {}", e)))?;
+
+    Ok(Json(CreditBalanceResponse {
+        balance: balance.balance,
+        lifetime_earned: balance.lifetime_earned,
+        lifetime_spent: balance.lifetime_spent,
+        last_monthly_grant: balance.last_monthly_grant,
+    }))
+}
+
+/// Purchase credits
+#[cfg(feature = "payment")]
+pub async fn purchase_credits(
+    auth_session: CurrentAuthSession,
+    State(app_state): State<AppState>,
+    Json(request): Json<PurchaseCreditsRequest>,
+) -> Result<Json<PurchaseCreditsResponse>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    // Get credit package details
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+
+    let package_id = request.package_id.clone();
+    let package: CreditPackage = conn
+        .interact(move |conn| {
+            use crate::schema::credit_packages::dsl;
+            use diesel::prelude::*;
+
+            dsl::credit_packages
+                .filter(dsl::package_id.eq(&package_id))
+                .filter(dsl::active.eq(true))
+                .first(conn)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::NotFound(format!("Credit package not found: {}", e)))?;
+
+    // Create Paddle transaction for credit purchase
+    let paddle_service = PaddleService::new(app_state.config.payment.clone());
+
+    // Create or get customer
+    let customer = paddle_service
+        .create_customer(&user.email, Some(&user.username))
+        .await?;
+
+    // Create transaction
+    let transaction_request = CreateTransactionRequest {
+        customer_id: customer.id.clone(),
+        items: vec![TransactionItem {
+            price_id: package.paddle_price_id
+                .ok_or_else(|| AppError::BadRequest("Package not configured for purchase".to_string()))?,
+            quantity: 1,
+        }],
+        collection_mode: "automatic".to_string(),
+        checkout: Some(TransactionCheckout {
+            url: None,
+            success_url: Some(format!("{}/credits/success", app_state.config.frontend_base_url)),
+            cancel_url: Some(format!("{}/credits", app_state.config.frontend_base_url)),
+        }),
+        billing_details: None,
+    };
+
+    let transaction = paddle_service
+        .create_transaction(&transaction_request)
+        .await?;
+
+    Ok(Json(PurchaseCreditsResponse {
+        checkout_url: transaction.checkout_url,
+        transaction_id: transaction.transaction_id,
+    }))
+}
+
+/// Get available credit packages
+#[cfg(feature = "payment")]
+pub async fn get_credit_packages(
+    State(app_state): State<AppState>,
+) -> Result<Json<CreditPackagesResponse>, AppError> {
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+
+    let packages = conn
+        .interact(|conn| {
+            use crate::schema::credit_packages::dsl;
+            use diesel::prelude::*;
+
+            dsl::credit_packages
+                .filter(dsl::active.eq(true))
+                .order(dsl::credits.asc())
+                .load::<CreditPackage>(conn)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get credit packages: {}", e)))?;
+
+    Ok(Json(CreditPackagesResponse { packages }))
+}
+
+/// Get user's credit transaction history
+#[cfg(feature = "payment")]
+pub async fn get_credit_transactions(
+    auth_session: CurrentAuthSession,
+    State(app_state): State<AppState>,
+    Query(query): Query<TransactionListQuery>,
+) -> Result<Json<Vec<CreditTransactionResponse>>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+
+    let credit_service = CreditService::new(app_state.config.clone());
+
+    let user_id = user.id;
+    let limit = query.limit;
+    let offset = query.offset;
+
+    // Get encrypted transactions
+    let transactions = conn
+        .interact(move |conn| {
+            credit_service.get_transaction_history(conn, user_id, limit, offset)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get transactions: {}", e)))?;
+
+    // Decrypt transactions for response
+    let mut decrypted_transactions = Vec::new();
+    for transaction in transactions {
+        let conn = app_state.pool.get().await
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        let user_id = user.id;
+        let credit_service_clone = CreditService::new(app_state.config.clone());
+        let transaction_clone = transaction.clone();
+
+        let (description, metadata) = conn
+            .interact(move |conn| {
+                credit_service_clone.decrypt_transaction_data(
+                    conn,
+                    user_id,
+                    &transaction_clone,
+                    None, // In production, would pass session DEK
+                )
+            })
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+            .unwrap_or_else(|_| {
+                // If decryption fails, use placeholder text
+                ("Transaction description unavailable".to_string(), None)
+            });
+
+        decrypted_transactions.push(CreditTransactionResponse {
+            id: transaction.id,
+            amount: transaction.amount,
+            balance_after: transaction.balance_after,
+            transaction_type: transaction.transaction_type,
+            description,
+            metadata,
+            reference_id: transaction.reference_id,
+            created_at: transaction.created_at.unwrap_or_else(chrono::Utc::now),
+        });
+    }
+
+    Ok(Json(decrypted_transactions))
+}
+
 /// Create authenticated payment routes (require login)
 #[cfg(feature = "payment")]
 pub fn payment_routes() -> Router<AppState> {
+    use axum::middleware::from_fn;
+    use crate::middleware::{
+        credit_purchase_rate_limit_middleware,
+        subscription_rate_limit_middleware,
+    };
+
     Router::new()
         .route("/subscription", get(get_subscription))
         .route("/subscription", post(create_subscription))
-        .route("/subscription/cancel", post(cancel_subscription))
-        .route("/subscription/reactivate", post(reactivate_subscription))
-        .route("/payment", post(create_payment)) // New transaction-based payment endpoint
+        .route("/subscription/cancel", post(cancel_subscription)
+            .layer(from_fn(subscription_rate_limit_middleware)))
+        .route("/subscription/reactivate", post(reactivate_subscription)
+            .layer(from_fn(subscription_rate_limit_middleware)))
+        .route("/payment", post(create_payment)
+            .layer(from_fn(credit_purchase_rate_limit_middleware))) // Rate limit payment creation
         .route("/transaction/:id/verify", get(verify_transaction)) // Transaction verification endpoint
         .route("/plans", get(get_plans))
         .route("/usage", get(get_usage))
+        // Credit endpoints
+        .route("/credits/balance", get(get_credit_balance))
+        .route("/credits/purchase", post(purchase_credits)
+            .layer(from_fn(credit_purchase_rate_limit_middleware))) // Rate limit credit purchases
+        .route("/credits/packages", get(get_credit_packages))
+        .route("/credits/transactions", get(get_credit_transactions))
 }
 
 /// Create public payment webhook routes (no authentication required)
 #[cfg(feature = "payment")]
 pub fn payment_webhook_routes() -> Router<AppState> {
+    use axum::middleware::from_fn;
+    use crate::middleware::webhook_rate_limit_middleware;
+
     tracing::info!("🎯 Creating payment webhook routes");
     Router::new()
-        .route("/webhook/paddle", post(paddle_webhook))
+        .route("/webhook/paddle", post(paddle_webhook)
+            .layer(from_fn(webhook_rate_limit_middleware))) // Rate limit webhooks
         .route("/pay", get(handle_pay_page)) // Handle Paddle payment completion redirects
 }
 
