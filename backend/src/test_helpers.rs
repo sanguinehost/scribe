@@ -62,7 +62,7 @@ use axum::{
     extract::Request as AxumRequest,
     http::{Request, StatusCode}, // Removed unused Method, header
 };
-use axum_login::{AuthManagerLayerBuilder, AuthSession}; // Removed unused login_required
+use axum_login::{AuthManagerLayerBuilder, AuthSession, login_required};
 use diesel::RunQueryDsl;
 use diesel::prelude::*;
 use diesel_migrations::{EmbeddedMigrations, embed_migrations};
@@ -1634,7 +1634,8 @@ pub async fn spawn_app_with_rate_limiting_options(
         .route_layer(middleware::from_fn_with_state(
             app_state_inner.clone(),
             auth_log_wrapper,
-        ));
+        ))
+        .route_layer(login_required!(AuthBackend)); // Apply authentication enforcement like in production
 
     // Webhook routes (no authentication, no rate limiting - signature verified in handler)
     #[cfg(feature = "payment")]

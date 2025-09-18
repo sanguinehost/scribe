@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { PAYMENT_FEATURES } from '$lib/utils/features';
 
 // Credit balance and usage information
 export interface CreditBalance {
@@ -51,6 +52,9 @@ interface CreditState {
 	isLoading: boolean;
 	error: string | null;
 	lastFetch: Date | null;
+	modelCosts?: { [key: string]: number };
+	tokenPricing?: { [key: string]: any };
+	contextMultipliers?: { [key: string]: number };
 }
 
 // Create the main credit store
@@ -67,6 +71,11 @@ function createCreditStore() {
 
 	// Fetch credit balance
 	async function fetchBalance() {
+		if (!PAYMENT_FEATURES.credits) {
+			update((state) => ({ ...state, error: 'Credits feature not enabled' }));
+			throw new Error('Credits feature not enabled');
+		}
+
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
@@ -105,6 +114,11 @@ function createCreditStore() {
 
 	// Fetch transaction history
 	async function fetchTransactions(limit: number = 50, offset: number = 0) {
+		if (!PAYMENT_FEATURES.credits) {
+			update((state) => ({ ...state, error: 'Credits feature not enabled' }));
+			throw new Error('Credits feature not enabled');
+		}
+
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
@@ -142,6 +156,11 @@ function createCreditStore() {
 
 	// Fetch available credit packages
 	async function fetchPackages() {
+		if (!PAYMENT_FEATURES.credits) {
+			update((state) => ({ ...state, error: 'Credits feature not enabled' }));
+			throw new Error('Credits feature not enabled');
+		}
+
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
@@ -179,6 +198,11 @@ function createCreditStore() {
 
 	// Purchase credits
 	async function purchaseCredits(packageId: string) {
+		if (!PAYMENT_FEATURES.credits) {
+			update((state) => ({ ...state, error: 'Credits feature not enabled' }));
+			throw new Error('Credits feature not enabled');
+		}
+
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
@@ -244,14 +268,65 @@ function createCreditStore() {
 
 	// Calculate if user has sufficient credits for a model
 	function hasSufficientCredits(requiredCredits: number): boolean {
+		if (!PAYMENT_FEATURES.credits) {
+			return true; // If credits are disabled, assume unlimited access
+		}
 		const state = get({ subscribe });
 		return state.balance ? state.balance.balance >= requiredCredits : false;
 	}
 
+	// Fetch model costs from backend
+	async function fetchModelCosts() {
+		if (!PAYMENT_FEATURES.credits) {
+			return null;
+		}
+
+		try {
+			const response = await fetch('/api/payment/credits/model-costs', {
+				credentials: 'include',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
+
+			if (!response.ok) {
+				const error = await response.json();
+				throw new Error(error.message || 'Failed to fetch model costs');
+			}
+
+			const data = await response.json();
+
+			update((state) => ({
+				...state,
+				modelCosts: data.model_costs || {},
+				tokenPricing: data.token_pricing || {},
+				contextMultipliers: data.context_multipliers || {}
+			}));
+
+			return data;
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : 'Failed to fetch model costs';
+			console.error('Failed to fetch model costs:', errorMessage);
+			// Don't update error state as this is non-critical
+			return null;
+		}
+	}
+
 	// Get credit cost for a specific model
 	function getModelCreditCost(modelName: string): number {
-		// These should match the backend configuration
-		const modelCosts: { [key: string]: number } = {
+		if (!PAYMENT_FEATURES.credits) {
+			return 0; // If credits are disabled, all models are free
+		}
+
+		const state = get({ subscribe });
+
+		// Use dynamic costs if available
+		if (state.modelCosts && state.modelCosts[modelName] !== undefined) {
+			return state.modelCosts[modelName];
+		}
+
+		// Fallback to hardcoded defaults for resilience
+		const defaultCosts: { [key: string]: number } = {
 			'gemini-2.5-pro': 50,
 			'gemini-2.5-flash': 10,
 			'gemini-2.5-flash-8b': 5,
@@ -264,7 +339,7 @@ function createCreditStore() {
 			'claude-3-5-haiku-20241022': 20,
 		};
 
-		return modelCosts[modelName] || 10; // Default to 10 credits
+		return defaultCosts[modelName] || 10; // Default to 10 credits
 	}
 
 	// Reset store
@@ -276,7 +351,10 @@ function createCreditStore() {
 			dailyUsage: null,
 			isLoading: false,
 			error: null,
-			lastFetch: null
+			lastFetch: null,
+			modelCosts: undefined,
+			tokenPricing: undefined,
+			contextMultipliers: undefined
 		});
 	}
 
@@ -286,6 +364,7 @@ function createCreditStore() {
 		fetchTransactions,
 		fetchPackages,
 		purchaseCredits,
+		fetchModelCosts,
 		updateDailyUsage,
 		hasSufficientCredits,
 		getModelCreditCost,

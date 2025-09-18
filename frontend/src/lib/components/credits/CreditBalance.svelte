@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { creditStore, formattedBalance, usagePercentage, isNearLimit, isOverLimit } from '$lib/stores/credits';
+	import { PAYMENT_FEATURES } from '$lib/utils/features';
 	import { Coins, AlertCircle, TrendingUp, Clock } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -11,18 +12,27 @@
 	export let showPurchaseButton = true;
 	export let onPurchaseClick = () => {};
 
-	// Fetch balance on mount
+	// Fetch balance and model costs on mount
 	onMount(async () => {
+		if (!PAYMENT_FEATURES.credits) {
+			return;
+		}
+
 		try {
-			await creditStore.fetchBalance();
+			await Promise.all([
+				creditStore.fetchBalance(),
+				creditStore.fetchModelCosts()
+			]);
 		} catch (error) {
-			console.error('Failed to fetch credit balance:', error);
+			console.error('Failed to fetch credit data:', error);
 		}
 	});
 
 	// Auto-refresh balance every 5 minutes
 	const refreshInterval = setInterval(() => {
-		creditStore.fetchBalance();
+		if (PAYMENT_FEATURES.credits) {
+			creditStore.fetchBalance();
+		}
 	}, 5 * 60 * 1000);
 
 	// Cleanup
@@ -36,7 +46,9 @@
 	$: error = $creditStore.error;
 </script>
 
-{#if compact}
+{#if !PAYMENT_FEATURES.credits}
+	<!-- Credits feature disabled -->
+{:else if compact}
 	<!-- Compact view for header/sidebar -->
 	<div class="flex items-center gap-2">
 		<Tooltip.Root>

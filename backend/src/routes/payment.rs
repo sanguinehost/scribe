@@ -1512,6 +1512,36 @@ pub async fn get_credit_transactions(
     Ok(Json(decrypted_transactions))
 }
 
+/// Get model credit costs configuration
+#[cfg(feature = "payment")]
+pub async fn get_model_costs(
+    State(app_state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    use std::fs;
+    
+    // Load the subscription tiers configuration
+    let config_path = "config/subscription_tiers.json";
+    let config_str = fs::read_to_string(config_path)
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to read config: {}", e)))?;
+    
+    let config: serde_json::Value = serde_json::from_str(&config_str)
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to parse config: {}", e)))?;
+    
+    // Extract model costs and token pricing
+    let model_costs = config["credit_system"]["model_costs"].clone();
+    let token_pricing = config["credit_system"]["token_pricing"].clone();
+    
+    // Build response
+    let response = serde_json::json!({
+        "model_costs": model_costs,
+        "token_pricing": token_pricing,
+        "credits_enabled": config["feature_flags"]["credits_enabled"],
+        "context_multipliers": config["credit_system"]["context_multipliers"]
+    });
+    
+    Ok(Json(response))
+}
+
 /// Create authenticated payment routes (require login)
 #[cfg(feature = "payment")]
 pub fn payment_routes() -> Router<AppState> {
@@ -1539,6 +1569,7 @@ pub fn payment_routes() -> Router<AppState> {
             .layer(from_fn(credit_purchase_rate_limit_middleware))) // Rate limit credit purchases
         .route("/credits/packages", get(get_credit_packages))
         .route("/credits/transactions", get(get_credit_transactions))
+        .route("/credits/model-costs", get(get_model_costs))
 }
 
 /// Create public payment webhook routes (no authentication required)

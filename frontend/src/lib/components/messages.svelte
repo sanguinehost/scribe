@@ -25,6 +25,9 @@ import Settings from './settings/Settings.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip'; // Import Tooltip components
 	import { infiniteScroll } from '$lib/actions/infinite-scroll';
 	import { Loader2 } from 'lucide-svelte';
+	import SoftLimitWarning from '$lib/components/warnings/SoftLimitWarning.svelte';
+	import { usageStore, shouldShowSoftLimitWarning } from '$lib/stores/usage';
+	import { PAYMENT_FEATURES } from '$lib/utils/features';
 
 	let containerRef = $state<HTMLDivElement | null>(null);
 	let endRef = $state<HTMLDivElement | null>(null);
@@ -121,6 +124,12 @@ import Settings from './settings/Settings.svelte';
 	onMount(() => {
 		mounted = true;
 
+		// Initialize usage tracking for soft limits (feature-gated)
+		if (PAYMENT_FEATURES.softLimits) {
+			usageStore.fetchUsageStats().catch(console.error);
+			usageStore.startAutoRefresh(30000); // Refresh every 30 seconds
+		}
+
 		// Listen for lorebook events from the overview components
 		const handleSelectLorebook = (event: CustomEvent) => {
 			selectedLorebookStore.selectLorebook(event.detail.lorebookId);
@@ -139,6 +148,11 @@ import Settings from './settings/Settings.svelte';
 		document.addEventListener('backToLorebookList', handleBackToLorebookList);
 
 		return () => {
+			// Cleanup usage store auto-refresh
+			if (PAYMENT_FEATURES.softLimits) {
+				usageStore.stopAutoRefresh();
+			}
+
 			document.removeEventListener('selectLorebook', handleSelectLorebook as EventListener);
 			document.removeEventListener('editLorebook', handleEditLorebook as EventListener);
 			document.removeEventListener('backToLorebookList', handleBackToLorebookList);
@@ -467,6 +481,21 @@ import Settings from './settings/Settings.svelte';
 					<Loader2 class="h-4 w-4 animate-spin" />
 					<span class="text-sm">Loading older messages...</span>
 				</div>
+			</div>
+		{/if}
+
+		<!-- Soft Limit Warning (feature-gated) -->
+		{#if $shouldShowSoftLimitWarning && messages.length > 0}
+			<div class="px-4 py-2">
+				<SoftLimitWarning
+					softLimitStatus={$usageStore.softLimitStatus}
+					compact={false}
+					showUpgradeButton={true}
+					onUpgrade={() => {
+						// Navigate to upgrade page - could be implemented later
+						console.log('Navigate to upgrade');
+					}}
+				/>
 			</div>
 		{/if}
 

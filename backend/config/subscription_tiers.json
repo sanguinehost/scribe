@@ -159,11 +159,33 @@
     "model_costs": {
       "gemini-2.5-flash-lite": 0,
       "gemini-2.5-flash": 0,
-      "gemini-2.5-pro": 50,
+      "gemini-2.5-pro": 100,
       "gemini-2.0-flash-experimental": 0,
       "claude-3.5-sonnet": 75,
       "gpt-4o": 60,
       "gpt-4o-mini": 10
+    },
+    "token_pricing": {
+      "gemini-2.5-flash-lite": {
+        "prompt_credits_per_1k": 5,
+        "completion_credits_per_1k": 20,
+        "description": "$0.005 per 1K prompt, $0.02 per 1K completion tokens"
+      },
+      "gemini-2.5-flash": {
+        "prompt_credits_per_1k": 15,
+        "completion_credits_per_1k": 60,
+        "description": "$0.015 per 1K prompt, $0.06 per 1K completion tokens"
+      },
+      "gemini-2.5-pro": {
+        "prompt_credits_per_1k": 75,
+        "completion_credits_per_1k": 300,
+        "description": "$0.075 per 1K prompt, $0.30 per 1K completion tokens"
+      },
+      "gemini-2.0-flash-experimental": {
+        "prompt_credits_per_1k": 10,
+        "completion_credits_per_1k": 40,
+        "description": "$0.01 per 1K prompt, $0.04 per 1K completion tokens"
+      }
     },
     "context_multipliers": {
       "32768": 1.0,

@@ -1,7 +1,7 @@
 import { Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
-import { ENABLE_LOCAL_LLM } from '$lib/utils/features';
+import { ENABLE_LOCAL_LLM, PAYMENT_FEATURES } from '$lib/utils/features';
 import type {
 	User,
 	Message,
@@ -89,6 +89,15 @@ import type {
 	CreatePaymentResponse,
 	CancelSubscriptionRequest
 } from '$lib/types';
+import type {
+	// Credit system types
+	CreditBalanceResponse,
+	CreditTransactionsResponse,
+	CreditPackagesResponse,
+	ModelCostsResponse,
+	PurchaseCreditsResponse,
+	UsageResponse
+} from '$lib/types/payment';
 import {
 	setConnectionError,
 	performLogout,
@@ -1486,6 +1495,75 @@ class ApiClient {
 			method: 'POST',
 			body: JSON.stringify({})
 		});
+	}
+
+	// ============================================================================
+	// Credit System Methods
+	// ============================================================================
+
+	/**
+	 * Get current user's credit balance
+	 */
+	async getCreditBalance(): Promise<Result<CreditBalanceResponse, ApiError>> {
+		if (!PAYMENT_FEATURES.credits) {
+			return err(new ApiResponseError(501, 'Credits feature not enabled'));
+		}
+		return this.fetch<CreditBalanceResponse>('/api/payment/credits/balance');
+	}
+
+	/**
+	 * Get user's credit transaction history
+	 */
+	async getCreditTransactions(limit = 50, offset = 0): Promise<Result<CreditTransactionsResponse, ApiError>> {
+		if (!PAYMENT_FEATURES.credits) {
+			return err(new ApiResponseError(501, 'Credits feature not enabled'));
+		}
+		return this.fetch<CreditTransactionsResponse>(
+			`/api/payment/credits/transactions?limit=${limit}&offset=${offset}`
+		);
+	}
+
+	/**
+	 * Get available credit packages for purchase
+	 */
+	async getCreditPackages(): Promise<Result<CreditPackagesResponse, ApiError>> {
+		if (!PAYMENT_FEATURES.credits) {
+			return err(new ApiResponseError(501, 'Credits feature not enabled'));
+		}
+		return this.fetch<CreditPackagesResponse>('/api/payment/credits/packages');
+	}
+
+	/**
+	 * Get model costs and pricing information
+	 */
+	async getModelCosts(): Promise<Result<ModelCostsResponse, ApiError>> {
+		if (!PAYMENT_FEATURES.credits) {
+			return err(new ApiResponseError(501, 'Credits feature not enabled'));
+		}
+		return this.fetch<ModelCostsResponse>('/api/payment/credits/model-costs');
+	}
+
+	/**
+	 * Purchase a credit package
+	 */
+	async purchaseCredits(packageId: string): Promise<Result<PurchaseCreditsResponse, ApiError>> {
+		if (!PAYMENT_FEATURES.credits) {
+			return err(new ApiResponseError(501, 'Credits feature not enabled'));
+		}
+		return this.fetch<PurchaseCreditsResponse>('/api/payment/credits/purchase', {
+			method: 'POST',
+			body: JSON.stringify({ package_id: packageId })
+		});
+	}
+
+	/**
+	 * Get current usage stats (daily and monthly)
+	 */
+	async getUsageStats(): Promise<Result<UsageResponse, ApiError>> {
+		if (!PAYMENT_FEATURES.enabled) {
+			return err(new ApiResponseError(501, 'Payment features not enabled'));
+		}
+		return this.fetch<UsageResponse>('/api/payment/usage');
 	}
 }
 

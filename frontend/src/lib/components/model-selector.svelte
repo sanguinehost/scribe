@@ -16,6 +16,9 @@
 	import { LLMStore } from '$lib/stores/llm.svelte';
 	import { ModelLifecycleStore } from '$lib/stores/modelLifecycle.svelte';
 	import { apiClient } from '$lib/api';
+	import { creditStore } from '$lib/stores/credits';
+	import { PAYMENT_FEATURES } from '$lib/utils/features';
+	import { Coins } from 'lucide-svelte';
 
 	let {
 		class: c,
@@ -103,6 +106,19 @@
 		availableModels().find((model) => model.id === currentEffectiveModel())
 	);
 
+	// Get credit cost for a model (feature-gated)
+	function getModelCreditCost(modelId: string): number {
+		if (!PAYMENT_FEATURES.credits) return 0;
+		return creditStore.getModelCreditCost(modelId);
+	}
+
+	// Check if user has sufficient credits for a model (feature-gated)
+	function hasSufficientCredits(modelId: string): boolean {
+		if (!PAYMENT_FEATURES.credits) return true;
+		const cost = getModelCreditCost(modelId);
+		return creditStore.hasSufficientCredits(cost);
+	}
+
 	function handleModelSelect(modelId: string) {
 		open = false;
 		if (chat) {
@@ -144,6 +160,24 @@
 					<div class="text-xs text-muted-foreground">
 						{availableModels().find((m) => m.id === selectedChatModel.value)?.name ||
 							'Default Model'}
+						{#if PAYMENT_FEATURES.credits}
+							{@const defaultModel = availableModels().find((m) => m.id === selectedChatModel.value)}
+							{#if defaultModel && !defaultModel.isLocal}
+								{@const creditCost = getModelCreditCost(defaultModel.id)}
+								{@const hasCredits = hasSufficientCredits(defaultModel.id)}
+								<div class="flex items-center gap-1 mt-1">
+									<Coins class="h-3 w-3" />
+									<span class={hasCredits ? '' : 'text-red-500'}>
+										{creditCost} credits per message
+									</span>
+								</div>
+							{:else if defaultModel && defaultModel.isLocal}
+								<div class="flex items-center gap-1 mt-1 text-green-600 dark:text-green-400">
+									<Coins class="h-3 w-3" />
+									<span>Free (local model)</span>
+								</div>
+							{/if}
+						{/if}
 					</div>
 				</div>
 
@@ -155,12 +189,14 @@
 			</DropdownMenuItem>
 		{/if}
 		{#each availableModels() as chatModel (chatModel.id)}
+			{@const hasCredits = hasSufficientCredits(chatModel.id)}
 			<DropdownMenuItem
-				onSelect={() => handleModelSelect(chatModel.id)}
-				class="group/item flex flex-row items-center justify-between gap-4"
+				onSelect={() => hasCredits ? handleModelSelect(chatModel.id) : undefined}
+				class="group/item flex flex-row items-center justify-between gap-4 {!hasCredits ? 'opacity-50 cursor-not-allowed' : ''}"
 				data-active={chat
 					? chatModelOverride === chatModel.id
 					: chatModel.id === selectedChatModel.value}
+				disabled={!hasCredits}
 			>
 				<div class="flex flex-col items-start gap-1">
 					<div class="flex items-center gap-2">
@@ -192,6 +228,24 @@
 					</div>
 					<div class="text-xs text-muted-foreground">
 						{chatModel.description}
+						{#if PAYMENT_FEATURES.credits && !chatModel.isLocal}
+							{@const creditCost = getModelCreditCost(chatModel.id)}
+							{@const hasCredits = hasSufficientCredits(chatModel.id)}
+							<div class="flex items-center gap-1 mt-1">
+								<Coins class="h-3 w-3" />
+								<span class={hasCredits ? '' : 'text-red-500'}>
+									{creditCost} credits per message
+								</span>
+								{#if !hasCredits}
+									<span class="text-red-500 text-xs">(insufficient credits)</span>
+								{/if}
+							</div>
+						{:else if PAYMENT_FEATURES.credits && chatModel.isLocal}
+							<div class="flex items-center gap-1 mt-1 text-green-600 dark:text-green-400">
+								<Coins class="h-3 w-3" />
+								<span>Free (local model)</span>
+							</div>
+						{/if}
 					</div>
 				</div>
 

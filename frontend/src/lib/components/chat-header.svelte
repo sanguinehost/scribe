@@ -11,6 +11,8 @@
 	import type { User } from '$lib/types'; // Updated import path
 	import type { ScribeChatSession } from '$lib/types'; // Use Scribe type
 	import CreditBalance from '$lib/components/credits/CreditBalance.svelte';
+	import PurchaseCreditsDialog from '$lib/components/credits/PurchaseCreditsDialog.svelte';
+	import { PAYMENT_FEATURES } from '$lib/utils/features';
 
 	let {
 		user,
@@ -42,6 +44,9 @@
 
 	// Track previous event count to detect when new events are added
 	let previousEventCount = $state<number>(0);
+
+	// Credit purchase dialog state
+	let showPurchaseDialog = $state(false);
 
 	// Load settings on chat change (same as ChatConfigPanel)
 	$effect(() => {
@@ -112,6 +117,15 @@
 	}
 
 	// Note: Chronicle creation and all extraction processes are now automatic through the narrative intelligence system
+
+	function handlePurchaseClick() {
+		showPurchaseDialog = true;
+	}
+
+	function handlePurchaseSuccess() {
+		showPurchaseDialog = false;
+		toast.success('Purchase completed! Your credits will be available shortly.');
+	}
 </script>
 
 <header class="sticky top-0 flex items-center gap-2 bg-background p-2">
@@ -144,8 +158,19 @@
 
 	{#if !readonly && chat}
 		<div class="ml-auto flex items-center gap-2">
-			<CreditBalance compact={true} showPurchaseButton={false} />
+			{#if PAYMENT_FEATURES.credits}
+				<CreditBalance compact={true} showPurchaseButton={true} onPurchaseClick={handlePurchaseClick} />
+			{/if}
 			<ModelSelector {chat} class="" />
 		</div>
 	{/if}
 </header>
+
+<!-- Purchase Credits Dialog -->
+{#if PAYMENT_FEATURES.credits}
+	<PurchaseCreditsDialog
+		bind:open={showPurchaseDialog}
+		on:close={() => (showPurchaseDialog = false)}
+		on:purchaseSuccess={handlePurchaseSuccess}
+	/>
+{/if}
