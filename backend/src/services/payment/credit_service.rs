@@ -114,7 +114,7 @@ impl CreditService {
         let new_balance = balance.balance + amount;
 
         // Check max balance limit
-        if new_balance > self.config.payment.max_credit_balance {
+        if new_balance > self.config.payment.max_credit_balance as i32 {
             return Err(AppError::BadRequest(format!(
                 "Credit balance would exceed maximum limit of {}",
                 self.config.payment.max_credit_balance
@@ -281,7 +281,7 @@ impl CreditService {
 
         // Load subscription tiers config
         let tier_config = self.load_subscription_tier_config(tier)?;
-        let monthly_credits = tier_config["monthly_credits"].as_u64()
+        let monthly_credits = tier_config["credits"]["included_monthly"].as_u64()
             .ok_or_else(|| AppError::BadRequest("Invalid tier configuration".to_string()))? as i32;
 
         if monthly_credits == 0 {

@@ -1081,7 +1081,7 @@ async fn process_transaction_completed(
             total_cents,
             tax_cents,
             discount_cents,
-            currency_code,
+            currency_code: Some(currency_code),
             paddle_customer_id: Some(customer_id.clone()),
             customer_data_encrypted: Some(customer_data_encrypted),
             customer_data_nonce: Some(customer_data_nonce),
