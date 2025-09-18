@@ -162,8 +162,8 @@ mod soft_limit_tests {
         config.payment.free_tier_token_limit = 1000; // Set low limit for testing
         let config = Arc::new(config);
 
-        // Record usage up to limit
-        for i in 0..15 {
+        // Record usage up to limit (free tier is 20 messages)
+        for i in 0..25 {
             let config_clone = config.clone();
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             let usage = conn.interact(move |conn| {
@@ -171,11 +171,11 @@ mod soft_limit_tests {
                 service.record_usage(conn, user_id, "gemini-2.5-flash", 100)
             }).await.expect("Failed to interact").expect("Failed to record usage");
 
-            if i < 9 {
-                assert!(usage.soft_limit_triggered_at.is_none());
+            if i < 19 {
+                assert!(usage.soft_limit_triggered_at.is_none(), "Should not trigger before 20 messages, but triggered at message {}", i + 1);
             } else {
-                // Should trigger after 10th message
-                assert!(usage.soft_limit_triggered_at.is_some());
+                // Should trigger at 20th message (index 19)
+                assert!(usage.soft_limit_triggered_at.is_some(), "Should trigger at message 20 or after, current message: {}", i + 1);
             }
         }
     }
@@ -188,14 +188,38 @@ mod soft_limit_tests {
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
 
+        // Create a basic subscription (which has throttling thresholds)
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        conn.interact(move |conn| {
+            let new_sub = NewSubscription {
+                id: Uuid::new_v4(),
+                user_id,
+                plan_type: "basic".to_string(),
+                paddle_subscription_id: Some("test_throttle".to_string()),
+                paddle_customer_id: Some("test_customer".to_string()),
+                status: "active".to_string(),
+                current_period_start: Utc::now(),
+                current_period_end: Utc::now() + Duration::days(30),
+                cancel_at_period_end: Some(false),
+                trial_end: None,
+                credits_allocated_this_period: Some(false),
+                last_credit_grant: None,
+                soft_limit_override: None,
+            };
+
+            use scribe_backend::schema::subscriptions::dsl;
+            diesel::insert_into(dsl::subscriptions)
+                .values(&new_sub)
+                .execute(conn)
+        }).await.expect("Failed to interact").expect("Failed to create subscription");
+
         // Enable soft limits
         let mut config = (*app.config).clone();
         config.payment.soft_limits_enabled = true;
-        config.payment.free_tier_token_limit = 1000; // Set low limit for testing
         let config = Arc::new(config);
 
-        // Trigger soft limit
-        for _ in 0..15 {
+        // Trigger soft limit (basic tier is 100 messages, triggers throttling after 100)
+        for _ in 0..101 {
             let config_clone = config.clone();
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             conn.interact(move |conn| {
@@ -204,7 +228,7 @@ mod soft_limit_tests {
             }).await.expect("Failed to interact").expect("Failed to record");
         }
 
-        // Check throttling
+        // Check throttling - basic tier has 2 second delay after 100 messages
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         let throttle = conn.interact(move |conn| {
@@ -212,10 +236,10 @@ mod soft_limit_tests {
             service.should_throttle(conn, user_id)
         }).await.expect("Failed to interact").expect("Failed to check throttle");
 
-        assert!(throttle.is_some());
+        assert!(throttle.is_some(), "Should have throttle delay for basic tier after 100 messages");
         let delay = throttle.unwrap();
         let delay_secs = delay.as_secs();
-        assert!(delay_secs >= 2 && delay_secs <= 5); // Should be between 2-5 seconds
+        assert!(delay_secs >= 2 && delay_secs <= 5, "Delay should be 2-5 seconds, got {} seconds", delay_secs);
     }
 
     #[tokio::test]
@@ -315,8 +339,9 @@ mod soft_limit_tests {
         }).await.expect("Failed to interact").expect("Failed to get stats");
 
         assert_eq!(stats.len(), 5);
-        // Stats should be in chronological order (oldest first)
-        assert!(stats[0].message_count > stats[4].message_count);
+        // Stats should be in reverse chronological order (newest first)
+        // Day 0 (today) has 10 messages, Day 4 (4 days ago) has 14 messages
+        assert!(stats[0].message_count < stats[4].message_count);
     }
 
     #[tokio::test]

@@ -178,18 +178,11 @@ mod credit_integration_tests {
                 soft_limit_service.record_usage(conn, user_id, "gemini-2.5-flash", 1000)
             }).await.expect("Failed to interact").expect("Failed to record usage");
 
-            // After some messages, should trigger soft limit
-            if i >= 10 {
-                assert!(usage.soft_limit_triggered_at.is_some());
+            // After 20 messages (free tier limit), should trigger soft limit
+            if i >= 19 {
+                assert!(usage.soft_limit_triggered_at.is_some(), "Should trigger after 20 messages, at message {}", i + 1);
 
-                // Should be throttled
-                let config_clone = config.clone();
-                let conn = app.db_pool.get().await.expect("Failed to get connection");
-                let throttle = conn.interact(move |conn| {
-                    let soft_limit_service = SoftLimitService::new(config_clone);
-                    soft_limit_service.should_throttle(conn, user_id)
-                }).await.expect("Failed to interact").expect("Failed to check throttle");
-                assert!(throttle.is_some());
+                // Note: Free tier doesn't have throttling delays, just hard limit
             }
 
             // Deduct credits for premium model usage

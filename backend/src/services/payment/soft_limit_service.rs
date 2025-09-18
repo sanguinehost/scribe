@@ -39,18 +39,19 @@ impl SoftLimitService {
         let config_path = &self.config.payment.subscription_config_path;
         if let Ok(config_str) = std::fs::read_to_string(config_path) {
             if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_str) {
-                if let Some(limit) = config["tiers"][tier]["daily_soft_limit"].as_i64() {
+                // Look for daily_messages in the limits section
+                if let Some(limit) = config["tiers"][tier]["limits"]["daily_messages"].as_i64() {
                     return limit as i32;
                 }
             }
         }
 
-        // Default limits by tier
+        // Default limits by tier (matching config file values)
         match tier.to_lowercase().as_str() {
-            "free" => 25,
+            "free" => 20,     // Updated to match config
             "basic" => 100,
             "premium" => 200,
-            _ => 25,
+            _ => 20,          // Default to free tier limit
         }
     }
 
@@ -359,7 +360,7 @@ mod tests {
         let service = SoftLimitService::new(app.config.clone());
 
         // Test progressive throttling based on tier limits
-        assert_eq!(service.get_daily_limit("free"), 25);
+        assert_eq!(service.get_daily_limit("free"), 20);
         assert_eq!(service.get_daily_limit("basic"), 100);
         assert_eq!(service.get_daily_limit("premium"), 200);
     }
