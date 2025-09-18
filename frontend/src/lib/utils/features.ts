@@ -6,7 +6,12 @@
  * during the build process, reducing bundle size and attack surface.
  */
 
-import { PUBLIC_ENABLE_LOCAL_LLM, PUBLIC_ENABLE_PAYMENTS } from '$env/static/public';
+import {
+	PUBLIC_ENABLE_LOCAL_LLM,
+	PUBLIC_ENABLE_PAYMENTS,
+	PUBLIC_ENABLE_CREDITS,
+	PUBLIC_ENABLE_SOFT_LIMITS
+} from '$env/static/public';
 
 /**
  * Whether local LLM features should be included in the build
@@ -21,11 +26,35 @@ export const ENABLE_LOCAL_LLM = PUBLIC_ENABLE_LOCAL_LLM === 'true';
 export const ENABLE_PAYMENTS = PUBLIC_ENABLE_PAYMENTS === 'true';
 
 /**
+ * Whether credit system features should be included in the build
+ * This includes credit balance, credit purchases, and credit usage for premium models
+ */
+export const ENABLE_CREDITS = PUBLIC_ENABLE_CREDITS === 'true';
+
+/**
+ * Whether soft limit features should be included in the build
+ * This includes daily usage limits, throttling warnings, and usage tracking UI
+ */
+export const ENABLE_SOFT_LIMITS = PUBLIC_ENABLE_SOFT_LIMITS === 'true';
+
+/**
  * Type-safe feature flags object
  */
 export const FEATURES = {
 	localLlm: ENABLE_LOCAL_LLM,
-	payments: ENABLE_PAYMENTS
+	payments: ENABLE_PAYMENTS,
+	credits: ENABLE_CREDITS,
+	softLimits: ENABLE_SOFT_LIMITS
+} as const;
+
+/**
+ * Payment-specific feature flags
+ */
+export const PAYMENT_FEATURES = {
+	enabled: ENABLE_PAYMENTS,
+	credits: ENABLE_PAYMENTS && ENABLE_CREDITS,
+	softLimits: ENABLE_PAYMENTS && ENABLE_SOFT_LIMITS,
+	subscriptions: ENABLE_PAYMENTS
 } as const;
 
 /**
