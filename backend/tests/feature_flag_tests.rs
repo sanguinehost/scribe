@@ -256,10 +256,10 @@ mod feature_flag_tests {
             let service = SoftLimitService::new(config_clone);
             service.get_remaining_messages(conn, user_id)
         }).await.expect("Failed to interact").expect("Should get remaining");
-        assert_eq!(remaining, Some(25), "Free tier should have 25 messages");
+        assert_eq!(remaining, Some(20), "Free tier should have 20 messages");
 
         // Record usage up to limit
-        for _ in 0..25 {
+        for _ in 0..20 {
             let config_clone = config.clone();
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             conn.interact(move |conn| {

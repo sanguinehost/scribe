@@ -129,11 +129,17 @@ impl SoftLimitService {
         if self.is_enabled() && usage.soft_limit_triggered_at.is_none() {
             // Get user's subscription to determine tier
             let subscription = self.get_user_subscription(conn, user_id)?;
-            let tier = subscription.as_ref()
-                .map(|s| s.plan_type.as_str())
-                .unwrap_or("free");
 
-            let daily_limit = self.get_daily_limit(tier);
+            // Check for soft limit override first
+            let daily_limit = if let Some(ref sub) = subscription {
+                if let Some(override_limit) = sub.soft_limit_override {
+                    override_limit
+                } else {
+                    self.get_daily_limit(&sub.plan_type)
+                }
+            } else {
+                self.get_daily_limit("free")
+            };
 
             if usage.message_count >= daily_limit {
                 usage.soft_limit_triggered_at = Some(usage.message_count);
@@ -171,13 +177,19 @@ impl SoftLimitService {
 
         // Check if soft limit was triggered
         if let Some(triggered_at) = usage.soft_limit_triggered_at {
-            // Get user's subscription tier
+            // Get user's subscription
             let subscription = self.get_user_subscription(conn, user_id)?;
-            let tier = subscription.as_ref()
-                .map(|s| s.plan_type.as_str())
-                .unwrap_or("free");
 
-            let daily_limit = self.get_daily_limit(tier);
+            // Check for soft limit override first
+            let daily_limit = if let Some(ref sub) = subscription {
+                if let Some(override_limit) = sub.soft_limit_override {
+                    override_limit
+                } else {
+                    self.get_daily_limit(&sub.plan_type)
+                }
+            } else {
+                self.get_daily_limit("free")
+            };
             let messages_over_limit = usage.message_count - daily_limit;
 
             // Progressive throttling: 2-5 seconds based on how far over limit
@@ -287,13 +299,20 @@ impl SoftLimitService {
 
         let usage = self.get_or_create_daily_usage(conn, user_id)?;
 
-        // Get user's subscription tier
+        // Get user's subscription
         let subscription = self.get_user_subscription(conn, user_id)?;
-        let tier = subscription.as_ref()
-            .map(|s| s.plan_type.as_str())
-            .unwrap_or("free");
 
-        let daily_limit = self.get_daily_limit(tier);
+        // Check for soft limit override first
+        let daily_limit = if let Some(ref sub) = subscription {
+            if let Some(override_limit) = sub.soft_limit_override {
+                override_limit
+            } else {
+                self.get_daily_limit(&sub.plan_type)
+            }
+        } else {
+            self.get_daily_limit("free")
+        };
+
         let remaining = (daily_limit - usage.message_count).max(0);
 
         Ok(Some(remaining))
