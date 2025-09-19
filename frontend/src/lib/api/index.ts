@@ -119,9 +119,18 @@ class ApiClient {
 	private fetchFn: typeof fetch = globalThis.fetch;
 
 	constructor(baseUrl: string = '') {
-		// Use PUBLIC_API_URL if available, otherwise fall back to relative paths
+		// Always prioritize PUBLIC_API_URL over the passed baseUrl for production
+		// This ensures the client always uses the correct API URL from environment
 		// Trim whitespace/newlines that might be added by environment variable processing
-		this.baseUrl = (baseUrl || env.PUBLIC_API_URL || '').trim();
+		this.baseUrl = (env.PUBLIC_API_URL || baseUrl || '').trim();
+
+		// Debug log to verify API URL is set correctly
+		if (browser) {
+			console.log(`[ApiClient] Initialized with baseUrl: ${this.baseUrl || '(empty - using relative paths)'}`);
+			if (env.PUBLIC_API_URL) {
+				console.log(`[ApiClient] PUBLIC_API_URL from env: ${env.PUBLIC_API_URL}`);
+			}
+		}
 	}
 
 	// Method to set custom fetch function (useful for server-side rendering)
