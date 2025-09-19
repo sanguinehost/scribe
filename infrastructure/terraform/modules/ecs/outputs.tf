@@ -28,10 +28,7 @@ output "qdrant_service_name" {
   value       = aws_ecs_service.qdrant_service.name
 }
 
-output "efs_file_system_id" {
-  description = "ID of the EFS file system for Qdrant"
-  value       = aws_efs_file_system.qdrant_efs.id
-}
+# EFS output removed - using EBS volumes instead
 
 output "service_discovery_namespace_id" {
   description = "ID of the service discovery namespace"

@@ -146,6 +146,7 @@ pub struct PlanFeatures {
     pub description: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    pub paddle_price_id_yearly: Option<String>,
 }
 
 /// Payment usage tracking model for database queries

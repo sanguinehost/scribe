@@ -28,10 +28,11 @@ variable "qdrant_security_group_id" {
   type        = string
 }
 
-variable "efs_security_group_id" {
-  description = "Security group ID for EFS"
-  type        = string
-}
+# EFS security group no longer needed - using EBS volumes instead
+# variable "efs_security_group_id" {
+#   description = "Security group ID for EFS"
+#   type        = string
+# }
 
 variable "backend_target_group_arn" {
   description = "Target group ARN for backend ALB"
@@ -85,11 +86,12 @@ variable "qdrant_desired_count" {
   default     = 1
 }
 
-variable "efs_provisioned_throughput" {
-  description = "Provisioned throughput for EFS in MiB/s"
-  type        = number
-  default     = 10
-}
+# EFS provisioned throughput no longer needed - using EBS volumes instead
+# variable "efs_provisioned_throughput" {
+#   description = "Provisioned throughput for EFS in MiB/s"
+#   type        = number
+#   default     = 10
+# }
 
 variable "database_url" {
   description = "PostgreSQL database URL"

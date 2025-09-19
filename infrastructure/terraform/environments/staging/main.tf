@@ -186,7 +186,7 @@ module "ecs" {
   # Security groups
   backend_security_group_id = module.networking.backend_security_group_id
   qdrant_security_group_id  = module.networking.qdrant_security_group_id
-  efs_security_group_id     = module.networking.efs_security_group_id
+  # efs_security_group_id     = module.networking.efs_security_group_id  # No longer needed - using EBS
 
   # ALB integration
   backend_target_group_arn = module.alb.backend_target_group_arn
@@ -203,7 +203,7 @@ module "ecs" {
   qdrant_cpu              = var.qdrant_cpu
   qdrant_memory           = var.qdrant_memory
   qdrant_desired_count    = var.qdrant_desired_count
-  efs_provisioned_throughput = var.efs_provisioned_throughput
+  # efs_provisioned_throughput = var.efs_provisioned_throughput  # No longer needed - using EBS
 
   # Backend secrets
   backend_secrets = module.secrets.backend_secrets_list

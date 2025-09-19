@@ -651,6 +651,8 @@ diesel::table! {
         description -> Nullable<Text>,
         created_at -> Nullable<Timestamptz>,
         updated_at -> Nullable<Timestamptz>,
+        #[max_length = 255]
+        paddle_price_id_yearly -> Nullable<Varchar>,
     }
 }
 

@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { PAYMENT_FEATURES } from '$lib/utils/features';
+import { apiClient } from '$lib/api';
 
 // Credit balance and usage information
 export interface CreditBalance {
@@ -79,19 +80,13 @@ function createCreditStore() {
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
-			const response = await fetch('/api/payment/credits/balance', {
-				credentials: 'include',
-				headers: {
-					'Content-Type': 'application/json'
-				}
-			});
+			const result = await apiClient.getCreditBalance();
 
-			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.message || 'Failed to fetch credit balance');
+			if (result.isErr()) {
+				throw new Error(result.error.message || 'Failed to fetch credit balance');
 			}
 
-			const data = await response.json();
+			const data = result.value;
 
 			update((state) => ({
 				...state,
@@ -122,19 +117,13 @@ function createCreditStore() {
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
-			const response = await fetch(`/api/payment/credits/transactions?limit=${limit}&offset=${offset}`, {
-				credentials: 'include',
-				headers: {
-					'Content-Type': 'application/json'
-				}
-			});
+			const result = await apiClient.getCreditTransactions(limit, offset);
 
-			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.message || 'Failed to fetch transactions');
+			if (result.isErr()) {
+				throw new Error(result.error.message || 'Failed to fetch transactions');
 			}
 
-			const data = await response.json();
+			const data = result.value;
 
 			update((state) => ({
 				...state,
@@ -164,19 +153,13 @@ function createCreditStore() {
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
-			const response = await fetch('/api/payment/credits/packages', {
-				credentials: 'include',
-				headers: {
-					'Content-Type': 'application/json'
-				}
-			});
+			const result = await apiClient.getCreditPackages();
 
-			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.message || 'Failed to fetch credit packages');
+			if (result.isErr()) {
+				throw new Error(result.error.message || 'Failed to fetch credit packages');
 			}
 
-			const data = await response.json();
+			const data = result.value;
 
 			update((state) => ({
 				...state,
@@ -206,21 +189,13 @@ function createCreditStore() {
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
-			const response = await fetch('/api/payment/credits/purchase', {
-				method: 'POST',
-				credentials: 'include',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({ package_id: packageId })
-			});
+			const result = await apiClient.purchaseCredits(packageId);
 
-			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.message || 'Failed to purchase credits');
+			if (result.isErr()) {
+				throw new Error(result.error.message || 'Failed to purchase credits');
 			}
 
-			const data = await response.json();
+			const data = result.value;
 
 			// Refresh balance after purchase
 			await fetchBalance();
@@ -282,19 +257,13 @@ function createCreditStore() {
 		}
 
 		try {
-			const response = await fetch('/api/payment/credits/model-costs', {
-				credentials: 'include',
-				headers: {
-					'Content-Type': 'application/json'
-				}
-			});
+			const result = await apiClient.getModelCosts();
 
-			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.message || 'Failed to fetch model costs');
+			if (result.isErr()) {
+				throw new Error(result.error.message || 'Failed to fetch model costs');
 			}
 
-			const data = await response.json();
+			const data = result.value;
 
 			update((state) => ({
 				...state,

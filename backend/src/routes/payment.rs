@@ -869,14 +869,6 @@ pub async fn preview_order(
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
 
-    // Load subscription tiers config for billing features
-    let config_path = "backend/config/subscription_tiers.json";
-    let config_str = std::fs::read_to_string(config_path)
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to read config: {}", e)))?;
-
-    let config: serde_json::Value = serde_json::from_str(&config_str)
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to parse config: {}", e)))?;
-
     // Create subscription service
     let subscription_service = SubscriptionService::new(
         (*app_state.config).clone(),
@@ -895,22 +887,20 @@ pub async fn preview_order(
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
         .ok_or_else(|| AppError::BadRequest(format!("Invalid plan type: {}", request.plan_type)))?;
 
-    // Determine pricing based on billing period from subscription tiers config
+    // Determine pricing based on billing period
     let is_yearly = request.billing_period == "yearly";
-
-    // Get pricing from config rather than database for more flexibility
-    let amount = if is_yearly {
-        // For yearly billing, we need to get the yearly price from config
-        config.get("plans")
-            .and_then(|plans| plans.get(&request.plan_type))
-            .and_then(|plan| plan.get("yearly_price_usd"))
-            .and_then(|price| price.as_f64())
-            .ok_or_else(|| AppError::BadRequest("Yearly pricing not available for this plan".to_string()))?
-    } else {
-        // For monthly billing, convert price_cents to dollars
-        plan_features.price_cents
-            .map(|cents| cents as f64 / 100.0)
-            .unwrap_or(0.0)
+    
+    // Simple pricing logic - in production, this should query Paddle's API
+    // or be stored in database alongside the price IDs
+    let (amount, savings_message) = match (request.plan_type.as_str(), is_yearly) {
+        ("basic", false) => (10.0, None),
+        ("basic", true) => (100.0, Some("Save $20 per year".to_string())),
+        ("premium", false) => (25.0, None),
+        ("premium", true) => (250.0, Some("Save $50 per year".to_string())),
+        _ => {
+            // For free plan or unknown plans
+            (0.0, None)
+        }
     };
 
     // Calculate next billing date
@@ -918,19 +908,6 @@ pub async fn preview_order(
         chrono::Utc::now() + chrono::Duration::days(365)
     } else {
         chrono::Utc::now() + chrono::Duration::days(30)
-    };
-
-    // Get savings message for yearly billing
-    let savings_message = if is_yearly {
-        config.get("plans")
-            .and_then(|plans| plans.get(&request.plan_type))
-            .and_then(|plan| plan.get("billing_features"))
-            .and_then(|bf| bf.get("yearly"))
-            .and_then(|yearly| yearly.get("savings_message"))
-            .and_then(|sm| sm.as_str())
-            .map(|s| s.to_string())
-    } else {
-        None
     };
 
     // Create order preview
@@ -994,10 +971,14 @@ pub async fn create_subscription(
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
         .ok_or_else(|| AppError::BadRequest(format!("Invalid plan type: {}", request.plan_type)))?;
 
-    // For now, we'll use the monthly price ID for both monthly and yearly
-    // In a production system, you'd want separate price IDs for different billing periods
-    let price_id = plan_features.paddle_price_id
-        .ok_or_else(|| AppError::BadRequest("Plan not configured for checkout".to_string()))?;
+    // Select the appropriate price ID based on billing period
+    let price_id = if request.billing_period == "yearly" {
+        plan_features.paddle_price_id_yearly
+            .ok_or_else(|| AppError::BadRequest("Yearly pricing not available for this plan".to_string()))?
+    } else {
+        plan_features.paddle_price_id
+            .ok_or_else(|| AppError::BadRequest("Monthly pricing not available for this plan".to_string()))?
+    };
 
     // Create Paddle service
     let paddle_service = PaddleService::new(app_state.config.payment.clone());
