@@ -411,7 +411,7 @@ fn default_grace_period_days() -> i32 {
 
 #[cfg(feature = "payment")]
 fn default_subscription_config_path() -> String {
-    "./config/subscription_tiers.json".to_string()
+    "./backend/config/subscription_tiers.json".to_string()
 }
 
 #[cfg(feature = "payment")]

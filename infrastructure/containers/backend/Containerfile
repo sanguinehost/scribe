@@ -38,6 +38,9 @@ COPY backend/diesel.toml ./backend/
 COPY backend/resources ./backend/resources
 COPY backend/data ./backend/data
 
+# Copy configuration files
+COPY backend/config ./backend/config
+
 # Build the application with optional features
 RUN if [ -n "$FEATURES" ]; then \
         echo "Building with features: $FEATURES" && \
@@ -69,10 +72,11 @@ COPY --from=builder --chown=1001:1001 /app/target/release/scribe-backend /app/sc
 # Copy migrations (needed for runtime migration checks)  
 COPY --from=builder --chown=1001:1001 /app/backend/migrations /app/migrations
 
-# Create backend directory structure and copy resources and data
-RUN mkdir -p /app/backend/resources /app/backend/data
+# Create backend directory structure and copy resources, data, and config
+RUN mkdir -p /app/backend/resources /app/backend/data /app/backend/config
 COPY --from=builder --chown=1001:1001 /app/backend/resources /app/backend/resources
 COPY --from=builder --chown=1001:1001 /app/backend/data /app/backend/data
+COPY --from=builder --chown=1001:1001 /app/backend/config /app/backend/config
 
 # Copy CA certificate and add to system trust store for inter-service TLS trust
 COPY --chown=root:root .certs-backend/ca.pem /usr/local/share/ca-certificates/scribe-ca.crt

@@ -96,7 +96,12 @@ import type {
 	CreditPackagesResponse,
 	ModelCostsResponse,
 	PurchaseCreditsResponse,
-	UsageResponse
+	UsageResponse,
+	// Subscription types
+	CreateSubscriptionRequest,
+	CreateSubscriptionResponse,
+	OrderPreviewRequest,
+	OrderPreview
 } from '$lib/types/payment';
 import {
 	setConnectionError,
@@ -1458,6 +1463,26 @@ class ApiClient {
 	 */
 	async getPlans(): Promise<Result<PlansResponse, ApiError>> {
 		return this.fetch<PlansResponse>('/api/payment/plans');
+	}
+
+	/**
+	 * Create a subscription checkout session
+	 */
+	async createSubscription(request: CreateSubscriptionRequest): Promise<Result<CreateSubscriptionResponse, ApiError>> {
+		return this.fetch<CreateSubscriptionResponse>('/api/payment/subscription', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	/**
+	 * Preview an order before checkout
+	 */
+	async previewOrder(request: OrderPreviewRequest): Promise<Result<OrderPreview, ApiError>> {
+		return this.fetch<OrderPreview>('/api/payment/subscription/preview', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
 	}
 
 	/**

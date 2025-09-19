@@ -6,12 +6,14 @@
 	"build": {
 		"env": {
 			"VITE_BUILD_SKIP_TYPE_CHECK": "true",
+			"PUBLIC_API_URL": "https://api.staging.scribe.sanguinehost.com",
 			"PUBLIC_ENABLE_PAYMENTS": "true",
 			"PUBLIC_ENABLE_CREDITS": "true",
 			"PUBLIC_ENABLE_SOFT_LIMITS": "true"
 		}
 	},
 	"env": {
+		"PUBLIC_API_URL": "https://api.staging.scribe.sanguinehost.com",
 		"PUBLIC_ENABLE_PAYMENTS": "true",
 		"PUBLIC_ENABLE_CREDITS": "true",
 		"PUBLIC_ENABLE_SOFT_LIMITS": "true"

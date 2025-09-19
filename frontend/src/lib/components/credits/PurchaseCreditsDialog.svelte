@@ -13,6 +13,7 @@
 	import { apiClient } from '$lib/api';
 	import CreditPackageSelector from './CreditPackageSelector.svelte';
 	import { AlertCircle, ExternalLink, Loader } from 'lucide-svelte';
+	import { ENABLE_PAYMENT_CREDITS } from '$lib/utils/features';
 	import type { CreditPackage, PurchaseCreditsResponse } from '$lib/types/payment';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
@@ -130,6 +131,7 @@
 	}
 </script>
 
+{#if ENABLE_PAYMENT_CREDITS}
 <Dialog bind:open onOpenChange={handleClose}>
 	<DialogContent class="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
 		<DialogHeader>
@@ -220,3 +222,4 @@
 		</div>
 	</DialogContent>
 </Dialog>
+{/if}

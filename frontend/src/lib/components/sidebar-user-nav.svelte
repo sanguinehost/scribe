@@ -113,7 +113,7 @@
 						{#if subscriptionStore.currentPlan === 'free' || subscriptionStore.isAtLimit}
 							<div class="mt-2">
 								<CheckoutButton
-									planType="pro"
+									planType="basic"
 									buttonText={subscriptionStore.isAtLimit ? "Upgrade Now" : "Upgrade Plan"}
 									buttonClass="w-full text-xs py-1 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded border-none cursor-pointer"
 									urgent={subscriptionStore.isAtLimit}

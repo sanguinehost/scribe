@@ -41,8 +41,25 @@
       "description": "For serious character AI enthusiasts and creators",
       "price_monthly": 10.00,
       "price_yearly": 100.00,
+      "annual_savings_percent": 17,
       "paddle_price_id_monthly": "pri_01k4qbyetvn495nzv9nkqhxz02",
       "paddle_price_id_yearly": "pri_01k5ejs7h9zmw4d888r3pjjqna",
+      "billing_features": {
+        "monthly": {
+          "display_price": "$10/month",
+          "billing_period": "monthly",
+          "trial_days": 0,
+          "cancel_anytime": true
+        },
+        "yearly": {
+          "display_price": "$100/year",
+          "monthly_equivalent": "$8.33/month",
+          "billing_period": "yearly",
+          "trial_days": 0,
+          "cancel_anytime": true,
+          "savings_message": "Save $20 per year"
+        }
+      },
       "limits": {
         "daily_messages": 100,
         "daily_limit_type": "soft",
@@ -77,8 +94,25 @@
       "description": "Professional roleplay & storytelling platform",
       "price_monthly": 25.00,
       "price_yearly": 250.00,
+      "annual_savings_percent": 17,
       "paddle_price_id_monthly": "pri_01k5ej7wzvpcj6j65vcbpam6t4",
       "paddle_price_id_yearly": "pri_01k5ejva0cwqzbtgzd2c9qk0d4",
+      "billing_features": {
+        "monthly": {
+          "display_price": "$25/month",
+          "billing_period": "monthly",
+          "trial_days": 0,
+          "cancel_anytime": true
+        },
+        "yearly": {
+          "display_price": "$250/year",
+          "monthly_equivalent": "$20.83/month",
+          "billing_period": "yearly",
+          "trial_days": 0,
+          "cancel_anytime": true,
+          "savings_message": "Save $50 per year"
+        }
+      },
       "limits": {
         "daily_messages": 200,
         "daily_limit_type": "soft",

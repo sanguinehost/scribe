@@ -48,13 +48,21 @@ export const FEATURES = {
 } as const;
 
 /**
- * Payment-specific feature flags
+ * Payment-specific feature flags (static constants for optimal dead code elimination)
+ */
+export const ENABLE_PAYMENT_CREDITS = ENABLE_PAYMENTS && ENABLE_CREDITS;
+export const ENABLE_PAYMENT_SOFT_LIMITS = ENABLE_PAYMENTS && ENABLE_SOFT_LIMITS;
+export const ENABLE_PAYMENT_SUBSCRIPTIONS = ENABLE_PAYMENTS;
+
+/**
+ * Legacy PAYMENT_FEATURES object for backward compatibility
+ * TODO: Migrate all usage to direct constants above for better dead code elimination
  */
 export const PAYMENT_FEATURES = {
 	enabled: ENABLE_PAYMENTS,
-	credits: ENABLE_PAYMENTS && ENABLE_CREDITS,
-	softLimits: ENABLE_PAYMENTS && ENABLE_SOFT_LIMITS,
-	subscriptions: ENABLE_PAYMENTS
+	credits: ENABLE_PAYMENT_CREDITS,
+	softLimits: ENABLE_PAYMENT_SOFT_LIMITS,
+	subscriptions: ENABLE_PAYMENT_SUBSCRIPTIONS
 } as const;
 
 /**

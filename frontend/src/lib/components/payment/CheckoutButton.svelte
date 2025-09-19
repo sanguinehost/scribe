@@ -2,11 +2,11 @@
 	import { createEventDispatcher } from 'svelte';
 	import { browser } from '$app/environment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
-	import { apiClient } from '$lib/api';
+	import CheckoutOverlay from './CheckoutOverlay.svelte';
 	import type { PlanType } from '$lib/types';
 
 	// Props
-	export let planType: string = 'pro';
+	export let planType: PlanType = 'basic';
 	export let disabled: boolean = false;
 	export let loading: boolean = false;
 	export let buttonText: string = 'Subscribe';
@@ -14,102 +14,46 @@
 	export let urgent: boolean = false; // Add urgent styling for critical situations
 
 	// State
+	let isOverlayOpen = false;
 	let checkoutLoading = false;
 	let checkoutError: string | null = null;
 
 	const dispatch = createEventDispatcher<{
-		'checkout-start': { planType: string };
-		'checkout-success': { checkoutUrl: string };
+		'checkout-start': { planType: PlanType };
+		'checkout-complete': { transactionId: string };
 		'checkout-error': { error: string };
 	}>();
 
 	/**
-	 * Initiate Paddle checkout flow
+	 * Open checkout overlay
 	 */
-	async function handleCheckout() {
+	function handleOpenCheckout() {
 		if (!browser || !ENABLE_PAYMENTS || disabled || loading) {
 			return;
 		}
 
-		checkoutLoading = true;
-		checkoutError = null;
-
+		isOverlayOpen = true;
 		dispatch('checkout-start', { planType });
+	}
 
-		try {
-			// Check if Paddle is loaded
-			if (!window.Paddle) {
-				throw new Error('Payment system not ready. Please refresh the page and try again.');
-			}
+	/**
+	 * Handle checkout completion
+	 */
+	function handleCheckoutComplete(event: CustomEvent<{ transactionId: string }>) {
+		dispatch('checkout-complete', event.detail);
+		isOverlayOpen = false;
+	}
 
-			// Create payment transaction via our API using the apiClient
-			const result = await apiClient.createPayment({
-				plan_type: planType as PlanType,
-				success_url: `${window.location.origin}/pay?transaction_id={transaction_id}`,
-				cancel_url: window.location.href // Return to current page on cancel
-			});
-
-			// Handle API client errors
-			if (result.isErr()) {
-				const error = result.error;
-				let errorMessage = 'Failed to create payment';
-				
-				// Handle specific error types from API client
-				if ('status' in error && error.status) {
-					switch (error.status) {
-						case 401:
-							errorMessage = 'Please sign in to upgrade your plan';
-							break;
-						case 403:
-							errorMessage = 'You do not have permission to create a subscription';
-							break;
-						case 429:
-							errorMessage = 'Too many requests. Please try again in a moment';
-							break;
-						case 500:
-							errorMessage = 'Server error. Please try again later';
-							break;
-						default:
-							errorMessage = `Payment service error (${error.status})`;
-					}
-				} else {
-					errorMessage = error.message || errorMessage;
-				}
-				
-				throw new Error(errorMessage);
-			}
-
-			const paymentData = result.value;
-			const checkoutUrl = paymentData.checkout_url;
-
-			if (!checkoutUrl) {
-				throw new Error('No checkout URL returned from payment service');
-			}
-
-			dispatch('checkout-success', { checkoutUrl });
-
-			// Add a small delay to show the "Redirecting..." state
-			await new Promise(resolve => setTimeout(resolve, 500));
-
-			// Redirect to Paddle checkout
-			window.location.href = checkoutUrl;
-
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Payment initialization failed';
-			console.error('Checkout error:', errorMessage);
-			checkoutError = errorMessage;
-			dispatch('checkout-error', { error: errorMessage });
-		} finally {
-			// Only reset loading if we're not redirecting (in case of error)
-			if (checkoutError) {
-				checkoutLoading = false;
-			}
-		}
+	/**
+	 * Handle overlay close
+	 */
+	function handleOverlayClose() {
+		isOverlayOpen = false;
 	}
 
 	// Determine if button should be disabled
 	$: isDisabled = disabled || loading || checkoutLoading || !ENABLE_PAYMENTS;
-	$: displayText = checkoutLoading ? 'Redirecting to checkout...' : loading ? 'Loading...' : buttonText;
+	$: displayText = checkoutLoading ? 'Processing...' : loading ? 'Loading...' : buttonText;
 	$: showSpinner = checkoutLoading || loading;
 </script>
 
@@ -119,7 +63,7 @@
 		class:loading={checkoutLoading}
 		class:disabled={isDisabled}
 		disabled={isDisabled}
-		on:click={handleCheckout}
+		on:click={handleOpenCheckout}
 		type="button"
 	>
 		{#if showSpinner}
@@ -133,6 +77,14 @@
 			{checkoutError}
 		</div>
 	{/if}
+
+	<!-- Checkout Overlay -->
+	<CheckoutOverlay
+		bind:open={isOverlayOpen}
+		initialPlan={planType}
+		on:close={handleOverlayClose}
+		on:checkout-complete={handleCheckoutComplete}
+	/>
 {:else}
 	<!-- Fallback when payments disabled -->
 	<button class="btn-disabled" disabled>
@@ -146,12 +98,12 @@
 		cursor: not-allowed;
 		position: relative;
 	}
-	
+
 	.disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
 	}
-	
+
 	.spinner {
 		display: inline-block;
 		width: 16px;
@@ -161,11 +113,11 @@
 		border-radius: 50%;
 		animation: spin 1s linear infinite;
 	}
-	
+
 	.ml-2 {
 		margin-left: 0.5rem;
 	}
-	
+
 	@keyframes spin {
 		0% {
 			transform: rotate(0deg);
@@ -174,7 +126,7 @@
 			transform: rotate(360deg);
 		}
 	}
-	
+
 	.error-message {
 		color: #ef4444;
 		font-size: 0.875rem;
@@ -184,7 +136,7 @@
 		border: 1px solid #fecaca;
 		border-radius: 0.375rem;
 	}
-	
+
 	.btn-disabled {
 		background-color: #6b7280;
 		color: white;

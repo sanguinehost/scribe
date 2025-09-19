@@ -1,71 +1,78 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
-	import { PaddleLoader, CheckoutButton, type PaymentPlan } from '$lib/components/payment';
+	import { apiClient } from '$lib/api';
+	import SubscriptionCheckout from '$lib/components/subscriptions/SubscriptionCheckout.svelte';
+	import { Alert, AlertDescription } from '$lib/components/ui/alert';
+	import { Loader, AlertCircle } from 'lucide-svelte';
+	import type { PlanFeatures, PlanType } from '$lib/types/payment';
 
-	// Payment plans configuration
-	const plans: PaymentPlan[] = [
-		{
-			id: 'free',
-			name: 'Free',
-			price: 0,
-			currency: 'USD',
-			interval: 'monthly',
-			features: [
-				'50,000 tokens per month',
-				'Up to 5 characters',
-				'1 lorebook',
-				'Basic chat features',
-				'Community support'
-			]
-		},
-		{
-			id: 'pro',
-			name: 'Pro',
-			price: 9.99,
-			currency: 'USD',
-			interval: 'monthly',
-			popular: true,
-			features: [
-				'500,000 tokens per month',
-				'Up to 50 characters',
-				'10 lorebooks',
-				'Advanced chat features',
-				'Custom personas',
-				'Priority support',
-				'Advanced AI models'
-			]
-		},
-		{
-			id: 'enterprise',
-			name: 'Enterprise',
-			price: 29.99,
-			currency: 'USD',
-			interval: 'monthly',
-			features: [
-				'Unlimited tokens',
-				'Unlimited characters',
-				'Unlimited lorebooks',
-				'All Pro features',
-				'API access',
-				'White-label options',
-				'Dedicated support',
-				'Custom integrations'
-			]
+	// Component state
+	let plans: PlanFeatures[] = $state([]);
+	let currentPlan: PlanType = $state('free');
+	let isLoading = $state(false);
+	let error: string | null = $state(null);
+
+	// Load plans and current subscription
+	onMount(async () => {
+		if (!ENABLE_PAYMENTS) return;
+
+		isLoading = true;
+		error = null;
+
+		try {
+			// Load available plans
+			const plansResult = await apiClient.getPlans();
+			if (plansResult.isOk()) {
+				plans = plansResult.value.plans;
+				currentPlan = plansResult.value.current_plan || 'free';
+			} else {
+				error = plansResult.error.message || 'Failed to load subscription plans';
+			}
+		} catch (err) {
+			error = 'Failed to load subscription plans';
+			console.error('Error loading plans:', err);
+		} finally {
+			isLoading = false;
 		}
-	];
+	});
 
-	function handleCheckoutStart(event: CustomEvent<{ planType: string }>) {
-		console.log('Checkout started for plan:', event.detail.planType);
+	async function handleCreateSubscription(planType: PlanType, billingCycle: 'monthly' | 'yearly') {
+		if (!ENABLE_PAYMENTS) return;
+
+		try {
+			const result = await apiClient.createSubscription({
+				plan_type: planType,
+				billing_period: billingCycle
+			});
+
+			if (result.isOk()) {
+				// Redirect to Paddle checkout
+				window.location.href = result.value.checkout_url;
+			} else {
+				throw new Error(result.error.message || 'Failed to create subscription');
+			}
+		} catch (err) {
+			const errorMessage = err instanceof Error ? err.message : 'Failed to create subscription';
+			error = errorMessage;
+			throw err; // Re-throw so SubscriptionCheckout can handle it
+		}
 	}
 
-	function handleCheckoutSuccess(event: CustomEvent<{ checkoutUrl: string }>) {
-		console.log('Checkout URL received:', event.detail.checkoutUrl);
+	function handlePlanSelected(event: CustomEvent<{ planType: PlanType; billingCycle: 'monthly' | 'yearly' }>) {
+		console.log('Plan selected:', event.detail);
 	}
 
-	function handleCheckoutError(event: CustomEvent<{ error: string }>) {
-		console.error('Checkout error:', event.detail.error);
-		// Could show a toast notification here
+	function handleCheckoutStarted(event: CustomEvent<{ planType: PlanType; billingCycle: 'monthly' | 'yearly' }>) {
+		console.log('Checkout started:', event.detail);
+	}
+
+	function handleSubscriptionCreated(event: CustomEvent<{ planType: PlanType; billingCycle: 'monthly' | 'yearly' }>) {
+		// For free plan, just redirect to app
+		if (event.detail.planType === 'free') {
+			goto('/');
+		}
 	}
 </script>
 
@@ -74,145 +81,111 @@
 	<meta name="description" content="Choose the perfect plan for your character AI conversations" />
 </svelte:head>
 
-{#if ENABLE_PAYMENTS}
-	<!-- Load Paddle.js SDK -->
-	<PaddleLoader />
-{/if}
-
 <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
 	<div class="container mx-auto px-4 py-12">
-		<!-- Header -->
-		<div class="text-center mb-12">
-			<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100 mb-4">
-				Choose Your Plan
-			</h1>
-			<p class="text-xl text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
-				Start your character AI journey with our free tier, or unlock advanced features with Pro and Enterprise plans.
-			</p>
-		</div>
+		{#if !ENABLE_PAYMENTS}
+			<!-- Payments disabled -->
+			<div class="text-center space-y-6">
+				<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100">
+					Pricing
+				</h1>
+				<Alert variant="destructive" class="max-w-2xl mx-auto">
+					<AlertCircle class="h-4 w-4" />
+					<AlertDescription>
+						Payment features are currently disabled. Please try again later or contact support.
+					</AlertDescription>
+				</Alert>
+			</div>
 
-		<!-- Pricing Cards -->
-		<div class="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-			{#each plans as plan}
-				<div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-8 {plan.popular ? 'ring-2 ring-blue-500 scale-105' : ''}">
-					{#if plan.popular}
-						<div class="absolute -top-4 left-1/2 transform -translate-x-1/2">
-							<span class="bg-blue-500 text-white px-4 py-2 rounded-full text-sm font-medium">
-								Most Popular
-							</span>
-						</div>
-					{/if}
-
-					<!-- Plan Header -->
-					<div class="text-center mb-8">
-						<h3 class="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-							{plan.name}
-						</h3>
-						<div class="mb-4">
-							{#if plan.price === 0}
-								<span class="text-4xl font-bold text-slate-900 dark:text-slate-100">Free</span>
-							{:else}
-								<span class="text-4xl font-bold text-slate-900 dark:text-slate-100">
-									${plan.price}
-								</span>
-								<span class="text-slate-600 dark:text-slate-300">/{plan.interval}</span>
-							{/if}
-						</div>
-					</div>
-
-					<!-- Features -->
-					<ul class="space-y-4 mb-8">
-						{#each plan.features as feature}
-							<li class="flex items-start">
-								<svg class="w-5 h-5 text-green-500 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-									<path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-								</svg>
-								<span class="text-slate-600 dark:text-slate-300">{feature}</span>
-							</li>
-						{/each}
-					</ul>
-
-					<!-- CTA Button -->
-					<div class="text-center">
-						{#if plan.id === 'free'}
-							<a
-								href="/auth/signup"
-								class="w-full inline-block bg-slate-600 hover:bg-slate-700 text-white font-medium py-3 px-6 rounded-lg transition-colors text-center"
-							>
-								Get Started Free
-							</a>
-						{:else if plan.id === 'enterprise'}
-							<a
-								href="mailto:support@sanguinehost.com?subject=Enterprise Plan Inquiry"
-								class="w-full inline-block bg-slate-600 hover:bg-slate-700 text-white font-medium py-3 px-6 rounded-lg transition-colors text-center"
-							>
-								Contact Sales
-							</a>
-						{:else if ENABLE_PAYMENTS}
-							<CheckoutButton
-								planType={plan.id}
-								buttonText="Subscribe to {plan.name}"
-								buttonClass="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors"
-								on:checkout-start={handleCheckoutStart}
-								on:checkout-success={handleCheckoutSuccess}
-								on:checkout-error={handleCheckoutError}
-							/>
-						{:else}
-							<button
-								disabled
-								class="w-full bg-slate-400 text-white font-medium py-3 px-6 rounded-lg cursor-not-allowed"
-							>
-								Payments Not Available
-							</button>
-						{/if}
-					</div>
-				</div>
-			{/each}
-		</div>
-
-		<!-- FAQ Section -->
-		<div class="mt-20 max-w-4xl mx-auto">
-			<h2 class="text-3xl font-bold text-slate-900 dark:text-slate-100 text-center mb-12">
-				Frequently Asked Questions
-			</h2>
-			
-			<div class="space-y-8">
-				<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-					<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
-						What are tokens?
-					</h3>
-					<p class="text-slate-600 dark:text-slate-300">
-						Tokens are units of AI processing power. On average, 1 token ≈ 0.75 words. A typical conversation message uses 50-200 tokens depending on length and context.
-					</p>
-				</div>
-
-				<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-					<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
-						Can I change plans at any time?
-					</h3>
-					<p class="text-slate-600 dark:text-slate-300">
-						Yes! You can upgrade or downgrade your plan at any time. Changes take effect at the next billing cycle, and we'll prorate any differences.
-					</p>
-				</div>
-
-				<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-					<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
-						Is there a free trial?
-					</h3>
-					<p class="text-slate-600 dark:text-slate-300">
-						Our Free plan gives you a taste of Sanguine Scribe with 50,000 tokens per month. You can upgrade to Pro or Enterprise at any time to unlock more features.
-					</p>
-				</div>
-
-				<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-					<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
-						What payment methods do you accept?
-					</h3>
-					<p class="text-slate-600 dark:text-slate-300">
-						We accept all major credit cards, PayPal, and other payment methods through our secure payment processor Paddle.
-					</p>
+		{:else if isLoading}
+			<!-- Loading state -->
+			<div class="text-center space-y-6">
+				<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100">
+					Loading Plans...
+				</h1>
+				<div class="flex justify-center">
+					<Loader class="w-8 h-8 animate-spin" />
 				</div>
 			</div>
-		</div>
+
+		{:else if error}
+			<!-- Error state -->
+			<div class="text-center space-y-6">
+				<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100">
+					Pricing
+				</h1>
+				<Alert variant="destructive" class="max-w-2xl mx-auto">
+					<AlertCircle class="h-4 w-4" />
+					<AlertDescription>{error}</AlertDescription>
+				</Alert>
+			</div>
+
+		{:else}
+			<!-- Main subscription checkout -->
+			<SubscriptionCheckout
+				{plans}
+				{currentPlan}
+				{isLoading}
+				{error}
+				onCreateSubscription={handleCreateSubscription}
+				on:planSelected={handlePlanSelected}
+				on:checkoutStarted={handleCheckoutStarted}
+				on:subscriptionCreated={handleSubscriptionCreated}
+			/>
+
+			<!-- FAQ Section -->
+			<div class="mt-20 max-w-4xl mx-auto">
+				<h2 class="text-3xl font-bold text-slate-900 dark:text-slate-100 text-center mb-12">
+					Frequently Asked Questions
+				</h2>
+
+				<div class="space-y-8">
+					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
+						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+							What are credits?
+						</h3>
+						<p class="text-slate-600 dark:text-slate-300">
+							Credits are used to access premium AI models. Each model has different credit costs based on its capabilities. Your monthly plan includes credits, and you can purchase additional credits if needed.
+						</p>
+					</div>
+
+					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
+						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+							Can I change plans at any time?
+						</h3>
+						<p class="text-slate-600 dark:text-slate-300">
+							Yes! You can upgrade or downgrade your plan at any time. Changes take effect at the next billing cycle, and we'll prorate any differences. Unused credits roll over with paid plans.
+						</p>
+					</div>
+
+					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
+						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+							What's the difference between annual and monthly billing?
+						</h3>
+						<p class="text-slate-600 dark:text-slate-300">
+							Annual billing saves you 17% compared to monthly billing. You get the same features and credits, just at a discounted rate when you pay yearly.
+						</p>
+					</div>
+
+					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
+						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+							What payment methods do you accept?
+						</h3>
+						<p class="text-slate-600 dark:text-slate-300">
+							We accept all major credit cards, PayPal, and other payment methods through our secure payment processor Paddle. All transactions are encrypted and secure.
+						</p>
+					</div>
+
+					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
+						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+							Can I cancel anytime?
+						</h3>
+						<p class="text-slate-600 dark:text-slate-300">
+							Absolutely! All plans can be cancelled anytime with no cancellation fees. Your subscription will remain active until the end of your current billing period.
+						</p>
+					</div>
+				</div>
+			</div>
+		{/if}
 	</div>
 </div>

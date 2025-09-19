@@ -720,12 +720,45 @@ impl PaddleService {
 
         let response_text = response.text().await.unwrap_or_default();
         
+        // Log the raw response to understand the structure
+        debug!(
+            response_body = %response_text,
+            "Raw subscription creation response from Paddle API"
+        );
+
         let wrapper: PaddleApiResponse<PaddleSubscription> = serde_json::from_str(&response_text)
             .map_err(|e| AppError::JsonParseError(format!("Failed to parse subscription response '{}': {}", response_text, e)))?;
-        
+
+        // For subscription creation, Paddle typically doesn't return a checkout URL
+        // since subscriptions are created after successful payment.
+        // However, we can check the response for any additional checkout information.
+        let checkout_url = if let Ok(raw_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
+            // Check if there's any checkout URL in the response
+            raw_json.get("data")
+                .and_then(|data| data.get("checkout_url"))
+                .and_then(|url| url.as_str())
+                .map(|url| {
+                    info!(checkout_url = %url, "Found checkout URL in subscription response");
+                    url.to_string()
+                })
+                .or_else(|| {
+                    // Check for nested checkout object
+                    raw_json.get("data")
+                        .and_then(|data| data.get("checkout"))
+                        .and_then(|checkout| checkout.get("url"))
+                        .and_then(|url| url.as_str())
+                        .map(|url| {
+                            info!(checkout_url = %url, "Found checkout URL in subscription checkout field");
+                            url.to_string()
+                        })
+                })
+        } else {
+            None
+        };
+
         let subscription_response = CreateSubscriptionResponse {
             subscription_id: wrapper.data.id.clone(),
-            checkout_url: None, // TODO: Extract checkout URL if present in response
+            checkout_url,
         };
 
         info!(

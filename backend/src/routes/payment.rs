@@ -57,6 +57,10 @@ pub struct UsageLimitsResponse {
     pub period_start: chrono::DateTime<chrono::Utc>,
     pub period_end: chrono::DateTime<chrono::Utc>,
     pub is_unlimited: bool,
+    // Daily usage fields
+    pub daily_message_count: Option<i32>,
+    pub is_throttled: Option<bool>,
+    pub throttle_delay: Option<i32>,
 }
 
 #[cfg(feature = "payment")]
@@ -69,7 +73,47 @@ pub struct PlansResponse {
 #[derive(Deserialize)]
 pub struct CreateSubscriptionRequest {
     pub plan_type: String,
+    pub billing_period: String, // "monthly" or "yearly"
     pub trial_days: Option<i32>,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Serialize)]
+pub struct CreateSubscriptionResponse {
+    pub checkout_url: String,
+    pub subscription_id: String,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Deserialize)]
+pub struct OrderPreviewRequest {
+    pub plan_type: String,
+    pub billing_period: String, // "monthly" or "yearly"
+}
+
+#[cfg(feature = "payment")]
+#[derive(Serialize)]
+pub struct OrderLineItem {
+    pub description: String,
+    pub billing_period: String,
+    pub amount: f64,
+    pub currency: String,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Serialize)]
+pub struct OrderPreview {
+    pub plan_name: String,
+    pub plan_type: String,
+    pub billing_period: String,
+    pub line_items: Vec<OrderLineItem>,
+    pub subtotal: f64,
+    pub tax_amount: f64,
+    pub total_amount: f64,
+    pub currency: String,
+    pub next_billing_date: String,
+    pub savings_message: Option<String>,
+    pub cancellation_policy: String,
 }
 
 #[cfg(feature = "payment")]
@@ -212,7 +256,34 @@ pub async fn get_subscription(
             .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get free plan features: {}", e)))?
     };
     
-    // Calculate usage limits
+    // Get daily usage from SoftLimitService
+    #[cfg(feature = "payment")]
+    let soft_limit_service = crate::services::payment::SoftLimitService::new(
+        app_state.config.clone()
+    );
+    let user_id_for_usage = user.id;
+    
+    let (daily_message_count, is_throttled, throttle_delay) = conn
+        .interact(move |conn| {
+            if let Ok(usage) = soft_limit_service.get_or_create_daily_usage(conn, user_id_for_usage) {
+                let is_over = usage.soft_limit_triggered_at.is_some();
+                let delay = if is_over {
+                    soft_limit_service.should_throttle(conn, user_id_for_usage)
+                        .unwrap_or(None)
+                        .map(|d| d.as_secs() as i32)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                (usage.message_count as i32, is_over, delay)
+            } else {
+                (0, false, 0)
+            }
+        })
+        .await
+        .unwrap_or((0, false, 0));
+    
+    // Calculate usage limits - now including daily usage
     let usage_limits = if let Some(ref features) = plan_features {
         // For now, return simple usage limits calculation
         // In a real system, this would query actual usage from usage_tracking table
@@ -226,6 +297,10 @@ pub async fn get_subscription(
             period_start,
             period_end,
             is_unlimited: features.monthly_token_limit.is_none(),
+            // Add daily usage fields
+            daily_message_count: Some(daily_message_count),
+            is_throttled: Some(is_throttled),
+            throttle_delay: Some(throttle_delay),
         })
     } else {
         None
@@ -255,13 +330,50 @@ pub async fn get_usage(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     
-    // TODO: This is a simplified implementation for now
+    // Get database connection
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+    
+    // Get daily usage from SoftLimitService
+    let soft_limit_service = crate::services::payment::SoftLimitService::new(
+        app_state.config.clone()
+    );
+    let user_id = user.id;
+    
+    let (daily_message_count, is_throttled, throttle_delay) = conn
+        .interact(move |conn| {
+            if let Ok(usage) = soft_limit_service.get_or_create_daily_usage(conn, user_id) {
+                let is_over = usage.soft_limit_triggered_at.is_some();
+                let delay = if is_over {
+                    soft_limit_service.should_throttle(conn, user_id)
+                        .unwrap_or(None)
+                        .map(|d| d.as_secs() as i32)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                (usage.message_count as i32, is_over, delay)
+            } else {
+                (0, false, 0)
+            }
+        })
+        .await
+        .unwrap_or((0, false, 0));
+    
+    // TODO: Get actual token usage from usage_tracking table
     Ok(Json(UsageLimitsResponse {
         tokens_remaining: 0,
         tokens_limit: 0,
         period_start: chrono::Utc::now(),
-        period_end: chrono::Utc::now(),
+        period_end: chrono::Utc::now() + chrono::Duration::days(30),
         is_unlimited: false,
+        // Add daily usage fields
+        daily_message_count: Some(daily_message_count),
+        is_throttled: Some(is_throttled),
+        throttle_delay: Some(throttle_delay),
     }))
 }
 
@@ -739,23 +851,186 @@ pub async fn verify_transaction(
     }
 }
 
+/// Preview order before checkout
+#[cfg(feature = "payment")]
+pub async fn preview_order(
+    auth_session: CurrentAuthSession,
+    State(app_state): State<AppState>,
+    Json(request): Json<OrderPreviewRequest>,
+) -> Result<Json<OrderPreview>, AppError> {
+    let _user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    // Get database connection
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+
+    // Load subscription tiers config for billing features
+    let config_path = "backend/config/subscription_tiers.json";
+    let config_str = std::fs::read_to_string(config_path)
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to read config: {}", e)))?;
+
+    let config: serde_json::Value = serde_json::from_str(&config_str)
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to parse config: {}", e)))?;
+
+    // Create subscription service
+    let subscription_service = SubscriptionService::new(
+        (*app_state.config).clone(),
+        (*app_state.encryption_service).clone()
+    );
+
+    // Get plan features for the requested plan
+    let plan_type = request.plan_type.clone();
+    let subscription_service_clone = subscription_service.clone();
+    let plan_features = conn
+        .interact(move |conn| {
+            futures::executor::block_on(subscription_service_clone.get_plan_features(conn, &plan_type))
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
+        .ok_or_else(|| AppError::BadRequest(format!("Invalid plan type: {}", request.plan_type)))?;
+
+    // Determine pricing based on billing period from subscription tiers config
+    let is_yearly = request.billing_period == "yearly";
+
+    // Get pricing from config rather than database for more flexibility
+    let amount = if is_yearly {
+        // For yearly billing, we need to get the yearly price from config
+        config.get("plans")
+            .and_then(|plans| plans.get(&request.plan_type))
+            .and_then(|plan| plan.get("yearly_price_usd"))
+            .and_then(|price| price.as_f64())
+            .ok_or_else(|| AppError::BadRequest("Yearly pricing not available for this plan".to_string()))?
+    } else {
+        // For monthly billing, convert price_cents to dollars
+        plan_features.price_cents
+            .map(|cents| cents as f64 / 100.0)
+            .unwrap_or(0.0)
+    };
+
+    // Calculate next billing date
+    let next_billing_date = if is_yearly {
+        chrono::Utc::now() + chrono::Duration::days(365)
+    } else {
+        chrono::Utc::now() + chrono::Duration::days(30)
+    };
+
+    // Get savings message for yearly billing
+    let savings_message = if is_yearly {
+        config.get("plans")
+            .and_then(|plans| plans.get(&request.plan_type))
+            .and_then(|plan| plan.get("billing_features"))
+            .and_then(|bf| bf.get("yearly"))
+            .and_then(|yearly| yearly.get("savings_message"))
+            .and_then(|sm| sm.as_str())
+            .map(|s| s.to_string())
+    } else {
+        None
+    };
+
+    // Create order preview
+    let billing_period_text = if is_yearly { "Annual billing" } else { "Monthly billing" };
+
+    let order_preview = OrderPreview {
+        plan_name: plan_features.display_name.clone(),
+        plan_type: request.plan_type.clone(),
+        billing_period: request.billing_period.clone(),
+        line_items: vec![OrderLineItem {
+            description: format!("{} Plan", plan_features.display_name),
+            billing_period: billing_period_text.to_string(),
+            amount,
+            currency: "USD".to_string(),
+        }],
+        subtotal: amount,
+        tax_amount: 0.0, // TODO: Calculate tax based on user location
+        total_amount: amount,
+        currency: "USD".to_string(),
+        next_billing_date: next_billing_date.to_rfc3339(),
+        savings_message,
+        cancellation_policy: "Cancel anytime. No cancellation fees.".to_string(),
+    };
+
+    Ok(Json(order_preview))
+}
+
 /// Create a new subscription for the user (legacy - now uses transactions)
 #[cfg(feature = "payment")]
 pub async fn create_subscription(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
     Json(request): Json<CreateSubscriptionRequest>,
-) -> Result<Json<SubscriptionResponse>, AppError> {
+) -> Result<Json<CreateSubscriptionResponse>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
-    // TODO: This is a simplified implementation for now
-    // In the future, this should map plan_type to price_id and use create_payment
-    Ok(Json(SubscriptionResponse {
-        subscription: None,
-        plan_features: None,
-        usage_limits: None,
+
+    // Get database connection
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+
+    // Create subscription service
+    let subscription_service = SubscriptionService::new(
+        (*app_state.config).clone(),
+        (*app_state.encryption_service).clone()
+    );
+
+    // Get plan features to validate the plan type and get price_id
+    let plan_type = request.plan_type.clone();
+    let subscription_service_clone = subscription_service.clone();
+    let plan_features = conn
+        .interact(move |conn| {
+            futures::executor::block_on(subscription_service_clone.get_plan_features(conn, &plan_type))
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
+        .ok_or_else(|| AppError::BadRequest(format!("Invalid plan type: {}", request.plan_type)))?;
+
+    // For now, we'll use the monthly price ID for both monthly and yearly
+    // In a production system, you'd want separate price IDs for different billing periods
+    let price_id = plan_features.paddle_price_id
+        .ok_or_else(|| AppError::BadRequest("Plan not configured for checkout".to_string()))?;
+
+    // Create Paddle service
+    let paddle_service = PaddleService::new(app_state.config.payment.clone());
+
+    // Create or get customer
+    let customer = paddle_service
+        .create_customer(&user.email, Some(&user.username))
+        .await?;
+
+    // Create transaction request for subscription
+    let transaction_request = CreateTransactionRequest {
+        customer_id: customer.id.clone(),
+        items: vec![TransactionItem {
+            price_id,
+            quantity: 1,
+        }],
+        collection_mode: "automatic".to_string(),
+        checkout: Some(TransactionCheckout {
+            url: None,
+            success_url: Some(format!("{}/pricing/success", app_state.config.frontend_base_url)),
+            cancel_url: Some(format!("{}/pricing", app_state.config.frontend_base_url)),
+        }),
+        billing_details: None,
+    };
+
+    // Create transaction with Paddle
+    let transaction = paddle_service
+        .create_transaction(&transaction_request)
+        .await?;
+
+    Ok(Json(CreateSubscriptionResponse {
+        checkout_url: transaction.checkout_url,
+        subscription_id: transaction.transaction_id, // Using transaction_id as subscription identifier
     }))
 }
 
@@ -1520,7 +1795,7 @@ pub async fn get_model_costs(
     use std::fs;
     
     // Load the subscription tiers configuration
-    let config_path = "config/subscription_tiers.json";
+    let config_path = "backend/config/subscription_tiers.json";
     let config_str = fs::read_to_string(config_path)
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to read config: {}", e)))?;
     
@@ -1558,6 +1833,7 @@ pub fn payment_routes() -> Router<AppState> {
             .layer(from_fn(subscription_rate_limit_middleware)))
         .route("/subscription/reactivate", post(reactivate_subscription)
             .layer(from_fn(subscription_rate_limit_middleware)))
+        .route("/subscription/preview", post(preview_order)) // Order preview endpoint
         .route("/payment", post(create_payment)
             .layer(from_fn(credit_purchase_rate_limit_middleware))) // Rate limit payment creation
         .route("/transaction/:id/verify", get(verify_transaction)) // Transaction verification endpoint

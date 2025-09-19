@@ -413,7 +413,7 @@ pub async fn generate_chat_response(
         debug!(%session_id, %user_tier, "User subscription tier determined");
         
         // Load subscription tier configuration
-        let config_path = std::path::Path::new("config/subscription_tiers.json");
+        let config_path = std::path::Path::new("backend/config/subscription_tiers.json");
         let config_content = std::fs::read_to_string(config_path)
             .map_err(|_| AppError::InternalServerErrorGeneric("Failed to load subscription tiers config".to_string()))?;
         let tiers_config: serde_json::Value = serde_json::from_str(&config_content)
@@ -1259,7 +1259,7 @@ pub async fn generate_chat_response(
                     #[cfg(feature = "payment")]
                     let actual_credit_cost = if prompt_tokens > 0 || completion_tokens > 0 {
                         // Load token-based pricing from config
-                        let config_path = std::path::Path::new("config/subscription_tiers.json");
+                        let config_path = std::path::Path::new("backend/config/subscription_tiers.json");
                         let config_content = std::fs::read_to_string(config_path)
                             .map_err(|_| AppError::InternalServerErrorGeneric("Failed to load subscription tiers config".to_string()))?;
                         let tiers_config: serde_json::Value = serde_json::from_str(&config_content)

@@ -205,8 +205,8 @@ export const subscriptionStore = {
 		// Fallback based on plan type
 		switch (subscriptionStore.currentPlan) {
 			case 'free': return 'Free';
-			case 'pro': return 'Pro';
-			case 'enterprise': return 'Enterprise';
+			case 'basic': return 'Basic';
+			case 'premium': return 'Premium';
 			default: return 'Free';
 		}
 	},

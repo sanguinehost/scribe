@@ -1134,7 +1134,7 @@ export interface PromptTemplateListResponse {
 // ============================================================================
 
 export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing' | 'unpaid' | 'incomplete';
-export type PlanType = 'free' | 'pro' | 'enterprise';
+export type PlanType = 'free' | 'basic' | 'premium';
 
 export interface Subscription {
 	id: string;
@@ -1151,18 +1151,59 @@ export interface Subscription {
 	updated_at?: string; // ISO date
 }
 
+export interface BillingFeatures {
+	display_price: string;
+	billing_period: 'monthly' | 'yearly';
+	trial_days: number;
+	cancel_anytime: boolean;
+	monthly_equivalent?: string;
+	savings_message?: string;
+}
+
 export interface PlanFeatures {
 	plan_type: PlanType;
-	monthly_token_limit?: number;
-	characters_limit?: number;
-	lorebooks_limit?: number;
-	price_cents?: number;
-	paddle_price_id?: string;
-	features?: Record<string, any>;
 	display_name: string;
-	description?: string;
-	created_at?: string; // ISO date
-	updated_at?: string; // ISO date
+	description: string;
+	price_monthly: number;
+	price_yearly?: number;
+	annual_savings_percent?: number;
+	paddle_price_id_monthly?: string;
+	paddle_price_id_yearly?: string;
+	billing_features?: {
+		monthly: BillingFeatures;
+		yearly: BillingFeatures;
+	};
+	limits: {
+		daily_messages: number;
+		daily_limit_type: 'hard' | 'soft';
+		context_tokens: number;
+		chronicles_enabled: boolean;
+		lorebooks_enabled: boolean;
+		personas_enabled: boolean;
+		max_characters: number;
+		max_lorebooks: number;
+	};
+	credits: {
+		included_monthly: number;
+		welcome_bonus?: number;
+		rollover_enabled?: boolean;
+		rollover_max?: number;
+		purchase_discount?: number;
+	};
+	models: {
+		allowed: string[];
+		default: string;
+	};
+	features: {
+		priority_support?: boolean;
+		api_access?: boolean;
+		beta_features?: boolean;
+		export_enabled?: boolean;
+		import_enabled?: boolean;
+		custom_personas?: boolean;
+		priority_queue?: boolean;
+		advanced_analytics?: boolean;
+	};
 }
 
 export interface UsageLimitsResponse {
@@ -1181,6 +1222,7 @@ export interface SubscriptionResponse {
 
 export interface PlansResponse {
 	plans: PlanFeatures[];
+	current_plan?: PlanType;
 }
 
 export interface CreatePaymentRequest {

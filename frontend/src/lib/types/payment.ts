@@ -116,14 +116,28 @@ export interface Subscription {
 	soft_limit_override?: number | null;
 }
 
+export interface BillingFeatures {
+	display_price: string;
+	billing_period: 'monthly' | 'yearly';
+	trial_days: number;
+	cancel_anytime: boolean;
+	monthly_equivalent?: string;
+	savings_message?: string;
+}
+
 export interface PlanFeatures {
 	plan_type: PlanType;
 	display_name: string;
 	description: string;
 	price_monthly: number;
 	price_yearly?: number;
+	annual_savings_percent?: number;
 	paddle_price_id_monthly?: string;
 	paddle_price_id_yearly?: string;
+	billing_features?: {
+		monthly: BillingFeatures;
+		yearly: BillingFeatures;
+	};
 	limits: {
 		daily_messages: number;
 		daily_limit_type: 'hard' | 'soft';
@@ -231,6 +245,32 @@ export interface CreateSubscriptionRequest {
 export interface CreateSubscriptionResponse {
 	checkout_url: string;
 	subscription_id: string;
+}
+
+export interface OrderPreviewRequest {
+	plan_type: PlanType;
+	billing_period: 'monthly' | 'yearly';
+}
+
+export interface OrderLineItem {
+	description: string;
+	billing_period: string;
+	amount: number;
+	currency: string;
+}
+
+export interface OrderPreview {
+	plan_name: string;
+	plan_type: PlanType;
+	billing_period: 'monthly' | 'yearly';
+	line_items: OrderLineItem[];
+	subtotal: number;
+	tax_amount: number;
+	total_amount: number;
+	currency: string;
+	next_billing_date: string;
+	savings_message?: string;
+	cancellation_policy: string;
 }
 
 export interface CancelSubscriptionRequest {

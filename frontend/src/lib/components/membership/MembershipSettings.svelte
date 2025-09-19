@@ -5,9 +5,11 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Separator } from '$lib/components/ui/separator';
+	import { CreditCard, Zap, MessageCircle, Layers, Shield } from 'lucide-svelte';
 	import PlanBadge from './PlanBadge.svelte';
-	import UsageIndicator from './UsageIndicator.svelte';
+	import DailyMessageUsage from './DailyMessageUsage.svelte';
 	import { CheckoutButton } from '$lib/components/payment';
+	import { CreditBalance } from '$lib/components/credits';
 
 	// Reactive subscription data
 	$: subscription = subscriptionStore.subscription;
@@ -20,6 +22,14 @@
 	$: isTrialing = subscriptionStore.isTrialing;
 	$: trialDaysRemaining = subscriptionStore.trialDaysRemaining;
 	$: daysUntilRenewal = subscriptionStore.daysUntilRenewal;
+
+	// Credit data - creditStore is a store, not a plain object
+	// We'll use the CreditBalance component which handles its own store subscription
+
+	// Mock daily usage data - will be replaced with actual API data
+	$: dailyMessageCount = 42;
+	$: isThrottled = false;
+	$: throttleDelay = 0;
 
 	function handleViewPricing() {
 		// Instead of navigating to pricing page, we'll show upgrade options directly
@@ -72,21 +82,7 @@
 	<Card class="w-full">
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					width="20"
-					height="20"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					class="lucide lucide-credit-card"
-				>
-					<rect width="20" height="14" x="2" y="5" rx="2"/>
-					<line x1="2" x2="22" y1="10" y2="10"/>
-				</svg>
+				<CreditCard size={20} />
 				Membership & Billing
 			</CardTitle>
 		</CardHeader>
@@ -127,10 +123,10 @@
 							</div>
 						</div>
 						
-						{#if currentPlan !== 'enterprise'}
+						{#if currentPlan !== 'premium'}
 							{#if currentPlan === 'free'}
 								<CheckoutButton
-									planType="pro"
+									planType="basic"
 									buttonText="Upgrade Plan"
 									buttonClass="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer border-none"
 								/>
@@ -165,14 +161,30 @@
 
 				<Separator />
 
-				<!-- Usage -->
+				<!-- Daily Messages -->
 				<div class="space-y-4">
-					<h3 class="font-semibold">Token Usage</h3>
-					<UsageIndicator 
-						usage={usageLimits}
-						showNumbers={true}
-						showPercentage={true}
+					<h3 class="font-semibold flex items-center gap-2">
+						<MessageCircle size={16} />
+						Daily Activity
+					</h3>
+					<DailyMessageUsage
+						messageCount={dailyMessageCount}
+						planType={currentPlan}
+						isThrottled={isThrottled}
+						throttleDelay={throttleDelay}
+						size="md"
 					/>
+				</div>
+
+				<Separator />
+
+				<!-- Credits -->
+				<div class="space-y-4">
+					<h3 class="font-semibold flex items-center gap-2">
+						<Zap size={16} />
+						Credits
+					</h3>
+					<CreditBalance showPurchaseButton={true} />
 				</div>
 
 				<!-- Plan Features -->
@@ -180,42 +192,59 @@
 					<Separator />
 					<div class="space-y-4">
 						<h3 class="font-semibold">Plan Features</h3>
-						<div class="space-y-2">
-							{#if planFeatures.monthly_token_limit}
-								<div class="flex items-center gap-2">
-									<div class="w-2 h-2 bg-blue-500 rounded-full"></div>
-									<span class="text-sm">{planFeatures.monthly_token_limit.toLocaleString()} tokens per month</span>
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+							<!-- Daily Messages -->
+							<div class="flex items-start gap-2">
+								<MessageCircle size={14} class="text-blue-500 mt-0.5" />
+								<div>
+									<span class="text-sm font-medium">
+										{currentPlan === 'free' ? '20' : currentPlan === 'basic' ? '100' : '200'} messages/day
+									</span>
+									<span class="text-xs text-slate-500 dark:text-slate-400 block">
+										{currentPlan === 'free' ? 'Hard limit' : 'Soft limit'}
+									</span>
 								</div>
-							{:else}
-								<div class="flex items-center gap-2">
-									<div class="w-2 h-2 bg-green-500 rounded-full"></div>
-									<span class="text-sm">Unlimited tokens</span>
+							</div>
+
+							<!-- Included Credits -->
+							<div class="flex items-start gap-2">
+								<Zap size={14} class="text-yellow-500 mt-0.5" />
+								<div>
+									<span class="text-sm font-medium">
+										{currentPlan === 'free' ? '25' : currentPlan === 'basic' ? '250' : '800'} credits
+									</span>
+									<span class="text-xs text-slate-500 dark:text-slate-400 block">
+										{currentPlan === 'free' ? 'One-time bonus' : 'Monthly allocation'}
+									</span>
 								</div>
-							{/if}
-							
-							{#if planFeatures.characters_limit}
-								<div class="flex items-center gap-2">
-									<div class="w-2 h-2 bg-blue-500 rounded-full"></div>
-									<span class="text-sm">{planFeatures.characters_limit} character{planFeatures.characters_limit === 1 ? '' : 's'}</span>
+							</div>
+
+							<!-- Context Limit -->
+							<div class="flex items-start gap-2">
+								<Layers size={14} class="text-purple-500 mt-0.5" />
+								<div>
+									<span class="text-sm font-medium">
+										{currentPlan === 'free' ? '32k' : currentPlan === 'basic' ? '64k' : '200k'} context
+									</span>
+									<span class="text-xs text-slate-500 dark:text-slate-400 block">
+										Token limit
+									</span>
 								</div>
-							{/if}
-							
-							{#if planFeatures.lorebooks_limit}
-								<div class="flex items-center gap-2">
-									<div class="w-2 h-2 bg-blue-500 rounded-full"></div>
-									<span class="text-sm">{planFeatures.lorebooks_limit} lorebook{planFeatures.lorebooks_limit === 1 ? '' : 's'}</span>
+							</div>
+
+							<!-- Characters & Lorebooks -->
+							{#if currentPlan !== 'free'}
+								<div class="flex items-start gap-2">
+									<Shield size={14} class="text-green-500 mt-0.5" />
+									<div>
+										<span class="text-sm font-medium">
+											{currentPlan === 'basic' ? '50 characters' : 'Unlimited characters'}
+										</span>
+										<span class="text-xs text-slate-500 dark:text-slate-400 block">
+											Character slots
+										</span>
+									</div>
 								</div>
-							{/if}
-							
-							{#if planFeatures.features}
-								{#each Object.entries(planFeatures.features) as [key, value]}
-									{#if value === true}
-										<div class="flex items-center gap-2">
-											<div class="w-2 h-2 bg-green-500 rounded-full"></div>
-											<span class="text-sm">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
-										</div>
-									{/if}
-								{/each}
 							{/if}
 						</div>
 					</div>
@@ -229,30 +258,30 @@
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 							<div class="p-4 border rounded-lg">
 								<div class="flex items-center gap-2 mb-2">
-									<PlanBadge planType="pro" size="sm" />
-									<span class="font-medium">Pro Plan</span>
+									<PlanBadge planType="basic" size="sm" />
+									<span class="font-medium">Basic Plan</span>
 								</div>
 								<p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
-									Perfect for regular users with higher token needs
+									For serious character AI enthusiasts and creators
 								</p>
 								<CheckoutButton
-									planType="pro"
-									buttonText="Upgrade to Pro"
+									planType="basic"
+									buttonText="Upgrade to Basic"
 									buttonClass="w-full"
 								/>
 							</div>
 							
 							<div class="p-4 border rounded-lg">
 								<div class="flex items-center gap-2 mb-2">
-									<PlanBadge planType="enterprise" size="sm" />
-									<span class="font-medium">Enterprise Plan</span>
+									<PlanBadge planType="premium" size="sm" />
+									<span class="font-medium">Premium Plan</span>
 								</div>
 								<p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
-									Unlimited usage with priority support
+									Professional roleplay & storytelling platform
 								</p>
 								<CheckoutButton
-									planType="enterprise"
-									buttonText="Upgrade to Enterprise"
+									planType="premium"
+									buttonText="Upgrade to Premium"
 									buttonClass="w-full"
 								/>
 							</div>
