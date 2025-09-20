@@ -18,12 +18,6 @@
 	import { toast } from 'svelte-sonner';
 	import { Expand, X, Star, Heart, Globe, Plus, Trash2, HelpCircle } from 'lucide-svelte';
 	import GenerationWidget from './generation-widget.svelte';
-	import {
-		Tooltip,
-		TooltipProvider,
-		TooltipTrigger,
-		TooltipContent
-	} from '$lib/components/ui/tooltip';
 	import type { Character, Lorebook, CharacterContext } from '$lib/types';
 	import { writable } from 'svelte/store';
 	import { tick } from 'svelte';
@@ -346,8 +340,7 @@
 	}
 </script>
 
-<TooltipProvider>
-	<Dialog bind:open>
+<Dialog bind:open>
 		<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
 			<DialogHeader>
 				<DialogTitle>Edit Character</DialogTitle>
@@ -367,12 +360,7 @@
 						<div class="flex items-center gap-2">
 							<h3 class="text-lg font-semibold">Basic Information</h3>
 							<div class="ml-auto flex items-center gap-2">
-								<Tooltip>
-									<TooltipTrigger>
-										<Checkbox id="favorite" bind:checked={formData.fav} />
-									</TooltipTrigger>
-									<TooltipContent>Toggle to add or remove from favorites</TooltipContent>
-								</Tooltip>
+								<Checkbox id="favorite" bind:checked={formData.fav} title="Toggle to add or remove from favorites" />
 								<Label for="favorite" class="flex items-center gap-1 text-sm">
 									<Heart class="h-4 w-4" />
 									Favorite
@@ -705,37 +693,9 @@
 									<div class="grid gap-2">
 										<div class="flex items-center gap-1">
 											<Label for="depth_prompt_depth">Insertion Depth</Label>
-											<Tooltip>
-												<TooltipTrigger class="cursor-help">
-													<HelpCircle class="h-4 w-4 text-muted-foreground" />
-												</TooltipTrigger>
-												<TooltipContent>
-													<div class="max-w-xs space-y-2 p-2">
-														<p>
-															Insertion depth determines where the Character's Note is injected into
-															the conversation history sent to the AI. It's counted from the end of
-															the chat history.
-														</p>
-														<p class="font-semibold">Why use a deeper insertion?</p>
-														<p>
-															It makes the AI's change in behavior feel more natural. Instead of a
-															sudden command, the instruction feels like an established fact or a
-															thought the character has been having for a while.
-														</p>
-														<p class="mt-2 font-semibold">Example:</p>
-														<ul class="list-disc space-y-1 pl-4">
-															<li>
-																<strong>Depth 0:</strong> Inserting "[Character is now angry]" can feel
-																abrupt.
-															</li>
-															<li>
-																<strong>Depth 4:</strong> Inserting the same note 4 messages ago allows
-																the AI to build up to the anger more organically over its next few responses.
-															</li>
-														</ul>
-													</div>
-												</TooltipContent>
-											</Tooltip>
+											<span class="cursor-help" title="Insertion depth determines where the Character's Note appears in the conversation history">
+												<HelpCircle class="h-4 w-4 text-muted-foreground" />
+											</span>
 										</div>
 										<Input
 											id="depth_prompt_depth"
@@ -752,18 +712,9 @@
 										<div class="grid gap-2">
 											<div class="flex items-center gap-1">
 												<Label for="depth_prompt_role">Insertion Role</Label>
-												<Tooltip>
-													<TooltipTrigger class="cursor-help">
-														<HelpCircle class="h-4 w-4 text-muted-foreground" />
-													</TooltipTrigger>
-													<TooltipContent>
-														<div class="max-w-xs space-y-2 p-2">
-															{#each insertionRoles as role}
-																<p><strong>{role.label}:</strong> {role.description}</p>
-															{/each}
-														</div>
-													</TooltipContent>
-												</Tooltip>
+												<span class="cursor-help" title="Determines the role or perspective for the Character's Note. System = instruction to AI, User = from user perspective, Assistant = from character perspective">
+													<HelpCircle class="h-4 w-4 text-muted-foreground" />
+												</span>
 											</div>
 											<select
 												id="depth_prompt_role"
@@ -814,7 +765,6 @@
 			</DialogFooter>
 		</DialogContent>
 	</Dialog>
-</TooltipProvider>
 
 <!-- Pop-out Editor Dialog -->
 <Dialog bind:open={popoutEditorOpen}>
