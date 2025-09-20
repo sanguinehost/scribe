@@ -26,10 +26,10 @@
 	// Credit data - creditStore is a store, not a plain object
 	// We'll use the CreditBalance component which handles its own store subscription
 
-	// Mock daily usage data - will be replaced with actual API data
-	$: dailyMessageCount = 42;
-	$: isThrottled = false;
-	$: throttleDelay = 0;
+	// Daily usage data from subscription store
+	$: dailyMessageCount = subscriptionStore.dailyMessageCount;
+	$: isThrottled = subscriptionStore.isThrottled;
+	$: throttleDelay = subscriptionStore.throttleDelay;
 
 	function handleViewPricing() {
 		// Instead of navigating to pricing page, we'll show upgrade options directly

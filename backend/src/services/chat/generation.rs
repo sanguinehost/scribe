@@ -39,6 +39,10 @@ use crate::{
 };
 // Corrected QdrantClient import
 
+// Conditional import for payment features
+#[cfg(feature = "payment")]
+use crate::services::payment::SoftLimitService;
+
 // Type aliases for complex types
 type GeminiStreamResult = Result<
     Pin<Box<dyn Stream<Item = Result<GeminiResponseChunkAlias, AppError>> + Send>>,
@@ -1736,6 +1740,60 @@ pub async fn stream_ai_response_and_save_message(
                 }).await {
                     Ok(saved_message) => {
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");
+
+                        // Track daily message usage with SoftLimitService
+                        #[cfg(feature = "payment")]
+                        {
+                            let soft_limit_service = SoftLimitService::new(state_for_full_save.config.clone());
+                            let user_id_for_tracking = full_user_id_clone;
+                            let model_for_tracking = service_model_name_clone_full.clone();
+                            let tokens_for_tracking = saved_message.completion_tokens.unwrap_or(0) as i64;
+
+                            // Get a connection from the pool for usage tracking
+                            match state_for_full_save.pool.get().await {
+                                Ok(conn) => {
+                                    let tracking_result = conn.interact(move |c| {
+                                        soft_limit_service.record_usage(
+                                            c,
+                                            user_id_for_tracking,
+                                            &model_for_tracking,
+                                            tokens_for_tracking,
+                                        )
+                                    }).await;
+
+                                    match tracking_result {
+                                        Ok(Ok(daily_usage)) => {
+                                            debug!(
+                                                session_id = %full_session_id_clone,
+                                                message_count = daily_usage.message_count,
+                                                "Successfully updated daily message count"
+                                            );
+                                        }
+                                        Ok(Err(e)) => {
+                                            warn!(
+                                                session_id = %full_session_id_clone,
+                                                error = ?e,
+                                                "Failed to update daily message count, but continuing"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                session_id = %full_session_id_clone,
+                                                error = ?e,
+                                                "Database interaction error during usage tracking, but continuing"
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        session_id = %full_session_id_clone,
+                                        error = ?e,
+                                        "Failed to get database connection for usage tracking, but continuing"
+                                    );
+                                }
+                            }
+                        }
 
                         // Send message ID first (for raw prompt modal)
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Sending message ID through channel");

@@ -1212,6 +1212,10 @@ export interface UsageLimitsResponse {
 	period_start: string; // ISO date
 	period_end: string; // ISO date
 	is_unlimited: boolean;
+	// Daily usage fields
+	daily_message_count?: number;
+	is_throttled?: boolean;
+	throttle_delay?: number;
 }
 
 export interface SubscriptionResponse {

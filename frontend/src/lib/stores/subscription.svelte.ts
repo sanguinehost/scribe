@@ -96,6 +96,18 @@ export const subscriptionStore = {
 		return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 	},
 
+	get dailyMessageCount(): number {
+		return _usageLimits?.daily_message_count || 0;
+	},
+
+	get isThrottled(): boolean {
+		return _usageLimits?.is_throttled || false;
+	},
+
+	get throttleDelay(): number {
+		return _usageLimits?.throttle_delay || 0;
+	},
+
 	/**
 	 * Fetch subscription data from API
 	 */
