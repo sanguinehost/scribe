@@ -26,6 +26,7 @@ pub struct ChatMessageChunkMetadata {
 impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
     type Error = AppError;
 
+    #[allow(deprecated)]
     fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
         let message_id =
             extract_uuid_from_payload(&payload, "message_id", "ChatMessageChunkMetadata")?;
@@ -123,6 +124,7 @@ pub struct LorebookChunkMetadata {
 impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
     type Error = AppError;
 
+    #[allow(deprecated)]
     fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
         let original_lorebook_entry_id = extract_uuid_from_payload(
             &payload,

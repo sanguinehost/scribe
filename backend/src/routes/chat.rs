@@ -389,7 +389,7 @@ pub async fn generate_chat_response(
     #[cfg(feature = "payment")]
     let mut credit_reservation: Option<(crate::services::payment::CreditService, Uuid, i32)> = None;
     #[cfg(not(feature = "payment"))]
-    let credit_reservation: Option<((), (), i32)> = None;
+    let _credit_reservation: Option<((), (), i32)> = None;
 
     // These need to be accessible outside the feature gate
     let _should_track_usage = false;
@@ -943,7 +943,7 @@ pub async fn generate_chat_response(
                     let final_stream = async_stream::stream! {
                         let mut content_produced = false;
                         let mut error_from_service_stream = false;
-                        let mut assistant_message_id: Option<Uuid> = None;
+                        let mut _assistant_message_id: Option<Uuid> = None;
                         futures::pin_mut!(service_stream);
 
                         while let Some(event_result) = service_stream.next().await {
@@ -972,7 +972,7 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
-                                                assistant_message_id =Some(msg_uuid);
+                                                _assistant_message_id = Some(msg_uuid);
 
                                                 // Update pre-processing analysis with assistant message ID if we have one
                                                 if let Some(analysis_id) = pre_processing_analysis_id_clone {
@@ -1038,7 +1038,7 @@ pub async fn generate_chat_response(
                             if let Some(mode) = &agent_mode {
                                 if mode == "post_processing" {
                                     // Only run post-processing if we have a valid assistant message ID
-                                    if let Some(assistant_msg_id) = assistant_message_id {
+                                    if let Some(assistant_msg_id) = _assistant_message_id {
                                         info!(%session_id, ?assistant_msg_id, "Post-processing agent mode enabled - will run in background");
 
                                         // Note: We should check the assistant message status before running post-processing
@@ -1752,7 +1752,7 @@ pub async fn generate_chat_response(
                     let final_stream = async_stream::stream! {
                         let mut content_produced = false;
                         let mut error_from_service_stream = false;
-                        let mut assistant_message_id: Option<Uuid> = None;
+                        let mut _assistant_message_id: Option<Uuid> = None;
                         futures::pin_mut!(service_stream);
 
                         while let Some(event_result) = service_stream.next().await {
@@ -1781,7 +1781,7 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
-                                                assistant_message_id =Some(msg_uuid);
+                                                _assistant_message_id = Some(msg_uuid);
                                             }
                                             let message_data = serde_json::json!({
                                                 "message_id": message_id,

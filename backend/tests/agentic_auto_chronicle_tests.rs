@@ -497,7 +497,7 @@ mod agentic_chronicle_tests {
             "Agentic workflow should succeed: {:?}",
             result.err()
         );
-        let workflow_result = result.unwrap();
+        let _workflow_result = result.unwrap();
 
         // Verify events were added to existing chronicle
         let events = chronicle_service

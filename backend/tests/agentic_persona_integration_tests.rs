@@ -175,7 +175,7 @@ fn create_lucas_roleplay_messages(
 
     let mut messages = Vec::new();
 
-    for (i, (role, content)) in messages_content.iter().enumerate() {
+    for (_i, (role, content)) in messages_content.iter().enumerate() {
         let message_role = match *role {
             "user" => MessageRole::User,
             "assistant" => MessageRole::Assistant,
@@ -551,7 +551,7 @@ async fn test_triage_tool_persona_awareness() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (user_id, _session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
+    let (_user_id, _session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
 
     // Test messages with persona-specific content
     let messages = json!({

@@ -112,7 +112,7 @@ fn create_roleplay_messages(
 
     let mut messages = Vec::new();
 
-    for (i, (role, content)) in messages_content.iter().enumerate() {
+    for (_i, (role, content)) in messages_content.iter().enumerate() {
         let message_role = match *role {
             "user" => MessageRole::User,
             "assistant" => MessageRole::Assistant,

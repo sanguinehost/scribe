@@ -274,7 +274,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     ));
 
     // --- Initialize Chronicle Service ---
-    let chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
+    let _chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 

@@ -805,6 +805,7 @@ pub(crate) fn apply_token_limits(
 }
 
 /// Builds the RAG context string from calculation data
+#[allow(deprecated)]
 fn build_rag_context_string(
     calculation: &TokenCalculation,
     user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
@@ -1154,8 +1155,8 @@ async fn build_final_prompt_strings(
     calculation: &TokenCalculation,
     current_user_message: &GenAiChatMessage,
     character_metadata: Option<&CharacterMetadata>,
-    token_counter: &HybridTokenCounter,
-    model_name: &str,
+    _token_counter: &HybridTokenCounter,
+    _model_name: &str,
     agent_context: Option<&str>,
     user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
     guidance: Option<&str>,
@@ -1810,6 +1811,7 @@ mod tests {
         }
 
         #[test]
+        #[allow(deprecated)]
         fn test_rag_truncation_before_history() {
             // Create RAG items that will be truncated first
             let rag_chunk = RetrievedChunk {

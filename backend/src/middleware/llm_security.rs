@@ -162,7 +162,7 @@ pub struct RateLimitResponse {
 pub async fn llm_security_middleware(
     State(app_state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     mut request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {

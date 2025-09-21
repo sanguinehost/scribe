@@ -265,8 +265,8 @@ async fn test_a01_cannot_execute_tools_without_permission() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create two users
-    let (user1_cookie, user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
-    let (user2_cookie, user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
+    let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
+    let (_user2_cookie, user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User 1 creates a chronicle
     let chronicle_request = json!({
@@ -295,7 +295,7 @@ async fn test_a01_cannot_execute_tools_without_permission() {
 
     // User 2 tries to use agentic tools to access User 1's chronicle (simulated)
     // This would happen through tool calls in the agentic system
-    let malicious_tool_params = json!({
+    let _malicious_tool_params = json!({
         "user_id": user2_id.to_string(),
         "chronicle_id": chronicle_id.to_string(),
         "event_type": "MALICIOUS.ACCESS",
@@ -360,7 +360,7 @@ async fn test_a02_agentic_context_analysis_is_encrypted() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "encrypt")
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "encrypt")
         .await
         .unwrap();
 

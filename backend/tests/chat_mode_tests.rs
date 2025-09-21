@@ -325,7 +325,7 @@ async fn test_chat_mode_validation_errors() {
 #[ignore] // For CI
 async fn test_character_operations_fail_for_non_character_modes() {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "operation_user".to_string(),
         "testpass".to_string(),

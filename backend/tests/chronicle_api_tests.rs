@@ -330,7 +330,7 @@ mod api_tests {
             .unwrap();
 
         // Test: Create Event
-        let event_data = json!({
+        let _event_data = json!({
             "location": "Misty Forest",
             "weather": "foggy",
             "danger_level": "moderate"

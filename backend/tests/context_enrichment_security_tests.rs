@@ -125,8 +125,8 @@ async fn test_search_knowledge_base_user_isolation() {
     guard.add_user(user2.id);
 
     // Use the DEKs from created users (they already have encrypted DEKs)
-    let user1_dek = &user1.dek.as_ref().expect("User1 should have DEK").0;
-    let user2_dek = &user2.dek.as_ref().expect("User2 should have DEK").0;
+    let _user1_dek = &user1.dek.as_ref().expect("User1 should have DEK").0;
+    let _user2_dek = &user2.dek.as_ref().expect("User2 should have DEK").0;
 
     // Create lorebooks for each user (not needed for basic security test)
     let _lorebook_service = ChronicleService::new(test_app.db_pool.clone());
@@ -200,7 +200,7 @@ async fn test_context_enrichment_agent_security() {
     .expect("Failed to create user");
     guard.add_user(user.id);
 
-    let session_dek = &user.dek.as_ref().expect("User should have DEK").0;
+    let _session_dek = &user.dek.as_ref().expect("User should have DEK").0;
 
     // Create chronicle for user
     let chronicle_service = ChronicleService::new(test_app.db_pool.clone());

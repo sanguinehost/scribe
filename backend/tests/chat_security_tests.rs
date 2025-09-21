@@ -467,7 +467,7 @@ async fn test_a02_chat_messages_are_encrypted_at_rest() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "encrypt")
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "encrypt")
         .await
         .unwrap();
 
@@ -525,7 +525,7 @@ async fn test_a02_chat_session_titles_are_encrypted() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "title_encrypt")
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "title_encrypt")
         .await
         .unwrap();
 
@@ -1100,7 +1100,7 @@ async fn test_a08_chat_message_integrity() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "integrity")
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "integrity")
         .await
         .unwrap();
 

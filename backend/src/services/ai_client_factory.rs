@@ -49,7 +49,7 @@ impl AiClientFactory {
         provider: Option<&str>,
         model_name: Option<&str>,
         session_dek: Option<&SessionDek>,
-        app_state: &Arc<AppState>,
+        _app_state: &Arc<AppState>,
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         info!(%user_id, provider = ?provider, model_name = ?model_name, has_session_dek = session_dek.is_some(), "🔍 DEBUG: get_secure_client_for_provider called with params");
         let provider = provider.unwrap_or("gemini"); // Default to gemini if no provider specified

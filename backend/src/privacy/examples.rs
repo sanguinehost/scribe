@@ -73,7 +73,7 @@ pub mod admin_routes_example {
     pub fn demonstrate_admin_logging_transformation() {
         let user_id = Uuid::new_v4();
         let admin_user_id = Uuid::new_v4();
-        let username = "john.doe";
+        let _username = "john.doe";
 
         // BEFORE: Logs actual user IDs and username
         // debug!(user_id = %user_id, username = %username, "User has Administrator role, access granted");
@@ -162,8 +162,8 @@ pub mod auth_example {
 
     pub fn demonstrate_auth_logging_transformation() {
         let user_id = Uuid::new_v4();
-        let email = "user@example.com";
-        let ip_address = "192.168.1.100";
+        let _email = "user@example.com";
+        let _ip_address = "192.168.1.100";
 
         // BEFORE: Logs email and IP directly
         // info!(user_id = %user_id, email = %email, ip = %ip_address, "User login successful");
@@ -225,8 +225,8 @@ pub fn show_transformation_patterns() {
 
 /// Demonstrates output format differences
 pub fn demonstrate_log_output_differences() {
-    let user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-    let session_id = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+    let _user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let _session_id = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
 
     println!("=== Log Output Format Comparison ===\n");
 

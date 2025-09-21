@@ -240,7 +240,7 @@ async fn test_a01_cannot_access_other_users_chronicle() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create two users
-    let (user1_cookie, user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
+    let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User1 creates a chronicle
@@ -509,7 +509,7 @@ async fn test_a02_chronicle_events_are_encrypted_at_rest() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create authenticated user
-    let (cookie, user_id) = create_authenticated_user(&test_app, "crypto_test")
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "crypto_test")
         .await
         .unwrap();
 
@@ -1325,7 +1325,7 @@ async fn test_a10_ssrf_prevention_in_event_data() {
         // Should either safely store the data or reject suspicious URLs
         // The system should NOT make requests to these URLs
         if response.status() == StatusCode::CREATED {
-            let event: ChronicleEvent = parse_json_response(response).await.unwrap();
+            let _event: ChronicleEvent = parse_json_response(response).await.unwrap();
             // Event should be created but URLs should not be fetched
             // Event stored successfully with the payload in keywords or summary
         }

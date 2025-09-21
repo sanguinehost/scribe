@@ -311,7 +311,7 @@ async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::
     let app_state_arc = Arc::new(app_state);
 
     // Add narrative intelligence service after AppState construction to break circular dependency
-    let narrative_intelligence_service =
+    let _narrative_intelligence_service =
         Arc::new(scribe_backend::services::NarrativeIntelligenceService::new(
             test_app.ai_client.clone(),
             Arc::new(scribe_backend::services::ChronicleService::new(

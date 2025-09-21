@@ -936,7 +936,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         use diesel::prelude::*;
 
         // Convert session_dek to SecretBox
-        let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
+        let _dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
 
         let analysis_type_str = match mode {
             EnrichmentMode::PreProcessing => AnalysisType::PreProcessing,

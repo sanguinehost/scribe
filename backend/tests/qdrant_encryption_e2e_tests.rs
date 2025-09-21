@@ -298,7 +298,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
     let dek_secret = SecretBox::new(Box::new(dek_key));
 
     // Create a chronicle first
-    let chronicle_id = Uuid::new_v4();
+    let _chronicle_id = Uuid::new_v4();
     let new_chronicle = scribe_backend::models::chronicle::NewPlayerChronicle {
         user_id: user.id,
         name: "Test Chronicle".to_string(),
@@ -456,13 +456,13 @@ async fn test_encryption_isolation_between_users() -> Result<()> {
     let _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create two users with different DEKs
-    let user_a = test_helpers::db::create_test_user(
+    let _user_a = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "user_a".to_string(),
         "password".to_string(),
     )
     .await?;
-    let user_b = test_helpers::db::create_test_user(
+    let _user_b = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "user_b".to_string(),
         "password".to_string(),

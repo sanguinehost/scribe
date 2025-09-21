@@ -294,7 +294,7 @@ mod integration_tests {
             .unwrap();
 
         // Test: Create Event
-        let event_data = json!({
+        let _event_data = json!({
             "location": "Starting Village",
             "mood": "mysterious",
             "npcs": ["Village Elder", "Suspicious Merchant"]

@@ -413,7 +413,7 @@ pub async fn get_chat_deletion_analysis_handler(
 
     // First verify the user owns this chat
     let pool = state.pool.clone();
-    let chat = pool
+    let _chat = pool
         .get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
@@ -960,7 +960,7 @@ pub async fn get_messages_by_chat_id_handler(
     tracing::debug!("Parsed chat_id = {}, user_id = {}", chat_id, user.id);
 
     // Fetch chat session and verify ownership
-    let chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+    let _chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
 
     // Fetch paginated messages for the chat
     let messages_db =

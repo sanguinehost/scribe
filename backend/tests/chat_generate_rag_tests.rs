@@ -575,6 +575,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 #[tokio::test]
 // Removed ignore: #[ignore] // Integration test, relies on external services
 #[allow(clippy::too_many_lines)]
+#[allow(deprecated)]
 async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let user = test_helpers::db::create_test_user(

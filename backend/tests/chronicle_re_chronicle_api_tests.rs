@@ -309,7 +309,7 @@ async fn create_chat_session_with_messages(
 
     // Create messages
     for i in 0..message_count {
-        let message_id = Uuid::new_v4();
+        let _message_id = Uuid::new_v4();
         let role = if i % 2 == 0 {
             MessageRole::User
         } else {

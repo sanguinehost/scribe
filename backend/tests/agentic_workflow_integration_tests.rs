@@ -585,7 +585,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
 
 #[tokio::test]
 async fn test_feature_flag_user_rollout() {
-    let test_app = spawn_app(false, false, false).await;
+    let _test_app = spawn_app(false, false, false).await;
 
     // Test user not in rollout (0% rollout)
     let mut feature_flags = NarrativeFeatureFlags::default();

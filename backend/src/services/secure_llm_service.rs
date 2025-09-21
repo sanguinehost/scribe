@@ -38,9 +38,10 @@ impl SecureLlmService {
     /// Secure chat execution with encryption, sanitization, and audit logging
     pub async fn secure_exec_chat(
         &self,
+        #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))]
         mut request: ChatRequest,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        _session_dek: &SessionDek,
     ) -> Result<ChatResponse, AppError> {
         debug!("Starting secure chat execution for user: {}", user_id);
 
@@ -152,9 +153,10 @@ impl SecureLlmService {
     /// Secure streaming chat with real-time encryption
     pub async fn secure_stream_chat(
         &self,
+        #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))]
         mut request: ChatRequest,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        _session_dek: &SessionDek,
     ) -> Result<ChatStream, AppError> {
         debug!("Starting secure streaming chat for user: {}", user_id);
 
@@ -429,7 +431,7 @@ impl AiClient for SecureLlmService {
     async fn exec_chat(
         &self,
         model_name: &str,
-        mut request: ChatRequest,
+        request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatResponse, AppError> {
         // We need user_id and session_dek to perform secure operations
@@ -449,7 +451,7 @@ impl AiClient for SecureLlmService {
     async fn stream_chat(
         &self,
         model_name: &str,
-        mut request: ChatRequest,
+        request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
         // Same limitation as exec_chat - we need user context for full security

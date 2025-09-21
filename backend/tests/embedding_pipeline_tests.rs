@@ -31,6 +31,7 @@ use std::{collections::HashMap, sync::Arc}; // Removed env
 use uuid::Uuid; // For mock assertions
 
 // Helper to assert content and metadata of retrieved chunks
+#[allow(deprecated)]
 fn assert_retrieved_chunks_content(
     retrieved_chunks: &[scribe_backend::services::embeddings::RetrievedChunk],
     test_session_id: Uuid,
@@ -123,6 +124,7 @@ fn check_qdrant_url_and_skip(config: &scribe_backend::config::Config, test_name:
 }
 
 // Helper to verify Qdrant points after embedding
+#[allow(deprecated)]
 async fn verify_qdrant_points(
     qdrant_service_trait: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     test_message_id: Uuid,
@@ -1463,6 +1465,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
 #[tokio::test]
 // #[ignore] // Test requires external Qdrant service // Temporarily un-ignore
 #[serial]
+#[allow(deprecated)]
 async fn test_rag_context_injection_with_qdrant() {
     // Setup: Initialize test environment with real Qdrant
     let test_app = test_helpers::spawn_app(false, false, true).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = true
@@ -1885,6 +1888,7 @@ async fn test_mock_qdrant_update_collection_settings() {
 
 #[tokio::test]
 #[serial]
+#[allow(deprecated)]
 async fn test_rag_chat_history_isolation_by_user_and_session() {
     // 1. Setup TestApp with real Qdrant
     let test_app = test_helpers::spawn_app(false, false, true).await;
@@ -2239,6 +2243,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
 }
 #[tokio::test]
 #[serial]
+#[allow(deprecated)]
 async fn test_rag_lorebook_isolation_by_user_and_id() {
     // 1. Setup TestApp with real Qdrant
     let test_app = test_helpers::spawn_app(false, false, true).await;

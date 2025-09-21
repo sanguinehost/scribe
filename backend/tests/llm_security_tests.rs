@@ -47,10 +47,10 @@ async fn test_llm01_prompt_injection_prevention() {
         .expect("Failed to start LLM server for testing");
 
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser".to_string(),
         "SecurePassword123!".to_string(),
@@ -176,10 +176,10 @@ async fn test_llm02_sensitive_information_filtering() {
         .expect("Failed to start LLM server for testing");
 
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser".to_string(),
         "SecurePassword123!".to_string(),

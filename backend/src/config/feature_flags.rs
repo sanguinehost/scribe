@@ -191,7 +191,7 @@ impl NarrativeFeatureFlags {
     pub fn determine_extraction_mode(
         &self,
         user_id: &str,
-        context: &str,
+        _context: &str,
     ) -> ExtractionModeDecision {
         // Check if user should get agentic extraction
         let user_should_get_agentic = self.should_use_agentic_for_user(user_id);

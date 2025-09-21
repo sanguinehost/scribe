@@ -222,7 +222,7 @@ async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::
     let app_state_arc = Arc::new(app_state);
 
     // Add narrative intelligence service after AppState construction to break circular dependency
-    let narrative_intelligence_service =
+    let _narrative_intelligence_service =
         Arc::new(scribe_backend::services::NarrativeIntelligenceService::new(
             test_app.ai_client.clone(),
             Arc::new(scribe_backend::services::ChronicleService::new(
@@ -683,7 +683,7 @@ mod realtime_extraction_tests {
             .unwrap();
         assert!(!events.is_empty(), "Should have recorded combat events");
 
-        let combat_event = &events[0];
+        let _combat_event = &events[0];
         // Note: Event summaries may be encrypted and show as "[ENCRYPTED]"
         // The key verification is that the combat event was created successfully
     }
@@ -834,7 +834,7 @@ mod realtime_extraction_tests {
             "Should have recorded the revelation event"
         );
 
-        let revelation_event = &events[0];
+        let _revelation_event = &events[0];
         // Note: Event summaries may be encrypted and show as "[ENCRYPTED]"
         // The key verification is that the revelation event was created successfully
     }

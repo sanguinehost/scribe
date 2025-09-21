@@ -170,6 +170,7 @@ async fn debug_session_data(
 #[tokio::test]
 // Removed ignore flag to make sure this test runs in CI
 #[allow(clippy::too_many_lines)]
+#[allow(deprecated)]
 async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(test_app.db_pool.clone());

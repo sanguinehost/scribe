@@ -255,7 +255,7 @@ mod delete_chat_message {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let username = "test_delete_chat_message_user";
         let password = "password";
-        let user: User = test_helpers::db::create_test_user(
+        let _user: User = test_helpers::db::create_test_user(
             &test_app.db_pool,
             username.to_string(),
             password.to_string(),
@@ -298,7 +298,7 @@ mod delete_chat_message {
         let (_client, auth_cookie) =
             test_helpers::login_user_via_api(&test_app, username, password).await;
 
-        let session_id = Uuid::new_v4();
+        let _session_id = Uuid::new_v4();
         let message_id = Uuid::new_v4();
 
         let request = Request::builder()

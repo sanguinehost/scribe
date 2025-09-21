@@ -71,6 +71,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_chat_message_chunk_metadata_try_from_valid_payload() {
         let payload = build_valid_payload_map();
         let result = ChatMessageChunkMetadata::try_from(payload);
@@ -199,7 +200,7 @@ mod tests {
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 
         // Create chronicle service for narrative intelligence
-        let chronicle_service = Arc::new(
+        let _chronicle_service = Arc::new(
             crate::services::chronicle_service::ChronicleService::new(pool.clone()),
         );
 

@@ -42,6 +42,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     /// `AppError::SerializationError` if metadata serialization fails,
     /// Qdrant service errors if vector storage operations fail.
     #[instrument(skip_all, fields(message_id = %message.id, session_id = %message.session_id))]
+    #[allow(deprecated)]
     async fn process_and_embed_message(
         &self,
         state: Arc<AppState>, // Get clients from state
@@ -234,6 +235,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         lorebook_id = %params.lorebook_id,
         user_id = %params.user_id
     ))]
+    #[allow(deprecated)]
     async fn process_and_embed_lorebook_entry(
         &self,
         state: Arc<AppState>,
@@ -431,6 +433,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     /// `AppError::SerializationError` if metadata deserialization fails,
     /// Qdrant service errors if vector search operations fail.
     #[instrument(skip_all, fields(user_id = %user_id, query_length = query_text.len(), session_id_for_chat = ?session_id_for_chat_history, lorebook_ids = ?active_lorebook_ids_for_search, chronicle_id = ?chronicle_id_for_search))]
+    #[allow(deprecated)]
     async fn retrieve_relevant_chunks(
         &self,
         state: Arc<AppState>,

@@ -84,7 +84,7 @@ mod tests {
 
         // Step 2: Extract based on significance
         if significance_result["is_significant"].as_bool().unwrap() {
-            let categories = significance_result["suggested_categories"]
+            let _categories = significance_result["suggested_categories"]
                 .as_array()
                 .unwrap();
 

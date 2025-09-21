@@ -590,7 +590,7 @@ impl SearchKnowledgeBaseTool {
         let associations_data = conn
             .interact(move |conn| {
                 // 1. Get chat session and character ID
-                let (session_found, character_id): (Uuid, Option<Uuid>) = chat_sessions::table
+                let (_session_found, character_id): (Uuid, Option<Uuid>) = chat_sessions::table
                     .filter(chat_sessions::id.eq(session_id))
                     .filter(chat_sessions::user_id.eq(user_id))
                     .select((chat_sessions::id, chat_sessions::character_id))
@@ -802,6 +802,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         })
     }
 
+    #[allow(deprecated)]
     async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
         debug!(
             "Executing search_knowledge_base tool with params: {}",

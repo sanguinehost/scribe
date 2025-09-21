@@ -522,6 +522,7 @@ mod get_session_data_for_generation_tests {
     }
 
     /// Helper to create test RAG chunks for lorebook testing
+    #[allow(deprecated)]
     fn create_test_rag_chunks(lorebook_id: Uuid, user_id: Uuid) -> Vec<RetrievedChunk> {
         let lore_chunk1_content = "The Orb of Zog is powerful.";
         let lore_chunk2_content = "It glows with an eerie light.";
@@ -1276,6 +1277,7 @@ mod get_session_data_for_generation_tests {
     }
     #[tokio::test]
     #[allow(clippy::too_many_lines)]
+    #[allow(deprecated)]
     async fn test_rag_lorebook_exclusion_due_to_total_budget() {
         // Arrange
         let user_message_content = "User query that triggers RAG.".to_string();
@@ -1677,6 +1679,7 @@ mod get_session_data_for_generation_tests {
     }
     #[tokio::test]
     #[allow(clippy::too_many_lines)]
+    #[allow(deprecated)]
     async fn test_rag_older_chat_history_inclusion_fits_budget() {
         // Arrange
         let user_message_content = "User query for older history RAG.".to_string();

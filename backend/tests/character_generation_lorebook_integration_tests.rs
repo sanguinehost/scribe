@@ -13,7 +13,7 @@ async fn test_character_generation_with_lorebook_context() {
     let test_app = test_helpers::spawn_app(true, true, false).await; // Use real AI, mock vector DB
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "loreuser@example.com".to_string(),
         "password123".to_string(),
@@ -242,7 +242,7 @@ async fn test_alternate_greeting_generation_with_lorebook() {
     let test_app = test_helpers::spawn_app(true, true, false).await;
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "greetinguser@example.com".to_string(),
         "password123".to_string(),
@@ -417,7 +417,7 @@ async fn test_character_generation_without_lorebook() {
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI for faster testing
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "nolorebook@example.com".to_string(),
         "password123".to_string(),
@@ -511,7 +511,7 @@ async fn test_character_generation_without_lorebook() {
 async fn test_character_generation_with_invalid_lorebook_id() {
     let test_app = test_helpers::spawn_app(false, true, false).await;
 
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "invalidlore@example.com".to_string(),
         "password123".to_string(),
@@ -616,7 +616,7 @@ async fn test_character_generation_with_invalid_lorebook_id() {
 async fn test_request_validation_with_lorebook_integration() {
     let test_app = test_helpers::spawn_app(false, true, false).await;
 
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "validation@example.com".to_string(),
         "password123".to_string(),
