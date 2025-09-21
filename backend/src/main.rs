@@ -154,6 +154,24 @@ async fn main() -> Result<()> {
 
     let (app_state, auth_layer) = setup_app_state_and_auth(&config, &pool, services)?;
 
+    // Start payment scheduler if payment feature is enabled
+    #[cfg(feature = "payment")]
+    {
+        if config.payment.credits_enabled || config.payment.soft_limits_enabled {
+            tracing::info!("Starting payment scheduler for periodic tasks...");
+            let scheduler = Arc::new(
+                scribe_backend::services::payment::PaymentScheduler::new(
+                    config.clone(),
+                    pool.clone(),
+                )
+            );
+            scheduler.start().await;
+            tracing::info!("Payment scheduler started successfully");
+        } else {
+            tracing::info!("Payment scheduler disabled (credits and soft limits are disabled)");
+        }
+    }
+
     let app = build_router(app_state, auth_layer);
 
     start_server(&config, app).await

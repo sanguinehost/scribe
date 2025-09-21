@@ -167,6 +167,8 @@
 			await new Promise((resolve) => setTimeout(resolve, 50));
 		}
 
+		// Go directly to consolidated settings view, skipping the overview
+		settingsStore.setViewMode('consolidated');
 		settingsStore.show();
 		context.setOpenMobile(false); // Close mobile sidebar if open
 	}

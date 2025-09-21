@@ -13,6 +13,9 @@ pub mod credit_service;
 pub mod paddle_service;
 
 #[cfg(feature = "payment")]
+pub mod scheduler;
+
+#[cfg(feature = "payment")]
 pub mod soft_limit_service;
 
 #[cfg(feature = "payment")]
@@ -26,6 +29,9 @@ pub use credit_service::CreditService;
 
 #[cfg(feature = "payment")]
 pub use paddle_service::PaddleService;
+
+#[cfg(feature = "payment")]
+pub use scheduler::PaymentScheduler;
 
 #[cfg(feature = "payment")]
 pub use soft_limit_service::SoftLimitService;
