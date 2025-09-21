@@ -9,9 +9,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use genai::{
-    chat::{ChatOptions, ChatRequest, ChatResponse},
-};
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -431,7 +429,7 @@ impl AiClient for SecureLlmService {
     async fn exec_chat(
         &self,
         model_name: &str,
-        request: ChatRequest,
+        mut request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatResponse, AppError> {
         // We need user_id and session_dek to perform secure operations
@@ -451,7 +449,7 @@ impl AiClient for SecureLlmService {
     async fn stream_chat(
         &self,
         model_name: &str,
-        request: ChatRequest,
+        mut request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError> {
         // Same limitation as exec_chat - we need user context for full security

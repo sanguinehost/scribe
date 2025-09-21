@@ -1359,7 +1359,6 @@ pub async fn build_final_llm_prompt(
 #[cfg(test)]
 mod tests {
 
-    use crate::config::Config;
     use crate::models::characters::CharacterMetadata;
     use chrono::Utc;
     use uuid::Uuid;
@@ -1771,7 +1770,6 @@ mod tests {
 
         #[test]
         fn test_hard_limit_enforcement() {
-
             // Create a scenario where even after truncation, we're still over limit
             let history_messages =
                 vec![create_test_message(ChatRole::User, "Huge message", 100_000)];

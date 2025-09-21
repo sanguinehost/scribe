@@ -392,8 +392,8 @@ pub async fn generate_chat_response(
     let credit_reservation: Option<((), (), i32)> = None;
 
     // These need to be accessible outside the feature gate
-    let mut should_track_usage = false;
-    let mut credits_required = 0i32;
+    let _should_track_usage = false;
+    let _credits_required = 0i32;
 
     #[cfg(feature = "payment")]
     {
@@ -972,12 +972,12 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
-                                                assistant_message_id = Some(msg_uuid);
+                                                assistant_message_id =Some(msg_uuid);
 
                                                 // Update pre-processing analysis with assistant message ID if we have one
                                                 if let Some(analysis_id) = pre_processing_analysis_id_clone {
                                                     debug!(session_id = %session_id_for_update, %analysis_id,
-                                                           assistant_message_id = %msg_uuid,
+                                                           assistant_message_id =%msg_uuid,
                                                            "Updating pre-processing analysis with assistant message ID (streaming)");
 
                                                     // Clone for the async task
@@ -1781,7 +1781,7 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
-                                                assistant_message_id = Some(msg_uuid);
+                                                assistant_message_id =Some(msg_uuid);
                                             }
                                             let message_data = serde_json::json!({
                                                 "message_id": message_id,

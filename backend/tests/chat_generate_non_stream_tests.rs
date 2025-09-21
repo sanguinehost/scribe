@@ -422,8 +422,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let (sp_ciphertext, sp_nonce) = user_dek_secret_box.as_ref().map_or_else(
         || panic!("User DEK not available for system prompt encryption in test setup"),
         |dek_arc| {
-            scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref())
-                .unwrap()
+            scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
         },
     );
 
@@ -495,8 +494,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
 
     // Configure Mock AI client for a successful response
     if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
-        let ai_response_content =
-            "Mock AI success response for session settings test.".to_string();
+        let ai_response_content = "Mock AI success response for session settings test.".to_string();
         let successful_response = genai::chat::ChatResponse {
             model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
@@ -748,9 +746,8 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         &dek_from_user_obj.0,
     )
     .expect("Failed to decrypt AI message content in test assertion");
-    let ai_decrypted_content_str =
-        String::from_utf8(ai_plaintext_bytes.expose_secret().clone())
-            .expect("AI decrypted content is not valid UTF-8");
+    let ai_decrypted_content_str = String::from_utf8(ai_plaintext_bytes.expose_secret().clone())
+        .expect("AI decrypted content is not valid UTF-8");
 
     // The expected AI content is what we set in mock_client.set_response()
     let expected_ai_content = "Mock AI success response for session settings test.".to_string();
@@ -804,11 +801,11 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         "Should have at least one embedding call"
     );
     Ok(())
-    }
+}
 
-    #[tokio::test]
-    #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_json_stream_initiation_error() -> Result<(), anyhow::Error> {
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn generate_chat_response_json_stream_initiation_error() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(test_app.db_pool.clone());
     let conn = test_app.db_pool.get().await?;
@@ -1014,8 +1011,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let (sp_err_ciphertext, sp_err_nonce) = user_dek_secret_box_err_test.as_ref().map_or_else(
         || panic!("User DEK not available for system prompt encryption in error test setup"),
         |dek_arc| {
-            scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref())
-                .unwrap()
+            scribe_backend::crypto::encrypt_gcm(test_prompt.as_bytes(), dek_arc.as_ref()).unwrap()
         },
     );
 
@@ -1198,9 +1194,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
                         .and_then(|nonce| {
                             scribe_backend::crypto::decrypt_gcm(ct, nonce, dek_arc.as_ref())
                                 .ok()
-                                .and_then(|ps| {
-                                    String::from_utf8(ps.expose_secret().clone()).ok()
-                                })
+                                .and_then(|ps| String::from_utf8(ps.expose_secret().clone()).ok())
                         })
                 })
         });
@@ -1262,9 +1256,8 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     )
     .expect("Failed to decrypt user message content in test assertion");
 
-    let decrypted_content_str =
-        String::from_utf8(plaintext_content_bytes.expose_secret().clone())
-            .expect("Decrypted content is not valid UTF-8");
+    let decrypted_content_str = String::from_utf8(plaintext_content_bytes.expose_secret().clone())
+        .expect("Decrypted content is not valid UTF-8");
 
     assert_eq!(
         decrypted_content_str,
@@ -1273,15 +1266,15 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     // We can't check the AI message since it doesn't exist due to the error
 
     Ok(())
-    }
+}
 
-    // --- Tests for History Management in Generation ---
+// --- Tests for History Management in Generation ---
 
-    // Helper to assert the history sent to the mock AI client
+// Helper to assert the history sent to the mock AI client
 
-    #[tokio::test]
-    #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Result<()> {
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
     let conn = test_app.db_pool.get().await?;
@@ -1576,10 +1569,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         .as_ref()
         .unwrap()
         .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
+            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
@@ -1634,11 +1624,11 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     );
     test_data_guard.cleanup().await?;
     Ok(())
-    }
+}
 
-    #[tokio::test]
-    #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Result<()> {
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
     let conn = test_app.db_pool.get().await?;
@@ -1918,10 +1908,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         .as_ref()
         .unwrap()
         .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
+            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
@@ -1975,11 +1962,11 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     );
     test_data_guard.cleanup().await?;
     Ok(())
-    }
+}
 
-    #[tokio::test]
-    #[allow(clippy::too_many_lines)]
-    async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result<()> {
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
     let conn = test_app.db_pool.get().await?;
@@ -2260,10 +2247,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         .as_ref()
         .unwrap()
         .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
+            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
@@ -2333,10 +2317,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         .as_ref()
         .unwrap()
         .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
+            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
@@ -2381,12 +2362,12 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     );
     test_data_guard.cleanup().await?;
     Ok(())
-    }
+}
 
-    #[tokio::test]
-    #[ignore] // Ignore for CI unless DB is guaranteed
-    #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_history_none() -> anyhow::Result<()> {
+#[tokio::test]
+#[ignore] // Ignore for CI unless DB is guaranteed
+#[allow(clippy::too_many_lines)]
+async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
     let conn = test_app.db_pool.get().await?;
@@ -2631,10 +2612,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         .as_ref()
         .unwrap()
         .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
+            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
@@ -2684,15 +2662,15 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     );
     test_data_guard.cleanup().await?;
     Ok(())
-    }
+}
 
-    // --- Test for History Management and RAG Integration ---
-    // These tests seem to be duplicates of the truncate_tokens tests above.
-    // Keeping them as they were in the original file, but they test similar logic.
+// --- Test for History Management and RAG Integration ---
+// These tests seem to be duplicates of the truncate_tokens tests above.
+// Keeping them as they were in the original file, but they test similar logic.
 
-    #[tokio::test]
-    #[allow(clippy::too_many_lines)]
-    async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Result<()> {
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
     let conn = test_app.db_pool.get().await?;
@@ -2973,10 +2951,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         .as_ref()
         .unwrap()
         .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
+            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
@@ -3046,10 +3021,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         .as_ref()
         .unwrap()
         .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
+            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
             provider_model_iden: genai::ModelIden::new(
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
@@ -3095,15 +3067,15 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     );
     test_data_guard.cleanup().await?;
     Ok(())
-    }
+}
 
-    // --- Tests for GET /api/chat/{id}/messages ---
-    // (Moved from chat_tests.rs)
+// --- Tests for GET /api/chat/{id}/messages ---
+// (Moved from chat_tests.rs)
 
-    // Test: Get messages for a valid session owned by the user
-    #[tokio::test]
-    #[allow(clippy::too_many_lines)]
-    async fn test_get_chat_messages_success() -> anyhow::Result<()> {
+// Test: Get messages for a valid session owned by the user
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
     let username = "get_messages_user";
@@ -3126,8 +3098,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     tracing::info!("Creating test character");
     let character_name = "Test Character".to_string();
     let character =
-        test_helpers::db::create_test_character(&test_app.db_pool, user.id, character_name)
-            .await?;
+        test_helpers::db::create_test_character(&test_app.db_pool, user.id, character_name).await?;
     let character_id = character.id;
     tracing::info!("Created test character with ID: {}", character_id);
     test_data_guard.add_character(character_id);
@@ -3283,12 +3254,12 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     test_data_guard.cleanup().await?;
 
     Ok(())
-    }
+}
 
-    // Test: Get messages for a session owned by another user
-    #[tokio::test]
-    #[allow(clippy::too_many_lines)]
-    async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
+// Test: Get messages for a session owned by another user
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
     let conn = test_app.db_pool.get().await?;
@@ -3502,7 +3473,6 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
     test_data_guard.cleanup().await?;
     Ok(())
-    }
 }
 
 // Test: Get messages without authentication

@@ -866,8 +866,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         request: &FieldGenerationRequest,
     ) -> Result<serde_json::Value, AppError> {
         use genai::chat::{
-            ChatOptions as GenAiChatOptions, ChatResponseFormat, ChatRole,
-            JsonSchemaSpec,
+            ChatOptions as GenAiChatOptions, ChatResponseFormat, ChatRole, JsonSchemaSpec,
         };
 
         // Follow the same pattern as main chat generation

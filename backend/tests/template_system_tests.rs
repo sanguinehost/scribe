@@ -1,5 +1,5 @@
 use scribe_backend::models::chats::UpdateChatSettingsRequest;
-use scribe_backend::prompt_templates::{TEMPLATE_MANAGER};
+use scribe_backend::prompt_templates::TEMPLATE_MANAGER;
 use validator::Validate;
 
 #[test]

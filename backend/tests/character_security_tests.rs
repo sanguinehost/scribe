@@ -13,10 +13,7 @@ use axum::{
 use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
-    models::{
-        character_dto::{CharacterCreateDto},
-        characters::{Character},
-    },
+    models::{character_dto::CharacterCreateDto, characters::Character},
     schema,
     test_helpers::{self, TestApp, TestDataGuard},
 };

@@ -355,7 +355,7 @@ impl ContextEnrichmentAgent {
 
         // Execute the AI call with retry logic including jailbreak prompts
         const MAX_RETRIES: usize = 2;
-        let mut last_error = None;
+        let mut _last_error = None;
 
         for retry_count in 0..=MAX_RETRIES {
             // Build the system prompt - use jailbreak on retries
@@ -523,17 +523,18 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
                             "Safety filter detected on attempt {}, retrying with enhanced prompt",
                             retry_count + 1
                         );
-                        last_error = Some(AppError::GeminiError(format!(
+                        _last_error = Some(AppError::GeminiError(format!(
                             "Planning failed due to safety filter: {}",
                             e
                         )));
                         continue;
                     } else if retry_count < MAX_RETRIES {
-                        last_error = Some(AppError::GeminiError(format!("Planning failed: {}", e)));
+                        _last_error =
+                            Some(AppError::GeminiError(format!("Planning failed: {}", e)));
                         continue;
                     }
 
-                    last_error = Some(AppError::GeminiError(format!(
+                    _last_error = Some(AppError::GeminiError(format!(
                         "Planning failed after retries: {}",
                         e
                     )));

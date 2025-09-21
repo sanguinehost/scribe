@@ -3,7 +3,7 @@
 use scribe_backend::{
     auth::session_dek::SessionDek,
     models::lorebook_dtos::SillyTavernImportPayload,
-    services::{EncryptionService},
+    services::EncryptionService,
     test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
 };
 use serde_json::json;

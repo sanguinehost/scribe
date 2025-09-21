@@ -85,12 +85,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{
-        Router,
-        body::Body,
-        http::{Method},
-        routing::get,
-    };
+    use axum::{Router, body::Body, http::Method, routing::get};
     use tower::ServiceExt;
 
     #[tokio::test]

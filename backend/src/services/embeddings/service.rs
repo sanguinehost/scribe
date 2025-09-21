@@ -407,7 +407,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }
         };
 
-        let mut points_to_upsert = vec![point];
+        let points_to_upsert = vec![point];
 
         if points_to_upsert.is_empty() {
             info!(%original_lorebook_entry_id, "No valid points generated for lorebook entry upserting.");
@@ -1224,7 +1224,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }
         };
 
-        let mut points_to_upsert = vec![point];
+        let points_to_upsert = vec![point];
 
         // 3. Upsert points to Qdrant in batch
         if points_to_upsert.is_empty() {

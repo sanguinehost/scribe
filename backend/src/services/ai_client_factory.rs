@@ -301,9 +301,7 @@ impl AiClientFactory {
 
     /// Create a local LLM client based on user settings (legacy method)
     #[cfg(feature = "local-llm")]
-    async fn create_local_llm_client(
-        &self,
-    ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
+    async fn create_local_llm_client(&self) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         // Get base config from environment
         let mut config = LlamaCppConfig::from_env();
 

@@ -15,7 +15,7 @@ use crate::models::chronicle_event::{
     ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, NewChronicleEvent,
 };
 use crate::schema::{chat_sessions, chronicle_events, player_chronicles};
-use crate::services::{ChronicleDeduplicationService};
+use crate::services::ChronicleDeduplicationService;
 
 /// ChronicleService handles all Chronicle-related database operations
 #[derive(Clone)]

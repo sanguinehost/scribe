@@ -242,7 +242,7 @@ impl AppStateServicesBuilder {
         // due to circular dependency (service needs AppState, but AppState is built from services)
         // We'll create a placeholder for now and set it properly after AppState construction
 
-        let mut services = AppStateServices {
+        let services = AppStateServices {
             ai_client,
             embedding_client,
             qdrant_service,

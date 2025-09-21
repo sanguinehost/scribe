@@ -20,8 +20,7 @@ use diesel::prelude::*;
 use scribe_backend::models::chats::{Chat as DbChatSession, ChatMode, CreateChatSessionPayload};
 use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::test_helpers;
-use secrecy::{ExposeSecret};
-
+use secrecy::ExposeSecret;
 
 // Helper function to authenticate and get auth cookie
 async fn authenticate_user(router: &axum::Router<()>, username: &str, password: &str) -> String {

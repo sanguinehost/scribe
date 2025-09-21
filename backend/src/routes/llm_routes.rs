@@ -2,7 +2,7 @@
 // API routes for local LLM management
 
 use crate::{
-    auth::{user_store::Backend as AuthBackend},
+    auth::user_store::Backend as AuthBackend,
     errors::AppError,
     models::user_settings::{UpdateUserSettingsRequest, UserSettingsResponse},
     services::user_settings_service::UserSettingsService,
@@ -12,7 +12,7 @@ use axum::{
     Router,
     extract::{Path, State},
     http::StatusCode,
-    response::{Json},
+    response::Json,
     routing::{get, put},
 };
 use axum_login::AuthSession;
@@ -1385,7 +1385,7 @@ async fn get_all_models(
 
     info!("Getting all available models");
 
-    let mut registry = ModelRegistry::new();
+    let registry = ModelRegistry::new();
 
     // First, populate the registry with ALL available models from ModelSelection
     #[cfg(feature = "local-llm")]
