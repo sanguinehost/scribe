@@ -294,6 +294,7 @@ async fn create_chat_session_with_messages(
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     conn.interact(move |conn| {
@@ -347,6 +348,8 @@ async fn create_chat_session_with_messages(
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
             error_message: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         conn.interact(move |conn| {

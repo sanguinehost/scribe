@@ -164,6 +164,8 @@ fn create_chat_message(
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     }
 }
 

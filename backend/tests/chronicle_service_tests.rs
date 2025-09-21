@@ -18,6 +18,7 @@ use scribe_backend::{
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use uuid::Uuid;
+use chrono::Utc;
 
 // Unit Tests for Chronicle Service
 mod unit_tests {
@@ -133,6 +134,11 @@ mod integration_tests {
             dek_nonce,
             recovery_dek_nonce: None,
             account_status: AccountStatus::Active,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: Utc::now(),
         };
 
         let user_db: UserDbQuery = diesel::insert_into(users::table)
@@ -159,6 +165,11 @@ mod integration_tests {
             default_persona_id: user_db.default_persona_id,
             created_at: user_db.created_at,
             updated_at: user_db.updated_at,
+            total_prompt_tokens: user_db.total_prompt_tokens,
+            total_completion_tokens: user_db.total_completion_tokens,
+            total_token_cost_cents: user_db.total_token_cost_cents,
+            tokens_last_reset_at: user_db.tokens_last_reset_at,
+            token_usage_updated_at: user_db.token_usage_updated_at,
         };
 
         Ok(user)

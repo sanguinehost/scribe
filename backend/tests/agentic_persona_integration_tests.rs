@@ -91,6 +91,11 @@ async fn create_test_user_with_persona(
         dek_nonce,
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
 
     let user_db: UserDbQuery = conn
@@ -197,6 +202,8 @@ fn create_lucas_roleplay_messages(
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         });
     }
 

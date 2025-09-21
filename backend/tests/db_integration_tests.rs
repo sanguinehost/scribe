@@ -162,6 +162,11 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
         recovery_dek_nonce: None,
         role: UserRole::User,
         account_status: AccountStatus::Active, // Default to Active account status
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
     diesel::insert_into(schema::users::table)
         .values(&new_user)
@@ -394,6 +399,11 @@ fn test_user_character_insert_and_query() {
             dek_nonce: dummy_dek_nonce,
             recovery_dek_nonce: None,
             account_status: AccountStatus::Active, // Default to Active account status
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: Utc::now(),
         };
 
         let inserted_user: User = diesel::insert_into(schema::users::table)
@@ -493,6 +503,11 @@ fn insert_test_user_with_password(
         recovery_dek_nonce: None,
         role: UserRole::User,
         account_status: AccountStatus::Active, // Default to Active account status
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
 
     diesel::insert_into(users::table)
@@ -864,6 +879,7 @@ fn test_chat_session_insert_and_query() {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
         };
 
         let inserted_session: Chat = diesel::insert_into(chat_sessions::table)
@@ -996,6 +1012,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
                 };
                 diesel::insert_into(chat_sessions::table)
                     .values(&new_session)
@@ -1197,6 +1214,7 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     conn_setup

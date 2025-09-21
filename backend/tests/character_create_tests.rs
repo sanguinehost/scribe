@@ -12,6 +12,7 @@ use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized}; /
 use serde_json::{Value as JsonValue, json}; // Added JsonValue
 use tower::ServiceExt; // For oneshot
 use uuid::Uuid;
+use chrono::Utc;
 
 // Local helper functions
 use anyhow::Context;
@@ -64,6 +65,11 @@ fn insert_test_user_with_password(
         dek_nonce,
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
     diesel::insert_into(users::table)
         .values(&new_user)

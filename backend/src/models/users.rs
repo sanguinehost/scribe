@@ -439,9 +439,10 @@ mod tests {
                 account_status: Some("active".to_string()),
                 recovery_phrase: None, // Add the recovery_phrase field
                 default_persona_id: params.default_persona_id,
-                token_usage_updated_at: None,
+                token_usage_updated_at: chrono::Utc::now(),
                 tokens_last_reset_at: None,
                 total_completion_tokens: 0,
+                total_token_cost_cents: 0,
                 total_prompt_tokens: 0,
             }
         }
@@ -529,10 +530,11 @@ mod tests {
             recovery_dek_nonce: None,
             role: UserRole::User,
             account_status: AccountStatus::Active,
-            token_usage_updated_at: None,
+            token_usage_updated_at: chrono::Utc::now(),
             tokens_last_reset_at: None,
             total_completion_tokens: 0,
             total_prompt_tokens: 0,
+            total_token_cost_cents: 0,
         };
 
         assert_eq!(new_user.username, username);

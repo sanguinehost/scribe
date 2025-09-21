@@ -169,6 +169,8 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -189,6 +191,8 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         },
     ];
 
@@ -320,6 +324,8 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     }];
 
     // Create session DEK for testing
@@ -432,6 +438,8 @@ async fn test_dual_mode_extraction_comparison() {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -449,6 +457,8 @@ async fn test_dual_mode_extraction_comparison() {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         },
     ];
 
@@ -545,6 +555,8 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     }];
 
     // Create session DEK for testing

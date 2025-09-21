@@ -163,7 +163,6 @@ async fn debug_session_data(
         }
         Err(e) => Err(anyhow::anyhow!("Database error querying session: {}", e)),
     }
-}
 
 // --- Tests for POST /api/chat/{id}/generate (Non-Streaming JSON) ---
 
@@ -375,6 +374,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     info!(
@@ -970,6 +970,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
     let session: DbChat = {
         let interact_result = conn
@@ -1428,6 +1429,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     let result = conn
@@ -1586,8 +1588,8 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
-    };
-    // client is from login_user_via_api
+        guidance: None,
+        variant_of: None,
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -1779,6 +1781,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     let result = conn
@@ -1922,8 +1925,8 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
-    };
-    // client is from login_user_via_api
+        guidance: None,
+        variant_of: None,
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2114,6 +2117,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     let result = conn
@@ -2258,8 +2262,8 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
-    };
-    // client is from login_user_via_api
+        guidance: None,
+        variant_of: None,
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2512,6 +2516,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     let result = conn
@@ -2620,8 +2625,8 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
-    };
-    // client is from login_user_via_api
+        guidance: None,
+        variant_of: None,
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2812,6 +2817,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     let result = conn
@@ -2956,8 +2962,8 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
-    };
-    // client is from login_user_via_api
+        guidance: None,
+        variant_of: None,
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -3124,6 +3130,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     let create_session_result = conn
@@ -3409,6 +3416,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     let conn_clone = test_app.db_pool.get().await?; // Re-acquire connection as it was moved
@@ -3434,8 +3442,8 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
-    };
-    // client_b is from login_user_via_api
+        guidance: None,
+        variant_of: None,
     let response = client_b
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -3452,6 +3460,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
     test_data_guard.cleanup().await?;
     Ok(())
+}
 }
 
 // Test: Get messages without authentication
@@ -3580,6 +3589,7 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
     };
 
     let session: DbChat = {
@@ -3634,6 +3644,8 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let response = client

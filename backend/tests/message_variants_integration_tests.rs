@@ -102,12 +102,12 @@ async fn create_test_user_with_dek(
 /// Helper function to create a test chat session with a character
 async fn create_test_chat_session(
     test_app: &test_helpers::TestApp,
-    user: &User,
+    user_id: Uuid,
     auth_cookie: &str,
 ) -> anyhow::Result<(DbCharacter, Chat, String)> {
     // Create a test character
     let new_character = NewCharacter {
-        user_id: user.id,
+        user_id,
         spec: "test_variant_character".to_string(),
         spec_version: "1.0".to_string(),
         name: "Test Variant Character".to_string(),
@@ -178,7 +178,7 @@ async fn create_test_chat_session(
 /// Helper function to create a message in the chat session
 async fn create_test_message(
     test_app: &test_helpers::TestApp,
-    user: &User,
+    user_id: Uuid,
     session_id: Uuid,
     content: &str,
     role: MessageRole,
@@ -186,7 +186,7 @@ async fn create_test_message(
     let new_message = NewChatMessage {
         id: Uuid::new_v4(),
         session_id,
-        user_id: user.id,
+        user_id,
         message_type: role.clone(),
         content: content.as_bytes().to_vec(),
         content_nonce: None,
@@ -351,12 +351,12 @@ async fn test_variant_display_persistence() -> anyhow::Result<()> {
     };
 
     // Create chat session with character
-    let (_character, chat_session, auth_cookie) = create_test_chat_session(&test_app, &user, &auth_cookie).await?;
+    let (_character, chat_session, auth_cookie) = create_test_chat_session(&test_app, user.id, &auth_cookie).await?;
 
     // Create an assistant message that will have variants
     let original_message = create_test_message(
         &test_app,
-        &user,
+        user_id,
         chat_session.id,
         "The answer is 4",
         MessageRole::Assistant,
@@ -411,26 +411,22 @@ async fn test_ai_context_uses_selected_variant() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
 
-    // Create test user
+    // Create test user with DEK
     let username = "variant_context_user";
     let password = "password";
-    let user = test_helpers::db::create_test_user(
-        &test_app.db_pool,
-        username.to_string(),
-        password.to_string(),
-    ).await?;
-    test_data_guard.add_user(user.id);
+    let (user_id, session_dek) = create_test_user_with_dek(&test_app, username.to_string(), password.to_string()).await?;
+    test_data_guard.add_user(user_id);
 
     // Login user
     let (_client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
 
     // Create chat session with character
-    let (_character, chat_session, auth_cookie) = create_test_chat_session(&test_app, &user, &auth_cookie).await?;
+    let (_character, chat_session, auth_cookie) = create_test_chat_session(&test_app, user_id, &auth_cookie).await?;
 
     // Create user message
     let _user_message = create_test_message(
         &test_app,
-        &user,
+        user_id,
         chat_session.id,
         "What is 2+2?",
         MessageRole::User,
@@ -439,14 +435,14 @@ async fn test_ai_context_uses_selected_variant() -> anyhow::Result<()> {
     // Create assistant response
     let assistant_message = create_test_message(
         &test_app,
-        &user,
+        user_id,
         chat_session.id,
         "The answer is 4",
         MessageRole::Assistant,
     ).await?;
 
     // Create a variant with different wording
-    create_message_variant(&test_app, &user, assistant_message.id, "The answer is four").await?;
+    create_message_variant(&test_app, user_id, assistant_message.id, "The answer is four", &session_dek.0).await?;
 
     // Select the variant (index 1, which is "The answer is four")
     select_variant(&test_app, &auth_cookie, assistant_message.id, 1).await?;
@@ -485,26 +481,22 @@ async fn test_variant_selection_affects_subsequent_messages() -> anyhow::Result<
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
 
-    // Create test user
+    // Create test user with DEK
     let username = "variant_sequence_user";
-    let password = "password"; 
-    let user = test_helpers::db::create_test_user(
-        &test_app.db_pool,
-        username.to_string(),
-        password.to_string(),
-    ).await?;
-    test_data_guard.add_user(user.id);
+    let password = "password";
+    let (user_id, session_dek) = create_test_user_with_dek(&test_app, username.to_string(), password.to_string()).await?;
+    test_data_guard.add_user(user_id);
 
     // Login user
     let (_client, auth_cookie) = test_helpers::login_user_via_api(&test_app, username, password).await;
 
     // Create chat session with character
-    let (_character, chat_session, auth_cookie) = create_test_chat_session(&test_app, &user, &auth_cookie).await?;
+    let (_character, chat_session, auth_cookie) = create_test_chat_session(&test_app, user_id, &auth_cookie).await?;
 
     // Create a conversation flow
     let _user_msg1 = create_test_message(
         &test_app,
-        &user,
+        user_id,
         chat_session.id,
         "Tell me your name",
         MessageRole::User,
@@ -512,7 +504,7 @@ async fn test_variant_selection_affects_subsequent_messages() -> anyhow::Result<
 
     let assistant_msg1 = create_test_message(
         &test_app,
-        &user,
+        user_id,
         chat_session.id,
         "My name is Alice",
         MessageRole::Assistant,
@@ -520,22 +512,22 @@ async fn test_variant_selection_affects_subsequent_messages() -> anyhow::Result<
 
     let _user_msg2 = create_test_message(
         &test_app,
-        &user,
+        user_id,
         chat_session.id,
-        "What is your favorite color?", 
+        "What is your favorite color?",
         MessageRole::User,
     ).await?;
 
     let _assistant_msg2 = create_test_message(
         &test_app,
-        &user,
+        user_id,
         chat_session.id,
         "Blue is my favorite color",
         MessageRole::Assistant,
     ).await?;
 
     // Create a variant for the first assistant message with a different name
-    create_message_variant(&test_app, &user, assistant_msg1.id, "My name is Bob").await?;
+    create_message_variant(&test_app, user_id, assistant_msg1.id, "My name is Bob", &session_dek.0).await?;
 
     // Select the variant (Bob instead of Alice)
     select_variant(&test_app, &auth_cookie, assistant_msg1.id, 1).await?;

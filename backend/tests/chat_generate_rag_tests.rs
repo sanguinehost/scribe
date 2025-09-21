@@ -237,6 +237,7 @@ async fn create_test_chat_session(
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
             };
 
             diesel::insert_into(schema::chat_sessions::table)
@@ -380,6 +381,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
         model: Some("test-embed-trigger-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -525,6 +528,8 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -760,6 +765,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -825,6 +831,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         model: None,
         query_text_for_rag: Some(query_text.to_string()),
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -1156,6 +1164,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1200,6 +1209,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         model: Some("test-rag-err-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -1518,6 +1529,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            prompt_template_id: "default".to_string()
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1551,6 +1563,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         model: Some("test-embed-trigger-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     // Ensure responses are queued for the retrieve_relevant_chunks calls (system prompt + user message)
@@ -1684,6 +1698,8 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -1822,6 +1838,8 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -1949,6 +1967,8 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -2118,6 +2138,8 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     // Ensure responses are queued for this specific /generate call (system prompt + user message)

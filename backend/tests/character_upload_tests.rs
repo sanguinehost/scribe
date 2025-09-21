@@ -29,6 +29,7 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tower::ServiceExt; // For oneshot
 use uuid::Uuid;
+use chrono::Utc;
 
 /// Helper to hash a password for tests
 fn hash_test_password(password: &str) -> String {
@@ -66,6 +67,11 @@ fn insert_test_user_with_password(
         dek_nonce,
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
     diesel::insert_into(users::table)
         .values(&new_user)

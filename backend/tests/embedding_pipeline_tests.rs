@@ -251,6 +251,8 @@ async fn test_process_and_embed_message_integration() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     let embedding_dimension = 768;
@@ -313,6 +315,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     // Configure mock embedding client to always return an error
@@ -1520,6 +1524,8 @@ async fn test_rag_context_injection_with_qdrant() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     // Configure mock embedding client for a sequence of calls
@@ -2001,6 +2007,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     let content_a2 = "User A Session 2 confidential cat strategies";
@@ -2021,6 +2029,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     let content_b1 = "User B Session 1 private alien agenda";
@@ -2041,6 +2051,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     // 4. Configure Mock Embeddings (one for each message chunk, one for each query)
