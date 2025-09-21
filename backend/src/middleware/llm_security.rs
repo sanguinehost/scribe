@@ -344,7 +344,6 @@ pub async fn security_headers_middleware(request: Request, next: Next) -> Respon
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread::sleep;
 
     #[test]
     fn test_rate_limiter() {

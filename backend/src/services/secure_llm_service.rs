@@ -10,8 +10,7 @@ use crate::{
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use genai::{
-    Client,
-    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse},
+    chat::{ChatOptions, ChatRequest, ChatResponse},
 };
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -400,7 +399,6 @@ fn extract_text_content(messages: &[ChatMessage]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     #[cfg(feature = "local-llm")]

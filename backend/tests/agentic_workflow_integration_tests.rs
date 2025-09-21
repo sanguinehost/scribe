@@ -5,7 +5,6 @@
 
 use chrono::Utc;
 use diesel::{ExpressionMethods, RunQueryDsl};
-use reqwest::StatusCode;
 use secrecy::SecretBox;
 use serde_json::json;
 use std::sync::Arc;

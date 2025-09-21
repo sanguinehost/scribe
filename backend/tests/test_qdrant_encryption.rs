@@ -4,7 +4,6 @@ use scribe_backend::services::embeddings::metadata::{
     ChatMessageChunkMetadata, LorebookChunkMetadata,
 };
 use secrecy::ExposeSecret;
-use serde_json::json;
 use uuid::Uuid;
 
 #[test]

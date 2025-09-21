@@ -6,12 +6,11 @@ use crate::{
     config::Config,
     errors::AppError,
     llm::AiClient,
-    models::user_settings::UserSettingsResponse,
     services::user_settings_service::UserSettingsService,
     state::{AppState, DbPool},
 };
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 #[cfg(feature = "local-llm")]
@@ -304,7 +303,6 @@ impl AiClientFactory {
     #[cfg(feature = "local-llm")]
     async fn create_local_llm_client(
         &self,
-        user_settings: &UserSettingsResponse,
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         // Get base config from environment
         let mut config = LlamaCppConfig::from_env();

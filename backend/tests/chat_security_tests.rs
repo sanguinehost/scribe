@@ -15,7 +15,7 @@ use http_body_util::BodyExt;
 use scribe_backend::{
     models::{
         characters::Character,
-        chats::{Chat, ChatMessage, CreateChatSessionPayload, GenerateChatRequest, MessageRole},
+        chats::{Chat},
     },
     schema,
     test_helpers::{self, TestApp, TestDataGuard},

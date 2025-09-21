@@ -960,7 +960,7 @@ pub async fn get_messages_by_chat_id_handler(
     tracing::debug!("Parsed chat_id = {}, user_id = {}", chat_id, user.id);
 
     // Fetch chat session and verify ownership
-    let _chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+    let chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
 
     // Fetch paginated messages for the chat
     let messages_db =

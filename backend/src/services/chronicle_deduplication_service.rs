@@ -357,9 +357,7 @@ impl ChronicleDeduplicationService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::*;
     use chrono::Utc;
-    use serde_json::json;
 
     #[tokio::test]
     async fn test_deduplication_service_creation() {

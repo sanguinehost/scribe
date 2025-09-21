@@ -344,7 +344,7 @@ impl AnalyzeTextSignificanceTool {
     async fn call_ai_for_triage(&self, prompt: &str) -> Result<ToolResult, ToolError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRole,
-            HarmBlockThreshold, HarmCategory, MessageContent, SafetySetting,
+            MessageContent,
         };
 
         let user_message = GenAiChatMessage {

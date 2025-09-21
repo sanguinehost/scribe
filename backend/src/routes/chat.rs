@@ -694,7 +694,7 @@ pub async fn generate_chat_response(
     };
 
     let user_message_id = saved_user_message.id;
-    let user_message_status = saved_user_message.status.clone();
+    let _user_message_status = saved_user_message.status.clone();
 
     // Check if we need to run pre-processing agent analysis
     // Now returns a tuple of (agent_context, analysis_id)

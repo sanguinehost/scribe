@@ -1359,6 +1359,7 @@ pub async fn build_final_llm_prompt(
 #[cfg(test)]
 mod tests {
 
+    use crate::config::Config;
     use crate::models::characters::CharacterMetadata;
     use chrono::Utc;
     use uuid::Uuid;
@@ -1512,7 +1513,6 @@ mod tests {
     }
 
     mod strategic_truncation_tests {
-        use super::*;
         use crate::config::Config;
         use crate::errors::AppError;
         use crate::prompt_builder::{
@@ -1771,7 +1771,6 @@ mod tests {
 
         #[test]
         fn test_hard_limit_enforcement() {
-            use crate::config::Config;
 
             // Create a scenario where even after truncation, we're still over limit
             let history_messages =

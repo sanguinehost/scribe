@@ -1206,7 +1206,7 @@ Your task is to analyze fictional roleplay content and create chronicle summarie
     async fn call_ai_structured(&self, model: &str, prompt: &str) -> Result<Value, AppError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRole,
-            HarmBlockThreshold, HarmCategory, MessageContent, SafetySetting,
+            MessageContent,
         };
 
         debug!("Making structured AI call to model: {}", model);

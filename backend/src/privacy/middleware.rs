@@ -88,7 +88,7 @@ mod tests {
     use axum::{
         Router,
         body::Body,
-        http::{Method, Uri},
+        http::{Method},
         routing::get,
     };
     use tower::ServiceExt;

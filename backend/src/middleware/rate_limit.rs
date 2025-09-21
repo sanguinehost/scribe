@@ -1,12 +1,8 @@
-use crate::errors::AppError;
 use axum::{extract::Request, middleware::Next, response::Response};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tower_governor::{
-    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
-};
 use tracing::{info, warn};
 
 /// Simple in-memory rate limiter for template endpoints

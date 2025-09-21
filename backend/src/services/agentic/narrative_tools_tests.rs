@@ -5,7 +5,6 @@ mod tests {
     use crate::test_helpers::MockAiClient;
     use serde_json::json;
     use std::sync::Arc;
-    use uuid::Uuid;
 
     #[tokio::test]
     async fn test_analyze_text_significance_tool() {

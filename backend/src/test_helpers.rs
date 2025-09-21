@@ -5,6 +5,8 @@
 #[cfg(feature = "payment")]
 pub mod payment_test_helpers;
 
+use std::fmt;
+
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
@@ -78,7 +80,6 @@ use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 use serde_json::json;
 use std::collections::VecDeque; // Added for MockQdrantClientService response queue
-use std::fmt;
 use std::sync::{Arc, Mutex}; // Add Mutex import
 use tokio::net::TcpListener;
 // use tokio::sync::Mutex as TokioMutex; // Removed unused import
@@ -3233,7 +3234,6 @@ pub mod llm_server {
 #[cfg(not(feature = "local-llm"))]
 pub mod llm_server {
     //! Placeholder module when local-llm feature is not enabled
-    use std::fmt;
 
     #[derive(Debug)]
     pub struct LlmServerTestGuard;

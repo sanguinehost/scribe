@@ -14,8 +14,8 @@ use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
     models::{
-        character_dto::{CharacterCreateDto, CharacterUpdateDto},
-        characters::{Character, CharacterDataForClient},
+        character_dto::{CharacterCreateDto},
+        characters::{Character},
     },
     schema,
     test_helpers::{self, TestApp, TestDataGuard},
