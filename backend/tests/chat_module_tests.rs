@@ -441,7 +441,7 @@ mod get_session_data_for_generation_tests {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
-            prompt_template_id: "default".to_string()
+            prompt_template_id: "default".to_string(),
         };
 
         conn.interact(move |conn_insert| {
@@ -1109,7 +1109,7 @@ mod get_session_data_for_generation_tests {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
-            prompt_template_id: "default".to_string()
+            prompt_template_id: "default".to_string(),
         };
         conn.interact(move |conn_insert| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1389,7 +1389,7 @@ mod get_session_data_for_generation_tests {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
-            prompt_template_id: "default".to_string()
+            prompt_template_id: "default".to_string(),
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1790,7 +1790,7 @@ mod get_session_data_for_generation_tests {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
-            prompt_template_id: "default".to_string()
+            prompt_template_id: "default".to_string(),
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)

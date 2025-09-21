@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result as AnyhowResult};
 use bcrypt;
+use chrono::Utc;
 use diesel::{PgConnection, RunQueryDsl, prelude::*};
 use scribe_backend::{
     crypto,
@@ -18,7 +19,6 @@ use scribe_backend::{
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use uuid::Uuid;
-use chrono::Utc;
 
 // Unit Tests for Chronicle Service
 mod unit_tests {

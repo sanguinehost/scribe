@@ -7,10 +7,10 @@
 //! - Only essential financial events are tracked
 
 use crate::errors::AppError;
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;
 use serde::Serialize;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tracing::{debug, error, info};
 use uuid::Uuid;
@@ -74,9 +74,7 @@ pub struct PaymentAuditLog {
 impl PaymentAuditService {
     /// Create a new audit service with default 30-day retention
     pub fn new() -> Self {
-        Self {
-            retention_days: 30,
-        }
+        Self { retention_days: 30 }
     }
 
     /// Create with custom retention period
@@ -130,7 +128,11 @@ impl PaymentAuditService {
                 AppError::DatabaseQueryError(e.to_string())
             })?;
 
-        debug!("Audit logged: {} for amount {}", event_type.as_str(), amount);
+        debug!(
+            "Audit logged: {} for amount {}",
+            event_type.as_str(),
+            amount
+        );
         Ok(())
     }
 
@@ -263,7 +265,10 @@ impl PaymentAuditService {
             })?;
 
         if deleted > 0 {
-            info!("Purged {} old audit logs (>{}d old)", deleted, self.retention_days);
+            info!(
+                "Purged {} old audit logs (>{}d old)",
+                deleted, self.retention_days
+            );
         }
 
         Ok(deleted)

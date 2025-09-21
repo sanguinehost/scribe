@@ -1,11 +1,13 @@
 use crate::config::Config;
 use crate::crypto::{decrypt_gcm, encrypt_gcm};
 use crate::errors::AppError;
-use crate::models::credit::{CreditBalance, CreditTransaction, NewCreditBalance, NewCreditTransaction};
+use crate::models::credit::{
+    CreditBalance, CreditTransaction, NewCreditBalance, NewCreditTransaction,
+};
 use crate::models::users::UserDbQuery;
 use crate::schema::{credit_transactions, user_credits, users};
-use crate::services::payment::{PaymentAuditService, AuditEventType};
-use chrono::{DateTime, Utc, Datelike};
+use crate::services::payment::{AuditEventType, PaymentAuditService};
+use chrono::{DateTime, Datelike, Utc};
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
@@ -69,9 +71,7 @@ impl CreditService {
         // Return existing balance or create new one with 0 credits
         match balance {
             Some(b) => Ok(b),
-            None => {
-                self.initialize_user_credits(conn, user_id)
-            }
+            None => self.initialize_user_credits(conn, user_id),
         }
     }
 
@@ -112,7 +112,9 @@ impl CreditService {
         metadata: Option<serde_json::Value>,
     ) -> Result<CreditBalance, AppError> {
         if !self.is_enabled() {
-            return Err(AppError::BadRequest("Credit system is not enabled".to_string()));
+            return Err(AppError::BadRequest(
+                "Credit system is not enabled".to_string(),
+            ));
         }
 
         if amount <= 0 {
@@ -205,7 +207,9 @@ impl CreditService {
         metadata: Option<serde_json::Value>,
     ) -> Result<CreditBalance, AppError> {
         if !self.is_enabled() {
-            return Err(AppError::BadRequest("Credit system is not enabled".to_string()));
+            return Err(AppError::BadRequest(
+                "Credit system is not enabled".to_string(),
+            ));
         }
 
         if amount <= 0 {
@@ -295,7 +299,9 @@ impl CreditService {
         metadata: Option<serde_json::Value>,
     ) -> Result<(CreditBalance, Uuid), AppError> {
         if !self.is_enabled() {
-            return Err(AppError::BadRequest("Credit system is not enabled".to_string()));
+            return Err(AppError::BadRequest(
+                "Credit system is not enabled".to_string(),
+            ));
         }
 
         if amount <= 0 {
@@ -353,7 +359,8 @@ impl CreditService {
         metadata_with_status["status"] = json!("pending");
         metadata_with_status["reservation_id"] = json!(reservation_id.to_string());
 
-        let encrypted_data = self.encrypt_transaction_data(conn, user_id, description, Some(metadata_with_status))?;
+        let encrypted_data =
+            self.encrypt_transaction_data(conn, user_id, description, Some(metadata_with_status))?;
 
         // Create pending transaction record
         let transaction = NewCreditTransaction {
@@ -418,7 +425,10 @@ impl CreditService {
             .filter(dsl::transaction_type.eq("pending"))
             .first(conn)
             .map_err(|e| {
-                error!("Failed to find pending transaction {}: {}", reservation_id, e);
+                error!(
+                    "Failed to find pending transaction {}: {}",
+                    reservation_id, e
+                );
                 AppError::NotFound(format!("Reservation {} not found", reservation_id))
             })?;
 
@@ -444,13 +454,14 @@ impl CreditService {
         balance.lifetime_spent += transaction.amount.abs();
         balance.updated_at = Some(Utc::now());
 
-        let updated_balance: CreditBalance = diesel::update(user_credits::dsl::user_credits.find(user_id))
-            .set(&balance)
-            .get_result(conn)
-            .map_err(|e| {
-                error!("Failed to update lifetime spent: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
+        let updated_balance: CreditBalance =
+            diesel::update(user_credits::dsl::user_credits.find(user_id))
+                .set(&balance)
+                .get_result(conn)
+                .map_err(|e| {
+                    error!("Failed to update lifetime spent: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
 
         // Log the confirmed credit deduction in audit log
         if let Err(e) = self.audit_service.log_credit_operation(
@@ -487,7 +498,10 @@ impl CreditService {
             .filter(dsl::transaction_type.eq("pending"))
             .first(conn)
             .map_err(|e| {
-                error!("Failed to find pending transaction for refund {}: {}", reservation_id, e);
+                error!(
+                    "Failed to find pending transaction for refund {}: {}",
+                    reservation_id, e
+                );
                 AppError::NotFound(format!("Reservation {} not found", reservation_id))
             })?;
 
@@ -498,7 +512,10 @@ impl CreditService {
             .set(dsl::transaction_type.eq("refunded"))
             .execute(conn)
             .map_err(|e| {
-                error!("Failed to mark reservation as refunded {}: {}", reservation_id, e);
+                error!(
+                    "Failed to mark reservation as refunded {}: {}",
+                    reservation_id, e
+                );
                 AppError::DatabaseQueryError(e.to_string())
             })?;
 
@@ -515,13 +532,14 @@ impl CreditService {
         balance.balance += refund_amount;
         balance.updated_at = Some(Utc::now());
 
-        let updated_balance: CreditBalance = diesel::update(user_credits::dsl::user_credits.find(user_id))
-            .set(&balance)
-            .get_result(conn)
-            .map_err(|e| {
-                error!("Failed to refund credits: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
+        let updated_balance: CreditBalance =
+            diesel::update(user_credits::dsl::user_credits.find(user_id))
+                .set(&balance)
+                .get_result(conn)
+                .map_err(|e| {
+                    error!("Failed to refund credits: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
 
         // Create refund transaction record
         let refund_description = format!("Refund: {}", reason);
@@ -532,7 +550,7 @@ impl CreditService {
             Some(json!({
                 "original_reservation": reservation_id.to_string(),
                 "reason": reason
-            }))
+            })),
         )?;
 
         let refund_transaction = NewCreditTransaction {
@@ -573,13 +591,17 @@ impl CreditService {
         tier: &str,
     ) -> Result<CreditBalance, AppError> {
         if !self.is_enabled() {
-            return Err(AppError::BadRequest("Credit system is not enabled".to_string()));
+            return Err(AppError::BadRequest(
+                "Credit system is not enabled".to_string(),
+            ));
         }
 
         // Load subscription tiers config
         let tier_config = self.load_subscription_tier_config(tier)?;
-        let monthly_credits = tier_config["credits"]["included_monthly"].as_u64()
-            .ok_or_else(|| AppError::BadRequest("Invalid tier configuration".to_string()))? as i32;
+        let monthly_credits = tier_config["credits"]["included_monthly"]
+            .as_u64()
+            .ok_or_else(|| AppError::BadRequest("Invalid tier configuration".to_string()))?
+            as i32;
 
         if monthly_credits == 0 {
             // No credits for this tier (e.g., free tier)
@@ -591,7 +613,8 @@ impl CreditService {
         if let Some(last_grant) = balance.last_monthly_grant {
             let now = Utc::now();
             if last_grant.date_naive().month() == now.date_naive().month()
-                && last_grant.date_naive().year() == now.date_naive().year() {
+                && last_grant.date_naive().year() == now.date_naive().year()
+            {
                 debug!("Monthly credits already granted for user {}", user_id);
                 return Ok(balance);
             }
@@ -615,13 +638,16 @@ impl CreditService {
     /// Load subscription tier configuration
     fn load_subscription_tier_config(&self, tier: &str) -> Result<serde_json::Value, AppError> {
         let config_path = &self.config.payment.subscription_config_path;
-        let config_str = std::fs::read_to_string(config_path)
-            .map_err(|e| AppError::ConfigurationError(format!("Failed to load subscription config: {}", e)))?;
+        let config_str = std::fs::read_to_string(config_path).map_err(|e| {
+            AppError::ConfigurationError(format!("Failed to load subscription config: {}", e))
+        })?;
 
-        let config: serde_json::Value = serde_json::from_str(&config_str)
-            .map_err(|e| AppError::ConfigurationError(format!("Invalid subscription config: {}", e)))?;
+        let config: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+            AppError::ConfigurationError(format!("Invalid subscription config: {}", e))
+        })?;
 
-        config["tiers"][tier].as_object()
+        config["tiers"][tier]
+            .as_object()
             .ok_or_else(|| AppError::BadRequest(format!("Invalid tier: {}", tier)))
             .map(|o| serde_json::Value::Object(o.clone()))
     }
@@ -649,13 +675,10 @@ impl CreditService {
             query = query.offset(o);
         }
 
-        let transactions = query
-            .load::<CreditTransaction>(conn)
-            
-            .map_err(|e| {
-                error!("Failed to get transaction history: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
+        let transactions = query.load::<CreditTransaction>(conn).map_err(|e| {
+            error!("Failed to get transaction history: {}", e);
+            AppError::DatabaseQueryError(e.to_string())
+        })?;
 
         // Note: We return encrypted transactions here
         // The API layer should decrypt them before sending to client
@@ -682,7 +705,9 @@ impl CreditService {
         paddle_transaction_id: &str,
     ) -> Result<CreditBalance, AppError> {
         if !self.is_enabled() {
-            return Err(AppError::BadRequest("Credit system is not enabled".to_string()));
+            return Err(AppError::BadRequest(
+                "Credit system is not enabled".to_string(),
+            ));
         }
 
         // Load credit package config
@@ -691,7 +716,6 @@ impl CreditService {
             .filter(dsl::package_id.eq(package_id))
             .filter(dsl::active.eq(true))
             .first(conn)
-            
             .map_err(|e| {
                 error!("Failed to find credit package: {}", e);
                 AppError::NotFound(format!("Credit package {} not found", package_id))
@@ -745,13 +769,10 @@ impl CreditService {
         metadata: Option<serde_json::Value>,
     ) -> Result<EncryptedTransactionData, AppError> {
         // Get user's encrypted DEK from database
-        let user: UserDbQuery = users::table
-            .find(user_id)
-            .first(conn)
-            .map_err(|e| {
-                error!("Failed to get user for encryption: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
+        let user: UserDbQuery = users::table.find(user_id).first(conn).map_err(|e| {
+            error!("Failed to get user for encryption: {}", e);
+            AppError::DatabaseQueryError(e.to_string())
+        })?;
 
         // Derive a credit-specific key using HMAC
         // In production, you would:
@@ -768,44 +789,44 @@ impl CreditService {
 
         // Create HMAC with the encrypted DEK as the key
         // Note: This is a simplified approach for demonstration
-        let mut mac = HmacSha256::new_from_slice(&user.encrypted_dek[..32.min(user.encrypted_dek.len())])
-            .map_err(|e| {
-                error!("Failed to create HMAC for key derivation: {}", e);
-                AppError::EncryptionError("Failed to derive credit key".to_string())
-            })?;
+        let mut mac =
+            HmacSha256::new_from_slice(&user.encrypted_dek[..32.min(user.encrypted_dek.len())])
+                .map_err(|e| {
+                    error!("Failed to create HMAC for key derivation: {}", e);
+                    AppError::EncryptionError("Failed to derive credit key".to_string())
+                })?;
 
         mac.update(context.as_bytes());
         let key_material = mac.finalize().into_bytes();
         let credit_key = SecretBox::new(Box::new(key_material.to_vec()));
 
         // Encrypt description
-        let (description_encrypted, description_nonce) = encrypt_gcm(
-            description.as_bytes(),
-            &credit_key,
-        ).map_err(|e| {
-            error!("Failed to encrypt transaction description: {}", e);
-            AppError::EncryptionError("Failed to encrypt transaction description".to_string())
-        })?;
+        let (description_encrypted, description_nonce) =
+            encrypt_gcm(description.as_bytes(), &credit_key).map_err(|e| {
+                error!("Failed to encrypt transaction description: {}", e);
+                AppError::EncryptionError("Failed to encrypt transaction description".to_string())
+            })?;
 
         // Encrypt metadata if present
         let (metadata_encrypted, metadata_nonce) = if let Some(meta) = metadata {
             let meta_str = serde_json::to_string(&meta)
                 .map_err(|e| AppError::SerializationError(e.to_string()))?;
 
-            let (encrypted, nonce) = encrypt_gcm(
-                meta_str.as_bytes(),
-                &credit_key,
-            ).map_err(|e| {
-                error!("Failed to encrypt transaction metadata: {}", e);
-                AppError::EncryptionError("Failed to encrypt transaction metadata".to_string())
-            })?;
+            let (encrypted, nonce) =
+                encrypt_gcm(meta_str.as_bytes(), &credit_key).map_err(|e| {
+                    error!("Failed to encrypt transaction metadata: {}", e);
+                    AppError::EncryptionError("Failed to encrypt transaction metadata".to_string())
+                })?;
 
             (Some(encrypted), Some(nonce))
         } else {
             (None, None)
         };
 
-        info!("Successfully encrypted credit transaction data for user {}", user_id);
+        info!(
+            "Successfully encrypted credit transaction data for user {}",
+            user_id
+        );
 
         Ok(EncryptedTransactionData {
             description_encrypted,
@@ -835,24 +856,20 @@ impl CreditService {
             type HmacSha256 = Hmac<Sha256>;
 
             let context = format!("credit_transactions_{}", user_id);
-            let mut mac = HmacSha256::new_from_slice(dek.expose_secret())
-                .map_err(|e| {
-                    error!("Failed to create HMAC for key derivation: {}", e);
-                    AppError::DecryptionError("Failed to derive credit key".to_string())
-                })?;
+            let mut mac = HmacSha256::new_from_slice(dek.expose_secret()).map_err(|e| {
+                error!("Failed to create HMAC for key derivation: {}", e);
+                AppError::DecryptionError("Failed to derive credit key".to_string())
+            })?;
 
             mac.update(context.as_bytes());
             let key_material = mac.finalize().into_bytes();
             SecretBox::new(Box::new(key_material.to_vec()))
         } else {
             // Fallback: derive the same key we used for encryption
-            let user: UserDbQuery = users::table
-                .find(user_id)
-                .first(conn)
-                .map_err(|e| {
-                    error!("Failed to get user for decryption: {}", e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })?;
+            let user: UserDbQuery = users::table.find(user_id).first(conn).map_err(|e| {
+                error!("Failed to get user for decryption: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
 
             use hmac::{Hmac, Mac};
             use sha2::Sha256;
@@ -860,11 +877,12 @@ impl CreditService {
             type HmacSha256 = Hmac<Sha256>;
 
             let context = format!("credit_transactions_{}", user_id);
-            let mut mac = HmacSha256::new_from_slice(&user.encrypted_dek[..32.min(user.encrypted_dek.len())])
-                .map_err(|e| {
-                    error!("Failed to create HMAC for key derivation: {}", e);
-                    AppError::DecryptionError("Failed to derive credit key".to_string())
-                })?;
+            let mut mac =
+                HmacSha256::new_from_slice(&user.encrypted_dek[..32.min(user.encrypted_dek.len())])
+                    .map_err(|e| {
+                        error!("Failed to create HMAC for key derivation: {}", e);
+                        AppError::DecryptionError("Failed to derive credit key".to_string())
+                    })?;
 
             mac.update(context.as_bytes());
             let key_material = mac.finalize().into_bytes();
@@ -876,40 +894,37 @@ impl CreditService {
             &transaction.description_encrypted,
             &transaction.description_nonce,
             &credit_key,
-        ).map_err(|e| {
+        )
+        .map_err(|e| {
             error!("Failed to decrypt transaction description: {}", e);
             AppError::DecryptionError("Failed to decrypt transaction description".to_string())
         })?;
 
-        let description = String::from_utf8(description_bytes.expose_secret().clone())
-            .map_err(|e| {
+        let description =
+            String::from_utf8(description_bytes.expose_secret().clone()).map_err(|e| {
                 error!("Failed to convert decrypted description to string: {}", e);
                 AppError::DecryptionError("Invalid UTF-8 in decrypted description".to_string())
             })?;
 
         // Decrypt metadata if present
         let metadata = if let (Some(encrypted), Some(nonce)) =
-            (&transaction.metadata_encrypted, &transaction.metadata_nonce) {
-            let metadata_bytes = decrypt_gcm(
-                encrypted,
-                nonce,
-                &credit_key,
-            ).map_err(|e| {
+            (&transaction.metadata_encrypted, &transaction.metadata_nonce)
+        {
+            let metadata_bytes = decrypt_gcm(encrypted, nonce, &credit_key).map_err(|e| {
                 error!("Failed to decrypt transaction metadata: {}", e);
                 AppError::DecryptionError("Failed to decrypt transaction metadata".to_string())
             })?;
 
-            let metadata_str = String::from_utf8(metadata_bytes.expose_secret().clone())
-                .map_err(|e| {
+            let metadata_str =
+                String::from_utf8(metadata_bytes.expose_secret().clone()).map_err(|e| {
                     error!("Failed to convert decrypted metadata to string: {}", e);
                     AppError::DecryptionError("Invalid UTF-8 in decrypted metadata".to_string())
                 })?;
 
-            Some(serde_json::from_str(&metadata_str)
-                .map_err(|e| {
-                    error!("Failed to parse decrypted metadata as JSON: {}", e);
-                    AppError::DecryptionError("Invalid JSON in decrypted metadata".to_string())
-                })?)
+            Some(serde_json::from_str(&metadata_str).map_err(|e| {
+                error!("Failed to parse decrypted metadata as JSON: {}", e);
+                AppError::DecryptionError("Invalid JSON in decrypted metadata".to_string())
+            })?)
         } else {
             None
         };
@@ -921,7 +936,7 @@ impl CreditService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::{spawn_app, TestDataGuard};
+    use crate::test_helpers::{TestDataGuard, spawn_app};
 
     #[test]
     fn test_credit_balance_lifecycle() {
@@ -931,46 +946,38 @@ mod tests {
         let mut conn = app.db_pool.get().unwrap();
         let user_id = Uuid::new_v4();
 
-        let credit_service = CreditService::new(
-            app.config.clone(),
-        );
+        let credit_service = CreditService::new(app.config.clone());
 
         // Initialize credits
-        let balance = credit_service.initialize_user_credits(&mut conn, user_id).unwrap();
+        let balance = credit_service
+            .initialize_user_credits(&mut conn, user_id)
+            .unwrap();
         assert_eq!(balance.balance, 0);
 
         // Add credits
-        let balance = credit_service.add_credits(
-            &mut conn,
-            user_id,
-            100,
-            "test",
-            "Test credit addition",
-            None,
-            None,
-        ).unwrap();
+        let balance = credit_service
+            .add_credits(
+                &mut conn,
+                user_id,
+                100,
+                "test",
+                "Test credit addition",
+                None,
+                None,
+            )
+            .unwrap();
         assert_eq!(balance.balance, 100);
         assert_eq!(balance.lifetime_earned, 100);
 
         // Deduct credits
-        let balance = credit_service.deduct_credits(
-            &mut conn,
-            user_id,
-            30,
-            "Test usage",
-            None,
-        ).unwrap();
+        let balance = credit_service
+            .deduct_credits(&mut conn, user_id, 30, "Test usage", None)
+            .unwrap();
         assert_eq!(balance.balance, 70);
         assert_eq!(balance.lifetime_spent, 30);
 
         // Check insufficient credits
-        let result = credit_service.deduct_credits(
-            &mut conn,
-            user_id,
-            100,
-            "Too much",
-            None,
-        );
+        let result = credit_service.deduct_credits(&mut conn, user_id, 100, "Too much", None);
         assert!(result.is_err());
     }
 }

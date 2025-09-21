@@ -4,6 +4,7 @@
 use anyhow::Context;
 use axum::Router;
 use bcrypt;
+use chrono::Utc;
 use deadpool_diesel::postgres::Pool;
 use diesel::{PgConnection, RunQueryDsl, prelude::*};
 use reqwest::Client;
@@ -23,7 +24,6 @@ use secrecy::{ExposeSecret, SecretString};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use uuid::Uuid;
-use chrono::Utc;
 
 /// Helper to hash a password for tests
 fn hash_test_password(password: &str) -> String {

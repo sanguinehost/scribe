@@ -8,30 +8,33 @@
 
 #[cfg(feature = "payment")]
 use axum::{
+    Router,
     body::Body,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
     routing::{get, post},
-    Router,
 };
 #[cfg(feature = "payment")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "payment")]
-use uuid::Uuid;
-#[cfg(feature = "payment")]
 use tracing::error;
+#[cfg(feature = "payment")]
+use uuid::Uuid;
 
 #[cfg(feature = "payment")]
 use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
+    models::credit::{CreditBalance, CreditPackage, CreditTransaction},
     models::payment::{PlanFeatures, Subscription, SubscriptionStatus},
-    models::credit::{CreditBalance, CreditTransaction, CreditPackage},
     services::payment::{
-        paddle_service::{CreateTransactionRequest, CreateTransactionResponse, TransactionItem, TransactionCheckout, TransactionBillingDetails, PaddleWebhook, PaddleEventType},
-        PaddleService, SubscriptionService, UsageTrackingService,
-        PaymentAuditService, AuditEventType, CreditService,
+        AuditEventType, CreditService, PaddleService, PaymentAuditService, SubscriptionService,
+        UsageTrackingService,
+        paddle_service::{
+            CreateTransactionRequest, CreateTransactionResponse, PaddleEventType, PaddleWebhook,
+            TransactionBillingDetails, TransactionCheckout, TransactionItem,
+        },
     },
     state::AppState,
 };
@@ -167,8 +170,8 @@ pub struct CreditTransactionResponse {
     pub amount: i32,
     pub balance_after: i32,
     pub transaction_type: String,
-    pub description: String,  // Decrypted
-    pub metadata: Option<serde_json::Value>,  // Decrypted
+    pub description: String,                 // Decrypted
+    pub metadata: Option<serde_json::Value>, // Decrypted
     pub reference_id: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -208,67 +211,70 @@ pub async fn get_subscription(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
+
     // Get database connection
-    let conn = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
-    
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+
     // Create subscription service
     let subscription_service = SubscriptionService::new(
         (*app_state.config).clone(),
-        (*app_state.encryption_service).clone()
+        (*app_state.encryption_service).clone(),
     );
-    
+
     // Get subscription from database
     let user_id = user.id;
     let subscription_service_clone = subscription_service.clone();
     let subscription = conn
         .interact(move |conn| {
-            futures::executor::block_on(subscription_service_clone.get_user_subscription(conn, user_id))
+            futures::executor::block_on(
+                subscription_service_clone.get_user_subscription(conn, user_id),
+            )
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get subscription: {}", e)))?;
-    
+
     // Get plan features if subscription exists
     let plan_features = if let Some(ref sub) = subscription {
         let plan_type = sub.plan_type.clone();
         let subscription_service_clone = subscription_service.clone();
-        conn
-            .interact(move |conn| {
-                futures::executor::block_on(subscription_service_clone.get_plan_features(conn, &plan_type))
-            })
-            .await
-            .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
+        conn.interact(move |conn| {
+            futures::executor::block_on(
+                subscription_service_clone.get_plan_features(conn, &plan_type),
+            )
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
     } else {
         // Default to free plan features
         let subscription_service_clone = subscription_service.clone();
-        conn
-            .interact(move |conn| {
-                futures::executor::block_on(subscription_service_clone.get_plan_features(conn, "free"))
-            })
-            .await
-            .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get free plan features: {}", e)))?
+        conn.interact(move |conn| {
+            futures::executor::block_on(subscription_service_clone.get_plan_features(conn, "free"))
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to get free plan features: {}", e))
+        })?
     };
-    
+
     // Get daily usage from SoftLimitService
     #[cfg(feature = "payment")]
-    let soft_limit_service = crate::services::payment::SoftLimitService::new(
-        app_state.config.clone()
-    );
+    let soft_limit_service =
+        crate::services::payment::SoftLimitService::new(app_state.config.clone());
     let user_id_for_usage = user.id;
-    
+
     let (daily_message_count, is_throttled, throttle_delay) = conn
         .interact(move |conn| {
-            if let Ok(usage) = soft_limit_service.get_or_create_daily_usage(conn, user_id_for_usage) {
+            if let Ok(usage) = soft_limit_service.get_or_create_daily_usage(conn, user_id_for_usage)
+            {
                 let is_over = usage.soft_limit_triggered_at.is_some();
                 let delay = if is_over {
-                    soft_limit_service.should_throttle(conn, user_id_for_usage)
+                    soft_limit_service
+                        .should_throttle(conn, user_id_for_usage)
                         .unwrap_or(None)
                         .map(|d| d.as_secs() as i32)
                         .unwrap_or(0)
@@ -282,7 +288,7 @@ pub async fn get_subscription(
         })
         .await
         .unwrap_or((0, false, 0));
-    
+
     // Calculate usage limits - now including daily usage
     let usage_limits = if let Some(ref features) = plan_features {
         // For now, return simple usage limits calculation
@@ -290,7 +296,7 @@ pub async fn get_subscription(
         let now = chrono::Utc::now();
         let period_start = now;
         let period_end = now + chrono::Duration::days(30);
-        
+
         Some(UsageLimitsResponse {
             tokens_remaining: features.monthly_token_limit.unwrap_or(0),
             tokens_limit: features.monthly_token_limit.unwrap_or(0),
@@ -305,7 +311,7 @@ pub async fn get_subscription(
     } else {
         None
     };
-    
+
     Ok(Json(SubscriptionResponse {
         subscription,
         plan_features,
@@ -329,26 +335,24 @@ pub async fn get_usage(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
+
     // Get database connection
-    let conn = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
-    
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+
     // Get daily usage from SoftLimitService
-    let soft_limit_service = crate::services::payment::SoftLimitService::new(
-        app_state.config.clone()
-    );
+    let soft_limit_service =
+        crate::services::payment::SoftLimitService::new(app_state.config.clone());
     let user_id = user.id;
-    
+
     let (daily_message_count, is_throttled, throttle_delay) = conn
         .interact(move |conn| {
             if let Ok(usage) = soft_limit_service.get_or_create_daily_usage(conn, user_id) {
                 let is_over = usage.soft_limit_triggered_at.is_some();
                 let delay = if is_over {
-                    soft_limit_service.should_throttle(conn, user_id)
+                    soft_limit_service
+                        .should_throttle(conn, user_id)
                         .unwrap_or(None)
                         .map(|d| d.as_secs() as i32)
                         .unwrap_or(0)
@@ -362,7 +366,7 @@ pub async fn get_usage(
         })
         .await
         .unwrap_or((0, false, 0));
-    
+
     // TODO: Get actual token usage from usage_tracking table
     Ok(Json(UsageLimitsResponse {
         tokens_remaining: 0,
@@ -425,25 +429,23 @@ pub async fn create_payment(
     tracing::debug!("🎯 CREATE_PAYMENT: Creating subscription service");
     let subscription_service = SubscriptionService::new(
         (*app_state.config).clone(),
-        (*app_state.encryption_service).clone()
+        (*app_state.encryption_service).clone(),
     );
 
     tracing::debug!("🎯 CREATE_PAYMENT: Getting database connection");
-    let conn = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "🎯 CREATE_PAYMENT: Failed to get database connection");
-            AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
-        })?;
+    let conn = app_state.pool.get().await.map_err(|e| {
+        tracing::error!(error = %e, "🎯 CREATE_PAYMENT: Failed to get database connection");
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
 
     tracing::debug!(plan_type = %request.plan_type, "🎯 CREATE_PAYMENT: Looking up plan features");
     let plan_type_clone = request.plan_type.clone();
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
         .interact(move |conn| {
-            futures::executor::block_on(subscription_service_clone.get_plan_features(conn, &plan_type_clone))
+            futures::executor::block_on(
+                subscription_service_clone.get_plan_features(conn, &plan_type_clone),
+            )
         })
         .await
         .map_err(|e| {
@@ -538,51 +540,68 @@ pub async fn verify_transaction(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    tracing::info!("🎯 Verifying transaction {} for user {}", transaction_id, user.id);
+    tracing::info!(
+        "🎯 Verifying transaction {} for user {}",
+        transaction_id,
+        user.id
+    );
 
     // First, check if we have the transaction in our database
-    let conn = app_state.pool.get().await
+    let conn = app_state
+        .pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let transaction_id_for_db = transaction_id.clone();
     let user_id_for_check = user.id.clone();
-    let stored_transaction = conn.interact(move |conn| {
-        use crate::models::payment::PaymentTransaction;
-        use crate::schema::payment_transactions::dsl::*;
-        use diesel::prelude::*;
+    let stored_transaction = conn
+        .interact(move |conn| {
+            use crate::models::payment::PaymentTransaction;
+            use crate::schema::payment_transactions::dsl::*;
+            use diesel::prelude::*;
 
-        payment_transactions
-            .filter(paddle_transaction_id.eq(&transaction_id_for_db))
-            .filter(user_id.eq(&user_id_for_check))
-            .first::<PaymentTransaction>(conn)
-            .optional()
-    }).await
+            payment_transactions
+                .filter(paddle_transaction_id.eq(&transaction_id_for_db))
+                .filter(user_id.eq(&user_id_for_check))
+                .first::<PaymentTransaction>(conn)
+                .optional()
+        })
+        .await
         .map_err(|e| AppError::DbInteractError(e.to_string()))?
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
     // If we have the transaction in our database and it's completed, use that data
     if let Some(transaction) = stored_transaction {
-        tracing::info!("🎯 Found transaction {} in database with status: {}",
-            transaction_id, transaction.status);
+        tracing::info!(
+            "🎯 Found transaction {} in database with status: {}",
+            transaction_id,
+            transaction.status
+        );
 
         if transaction.status == "completed" {
             // Transaction is already verified and stored
             // Check for existing subscription or create one
-            let conn = app_state.pool.get().await
+            let conn = app_state
+                .pool
+                .get()
+                .await
                 .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
             let user_id_for_sub = user.id.clone();
-            let existing_subscription = conn.interact(move |conn| {
-                use crate::models::payment::Subscription;
-                use diesel::prelude::*;
-                use crate::schema::subscriptions::dsl as sub_dsl;
+            let existing_subscription = conn
+                .interact(move |conn| {
+                    use crate::models::payment::Subscription;
+                    use crate::schema::subscriptions::dsl as sub_dsl;
+                    use diesel::prelude::*;
 
-                sub_dsl::subscriptions
-                    .filter(sub_dsl::user_id.eq(user_id_for_sub))
-                    .filter(sub_dsl::status.ne("cancelled"))
-                    .first::<Subscription>(conn)
-                    .optional()
-            }).await
+                    sub_dsl::subscriptions
+                        .filter(sub_dsl::user_id.eq(user_id_for_sub))
+                        .filter(sub_dsl::status.ne("cancelled"))
+                        .first::<Subscription>(conn)
+                        .optional()
+                })
+                .await
                 .map_err(|e| AppError::DbInteractError(e.to_string()))?
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -596,13 +615,14 @@ pub async fn verify_transaction(
 
             // Create subscription from stored transaction data
             // Parse plan type from items
-            let plan_type = if let Some(item) = transaction.items.as_array().and_then(|a| a.first()) {
+            let plan_type = if let Some(item) = transaction.items.as_array().and_then(|a| a.first())
+            {
                 let price_id = item.get("price_id").and_then(|v| v.as_str()).unwrap_or("");
                 match price_id {
                     "pri_01k4qbyetvn495nzv9nkqhxz02" => "pro",
                     price if price.contains("pro") => "pro",
                     price if price.contains("enterprise") => "enterprise",
-                    _ => "pro"
+                    _ => "pro",
                 }
             } else {
                 "pro"
@@ -610,27 +630,35 @@ pub async fn verify_transaction(
 
             let subscription_service = crate::services::payment::SubscriptionService::new(
                 (*app_state.config).clone(),
-                (*app_state.encryption_service).clone()
+                (*app_state.encryption_service).clone(),
             );
 
-            let conn = app_state.pool.get().await
+            let conn = app_state
+                .pool
+                .get()
+                .await
                 .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
             let paddle_customer_id = transaction.paddle_customer_id.clone();
-            let new_subscription = conn.interact(move |conn| {
-                futures::executor::block_on(subscription_service.create_subscription(
-                    conn,
-                    user.id,
-                    plan_type,
-                    paddle_customer_id,
-                    None,
-                    None,
-                ))
-            }).await
+            let new_subscription = conn
+                .interact(move |conn| {
+                    futures::executor::block_on(subscription_service.create_subscription(
+                        conn,
+                        user.id,
+                        plan_type,
+                        paddle_customer_id,
+                        None,
+                        None,
+                    ))
+                })
+                .await
                 .map_err(|e| AppError::DbInteractError(e.to_string()))??;
 
-            tracing::info!("🎯 Created subscription {} from stored transaction {}",
-                new_subscription.id, transaction_id);
+            tracing::info!(
+                "🎯 Created subscription {} from stored transaction {}",
+                new_subscription.id,
+                transaction_id
+            );
 
             return Ok(Json(serde_json::json!({
                 "success": true,
@@ -655,99 +683,131 @@ pub async fn verify_transaction(
     match paddle_service.get_transaction(&transaction_id).await {
         Ok(response) => {
             tracing::debug!("🎯 Raw Paddle API response: {:?}", response);
-            
+
             // Use response directly - get_transaction() already extracts the data field
             let transaction_data = &response;
-            
-            tracing::info!("🎯 Transaction data retrieved from Paddle: {:?}", transaction_data);
-            
+
+            tracing::info!(
+                "🎯 Transaction data retrieved from Paddle: {:?}",
+                transaction_data
+            );
+
             // Check if transaction is completed or if it's a valid trial transaction
-            let status = transaction_data.get("status")
+            let status = transaction_data
+                .get("status")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            
+
             // Extract total from transaction - handle different formats
-            let total_str = transaction_data.get("totals")
+            let total_str = transaction_data
+                .get("totals")
                 .and_then(|t| t.get("total"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("0");
-            
+
             // Parse total as float to handle "0", "0.0", "0.00" formats
             let is_zero_total = match total_str.parse::<f64>() {
                 Ok(amount) => amount == 0.0,
-                Err(_) => total_str == "0" || total_str == "0.00"
+                Err(_) => total_str == "0" || total_str == "0.00",
             };
-            
+
             // Check if this is a trial transaction (draft status with $0.00 total)
             let is_trial = status == "draft" && is_zero_total;
-            
-            tracing::info!("🎯 Transaction status: {}, total: {}, is_trial: {}", 
-                status, total_str, is_trial);
-            
+
+            tracing::info!(
+                "🎯 Transaction status: {}, total: {}, is_trial: {}",
+                status,
+                total_str,
+                is_trial
+            );
+
             if status != "completed" && !is_trial {
-                tracing::warn!("🎯 Transaction {} is not completed and not a trial (status: {}, total: {})", 
-                    transaction_id, status, total_str);
+                tracing::warn!(
+                    "🎯 Transaction {} is not completed and not a trial (status: {}, total: {})",
+                    transaction_id,
+                    status,
+                    total_str
+                );
                 return Ok(Json(serde_json::json!({
                     "success": false,
                     "message": format!("Transaction is not completed: {}", status),
                     "status": status
                 })));
             }
-            
+
             // Extract customer_id from transaction
-            let customer_id = transaction_data.get("customer_id")
+            let customer_id = transaction_data
+                .get("customer_id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| AppError::BadRequest("Missing customer_id in transaction".to_string()))?
+                .ok_or_else(|| {
+                    AppError::BadRequest("Missing customer_id in transaction".to_string())
+                })?
                 .to_string();
-            
+
             // Extract price_id to determine plan type
-            let price_id = transaction_data.get("items")
+            let price_id = transaction_data
+                .get("items")
                 .and_then(|items| items.as_array())
                 .and_then(|items| items.first())
                 .and_then(|item| item.get("price_id"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            
+
             // Map price_id to plan type
             let plan_type = match price_id {
                 "pri_01k4qbyetvn495nzv9nkqhxz02" => "pro", // Actual Paddle price ID for pro plan
                 price if price.contains("pro") => "pro",
                 price if price.contains("enterprise") => "enterprise",
-                _ => "pro" // Default to pro plan
+                _ => "pro", // Default to pro plan
             };
-            
+
             // Set trial days if this is a trial transaction
             let trial_days = if is_trial { Some(7) } else { None };
-            
-            tracing::info!("🎯 Creating/updating {} subscription for user {} (trial: {})", 
-                plan_type, user.id, is_trial);
-            
+
+            tracing::info!(
+                "🎯 Creating/updating {} subscription for user {} (trial: {})",
+                plan_type,
+                user.id,
+                is_trial
+            );
+
             // Check if user already has a subscription
-            let conn = app_state.pool.get().await
+            let conn = app_state
+                .pool
+                .get()
+                .await
                 .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-            
-            let existing_subscription = conn.interact(move |conn| {
-                use crate::models::users::User;
-                use crate::models::payment::Subscription;
-                use diesel::prelude::*;
-                use crate::schema::subscriptions::dsl as sub_dsl;
-                
-                sub_dsl::subscriptions
-                    .filter(sub_dsl::user_id.eq(user.id))
-                    .filter(sub_dsl::status.ne("cancelled"))
-                    .first::<Subscription>(conn)
-                    .optional()
-            }).await
+
+            let existing_subscription = conn
+                .interact(move |conn| {
+                    use crate::models::payment::Subscription;
+                    use crate::models::users::User;
+                    use crate::schema::subscriptions::dsl as sub_dsl;
+                    use diesel::prelude::*;
+
+                    sub_dsl::subscriptions
+                        .filter(sub_dsl::user_id.eq(user.id))
+                        .filter(sub_dsl::status.ne("cancelled"))
+                        .first::<Subscription>(conn)
+                        .optional()
+                })
+                .await
                 .map_err(|e| AppError::DbInteractError(e.to_string()))?
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-            
+
             if let Some(existing) = existing_subscription {
-                tracing::info!("🎯 User already has an active subscription: {}", existing.id);
-                
+                tracing::info!(
+                    "🎯 User already has an active subscription: {}",
+                    existing.id
+                );
+
                 // Update existing subscription if needed
-                let conn = app_state.pool.get().await
+                let conn = app_state
+                    .pool
+                    .get()
+                    .await
                     .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                    
+
                 let subscription_status = if is_trial { "trialing" } else { "active" };
                 let trial_end_date = if is_trial {
                     Some(chrono::Utc::now() + chrono::Duration::days(7))
@@ -760,36 +820,38 @@ pub async fn verify_transaction(
                 let customer_id_str = customer_id.to_string();
                 let subscription_status_str = subscription_status.to_string();
 
-                let updated = conn.interact(move |conn| {
-                    use crate::models::payment::Subscription;
-                    use diesel::prelude::*;
-                    use crate::schema::subscriptions::dsl as sub_dsl;
+                let updated = conn
+                    .interact(move |conn| {
+                        use crate::models::payment::Subscription;
+                        use crate::schema::subscriptions::dsl as sub_dsl;
+                        use diesel::prelude::*;
 
-                    // Build update based on whether we have trial_end_date
-                    if let Some(trial_end) = trial_end_date {
-                        diesel::update(sub_dsl::subscriptions.find(existing_id))
-                            .set((
-                                sub_dsl::plan_type.eq(plan_type_clone),
-                                sub_dsl::paddle_customer_id.eq(Some(customer_id_str)),
-                                sub_dsl::status.eq(subscription_status_str),
-                                sub_dsl::trial_end.eq(Some(trial_end)),
-                                sub_dsl::updated_at.eq(chrono::Utc::now())
-                            ))
-                            .get_result::<Subscription>(conn)
-                    } else {
-                        diesel::update(sub_dsl::subscriptions.find(existing_id))
-                            .set((
-                                sub_dsl::plan_type.eq(plan_type_clone),
-                                sub_dsl::paddle_customer_id.eq(Some(customer_id_str)),
-                                sub_dsl::status.eq(subscription_status_str),
-                                sub_dsl::updated_at.eq(chrono::Utc::now())
-                            ))
-                            .get_result::<Subscription>(conn)
-                    }
-                }).await
+                        // Build update based on whether we have trial_end_date
+                        if let Some(trial_end) = trial_end_date {
+                            diesel::update(sub_dsl::subscriptions.find(existing_id))
+                                .set((
+                                    sub_dsl::plan_type.eq(plan_type_clone),
+                                    sub_dsl::paddle_customer_id.eq(Some(customer_id_str)),
+                                    sub_dsl::status.eq(subscription_status_str),
+                                    sub_dsl::trial_end.eq(Some(trial_end)),
+                                    sub_dsl::updated_at.eq(chrono::Utc::now()),
+                                ))
+                                .get_result::<Subscription>(conn)
+                        } else {
+                            diesel::update(sub_dsl::subscriptions.find(existing_id))
+                                .set((
+                                    sub_dsl::plan_type.eq(plan_type_clone),
+                                    sub_dsl::paddle_customer_id.eq(Some(customer_id_str)),
+                                    sub_dsl::status.eq(subscription_status_str),
+                                    sub_dsl::updated_at.eq(chrono::Utc::now()),
+                                ))
+                                .get_result::<Subscription>(conn)
+                        }
+                    })
+                    .await
                     .map_err(|e| AppError::DbInteractError(e.to_string()))?
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-                
+
                 Ok(Json(serde_json::json!({
                     "success": true,
                     "message": if is_trial { "Trial subscription updated successfully" } else { "Subscription updated successfully" },
@@ -804,28 +866,36 @@ pub async fn verify_transaction(
                 // Create new subscription
                 let subscription_service = crate::services::payment::SubscriptionService::new(
                     (*app_state.config).clone(),
-                    (*app_state.encryption_service).clone()
+                    (*app_state.encryption_service).clone(),
                 );
-                
-                let conn = app_state.pool.get().await
+
+                let conn = app_state
+                    .pool
+                    .get()
+                    .await
                     .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                
-                let new_subscription = conn.interact(move |conn| {
-                    futures::executor::block_on(subscription_service.create_subscription(
-                        conn,
-                        user.id,
-                        plan_type,
-                        Some(customer_id.to_string()),
-                        None, // No paddle subscription ID for transaction-based billing
-                        trial_days, // Pass trial_days if this is a trial
-                    ))
-                }).await
+
+                let new_subscription = conn
+                    .interact(move |conn| {
+                        futures::executor::block_on(subscription_service.create_subscription(
+                            conn,
+                            user.id,
+                            plan_type,
+                            Some(customer_id.to_string()),
+                            None, // No paddle subscription ID for transaction-based billing
+                            trial_days, // Pass trial_days if this is a trial
+                        ))
+                    })
+                    .await
                     .map_err(|e| AppError::DbInteractError(e.to_string()))??;
-                
-                tracing::info!("🎯 Successfully created {} subscription {} for user {}", 
+
+                tracing::info!(
+                    "🎯 Successfully created {} subscription {} for user {}",
                     if is_trial { "trial" } else { "active" },
-                    new_subscription.id, user.id);
-                
+                    new_subscription.id,
+                    user.id
+                );
+
                 Ok(Json(serde_json::json!({
                     "success": true,
                     "message": if is_trial { "Trial subscription created successfully" } else { "Subscription created successfully" },
@@ -840,7 +910,7 @@ pub async fn verify_transaction(
         }
         Err(e) => {
             tracing::error!("🎯 Failed to verify transaction {}: {}", transaction_id, e);
-            
+
             // Still return a response but indicate verification failed
             Ok(Json(serde_json::json!({
                 "success": false,
@@ -863,16 +933,14 @@ pub async fn preview_order(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
 
     // Create subscription service
     let subscription_service = SubscriptionService::new(
         (*app_state.config).clone(),
-        (*app_state.encryption_service).clone()
+        (*app_state.encryption_service).clone(),
     );
 
     // Get plan features for the requested plan
@@ -880,7 +948,9 @@ pub async fn preview_order(
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
         .interact(move |conn| {
-            futures::executor::block_on(subscription_service_clone.get_plan_features(conn, &plan_type))
+            futures::executor::block_on(
+                subscription_service_clone.get_plan_features(conn, &plan_type),
+            )
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -889,7 +959,7 @@ pub async fn preview_order(
 
     // Determine pricing based on billing period
     let is_yearly = request.billing_period == "yearly";
-    
+
     // Simple pricing logic - in production, this should query Paddle's API
     // or be stored in database alongside the price IDs
     let (amount, savings_message) = match (request.plan_type.as_str(), is_yearly) {
@@ -911,7 +981,11 @@ pub async fn preview_order(
     };
 
     // Create order preview
-    let billing_period_text = if is_yearly { "Annual billing" } else { "Monthly billing" };
+    let billing_period_text = if is_yearly {
+        "Annual billing"
+    } else {
+        "Monthly billing"
+    };
 
     let order_preview = OrderPreview {
         plan_name: plan_features.display_name.clone(),
@@ -947,16 +1021,14 @@ pub async fn create_subscription(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
 
     // Create subscription service
     let subscription_service = SubscriptionService::new(
         (*app_state.config).clone(),
-        (*app_state.encryption_service).clone()
+        (*app_state.encryption_service).clone(),
     );
 
     // Get plan features to validate the plan type and get price_id
@@ -964,7 +1036,9 @@ pub async fn create_subscription(
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
         .interact(move |conn| {
-            futures::executor::block_on(subscription_service_clone.get_plan_features(conn, &plan_type))
+            futures::executor::block_on(
+                subscription_service_clone.get_plan_features(conn, &plan_type),
+            )
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -973,11 +1047,13 @@ pub async fn create_subscription(
 
     // Select the appropriate price ID based on billing period
     let price_id = if request.billing_period == "yearly" {
-        plan_features.paddle_price_id_yearly
-            .ok_or_else(|| AppError::BadRequest("Yearly pricing not available for this plan".to_string()))?
+        plan_features.paddle_price_id_yearly.ok_or_else(|| {
+            AppError::BadRequest("Yearly pricing not available for this plan".to_string())
+        })?
     } else {
-        plan_features.paddle_price_id
-            .ok_or_else(|| AppError::BadRequest("Monthly pricing not available for this plan".to_string()))?
+        plan_features.paddle_price_id.ok_or_else(|| {
+            AppError::BadRequest("Monthly pricing not available for this plan".to_string())
+        })?
     };
 
     // Create Paddle service
@@ -998,7 +1074,10 @@ pub async fn create_subscription(
         collection_mode: "automatic".to_string(),
         checkout: Some(TransactionCheckout {
             url: None,
-            success_url: Some(format!("{}/pricing/success", app_state.config.frontend_base_url)),
+            success_url: Some(format!(
+                "{}/pricing/success",
+                app_state.config.frontend_base_url
+            )),
             cancel_url: Some(format!("{}/pricing", app_state.config.frontend_base_url)),
         }),
         billing_details: None,
@@ -1025,7 +1104,7 @@ pub async fn cancel_subscription(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
+
     // TODO: This is a simplified implementation for now
     Ok(Json(SubscriptionResponse {
         subscription: None,
@@ -1043,7 +1122,7 @@ pub async fn reactivate_subscription(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
+
     // TODO: This is a simplified implementation for now
     Ok(Json(SubscriptionResponse {
         subscription: None,
@@ -1060,14 +1139,14 @@ pub async fn paddle_webhook(
     body: axum::body::Bytes,
 ) -> Result<Json<WebhookResponse>, AppError> {
     tracing::info!("🎯 PADDLE WEBHOOK HANDLER CALLED - Received Paddle webhook");
-    
+
     // Log the full raw payload for debugging
     let payload_string = String::from_utf8_lossy(&body);
     tracing::info!("🎯 Raw webhook payload: {}", payload_string);
-    
+
     // Log all headers for debugging
     tracing::info!("🎯 Webhook headers: {:?}", headers);
-    
+
     // 1. Check for Paddle-Signature header
     let signature = headers
         .get("Paddle-Signature")
@@ -1076,13 +1155,13 @@ pub async fn paddle_webhook(
             tracing::error!("🎯 WEBHOOK ERROR: Missing Paddle-Signature header");
             AppError::BadRequest("Missing Paddle-Signature header".to_string())
         })?;
-    
+
     tracing::info!("🎯 Found signature: {}", signature);
 
     // 2. Create PaddleService to verify signature
     let paddle_service = PaddleService::new(app_state.config.payment.clone());
     tracing::info!("🎯 Created PaddleService for signature verification");
-    
+
     // 3. Verify webhook signature
     if let Err(e) = paddle_service.verify_webhook_signature(&body, signature) {
         tracing::error!("🎯 WEBHOOK ERROR: Signature verification failed: {}", e);
@@ -1096,14 +1175,17 @@ pub async fn paddle_webhook(
     // 4. Try to parse as generic JSON first to see the structure
     match serde_json::from_slice::<serde_json::Value>(&body) {
         Ok(raw_json) => {
-            tracing::info!("🎯 Raw JSON structure: {}", serde_json::to_string_pretty(&raw_json).unwrap_or("unparseable".to_string()));
-            
+            tracing::info!(
+                "🎯 Raw JSON structure: {}",
+                serde_json::to_string_pretty(&raw_json).unwrap_or("unparseable".to_string())
+            );
+
             // Check for different possible event_type field names
             if let Some(event_type) = raw_json.get("event_type") {
                 tracing::info!("🎯 Found event_type: {}", event_type);
             }
             if let Some(event_type) = raw_json.get("eventType") {
-                tracing::info!("🎯 Found eventType: {}", event_type);  
+                tracing::info!("🎯 Found eventType: {}", event_type);
             }
             if let Some(event_type) = raw_json.get("type") {
                 tracing::info!("🎯 Found type: {}", event_type);
@@ -1114,35 +1196,40 @@ pub async fn paddle_webhook(
             return Err(AppError::BadRequest(format!("Invalid JSON: {}", e)));
         }
     }
-    
-    // 5. Parse JSON payload as PaddleWebhook
-    let webhook_data: PaddleWebhook = serde_json::from_slice(&body)
-        .map_err(|e| {
-            tracing::error!("🎯 WEBHOOK ERROR: Failed to parse as PaddleWebhook: {}", e);
-            AppError::BadRequest(format!("Invalid PaddleWebhook payload: {}", e))
-        })?;
 
-    tracing::info!("🎯 Successfully parsed webhook data: event_type={:?}, event_id={}",
-        webhook_data.event_type, webhook_data.event_id);
+    // 5. Parse JSON payload as PaddleWebhook
+    let webhook_data: PaddleWebhook = serde_json::from_slice(&body).map_err(|e| {
+        tracing::error!("🎯 WEBHOOK ERROR: Failed to parse as PaddleWebhook: {}", e);
+        AppError::BadRequest(format!("Invalid PaddleWebhook payload: {}", e))
+    })?;
+
+    tracing::info!(
+        "🎯 Successfully parsed webhook data: event_type={:?}, event_id={}",
+        webhook_data.event_type,
+        webhook_data.event_id
+    );
 
     // Log webhook event to audit log (privacy-focused)
     {
-        let conn = app_state.pool.get().await
+        let conn = app_state
+            .pool
+            .get()
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         let event_type_str = format!("{:?}", webhook_data.event_type);
-        let external_ref = webhook_data.data.get("transaction")
+        let external_ref = webhook_data
+            .data
+            .get("transaction")
             .and_then(|t| t.get("id"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        if let Err(e) = conn.interact(move |conn| {
-            audit_service.log_webhook_event(
-                conn,
-                &event_type_str,
-                external_ref.as_deref(),
-            )
-        }).await
+        if let Err(e) = conn
+            .interact(move |conn| {
+                audit_service.log_webhook_event(conn, &event_type_str, external_ref.as_deref())
+            })
+            .await
             .map_err(|e| AppError::DbInteractError(e.to_string()))
             .and_then(|r| r)
         {
@@ -1170,13 +1257,15 @@ pub async fn paddle_webhook(
             process_subscription_cancelled(app_state, &webhook_data).await?;
         }
         _ => {
-            tracing::info!("🎯 Webhook event type {:?} not processed - acknowledged", 
-                webhook_data.event_type);
+            tracing::info!(
+                "🎯 Webhook event type {:?} not processed - acknowledged",
+                webhook_data.event_type
+            );
         }
     }
-    
+
     tracing::info!("🎯 Webhook processed successfully");
-    
+
     Ok(Json(WebhookResponse {
         success: true,
         message: "Webhook processed successfully".to_string(),
@@ -1190,18 +1279,23 @@ pub async fn handle_pay_page(
     State(app_state): State<AppState>,
 ) -> Result<axum::response::Response, AppError> {
     if let Some(transaction_id) = query._ptxn {
-        tracing::info!("🎯 Payment completion detected for transaction: {}", transaction_id);
-        
+        tracing::info!(
+            "🎯 Payment completion detected for transaction: {}",
+            transaction_id
+        );
+
         // TODO: In the future, we could:
         // 1. Verify the transaction status with Paddle API
         // 2. Update local subscription records
         // 3. Redirect to success/failure page based on status
         // For now, we'll redirect to the frontend with the transaction ID
-        
+
         // Fixed: Include /pay in the redirect URL to land on the correct page
-        let redirect_url = format!("{}/pay?transaction_id={}&status=success", 
-            app_state.config.frontend_base_url, transaction_id);
-        
+        let redirect_url = format!(
+            "{}/pay?transaction_id={}&status=success",
+            app_state.config.frontend_base_url, transaction_id
+        );
+
         let response = axum::response::Redirect::permanent(&redirect_url);
         Ok(response.into_response())
     } else {
@@ -1217,38 +1311,54 @@ pub async fn handle_pay_page(
 #[cfg(feature = "payment")]
 async fn process_transaction_completed(
     app_state: AppState,
-    webhook_data: &PaddleWebhook
+    webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
-    tracing::info!("🎯 Processing transaction.completed webhook: {}", webhook_data.event_id);
+    tracing::info!(
+        "🎯 Processing transaction.completed webhook: {}",
+        webhook_data.event_id
+    );
 
     // Extract transaction data from the webhook payload
-    let transaction_data = webhook_data.data.get("transaction")
+    let transaction_data = webhook_data
+        .data
+        .get("transaction")
         .ok_or_else(|| AppError::BadRequest("Missing transaction data in webhook".to_string()))?;
 
-    let transaction_id = transaction_data.get("id")
+    let transaction_id = transaction_data
+        .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| AppError::BadRequest("Missing transaction ID in webhook".to_string()))?
         .to_string();
 
-    let customer_id = transaction_data.get("customer_id")
+    let customer_id = transaction_data
+        .get("customer_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| AppError::BadRequest("Missing customer_id in webhook".to_string()))?
         .to_string();
 
-    let status = transaction_data.get("status")
+    let status = transaction_data
+        .get("status")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown")
         .to_string();
 
-    tracing::info!("🎯 Transaction details - ID: {}, Customer: {}, Status: {}",
-        transaction_id, customer_id, status);
-    
+    tracing::info!(
+        "🎯 Transaction details - ID: {}, Customer: {}, Status: {}",
+        transaction_id,
+        customer_id,
+        status
+    );
+
     // Only process completed transactions
     if status != "completed" {
-        tracing::info!("🎯 Transaction {} not completed (status: {}), skipping", transaction_id, status);
+        tracing::info!(
+            "🎯 Transaction {} not completed (status: {}), skipping",
+            transaction_id,
+            status
+        );
         return Ok(());
     }
-    
+
     // Try to get customer email from multiple possible locations in the webhook
     let customer_email = {
         // Try 1: Customer data object in webhook
@@ -1264,53 +1374,77 @@ async fn process_transaction_completed(
         } else {
             None
         }
-    }.or_else(|| {
+    }
+    .or_else(|| {
         // Try 2: Email directly in transaction data
-        transaction_data.get("customer_email")
+        transaction_data
+            .get("customer_email")
             .or_else(|| transaction_data.get("email"))
             .and_then(|v| v.as_str())
             .map(|email| {
                 tracing::info!("🎯 Found customer email in transaction: {}", email);
                 email.to_string()
             })
-    }).or_else(|| {
+    })
+    .or_else(|| {
         // Try 3: Look for email in billing details
-        transaction_data.get("billing_details")
+        transaction_data
+            .get("billing_details")
             .and_then(|billing| billing.get("email"))
             .and_then(|v| v.as_str())
             .map(|email| {
                 tracing::info!("🎯 Found customer email in billing details: {}", email);
                 email.to_string()
             })
-    }).unwrap_or_else(|| {
+    })
+    .unwrap_or_else(|| {
         // Fallback: Log the webhook structure and use test email
-        tracing::error!("🎯 Could not find customer email anywhere in webhook. Full webhook data: {}", 
-            serde_json::to_string_pretty(&webhook_data.data).unwrap_or("unparseable".to_string()));
-        tracing::warn!("🎯 Using fallback test email for customer_id: {}", customer_id);
+        tracing::error!(
+            "🎯 Could not find customer email anywhere in webhook. Full webhook data: {}",
+            serde_json::to_string_pretty(&webhook_data.data).unwrap_or("unparseable".to_string())
+        );
+        tracing::warn!(
+            "🎯 Using fallback test email for customer_id: {}",
+            customer_id
+        );
         "lucasrw@protonmail.com".to_string() // Use the actual logged-in user's email from logs
     });
-    
-    tracing::info!("🎯 Processing transaction for customer email: {}", customer_email);
-    
+
+    tracing::info!(
+        "🎯 Processing transaction for customer email: {}",
+        customer_email
+    );
+
     // Find user by email
-    let conn = app_state.pool.get().await
+    let conn = app_state
+        .pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-    
+
     let customer_email_for_closure = customer_email.clone();
-    let user = match conn.interact(move |conn| {
-        crate::auth::find_user_by_email(conn, &customer_email_for_closure)
-    }).await {
+    let user = match conn
+        .interact(move |conn| crate::auth::find_user_by_email(conn, &customer_email_for_closure))
+        .await
+    {
         Ok(Ok(user)) => user,
         Ok(Err(_)) => {
-            tracing::warn!("🎯 User not found for customer email: {}, skipping subscription creation", customer_email);
+            tracing::warn!(
+                "🎯 User not found for customer email: {}, skipping subscription creation",
+                customer_email
+            );
             return Ok(());
         }
         Err(e) => {
             return Err(AppError::DbInteractError(e.to_string()));
         }
     };
-    
-    tracing::info!("🎯 Found user {} for transaction {}", user.id, transaction_id);
+
+    tracing::info!(
+        "🎯 Found user {} for transaction {}",
+        user.id,
+        transaction_id
+    );
 
     // Store transaction in our database for future verification
     {
@@ -1329,39 +1463,46 @@ async fn process_transaction_completed(
         //     })?;
 
         // Extract transaction details
-        let total_cents = transaction_data.get("details")
+        let total_cents = transaction_data
+            .get("details")
             .and_then(|d| d.get("totals"))
             .and_then(|t| t.get("total"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0) as i32;
 
-        let tax_cents = transaction_data.get("details")
+        let tax_cents = transaction_data
+            .get("details")
             .and_then(|d| d.get("totals"))
             .and_then(|t| t.get("tax"))
             .and_then(|v| v.as_i64())
             .map(|v| v as i32);
 
-        let discount_cents = transaction_data.get("details")
+        let discount_cents = transaction_data
+            .get("details")
             .and_then(|d| d.get("totals"))
             .and_then(|t| t.get("discount"))
             .and_then(|v| v.as_i64())
             .map(|v| v as i32);
 
-        let currency_code = transaction_data.get("currency_code")
+        let currency_code = transaction_data
+            .get("currency_code")
             .and_then(|v| v.as_str())
             .unwrap_or("USD")
             .to_string();
 
-        let collection_mode = transaction_data.get("collection_mode")
+        let collection_mode = transaction_data
+            .get("collection_mode")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let checkout_id = transaction_data.get("checkout")
+        let checkout_id = transaction_data
+            .get("checkout")
             .and_then(|c| c.get("id"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let items = transaction_data.get("items")
+        let items = transaction_data
+            .get("items")
             .cloned()
             .unwrap_or_else(|| serde_json::json!([]));
 
@@ -1400,12 +1541,14 @@ async fn process_transaction_completed(
         let paddle_data_nonce = vec![0u8; 12]; // Placeholder nonce
 
         // Parse timestamps
-        let billed_at = transaction_data.get("billed_at")
+        let billed_at = transaction_data
+            .get("billed_at")
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&chrono::Utc));
 
-        let completed_at = transaction_data.get("created_at")
+        let completed_at = transaction_data
+            .get("created_at")
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&chrono::Utc));
@@ -1431,86 +1574,113 @@ async fn process_transaction_completed(
         };
 
         // Insert into database
-        let conn = app_state.pool.get().await
+        let conn = app_state
+            .pool
+            .get()
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         conn.interact(move |conn| {
             diesel::insert_into(payment_transactions::table)
                 .values(&new_transaction)
                 .execute(conn)
-        }).await
-            .map_err(|e| AppError::DbInteractError(e.to_string()))?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to store transaction: {}", e)))?;
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to store transaction: {}", e)))?;
 
-        tracing::info!("🎯 Successfully stored transaction {} in database", transaction_id);
+        tracing::info!(
+            "🎯 Successfully stored transaction {} in database",
+            transaction_id
+        );
     }
 
     // Extract price_id to determine plan type
-    let price_data = transaction_data.get("items")
+    let price_data = transaction_data
+        .get("items")
         .and_then(|items| items.as_array())
         .and_then(|items| items.first())
         .and_then(|item| item.get("price_id"))
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
-    
+
     // Map price_id to plan type (based on database plan_features table)
     let plan_type = match price_data {
         "pri_01k4qbyetvn495nzv9nkqhxz02" => "pro", // Actual Paddle price ID for pro plan
         price_id if price_id.contains("pro") => "pro",
         price_id if price_id.contains("enterprise") => "enterprise",
-        _ => "pro" // Default to pro plan instead of non-existent premium
+        _ => "pro", // Default to pro plan instead of non-existent premium
     };
-    
-    tracing::info!("🎯 Creating {} subscription for user {} (price_id: {})", 
-        plan_type, user.id, price_data);
-    
+
+    tracing::info!(
+        "🎯 Creating {} subscription for user {} (price_id: {})",
+        plan_type,
+        user.id,
+        price_data
+    );
+
     // Create subscription record
     let subscription_service = crate::services::payment::SubscriptionService::new(
         (*app_state.config).clone(),
-        (*app_state.encryption_service).clone()
+        (*app_state.encryption_service).clone(),
     );
-    
-    let conn_clone = app_state.pool.get().await
+
+    let conn_clone = app_state
+        .pool
+        .get()
+        .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-    
-    let subscription = conn_clone.interact(move |conn| {
-        futures::executor::block_on(subscription_service.create_subscription(
-            conn,
-            user.id,
-            plan_type,
-            Some(customer_id.clone()),
-            None, // No paddle subscription ID for transaction-based billing
-            None, // No trial
-        ))
-    }).await
-    .map_err(|e| AppError::DbInteractError(e.to_string()))??;
-    
-    tracing::info!("🎯 Successfully created subscription {} for user {} from transaction {}",
-        subscription.id, user.id, transaction_id);
+
+    let subscription = conn_clone
+        .interact(move |conn| {
+            futures::executor::block_on(subscription_service.create_subscription(
+                conn,
+                user.id,
+                plan_type,
+                Some(customer_id.clone()),
+                None, // No paddle subscription ID for transaction-based billing
+                None, // No trial
+            ))
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+    tracing::info!(
+        "🎯 Successfully created subscription {} for user {} from transaction {}",
+        subscription.id,
+        user.id,
+        transaction_id
+    );
 
     // Log successful payment event to audit log
     {
         // Get amount from transaction data
-        let total_cents = transaction_data.get("details")
+        let total_cents = transaction_data
+            .get("details")
             .and_then(|d| d.get("totals"))
             .and_then(|t| t.get("total"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0) as i32;
 
         let audit_service = PaymentAuditService::new();
-        let conn = app_state.pool.get().await
+        let conn = app_state
+            .pool
+            .get()
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-        if let Err(e) = conn.interact(move |conn| {
-            audit_service.log_payment_event(
-                conn,
-                user.id,
-                total_cents,
-                true, // success
-                None, // no error code
-                Some(&transaction_id),
-            )
-        }).await
+        if let Err(e) = conn
+            .interact(move |conn| {
+                audit_service.log_payment_event(
+                    conn,
+                    user.id,
+                    total_cents,
+                    true, // success
+                    None, // no error code
+                    Some(&transaction_id),
+                )
+            })
+            .await
             .map_err(|e| AppError::DbInteractError(e.to_string()))
             .and_then(|r| r)
         {
@@ -1526,13 +1696,16 @@ async fn process_transaction_completed(
 #[cfg(feature = "payment")]
 async fn process_subscription_created(
     app_state: AppState,
-    webhook_data: &PaddleWebhook
+    webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
-    tracing::info!("🎯 Processing subscription.created webhook: {}", webhook_data.event_id);
-    
+    tracing::info!(
+        "🎯 Processing subscription.created webhook: {}",
+        webhook_data.event_id
+    );
+
     // For subscription-based billing (future enhancement)
     tracing::info!("🎯 Subscription creation processing not yet implemented");
-    
+
     Ok(())
 }
 
@@ -1540,13 +1713,16 @@ async fn process_subscription_created(
 #[cfg(feature = "payment")]
 async fn process_subscription_updated(
     app_state: AppState,
-    webhook_data: &PaddleWebhook
+    webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
-    tracing::info!("🎯 Processing subscription.updated webhook: {}", webhook_data.event_id);
-    
+    tracing::info!(
+        "🎯 Processing subscription.updated webhook: {}",
+        webhook_data.event_id
+    );
+
     // For subscription updates (status changes, renewals, etc.)
     tracing::info!("🎯 Subscription update processing not yet implemented");
-    
+
     Ok(())
 }
 
@@ -1554,13 +1730,16 @@ async fn process_subscription_updated(
 #[cfg(feature = "payment")]
 async fn process_subscription_cancelled(
     app_state: AppState,
-    webhook_data: &PaddleWebhook
+    webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
-    tracing::info!("🎯 Processing subscription.cancelled webhook: {}", webhook_data.event_id);
-    
+    tracing::info!(
+        "🎯 Processing subscription.cancelled webhook: {}",
+        webhook_data.event_id
+    );
+
     // For subscription cancellations
     tracing::info!("🎯 Subscription cancellation processing not yet implemented");
-    
+
     Ok(())
 }
 
@@ -1574,22 +1753,20 @@ pub async fn get_credit_balance(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    let conn = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
 
     let credit_service = CreditService::new(app_state.config.clone());
 
     let user_id = user.id;
     let balance = conn
-        .interact(move |conn| {
-            credit_service.get_balance(conn, user_id)
-        })
+        .interact(move |conn| credit_service.get_balance(conn, user_id))
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get credit balance: {}", e)))?;
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to get credit balance: {}", e))
+        })?;
 
     Ok(Json(CreditBalanceResponse {
         balance: balance.balance,
@@ -1611,11 +1788,9 @@ pub async fn purchase_credits(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get credit package details
-    let conn = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
 
     let package_id = request.package_id.clone();
     let package: CreditPackage = conn
@@ -1644,14 +1819,18 @@ pub async fn purchase_credits(
     let transaction_request = CreateTransactionRequest {
         customer_id: customer.id.clone(),
         items: vec![TransactionItem {
-            price_id: package.paddle_price_id
-                .ok_or_else(|| AppError::BadRequest("Package not configured for purchase".to_string()))?,
+            price_id: package.paddle_price_id.ok_or_else(|| {
+                AppError::BadRequest("Package not configured for purchase".to_string())
+            })?,
             quantity: 1,
         }],
         collection_mode: "automatic".to_string(),
         checkout: Some(TransactionCheckout {
             url: None,
-            success_url: Some(format!("{}/credits/success", app_state.config.frontend_base_url)),
+            success_url: Some(format!(
+                "{}/credits/success",
+                app_state.config.frontend_base_url
+            )),
             cancel_url: Some(format!("{}/credits", app_state.config.frontend_base_url)),
         }),
         billing_details: None,
@@ -1672,11 +1851,9 @@ pub async fn purchase_credits(
 pub async fn get_credit_packages(
     State(app_state): State<AppState>,
 ) -> Result<Json<CreditPackagesResponse>, AppError> {
-    let conn = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
 
     let packages = conn
         .interact(|conn| {
@@ -1690,7 +1867,9 @@ pub async fn get_credit_packages(
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get credit packages: {}", e)))?;
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to get credit packages: {}", e))
+        })?;
 
     Ok(Json(CreditPackagesResponse { packages }))
 }
@@ -1706,11 +1885,9 @@ pub async fn get_credit_transactions(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    let conn = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e)))?;
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
 
     let credit_service = CreditService::new(app_state.config.clone());
 
@@ -1720,9 +1897,7 @@ pub async fn get_credit_transactions(
 
     // Get encrypted transactions
     let transactions = conn
-        .interact(move |conn| {
-            credit_service.get_transaction_history(conn, user_id, limit, offset)
-        })
+        .interact(move |conn| credit_service.get_transaction_history(conn, user_id, limit, offset))
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get transactions: {}", e)))?;
@@ -1730,7 +1905,10 @@ pub async fn get_credit_transactions(
     // Decrypt transactions for response
     let mut decrypted_transactions = Vec::new();
     for transaction in transactions {
-        let conn = app_state.pool.get().await
+        let conn = app_state
+            .pool
+            .get()
+            .await
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         let user_id = user.id;
@@ -1747,7 +1925,9 @@ pub async fn get_credit_transactions(
                 )
             })
             .await
-            .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
+            })?
             .unwrap_or_else(|_| {
                 // If decryption fails, use placeholder text
                 ("Transaction description unavailable".to_string(), None)
@@ -1774,19 +1954,21 @@ pub async fn get_model_costs(
     State(app_state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     use std::fs;
-    
+
     // Load the subscription tiers configuration
     let config_path = "backend/config/subscription_tiers.json";
-    let config_str = fs::read_to_string(config_path)
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to read config: {}", e)))?;
-    
-    let config: serde_json::Value = serde_json::from_str(&config_str)
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to parse config: {}", e)))?;
-    
+    let config_str = fs::read_to_string(config_path).map_err(|e| {
+        AppError::InternalServerErrorGeneric(format!("Failed to read config: {}", e))
+    })?;
+
+    let config: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+        AppError::InternalServerErrorGeneric(format!("Failed to parse config: {}", e))
+    })?;
+
     // Extract model costs and token pricing
     let model_costs = config["credit_system"]["model_costs"].clone();
     let token_pricing = config["credit_system"]["token_pricing"].clone();
-    
+
     // Build response
     let response = serde_json::json!({
         "model_costs": model_costs,
@@ -1794,36 +1976,43 @@ pub async fn get_model_costs(
         "credits_enabled": config["feature_flags"]["credits_enabled"],
         "context_multipliers": config["credit_system"]["context_multipliers"]
     });
-    
+
     Ok(Json(response))
 }
 
 /// Create authenticated payment routes (require login)
 #[cfg(feature = "payment")]
 pub fn payment_routes() -> Router<AppState> {
-    use axum::middleware::from_fn;
     use crate::middleware::{
-        credit_purchase_rate_limit_middleware,
-        subscription_rate_limit_middleware,
+        credit_purchase_rate_limit_middleware, subscription_rate_limit_middleware,
     };
+    use axum::middleware::from_fn;
 
     Router::new()
         .route("/subscription", get(get_subscription))
         .route("/subscription", post(create_subscription))
-        .route("/subscription/cancel", post(cancel_subscription)
-            .layer(from_fn(subscription_rate_limit_middleware)))
-        .route("/subscription/reactivate", post(reactivate_subscription)
-            .layer(from_fn(subscription_rate_limit_middleware)))
+        .route(
+            "/subscription/cancel",
+            post(cancel_subscription).layer(from_fn(subscription_rate_limit_middleware)),
+        )
+        .route(
+            "/subscription/reactivate",
+            post(reactivate_subscription).layer(from_fn(subscription_rate_limit_middleware)),
+        )
         .route("/subscription/preview", post(preview_order)) // Order preview endpoint
-        .route("/payment", post(create_payment)
-            .layer(from_fn(credit_purchase_rate_limit_middleware))) // Rate limit payment creation
+        .route(
+            "/payment",
+            post(create_payment).layer(from_fn(credit_purchase_rate_limit_middleware)),
+        ) // Rate limit payment creation
         .route("/transaction/:id/verify", get(verify_transaction)) // Transaction verification endpoint
         .route("/plans", get(get_plans))
         .route("/usage", get(get_usage))
         // Credit endpoints
         .route("/credits/balance", get(get_credit_balance))
-        .route("/credits/purchase", post(purchase_credits)
-            .layer(from_fn(credit_purchase_rate_limit_middleware))) // Rate limit credit purchases
+        .route(
+            "/credits/purchase",
+            post(purchase_credits).layer(from_fn(credit_purchase_rate_limit_middleware)),
+        ) // Rate limit credit purchases
         .route("/credits/packages", get(get_credit_packages))
         .route("/credits/transactions", get(get_credit_transactions))
         .route("/credits/model-costs", get(get_model_costs))
@@ -1832,13 +2021,15 @@ pub fn payment_routes() -> Router<AppState> {
 /// Create public payment webhook routes (no authentication required)
 #[cfg(feature = "payment")]
 pub fn payment_webhook_routes() -> Router<AppState> {
-    use axum::middleware::from_fn;
     use crate::middleware::webhook_rate_limit_middleware;
+    use axum::middleware::from_fn;
 
     tracing::info!("🎯 Creating payment webhook routes");
     Router::new()
-        .route("/webhook/paddle", post(paddle_webhook)
-            .layer(from_fn(webhook_rate_limit_middleware))) // Rate limit webhooks
+        .route(
+            "/webhook/paddle",
+            post(paddle_webhook).layer(from_fn(webhook_rate_limit_middleware)),
+        ) // Rate limit webhooks
         .route("/pay", get(handle_pay_page)) // Handle Paddle payment completion redirects
 }
 

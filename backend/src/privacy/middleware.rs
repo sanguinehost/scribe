@@ -1,32 +1,25 @@
 use crate::privacy::{PrivacyConfig, PrivacyContext};
-use axum::{
-    extract::Request,
-    http::HeaderMap,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, http::HeaderMap, middleware::Next, response::Response};
 use std::sync::Arc;
-use tracing::{info_span, Instrument};
+use tracing::{Instrument, info_span};
 
 /// Request extension key for privacy context
 #[derive(Clone)]
 pub struct PrivacyContextExtension(pub Arc<PrivacyContext>);
 
 /// Privacy middleware that injects privacy context into each request
-pub async fn privacy_middleware(
-    _headers: HeaderMap,
-    mut request: Request,
-    next: Next,
-) -> Response {
+pub async fn privacy_middleware(_headers: HeaderMap, mut request: Request, next: Next) -> Response {
     let privacy_config = PrivacyConfig::default();
     let privacy_context = Arc::new(PrivacyContext::new(privacy_config));
-    
+
     // Get the request ID for correlation
     let request_id = privacy_context.request_id().to_string();
-    
+
     // Insert privacy context into request extensions
-    request.extensions_mut().insert(PrivacyContextExtension(privacy_context.clone()));
-    
+    request
+        .extensions_mut()
+        .insert(PrivacyContextExtension(privacy_context.clone()));
+
     // Create a span with the request ID for correlation
     let span = info_span!(
         "request",
@@ -34,18 +27,18 @@ pub async fn privacy_middleware(
         method = %request.method(),
         path = %request.uri().path(),
     );
-    
+
     async move {
         // Process the request
         let response = next.run(request).await;
-        
+
         // Log request completion (without any PII)
         tracing::debug!(
             request_id = %request_id,
             status = %response.status(),
             "Request completed"
         );
-        
+
         response
     }
     .instrument(span)
@@ -93,9 +86,9 @@ where
 mod tests {
     use super::*;
     use axum::{
+        Router,
         body::Body,
         http::{Method, Uri},
-        Router,
         routing::get,
     };
     use tower::ServiceExt;
@@ -117,12 +110,14 @@ mod tests {
             .unwrap();
 
         let response = app.oneshot(request).await.unwrap();
-        
+
         assert_eq!(response.status(), 200);
-        
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let body_str = String::from_utf8(body.to_vec()).unwrap();
-        
+
         assert!(body_str.starts_with("Request ID: "));
         assert!(body_str.len() > 12); // Should have some request ID
     }

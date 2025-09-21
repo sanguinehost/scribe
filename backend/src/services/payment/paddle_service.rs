@@ -45,26 +45,48 @@ impl<'de> Deserialize<'de> for PaddleEventType {
         let s = String::deserialize(deserializer)?;
         match s.as_str() {
             // Snake case variants
-            "subscription_created" | "subscription.created" => Ok(PaddleEventType::SubscriptionCreated),
-            "subscription_updated" | "subscription.updated" => Ok(PaddleEventType::SubscriptionUpdated),
-            "subscription_cancelled" | "subscription.cancelled" | "subscription_canceled" | "subscription.canceled" => Ok(PaddleEventType::SubscriptionCancelled),
-            "transaction_completed" | "transaction.completed" => Ok(PaddleEventType::TransactionCompleted),
+            "subscription_created" | "subscription.created" => {
+                Ok(PaddleEventType::SubscriptionCreated)
+            }
+            "subscription_updated" | "subscription.updated" => {
+                Ok(PaddleEventType::SubscriptionUpdated)
+            }
+            "subscription_cancelled"
+            | "subscription.cancelled"
+            | "subscription_canceled"
+            | "subscription.canceled" => Ok(PaddleEventType::SubscriptionCancelled),
+            "transaction_completed" | "transaction.completed" => {
+                Ok(PaddleEventType::TransactionCompleted)
+            }
             "transaction_failed" | "transaction.failed" => Ok(PaddleEventType::TransactionFailed),
-            "transaction_canceled" | "transaction.canceled" => Ok(PaddleEventType::TransactionCanceled),
+            "transaction_canceled" | "transaction.canceled" => {
+                Ok(PaddleEventType::TransactionCanceled)
+            }
             "customer_created" | "customer.created" => Ok(PaddleEventType::CustomerCreated),
             "customer_updated" | "customer.updated" => Ok(PaddleEventType::CustomerUpdated),
             _ => {
                 tracing::warn!("🎯 Unknown Paddle event type received: {}", s);
-                Err(serde::de::Error::unknown_variant(&s, &[
-                    "subscription_created", "subscription.created",
-                    "subscription_updated", "subscription.updated",
-                    "subscription_cancelled", "subscription.cancelled",
-                    "transaction_completed", "transaction.completed",
-                    "transaction_failed", "transaction.failed",
-                    "transaction_canceled", "transaction.canceled",
-                    "customer_created", "customer.created",
-                    "customer_updated", "customer.updated"
-                ]))
+                Err(serde::de::Error::unknown_variant(
+                    &s,
+                    &[
+                        "subscription_created",
+                        "subscription.created",
+                        "subscription_updated",
+                        "subscription.updated",
+                        "subscription_cancelled",
+                        "subscription.cancelled",
+                        "transaction_completed",
+                        "transaction.completed",
+                        "transaction_failed",
+                        "transaction.failed",
+                        "transaction_canceled",
+                        "transaction.canceled",
+                        "customer_created",
+                        "customer.created",
+                        "customer_updated",
+                        "customer.updated",
+                    ],
+                ))
             }
         }
     }
@@ -293,18 +315,22 @@ impl PaddleService {
         payload: &[u8],
         signature: &str,
     ) -> Result<(), AppError> {
-        let webhook_secret = self
-            .config
-            .paddle_webhook_secret
-            .as_ref()
-            .ok_or_else(|| {
-                tracing::error!("🎯 WEBHOOK SECRET ERROR: Paddle webhook secret not configured in PaymentConfig");
-                AppError::ConfigurationError("Paddle webhook secret not configured".to_string())
-            })?;
+        let webhook_secret = self.config.paddle_webhook_secret.as_ref().ok_or_else(|| {
+            tracing::error!(
+                "🎯 WEBHOOK SECRET ERROR: Paddle webhook secret not configured in PaymentConfig"
+            );
+            AppError::ConfigurationError("Paddle webhook secret not configured".to_string())
+        })?;
 
         // Log webhook secret info for debugging (don't log actual secret)
-        tracing::info!("🎯 Using webhook secret of length: {} chars", webhook_secret.len());
-        tracing::info!("🎯 Webhook secret starts with: {}...", &webhook_secret.chars().take(4).collect::<String>());
+        tracing::info!(
+            "🎯 Using webhook secret of length: {} chars",
+            webhook_secret.len()
+        );
+        tracing::info!(
+            "🎯 Webhook secret starts with: {}...",
+            &webhook_secret.chars().take(4).collect::<String>()
+        );
 
         // Parse Paddle signature format: "ts=<timestamp>;h1=<signature>"
         tracing::info!("🎯 Raw signature header: {}", signature);
@@ -348,11 +374,13 @@ impl PaddleService {
 
         type HmacSha256 = Hmac<Sha256>;
 
-        let mut mac = HmacSha256::new_from_slice(webhook_secret.as_bytes())
-            .map_err(|e| {
-                tracing::error!("🎯 WEBHOOK SECRET ERROR: Invalid webhook secret format: {}", e);
-                AppError::InvalidWebhookSignature(format!("Invalid webhook secret: {}", e))
-            })?;
+        let mut mac = HmacSha256::new_from_slice(webhook_secret.as_bytes()).map_err(|e| {
+            tracing::error!(
+                "🎯 WEBHOOK SECRET ERROR: Invalid webhook secret format: {}",
+                e
+            );
+            AppError::InvalidWebhookSignature(format!("Invalid webhook secret: {}", e))
+        })?;
 
         mac.update(signed_payload.as_bytes());
 
@@ -363,16 +391,20 @@ impl PaddleService {
 
         // Compare h1 signature in constant time
         use subtle::ConstantTimeEq;
-        let received_bytes = hex::decode(h1_signature)
-            .map_err(|e| {
-                tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Failed to decode h1 signature: {}", e);
-                AppError::InvalidWebhookSignature("Invalid h1 signature format".to_string())
-            })?;
-        let expected_bytes = hex::decode(&expected_signature)
-            .map_err(|e| {
-                tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Failed to decode expected signature: {}", e);
-                AppError::InvalidWebhookSignature("Invalid expected signature format".to_string())
-            })?;
+        let received_bytes = hex::decode(h1_signature).map_err(|e| {
+            tracing::error!(
+                "🎯 WEBHOOK SIGNATURE ERROR: Failed to decode h1 signature: {}",
+                e
+            );
+            AppError::InvalidWebhookSignature("Invalid h1 signature format".to_string())
+        })?;
+        let expected_bytes = hex::decode(&expected_signature).map_err(|e| {
+            tracing::error!(
+                "🎯 WEBHOOK SIGNATURE ERROR: Failed to decode expected signature: {}",
+                e
+            );
+            AppError::InvalidWebhookSignature("Invalid expected signature format".to_string())
+        })?;
 
         if received_bytes.ct_eq(&expected_bytes).into() {
             tracing::info!("🎯 Webhook signature verification SUCCESS");
@@ -381,7 +413,9 @@ impl PaddleService {
             tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Signature verification FAILED");
             tracing::error!("🎯 Expected: {}", expected_signature);
             tracing::error!("🎯 Received: {}", h1_signature);
-            Err(AppError::InvalidWebhookSignature("Signature mismatch".to_string()))
+            Err(AppError::InvalidWebhookSignature(
+                "Signature mismatch".to_string(),
+            ))
         }
     }
 
@@ -391,8 +425,9 @@ impl PaddleService {
     ///
     /// Returns `AppError::JsonParseError` if payload parsing fails
     pub fn parse_webhook_payload(&self, payload: &[u8]) -> Result<PaddleWebhook, AppError> {
-        serde_json::from_slice(payload)
-            .map_err(|e| AppError::JsonParseError(format!("Failed to parse webhook payload: {}", e)))
+        serde_json::from_slice(payload).map_err(|e| {
+            AppError::JsonParseError(format!("Failed to parse webhook payload: {}", e))
+        })
     }
 
     /// Create a Paddle customer or get existing one
@@ -405,11 +440,9 @@ impl PaddleService {
         email: &str,
         name: Option<&str>,
     ) -> Result<PaddleCustomer, AppError> {
-        let api_key = self
-            .config
-            .paddle_api_key
-            .as_ref()
-            .ok_or_else(|| AppError::ConfigurationError("Paddle API key not configured".to_string()))?;
+        let api_key = self.config.paddle_api_key.as_ref().ok_or_else(|| {
+            AppError::ConfigurationError("Paddle API key not configured".to_string())
+        })?;
 
         let base_url = if self.config.paddle_sandbox_mode {
             "https://sandbox-api.paddle.com"
@@ -430,11 +463,13 @@ impl PaddleService {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Paddle API request failed: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Paddle API request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             let error_body = response.text().await.unwrap_or_default();
-            
+
             // Check if this is a "customer_already_exists" error
             if error_body.contains("customer_already_exists") {
                 // Try to extract the existing customer ID from the error message
@@ -449,7 +484,7 @@ impl PaddleService {
                     });
                 }
             }
-            
+
             return Err(AppError::ExternalServiceError(format!(
                 "Paddle API error: {}",
                 error_body
@@ -457,10 +492,15 @@ impl PaddleService {
         }
 
         let response_text = response.text().await.unwrap_or_default();
-        
+
         // Paddle wraps the response in a "data" field
         let wrapper: PaddleApiResponse<PaddleCustomer> = serde_json::from_str(&response_text)
-            .map_err(|e| AppError::JsonParseError(format!("Failed to parse customer response '{}': {}", response_text, e)))?;
+            .map_err(|e| {
+                AppError::JsonParseError(format!(
+                    "Failed to parse customer response '{}': {}",
+                    response_text, e
+                ))
+            })?;
         let customer = wrapper.data;
 
         info!(customer_id = %customer.id, email = %email, "Created Paddle customer");
@@ -496,11 +536,9 @@ impl PaddleService {
         &self,
         request: &CreateTransactionRequest,
     ) -> Result<CreateTransactionResponse, AppError> {
-        let api_key = self
-            .config
-            .paddle_api_key
-            .as_ref()
-            .ok_or_else(|| AppError::ConfigurationError("Paddle API key not configured".to_string()))?;
+        let api_key = self.config.paddle_api_key.as_ref().ok_or_else(|| {
+            AppError::ConfigurationError("Paddle API key not configured".to_string())
+        })?;
 
         let base_url = if self.config.paddle_sandbox_mode {
             "https://sandbox-api.paddle.com"
@@ -564,8 +602,7 @@ impl PaddleService {
             );
             return Err(AppError::ExternalServiceError(format!(
                 "Paddle API error ({}): {}",
-                status,
-                error_body
+                status, error_body
             )));
         }
 
@@ -611,7 +648,10 @@ impl PaddleService {
                     response_text = %response_text,
                     "Failed to parse Paddle transaction response"
                 );
-                AppError::JsonParseError(format!("Failed to parse transaction response '{}': {}", response_text, e))
+                AppError::JsonParseError(format!(
+                    "Failed to parse transaction response '{}': {}",
+                    response_text, e
+                ))
             })?;
 
         let transaction = wrapper.data;
@@ -634,12 +674,13 @@ impl PaddleService {
                 Some(url) => {
                     info!(checkout_url = %url, "🎯 Found checkout URL from Paddle in checkout field");
                     url.clone()
-                },
+                }
                 None => {
                     warn!("🎯 Checkout field exists but URL is None - using fallback");
-                    let fallback_url = format!("{}/pay?_ptxn={}",
-                        &self.config.payment_base_url,
-                        transaction.id);
+                    let fallback_url = format!(
+                        "{}/pay?_ptxn={}",
+                        &self.config.payment_base_url, transaction.id
+                    );
                     info!(
                         fallback_url = %fallback_url,
                         transaction_id = %transaction.id,
@@ -650,10 +691,13 @@ impl PaddleService {
                 }
             }
         } else {
-            warn!("🎯 No checkout_url at root level and no checkout field in transaction - using fallback");
-            let fallback_url = format!("{}/pay?_ptxn={}",
-                &self.config.payment_base_url,
-                transaction.id);
+            warn!(
+                "🎯 No checkout_url at root level and no checkout field in transaction - using fallback"
+            );
+            let fallback_url = format!(
+                "{}/pay?_ptxn={}",
+                &self.config.payment_base_url, transaction.id
+            );
             info!(
                 fallback_url = %fallback_url,
                 transaction_id = %transaction.id,
@@ -689,11 +733,9 @@ impl PaddleService {
         &self,
         request: &CreateSubscriptionRequest,
     ) -> Result<CreateSubscriptionResponse, AppError> {
-        let api_key = self
-            .config
-            .paddle_api_key
-            .as_ref()
-            .ok_or_else(|| AppError::ConfigurationError("Paddle API key not configured".to_string()))?;
+        let api_key = self.config.paddle_api_key.as_ref().ok_or_else(|| {
+            AppError::ConfigurationError("Paddle API key not configured".to_string())
+        })?;
 
         let base_url = if self.config.paddle_sandbox_mode {
             "https://sandbox-api.paddle.com"
@@ -708,7 +750,9 @@ impl PaddleService {
             .json(request)
             .send()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Paddle API request failed: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Paddle API request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             let error_body = response.text().await.unwrap_or_default();
@@ -719,7 +763,7 @@ impl PaddleService {
         }
 
         let response_text = response.text().await.unwrap_or_default();
-        
+
         // Log the raw response to understand the structure
         debug!(
             response_body = %response_text,
@@ -727,12 +771,19 @@ impl PaddleService {
         );
 
         let wrapper: PaddleApiResponse<PaddleSubscription> = serde_json::from_str(&response_text)
-            .map_err(|e| AppError::JsonParseError(format!("Failed to parse subscription response '{}': {}", response_text, e)))?;
+            .map_err(|e| {
+            AppError::JsonParseError(format!(
+                "Failed to parse subscription response '{}': {}",
+                response_text, e
+            ))
+        })?;
 
         // For subscription creation, Paddle typically doesn't return a checkout URL
         // since subscriptions are created after successful payment.
         // However, we can check the response for any additional checkout information.
-        let checkout_url = if let Ok(raw_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
+        let checkout_url = if let Ok(raw_json) =
+            serde_json::from_str::<serde_json::Value>(&response_text)
+        {
             // Check if there's any checkout URL in the response
             raw_json.get("data")
                 .and_then(|data| data.get("checkout_url"))
@@ -778,11 +829,9 @@ impl PaddleService {
         &self,
         subscription_id: &str,
     ) -> Result<PaddleSubscription, AppError> {
-        let api_key = self
-            .config
-            .paddle_api_key
-            .as_ref()
-            .ok_or_else(|| AppError::ConfigurationError("Paddle API key not configured".to_string()))?;
+        let api_key = self.config.paddle_api_key.as_ref().ok_or_else(|| {
+            AppError::ConfigurationError("Paddle API key not configured".to_string())
+        })?;
 
         let base_url = if self.config.paddle_sandbox_mode {
             "https://sandbox-api.paddle.com"
@@ -796,7 +845,9 @@ impl PaddleService {
             .bearer_auth(api_key)
             .send()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Paddle API request failed: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Paddle API request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             let error_body = response.text().await.unwrap_or_default();
@@ -807,9 +858,14 @@ impl PaddleService {
         }
 
         let response_text = response.text().await.unwrap_or_default();
-        
+
         let wrapper: PaddleApiResponse<PaddleSubscription> = serde_json::from_str(&response_text)
-            .map_err(|e| AppError::JsonParseError(format!("Failed to parse subscription response '{}': {}", response_text, e)))?;
+            .map_err(|e| {
+            AppError::JsonParseError(format!(
+                "Failed to parse subscription response '{}': {}",
+                response_text, e
+            ))
+        })?;
         let subscription = wrapper.data;
 
         debug!(subscription_id = %subscription_id, "Retrieved Paddle subscription");
@@ -821,11 +877,9 @@ impl PaddleService {
         &self,
         transaction_id: &str,
     ) -> Result<serde_json::Value, AppError> {
-        let api_key = self
-            .config
-            .paddle_api_key
-            .as_ref()
-            .ok_or_else(|| AppError::ConfigurationError("Paddle API key not configured".to_string()))?;
+        let api_key = self.config.paddle_api_key.as_ref().ok_or_else(|| {
+            AppError::ConfigurationError("Paddle API key not configured".to_string())
+        })?;
 
         let api_url = if self.config.paddle_sandbox_mode {
             "https://sandbox-api.paddle.com"
@@ -833,22 +887,22 @@ impl PaddleService {
             "https://api.paddle.com"
         };
 
-        let url = format!(
-            "{}/transactions/{}", 
-            api_url,
-            transaction_id
-        );
+        let url = format!("{}/transactions/{}", api_url, transaction_id);
 
         tracing::info!("🎯 Getting transaction {} from Paddle API", transaction_id);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .bearer_auth(api_key)
             .send()
             .await
             .map_err(|e| {
                 tracing::error!("Failed to get transaction from Paddle: {}", e);
-                AppError::ExternalServiceError(format!("Failed to get transaction from Paddle: {}", e))
+                AppError::ExternalServiceError(format!(
+                    "Failed to get transaction from Paddle: {}",
+                    e
+                ))
             })?;
 
         let status = response.status();
@@ -857,7 +911,11 @@ impl PaddleService {
             AppError::ExternalServiceError(format!("Failed to read Paddle response: {}", e))
         })?;
 
-        tracing::info!("🎯 Paddle transaction response status: {}, body: {}", status, response_text);
+        tracing::info!(
+            "🎯 Paddle transaction response status: {}, body: {}",
+            status,
+            response_text
+        );
 
         if !status.is_success() {
             tracing::error!("Paddle API error (status {}): {}", status, response_text);
@@ -868,8 +926,8 @@ impl PaddleService {
         }
 
         // Parse response as JSON
-        let response_json: serde_json::Value = serde_json::from_str(&response_text)
-            .map_err(|e| {
+        let response_json: serde_json::Value =
+            serde_json::from_str(&response_text).map_err(|e| {
                 tracing::error!("Failed to parse Paddle response: {}", e);
                 AppError::ExternalServiceError(format!("Failed to parse Paddle response: {}", e))
             })?;
@@ -892,11 +950,9 @@ impl PaddleService {
         subscription_id: &str,
         effective_from: Option<&str>, // "next_billing_period" or "immediately"
     ) -> Result<(), AppError> {
-        let api_key = self
-            .config
-            .paddle_api_key
-            .as_ref()
-            .ok_or_else(|| AppError::ConfigurationError("Paddle API key not configured".to_string()))?;
+        let api_key = self.config.paddle_api_key.as_ref().ok_or_else(|| {
+            AppError::ConfigurationError("Paddle API key not configured".to_string())
+        })?;
 
         let base_url = if self.config.paddle_sandbox_mode {
             "https://sandbox-api.paddle.com"
@@ -911,12 +967,17 @@ impl PaddleService {
 
         let response = self
             .client
-            .post(&format!("{}/subscriptions/{}/cancel", base_url, subscription_id))
+            .post(&format!(
+                "{}/subscriptions/{}/cancel",
+                base_url, subscription_id
+            ))
             .bearer_auth(api_key)
             .json(&payload)
             .send()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Paddle API request failed: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Paddle API request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             let error_body = response.text().await.unwrap_or_default();
@@ -965,7 +1026,7 @@ mod tests {
     fn test_paddle_service_creation() {
         let config = test_config();
         let service = PaddleService::new(config);
-        
+
         assert!(service.should_enforce_limits() == false);
         assert!(service.free_tier_token_limit() == 50000);
         assert!(service.grace_period_days() == 7);
@@ -975,9 +1036,9 @@ mod tests {
     async fn test_webhook_signature_verification() {
         let config = test_config();
         let service = PaddleService::new(config);
-        
+
         let payload = b"test payload";
-        
+
         // This will fail because we need proper HMAC calculation
         // But it tests the error path
         let result = service.verify_webhook_signature(payload, "invalid_signature");
@@ -988,17 +1049,17 @@ mod tests {
     fn test_webhook_payload_parsing() {
         let config = test_config();
         let service = PaddleService::new(config);
-        
+
         let payload = r#"{
             "event_type": "subscription_created",
             "event_id": "evt_123",
             "occurred_at": "2025-01-01T00:00:00Z",
             "data": {"subscription_id": "sub_123"}
         }"#;
-        
+
         let webhook = service.parse_webhook_payload(payload.as_bytes());
         assert!(webhook.is_ok());
-        
+
         let webhook = webhook.unwrap();
         assert_eq!(webhook.event_type, PaddleEventType::SubscriptionCreated);
         assert_eq!(webhook.event_id, "evt_123");

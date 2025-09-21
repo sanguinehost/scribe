@@ -5,14 +5,12 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tower_governor::{
-    governor::GovernorConfigBuilder, 
-    key_extractor::SmartIpKeyExtractor, 
-    GovernorLayer,
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
 };
 use tracing::{info, warn};
 
 /// Simple in-memory rate limiter for template endpoints
-/// 
+///
 /// This implements a basic rate limiter that's simpler than tower_governor
 /// but provides the security we need for template endpoints.
 #[derive(Debug, Clone)]
@@ -34,16 +32,18 @@ impl SimpleRateLimiter {
     pub fn is_allowed(&self, client_id: &str) -> bool {
         let mut requests = self.requests.lock().unwrap();
         let now = Instant::now();
-        
+
         // Clean old entries
         let cutoff = now - self.window_duration;
-        
+
         // Get or create entry for this client
-        let client_requests = requests.entry(client_id.to_string()).or_insert_with(Vec::new);
-        
+        let client_requests = requests
+            .entry(client_id.to_string())
+            .or_insert_with(Vec::new);
+
         // Remove old requests
         client_requests.retain(|&time| time > cutoff);
-        
+
         // Check if we're under the limit
         if client_requests.len() < self.max_requests {
             client_requests.push(now);
@@ -75,14 +75,11 @@ pub fn create_webhook_rate_limiter() -> SimpleRateLimiter {
 }
 
 /// Rate limiter middleware for template endpoints
-pub async fn template_rate_limit_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn template_rate_limit_middleware(request: Request, next: Next) -> Response {
     // Create a static rate limiter instance
     static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
     let limiter = RATE_LIMITER.get_or_init(|| create_template_rate_limiter());
-    
+
     // Extract client identifier
     let client_ip = if let Some(forwarded) = request.headers().get("x-forwarded-for") {
         forwarded.to_str().unwrap_or("unknown").to_string()
@@ -95,26 +92,21 @@ pub async fn template_rate_limit_middleware(
     // Check rate limit
     if !limiter.is_allowed(&client_ip) {
         warn!(client_ip = %client_ip, "Template rate limit exceeded");
-        
-        let mut response = Response::new(
-            "Too Many Requests - Template rate limit exceeded".into()
-        );
+
+        let mut response = Response::new("Too Many Requests - Template rate limit exceeded".into());
         *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
-        
+
         // Add rate limit headers
-        response.headers_mut().insert(
-            "X-RateLimit-Limit",
-            "30".parse().unwrap(),
-        );
-        response.headers_mut().insert(
-            "X-RateLimit-Window",
-            "60".parse().unwrap(),
-        );
-        response.headers_mut().insert(
-            "Retry-After",
-            "60".parse().unwrap(),
-        );
-        
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Limit", "30".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Window", "60".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("Retry-After", "60".parse().unwrap());
+
         return response;
     }
 
@@ -123,10 +115,7 @@ pub async fn template_rate_limit_middleware(
 }
 
 /// Rate limiter middleware for credit purchase endpoints
-pub async fn credit_purchase_rate_limit_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn credit_purchase_rate_limit_middleware(request: Request, next: Next) -> Response {
     static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
     let limiter = RATE_LIMITER.get_or_init(|| create_credit_purchase_rate_limiter());
 
@@ -143,14 +132,19 @@ pub async fn credit_purchase_rate_limit_middleware(
     if !limiter.is_allowed(&client_ip) {
         warn!(client_ip = %client_ip, "Credit purchase rate limit exceeded");
 
-        let mut response = Response::new(
-            "Too Many Requests - Please wait before purchasing more credits".into()
-        );
+        let mut response =
+            Response::new("Too Many Requests - Please wait before purchasing more credits".into());
         *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
 
-        response.headers_mut().insert("X-RateLimit-Limit", "5".parse().unwrap());
-        response.headers_mut().insert("X-RateLimit-Window", "3600".parse().unwrap());
-        response.headers_mut().insert("Retry-After", "3600".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Limit", "5".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Window", "3600".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("Retry-After", "3600".parse().unwrap());
 
         return response;
     }
@@ -159,10 +153,7 @@ pub async fn credit_purchase_rate_limit_middleware(
 }
 
 /// Rate limiter middleware for subscription management endpoints
-pub async fn subscription_rate_limit_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn subscription_rate_limit_middleware(request: Request, next: Next) -> Response {
     static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
     let limiter = RATE_LIMITER.get_or_init(|| create_subscription_rate_limiter());
 
@@ -179,14 +170,19 @@ pub async fn subscription_rate_limit_middleware(
     if !limiter.is_allowed(&client_ip) {
         warn!(client_ip = %client_ip, "Subscription management rate limit exceeded");
 
-        let mut response = Response::new(
-            "Too Many Requests - Please wait before modifying subscription".into()
-        );
+        let mut response =
+            Response::new("Too Many Requests - Please wait before modifying subscription".into());
         *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
 
-        response.headers_mut().insert("X-RateLimit-Limit", "3".parse().unwrap());
-        response.headers_mut().insert("X-RateLimit-Window", "3600".parse().unwrap());
-        response.headers_mut().insert("Retry-After", "3600".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Limit", "3".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Window", "3600".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("Retry-After", "3600".parse().unwrap());
 
         return response;
     }
@@ -195,17 +191,19 @@ pub async fn subscription_rate_limit_middleware(
 }
 
 /// Rate limiter middleware for webhook endpoints
-pub async fn webhook_rate_limit_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn webhook_rate_limit_middleware(request: Request, next: Next) -> Response {
     static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
     let limiter = RATE_LIMITER.get_or_init(|| create_webhook_rate_limiter());
 
     // Extract client identifier (for webhooks, use signature or user-agent)
     let client_id = if let Some(signature) = request.headers().get("paddle-signature") {
         // Use first 16 chars of signature as identifier
-        signature.to_str().unwrap_or("unknown").chars().take(16).collect::<String>()
+        signature
+            .to_str()
+            .unwrap_or("unknown")
+            .chars()
+            .take(16)
+            .collect::<String>()
     } else if let Some(forwarded) = request.headers().get("x-forwarded-for") {
         forwarded.to_str().unwrap_or("unknown").to_string()
     } else if let Some(socket_addr) = request.extensions().get::<SocketAddr>() {
@@ -218,14 +216,18 @@ pub async fn webhook_rate_limit_middleware(
     if !limiter.is_allowed(&client_id) {
         warn!(client_id = %client_id, "Webhook rate limit exceeded");
 
-        let mut response = Response::new(
-            "Too Many Requests - Webhook rate limit exceeded".into()
-        );
+        let mut response = Response::new("Too Many Requests - Webhook rate limit exceeded".into());
         *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
 
-        response.headers_mut().insert("X-RateLimit-Limit", "100".parse().unwrap());
-        response.headers_mut().insert("X-RateLimit-Window", "60".parse().unwrap());
-        response.headers_mut().insert("Retry-After", "60".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Limit", "100".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Window", "60".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("Retry-After", "60".parse().unwrap());
 
         return response;
     }
@@ -235,10 +237,7 @@ pub async fn webhook_rate_limit_middleware(
 
 /// Credit checking middleware for chat generation endpoints
 /// This middleware checks if the user has sufficient credits for Pro model usage
-pub async fn credit_check_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
     // Only apply credit checking to the generate endpoint
     let uri_path = request.uri().path();
     if !uri_path.contains("/generate") {
@@ -253,15 +252,15 @@ pub async fn credit_check_middleware(
 
     #[cfg(feature = "payment")]
     {
-        use crate::services::payment::{CreditService, SoftLimitService};
-        use crate::auth::user_store::Backend as AuthBackend;
-        use axum_login::AuthSession;
         use crate::AppState;
+        use crate::auth::user_store::Backend as AuthBackend;
+        use crate::services::payment::{CreditService, SoftLimitService};
+        use axum::Json;
         use axum::extract::State;
         use axum::http::StatusCode;
         use axum::response::IntoResponse;
-        use axum::Json;
-        use serde_json::{json, Value};
+        use axum_login::AuthSession;
+        use serde_json::{Value, json};
         use std::sync::Arc;
 
         // Extract app state from request extensions
@@ -271,7 +270,11 @@ pub async fn credit_check_middleware(
         };
 
         // Extract auth session to get user ID
-        let Some(auth_session) = request.extensions().get::<AuthSession<AuthBackend>>().cloned() else {
+        let Some(auth_session) = request
+            .extensions()
+            .get::<AuthSession<AuthBackend>>()
+            .cloned()
+        else {
             // No auth session, continue (will be rejected by auth middleware anyway)
             return next.run(request).await;
         };
@@ -291,39 +294,43 @@ pub async fn credit_check_middleware(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({
                         "error": "Database connection error"
-                    }))
-                ).into_response();
+                    })),
+                )
+                    .into_response();
             };
 
             // Check soft limit status
             let user_id = user.id;
-            let check_result = conn.interact(move |conn| {
-                // Get or create daily usage
-                let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
+            let check_result = conn
+                .interact(move |conn| {
+                    // Get or create daily usage
+                    let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
 
-                // Get user's subscription tier (default to "free" if not found)
-                let tier = "free"; // TODO: Get actual tier from subscription service
+                    // Get user's subscription tier (default to "free" if not found)
+                    let tier = "free"; // TODO: Get actual tier from subscription service
 
-                // Get daily limit for tier
-                let daily_limit = soft_limit_service.get_daily_limit(tier);
+                    // Get daily limit for tier
+                    let daily_limit = soft_limit_service.get_daily_limit(tier);
 
-                // Calculate usage percentage
-                let usage_percentage = (usage.message_count as f32 / daily_limit as f32 * 100.0) as i32;
+                    // Calculate usage percentage
+                    let usage_percentage =
+                        (usage.message_count as f32 / daily_limit as f32 * 100.0) as i32;
 
-                // Check if soft limit is exceeded
-                if usage.message_count >= daily_limit {
-                    // Check if hard limit grace period has passed
-                    if usage.soft_limit_triggered_at.is_some() {
-                        // For now, we'll allow with warning (could enforce hard stop here)
-                        Ok::<_, AppError>((true, usage_percentage, true)) // (has_limit, percentage, is_over_limit)
+                    // Check if soft limit is exceeded
+                    if usage.message_count >= daily_limit {
+                        // Check if hard limit grace period has passed
+                        if usage.soft_limit_triggered_at.is_some() {
+                            // For now, we'll allow with warning (could enforce hard stop here)
+                            Ok::<_, AppError>((true, usage_percentage, true)) // (has_limit, percentage, is_over_limit)
+                        } else {
+                            // First time hitting limit
+                            Ok::<_, AppError>((true, usage_percentage, true))
+                        }
                     } else {
-                        // First time hitting limit
-                        Ok::<_, AppError>((true, usage_percentage, true))
+                        Ok::<_, AppError>((true, usage_percentage, false))
                     }
-                } else {
-                    Ok::<_, AppError>((true, usage_percentage, false))
-                }
-            }).await;
+                })
+                .await;
 
             match check_result {
                 Ok(Ok((has_limit, usage_percentage, is_over_limit))) => {
@@ -337,11 +344,11 @@ pub async fn credit_check_middleware(
                         // Could return 429 Too Many Requests here for hard enforcement
                         // For now, we'll continue and let the handler decide
                     }
-                },
+                }
                 Ok(Err(e)) => {
                     warn!("Failed to check soft limits: {}", e);
                     // Continue on error - don't block the request
-                },
+                }
                 Err(e) => {
                     warn!("Database interaction error checking soft limits: {}", e);
                     // Continue on error - don't block the request
@@ -356,17 +363,14 @@ pub async fn credit_check_middleware(
 
 /// Soft limit enforcement middleware for daily usage limits
 #[cfg(feature = "payment")]
-pub async fn soft_limit_enforcement_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
-    use crate::services::payment::{SoftLimitService, SubscriptionService};
-    use crate::auth::user_store::Backend as AuthBackend;
-    use axum_login::AuthSession;
+pub async fn soft_limit_enforcement_middleware(request: Request, next: Next) -> Response {
     use crate::AppState;
-    use axum::http::{StatusCode, HeaderMap, HeaderValue};
-    use axum::response::IntoResponse;
+    use crate::auth::user_store::Backend as AuthBackend;
+    use crate::services::payment::{SoftLimitService, SubscriptionService};
     use axum::Json;
+    use axum::http::{HeaderMap, HeaderValue, StatusCode};
+    use axum::response::IntoResponse;
+    use axum_login::AuthSession;
     use serde_json::json;
     use std::sync::Arc;
 
@@ -382,7 +386,11 @@ pub async fn soft_limit_enforcement_middleware(
     };
 
     // Extract auth session
-    let Some(auth_session) = request.extensions().get::<AuthSession<AuthBackend>>().cloned() else {
+    let Some(auth_session) = request
+        .extensions()
+        .get::<AuthSession<AuthBackend>>()
+        .cloned()
+    else {
         return next.run(request).await;
     };
 
@@ -402,39 +410,44 @@ pub async fn soft_limit_enforcement_middleware(
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({
                 "error": "Service temporarily unavailable"
-            }))
-        ).into_response();
+            })),
+        )
+            .into_response();
     };
 
     let user_id = user.id;
     let state_clone = state.clone();
 
-    let check_result = conn.interact(move |conn| {
-        // Get daily usage
-        let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
+    let check_result = conn
+        .interact(move |conn| {
+            // Get daily usage
+            let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
 
-        // Get user's subscription tier (simplified for now)
-        // TODO: Integrate with actual subscription service when encryption service is available
-        let tier = "free".to_string();
+            // Get user's subscription tier (simplified for now)
+            // TODO: Integrate with actual subscription service when encryption service is available
+            let tier = "free".to_string();
 
-        // Get daily limit
-        let daily_limit = soft_limit_service.get_daily_limit(&tier);
+            // Get daily limit
+            let daily_limit = soft_limit_service.get_daily_limit(&tier);
 
-        // Calculate throttle delay based on usage
-        let usage_percentage = (usage.message_count as f32 / daily_limit as f32 * 100.0) as u32;
-        let throttle_delay = if usage_percentage > 100 {
-            // Progressive throttling after limit
-            let over_percentage = usage_percentage - 100;
-            Some(std::time::Duration::from_millis((over_percentage * 100) as u64))
-        } else if usage_percentage > 80 {
-            // Mild throttling near limit
-            Some(std::time::Duration::from_millis(100))
-        } else {
-            None
-        };
+            // Calculate throttle delay based on usage
+            let usage_percentage = (usage.message_count as f32 / daily_limit as f32 * 100.0) as u32;
+            let throttle_delay = if usage_percentage > 100 {
+                // Progressive throttling after limit
+                let over_percentage = usage_percentage - 100;
+                Some(std::time::Duration::from_millis(
+                    (over_percentage * 100) as u64,
+                ))
+            } else if usage_percentage > 80 {
+                // Mild throttling near limit
+                Some(std::time::Duration::from_millis(100))
+            } else {
+                None
+            };
 
-        Ok::<_, AppError>((usage.message_count, daily_limit, throttle_delay, tier))
-    }).await;
+            Ok::<_, AppError>((usage.message_count, daily_limit, throttle_delay, tier))
+        })
+        .await;
 
     match check_result {
         Ok(Ok((current_usage, limit, throttle_info, tier))) => {
@@ -458,7 +471,9 @@ pub async fn soft_limit_enforcement_middleware(
                     tokio::time::sleep(delay).await;
                 }
 
-                if let Ok(throttle_value) = HeaderValue::from_str(&format!("{}ms", delay.as_millis())) {
+                if let Ok(throttle_value) =
+                    HeaderValue::from_str(&format!("{}ms", delay.as_millis()))
+                {
                     headers.insert("X-Throttle-Applied", throttle_value);
                 }
 
@@ -472,17 +487,18 @@ pub async fn soft_limit_enforcement_middleware(
                             "current": current_usage,
                             "tier": tier,
                             "reset_time": "00:00 UTC"
-                        }))
-                    ).into_response();
+                        })),
+                    )
+                        .into_response();
                 }
             }
 
             response
-        },
+        }
         Ok(Err(e)) => {
             warn!("Soft limit check failed: {}", e);
             next.run(request).await
-        },
+        }
         Err(e) => {
             warn!("Database error during soft limit check: {}", e);
             next.run(request).await
@@ -491,10 +507,7 @@ pub async fn soft_limit_enforcement_middleware(
 }
 
 /// Middleware to log rate limit violations
-pub async fn rate_limit_logger(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn rate_limit_logger(request: Request, next: Next) -> Response {
     let client_ip = if let Some(forwarded) = request.headers().get("x-forwarded-for") {
         forwarded.to_str().unwrap_or("unknown").to_string()
     } else if let Some(socket_addr) = request.extensions().get::<SocketAddr>() {
@@ -530,44 +543,41 @@ pub async fn rate_limit_logger(
 }
 
 /// Security headers middleware
-pub async fn security_headers(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
 
     let headers = response.headers_mut();
-    
+
     // Prevent clickjacking
     if let Ok(header_value) = "DENY".parse() {
         headers.insert("X-Frame-Options", header_value);
     }
-    
+
     // Prevent MIME type sniffing
     if let Ok(header_value) = "nosniff".parse() {
         headers.insert("X-Content-Type-Options", header_value);
     }
-    
+
     // Enable XSS protection
     if let Ok(header_value) = "1; mode=block".parse() {
         headers.insert("X-XSS-Protection", header_value);
     }
-    
+
     // Strict transport security (HTTPS only)
     if let Ok(header_value) = "max-age=31536000; includeSubDomains; preload".parse() {
         headers.insert("Strict-Transport-Security", header_value);
     }
-    
+
     // Content Security Policy for API responses
     if let Ok(header_value) = "default-src 'none'; script-src 'none'; object-src 'none'; style-src 'none'; img-src 'none'; media-src 'none'; frame-src 'none'; font-src 'none'; connect-src 'none'".parse() {
         headers.insert("Content-Security-Policy", header_value);
     }
-    
+
     // Referrer policy
     if let Ok(header_value) = "strict-origin-when-cross-origin".parse() {
         headers.insert("Referrer-Policy", header_value);
     }
-    
+
     // Permissions policy
     if let Ok(header_value) = "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), speaker=(), vibrate=(), fullscreen=(), sync-xhr=()".parse() {
         headers.insert("Permissions-Policy", header_value);
@@ -584,7 +594,7 @@ mod tests {
     async fn test_rate_limiter_creation() {
         // Test that rate limiters can be created without panicking
         let limiter = create_template_rate_limiter();
-        
+
         // Basic functionality test
         assert!(limiter.is_allowed("test_client"));
         assert!(limiter.is_allowed("different_client"));
@@ -593,14 +603,14 @@ mod tests {
     #[test]
     fn test_simple_rate_limiter() {
         let limiter = SimpleRateLimiter::new(2, Duration::from_secs(1));
-        
+
         // First two requests should be allowed
         assert!(limiter.is_allowed("client1"));
         assert!(limiter.is_allowed("client1"));
-        
+
         // Third request should be denied
         assert!(!limiter.is_allowed("client1"));
-        
+
         // Different client should be allowed
         assert!(limiter.is_allowed("client2"));
     }
@@ -608,16 +618,16 @@ mod tests {
     #[test]
     fn test_rate_limiter_window_reset() {
         let limiter = SimpleRateLimiter::new(1, Duration::from_millis(50));
-        
+
         // First request allowed
         assert!(limiter.is_allowed("client1"));
-        
+
         // Second request denied (within window)
         assert!(!limiter.is_allowed("client1"));
-        
+
         // Wait for window to expire
         std::thread::sleep(Duration::from_millis(100));
-        
+
         // Request should be allowed again
         assert!(limiter.is_allowed("client1"));
     }

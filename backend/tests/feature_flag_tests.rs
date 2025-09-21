@@ -10,7 +10,7 @@ mod feature_flag_tests {
     use scribe_backend::{
         config::Config,
         services::payment::{CreditService, SoftLimitService},
-        test_helpers::{spawn_app, TestDataGuard},
+        test_helpers::{TestDataGuard, spawn_app},
     };
     use std::sync::Arc;
     use uuid::Uuid;
@@ -37,19 +37,14 @@ mod feature_flag_tests {
 
         // Operations should fail when disabled
         let user_id = Uuid::new_v4();
-        
+
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let result = conn.interact(move |conn| {
-            service.add_credits(
-                conn,
-                user_id,
-                100,
-                "test",
-                "Should fail",
-                None,
-                None,
-            )
-        }).await.expect("Failed to interact");
+        let result = conn
+            .interact(move |conn| {
+                service.add_credits(conn, user_id, 100, "test", "Should fail", None, None)
+            })
+            .await
+            .expect("Failed to interact");
 
         assert!(result.is_err());
         if let Err(e) = result {
@@ -66,7 +61,7 @@ mod feature_flag_tests {
         let mut config = (*app.config).clone();
         config.payment.credits_enabled = true;
         let config = Arc::new(config);
-        
+
         let user_id = Uuid::new_v4();
 
         // Create test user first
@@ -74,19 +69,19 @@ mod feature_flag_tests {
         conn.interact(move |conn| {
             use diesel::prelude::*;
             use scribe_backend::schema::users;
-            
+
             // Check if user exists first
             let exists: Result<i64, _> = users::table
                 .filter(users::id.eq(user_id))
                 .count()
                 .get_result(conn);
-                
+
             if let Ok(count) = exists {
                 if count > 0 {
                     return Ok(()) as Result<(), diesel::result::Error>;
                 }
             }
-            
+
             // Create user with raw SQL to handle enums
             diesel::sql_query(
                 "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
@@ -117,23 +112,20 @@ mod feature_flag_tests {
 
         // Initialize and add credits should work
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        conn.interact(move |conn| {
-            service.initialize_user_credits(conn, user_id)
-        }).await.expect("Failed to interact").expect("Should initialize when enabled");
+        conn.interact(move |conn| service.initialize_user_credits(conn, user_id))
+            .await
+            .expect("Failed to interact")
+            .expect("Should initialize when enabled");
 
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let balance = conn.interact(move |conn| {
-            let service = CreditService::new(config);
-            service.add_credits(
-                conn,
-                user_id,
-                100,
-                "test",
-                "Test credits",
-                None,
-                None,
-            )
-        }).await.expect("Failed to interact").expect("Should add credits when enabled");
+        let balance = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config);
+                service.add_credits(conn, user_id, 100, "test", "Test credits", None, None)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Should add credits when enabled");
 
         assert_eq!(balance.balance, 100);
     }
@@ -147,7 +139,7 @@ mod feature_flag_tests {
         let mut config = (*app.config).clone();
         config.payment.soft_limits_enabled = false;
         let config = Arc::new(config);
-        
+
         let user_id = Uuid::new_v4();
 
         // Create test user first
@@ -183,26 +175,36 @@ mod feature_flag_tests {
 
         // Should still track usage even when disabled
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let usage = conn.interact(move |conn| {
-            service.record_usage(conn, user_id, "gemini-2.5-flash", 1000)
-        }).await.expect("Failed to interact").expect("Should track usage even when disabled");
+        let usage = conn
+            .interact(move |conn| service.record_usage(conn, user_id, "gemini-2.5-flash", 1000))
+            .await
+            .expect("Failed to interact")
+            .expect("Should track usage even when disabled");
         assert_eq!(usage.message_count, 1);
 
         // But should not throttle
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let throttle = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config_clone);
-            service.should_throttle(conn, user_id)
-        }).await.expect("Failed to interact").expect("Should check throttle");
+        let throttle = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.should_throttle(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Should check throttle");
         assert!(throttle.is_none(), "Should not throttle when disabled");
 
         // And should return no limit
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let remaining = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config);
-            service.get_remaining_messages(conn, user_id)
-        }).await.expect("Failed to interact").expect("Should get remaining");
+        let remaining = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config);
+                service.get_remaining_messages(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Should get remaining");
         assert_eq!(remaining, None, "Should have no limit when disabled");
     }
 
@@ -215,7 +217,7 @@ mod feature_flag_tests {
         let mut config = (*app.config).clone();
         config.payment.soft_limits_enabled = true;
         let config = Arc::new(config);
-        
+
         let user_id = Uuid::new_v4();
 
         // Create test user first
@@ -252,10 +254,14 @@ mod feature_flag_tests {
         // Should have remaining messages for free tier
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let remaining = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config_clone);
-            service.get_remaining_messages(conn, user_id)
-        }).await.expect("Failed to interact").expect("Should get remaining");
+        let remaining = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.get_remaining_messages(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Should get remaining");
         assert_eq!(remaining, Some(20), "Free tier should have 20 messages");
 
         // Record usage up to limit
@@ -265,15 +271,22 @@ mod feature_flag_tests {
             conn.interact(move |conn| {
                 let service = SoftLimitService::new(config_clone);
                 service.record_usage(conn, user_id, "gemini-2.5-flash", 100)
-            }).await.expect("Failed to interact").unwrap();
+            })
+            .await
+            .expect("Failed to interact")
+            .unwrap();
         }
 
         // Should now be throttled
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let throttle = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config);
-            service.should_throttle(conn, user_id)
-        }).await.expect("Failed to interact").expect("Should check throttle");
+        let throttle = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config);
+                service.should_throttle(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Should check throttle");
         assert!(throttle.is_some(), "Should throttle after limit reached");
     }
 
@@ -323,8 +336,14 @@ mod feature_flag_tests {
 
         // Check that the config fields exist and have expected defaults
         // (These are the test environment defaults)
-        assert_eq!(config.payment.credits_enabled, false, "Credits should be disabled by default in test config");
-        assert_eq!(config.payment.soft_limits_enabled, false, "Soft limits should be disabled by default in test config");
+        assert_eq!(
+            config.payment.credits_enabled, false,
+            "Credits should be disabled by default in test config"
+        );
+        assert_eq!(
+            config.payment.soft_limits_enabled, false,
+            "Soft limits should be disabled by default in test config"
+        );
 
         // Verify other payment config fields are present
         assert!(config.payment.max_credit_balance > 0);

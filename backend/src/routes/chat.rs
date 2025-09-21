@@ -26,11 +26,11 @@ use crate::prompt_builder;
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
 use crate::services::ChronicleService;
-use crate::services::chat;
 use crate::services::agentic::{
     context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
     narrative_tools::SearchKnowledgeBaseTool,
 };
+use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
 use crate::services::hybrid_token_counter::CountingMode;
 use secrecy::ExposeSecret; // Added for ExposeSecret
@@ -397,37 +397,60 @@ pub async fn generate_chat_response(
 
     #[cfg(feature = "payment")]
     {
-        use crate::services::payment::{CreditService, SubscriptionService, UsageTrackingService};
         use crate::services::encryption_service::EncryptionService;
-        
-        let conn = state_arc.pool.get().await.map_err(|e| AppError::DbPoolError(e.to_string()))?;
-        
-        // Get user's subscription tier  
-        let subscription_service = SubscriptionService::new(state_arc.config.as_ref().clone(), EncryptionService::new());
-        let user_subscription = conn.interact(move |conn| {
-            // Use async block wrapper since the service method is async
-            futures::executor::block_on(subscription_service.get_user_subscription(conn, user_id_value))
-        }).await.map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-        
-        let user_tier = user_subscription.as_ref().map(|s| s.plan_type.as_str()).unwrap_or("free");
+        use crate::services::payment::{CreditService, SubscriptionService, UsageTrackingService};
+
+        let conn = state_arc
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        // Get user's subscription tier
+        let subscription_service =
+            SubscriptionService::new(state_arc.config.as_ref().clone(), EncryptionService::new());
+        let user_subscription = conn
+            .interact(move |conn| {
+                // Use async block wrapper since the service method is async
+                futures::executor::block_on(
+                    subscription_service.get_user_subscription(conn, user_id_value),
+                )
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+        let user_tier = user_subscription
+            .as_ref()
+            .map(|s| s.plan_type.as_str())
+            .unwrap_or("free");
         debug!(%session_id, %user_tier, "User subscription tier determined");
-        
+
         // Load subscription tier configuration
         let config_path = std::path::Path::new("backend/config/subscription_tiers.json");
-        let config_content = std::fs::read_to_string(config_path)
-            .map_err(|_| AppError::InternalServerErrorGeneric("Failed to load subscription tiers config".to_string()))?;
-        let tiers_config: serde_json::Value = serde_json::from_str(&config_content)
-            .map_err(|_| AppError::InternalServerErrorGeneric("Failed to parse subscription tiers config".to_string()))?;
-        
+        let config_content = std::fs::read_to_string(config_path).map_err(|_| {
+            AppError::InternalServerErrorGeneric(
+                "Failed to load subscription tiers config".to_string(),
+            )
+        })?;
+        let tiers_config: serde_json::Value =
+            serde_json::from_str(&config_content).map_err(|_| {
+                AppError::InternalServerErrorGeneric(
+                    "Failed to parse subscription tiers config".to_string(),
+                )
+            })?;
+
         let tier_config = tiers_config["tiers"][user_tier].clone();
         if tier_config.is_null() {
-            return Err(AppError::InternalServerErrorGeneric(format!("Unknown subscription tier: {}", user_tier)));
+            return Err(AppError::InternalServerErrorGeneric(format!(
+                "Unknown subscription tier: {}",
+                user_tier
+            )));
         }
-        
+
         // Check if this model requires credits based on tier and usage
         let model_costs = &tiers_config["credit_system"]["model_costs"];
         let base_model_cost = model_costs[&model_to_use].as_i64().unwrap_or(0) as i32;
-        
+
         match user_tier {
             "free" => {
                 // Free tier: Flash/Flash-Lite free until token limit, gemini-2.5-pro blocked/requires credits
@@ -435,39 +458,60 @@ pub async fn generate_chat_response(
                     if base_model_cost > 0 {
                         credits_required = base_model_cost;
                     } else {
-                        return Err(AppError::BadRequest("Premium model requires subscription or credits".to_string()));
+                        return Err(AppError::BadRequest(
+                            "Premium model requires subscription or credits".to_string(),
+                        ));
                     }
                 }
                 should_track_usage = true; // Track usage to enforce daily limits
-            },
+            }
             "basic" | "premium" => {
                 // Paid tiers: Check if user has exceeded their included usage
                 should_track_usage = true;
-                
+
                 // For gemini-2.5-pro, always require credits regardless of tier
                 if model_to_use == "gemini-2.5-pro" {
                     credits_required = base_model_cost;
                 } else {
                     // For Flash/Flash-Lite, check if user has exceeded included usage
-                    let daily_messages_limit = tier_config["limits"]["daily_messages"].as_i64().unwrap_or(0) as i32;
-                    
+                    let daily_messages_limit = tier_config["limits"]["daily_messages"]
+                        .as_i64()
+                        .unwrap_or(0) as i32;
+
                     // Get current daily usage (simplified check - in production would need proper usage tracking)
-                    let usage_service = UsageTrackingService::new(state_arc.config.as_ref().clone(), EncryptionService::new());
+                    let usage_service = UsageTrackingService::new(
+                        state_arc.config.as_ref().clone(),
+                        EncryptionService::new(),
+                    );
                     let subscription_id = user_subscription.as_ref().map(|s| s.id);
-                    let current_usage = conn.interact(move |conn| {
-                        futures::executor::block_on(usage_service.get_current_usage(conn, user_id_value, subscription_id))
-                    }).await.map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-                    
+                    let current_usage = conn
+                        .interact(move |conn| {
+                            futures::executor::block_on(usage_service.get_current_usage(
+                                conn,
+                                user_id_value,
+                                subscription_id,
+                            ))
+                        })
+                        .await
+                        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
                     let messages_used_today = current_usage.map(|u| u.tokens_used).unwrap_or(0); // Simplified - should track messages not tokens
-                    
+
                     if messages_used_today >= daily_messages_limit {
                         // Exceeded included usage, require credits for any model (soft limit bypass)
-                        credits_required = if base_model_cost > 0 { base_model_cost } else { 10 }; // Default cost for Flash models when over limit
+                        credits_required = if base_model_cost > 0 {
+                            base_model_cost
+                        } else {
+                            10
+                        }; // Default cost for Flash models when over limit
                     }
                 }
-            },
+            }
             _ => {
-                return Err(AppError::InternalServerErrorGeneric(format!("Unsupported subscription tier: {}", user_tier)));
+                return Err(AppError::InternalServerErrorGeneric(format!(
+                    "Unsupported subscription tier: {}",
+                    user_tier
+                )));
             }
         }
 
@@ -476,11 +520,16 @@ pub async fn generate_chat_response(
             let credit_service = CreditService::new(state_arc.config.clone());
 
             if !credit_service.is_enabled() {
-                return Err(AppError::BadRequest("Credit system is not enabled".to_string()));
+                return Err(AppError::BadRequest(
+                    "Credit system is not enabled".to_string(),
+                ));
             }
 
             // Reserve credits atomically
-            let description = format!("AI model usage: {} for session {}", model_to_use, session_id);
+            let description = format!(
+                "AI model usage: {} for session {}",
+                model_to_use, session_id
+            );
             let metadata = serde_json::json!({
                 "session_id": session_id,
                 "character_id": char_id,
@@ -590,7 +639,7 @@ pub async fn generate_chat_response(
         // For variants, we don't save a new user message since it already exists
         // Instead, we need to find the existing user message that prompted the original response
         debug!(session_id = %session_id, variant_of = ?payload.variant_of, "Skipping user message save for variant creation - user message already exists");
-        
+
         // For now, we'll create a placeholder since the agent analysis expects a user message
         // In the future, we might want to find the actual user message that prompted the variant
         use crate::models::chats::{ChatMessage, MessageRole as DbMessageRole};
@@ -615,24 +664,22 @@ pub async fn generate_chat_response(
         }
     } else {
         // Normal flow: save new user message
-        match chat::message_handling::save_message(
-            chat::message_handling::SaveMessageParams {
-                state: state_arc.clone(),
-                session_id,
-                user_id: user_id_value,
-                message_type_enum: MessageRole::User,
-                content: &current_user_content_text,
-                role_str: user_message_struct_to_save.role.clone(),
-                parts: user_message_struct_to_save.parts.clone(),
-                attachments: user_message_struct_to_save.attachments.clone(),
-                user_dek_secret_box: Some(session_dek_arc.clone()),
-                model_name: model_to_use.clone(),
-                raw_prompt_debug: None, // User messages don't need raw prompt debug
-                status: crate::models::chats::MessageStatus::Completed,
-                error_message: None,
-                variant_of: None, // User messages don't create variants
-            },
-        )
+        match chat::message_handling::save_message(chat::message_handling::SaveMessageParams {
+            state: state_arc.clone(),
+            session_id,
+            user_id: user_id_value,
+            message_type_enum: MessageRole::User,
+            content: &current_user_content_text,
+            role_str: user_message_struct_to_save.role.clone(),
+            parts: user_message_struct_to_save.parts.clone(),
+            attachments: user_message_struct_to_save.attachments.clone(),
+            user_dek_secret_box: Some(session_dek_arc.clone()),
+            model_name: model_to_use.clone(),
+            raw_prompt_debug: None, // User messages don't need raw prompt debug
+            status: crate::models::chats::MessageStatus::Completed,
+            error_message: None,
+            variant_of: None, // User messages don't create variants
+        })
         .await
         {
             Ok(saved_msg) => {
@@ -777,7 +824,7 @@ pub async fn generate_chat_response(
                         .await
                     {
                         Ok(result) => {
-                            info!(%session_id, tokens_used = result.total_tokens_used, 
+                            info!(%session_id, tokens_used = result.total_tokens_used,
                                   "Pre-processing agent completed successfully");
                             (Some(result.analysis_summary), result.analysis_id)
                         }
@@ -804,7 +851,8 @@ pub async fn generate_chat_response(
         user_id_value,
         session_id,
         Some(&*session_dek_arc),
-    ).await?;
+    )
+    .await?;
     let prompt_template_id = session_settings.prompt_template_id;
 
     // Call the new prompt builder
@@ -1194,7 +1242,10 @@ pub async fn generate_chat_response(
                     // Extract token usage from LLM response
                     let prompt_tokens = chat_response.usage.prompt_tokens.unwrap_or(0);
                     let completion_tokens = chat_response.usage.completion_tokens.unwrap_or(0);
-                    let total_tokens = chat_response.usage.total_tokens.unwrap_or(prompt_tokens + completion_tokens);
+                    let total_tokens = chat_response
+                        .usage
+                        .total_tokens
+                        .unwrap_or(prompt_tokens + completion_tokens);
 
                     info!(
                         %session_id,
@@ -1208,46 +1259,48 @@ pub async fn generate_chat_response(
                     // Track usage if enabled
                     #[cfg(feature = "payment")]
                     if should_track_usage && total_tokens > 0 {
-                        use crate::services::payment::UsageTrackingService;
                         use crate::services::encryption_service::EncryptionService;
+                        use crate::services::payment::UsageTrackingService;
 
                         let conn = state_arc.pool.get().await;
                         if let Ok(conn) = conn {
                             let usage_service = UsageTrackingService::new(
                                 state_arc.config.as_ref().clone(),
-                                EncryptionService::new()
+                                EncryptionService::new(),
                             );
 
                             let subscription_id = None; // TODO: Get from user's subscription
                             let mut model_usage = std::collections::HashMap::new();
                             model_usage.insert(model_to_use.clone(), total_tokens as i32);
 
-                            let metadata = Some(crate::services::payment::usage_tracking_service::UsageMetadata {
-                                model_usage,
-                                feature_usage: std::collections::HashMap::new(),
-                                request_count: 1,
-                                last_activity: chrono::Utc::now(),
-                            });
+                            let metadata = Some(
+                                crate::services::payment::usage_tracking_service::UsageMetadata {
+                                    model_usage,
+                                    feature_usage: std::collections::HashMap::new(),
+                                    request_count: 1,
+                                    last_activity: chrono::Utc::now(),
+                                },
+                            );
 
-                            let track_result = conn.interact(move |conn| {
-                                futures::executor::block_on(
-                                    usage_service.track_usage(
+                            let track_result = conn
+                                .interact(move |conn| {
+                                    futures::executor::block_on(usage_service.track_usage(
                                         conn,
                                         user_id_value,
                                         subscription_id,
                                         total_tokens as i32,
-                                        metadata
-                                    )
-                                )
-                            }).await;
+                                        metadata,
+                                    ))
+                                })
+                                .await;
 
                             match track_result {
                                 Ok(Ok(_)) => {
                                     debug!(%session_id, "Usage tracked successfully");
-                                },
+                                }
                                 Ok(Err(e)) => {
                                     warn!(%session_id, "Failed to track usage: {}", e);
-                                },
+                                }
                                 Err(e) => {
                                     warn!(%session_id, "Database error tracking usage: {}", e);
                                 }
@@ -1259,27 +1312,41 @@ pub async fn generate_chat_response(
                     #[cfg(feature = "payment")]
                     let actual_credit_cost = if prompt_tokens > 0 || completion_tokens > 0 {
                         // Load token-based pricing from config
-                        let config_path = std::path::Path::new("backend/config/subscription_tiers.json");
-                        let config_content = std::fs::read_to_string(config_path)
-                            .map_err(|_| AppError::InternalServerErrorGeneric("Failed to load subscription tiers config".to_string()))?;
+                        let config_path =
+                            std::path::Path::new("backend/config/subscription_tiers.json");
+                        let config_content =
+                            std::fs::read_to_string(config_path).map_err(|_| {
+                                AppError::InternalServerErrorGeneric(
+                                    "Failed to load subscription tiers config".to_string(),
+                                )
+                            })?;
                         let tiers_config: serde_json::Value = serde_json::from_str(&config_content)
-                            .map_err(|_| AppError::InternalServerErrorGeneric("Failed to parse subscription tiers config".to_string()))?;
+                            .map_err(|_| {
+                                AppError::InternalServerErrorGeneric(
+                                    "Failed to parse subscription tiers config".to_string(),
+                                )
+                            })?;
 
                         let token_pricing = &tiers_config["credit_system"]["token_pricing"];
                         let model_pricing = &token_pricing[&model_to_use];
 
                         let (prompt_rate, completion_rate) = if !model_pricing.is_null() {
                             (
-                                model_pricing["prompt_credits_per_1k"].as_i64().unwrap_or(10) as i32,
-                                model_pricing["completion_credits_per_1k"].as_i64().unwrap_or(40) as i32
+                                model_pricing["prompt_credits_per_1k"]
+                                    .as_i64()
+                                    .unwrap_or(10) as i32,
+                                model_pricing["completion_credits_per_1k"]
+                                    .as_i64()
+                                    .unwrap_or(40) as i32,
                             )
                         } else {
                             // Default rates if model not in config
                             (10, 40)
                         };
 
-                        let prompt_cost = (prompt_tokens as i32 * prompt_rate + 999) / 1000;  // Round up
-                        let completion_cost = (completion_tokens as i32 * completion_rate + 999) / 1000;  // Round up
+                        let prompt_cost = (prompt_tokens as i32 * prompt_rate + 999) / 1000; // Round up
+                        let completion_cost =
+                            (completion_tokens as i32 * completion_rate + 999) / 1000; // Round up
                         let total_cost = prompt_cost + completion_cost;
 
                         info!(
@@ -1295,12 +1362,14 @@ pub async fn generate_chat_response(
 
                         total_cost
                     } else {
-                        credits_required  // Fall back to fixed cost if no token data
+                        credits_required // Fall back to fixed cost if no token data
                     };
 
                     // Confirm credit reservation on successful LLM response
                     #[cfg(feature = "payment")]
-                    if let Some((credit_service, reservation_id, reserved_credits)) = &credit_reservation {
+                    if let Some((credit_service, reservation_id, reserved_credits)) =
+                        &credit_reservation
+                    {
                         let conn_result = state_arc.pool.get().await;
                         match conn_result {
                             Ok(conn) => {
@@ -1310,9 +1379,15 @@ pub async fn generate_chat_response(
                                 // If actual cost differs from reserved amount, adjust
                                 // For now, we'll just confirm the reservation
                                 // TODO: Implement partial refund if actual_credit_cost < reserved_credits
-                                let confirm_result = conn.interact(move |conn| {
-                                    service_clone.confirm_reservation(conn, user_id_value, reservation_id_clone)
-                                }).await;
+                                let confirm_result = conn
+                                    .interact(move |conn| {
+                                        service_clone.confirm_reservation(
+                                            conn,
+                                            user_id_value,
+                                            reservation_id_clone,
+                                        )
+                                    })
+                                    .await;
 
                                 match confirm_result {
                                     Ok(Ok(balance)) => {
@@ -1322,7 +1397,7 @@ pub async fn generate_chat_response(
                                             new_balance = balance.balance,
                                             "Credit reservation confirmed after successful LLM response"
                                         );
-                                    },
+                                    }
                                     Ok(Err(e)) => {
                                         error!(
                                             %session_id,
@@ -1331,7 +1406,7 @@ pub async fn generate_chat_response(
                                             "Failed to confirm credit reservation - credits may be stuck in pending state"
                                         );
                                         // Continue processing - don't fail the request over confirmation failure
-                                    },
+                                    }
                                     Err(e) => {
                                         error!(
                                             %session_id,
@@ -1342,7 +1417,7 @@ pub async fn generate_chat_response(
                                         // Continue processing
                                     }
                                 }
-                            },
+                            }
                             Err(e) => {
                                 error!(
                                     %session_id,
@@ -1397,7 +1472,7 @@ pub async fn generate_chat_response(
 
                                 // Update pre-processing analysis with assistant message ID if we have one
                                 if let Some(analysis_id) = pre_processing_analysis_id {
-                                    debug!(%session_id, %analysis_id, assistant_message_id = %saved_message.id, 
+                                    debug!(%session_id, %analysis_id, assistant_message_id = %saved_message.id,
                                            "Updating pre-processing analysis with assistant message ID");
 
                                     let conn = state_arc.pool.get().await;
@@ -1548,21 +1623,25 @@ pub async fn generate_chat_response(
 
                     // Refund credit reservation on LLM failure
                     #[cfg(feature = "payment")]
-                    if let Some((credit_service, reservation_id, credits_amount)) = &credit_reservation {
+                    if let Some((credit_service, reservation_id, credits_amount)) =
+                        &credit_reservation
+                    {
                         let conn_result = state_arc.pool.get().await;
                         match conn_result {
                             Ok(conn) => {
                                 let service_clone = credit_service.clone();
                                 let reservation_id_clone = *reservation_id; // Copy the UUID
                                 let error_reason = format!("LLM call failed: {}", error_str);
-                                let refund_result = conn.interact(move |conn| {
-                                    service_clone.refund_reservation(
-                                        conn,
-                                        user_id_value,
-                                        reservation_id_clone,
-                                        &error_reason
-                                    )
-                                }).await;
+                                let refund_result = conn
+                                    .interact(move |conn| {
+                                        service_clone.refund_reservation(
+                                            conn,
+                                            user_id_value,
+                                            reservation_id_clone,
+                                            &error_reason,
+                                        )
+                                    })
+                                    .await;
 
                                 match refund_result {
                                     Ok(Ok(balance)) => {
@@ -1573,7 +1652,7 @@ pub async fn generate_chat_response(
                                             new_balance = balance.balance,
                                             "Credit reservation refunded due to LLM failure"
                                         );
-                                    },
+                                    }
                                     Ok(Err(e)) => {
                                         error!(
                                             %session_id,
@@ -1582,7 +1661,7 @@ pub async fn generate_chat_response(
                                             "Failed to refund credit reservation after LLM failure"
                                         );
                                         // Continue with error handling - user loses credits but gets error message
-                                    },
+                                    }
                                     Err(e) => {
                                         error!(
                                             %session_id,
@@ -1592,7 +1671,7 @@ pub async fn generate_chat_response(
                                         );
                                     }
                                 }
-                            },
+                            }
                             Err(e) => {
                                 error!(
                                     %session_id,
@@ -3064,8 +3143,8 @@ pub async fn impersonate_handler(
             "What should the user say in response to this conversation?".to_string(),
         ),
         analysis_mode: None, // Not applicable for suggested actions
-        guidance: None, // No guidance for impersonation
-        variant_of: None, // Impersonation doesn't create variants
+        guidance: None,      // No guidance for impersonation
+        variant_of: None,    // Impersonation doesn't create variants
     };
 
     // Call the existing generate_chat_response handler logic but collect the response
@@ -3287,9 +3366,9 @@ async fn select_message_variant_handler(
     Json(payload): Json<crate::models::chats::SelectVariantRequest>,
 ) -> Result<Json<crate::models::chats::MessageResponse>, AppError> {
     // Validate payload
-    payload.validate().map_err(|e| {
-        AppError::BadRequest(format!("Invalid request: {}", e))
-    })?;
+    payload
+        .validate()
+        .map_err(|e| AppError::BadRequest(format!("Invalid request: {}", e)))?;
 
     let user = auth_session
         .user

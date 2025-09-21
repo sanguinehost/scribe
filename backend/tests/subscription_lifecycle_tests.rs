@@ -9,13 +9,13 @@
 
 #[cfg(feature = "payment")]
 mod subscription_lifecycle_tests {
-    use scribe_backend::{
-        test_helpers::{spawn_app, TestApp, TestDataGuard},
-        middleware::plan_enforcement::EnforcementConfig,
-        config::Config,
-    };
     use diesel::prelude::*;
     use reqwest::{Client, StatusCode};
+    use scribe_backend::{
+        config::Config,
+        middleware::plan_enforcement::EnforcementConfig,
+        test_helpers::{TestApp, TestDataGuard, spawn_app},
+    };
     use serde_json::json;
     use std::env;
 
@@ -23,18 +23,21 @@ mod subscription_lifecycle_tests {
     fn test_payment_services_can_be_created() {
         // Test that payment services can be instantiated with configuration
         use scribe_backend::services::payment::paddle_service::PaddleService;
-        
+
         dotenvy::dotenv().ok(); // Load environment variables from .env file
         let config = Config::load().expect("Failed to load config");
-        
+
         #[cfg(feature = "payment")]
         {
             let paddle_service = PaddleService::new(config.payment.clone());
-            
-            assert!(!paddle_service.should_enforce_limits(), "Should not enforce limits in development");
+
+            assert!(
+                !paddle_service.should_enforce_limits(),
+                "Should not enforce limits in development"
+            );
             assert_eq!(paddle_service.free_tier_token_limit(), 50000);
             assert_eq!(paddle_service.grace_period_days(), 7);
-            
+
             println!("✓ Paddle service can be created successfully");
         }
     }
@@ -48,18 +51,18 @@ mod subscription_lifecycle_tests {
             required_features: vec![],
             enforce_limits: true,
         };
-        
+
         let premium_config = EnforcementConfig {
             tokens_required: 50,
             requires_subscription: true,
             required_features: vec!["advanced_models".to_string()],
             enforce_limits: true,
         };
-        
+
         assert!(premium_config.tokens_required >= standard_config.tokens_required);
         assert!(premium_config.requires_subscription);
         assert!(!standard_config.requires_subscription);
-        
+
         println!("✓ Plan enforcement configurations are correctly structured");
     }
 
@@ -70,7 +73,7 @@ mod subscription_lifecycle_tests {
 
         // Simple test to verify payment tables exist by accessing them
         println!("✓ Database connection established for payment system tests");
-        
+
         // The fact that migrations ran and the app started successfully indicates
         // that all payment tables were created correctly
         println!("✓ Payment system database schema validated through app startup");
@@ -81,20 +84,38 @@ mod subscription_lifecycle_tests {
         // Test that payment configuration loads correctly
         dotenvy::dotenv().ok(); // Load environment variables from .env file
         let config = Config::load().expect("Failed to load config");
-        
+
         #[cfg(feature = "payment")]
         {
             // These assertions only work when payment feature is enabled
-            assert!(config.payment.paddle_api_key.is_some(), "Paddle API key should be loaded");
-            assert!(config.payment.paddle_webhook_secret.is_some(), "Webhook secret should be loaded");
-            assert!(config.payment.paddle_sandbox_mode, "Should be in sandbox mode for development");
+            assert!(
+                config.payment.paddle_api_key.is_some(),
+                "Paddle API key should be loaded"
+            );
+            assert!(
+                config.payment.paddle_webhook_secret.is_some(),
+                "Webhook secret should be loaded"
+            );
+            assert!(
+                config.payment.paddle_sandbox_mode,
+                "Should be in sandbox mode for development"
+            );
             assert_eq!(config.payment.free_tier_token_limit, 50000);
             assert_eq!(config.payment.grace_period_days, 7);
-            assert!(!config.payment.enforce_limits, "Should not enforce limits in development");
-            
+            assert!(
+                !config.payment.enforce_limits,
+                "Should not enforce limits in development"
+            );
+
             println!("✓ Payment configuration loaded successfully");
-            println!("✓ Paddle sandbox mode: {}", config.payment.paddle_sandbox_mode);
-            println!("✓ Free tier limit: {}", config.payment.free_tier_token_limit);
+            println!(
+                "✓ Paddle sandbox mode: {}",
+                config.payment.paddle_sandbox_mode
+            );
+            println!(
+                "✓ Free tier limit: {}",
+                config.payment.free_tier_token_limit
+            );
         }
     }
 
@@ -145,30 +166,44 @@ mod subscription_lifecycle_tests {
     fn test_environment_variables_configured() {
         // Test that environment variables can be loaded (may not be present in all test environments)
         dotenvy::dotenv().ok(); // Load environment variables from .env file
-        
+
         if let Ok(paddle_api_key) = env::var("PADDLE_API_KEY") {
-            assert!(!paddle_api_key.is_empty(), "Paddle API key should not be empty");
+            assert!(
+                !paddle_api_key.is_empty(),
+                "Paddle API key should not be empty"
+            );
             println!("✓ PADDLE_API_KEY is configured");
         } else {
             println!("⚠ PADDLE_API_KEY not set in test environment (this is expected in CI)");
         }
 
         if let Ok(webhook_secret) = env::var("PADDLE_WEBHOOK_SECRET") {
-            assert!(!webhook_secret.is_empty(), "Webhook secret should not be empty");
+            assert!(
+                !webhook_secret.is_empty(),
+                "Webhook secret should not be empty"
+            );
             println!("✓ PADDLE_WEBHOOK_SECRET is configured");
         } else {
-            println!("⚠ PADDLE_WEBHOOK_SECRET not set in test environment (this is expected in CI)");
+            println!(
+                "⚠ PADDLE_WEBHOOK_SECRET not set in test environment (this is expected in CI)"
+            );
         }
 
         if let Ok(product_id) = env::var("PADDLE_PRODUCT_ID") {
-            assert_eq!(product_id, "pro_01k4qbwv2tf73cvy1nffve71w3", "Product ID should match expected value");
+            assert_eq!(
+                product_id, "pro_01k4qbwv2tf73cvy1nffve71w3",
+                "Product ID should match expected value"
+            );
             println!("✓ Product ID: {}", product_id);
         } else {
             println!("⚠ PADDLE_PRODUCT_ID not set in test environment (this is expected in CI)");
         }
 
         if let Ok(price_id) = env::var("PADDLE_PRICE_ID") {
-            assert_eq!(price_id, "pri_01k4qbyetvn495nzv9nkqhxz02", "Price ID should match expected value");
+            assert_eq!(
+                price_id, "pri_01k4qbyetvn495nzv9nkqhxz02",
+                "Price ID should match expected value"
+            );
             println!("✓ Price ID: {}", price_id);
         } else {
             println!("⚠ PADDLE_PRICE_ID not set in test environment (this is expected in CI)");

@@ -34,7 +34,9 @@ use secrecy::SecretBox; // Ensure SecretBox is imported
 // Removed incorrect ValidatedJson import
 use crate::services::chat;
 use crate::state::AppState;
-use diesel::{ExpressionMethods, OptionalExtension, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper};
+use diesel::{
+    ExpressionMethods, OptionalExtension, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
+};
 use serde_json::json;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -77,7 +79,10 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             "/messages/:id",
             get(get_message_by_id_handler).delete(delete_message_handler),
         )
-        .route("/messages/:id/select-variant", post(select_message_variant_handler))
+        .route(
+            "/messages/:id/select-variant",
+            post(select_message_variant_handler),
+        )
         .route("/messages/:id/vote", post(vote_message_handler))
         .route(
             "/messages/:id/trailing",
@@ -800,7 +805,6 @@ async fn get_default_variant_content(
     }
 }
 
-
 /// Helper function to decrypt and transform messages for client response with variant support
 async fn process_messages_for_response(
     messages_db: Vec<Message>,
@@ -833,11 +837,19 @@ async fn process_messages_for_response(
                 msg_db.current_variant_index,
                 msg_db.id
             );
-            match get_variant_content_by_index(pool.clone(), msg_db.id, msg_db.current_variant_index, user_id, dek).await? {
+            match get_variant_content_by_index(
+                pool.clone(),
+                msg_db.id,
+                msg_db.current_variant_index,
+                user_id,
+                dek,
+            )
+            .await?
+            {
                 Some(variant_content) => {
                     tracing::info!("✅ Found variant content for message {}", msg_db.id);
                     variant_content
-                },
+                }
                 None => {
                     // Fallback to original message content if variant not found
                     tracing::warn!(
@@ -891,10 +903,10 @@ async fn process_messages_for_response(
             variant_count: msg_db.variant_count,
             current_variant_index: msg_db.current_variant_index,
             is_variant: msg_db.variant_count > 0, // True if this message has variants
-            parent_message_id: None, // TODO: Add parent_message_id to Message struct
-            variants: None, // TODO: Load actual variants
+            parent_message_id: None,              // TODO: Add parent_message_id to Message struct
+            variants: None,                       // TODO: Load actual variants
         };
-        
+
         tracing::info!(
             "📤 Sending message response: id={}, variant_count={}, current_variant_index={}, is_variant={}",
             message_response.id,
@@ -902,7 +914,7 @@ async fn process_messages_for_response(
             message_response.current_variant_index,
             message_response.is_variant
         );
-        
+
         responses.push(message_response);
     }
 
@@ -1831,7 +1843,7 @@ async fn get_chat_token_usage_handler(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
+
     // Fetch the chat session to verify ownership and get token statistics
     let user_id = user.id;
     let conn = state.pool.get().await.map_err(|e| {
@@ -1911,7 +1923,7 @@ pub async fn select_message_variant_handler(
 
     let pool = state.pool.clone();
 
-    // Verify the message exists and user has access 
+    // Verify the message exists and user has access
     let message_db = pool
         .get()
         .await
@@ -1964,13 +1976,21 @@ pub async fn select_message_variant_handler(
     // Get the content for the selected variant
     let content = if payload.variant_index == 0 {
         // Variant 0 means use original message content
-        let client_message = updated_message.clone().into_decrypted_for_client(Some(&dek.0))?;
+        let client_message = updated_message
+            .clone()
+            .into_decrypted_for_client(Some(&dek.0))?;
         client_message.content
     } else {
         // Get content from the variants table
-        get_variant_content_by_index(pool.clone(), message_id, payload.variant_index, user.id, &dek)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Variant not found".to_string()))?
+        get_variant_content_by_index(
+            pool.clone(),
+            message_id,
+            payload.variant_index,
+            user.id,
+            &dek,
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound("Variant not found".to_string()))?
     };
 
     // Return the updated message response

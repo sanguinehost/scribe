@@ -9,22 +9,22 @@
 
 #[cfg(feature = "payment")]
 mod credit_flow_tests {
+    use diesel::{Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
+    use reqwest::{Client, StatusCode};
     use scribe_backend::{
-        services::payment::CreditService,
-        test_helpers::{spawn_app, TestDataGuard, payment_test_helpers},
+        auth::{AuthError, user_store::Backend as AuthBackend},
         models::{
-            users::{NewUser, User},
             character_card::NewCharacter,
             characters::Character,
-            credit::{CreditTransactionDto, CreditBalance},
+            credit::{CreditBalance, CreditTransactionDto},
+            users::{NewUser, User},
         },
-        auth::{user_store::Backend as AuthBackend, AuthError},
+        services::payment::CreditService,
+        test_helpers::{TestDataGuard, payment_test_helpers, spawn_app},
     };
-    use reqwest::{Client, StatusCode};
     use serde_json::json;
-    use uuid::Uuid;
-    use diesel::{Connection, PgConnection, RunQueryDsl, ExpressionMethods, QueryDsl};
     use std::sync::Arc;
+    use uuid::Uuid;
 
     /// Simple test helper to check that credit deduction endpoint works
     async fn test_credit_deduction_basic() {
@@ -49,8 +49,8 @@ mod credit_flow_tests {
         // But it confirms the endpoint exists and credit system is working
         assert!(
             response.status() == StatusCode::UNAUTHORIZED
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::NOT_FOUND,
+                || response.status() == StatusCode::BAD_REQUEST
+                || response.status() == StatusCode::NOT_FOUND,
             "Credit endpoint should exist (got {})",
             response.status()
         );
@@ -63,7 +63,10 @@ mod credit_flow_tests {
 
         // Test that the credit service can be created and initialized
         let credit_service = CreditService::new(app.config.clone());
-        assert!(credit_service.is_enabled(), "Credit system should be enabled in test config");
+        assert!(
+            credit_service.is_enabled(),
+            "Credit system should be enabled in test config"
+        );
     }
 
     #[tokio::test]
@@ -101,8 +104,8 @@ mod credit_flow_tests {
         // This confirms the endpoint exists and the credit checking middleware is in place
         assert!(
             response.status() == StatusCode::UNAUTHORIZED
-            || response.status() == StatusCode::FORBIDDEN
-            || response.status() == StatusCode::NOT_FOUND,
+                || response.status() == StatusCode::FORBIDDEN
+                || response.status() == StatusCode::NOT_FOUND,
             "Chat generation endpoint should exist and require auth (got {})",
             response.status()
         );
@@ -115,7 +118,10 @@ mod credit_flow_tests {
 
         // Test that subscription tier configuration can be loaded
         let config_path = std::path::Path::new("config/subscription_tiers.json");
-        assert!(config_path.exists(), "Subscription tiers configuration should exist");
+        assert!(
+            config_path.exists(),
+            "Subscription tiers configuration should exist"
+        );
 
         let config_content = std::fs::read_to_string(config_path)
             .expect("Should be able to read subscription tiers config");
@@ -124,21 +130,42 @@ mod credit_flow_tests {
             .expect("Subscription tiers config should be valid JSON");
 
         // Verify basic structure
-        assert!(tiers_config["tiers"]["free"].is_object(), "Free tier should be defined");
-        assert!(tiers_config["tiers"]["basic"].is_object(), "Basic tier should be defined");
-        assert!(tiers_config["tiers"]["premium"].is_object(), "Premium tier should be defined");
+        assert!(
+            tiers_config["tiers"]["free"].is_object(),
+            "Free tier should be defined"
+        );
+        assert!(
+            tiers_config["tiers"]["basic"].is_object(),
+            "Basic tier should be defined"
+        );
+        assert!(
+            tiers_config["tiers"]["premium"].is_object(),
+            "Premium tier should be defined"
+        );
 
         // Verify credit system configuration
-        assert!(tiers_config["credit_system"]["enabled"].as_bool().unwrap_or(false),
-               "Credit system should be enabled");
-        assert!(tiers_config["credit_system"]["model_costs"].is_object(),
-               "Model costs should be defined");
+        assert!(
+            tiers_config["credit_system"]["enabled"]
+                .as_bool()
+                .unwrap_or(false),
+            "Credit system should be enabled"
+        );
+        assert!(
+            tiers_config["credit_system"]["model_costs"].is_object(),
+            "Model costs should be defined"
+        );
 
         // Verify specific model costs exist
         let model_costs = &tiers_config["credit_system"]["model_costs"];
-        assert!(model_costs["gemini-2.5-pro"].is_number(), "gemini-2.5-pro cost should be defined");
-        assert_eq!(model_costs["gemini-2.5-pro"].as_i64().unwrap(), 50,
-                  "gemini-2.5-pro should cost 50 credits");
+        assert!(
+            model_costs["gemini-2.5-pro"].is_number(),
+            "gemini-2.5-pro cost should be defined"
+        );
+        assert_eq!(
+            model_costs["gemini-2.5-pro"].as_i64().unwrap(),
+            50,
+            "gemini-2.5-pro should cost 50 credits"
+        );
     }
 
     #[tokio::test]
@@ -150,10 +177,16 @@ mod credit_flow_tests {
         let credit_service = CreditService::new(app.config.clone());
 
         // Test that credit service is enabled in test configuration
-        assert!(credit_service.is_enabled(), "Credit system should be enabled in test config");
+        assert!(
+            credit_service.is_enabled(),
+            "Credit system should be enabled in test config"
+        );
 
         // Create a test user first
-        let (user, _character) = app.db_pool.get().await
+        let (user, _character) = app
+            .db_pool
+            .get()
+            .await
             .expect("Failed to get database connection")
             .interact(|conn| payment_test_helpers::create_test_user_with_character(conn))
             .await
@@ -165,13 +198,21 @@ mod credit_flow_tests {
         assert!(result.is_ok(), "Should be able to initialize user credits");
 
         // Test adding credits
-        let add_result = payment_test_helpers::add_credits_to_user(&app, user.id, 100, "Test credits").await;
+        let add_result =
+            payment_test_helpers::add_credits_to_user(&app, user.id, 100, "Test credits").await;
         assert!(add_result.is_ok(), "Should be able to add credits");
 
         // Test getting balance
         let balance_result = payment_test_helpers::get_user_credit_balance(&app, user.id).await;
-        assert!(balance_result.is_ok(), "Should be able to get credit balance");
-        assert_eq!(balance_result.unwrap().balance, 100, "Balance should be 100 credits");
+        assert!(
+            balance_result.is_ok(),
+            "Should be able to get credit balance"
+        );
+        assert_eq!(
+            balance_result.unwrap().balance,
+            100,
+            "Balance should be 100 credits"
+        );
     }
 
     #[tokio::test]
@@ -180,7 +221,10 @@ mod credit_flow_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         // Create test user with minimal credits
-        let (user, character) = app.db_pool.get().await
+        let (user, character) = app
+            .db_pool
+            .get()
+            .await
             .expect("Failed to get database connection")
             .interact(|conn| payment_test_helpers::create_test_user_with_character(conn))
             .await
@@ -189,11 +233,13 @@ mod credit_flow_tests {
 
         // Add only a few credits (insufficient for expensive model)
         payment_test_helpers::add_credits_to_user(&app, user.id, 10, "Insufficient test credits")
-            .await.expect("Failed to add credits to user");
+            .await
+            .expect("Failed to add credits to user");
 
         // Create session for the user
         let session_key = payment_test_helpers::create_authenticated_session(&app, &user)
-            .await.expect("Failed to create session");
+            .await
+            .expect("Failed to create session");
 
         // Test chat generation with expensive model (costs 50 credits, user has 10)
         let payload = json!({
@@ -212,21 +258,27 @@ mod credit_flow_tests {
             "POST",
             &format!("/api/chat/{}/generate", character.id),
             Some(payload),
-        ).await.expect("Failed to execute request");
+        )
+        .await
+        .expect("Failed to execute request");
 
         // Should be blocked due to insufficient credits or return unauthorized (if credit checking not implemented yet)
         assert!(
             response.status() == StatusCode::PAYMENT_REQUIRED
-            || response.status() == StatusCode::UNAUTHORIZED
-            || response.status() == StatusCode::FORBIDDEN,
+                || response.status() == StatusCode::UNAUTHORIZED
+                || response.status() == StatusCode::FORBIDDEN,
             "Chat generation should be blocked due to insufficient credits or authentication (got {})",
             response.status()
         );
 
         // Verify credits were not consumed for failed request
         let balance = payment_test_helpers::get_user_credit_balance(&app, user.id)
-            .await.expect("Failed to get credit balance");
-        assert_eq!(balance.balance, 10, "Credits should not have been consumed for failed request");
+            .await
+            .expect("Failed to get credit balance");
+        assert_eq!(
+            balance.balance, 10,
+            "Credits should not have been consumed for failed request"
+        );
     }
 
     #[tokio::test]
@@ -235,7 +287,10 @@ mod credit_flow_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         // Create test user
-        let (user, _character) = app.db_pool.get().await
+        let (user, _character) = app
+            .db_pool
+            .get()
+            .await
             .expect("Failed to get database connection")
             .interact(|conn| payment_test_helpers::create_test_user_with_character(conn))
             .await
@@ -244,17 +299,28 @@ mod credit_flow_tests {
 
         // Add credits and verify transaction is recorded
         payment_test_helpers::add_credits_to_user(&app, user.id, 100, "Test transaction")
-            .await.expect("Failed to add credits");
+            .await
+            .expect("Failed to add credits");
 
         // Get transaction history
         let transactions = payment_test_helpers::get_user_transaction_history(&app, user.id)
-            .await.expect("Failed to get transaction history");
+            .await
+            .expect("Failed to get transaction history");
 
-        assert!(!transactions.is_empty(), "Transaction history should not be empty");
+        assert!(
+            !transactions.is_empty(),
+            "Transaction history should not be empty"
+        );
         let latest_transaction = &transactions[0];
-        assert_eq!(latest_transaction.amount, 100, "Transaction amount should match");
+        assert_eq!(
+            latest_transaction.amount, 100,
+            "Transaction amount should match"
+        );
         // Note: description is encrypted in CreditTransaction, so we can't check it directly
-        assert_eq!(latest_transaction.transaction_type, "test_credit", "Transaction type should match");
+        assert_eq!(
+            latest_transaction.transaction_type, "test_credit",
+            "Transaction type should match"
+        );
     }
 
     #[tokio::test]
@@ -263,7 +329,10 @@ mod credit_flow_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         // Create test user with some credits
-        let (user, character) = app.db_pool.get().await
+        let (user, character) = app
+            .db_pool
+            .get()
+            .await
             .expect("Failed to get database connection")
             .interact(|conn| payment_test_helpers::create_test_user_with_character(conn))
             .await
@@ -272,11 +341,13 @@ mod credit_flow_tests {
 
         // Add credits to user
         payment_test_helpers::add_credits_to_user(&app, user.id, 50, "Test credits")
-            .await.expect("Failed to add credits to user");
+            .await
+            .expect("Failed to add credits to user");
 
         // Create session for the user
         let session_key = payment_test_helpers::create_authenticated_session(&app, &user)
-            .await.expect("Failed to create session");
+            .await
+            .expect("Failed to create session");
 
         // Test chat generation with free model (costs 0 credits according to config)
         let payload = json!({
@@ -295,21 +366,27 @@ mod credit_flow_tests {
             "POST",
             &format!("/api/chat/{}/generate", character.id),
             Some(payload),
-        ).await.expect("Failed to execute request");
+        )
+        .await
+        .expect("Failed to execute request");
 
         // Should succeed since free model (or return auth error if not properly authenticated)
         assert!(
             response.status().is_success()
-            || response.status() == StatusCode::ACCEPTED
-            || response.status() == StatusCode::UNAUTHORIZED,
+                || response.status() == StatusCode::ACCEPTED
+                || response.status() == StatusCode::UNAUTHORIZED,
             "Free model chat generation should succeed or return auth error (got {})",
             response.status()
         );
 
         // Verify credits were NOT consumed
         let balance = payment_test_helpers::get_user_credit_balance(&app, user.id)
-            .await.expect("Failed to get credit balance");
-        assert_eq!(balance.balance, 50, "Credits should not be consumed for free model");
+            .await
+            .expect("Failed to get credit balance");
+        assert_eq!(
+            balance.balance, 50,
+            "Credits should not be consumed for free model"
+        );
     }
 }
 

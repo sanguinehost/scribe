@@ -1,4 +1,7 @@
-use crate::privacy::{LoggableUserId, LoggableSessionId, LoggableCharacterId, LoggablePersonaId, PrivacyConfig, SanitizedString};
+use crate::privacy::{
+    LoggableCharacterId, LoggablePersonaId, LoggableSessionId, LoggableUserId, PrivacyConfig,
+    SanitizedString,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use tracing::field::{Field, Visit};
@@ -7,7 +10,7 @@ use tracing_subscriber::layer::{Context, Layer};
 use uuid::Uuid;
 
 /// Global privacy configuration (loaded from environment or defaults)
-static PRIVACY_CONFIG: std::sync::LazyLock<PrivacyConfig> = 
+static PRIVACY_CONFIG: std::sync::LazyLock<PrivacyConfig> =
     std::sync::LazyLock::new(PrivacyConfig::default);
 
 /// Privacy-safe logging macros that automatically obfuscate sensitive data
@@ -91,8 +94,8 @@ impl Default for PrivacyLayer {
     }
 }
 
-impl<S> Layer<S> for PrivacyLayer 
-where 
+impl<S> Layer<S> for PrivacyLayer
+where
     S: Subscriber,
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
@@ -129,28 +132,36 @@ impl<'a> Visit for PrivacyVisitor<'a> {
         let debug_str = format!("{:?}", value);
         self._fields.insert(field_name.to_string(), debug_str);
     }
-    
+
     fn record_str(&mut self, field: &Field, value: &str) {
         let field_name = field.name();
-        
+
         // Check for potential UUID patterns in string fields
         if is_uuid_pattern(value) {
-            tracing::warn!("Potential UUID detected in log field '{}' - consider using privacy wrappers", field_name);
+            tracing::warn!(
+                "Potential UUID detected in log field '{}' - consider using privacy wrappers",
+                field_name
+            );
         }
-        
+
         // Check for potential email patterns
         if is_email_pattern(value) {
-            tracing::warn!("Potential email detected in log field '{}' - consider using privacy wrappers", field_name);
+            tracing::warn!(
+                "Potential email detected in log field '{}' - consider using privacy wrappers",
+                field_name
+            );
         }
-        
-        self._fields.insert(field_name.to_string(), value.to_string());
+
+        self._fields
+            .insert(field_name.to_string(), value.to_string());
     }
 }
 
 /// Check if a string looks like a UUID
 fn is_uuid_pattern(s: &str) -> bool {
-    s.len() == 36 && s.chars().filter(|&c| c == '-').count() == 4 && 
-    s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+    s.len() == 36
+        && s.chars().filter(|&c| c == '-').count() == 4
+        && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
 /// Check if a string looks like an email
@@ -165,7 +176,7 @@ pub fn sanitize_json_value(value: &Value) -> Value {
             if is_uuid_pattern(s) {
                 Value::String("<uuid-redacted>".to_string())
             } else if is_email_pattern(s) {
-                Value::String("<email-redacted>".to_string()) 
+                Value::String("<email-redacted>".to_string())
             } else if s.len() > 100 {
                 // Redact long strings that might be content
                 Value::String(format!("<content-redacted:{}-chars>", s.len()))
@@ -176,29 +187,29 @@ pub fn sanitize_json_value(value: &Value) -> Value {
         Value::Object(obj) => {
             let mut new_obj = serde_json::Map::new();
             for (key, val) in obj {
-                let sanitized_key = if key.to_lowercase().contains("password") || 
-                                       key.to_lowercase().contains("token") ||
-                                       key.to_lowercase().contains("key") {
+                let sanitized_key = if key.to_lowercase().contains("password")
+                    || key.to_lowercase().contains("token")
+                    || key.to_lowercase().contains("key")
+                {
                     key.clone()
                 } else {
                     key.clone()
                 };
-                
-                let sanitized_val = if key.to_lowercase().contains("password") || 
-                                       key.to_lowercase().contains("token") ||
-                                       key.to_lowercase().contains("key") {
+
+                let sanitized_val = if key.to_lowercase().contains("password")
+                    || key.to_lowercase().contains("token")
+                    || key.to_lowercase().contains("key")
+                {
                     Value::String("<credentials-redacted>".to_string())
                 } else {
                     sanitize_json_value(val)
                 };
-                
+
                 new_obj.insert(sanitized_key, sanitized_val);
             }
             Value::Object(new_obj)
         }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(sanitize_json_value).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.iter().map(sanitize_json_value).collect()),
         _ => value.clone(),
     }
 }
@@ -226,18 +237,23 @@ mod tests {
     fn test_json_sanitization() {
         let input = serde_json::json!({
             "user_id": "550e8400-e29b-41d4-a716-446655440000",
-            "email": "user@example.com", 
+            "email": "user@example.com",
             "password": "secret123",
             "content": "Some user content that might be long enough to redact if it exceeds one hundred characters in length which this string does",
             "safe_field": "normal data"
         });
 
         let sanitized = sanitize_json_value(&input);
-        
+
         assert_eq!(sanitized["user_id"], "<uuid-redacted>");
         assert_eq!(sanitized["email"], "<email-redacted>");
         assert_eq!(sanitized["password"], "<credentials-redacted>");
-        assert!(sanitized["content"].as_str().unwrap().starts_with("<content-redacted:"));
+        assert!(
+            sanitized["content"]
+                .as_str()
+                .unwrap()
+                .starts_with("<content-redacted:")
+        );
         assert_eq!(sanitized["safe_field"], "normal data");
     }
 
@@ -245,17 +261,17 @@ mod tests {
     fn test_loggable_wrappers() {
         let user_uuid = Uuid::new_v4();
         let session_uuid = Uuid::new_v4();
-        
+
         let loggable_user = loggable_user_id(user_uuid);
         let loggable_session = loggable_session_id(session_uuid);
-        
+
         let user_str = loggable_user.to_string();
         let session_str = loggable_session.to_string();
-        
+
         assert!(user_str.starts_with("user#"));
         assert!(session_str.starts_with("session#"));
         assert_ne!(user_str, session_str);
-        
+
         // Ensure the original UUIDs are not present in the output
         assert!(!user_str.contains(&user_uuid.to_string()));
         assert!(!session_str.contains(&session_uuid.to_string()));

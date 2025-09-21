@@ -5,7 +5,7 @@ use serde_json::Value as JsonValue;
 use std::fmt;
 use uuid::Uuid;
 
-use crate::schema::{payment_usage_tracking, payment_transactions, plan_features, subscriptions};
+use crate::schema::{payment_transactions, payment_usage_tracking, plan_features, subscriptions};
 
 /// Subscription status types
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

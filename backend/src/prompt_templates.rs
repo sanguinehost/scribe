@@ -64,9 +64,18 @@ impl TemplateManager {
     /// Load embedded default templates
     fn load_embedded_templates(&mut self) {
         let embedded_templates = [
-            ("neutral_roleplay", include_str!("../data/prompt_templates/neutral_roleplay.json")),
-            ("chatbot_dialogue", include_str!("../data/prompt_templates/chatbot_dialogue.json")),
-            ("creative_narrative", include_str!("../data/prompt_templates/creative_narrative.json")),
+            (
+                "neutral_roleplay",
+                include_str!("../data/prompt_templates/neutral_roleplay.json"),
+            ),
+            (
+                "chatbot_dialogue",
+                include_str!("../data/prompt_templates/chatbot_dialogue.json"),
+            ),
+            (
+                "creative_narrative",
+                include_str!("../data/prompt_templates/creative_narrative.json"),
+            ),
         ];
 
         for (template_id, template_json) in embedded_templates {
@@ -81,7 +90,7 @@ impl TemplateManager {
     /// Load templates from files (overrides embedded ones)
     fn load_file_templates(&mut self) {
         let templates_dir = std::path::Path::new("data/prompt_templates");
-        
+
         if !templates_dir.exists() {
             debug!("No prompt_templates directory found, using embedded defaults only");
             return;
@@ -122,16 +131,22 @@ impl TemplateManager {
         // Validate template has required sections
         if !template.sections.contains_key("main") {
             return Err(AppError::BadRequest(
-                "Template must have a 'main' section".to_string()
+                "Template must have a 'main' section".to_string(),
             ));
         }
 
         // Add all sections to minijinja environment
         for (section_name, section_content) in &template.sections {
             let template_key = format!("{}/{}", template.id, section_name);
-            
-            self.env.add_template_owned(template_key, section_content.clone())
-                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to add template section: {}", e)))?;
+
+            self.env
+                .add_template_owned(template_key, section_content.clone())
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!(
+                        "Failed to add template section: {}",
+                        e
+                    ))
+                })?;
         }
 
         debug!(template_id = %template.id, version = %template.version, "Added template");
@@ -161,15 +176,19 @@ impl TemplateManager {
             serde_json::Value::String(s) => {
                 // Remove or escape potentially dangerous template injection patterns
                 let sanitized = s
-                    .replace("{%", "{ %")  // Escape Jinja control structures
-                    .replace("{{", "{ {")  // Escape Jinja expressions
-                    .replace("%}", "% }")  // Escape closing control structures
-                    .replace("}}", "} }")  // Escape closing expressions
-                    .replace("#!", "# !")  // Escape shebang attempts
+                    .replace("{%", "{ %") // Escape Jinja control structures
+                    .replace("{{", "{ {") // Escape Jinja expressions
+                    .replace("%}", "% }") // Escape closing control structures
+                    .replace("}}", "} }") // Escape closing expressions
+                    .replace("#!", "# !") // Escape shebang attempts
                     .chars()
-                    .filter(|&c| c.is_ascii() || c.is_alphanumeric() || " \t\n\r!@#$%^&*()-_+=[]{}|\\:;\"'<>,.?/~`".contains(c))
+                    .filter(|&c| {
+                        c.is_ascii()
+                            || c.is_alphanumeric()
+                            || " \t\n\r!@#$%^&*()-_+=[]{}|\\:;\"'<>,.?/~`".contains(c)
+                    })
                     .collect::<String>();
-                
+
                 // Limit length to prevent memory exhaustion
                 if sanitized.len() > 10000 {
                     serde_json::Value::String(format!("{}...[truncated]", &sanitized[..10000]))
@@ -182,7 +201,7 @@ impl TemplateManager {
                     arr.into_iter()
                         .take(100) // Limit array size
                         .map(|v| self.sanitize_context(v, skip_keys))
-                        .collect()
+                        .collect(),
                 )
             }
             serde_json::Value::Object(obj) => {
@@ -197,7 +216,7 @@ impl TemplateManager {
                                 (k, self.sanitize_context(v, skip_keys))
                             }
                         })
-                        .collect()
+                        .collect(),
                 )
             }
             // Numbers, booleans, and null are safe
@@ -206,48 +225,64 @@ impl TemplateManager {
     }
 
     /// Render a template with the given context (with security hardening)
-    /// 
+    ///
     /// Security measures:
     /// - Input sanitization to prevent template injection
     /// - Context size limits to prevent DoS
     /// - Template fallback to prevent errors
     /// - Logging for security monitoring
-    pub fn render(&self, template_id: &str, context: serde_json::Value) -> Result<String, AppError> {
+    pub fn render(
+        &self,
+        template_id: &str,
+        context: serde_json::Value,
+    ) -> Result<String, AppError> {
         // Validate template_id format for security
         if template_id.is_empty() || template_id.len() > 50 {
             warn!(template_id = %template_id, "Invalid template_id format");
-            return Err(AppError::BadRequest("Invalid template ID format".to_string()));
+            return Err(AppError::BadRequest(
+                "Invalid template ID format".to_string(),
+            ));
         }
-        
+
         // Fall back to neutral_roleplay if template not found
         let actual_template_id = if self.has_template(template_id) {
             template_id
         } else {
-            warn!(requested = template_id, "Template not found, falling back to neutral_roleplay");
+            warn!(
+                requested = template_id,
+                "Template not found, falling back to neutral_roleplay"
+            );
             "neutral_roleplay"
         };
 
         // Get the template object and add sections to context first
-        let template_obj = self.templates.get(actual_template_id)
-            .ok_or_else(|| AppError::InternalServerErrorGeneric("Template disappeared during rendering".to_string()))?;
+        let template_obj = self.templates.get(actual_template_id).ok_or_else(|| {
+            AppError::InternalServerErrorGeneric(
+                "Template disappeared during rendering".to_string(),
+            )
+        })?;
 
         // Convert input context to map for manipulation
         let mut context_map: serde_json::Map<String, serde_json::Value> = match context {
             serde_json::Value::Object(map) => map,
             _ => serde_json::Map::new(),
         };
-        
+
         // For templates with complex Jinja2 in sections, render each section with the full context
         let mut rendered_sections = std::collections::HashMap::new();
         debug!(template_id = %actual_template_id, section_count = template_obj.sections.len(), "Starting section pre-rendering");
-        
+
         for (section_name, section_content) in &template_obj.sections {
             if section_name == "main" {
                 continue; // Skip main section
             }
-            
-            debug!(section = section_name, template_id = actual_template_id, "Attempting to render section");
-            
+
+            debug!(
+                section = section_name,
+                template_id = actual_template_id,
+                "Attempting to render section"
+            );
+
             // Create a temporary environment to render this section
             let mut temp_env = minijinja::Environment::new();
             match temp_env.add_template("temp", section_content) {
@@ -255,20 +290,30 @@ impl TemplateManager {
                     if let Ok(temp_template) = temp_env.get_template("temp") {
                         match temp_template.render(serde_json::Value::Object(context_map.clone())) {
                             Ok(rendered_content) => {
-                                debug!(section = section_name, template_id = actual_template_id, rendered_length = rendered_content.len(), "Section rendered successfully");
+                                debug!(
+                                    section = section_name,
+                                    template_id = actual_template_id,
+                                    rendered_length = rendered_content.len(),
+                                    "Section rendered successfully"
+                                );
                                 rendered_sections.insert(section_name.clone(), rendered_content);
-                            },
+                            }
                             Err(e) => {
                                 // If rendering fails, use raw content
                                 debug!(section = section_name, template_id = actual_template_id, error = %e, "Section failed to render, using raw content");
-                                rendered_sections.insert(section_name.clone(), section_content.clone());
+                                rendered_sections
+                                    .insert(section_name.clone(), section_content.clone());
                             }
                         }
                     } else {
-                        debug!(section = section_name, template_id = actual_template_id, "Failed to get template from temp environment");
+                        debug!(
+                            section = section_name,
+                            template_id = actual_template_id,
+                            "Failed to get template from temp environment"
+                        );
                         rendered_sections.insert(section_name.clone(), section_content.clone());
                     }
-                },
+                }
                 Err(e) => {
                     // If template creation fails, use raw content
                     debug!(section = section_name, template_id = actual_template_id, error = %e, "Failed to add template to temp environment");
@@ -276,31 +321,35 @@ impl TemplateManager {
                 }
             }
         }
-        
+
         // Add rendered sections to context
-        context_map.insert("self".to_string(), serde_json::to_value(&rendered_sections).unwrap_or(serde_json::Value::Null));
-        
+        context_map.insert(
+            "self".to_string(),
+            serde_json::to_value(&rendered_sections).unwrap_or(serde_json::Value::Null),
+        );
+
         let enhanced_context = serde_json::Value::Object(context_map);
-        
+
         // Sanitize context to prevent template injection, but skip the 'self' key containing template sections
         let sanitized_context = self.sanitize_context(enhanced_context, &["self"]);
 
         let template_key = format!("{}/main", actual_template_id);
-        
-        let template = self.env.get_template(&template_key)
-            .map_err(|e| {
-                error!(template_key = %template_key, error = %e, "Failed to get template");
-                AppError::InternalServerErrorGeneric(format!("Failed to get template '{}': {}", template_key, e))
-            })?;
+
+        let template = self.env.get_template(&template_key).map_err(|e| {
+            error!(template_key = %template_key, error = %e, "Failed to get template");
+            AppError::InternalServerErrorGeneric(format!(
+                "Failed to get template '{}': {}",
+                template_key, e
+            ))
+        })?;
 
         debug!(template_id = %actual_template_id, context_keys = ?sanitized_context.as_object().map(|o| o.keys().collect::<Vec<_>>()), "Rendering template with context");
-        
-        let rendered = template.render(sanitized_context)
-            .map_err(|e| {
-                error!(template_id = %actual_template_id, error = %e, "Failed to render template");
-                AppError::InternalServerErrorGeneric(format!("Failed to render template: {}", e))
-            })?;
-            
+
+        let rendered = template.render(sanitized_context).map_err(|e| {
+            error!(template_id = %actual_template_id, error = %e, "Failed to render template");
+            AppError::InternalServerErrorGeneric(format!("Failed to render template: {}", e))
+        })?;
+
         debug!(template_id = %actual_template_id, rendered_length = rendered.len(), "Template rendered successfully");
         Ok(rendered)
     }
@@ -309,19 +358,19 @@ impl TemplateManager {
 /// Global template manager instance
 pub static TEMPLATE_MANAGER: Lazy<TemplateManager> = Lazy::new(|| {
     let mut manager = TemplateManager::new();
-    
+
     // Load embedded templates first
     manager.load_embedded_templates();
-    
+
     // Load file overrides
     manager.load_file_templates();
-    
+
     info!(
         template_count = manager.templates.len(),
         templates = ?manager.templates.keys().collect::<Vec<_>>(),
         "Template manager initialized"
     );
-    
+
     manager
 });
 
@@ -392,7 +441,7 @@ mod tests {
     fn test_fallback_to_default() {
         // This test ensures the global template manager falls back properly
         let manager = &*TEMPLATE_MANAGER;
-        
+
         let context = json!({
             "user": {"name": "TestUser"}
         });
@@ -406,12 +455,12 @@ mod tests {
     #[test]
     fn test_global_template_manager() {
         let manager = &*TEMPLATE_MANAGER;
-        
+
         // Should have at least the embedded templates
         assert!(manager.has_template("neutral_roleplay"));
         assert!(manager.has_template("chatbot_dialogue"));
         assert!(manager.has_template("creative_narrative"));
-        
+
         // Should have at least 3 templates
         assert!(manager.list_templates().len() >= 3);
     }

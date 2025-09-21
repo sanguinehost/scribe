@@ -3,7 +3,7 @@ use crate::errors::AppError;
 use crate::models::credit::{DailyUsage, NewDailyUsage};
 use crate::models::payment::Subscription;
 use crate::schema::{daily_usage_tracking, subscriptions};
-use chrono::{DateTime, Local, NaiveDate, Utc, Timelike};
+use chrono::{DateTime, Local, NaiveDate, Timelike, Utc};
 use diesel::prelude::*;
 use serde_json::json;
 use std::sync::Arc;
@@ -48,10 +48,10 @@ impl SoftLimitService {
 
         // Default limits by tier (matching config file values)
         match tier.to_lowercase().as_str() {
-            "free" => 20,     // Updated to match config
+            "free" => 20, // Updated to match config
             "basic" => 100,
             "premium" => 200,
-            _ => 20,          // Default to free tier limit
+            _ => 20, // Default to free tier limit
         }
     }
 
@@ -279,12 +279,10 @@ impl SoftLimitService {
             query = query.filter(dsl::date.ge(start_date));
         }
 
-        query
-            .load::<DailyUsage>(conn)
-            .map_err(|e| {
-                error!("Failed to get usage stats: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })
+        query.load::<DailyUsage>(conn).map_err(|e| {
+            error!("Failed to get usage stats: {}", e);
+            AppError::DatabaseQueryError(e.to_string())
+        })
     }
 
     /// Get remaining messages for today
@@ -330,7 +328,7 @@ impl SoftLimitService {
         diesel::update(
             dsl::subscriptions
                 .filter(dsl::user_id.eq(user_id))
-                .filter(dsl::status.eq("active"))
+                .filter(dsl::status.eq("active")),
         )
         .set(dsl::soft_limit_override.eq(override_limit))
         .execute(conn)
@@ -346,7 +344,7 @@ impl SoftLimitService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::{spawn_app, TestDataGuard};
+    use crate::test_helpers::{TestDataGuard, spawn_app};
 
     #[test]
     fn test_soft_limit_tracking() {
@@ -359,12 +357,16 @@ mod tests {
         let service = SoftLimitService::new(app.config.clone());
 
         // Record usage
-        let usage = service.record_usage(&mut conn, user_id, "gemini-2.5-flash", 1000).unwrap();
+        let usage = service
+            .record_usage(&mut conn, user_id, "gemini-2.5-flash", 1000)
+            .unwrap();
         assert_eq!(usage.message_count, 1);
         assert_eq!(usage.token_count, 1000);
 
         // Record more usage
-        let usage = service.record_usage(&mut conn, user_id, "gemini-2.5-flash", 500).unwrap();
+        let usage = service
+            .record_usage(&mut conn, user_id, "gemini-2.5-flash", 500)
+            .unwrap();
         assert_eq!(usage.message_count, 2);
         assert_eq!(usage.token_count, 1500);
 

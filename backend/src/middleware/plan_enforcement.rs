@@ -20,8 +20,8 @@ use crate::{
     config::Config,
     errors::AppError,
     models::payment::{PlanFeatures, Subscription},
-    services::payment::{SubscriptionService, UsageTrackingService},
     services::EncryptionService,
+    services::payment::{SubscriptionService, UsageTrackingService},
     state::AppState,
 };
 
@@ -77,18 +77,12 @@ pub async fn plan_enforcement_middleware(
     }
 
     // Extract auth session from request (this assumes the auth middleware has run first)
-    let auth_session = request
-        .extensions()
-        .get::<CurrentAuthSession>()
-        .cloned();
+    let auth_session = request.extensions().get::<CurrentAuthSession>().cloned();
 
     if let Some(auth_session) = auth_session {
         if let Some(user) = auth_session.user {
-            let enforcement_result = check_plan_limits(
-                &app_state,
-                &user,
-                &enforcement_config,
-            ).await?;
+            let enforcement_result =
+                check_plan_limits(&app_state, &user, &enforcement_config).await?;
 
             match enforcement_result {
                 EnforcementResult::Allow => {
@@ -102,14 +96,18 @@ pub async fn plan_enforcement_middleware(
             }
         } else if enforcement_config.requires_subscription {
             // Auth session exists but no user - shouldn't happen
-            Err(AppError::Unauthorized("Authentication required".to_string()))
+            Err(AppError::Unauthorized(
+                "Authentication required".to_string(),
+            ))
         } else {
             // Auth session exists but no user required
             Ok(next.run(request).await)
         }
     } else if enforcement_config.requires_subscription {
         // No authenticated user but subscription is required
-        Err(AppError::Unauthorized("Authentication required".to_string()))
+        Err(AppError::Unauthorized(
+            "Authentication required".to_string(),
+        ))
     } else {
         // No user but enforcement doesn't require subscription
         Ok(next.run(request).await)
@@ -137,9 +135,9 @@ async fn check_plan_limits(
         .interact(move |conn| {
             // This would ideally use the service methods, but they're async
             // For now, we'll use direct database queries
-            
-            use diesel::prelude::*;
+
             use crate::schema::subscriptions;
+            use diesel::prelude::*;
 
             // Get user's subscription
             let subscription = subscriptions::table
@@ -152,9 +150,11 @@ async fn check_plan_limits(
 
             // Check if subscription is required
             if enforcement_config.requires_subscription && subscription.is_none() {
-                return Ok::<EnforcementResult, AppError>(EnforcementResult::Block(AppError::BadRequest(
-                    "Active subscription required for this operation".to_string(),
-                )));
+                return Ok::<EnforcementResult, AppError>(EnforcementResult::Block(
+                    AppError::BadRequest(
+                        "Active subscription required for this operation".to_string(),
+                    ),
+                ));
             }
 
             // Check token limits if specified
@@ -278,15 +278,29 @@ pub struct EnforcementConfig;
 
 #[cfg(not(feature = "payment"))]
 impl EnforcementConfig {
-    pub fn basic_chat() -> Self { Self }
-    pub fn advanced_chat() -> Self { Self }
-    pub fn character_generation() -> Self { Self }
-    pub fn unlimited_characters() -> Self { Self }
-    pub fn enterprise_features() -> Self { Self }
-    pub fn disabled() -> Self { Self }
+    pub fn basic_chat() -> Self {
+        Self
+    }
+    pub fn advanced_chat() -> Self {
+        Self
+    }
+    pub fn character_generation() -> Self {
+        Self
+    }
+    pub fn unlimited_characters() -> Self {
+        Self
+    }
+    pub fn enterprise_features() -> Self {
+        Self
+    }
+    pub fn disabled() -> Self {
+        Self
+    }
 }
 
 #[cfg(not(feature = "payment"))]
-pub fn with_enforcement_config(_config: EnforcementConfig) -> impl Fn(axum::extract::Request) -> axum::extract::Request {
+pub fn with_enforcement_config(
+    _config: EnforcementConfig,
+) -> impl Fn(axum::extract::Request) -> axum::extract::Request {
     |request| request
 }

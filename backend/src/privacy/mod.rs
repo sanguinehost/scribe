@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 
+pub mod examples;
 pub mod logging;
 pub mod middleware;
-pub mod examples;
 
 /// Configuration for privacy settings
 #[derive(Debug, Clone)]
@@ -41,38 +41,38 @@ impl ObfuscatedId {
         let input = format!("{}{}{}", uuid, salt, id_type);
         let hash = blake3::hash(input.as_bytes());
         let hash_str = hash.to_hex()[..16].to_string(); // Use first 16 chars for brevity
-        
+
         Self {
             hash: hash_str,
             id_type: id_type.to_string(),
         }
     }
-    
+
     /// Create from user ID
     pub fn user_id(uuid: Uuid, salt: &str) -> Self {
         Self::new(uuid, salt, "user")
     }
-    
+
     /// Create from session ID  
     pub fn session_id(uuid: Uuid, salt: &str) -> Self {
         Self::new(uuid, salt, "session")
     }
-    
+
     /// Create from character ID
     pub fn character_id(uuid: Uuid, salt: &str) -> Self {
         Self::new(uuid, salt, "character")
     }
-    
+
     /// Create from persona ID
     pub fn persona_id(uuid: Uuid, salt: &str) -> Self {
         Self::new(uuid, salt, "persona")
     }
-    
+
     /// Create from chronicle ID
     pub fn chronicle_id(uuid: Uuid, salt: &str) -> Self {
         Self::new(uuid, salt, "chronicle")
     }
-    
+
     /// Create from lorebook ID
     pub fn lorebook_id(uuid: Uuid, salt: &str) -> Self {
         Self::new(uuid, salt, "lorebook")
@@ -94,10 +94,10 @@ pub struct SanitizedString {
 
 #[derive(Debug, Clone)]
 pub enum RedactionType {
-    Content,        // User-generated content
-    SystemPrompt,   // System prompts
-    PersonalInfo,   // Email, username, etc.
-    Credentials,    // Passwords, tokens, etc.
+    Content,      // User-generated content
+    SystemPrompt, // System prompts
+    PersonalInfo, // Email, username, etc.
+    Credentials,  // Passwords, tokens, etc.
 }
 
 impl SanitizedString {
@@ -107,38 +107,38 @@ impl SanitizedString {
             redaction_type: RedactionType::Content,
         }
     }
-    
+
     pub fn system_prompt<S: Into<String>>(content: S) -> Self {
         Self {
             content: content.into(),
             redaction_type: RedactionType::SystemPrompt,
         }
     }
-    
+
     pub fn personal_info<S: Into<String>>(content: S) -> Self {
         Self {
             content: content.into(),
             redaction_type: RedactionType::PersonalInfo,
         }
     }
-    
+
     pub fn credentials<S: Into<String>>(content: S) -> Self {
         Self {
             content: content.into(),
             redaction_type: RedactionType::Credentials,
         }
     }
-    
+
     /// Get the raw content (for business logic, not logging)
     pub fn expose(&self) -> &str {
         &self.content
     }
-    
+
     /// Get length for logging purposes
     pub fn len(&self) -> usize {
         self.content.len()
     }
-    
+
     /// Check if empty
     pub fn is_empty(&self) -> bool {
         self.content.is_empty()
@@ -149,7 +149,9 @@ impl fmt::Display for SanitizedString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.redaction_type {
             RedactionType::Content => write!(f, "<content-redacted:{}-chars>", self.len()),
-            RedactionType::SystemPrompt => write!(f, "<system-prompt-redacted:{}-chars>", self.len()),
+            RedactionType::SystemPrompt => {
+                write!(f, "<system-prompt-redacted:{}-chars>", self.len())
+            }
             RedactionType::PersonalInfo => write!(f, "<personal-info-redacted>"),
             RedactionType::Credentials => write!(f, "<credentials-redacted>"),
         }
@@ -170,35 +172,35 @@ impl PrivacyContext {
             request_id: nanoid::nanoid!(8), // Generate 8-char request ID
         }
     }
-    
+
     pub fn request_id(&self) -> &str {
         &self.request_id
     }
-    
+
     pub fn obfuscate_user_id(&self, uuid: Uuid) -> ObfuscatedId {
         ObfuscatedId::user_id(uuid, &self.config.hash_salt)
     }
-    
+
     pub fn obfuscate_session_id(&self, uuid: Uuid) -> ObfuscatedId {
         ObfuscatedId::session_id(uuid, &self.config.hash_salt)
     }
-    
+
     pub fn obfuscate_character_id(&self, uuid: Uuid) -> ObfuscatedId {
         ObfuscatedId::character_id(uuid, &self.config.hash_salt)
     }
-    
+
     pub fn obfuscate_persona_id(&self, uuid: Uuid) -> ObfuscatedId {
         ObfuscatedId::persona_id(uuid, &self.config.hash_salt)
     }
-    
+
     pub fn obfuscate_chronicle_id(&self, uuid: Uuid) -> ObfuscatedId {
         ObfuscatedId::chronicle_id(uuid, &self.config.hash_salt)
     }
-    
+
     pub fn obfuscate_lorebook_id(&self, uuid: Uuid) -> ObfuscatedId {
         ObfuscatedId::lorebook_id(uuid, &self.config.hash_salt)
     }
-    
+
     pub fn sanitize_content<S: Into<String>>(&self, content: S) -> SanitizedString {
         SanitizedString::content(content)
     }
@@ -277,41 +279,54 @@ mod tests {
     fn test_obfuscated_id_consistency() {
         let uuid = Uuid::new_v4();
         let salt = "test-salt";
-        
+
         let id1 = ObfuscatedId::user_id(uuid, salt);
         let id2 = ObfuscatedId::user_id(uuid, salt);
-        
-        assert_eq!(id1, id2, "Same UUID and salt should produce same obfuscated ID");
-        
+
+        assert_eq!(
+            id1, id2,
+            "Same UUID and salt should produce same obfuscated ID"
+        );
+
         let id3 = ObfuscatedId::user_id(uuid, "different-salt");
-        assert_ne!(id1, id3, "Different salt should produce different obfuscated ID");
-        
+        assert_ne!(
+            id1, id3,
+            "Different salt should produce different obfuscated ID"
+        );
+
         let different_uuid = Uuid::new_v4();
         let id4 = ObfuscatedId::user_id(different_uuid, salt);
-        assert_ne!(id1, id4, "Different UUID should produce different obfuscated ID");
+        assert_ne!(
+            id1, id4,
+            "Different UUID should produce different obfuscated ID"
+        );
     }
-    
+
     #[test]
     fn test_obfuscated_id_display() {
         let uuid = Uuid::new_v4();
         let salt = "test-salt";
-        
+
         let user_id = ObfuscatedId::user_id(uuid, salt);
         let session_id = ObfuscatedId::session_id(uuid, salt);
-        
+
         assert!(user_id.to_string().starts_with("user#"));
         assert!(session_id.to_string().starts_with("session#"));
         assert_ne!(user_id.to_string(), session_id.to_string());
     }
-    
+
     #[test]
     fn test_sanitized_string_redaction() {
         let content = "This is sensitive user content";
         let sanitized = SanitizedString::content(content);
-        
+
         assert_eq!(sanitized.expose(), content);
         assert_eq!(sanitized.len(), content.len());
         assert!(sanitized.to_string().contains("<content-redacted:"));
-        assert!(sanitized.to_string().contains(&format!("{}-chars>", content.len())));
+        assert!(
+            sanitized
+                .to_string()
+                .contains(&format!("{}-chars>", content.len()))
+        );
     }
 }

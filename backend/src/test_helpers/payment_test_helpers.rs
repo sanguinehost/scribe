@@ -7,25 +7,27 @@
 
 #[cfg(feature = "payment")]
 pub mod payment_test_helpers {
-    use chrono::{DateTime, Utc};
-    use serde_json::{json, Value};
-    use secrecy::{ExposeSecret, SecretBox, SecretString};
     use crate::{
+        auth,
+        auth::user_store::Backend as AuthBackend,
+        crypto,
+        errors::AppError,
         models::{
-            users::{NewUser, User as DbUser, UserDbQuery, UserRole, AccountStatus},
             character_card::NewCharacter,
             characters::Character,
             credit::{CreditBalance, CreditTransaction},
+            users::{AccountStatus, NewUser, User as DbUser, UserDbQuery, UserRole},
         },
-        auth::user_store::Backend as AuthBackend,
         services::payment::CreditService,
         test_helpers::TestApp,
-        errors::AppError,
-        crypto,
-        auth,
     };
-    use diesel::{Connection, PgConnection, RunQueryDsl, ExpressionMethods, QueryDsl, SelectableHelper};
+    use chrono::{DateTime, Utc};
+    use diesel::{
+        Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
+    };
     use reqwest::Client;
+    use secrecy::{ExposeSecret, SecretBox, SecretString};
+    use serde_json::{Value, json};
     use std::sync::Arc;
     use uuid::Uuid;
 
@@ -42,9 +44,9 @@ pub mod payment_test_helpers {
     pub fn create_test_user_with_character(
         conn: &mut PgConnection,
     ) -> Result<(DbUser, Character), AppError> {
-        use crate::schema::{users, characters};
+        use crate::schema::{characters, users};
+        use argon2::password_hash::{SaltString, rand_core::OsRng};
         use argon2::{Argon2, PasswordHasher};
-        use argon2::password_hash::{rand_core::OsRng, SaltString};
 
         let username = format!("testuser_{}", Uuid::new_v4());
         let email = format!("test_{}@example.com", Uuid::new_v4());
@@ -58,8 +60,9 @@ pub mod payment_test_helpers {
             .map_err(|e| AppError::DatabaseQueryError(format!("Password hashing failed: {}", e)))?
             .to_string();
 
-        let kek_salt = crypto::generate_salt()
-            .map_err(|e| AppError::DatabaseQueryError(format!("KEK salt generation failed: {}", e)))?;
+        let kek_salt = crypto::generate_salt().map_err(|e| {
+            AppError::DatabaseQueryError(format!("KEK salt generation failed: {}", e))
+        })?;
 
         let plaintext_dek_box: SecretBox<Vec<u8>> = crypto::generate_dek()
             .map_err(|e| AppError::DatabaseQueryError(format!("DEK generation failed: {}", e)))?;
@@ -69,8 +72,9 @@ pub mod payment_test_helpers {
 
         // expose_secret() on SecretBox<Vec<u8>> gives &Vec<u8>
         let (encrypted_dek_bytes, dek_nonce_bytes) =
-            crypto::encrypt_gcm(plaintext_dek_box.expose_secret(), &kek)
-                .map_err(|e| AppError::DatabaseQueryError(format!("DEK encryption failed: {}", e)))?;
+            crypto::encrypt_gcm(plaintext_dek_box.expose_secret(), &kek).map_err(|e| {
+                AppError::DatabaseQueryError(format!("DEK encryption failed: {}", e))
+            })?;
 
         // Create test user with all required fields
         let new_user = NewUser {
@@ -229,8 +233,8 @@ pub mod payment_test_helpers {
                     conn,
                     user_id,
                     amount,
-                    "test_credit",       // transaction_type
-                    &description_owned,  // description
+                    "test_credit",      // transaction_type
+                    &description_owned, // description
                     None,               // reference_id
                     None,               // metadata
                 )
@@ -266,9 +270,7 @@ pub mod payment_test_helpers {
             .get()
             .await
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
-            .interact(move |conn| {
-                credit_service.get_transaction_history(conn, user_id, None, None)
-            })
+            .interact(move |conn| credit_service.get_transaction_history(conn, user_id, None, None))
             .await
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
     }
@@ -331,9 +333,9 @@ pub mod payment_test_helpers {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
         type HmacSha256 = Hmac<Sha256>;
-        
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .expect("HMAC can take key of any size");
+
+        let mut mac =
+            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
         mac.update(payload.as_bytes());
         hex::encode(mac.finalize().into_bytes())
     }
@@ -510,8 +512,8 @@ pub mod payment_test_helpers {
 
     /// Mock Paddle API responses for offline testing
     pub mod mock_responses {
-        use serde_json::{json, Value};
         use chrono::Utc;
+        use serde_json::{Value, json};
 
         /// Mock successful customer creation response
         pub fn customer_created_response(customer_id: &str, email: &str) -> Value {
@@ -527,7 +529,10 @@ pub mod payment_test_helpers {
         }
 
         /// Mock successful subscription creation response
-        pub fn subscription_created_response(subscription_id: &str, checkout_url: Option<&str>) -> Value {
+        pub fn subscription_created_response(
+            subscription_id: &str,
+            checkout_url: Option<&str>,
+        ) -> Value {
             let mut response = json!({
                 "data": {
                     "id": subscription_id,
@@ -549,7 +554,11 @@ pub mod payment_test_helpers {
         }
 
         /// Mock subscription retrieval response
-        pub fn subscription_details_response(subscription_id: &str, customer_id: &str, status: &str) -> Value {
+        pub fn subscription_details_response(
+            subscription_id: &str,
+            customer_id: &str,
+            status: &str,
+        ) -> Value {
             json!({
                 "data": {
                     "id": subscription_id,
@@ -593,13 +602,20 @@ pub mod payment_test_helpers {
         fn test_webhook_signature_generation() {
             let payload = "test payload";
             let secret = "test_secret";
-            
+
             let signature1 = create_webhook_signature(payload, secret);
             let signature2 = create_webhook_signature(payload, secret);
-            
-            assert_eq!(signature1, signature2, "Signature generation should be deterministic");
+
+            assert_eq!(
+                signature1, signature2,
+                "Signature generation should be deterministic"
+            );
             assert!(!signature1.is_empty(), "Signature should not be empty");
-            assert_eq!(signature1.len(), 64, "HMAC-SHA256 signature should be 64 hex characters");
+            assert_eq!(
+                signature1.len(),
+                64,
+                "HMAC-SHA256 signature should be 64 hex characters"
+            );
         }
 
         #[test]
@@ -613,7 +629,10 @@ pub mod payment_test_helpers {
 
             assert_eq!(payload["event_type"], "subscription_created");
             assert_eq!(payload["event_id"], test_ids.event_id);
-            assert_eq!(payload["data"]["subscription"]["id"], test_ids.subscription_id);
+            assert_eq!(
+                payload["data"]["subscription"]["id"],
+                test_ids.subscription_id
+            );
             assert_eq!(payload["data"]["customer"]["id"], test_ids.customer_id);
         }
 
@@ -626,8 +645,9 @@ pub mod payment_test_helpers {
                 &test_ids.customer_id,
             );
 
-            let (payload_string, signature) = create_signed_webhook_request(&payload, TEST_WEBHOOK_SECRET);
-            
+            let (payload_string, signature) =
+                create_signed_webhook_request(&payload, TEST_WEBHOOK_SECRET);
+
             assert!(!payload_string.is_empty());
             assert!(!signature.is_empty());
             assert_eq!(signature.len(), 64, "Signature should be 64 hex characters");
@@ -657,15 +677,23 @@ pub mod payment_test_helpers {
 
         #[test]
         fn test_mock_responses() {
-            let customer_response = mock_responses::customer_created_response("cus_123", "test@example.com");
+            let customer_response =
+                mock_responses::customer_created_response("cus_123", "test@example.com");
             assert_eq!(customer_response["data"]["id"], "cus_123");
             assert_eq!(customer_response["data"]["email"], "test@example.com");
 
-            let subscription_response = mock_responses::subscription_created_response("sub_123", Some("https://checkout.example.com"));
+            let subscription_response = mock_responses::subscription_created_response(
+                "sub_123",
+                Some("https://checkout.example.com"),
+            );
             assert_eq!(subscription_response["data"]["id"], "sub_123");
-            assert_eq!(subscription_response["data"]["checkout"]["url"], "https://checkout.example.com");
+            assert_eq!(
+                subscription_response["data"]["checkout"]["url"],
+                "https://checkout.example.com"
+            );
 
-            let error_response = mock_responses::error_response("invalid_request", "Missing required field");
+            let error_response =
+                mock_responses::error_response("invalid_request", "Missing required field");
             assert_eq!(error_response["error"]["code"], "invalid_request");
             assert_eq!(error_response["error"]["detail"], "Missing required field");
         }

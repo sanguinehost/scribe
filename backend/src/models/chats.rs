@@ -1440,7 +1440,7 @@ pub struct GenerateChatRequest {
     pub model: Option<String>,
     pub query_text_for_rag: Option<String>,
     pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
-    pub guidance: Option<String>, // Optional guidance text for regeneration steering
+    pub guidance: Option<String>,      // Optional guidance text for regeneration steering
     pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
 }
 
@@ -1956,7 +1956,6 @@ pub struct MessageVariantResponse {
     pub model_name: Option<String>,
 }
 
-
 // MessageResponse struct for API responses
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MessageResponse {
@@ -1974,13 +1973,13 @@ pub struct MessageResponse {
     pub model_name: Option<String>, // Optional for backward compatibility with existing messages
     pub status: String,
     pub error_message: Option<String>,
-    
+
     // Variant metadata
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub is_variant: bool,
     pub parent_message_id: Option<Uuid>,
-    
+
     // Optional: Complete variant data for immediate access
     pub variants: Option<Vec<MessageVariantResponse>>,
 }
@@ -2005,7 +2004,13 @@ impl std::fmt::Debug for MessageResponse {
             .field("current_variant_index", &self.current_variant_index)
             .field("is_variant", &self.is_variant)
             .field("parent_message_id", &self.parent_message_id)
-            .field("variants", &self.variants.as_ref().map(|v| format!("[{} variants]", v.len())))
+            .field(
+                "variants",
+                &self
+                    .variants
+                    .as_ref()
+                    .map(|v| format!("[{} variants]", v.len())),
+            )
             .finish()
     }
 }
@@ -2157,30 +2162,31 @@ impl std::fmt::Debug for ImpersonateResponse {
 fn validate_optional_template_id(template_id: &String) -> Result<(), ValidationError> {
     use regex::Regex;
     use std::sync::LazyLock;
-    
+
     static TEMPLATE_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^[a-zA-Z0-9_]+$").expect("Failed to compile template ID regex")
     });
-    
+
     // Check template ID format
     if template_id.is_empty() {
         let mut err = ValidationError::new("template_id_empty");
         err.message = Some("Template ID cannot be empty".into());
         return Err(err);
     }
-    
+
     if template_id.len() > 50 {
         let mut err = ValidationError::new("template_id_too_long");
         err.message = Some("Template ID too long (max 50 characters)".into());
         return Err(err);
     }
-    
+
     if !TEMPLATE_ID_REGEX.is_match(template_id) {
         let mut err = ValidationError::new("template_id_invalid_format");
-        err.message = Some("Template ID must contain only alphanumeric characters and underscores".into());
+        err.message =
+            Some("Template ID must contain only alphanumeric characters and underscores".into());
         return Err(err);
     }
-    
+
     // Check if template exists using the global template manager
     use crate::prompt_templates::TEMPLATE_MANAGER;
     if !TEMPLATE_MANAGER.has_template(template_id) {
@@ -2188,7 +2194,7 @@ fn validate_optional_template_id(template_id: &String) -> Result<(), ValidationE
         err.message = Some(format!("Template '{}' not found", template_id).into());
         return Err(err);
     }
-    
+
     Ok(())
 }
 

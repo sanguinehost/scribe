@@ -290,11 +290,11 @@ async fn create_chat_session_with_messages(
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: chronicle_id,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
-            prompt_template_id: "default".to_string()
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     conn.interact(move |conn| {

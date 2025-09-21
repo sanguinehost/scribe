@@ -43,4 +43,4 @@ pub use subscription_service::SubscriptionService;
 pub use usage_tracking_service::UsageTrackingService;
 
 #[cfg(feature = "payment")]
-pub use audit_service::{PaymentAuditService, AuditEventType};
+pub use audit_service::{AuditEventType, PaymentAuditService};

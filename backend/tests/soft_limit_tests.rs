@@ -5,24 +5,27 @@
 
 #[cfg(all(test, feature = "payment"))]
 mod soft_limit_tests {
-    use scribe_backend::{
-        models::payment::NewSubscription,
-        services::payment::SoftLimitService,
-        test_helpers::{spawn_app, TestDataGuard},
-        config::Config,
-        schema::{subscriptions, daily_usage_tracking},
-    };
-    use uuid::Uuid;
-    use chrono::{Utc, Duration};
+    use chrono::{Duration, Utc};
+    use deadpool_diesel::Manager as DeadpoolManager;
+    use deadpool_diesel::Pool;
     use diesel::prelude::*;
+    use scribe_backend::models::users::UserRole;
+    use scribe_backend::{
+        config::Config,
+        models::payment::NewSubscription,
+        schema::{daily_usage_tracking, subscriptions},
+        services::payment::SoftLimitService,
+        test_helpers::{TestDataGuard, spawn_app},
+    };
     use serde_json::json;
     use std::sync::Arc;
-    use scribe_backend::models::users::UserRole;
-    use deadpool_diesel::Pool;
-    use deadpool_diesel::Manager as DeadpoolManager;
+    use uuid::Uuid;
 
     /// Helper function to create a test user
-    async fn create_test_user(pool: &Pool<DeadpoolManager<diesel::PgConnection>>, user_id: Uuid) -> Result<(), Box<dyn std::error::Error>> {
+    async fn create_test_user(
+        pool: &Pool<DeadpoolManager<diesel::PgConnection>>,
+        user_id: Uuid,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let conn = pool.get().await?;
         conn.interact(move |conn| {
             // Check if user already exists
@@ -81,15 +84,21 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
         let config = app.config.clone();
 
         // Get or create daily usage
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let usage = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config);
-            service.get_or_create_daily_usage(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to create daily usage");
+        let usage = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config);
+                service.get_or_create_daily_usage(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to create daily usage");
 
         assert_eq!(usage.user_id, user_id);
         assert_eq!(usage.message_count, 0);
@@ -99,10 +108,14 @@ mod soft_limit_tests {
         // Getting again should return same record
         let config2 = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let usage2 = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config2);
-            service.get_or_create_daily_usage(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to get usage");
+        let usage2 = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config2);
+                service.get_or_create_daily_usage(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get usage");
 
         assert_eq!(usage.user_id, usage2.user_id);
         assert_eq!(usage.date, usage2.date);
@@ -114,7 +127,9 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Enable soft limits
         let mut config = (*app.config).clone();
@@ -124,20 +139,28 @@ mod soft_limit_tests {
         // Record usage multiple times
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let usage1 = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config_clone);
-            service.record_usage(conn, user_id, "gemini-2.5-flash", 100)
-        }).await.expect("Failed to interact").expect("Failed to record usage");
+        let usage1 = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.record_usage(conn, user_id, "gemini-2.5-flash", 100)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to record usage");
 
         assert_eq!(usage1.message_count, 1);
         assert_eq!(usage1.token_count, 100);
 
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let usage2 = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config_clone);
-            service.record_usage(conn, user_id, "gemini-2.5-pro", 200)
-        }).await.expect("Failed to interact").expect("Failed to record usage");
+        let usage2 = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.record_usage(conn, user_id, "gemini-2.5-pro", 200)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to record usage");
 
         assert_eq!(usage2.message_count, 2);
         assert_eq!(usage2.token_count, 300);
@@ -154,7 +177,9 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Enable soft limits with low threshold for testing
         let mut config = (*app.config).clone();
@@ -166,16 +191,28 @@ mod soft_limit_tests {
         for i in 0..25 {
             let config_clone = config.clone();
             let conn = app.db_pool.get().await.expect("Failed to get connection");
-            let usage = conn.interact(move |conn| {
-                let service = SoftLimitService::new(config_clone);
-                service.record_usage(conn, user_id, "gemini-2.5-flash", 100)
-            }).await.expect("Failed to interact").expect("Failed to record usage");
+            let usage = conn
+                .interact(move |conn| {
+                    let service = SoftLimitService::new(config_clone);
+                    service.record_usage(conn, user_id, "gemini-2.5-flash", 100)
+                })
+                .await
+                .expect("Failed to interact")
+                .expect("Failed to record usage");
 
             if i < 19 {
-                assert!(usage.soft_limit_triggered_at.is_none(), "Should not trigger before 20 messages, but triggered at message {}", i + 1);
+                assert!(
+                    usage.soft_limit_triggered_at.is_none(),
+                    "Should not trigger before 20 messages, but triggered at message {}",
+                    i + 1
+                );
             } else {
                 // Should trigger at 20th message (index 19)
-                assert!(usage.soft_limit_triggered_at.is_some(), "Should trigger at message 20 or after, current message: {}", i + 1);
+                assert!(
+                    usage.soft_limit_triggered_at.is_some(),
+                    "Should trigger at message 20 or after, current message: {}",
+                    i + 1
+                );
             }
         }
     }
@@ -186,7 +223,9 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Create a basic subscription (which has throttling thresholds)
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -211,7 +250,10 @@ mod soft_limit_tests {
             diesel::insert_into(dsl::subscriptions)
                 .values(&new_sub)
                 .execute(conn)
-        }).await.expect("Failed to interact").expect("Failed to create subscription");
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to create subscription");
 
         // Enable soft limits
         let mut config = (*app.config).clone();
@@ -225,21 +267,35 @@ mod soft_limit_tests {
             conn.interact(move |conn| {
                 let service = SoftLimitService::new(config_clone);
                 service.record_usage(conn, user_id, "test", 100)
-            }).await.expect("Failed to interact").expect("Failed to record");
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to record");
         }
 
         // Check throttling - basic tier has 2 second delay after 100 messages
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let throttle = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config_clone);
-            service.should_throttle(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to check throttle");
+        let throttle = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.should_throttle(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to check throttle");
 
-        assert!(throttle.is_some(), "Should have throttle delay for basic tier after 100 messages");
+        assert!(
+            throttle.is_some(),
+            "Should have throttle delay for basic tier after 100 messages"
+        );
         let delay = throttle.unwrap();
         let delay_secs = delay.as_secs();
-        assert!(delay_secs >= 2 && delay_secs <= 5, "Delay should be 2-5 seconds, got {} seconds", delay_secs);
+        assert!(
+            delay_secs >= 2 && delay_secs <= 5,
+            "Delay should be 2-5 seconds, got {} seconds",
+            delay_secs
+        );
     }
 
     #[tokio::test]
@@ -248,7 +304,9 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Enable soft limits
         let mut config = (*app.config).clone();
@@ -277,15 +335,22 @@ mod soft_limit_tests {
             diesel::insert_into(subscriptions::table)
                 .values(&sub)
                 .execute(conn)
-        }).await.expect("Failed to interact").expect("Failed to insert subscription");
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to insert subscription");
 
         // Check remaining messages for premium tier
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let remaining = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config_clone);
-            service.get_remaining_messages(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to get remaining");
+        let remaining = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.get_remaining_messages(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get remaining");
 
         // Premium tier should have 200 messages
         assert_eq!(remaining, Some(200));
@@ -297,7 +362,9 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Enable soft limits
         let mut config = (*app.config).clone();
@@ -327,16 +394,23 @@ mod soft_limit_tests {
                 diesel::insert_into(daily_usage_tracking::table)
                     .values(&usage)
                     .execute(conn)
-            }).await.expect("Failed to interact").expect("Failed to insert usage");
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to insert usage");
         }
 
         // Get usage stats for last 7 days
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let stats = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config_clone);
-            service.get_usage_stats(conn, user_id, Some(7))
-        }).await.expect("Failed to interact").expect("Failed to get stats");
+        let stats = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.get_usage_stats(conn, user_id, Some(7))
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get stats");
 
         assert_eq!(stats.len(), 5);
         // Stats should be in reverse chronological order (newest first)
@@ -350,7 +424,9 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
         let config = app.config.clone();
 
         // Create usage for yesterday
@@ -371,15 +447,22 @@ mod soft_limit_tests {
             diesel::insert_into(daily_usage_tracking::table)
                 .values(&usage)
                 .execute(conn)
-        }).await.expect("Failed to interact").expect("Failed to insert");
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to insert");
 
         // Get today's usage - should be fresh
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let today_usage = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config_clone);
-            service.get_or_create_daily_usage(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to get today's usage");
+        let today_usage = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.get_or_create_daily_usage(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get today's usage");
 
         assert_eq!(today_usage.message_count, 0);
         assert_eq!(today_usage.token_count, 0);
@@ -392,7 +475,9 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Enable soft limits
         let mut config = (*app.config).clone();
@@ -421,15 +506,22 @@ mod soft_limit_tests {
             diesel::insert_into(subscriptions::table)
                 .values(&sub)
                 .execute(conn)
-        }).await.expect("Failed to interact").expect("Failed to insert subscription");
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to insert subscription");
 
         // Check remaining messages - should use override
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let remaining = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config_clone);
-            service.get_remaining_messages(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to get remaining");
+        let remaining = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config_clone);
+                service.get_remaining_messages(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get remaining");
 
         assert_eq!(remaining, Some(500)); // Using override value
     }
@@ -440,7 +532,9 @@ mod soft_limit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Soft limits disabled by default
         let config = app.config.clone();
@@ -449,10 +543,14 @@ mod soft_limit_tests {
 
         // Record usage should work but not enforce limits
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let usage = conn.interact(move |conn| {
-            let service = SoftLimitService::new(config);
-            service.record_usage(conn, user_id, "test", 1000)
-        }).await.expect("Failed to interact").expect("Failed to record");
+        let usage = conn
+            .interact(move |conn| {
+                let service = SoftLimitService::new(config);
+                service.record_usage(conn, user_id, "test", 1000)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to record");
 
         assert_eq!(usage.message_count, 1);
         assert!(usage.soft_limit_triggered_at.is_none()); // No limit trigger when disabled

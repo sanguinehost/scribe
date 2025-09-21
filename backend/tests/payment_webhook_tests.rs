@@ -9,13 +9,13 @@
 
 #[cfg(feature = "payment")]
 mod payment_webhook_tests {
+    use chrono::Utc;
+    use reqwest::{Client, StatusCode};
     use scribe_backend::{
         config::PaymentConfig,
         services::payment::paddle_service::PaddleService,
-        test_helpers::{spawn_app, TestDataGuard},
+        test_helpers::{TestDataGuard, spawn_app},
     };
-    use chrono::Utc;
-    use reqwest::{Client, StatusCode};
     use serde_json::json;
     use std::env;
 
@@ -25,7 +25,11 @@ mod payment_webhook_tests {
     }
 
     /// Helper to create a valid webhook signature with optional fixed timestamp for deterministic tests
-    fn create_webhook_signature_with_timestamp(payload: &str, secret: &str, timestamp: Option<i64>) -> String {
+    fn create_webhook_signature_with_timestamp(
+        payload: &str,
+        secret: &str,
+        timestamp: Option<i64>,
+    ) -> String {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
         type HmacSha256 = Hmac<Sha256>;
@@ -36,8 +40,8 @@ mod payment_webhook_tests {
         // Create signed payload in Paddle format: timestamp:request_body
         let signed_payload = format!("{}:{}", timestamp, payload);
 
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .expect("HMAC can take key of any size");
+        let mut mac =
+            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
         mac.update(signed_payload.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
 
@@ -69,7 +73,7 @@ mod payment_webhook_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let payload = create_webhook_payload("subscription_created", "evt_test_001");
-        
+
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
             .json(&payload)
@@ -89,7 +93,7 @@ mod payment_webhook_tests {
 
         let payload = create_webhook_payload("subscription_created", "evt_test_002");
         let payload_str = payload.to_string();
-        
+
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
             .header("Paddle-Signature", "invalid_signature_value")
@@ -117,12 +121,16 @@ mod payment_webhook_tests {
         // Test with various timestamp formats
         let test_timestamps = vec![
             chrono::Utc::now().timestamp(),
-            1699123456, // Fixed timestamp
+            1699123456,                          // Fixed timestamp
             chrono::Utc::now().timestamp() - 60, // 1 minute ago
         ];
 
         for timestamp in test_timestamps {
-            let signature = create_webhook_signature_with_timestamp(&payload_str, &webhook_secret, Some(timestamp));
+            let signature = create_webhook_signature_with_timestamp(
+                &payload_str,
+                &webhook_secret,
+                Some(timestamp),
+            );
 
             let response = Client::new()
                 .post(&format!("{}/api/payment/webhook/paddle", &app.address))
@@ -135,7 +143,8 @@ mod payment_webhook_tests {
 
             // Should accept valid signatures regardless of timestamp format
             assert!(
-                response.status() == StatusCode::OK || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                response.status() == StatusCode::OK
+                    || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed for timestamp {}: Expected OK or Internal Server Error, got: {}",
                 timestamp,
                 response.status()
@@ -153,13 +162,13 @@ mod payment_webhook_tests {
 
         // Test various malformed signature formats
         let malformed_signatures = vec![
-            "just_a_string", // No format at all
-            "ts=123;", // Missing h1
-            "h1=abcdef;", // Missing ts
-            "ts=invalid;h1=abcdef", // Invalid timestamp
-            "ts=123;h1=invalid_hex", // Invalid hex in h1
-            "ts=123;h1=", // Empty h1
-            "ts=;h1=abcdef", // Empty timestamp
+            "just_a_string",                // No format at all
+            "ts=123;",                      // Missing h1
+            "h1=abcdef;",                   // Missing ts
+            "ts=invalid;h1=abcdef",         // Invalid timestamp
+            "ts=123;h1=invalid_hex",        // Invalid hex in h1
+            "ts=123;h1=",                   // Empty h1
+            "ts=;h1=abcdef",                // Empty timestamp
             "ts=123;h1=abcdef;extra=value", // Extra fields (should still work)
         ];
 
@@ -188,7 +197,8 @@ mod payment_webhook_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
-        let original_payload = create_webhook_payload("subscription_created", "evt_test_tamper_001");
+        let original_payload =
+            create_webhook_payload("subscription_created", "evt_test_tamper_001");
         let original_payload_str = original_payload.to_string();
 
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
@@ -273,7 +283,8 @@ mod payment_webhook_tests {
 
         // Should accept the real Paddle format
         assert!(
-            response.status() == StatusCode::OK || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+            response.status() == StatusCode::OK
+                || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
             "Expected OK or Internal Server Error for real Paddle format, got: {}",
             response.status()
         );
@@ -286,11 +297,11 @@ mod payment_webhook_tests {
 
         let payload = create_webhook_payload("subscription_created", "evt_test_003");
         let payload_str = payload.to_string();
-        
+
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
-        
+
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
             .header("Paddle-Signature", signature)
@@ -304,7 +315,8 @@ mod payment_webhook_tests {
         // Note: This might return 500 if the webhook processing logic isn't complete,
         // but it should not be a 400 (bad request) due to signature issues
         assert!(
-            response.status() == StatusCode::OK || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+            response.status() == StatusCode::OK
+                || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
             "Expected OK or Internal Server Error, got: {}",
             response.status()
         );
@@ -374,7 +386,8 @@ mod payment_webhook_tests {
 
         // Should process the credit purchase webhook successfully
         assert!(
-            response.status() == StatusCode::OK || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+            response.status() == StatusCode::OK
+                || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
             "Credit purchase webhook failed with status: {}",
             response.status()
         );
@@ -414,12 +427,12 @@ mod payment_webhook_tests {
                 }
             }
         });
-        
+
         let payload_str = payload.to_string();
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
-        
+
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
             .header("Paddle-Signature", signature)
@@ -433,12 +446,13 @@ mod payment_webhook_tests {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         println!("Webhook response status: {}, body: {}", status, body);
-        
+
         // Should handle the webhook (may return 500 if processing logic is incomplete)
         assert!(
             status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR,
             "Expected OK or Internal Server Error, got: {} with body: {}",
-            status, body
+            status,
+            body
         );
     }
 
@@ -468,12 +482,12 @@ mod payment_webhook_tests {
                 }
             }
         });
-        
+
         let payload_str = payload.to_string();
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
-        
+
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
             .header("Paddle-Signature", signature)
@@ -485,7 +499,7 @@ mod payment_webhook_tests {
 
         let status = response.status();
         println!("Subscription updated webhook response status: {}", status);
-        
+
         // Should handle the webhook
         assert!(
             status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR,
@@ -517,12 +531,12 @@ mod payment_webhook_tests {
                 }
             }
         });
-        
+
         let payload_str = payload.to_string();
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
-        
+
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
             .header("Paddle-Signature", signature)
@@ -534,7 +548,7 @@ mod payment_webhook_tests {
 
         let status = response.status();
         println!("Subscription cancelled webhook response status: {}", status);
-        
+
         // Should handle the webhook
         assert!(
             status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR,
@@ -569,12 +583,12 @@ mod payment_webhook_tests {
                 }
             }
         });
-        
+
         let payload_str = payload.to_string();
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
-        
+
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
             .header("Paddle-Signature", signature)
@@ -586,7 +600,7 @@ mod payment_webhook_tests {
 
         let status = response.status();
         println!("Transaction completed webhook response status: {}", status);
-        
+
         // Should handle the webhook
         assert!(
             status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR,
@@ -604,7 +618,7 @@ mod payment_webhook_tests {
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(malformed_payload, &webhook_secret);
-        
+
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
             .header("Paddle-Signature", signature)
@@ -632,12 +646,12 @@ mod payment_webhook_tests {
                 "test": "data"
             }
         });
-        
+
         let payload_str = payload.to_string();
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
         let signature = create_webhook_signature(&payload_str, &webhook_secret);
-        
+
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
             .header("Paddle-Signature", signature)
@@ -649,10 +663,12 @@ mod payment_webhook_tests {
 
         let status = response.status();
         println!("Unknown event type webhook response status: {}", status);
-        
+
         // Should handle unknown events gracefully (probably with OK status but no action)
         assert!(
-            status == StatusCode::OK || status == StatusCode::BAD_REQUEST || status == StatusCode::INTERNAL_SERVER_ERROR,
+            status == StatusCode::OK
+                || status == StatusCode::BAD_REQUEST
+                || status == StatusCode::INTERNAL_SERVER_ERROR,
             "Expected OK, Bad Request, or Internal Server Error, got: {}",
             status
         );
@@ -664,16 +680,28 @@ mod payment_webhook_tests {
         let secret = "test_secret";
         let fixed_timestamp = 1234567890; // Fixed timestamp for deterministic tests
 
-        let signature1 = create_webhook_signature_with_timestamp(payload, secret, Some(fixed_timestamp));
-        let signature2 = create_webhook_signature_with_timestamp(payload, secret, Some(fixed_timestamp));
+        let signature1 =
+            create_webhook_signature_with_timestamp(payload, secret, Some(fixed_timestamp));
+        let signature2 =
+            create_webhook_signature_with_timestamp(payload, secret, Some(fixed_timestamp));
 
-        assert_eq!(signature1, signature2, "Signature creation should be deterministic");
+        assert_eq!(
+            signature1, signature2,
+            "Signature creation should be deterministic"
+        );
         assert!(!signature1.is_empty(), "Signature should not be empty");
 
         // Paddle format: "ts=1234567890;h1=<64_char_hex_signature>"
         // Expected length: 3 + 10 + 4 + 64 = 81 characters
-        assert_eq!(signature1.len(), 81, "Paddle signature should be 81 characters (ts=timestamp;h1=64_hex_chars)");
-        assert!(signature1.starts_with("ts=1234567890;h1="), "Signature should have correct Paddle format");
+        assert_eq!(
+            signature1.len(),
+            81,
+            "Paddle signature should be 81 characters (ts=timestamp;h1=64_hex_chars)"
+        );
+        assert!(
+            signature1.starts_with("ts=1234567890;h1="),
+            "Signature should have correct Paddle format"
+        );
     }
 
     #[test]
@@ -696,18 +724,19 @@ mod payment_webhook_tests {
             usage_reset_hour_utc: 0,
         };
         let service = PaddleService::new(config);
-        
+
         let payload = b"test payload";
-        let signature = create_webhook_signature(
-            std::str::from_utf8(payload).unwrap(), 
-            "test_secret"
-        );
-        
+        let signature =
+            create_webhook_signature(std::str::from_utf8(payload).unwrap(), "test_secret");
+
         let result = service.verify_webhook_signature(payload, &signature);
         assert!(result.is_ok(), "Valid signature should pass verification");
-        
+
         let invalid_result = service.verify_webhook_signature(payload, "invalid_signature");
-        assert!(invalid_result.is_err(), "Invalid signature should fail verification");
+        assert!(
+            invalid_result.is_err(),
+            "Invalid signature should fail verification"
+        );
     }
 }
 

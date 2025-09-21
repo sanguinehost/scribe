@@ -5,27 +5,30 @@
 
 #[cfg(all(test, feature = "payment"))]
 mod credit_integration_tests {
+    use chrono::{Duration, Utc};
+    use deadpool_diesel::Manager as DeadpoolManager;
+    use deadpool_diesel::Pool;
+    use diesel::prelude::*;
     use scribe_backend::{
+        config::Config,
         models::{
             credit::{CreditBalance, CreditPackage, NewCreditPackage},
             payment::{NewSubscription, Subscription},
         },
-        services::payment::{CreditService, SoftLimitService, SubscriptionService},
-        services::EncryptionService,
-        test_helpers::{spawn_app, TestDataGuard},
         schema::{credit_packages, subscriptions, user_credits},
-        config::Config,
+        services::EncryptionService,
+        services::payment::{CreditService, SoftLimitService, SubscriptionService},
+        test_helpers::{TestDataGuard, spawn_app},
     };
-    use uuid::Uuid;
-    use chrono::{Utc, Duration};
-    use diesel::prelude::*;
     use serde_json::json;
     use std::sync::Arc;
-    use deadpool_diesel::Pool;
-    use deadpool_diesel::Manager as DeadpoolManager;
+    use uuid::Uuid;
 
     /// Helper function to create a test user
-    async fn create_test_user(pool: &Pool<DeadpoolManager<diesel::PgConnection>>, user_id: Uuid) -> Result<(), Box<dyn std::error::Error>> {
+    async fn create_test_user(
+        pool: &Pool<DeadpoolManager<diesel::PgConnection>>,
+        user_id: Uuid,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let conn = pool.get().await?;
         conn.interact(move |conn| {
             // Check if user already exists
@@ -74,7 +77,9 @@ mod credit_integration_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Enable credits
         let mut config = (*app.config).clone();
@@ -85,31 +90,36 @@ mod credit_integration_tests {
         let encryption_service = EncryptionService::new();
         let config_for_sub = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let sub = conn.interact(move |conn| {
-            let subscription_service = SubscriptionService::new(config_for_sub.as_ref().clone(), encryption_service);
+        let sub = conn
+            .interact(move |conn| {
+                let subscription_service =
+                    SubscriptionService::new(config_for_sub.as_ref().clone(), encryption_service);
 
-            // Create subscription
-            let new_sub = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
-                plan_type: "basic".to_string(),
-                paddle_subscription_id: Some("test_sub_123".to_string()),
-                paddle_customer_id: Some("test_customer_123".to_string()),
-                status: "active".to_string(),
-                current_period_start: Utc::now(),
-                current_period_end: Utc::now() + Duration::days(30),
-                cancel_at_period_end: Some(false),
-                trial_end: None,
-                credits_allocated_this_period: Some(false),
-                last_credit_grant: None,
-                soft_limit_override: None,
-            };
+                // Create subscription
+                let new_sub = NewSubscription {
+                    id: Uuid::new_v4(),
+                    user_id,
+                    plan_type: "basic".to_string(),
+                    paddle_subscription_id: Some("test_sub_123".to_string()),
+                    paddle_customer_id: Some("test_customer_123".to_string()),
+                    status: "active".to_string(),
+                    current_period_start: Utc::now(),
+                    current_period_end: Utc::now() + Duration::days(30),
+                    cancel_at_period_end: Some(false),
+                    trial_end: None,
+                    credits_allocated_this_period: Some(false),
+                    last_credit_grant: None,
+                    soft_limit_override: None,
+                };
 
-            use scribe_backend::schema::subscriptions::dsl;
-            diesel::insert_into(dsl::subscriptions)
-                .values(&new_sub)
-                .get_result::<Subscription>(conn)
-        }).await.expect("Failed to interact").expect("Failed to create subscription");
+                use scribe_backend::schema::subscriptions::dsl;
+                diesel::insert_into(dsl::subscriptions)
+                    .values(&new_sub)
+                    .get_result::<Subscription>(conn)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to create subscription");
 
         // Initialize and grant credits
         let config_clone = config.clone();
@@ -118,15 +128,22 @@ mod credit_integration_tests {
             let credit_service = CreditService::new(config_clone);
             credit_service.initialize_user_credits(conn, user_id)?;
             credit_service.grant_monthly_credits(conn, user_id, "basic")
-        }).await.expect("Failed to interact").expect("Failed to grant credits");
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to grant credits");
 
         // Check balance
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let balance = conn.interact(move |conn| {
-            let credit_service = CreditService::new(config_clone);
-            credit_service.get_balance(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to get balance");
+        let balance = conn
+            .interact(move |conn| {
+                let credit_service = CreditService::new(config_clone);
+                credit_service.get_balance(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get balance");
 
         // Basic tier should get credits
         assert!(balance.balance > 0);
@@ -143,7 +160,10 @@ mod credit_integration_tests {
                     dsl::last_credit_grant.eq(Some(Utc::now())),
                 ))
                 .execute(conn)
-        }).await.expect("Failed to interact").expect("Failed to update subscription");
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to update subscription");
     }
 
     #[tokio::test]
@@ -152,7 +172,9 @@ mod credit_integration_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Enable both credits and soft limits
         let mut config = (*app.config).clone();
@@ -167,20 +189,31 @@ mod credit_integration_tests {
             let credit_service = CreditService::new(config_clone.clone());
             credit_service.initialize_user_credits(conn, user_id)?;
             credit_service.add_credits(conn, user_id, 1000, "test", "Setup", None, None)
-        }).await.expect("Failed to interact").expect("Failed to setup credits");
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to setup credits");
 
         // Simulate chat usage
         for i in 0..30 {
             let config_clone = config.clone();
             let conn = app.db_pool.get().await.expect("Failed to get connection");
-            let usage = conn.interact(move |conn| {
-                let soft_limit_service = SoftLimitService::new(config_clone);
-                soft_limit_service.record_usage(conn, user_id, "gemini-2.5-flash", 1000)
-            }).await.expect("Failed to interact").expect("Failed to record usage");
+            let usage = conn
+                .interact(move |conn| {
+                    let soft_limit_service = SoftLimitService::new(config_clone);
+                    soft_limit_service.record_usage(conn, user_id, "gemini-2.5-flash", 1000)
+                })
+                .await
+                .expect("Failed to interact")
+                .expect("Failed to record usage");
 
             // After 20 messages (free tier limit), should trigger soft limit
             if i >= 19 {
-                assert!(usage.soft_limit_triggered_at.is_some(), "Should trigger after 20 messages, at message {}", i + 1);
+                assert!(
+                    usage.soft_limit_triggered_at.is_some(),
+                    "Should trigger after 20 messages, at message {}",
+                    i + 1
+                );
 
                 // Note: Free tier doesn't have throttling delays, just hard limit
             }
@@ -199,25 +232,36 @@ mod credit_integration_tests {
                         "Gemini Pro usage",
                         Some(json!({"model": "gemini-2.5-pro", "message": i})),
                     )
-                }).await.expect("Failed to interact").expect("Failed to deduct credits");
+                })
+                .await
+                .expect("Failed to interact")
+                .expect("Failed to deduct credits");
             }
         }
 
         // Check final states
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let balance = conn.interact(move |conn| {
-            let credit_service = CreditService::new(config_clone);
-            credit_service.get_balance(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to get balance");
+        let balance = conn
+            .interact(move |conn| {
+                let credit_service = CreditService::new(config_clone);
+                credit_service.get_balance(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get balance");
         assert_eq!(balance.balance, 700); // 1000 - (6 * 50)
 
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let remaining = conn.interact(move |conn| {
-            let soft_limit_service = SoftLimitService::new(config_clone);
-            soft_limit_service.get_remaining_messages(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to get remaining");
+        let remaining = conn
+            .interact(move |conn| {
+                let soft_limit_service = SoftLimitService::new(config_clone);
+                soft_limit_service.get_remaining_messages(conn, user_id)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get remaining");
         assert_eq!(remaining, Some(0)); // Over limit
     }
 
@@ -227,7 +271,9 @@ mod credit_integration_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Enable credits
         let mut config = (*app.config).clone();
@@ -236,23 +282,27 @@ mod credit_integration_tests {
 
         // Create credit package
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let package = conn.interact(move |conn| {
-            let new_package = NewCreditPackage {
-                package_id: "starter_pack".to_string(),
-                name: "Starter Pack".to_string(),
-                credits: 500,
-                price_cents: 499, // $4.99
-                bonus_percentage: None,
-                paddle_price_id: Some("price_test_123".to_string()),
-                active: Some(true),
-                display_order: None,
-            };
+        let package = conn
+            .interact(move |conn| {
+                let new_package = NewCreditPackage {
+                    package_id: "starter_pack".to_string(),
+                    name: "Starter Pack".to_string(),
+                    credits: 500,
+                    price_cents: 499, // $4.99
+                    bonus_percentage: None,
+                    paddle_price_id: Some("price_test_123".to_string()),
+                    active: Some(true),
+                    display_order: None,
+                };
 
-            use scribe_backend::schema::credit_packages::dsl;
-            diesel::insert_into(dsl::credit_packages)
-                .values(&new_package)
-                .get_result::<CreditPackage>(conn)
-        }).await.expect("Failed to interact").expect("Failed to create package");
+                use scribe_backend::schema::credit_packages::dsl;
+                diesel::insert_into(dsl::credit_packages)
+                    .values(&new_package)
+                    .get_result::<CreditPackage>(conn)
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to create package");
 
         // Initialize user credits
         let config_clone = config.clone();
@@ -260,20 +310,27 @@ mod credit_integration_tests {
         conn.interact(move |conn| {
             let credit_service = CreditService::new(config_clone);
             credit_service.initialize_user_credits(conn, user_id)
-        }).await.expect("Failed to interact").expect("Failed to initialize");
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to initialize");
 
         // Process purchase
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let balance = conn.interact(move |conn| {
-            let credit_service = CreditService::new(config_clone);
-            credit_service.process_credit_purchase(
-                conn,
-                user_id,
-                &package.package_id,
-                "trans_test_123",
-            )
-        }).await.expect("Failed to interact").expect("Failed to process purchase");
+        let balance = conn
+            .interact(move |conn| {
+                let credit_service = CreditService::new(config_clone);
+                credit_service.process_credit_purchase(
+                    conn,
+                    user_id,
+                    &package.package_id,
+                    "trans_test_123",
+                )
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to process purchase");
 
         assert_eq!(balance.balance, 500);
         // Note: lifetime_purchased field doesn't exist in CreditBalance
@@ -287,7 +344,9 @@ mod credit_integration_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id).await.expect("Failed to create user");
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
 
         // Enable credits
         let mut config = (*app.config).clone();
@@ -305,7 +364,7 @@ mod credit_integration_tests {
             diesel::sql_query(
                 "INSERT INTO credit_packages (id, package_id, name, credits, price_cents, active)
                  VALUES ($1, $2, $3, $4, $5, $6)
-                 ON CONFLICT (package_id) DO NOTHING"
+                 ON CONFLICT (package_id) DO NOTHING",
             )
             .bind::<diesel::sql_types::Uuid, _>(Uuid::new_v4())
             .bind::<diesel::sql_types::Text, _>(package_id)
@@ -315,21 +374,23 @@ mod credit_integration_tests {
             .bind::<diesel::sql_types::Bool, _>(true)
             .execute(conn)?;
 
-            credit_service.process_credit_purchase(
-                conn,
-                user_id,
-                package_id,
-                "trans_initial",
-            )
-        }).await.expect("Failed to interact").expect("Failed to add initial credits");
+            credit_service.process_credit_purchase(conn, user_id, package_id, "trans_initial")
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to add initial credits");
 
         // Grant monthly credits for premium tier
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let balance = conn.interact(move |conn| {
-            let credit_service = CreditService::new(config_clone);
-            credit_service.grant_monthly_credits(conn, user_id, "premium")
-        }).await.expect("Failed to interact").expect("Failed to grant monthly credits");
+        let balance = conn
+            .interact(move |conn| {
+                let credit_service = CreditService::new(config_clone);
+                credit_service.grant_monthly_credits(conn, user_id, "premium")
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to grant monthly credits");
 
         // Should have both purchased and granted credits
         assert!(balance.balance > 1000);
@@ -340,10 +401,14 @@ mod credit_integration_tests {
         // Try to grant again in same month - should not double grant
         let config_clone = config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let balance2 = conn.interact(move |conn| {
-            let credit_service = CreditService::new(config_clone);
-            credit_service.grant_monthly_credits(conn, user_id, "premium")
-        }).await.expect("Failed to interact").expect("Failed second grant attempt");
+        let balance2 = conn
+            .interact(move |conn| {
+                let credit_service = CreditService::new(config_clone);
+                credit_service.grant_monthly_credits(conn, user_id, "premium")
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed second grant attempt");
 
         // Balance should not have increased
         assert_eq!(balance2.balance, balance.balance);

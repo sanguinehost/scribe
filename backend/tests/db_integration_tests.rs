@@ -879,7 +879,7 @@ fn test_chat_session_insert_and_query() {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
-            prompt_template_id: "default".to_string()
+            prompt_template_id: "default".to_string(),
         };
 
         let inserted_session: Chat = diesel::insert_into(chat_sessions::table)
@@ -1008,11 +1008,11 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     system_prompt_ciphertext: None,
                     system_prompt_nonce: None,
                     player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
-            prompt_template_id: "default".to_string()
+                    total_prompt_tokens: 0,
+                    total_completion_tokens: 0,
+                    estimated_cost_cents: 0,
+                    tokens_counted_at: chrono::Utc::now(),
+                    prompt_template_id: "default".to_string(),
                 };
                 diesel::insert_into(chat_sessions::table)
                     .values(&new_session)
@@ -1210,11 +1210,11 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
-            prompt_template_id: "default".to_string()
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     conn_setup

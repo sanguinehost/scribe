@@ -32,7 +32,7 @@ use crate::{
         chronicles,
         documents::document_routes,
         health::health_check,
-        lorebook_routes, // Added lorebook_routes
+        lorebook_routes,           // Added lorebook_routes
         payment as payment_routes, // Added payment_routes
         user_persona_routes,
         user_settings_routes,
@@ -150,9 +150,9 @@ impl MockAiClient {
                 )],
                 reasoning_content: None,
                 usage: Usage {
-                    prompt_tokens: Some(20),      // Simulate ~20 tokens for prompt
-                    completion_tokens: Some(10),  // Simulate ~10 tokens for completion
-                    total_tokens: Some(30),       // Total of prompt + completion
+                    prompt_tokens: Some(20),     // Simulate ~20 tokens for prompt
+                    completion_tokens: Some(10), // Simulate ~10 tokens for completion
+                    total_tokens: Some(30),      // Total of prompt + completion
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
                 },
@@ -168,7 +168,7 @@ impl MockAiClient {
         // Estimate token count based on response text length (rough approximation: 1 token per 4 characters)
         let completion_tokens = ((response_text.len() as f64 / 4.0).ceil() as i32).max(1);
         let prompt_tokens = 15; // Default prompt token count
-        
+
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -1642,7 +1642,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     let webhook_routes_for_test = Router::new()
         .nest("/api/payment", payment_routes::payment_webhook_routes()) // Webhook routes under /api/payment
         .with_state(app_state_inner.clone());
-    
+
     #[cfg(not(feature = "payment"))]
     let webhook_routes_for_test = Router::new();
 

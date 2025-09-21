@@ -11,22 +11,22 @@ use crate::{
     errors::AppError,
     models::{
         payment::{
-            NewPaymentUsageTracking, PaymentUsageTracking, UpdatePaymentUsageTracking,
-            Subscription, PlanFeatures,
+            NewPaymentUsageTracking, PaymentUsageTracking, PlanFeatures, Subscription,
+            UpdatePaymentUsageTracking,
         },
-        users::{User as UserDbQuery},
+        users::User as UserDbQuery,
     },
     schema::{payment_usage_tracking, users},
     services::EncryptionService,
 };
 #[cfg(feature = "payment")]
-use chrono::{DateTime, Duration, Utc, Datelike};
+use chrono::{DateTime, Datelike, Duration, Utc};
 #[cfg(feature = "payment")]
-use diesel::{prelude::*, PgConnection};
-#[cfg(feature = "payment")]
-use serde::{Deserialize, Serialize};
+use diesel::{PgConnection, prelude::*};
 #[cfg(feature = "payment")]
 use secrecy::{ExposeSecret, SecretBox};
+#[cfg(feature = "payment")]
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "payment")]
 use tracing::{error, info};
 #[cfg(feature = "payment")]
@@ -87,7 +87,7 @@ impl UsageTrackingService {
         {
             // Update existing record
             let new_total = existing.tokens_used + tokens_used;
-            
+
             let (encrypted_metadata, metadata_nonce) = if let Some(meta) = metadata {
                 // Encrypt the metadata using the user's DEK
                 let (encrypted, nonce) = self.encrypt_usage_metadata(conn, user_id, &meta)?;
@@ -116,7 +116,7 @@ impl UsageTrackingService {
 
         // Create new usage record
         let tokens_limit = self.get_token_limit_for_user(conn, user_id).await?;
-        
+
         let (metadata_encrypted, metadata_nonce) = if let Some(meta) = metadata {
             // Encrypt the metadata using the user's DEK
             let (encrypted, nonce) = self.encrypt_usage_metadata(conn, user_id, &meta)?;
@@ -197,7 +197,7 @@ impl UsageTrackingService {
         // Get token limit based on subscription
         let tokens_limit = self.get_token_limit_for_user(conn, user_id).await?;
         let is_unlimited = tokens_limit < 0;
-        
+
         let tokens_remaining = if is_unlimited {
             i32::MAX
         } else {
@@ -225,7 +225,7 @@ impl UsageTrackingService {
         }
 
         let limits = self.get_usage_limits(conn, user_id).await?;
-        
+
         if limits.is_unlimited {
             return Ok(true);
         }
@@ -262,14 +262,12 @@ impl UsageTrackingService {
         conn: &mut PgConnection,
         usage: &PaymentUsageTracking,
     ) -> Result<Option<UsageMetadata>, AppError> {
-        if let (Some(encrypted_data), Some(nonce)) = (&usage.metadata_encrypted, &usage.metadata_nonce) {
+        if let (Some(encrypted_data), Some(nonce)) =
+            (&usage.metadata_encrypted, &usage.metadata_nonce)
+        {
             // Decrypt the metadata using the user's DEK
-            let metadata = self.decrypt_usage_metadata_with_key(
-                conn,
-                usage.user_id,
-                encrypted_data,
-                nonce,
-            )?;
+            let metadata =
+                self.decrypt_usage_metadata_with_key(conn, usage.user_id, encrypted_data, nonce)?;
             Ok(Some(metadata))
         } else {
             Ok(None)
@@ -289,7 +287,7 @@ impl UsageTrackingService {
             payment_usage_tracking::table
                 .filter(payment_usage_tracking::user_id.eq(user_id))
                 .filter(payment_usage_tracking::period_start.eq(period_start))
-                .filter(payment_usage_tracking::period_end.eq(period_end))
+                .filter(payment_usage_tracking::period_end.eq(period_end)),
         )
         .execute(conn)
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -305,14 +303,17 @@ impl UsageTrackingService {
         months_back: i32,
     ) -> Result<Vec<(DateTime<Utc>, i32)>, AppError> {
         use diesel::dsl::sql;
-        use diesel::sql_types::{Timestamp, Integer};
+        use diesel::sql_types::{Integer, Timestamp};
 
         let cutoff = Utc::now() - Duration::days(months_back as i64 * 30);
 
         let stats: Vec<(DateTime<Utc>, i32)> = payment_usage_tracking::table
             .filter(payment_usage_tracking::user_id.eq(user_id))
             .filter(payment_usage_tracking::period_start.ge(cutoff))
-            .select((payment_usage_tracking::period_start, payment_usage_tracking::tokens_used))
+            .select((
+                payment_usage_tracking::period_start,
+                payment_usage_tracking::tokens_used,
+            ))
             .order(payment_usage_tracking::period_start.asc())
             .load::<(DateTime<Utc>, i32)>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -350,11 +351,15 @@ impl UsageTrackingService {
     fn get_period_end(&self, period_start: DateTime<Utc>) -> DateTime<Utc> {
         // End of month
         let next_month = if period_start.month() == 12 {
-            period_start.with_year(period_start.year() + 1).unwrap().with_month(1).unwrap()
+            period_start
+                .with_year(period_start.year() + 1)
+                .unwrap()
+                .with_month(1)
+                .unwrap()
         } else {
             period_start.with_month(period_start.month() + 1).unwrap()
         };
-        
+
         next_month - Duration::seconds(1)
     }
 
@@ -394,7 +399,10 @@ impl UsageTrackingService {
         // Create HMAC with the encrypted DEK as the key
         let mut mac = HmacSha256::new_from_slice(&encrypted_dek[..32.min(encrypted_dek.len())])
             .map_err(|e| {
-                error!("Failed to create HMAC for usage tracking key derivation: {}", e);
+                error!(
+                    "Failed to create HMAC for usage tracking key derivation: {}",
+                    e
+                );
                 AppError::EncryptionError("Failed to derive usage tracking key".to_string())
             })?;
 
@@ -406,10 +414,7 @@ impl UsageTrackingService {
         let metadata_str = serde_json::to_string(metadata)
             .map_err(|e| AppError::SerializationError(e.to_string()))?;
 
-        let (encrypted, nonce) = encrypt_gcm(
-            metadata_str.as_bytes(),
-            &usage_key,
-        ).map_err(|e| {
+        let (encrypted, nonce) = encrypt_gcm(metadata_str.as_bytes(), &usage_key).map_err(|e| {
             error!("Failed to encrypt usage metadata: {}", e);
             AppError::EncryptionError("Failed to encrypt usage metadata".to_string())
         })?;
@@ -452,7 +457,10 @@ impl UsageTrackingService {
         // Create HMAC with the encrypted DEK as the key
         let mut mac = HmacSha256::new_from_slice(&encrypted_dek[..32.min(encrypted_dek.len())])
             .map_err(|e| {
-                error!("Failed to create HMAC for usage tracking key derivation: {}", e);
+                error!(
+                    "Failed to create HMAC for usage tracking key derivation: {}",
+                    e
+                );
                 AppError::EncryptionError("Failed to derive usage tracking key".to_string())
             })?;
 
@@ -461,21 +469,20 @@ impl UsageTrackingService {
         let usage_key = SecretBox::new(Box::new(key_material.to_vec()));
 
         // Decrypt the metadata
-        let decrypted = crate::crypto::decrypt_gcm(
-            encrypted_data,
-            nonce,
-            &usage_key,
-        ).map_err(|e| {
-            error!("Failed to decrypt usage metadata: {}", e);
-            AppError::DecryptionError("Failed to decrypt usage metadata".to_string())
-        })?;
+        let decrypted =
+            crate::crypto::decrypt_gcm(encrypted_data, nonce, &usage_key).map_err(|e| {
+                error!("Failed to decrypt usage metadata: {}", e);
+                AppError::DecryptionError("Failed to decrypt usage metadata".to_string())
+            })?;
 
         // Deserialize the metadata
-        let metadata_str = String::from_utf8(decrypted.expose_secret().clone())
-            .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8 in decrypted metadata: {}", e)))?;
+        let metadata_str = String::from_utf8(decrypted.expose_secret().clone()).map_err(|e| {
+            AppError::DecryptionError(format!("Invalid UTF-8 in decrypted metadata: {}", e))
+        })?;
 
-        let metadata: UsageMetadata = serde_json::from_str(&metadata_str)
-            .map_err(|e| AppError::SerializationError(format!("Failed to deserialize metadata: {}", e)))?;
+        let metadata: UsageMetadata = serde_json::from_str(&metadata_str).map_err(|e| {
+            AppError::SerializationError(format!("Failed to deserialize metadata: {}", e))
+        })?;
 
         info!("Successfully decrypted usage metadata for user {}", user_id);
 
@@ -488,7 +495,10 @@ pub struct UsageTrackingService;
 
 #[cfg(not(feature = "payment"))]
 impl UsageTrackingService {
-    pub fn new(_config: crate::config::Config, _encryption_service: crate::services::EncryptionService) -> Self {
+    pub fn new(
+        _config: crate::config::Config,
+        _encryption_service: crate::services::EncryptionService,
+    ) -> Self {
         Self
     }
 }

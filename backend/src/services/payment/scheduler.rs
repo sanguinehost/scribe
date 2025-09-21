@@ -10,7 +10,7 @@ use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc};
 use deadpool_diesel::Pool;
 use diesel::prelude::*;
 use std::sync::Arc;
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -43,7 +43,10 @@ impl PaymentScheduler {
             config.as_ref().clone(),
             EncryptionService::new(),
         ));
-        let usage_service = Arc::new(UsageTrackingService::new(config.as_ref().clone(), EncryptionService::new()));
+        let usage_service = Arc::new(UsageTrackingService::new(
+            config.as_ref().clone(),
+            EncryptionService::new(),
+        ));
 
         Self {
             config,
@@ -145,7 +148,8 @@ impl PaymentScheduler {
             };
 
             let duration_until_next = next_month_start - now;
-            let sleep_duration = Duration::from_secs(duration_until_next.num_seconds().max(0) as u64);
+            let sleep_duration =
+                Duration::from_secs(duration_until_next.num_seconds().max(0) as u64);
 
             info!(
                 "Monthly credit allocation scheduled for {} (in {} hours)",
@@ -210,7 +214,10 @@ impl PaymentScheduler {
                 .set(users::last_daily_usage_reset.eq(Utc::now()))
                 .execute(conn)?;
 
-            info!("Updated last_daily_usage_reset for {} users", user_update_count);
+            info!(
+                "Updated last_daily_usage_reset for {} users",
+                user_update_count
+            );
 
             Ok::<_, diesel::result::Error>(())
         })
@@ -241,9 +248,8 @@ impl PaymentScheduler {
                     .filter(
                         subscriptions::last_credit_grant
                             .is_null()
-                            .or(subscriptions::last_credit_grant.lt(
-                                Utc::now() - chrono::Duration::days(25)
-                            ))
+                            .or(subscriptions::last_credit_grant
+                                .lt(Utc::now() - chrono::Duration::days(25))),
                     )
                     .load::<Subscription>(conn)
             })
@@ -257,7 +263,10 @@ impl PaymentScheduler {
                 AppError::DatabaseQueryError(e.to_string())
             })?;
 
-        info!("Processing monthly credits for {} active subscriptions", active_subscriptions.len());
+        info!(
+            "Processing monthly credits for {} active subscriptions",
+            active_subscriptions.len()
+        );
 
         // Allocate credits for each subscription
         for subscription in active_subscriptions {
@@ -271,11 +280,7 @@ impl PaymentScheduler {
             match conn
                 .interact(move |conn| {
                     // Grant credits based on plan
-                    let result = credit_service.grant_monthly_credits(
-                        conn,
-                        user_id,
-                        &plan_type,
-                    );
+                    let result = credit_service.grant_monthly_credits(conn, user_id, &plan_type);
 
                     // Update last_credit_grant timestamp
                     if result.is_ok() {
@@ -295,10 +300,7 @@ impl PaymentScheduler {
                     );
                 }
                 Ok(Err(e)) => {
-                    error!(
-                        "Failed to allocate credits for user {}: {}",
-                        user_id, e
-                    );
+                    error!("Failed to allocate credits for user {}: {}", user_id, e);
                 }
                 Err(e) => {
                     error!(
@@ -320,14 +322,12 @@ impl PaymentScheduler {
         let subscriptions_to_process = conn
             .interact(move |conn| {
                 subscriptions::table
-                    .filter(
-                        subscriptions::current_period_end
-                            .lt(Utc::now())
-                            .and(subscriptions::status.eq_any(vec![
-                                SubscriptionStatus::Active.to_string(),
-                                SubscriptionStatus::Trialing.to_string(),
-                            ]))
-                    )
+                    .filter(subscriptions::current_period_end.lt(Utc::now()).and(
+                        subscriptions::status.eq_any(vec![
+                            SubscriptionStatus::Active.to_string(),
+                            SubscriptionStatus::Trialing.to_string(),
+                        ]),
+                    ))
                     .load::<Subscription>(conn)
             })
             .await
@@ -351,7 +351,8 @@ impl PaymentScheduler {
             let grace_period_days = self.config.payment.grace_period_days as i64;
 
             // Check if subscription is past grace period
-            let days_overdue = (Utc::now().signed_duration_since(subscription.current_period_end)).num_days();
+            let days_overdue =
+                (Utc::now().signed_duration_since(subscription.current_period_end)).num_days();
 
             if days_overdue > grace_period_days {
                 // Expire the subscription
@@ -413,7 +414,10 @@ impl PaymentScheduler {
                 })
                 .await
                 .map_err(|e| {
-                    error!("Failed to mark subscription as past due {}: {}", subscription_id, e);
+                    error!(
+                        "Failed to mark subscription as past due {}: {}",
+                        subscription_id, e
+                    );
                     AppError::DatabaseQueryError(e.to_string())
                 })?
                 .map_err(|e| {

@@ -138,15 +138,17 @@ async fn main_request_logging_middleware(req: AxumRequest, next: Next) -> AxumRe
 async fn main() -> Result<()> {
     initialize_runtime();
     let config = Arc::new(Config::load().context("Failed to load configuration")?);
-    
+
     // Validate configuration on startup
     #[cfg(feature = "payment")]
     {
         tracing::info!("Validating payment system configuration...");
-        config.validate().context("Configuration validation failed")?;
+        config
+            .validate()
+            .context("Configuration validation failed")?;
         tracing::info!("Payment system configuration validation passed");
     }
-    
+
     let pool = setup_database_pool(&config);
     run_migrations(&pool).await?;
 
@@ -159,12 +161,10 @@ async fn main() -> Result<()> {
     {
         if config.payment.credits_enabled || config.payment.soft_limits_enabled {
             tracing::info!("Starting payment scheduler for periodic tasks...");
-            let scheduler = Arc::new(
-                scribe_backend::services::payment::PaymentScheduler::new(
-                    config.clone(),
-                    pool.clone(),
-                )
-            );
+            let scheduler = Arc::new(scribe_backend::services::payment::PaymentScheduler::new(
+                config.clone(),
+                pool.clone(),
+            ));
             scheduler.start().await;
             tracing::info!("Payment scheduler started successfully");
         } else {
@@ -546,26 +546,23 @@ fn build_router(
             "/characters",
             characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         ) // 10MB limit for character uploads
-        .nest(
-            "/chat",
+        .nest("/chat", {
+            let mut routes =
+                chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
+
+            // Add soft limit enforcement before LLM security
+            #[cfg(feature = "payment")]
             {
-                let mut routes = chat_routes(app_state.clone())
-                    .layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
+                routes = routes.layer(axum::middleware::from_fn(
+                    scribe_backend::middleware::soft_limit_enforcement_middleware,
+                ));
+            }
 
-                // Add soft limit enforcement before LLM security
-                #[cfg(feature = "payment")]
-                {
-                    routes = routes.layer(axum::middleware::from_fn(
-                        scribe_backend::middleware::soft_limit_enforcement_middleware,
-                    ));
-                }
-
-                routes.layer(axum::middleware::from_fn_with_state(
-                    app_state.clone(),
-                    scribe_backend::middleware::llm_security::llm_security_middleware,
-                ))
-            },
-        )
+            routes.layer(axum::middleware::from_fn_with_state(
+                app_state.clone(),
+                scribe_backend::middleware::llm_security::llm_security_middleware,
+            ))
+        })
         .nest("/chats", chats::chat_routes())
         .nest(
             "/chronicles",

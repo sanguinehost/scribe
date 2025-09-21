@@ -209,10 +209,10 @@ async fn create_test_chat_session(
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
     };
 
     let chat_session = conn_pool
@@ -316,7 +316,7 @@ async fn setup_chat_settings_test_env(
             model_name: "initial-model".to_string(),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
-        prompt_template_id: "default".to_string(),
+            prompt_template_id: "default".to_string(),
             active_impersonated_character_id: None,
             temperature: None,
             max_output_tokens: None,
@@ -540,7 +540,7 @@ async fn get_chat_settings_defaults() {
             model_name: "scribe-default-model".to_string(),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
-        prompt_template_id: "default".to_string(),
+            prompt_template_id: "default".to_string(),
             active_impersonated_character_id: None,
             temperature: None,
             max_output_tokens: None,
@@ -1299,7 +1299,7 @@ async fn debug_system_prompt_encryption_decryption() {
                 model_name: "gemini-2.5-flash".to_string(),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
-        prompt_template_id: "default".to_string(),
+                prompt_template_id: "default".to_string(),
                 active_impersonated_character_id: None,
                 temperature: None,
                 max_output_tokens: None,
@@ -1314,10 +1314,10 @@ async fn debug_system_prompt_encryption_decryption() {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
             };
 
             diesel::insert_into(chat_sessions::table)
@@ -1537,7 +1537,7 @@ async fn test_actual_api_route_for_system_prompt() {
                 model_name: "gemini-2.5-flash".to_string(),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
-        prompt_template_id: "default".to_string(),
+                prompt_template_id: "default".to_string(),
                 active_impersonated_character_id: None,
                 temperature: None,
                 max_output_tokens: None,
@@ -1552,10 +1552,10 @@ async fn test_actual_api_route_for_system_prompt() {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
             };
 
             diesel::insert_into(chat_sessions::table)

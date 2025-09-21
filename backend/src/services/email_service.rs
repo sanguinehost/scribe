@@ -65,7 +65,7 @@ pub trait EmailService: Send + Sync {
 
 /// Development email service that logs verification links to console
 /// instead of sending actual emails
-/// 
+///
 /// ⚠️  SECURITY WARNING: This service is for DEVELOPMENT ONLY!
 /// It logs email verification information to console and should NEVER be used in production.
 /// Sensitive data (emails, tokens) are redacted in logs but still visible in console output.
@@ -93,7 +93,7 @@ impl EmailService for LoggingEmailService {
         let redacted_token = redact_token(verification_token);
         let masked_email = mask_email(to_email);
         let redacted_link = format!("{}/verify-email?token={}", self.base_url, redacted_token);
-        
+
         // Create the actual verification link (not logged)
         let verification_link = format!(
             "{}/verify-email?token={}",
@@ -298,7 +298,9 @@ pub async fn create_email_service(
             Ok(Arc::new(service))
         }
         _ => {
-            info!("Creating logging email service for development - sensitive data will be redacted in logs");
+            info!(
+                "Creating logging email service for development - sensitive data will be redacted in logs"
+            );
             Ok(Arc::new(LoggingEmailService::new(base_url)))
         }
     }
@@ -314,12 +316,12 @@ mod tests {
         let long_token = "abcdef1234567890wxyz1234567890";
         let redacted = redact_token(long_token);
         assert_eq!(redacted, "abcdef12***7890");
-        
+
         // Test short token
         let short_token = "abc123";
         let redacted = redact_token(short_token);
         assert_eq!(redacted, "abc1***");
-        
+
         // Test very short token
         let tiny_token = "ab";
         let redacted = redact_token(tiny_token);
@@ -332,17 +334,17 @@ mod tests {
         let email = "john.doe@example.com";
         let masked = mask_email(email);
         assert_eq!(masked, "j***@example.com");
-        
+
         // Test single char local part
         let email = "a@example.com";
         let masked = mask_email(email);
         assert_eq!(masked, "***@example.com");
-        
+
         // Test invalid email (no @)
         let email = "notanemail";
         let masked = mask_email(email);
         assert_eq!(masked, "n***");
-        
+
         // Test very short invalid email
         let email = "no";
         let masked = mask_email(email);

@@ -19,10 +19,7 @@ use crate::{
         MessageRole, // Changed NewChatMessagePayload to NewChatMessage
     },
     schema::{chat_messages, chat_sessions},
-    services::{
-        chat::message_variants,
-        hybrid_token_counter::CountingMode,
-    },
+    services::{chat::message_variants, hybrid_token_counter::CountingMode},
     state::DbPool, // Changed db::Db to state::DbPool
 };
 
@@ -133,7 +130,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         error_message,
         variant_of,
     } = params;
-    
+
     // Clone model_name early for later use in token tracking
     let model_name_for_tracking = model_name.clone();
 
@@ -154,7 +151,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     // CRITICAL FIX: If variant_of is provided, create ONLY a variant, don't save a new message
     if let Some(parent_message_id) = variant_of {
         info!(parent_message_id = %parent_message_id, "Creating variant instead of new message");
-        
+
         if let Some(dek_arc) = &user_dek_secret_box {
             // Create the variant using the existing function
             let variant_result = message_variants::create_message_variant(
@@ -163,12 +160,13 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 content, // Use the content directly (create_message_variant handles encryption)
                 user_id,
                 dek_arc,
-            ).await;
-            
+            )
+            .await;
+
             match variant_result {
                 Ok(_variant) => {
                     info!(parent_message_id = %parent_message_id, "Successfully created message variant");
-                    
+
                     // Return the parent message with updated variant metadata
                     // We need to fetch the updated parent message to return it
                     let pool = state.pool.clone();
@@ -183,13 +181,17 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                                 .filter(user_id.eq(user_id))
                                 .select(ChatMessage::as_select())
                                 .first::<ChatMessage>(conn)
-                                .map_err(|e| AppError::DatabaseQueryError(format!("Parent message not found: {e}")))
+                                .map_err(|e| {
+                                    AppError::DatabaseQueryError(format!(
+                                        "Parent message not found: {e}"
+                                    ))
+                                })
                         })
                         .await
                         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-                        
+
                     return Ok(updated_parent);
-                },
+                }
                 Err(e) => {
                     error!(parent_message_id = %parent_message_id, error = ?e, "Failed to create message variant");
                     return Err(e);
@@ -197,7 +199,9 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             }
         } else {
             error!(parent_message_id = %parent_message_id, "Cannot create variant without user DEK");
-            return Err(AppError::BadRequest("Cannot create variant without encryption key".to_string()));
+            return Err(AppError::BadRequest(
+                "Cannot create variant without encryption key".to_string(),
+            ));
         }
     }
 
@@ -236,7 +240,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         // For assistant messages, if raw_prompt_debug is provided, count tokens for the full prompt
         // that was sent to the AI (including system prompt, RAG context, history, etc.)
         if let Some(raw_prompt) = raw_prompt_debug {
-            info!(%session_id, raw_prompt_length = raw_prompt.len(), 
+            info!(%session_id, raw_prompt_length = raw_prompt.len(),
                   "Counting tokens for full AI prompt (system + RAG + history + user input)");
 
             match state
@@ -247,7 +251,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 Ok(estimate) => {
                     // Override the prompt_tokens with the full prompt token count
                     prompt_tokens_val = Some(i32::try_from(estimate.total).unwrap_or(i32::MAX));
-                    info!(%session_id, prompt_tokens = estimate.total, 
+                    info!(%session_id, prompt_tokens = estimate.total,
                           "Counted tokens for full AI prompt (system + RAG + history + user input)");
                 }
                 Err(e) => warn!(
@@ -341,14 +345,15 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     // Only update if we have at least some tokens to count
     if prompt_tokens > 0 || completion_tokens > 0 {
         info!(session_id = %session_id, user_id = %user_id, prompt_tokens = prompt_tokens, completion_tokens = completion_tokens, "Updating cumulative token counts");
-        
+
         // Calculate estimated cost in cents based on model pricing
-        let estimated_cost_cents = calculate_token_cost_cents(prompt_tokens, completion_tokens, &model_name_for_tracking);
-        
+        let estimated_cost_cents =
+            calculate_token_cost_cents(prompt_tokens, completion_tokens, &model_name_for_tracking);
+
         let db_pool_for_tokens: DbPool = state.pool.clone();
         let session_id_for_tokens = session_id;
         let user_id_for_tokens = user_id;
-        
+
         // Spawn async task to update token counts to avoid blocking message save
         tokio::spawn(async move {
             if let Err(e) = update_cumulative_token_counts(
@@ -358,7 +363,9 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 prompt_tokens,
                 completion_tokens,
                 estimated_cost_cents,
-            ).await {
+            )
+            .await
+            {
                 error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, error = ?e, "Failed to update cumulative token counts");
             } else {
                 info!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, "Successfully updated cumulative token counts");
@@ -429,7 +436,10 @@ fn calculate_token_cost_cents(prompt_tokens: i32, completion_tokens: i32, model_
         "gemini-2.5-flash-lite-preview" => (0.1, 0.4),
         _ => {
             // Default to flash pricing for unknown models
-            warn!("Unknown model '{}', using gemini-2.5-flash pricing", model_name);
+            warn!(
+                "Unknown model '{}', using gemini-2.5-flash pricing",
+                model_name
+            );
             (0.3, 2.5)
         }
     };
@@ -440,9 +450,15 @@ fn calculate_token_cost_cents(prompt_tokens: i32, completion_tokens: i32, model_
     let total_cost_dollars = input_cost_dollars + output_cost_dollars;
     let total_cost_cents = (total_cost_dollars * 100.0).round() as i32;
 
-    trace!(model_name = model_name, prompt_tokens = prompt_tokens, completion_tokens = completion_tokens, 
-           input_cost_dollars = input_cost_dollars, output_cost_dollars = output_cost_dollars, 
-           total_cost_cents = total_cost_cents, "Calculated token cost");
+    trace!(
+        model_name = model_name,
+        prompt_tokens = prompt_tokens,
+        completion_tokens = completion_tokens,
+        input_cost_dollars = input_cost_dollars,
+        output_cost_dollars = output_cost_dollars,
+        total_cost_cents = total_cost_cents,
+        "Calculated token cost"
+    );
 
     total_cost_cents
 }
@@ -458,24 +474,21 @@ async fn update_cumulative_token_counts(
 ) -> Result<(), AppError> {
     use crate::schema::{chat_sessions, users};
     use diesel::prelude::*;
-    
+
     let conn = pool.get().await?;
-    
+
     conn.interact(move |conn| {
         // Start a transaction to ensure atomicity
         conn.transaction::<_, diesel::result::Error, _>(|conn| {
             // Update chat session cumulative counts
             diesel::update(chat_sessions::table.find(session_id))
                 .set((
-                    chat_sessions::total_prompt_tokens.eq(
-                        chat_sessions::total_prompt_tokens + prompt_tokens
-                    ),
-                    chat_sessions::total_completion_tokens.eq(
-                        chat_sessions::total_completion_tokens + completion_tokens
-                    ),
-                    chat_sessions::estimated_cost_cents.eq(
-                        chat_sessions::estimated_cost_cents + estimated_cost_cents
-                    ),
+                    chat_sessions::total_prompt_tokens
+                        .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
+                    chat_sessions::total_completion_tokens
+                        .eq(chat_sessions::total_completion_tokens + completion_tokens),
+                    chat_sessions::estimated_cost_cents
+                        .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
                     chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)?;
@@ -483,15 +496,12 @@ async fn update_cumulative_token_counts(
             // Update user cumulative counts
             diesel::update(users::table.find(user_id))
                 .set((
-                    users::total_prompt_tokens.eq(
-                        users::total_prompt_tokens + (prompt_tokens as i64)
-                    ),
-                    users::total_completion_tokens.eq(
-                        users::total_completion_tokens + (completion_tokens as i64)
-                    ),
-                    users::total_token_cost_cents.eq(
-                        users::total_token_cost_cents + (estimated_cost_cents as i64)
-                    ),
+                    users::total_prompt_tokens
+                        .eq(users::total_prompt_tokens + (prompt_tokens as i64)),
+                    users::total_completion_tokens
+                        .eq(users::total_completion_tokens + (completion_tokens as i64)),
+                    users::total_token_cost_cents
+                        .eq(users::total_token_cost_cents + (estimated_cost_cents as i64)),
                     users::token_usage_updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)?;

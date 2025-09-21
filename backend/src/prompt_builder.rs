@@ -258,8 +258,8 @@ pub struct PromptBuildParams<'a> {
     pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>, // For decrypting character data
     pub user_persona_name: Option<String>,                 // For {{user}} template substitution
     pub agent_context: Option<String>,                     // Pre-processing agent context to inject
-    pub guidance: Option<String>,                          // Optional guidance for response generation
-    pub prompt_template_id: Option<String>,                // Template ID for conversation style
+    pub guidance: Option<String>, // Optional guidance for response generation
+    pub prompt_template_id: Option<String>, // Template ID for conversation style
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -838,9 +838,7 @@ fn build_rag_context_string(
                 &rag_item.metadata
             {
                 // Try to parse the text as JSON to extract rich chronicle data
-                if let Ok(event_data) =
-                    serde_json::from_str::<serde_json::Value>(&rag_item.text)
-                {
+                if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&rag_item.text) {
                     write!(
                         rag_context,
                         "<chronicle_event type=\"{}\" timestamp=\"{}\"",
@@ -870,10 +868,8 @@ fn build_rag_context_string(
                                     actor.get("id").and_then(|i| i.as_str()),
                                     actor.get("role").and_then(|r| r.as_str()),
                                 ) {
-                                    let details = actor
-                                        .get("details")
-                                        .and_then(|d| d.as_str())
-                                        .unwrap_or("");
+                                    let details =
+                                        actor.get("details").and_then(|d| d.as_str()).unwrap_or("");
                                     writeln!(
                                         rag_context,
                                         "        <actor id=\"{}\" role=\"{}\">{}</actor>",
@@ -913,7 +909,9 @@ fn build_rag_context_string(
                     }
 
                     // Add context data if available
-                    if let Some(context) = event_data.get("context_data").and_then(|c| c.as_object()) {
+                    if let Some(context) =
+                        event_data.get("context_data").and_then(|c| c.as_object())
+                    {
                         if !context.is_empty() {
                             write!(rag_context, "    <context").unwrap();
                             for (key, value) in context {
@@ -932,7 +930,8 @@ fn build_rag_context_string(
                     }
 
                     // Add causality if available
-                    if let Some(causality) = event_data.get("causality").and_then(|c| c.as_object()) {
+                    if let Some(causality) = event_data.get("causality").and_then(|c| c.as_object())
+                    {
                         let has_caused_by = causality
                             .get("causedBy")
                             .and_then(|cb| cb.as_array())
@@ -947,7 +946,9 @@ fn build_rag_context_string(
                         if has_caused_by || has_causes {
                             writeln!(rag_context, "    <causality>").unwrap();
 
-                            if let Some(caused_by) = causality.get("causedBy").and_then(|cb| cb.as_array()) {
+                            if let Some(caused_by) =
+                                causality.get("causedBy").and_then(|cb| cb.as_array())
+                            {
                                 for cause_id in caused_by {
                                     if let Some(id_str) = cause_id.as_str() {
                                         writeln!(
@@ -960,7 +961,8 @@ fn build_rag_context_string(
                                 }
                             }
 
-                            if let Some(causes) = causality.get("causes").and_then(|c| c.as_array()) {
+                            if let Some(causes) = causality.get("causes").and_then(|c| c.as_array())
+                            {
                                 for effect_id in causes {
                                     if let Some(id_str) = effect_id.as_str() {
                                         writeln!(
@@ -982,8 +984,12 @@ fn build_rag_context_string(
                         .get("summary")
                         .and_then(|s| s.as_str())
                         .unwrap_or_else(|| rag_item.text.trim());
-                    writeln!(rag_context, "    <summary>{}</summary>", escape_xml(summary))
-                        .unwrap();
+                    writeln!(
+                        rag_context,
+                        "    <summary>{}</summary>",
+                        escape_xml(summary)
+                    )
+                    .unwrap();
 
                     writeln!(rag_context, "</chronicle_event>").unwrap();
                 } else {
@@ -1060,54 +1066,58 @@ fn build_rag_context_string(
                     };
 
                     // Decrypt title if encrypted fields are present
-                    let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
-                        lorebook_meta.encrypted_title.as_ref(),
-                        lorebook_meta.title_nonce.as_ref(),
-                    ) {
-                        // We have encrypted title
-                        if let Some(ref session_dek) = user_dek {
-                            match crate::crypto::decrypt_gcm(encrypted_title, title_nonce, session_dek)
-                            {
-                                Ok(decrypted_secret) => {
-                                    let decrypted_bytes =
-                                        secrecy::ExposeSecret::expose_secret(&decrypted_secret);
-                                    let decrypted_title =
-                                        String::from_utf8_lossy(decrypted_bytes).to_string();
-                                    // Handle empty decrypted titles
-                                    if decrypted_title.trim().is_empty() {
-                                        "Untitled".to_string()
-                                    } else {
-                                        decrypted_title
+                    let title =
+                        if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
+                            lorebook_meta.encrypted_title.as_ref(),
+                            lorebook_meta.title_nonce.as_ref(),
+                        ) {
+                            // We have encrypted title
+                            if let Some(ref session_dek) = user_dek {
+                                match crate::crypto::decrypt_gcm(
+                                    encrypted_title,
+                                    title_nonce,
+                                    session_dek,
+                                ) {
+                                    Ok(decrypted_secret) => {
+                                        let decrypted_bytes =
+                                            secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                        let decrypted_title =
+                                            String::from_utf8_lossy(decrypted_bytes).to_string();
+                                        // Handle empty decrypted titles
+                                        if decrypted_title.trim().is_empty() {
+                                            "Untitled".to_string()
+                                        } else {
+                                            decrypted_title
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to decrypt lorebook title: {}", e);
+                                        // Handle empty fallback titles
+                                        lorebook_meta
+                                            .entry_title
+                                            .clone()
+                                            .and_then(|t| {
+                                                if t.trim().is_empty() { None } else { Some(t) }
+                                            })
+                                            .unwrap_or_else(|| "[decryption failed]".to_string())
                                     }
                                 }
-                                Err(e) => {
-                                    warn!("Failed to decrypt lorebook title: {}", e);
-                                    // Handle empty fallback titles
-                                    lorebook_meta
-                                        .entry_title
-                                        .clone()
-                                        .and_then(|t| {
-                                            if t.trim().is_empty() { None } else { Some(t) }
-                                        })
-                                        .unwrap_or_else(|| "[decryption failed]".to_string())
-                                }
+                            } else {
+                                // Handle empty fallback titles
+                                lorebook_meta
+                                    .entry_title
+                                    .clone()
+                                    .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
+                                    .unwrap_or_else(|| "[encrypted - no DEK]".to_string())
                             }
                         } else {
-                            // Handle empty fallback titles
+                            // Handle empty unencrypted titles
                             lorebook_meta
                                 .entry_title
                                 .clone()
                                 .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
-                                .unwrap_or_else(|| "[encrypted - no DEK]".to_string())
-                        }
-                    } else {
-                        // Handle empty unencrypted titles
-                        lorebook_meta
-                            .entry_title
-                            .clone()
-                            .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
-                            .unwrap_or_else(|| "Untitled".to_string())
-                    };
+                                .unwrap_or_else(|| "Untitled".to_string())
+                        };
 
                     write!(rag_context, "<lorebook_entry").unwrap();
 
@@ -1121,8 +1131,12 @@ fn build_rag_context_string(
                         }
                     }
 
-                    writeln!(rag_context, ">{}</lorebook_entry>", escape_xml(content.trim()))
-                        .unwrap();
+                    writeln!(
+                        rag_context,
+                        ">{}</lorebook_entry>",
+                        escape_xml(content.trim())
+                    )
+                    .unwrap();
                 }
                 crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
                     // Already handled above
@@ -1150,14 +1164,15 @@ async fn build_final_prompt_strings(
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Use the template system to build the final system prompt
     let template_id = template_id.unwrap_or("neutral_roleplay");
-    
+
     debug!(template_id = %template_id, "Building final prompt with template");
-    
+
     // Build RAG context string
     let rag_context_string = build_rag_context_string(calculation, user_dek);
-    
+
     // Extract character personality and description if available
-    let (character_personality, character_description) = if let Some(char_meta) = character_metadata {
+    let (character_personality, character_description) = if let Some(char_meta) = character_metadata
+    {
         let personality = decrypt_character_field(
             &char_meta.personality,
             &char_meta.personality_nonce,
@@ -1176,14 +1191,21 @@ async fn build_final_prompt_strings(
     } else {
         (None, None)
     };
-    
+
     // Add agent context to RAG if available
     let enhanced_rag_context = if let Some(agent_ctx) = agent_context {
         if !agent_ctx.is_empty() {
             if rag_context_string.is_empty() {
-                format!("<agent_context>\n{}\n</agent_context>", escape_xml(agent_ctx))
+                format!(
+                    "<agent_context>\n{}\n</agent_context>",
+                    escape_xml(agent_ctx)
+                )
             } else {
-                format!("{}\n\n<agent_context>\n{}\n</agent_context>", rag_context_string, escape_xml(agent_ctx))
+                format!(
+                    "{}\n\n<agent_context>\n{}\n</agent_context>",
+                    rag_context_string,
+                    escape_xml(agent_ctx)
+                )
             }
         } else {
             rag_context_string
@@ -1191,51 +1213,54 @@ async fn build_final_prompt_strings(
     } else {
         rag_context_string
     };
-    
+
     // Build context for template rendering
     let mut template_context = serde_json::json!({
         "user": {
             "name": user_persona_name.unwrap_or("User")
         }
     });
-    
+
     // Add character information if available
     if let Some(char_meta) = character_metadata {
         let mut char_obj = serde_json::json!({
             "name": char_meta.name
         });
-        
+
         if let Some(personality) = character_personality {
             char_obj["personality"] = serde_json::Value::String(personality);
         }
-        
+
         if let Some(description) = character_description {
             char_obj["description"] = serde_json::Value::String(description);
         }
-        
+
         template_context["char"] = char_obj;
     }
-    
+
     // Add persona override if available
     if !calculation.persona_override_prompt_str.is_empty() {
-        template_context["persona_override"] = serde_json::Value::String(calculation.persona_override_prompt_str.clone());
+        template_context["persona_override"] =
+            serde_json::Value::String(calculation.persona_override_prompt_str.clone());
     }
-    
+
     // Add character definition if available
     if !calculation.character_definition_str.is_empty() {
-        template_context["character_definition"] = serde_json::Value::String(calculation.character_definition_str.clone());
+        template_context["character_definition"] =
+            serde_json::Value::String(calculation.character_definition_str.clone());
     }
-    
+
     // Add character details if available
     if !calculation.character_details_str.is_empty() {
-        template_context["character_details"] = serde_json::Value::String(calculation.character_details_str.clone());
+        template_context["character_details"] =
+            serde_json::Value::String(calculation.character_details_str.clone());
     }
-    
+
     // Add RAG context if available
     if !enhanced_rag_context.is_empty() {
         template_context["rag_context"] = serde_json::Value::String(enhanced_rag_context.clone());
     }
-    
+
     // Add agent context as separate template variable for sections list generation
     if let Some(agent_ctx) = agent_context {
         template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string());
@@ -1255,16 +1280,16 @@ async fn build_final_prompt_strings(
     let mut final_user_message = current_user_message.clone();
     if let MessageContent::Text(text_content) = final_user_message.content {
         let mut formatted_content = String::new();
-        
+
         // Add the user input
         formatted_content.push_str(&format!("**[User Input]**\n{}", text_content));
-        
+
         // Add guidance if provided
         if let Some(guidance_text) = guidance {
             formatted_content.push_str("\n\n**[Regeneration Guidance]**\n");
             formatted_content.push_str(guidance_text);
         }
-        
+
         final_user_message.content = MessageContent::Text(formatted_content);
     } else {
         // Handle other MessageContent variants if necessary, or log a warning

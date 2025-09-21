@@ -12,20 +12,20 @@
 
 #[cfg(all(test, feature = "payment"))]
 mod payment_security_tests {
+    use chrono::Utc;
+    use deadpool_diesel::{Manager as DeadpoolManager, Pool};
+    use diesel::prelude::*;
+    use reqwest::{Client, StatusCode};
     use scribe_backend::{
-        models::users::{NewUser, UserRole, AccountStatus},
-        services::payment::CreditService,
-        test_helpers::{spawn_app, TestDataGuard},
         config::Config,
         errors::AppError,
+        models::users::{AccountStatus, NewUser, UserRole},
+        services::payment::CreditService,
+        test_helpers::{TestDataGuard, spawn_app},
     };
-    use uuid::Uuid;
     use serde_json::json;
-    use reqwest::{StatusCode, Client};
     use std::sync::Arc;
-    use diesel::prelude::*;
-    use deadpool_diesel::{Pool, Manager as DeadpoolManager};
-    use chrono::Utc;
+    use uuid::Uuid;
 
     /// Helper function to create a test user
     async fn create_test_user(
@@ -120,7 +120,8 @@ mod payment_security_tests {
         ];
 
         for (endpoint, method) in endpoints {
-            let response = make_authenticated_request(&client, &app.address, endpoint, method).await;
+            let response =
+                make_authenticated_request(&client, &app.address, endpoint, method).await;
 
             assert_eq!(
                 response.status(),
@@ -151,20 +152,24 @@ mod payment_security_tests {
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
-        let _balance1 = conn.interact(move |conn| {
-            let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user1_id)
-        }).await
+        let _balance1 = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config.clone());
+                service.initialize_user_credits(conn, user1_id)
+            })
+            .await
             .expect("Failed to interact")
             .expect("Failed to initialize user1 credits");
 
         let config2 = app.config.clone();
         let conn2 = app.db_pool.get().await.expect("Failed to get connection");
 
-        let _balance2 = conn2.interact(move |conn| {
-            let service = CreditService::new(config2.clone());
-            service.initialize_user_credits(conn, user2_id)
-        }).await
+        let _balance2 = conn2
+            .interact(move |conn| {
+                let service = CreditService::new(config2.clone());
+                service.initialize_user_credits(conn, user2_id)
+            })
+            .await
             .expect("Failed to interact")
             .expect("Failed to initialize user2 credits");
 
@@ -188,26 +193,28 @@ mod payment_security_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
         // Add some credits and create transactions
-        let result = conn.interact(move |conn| {
-            let service = CreditService::new(config.clone());
+        let result = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config.clone());
 
-            // Initialize user credits
-            service.initialize_user_credits(conn, user_id)?;
+                // Initialize user credits
+                service.initialize_user_credits(conn, user_id)?;
 
-            // Add credits with sensitive description
-            service.add_credits(
-                conn,
-                user_id,
-                100,
-                "test",
-                "Sensitive transaction description",
-                None,
-                Some(json!({"sensitive_field": "secret_value"}))
-            )?;
+                // Add credits with sensitive description
+                service.add_credits(
+                    conn,
+                    user_id,
+                    100,
+                    "test",
+                    "Sensitive transaction description",
+                    None,
+                    Some(json!({"sensitive_field": "secret_value"})),
+                )?;
 
-            // Get transaction history
-            service.get_transaction_history(conn, user_id, Some(10), None)
-        }).await
+                // Get transaction history
+                service.get_transaction_history(conn, user_id, Some(10), None)
+            })
+            .await
             .expect("Failed to interact")
             .expect("Failed to get transactions");
 
@@ -253,29 +260,23 @@ mod payment_security_tests {
             let payload_clone = payload.to_string();
 
             // Try injection in description field
-            let result = conn.interact(move |conn| {
-                let service = CreditService::new(config_clone.clone());
-                service.add_credits(
-                    conn,
-                    user_id,
-                    10,
-                    "test",
-                    &payload_clone,
-                    None,
-                    None
-                )
-            }).await;
+            let result = conn
+                .interact(move |conn| {
+                    let service = CreditService::new(config_clone.clone());
+                    service.add_credits(conn, user_id, 10, "test", &payload_clone, None, None)
+                })
+                .await;
 
             // Should either succeed (sanitized) or fail gracefully
             // Should NOT cause SQL error
             match result {
-                Ok(Ok(_)) => {}, // Successfully sanitized
+                Ok(Ok(_)) => {} // Successfully sanitized
                 Ok(Err(e)) => {
                     // Should be a controlled error, not SQL syntax error
                     assert!(!e.to_string().contains("syntax error"));
                     assert!(!e.to_string().contains("SQL"));
-                },
-                Err(_) => {}, // Connection error is acceptable
+                }
+                Err(_) => {} // Connection error is acceptable
             }
         }
     }
@@ -295,23 +296,25 @@ mod payment_security_tests {
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
-        let result = conn.interact(move |conn| {
-            let service = CreditService::new(config.clone());
+        let result = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config.clone());
 
-            // Initialize user
-            service.initialize_user_credits(conn, user_id)?;
+                // Initialize user
+                service.initialize_user_credits(conn, user_id)?;
 
-            // Try to add negative credits
-            service.add_credits(
-                conn,
-                user_id,
-                -1000, // Negative amount
-                "test",
-                "Attempting negative credit addition",
-                None,
-                None
-            )
-        }).await
+                // Try to add negative credits
+                service.add_credits(
+                    conn,
+                    user_id,
+                    -1000, // Negative amount
+                    "test",
+                    "Attempting negative credit addition",
+                    None,
+                    None,
+                )
+            })
+            .await
             .expect("Failed to interact");
 
         // Should fail with BadRequest error
@@ -338,16 +341,18 @@ mod payment_security_tests {
         // Test reserve/confirm/refund pattern
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
-        let (initial_balance, reservation_id) = conn.interact(move |conn| {
-            let service = CreditService::new(config1.clone());
+        let (initial_balance, reservation_id) = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config1.clone());
 
-            // Initialize and add some credits
-            service.initialize_user_credits(conn, user_id)?;
-            service.add_credits(conn, user_id, 100, "test", "Initial credits", None, None)?;
+                // Initialize and add some credits
+                service.initialize_user_credits(conn, user_id)?;
+                service.add_credits(conn, user_id, 100, "test", "Initial credits", None, None)?;
 
-            // Reserve credits
-            service.reserve_credits(conn, user_id, 30, "Test reservation", None)
-        }).await
+                // Reserve credits
+                service.reserve_credits(conn, user_id, 30, "Test reservation", None)
+            })
+            .await
             .expect("Failed to interact")
             .expect("Failed to reserve credits");
 
@@ -356,10 +361,12 @@ mod payment_security_tests {
         // Test confirmation
         let conn2 = app.db_pool.get().await.expect("Failed to get connection");
 
-        let confirmed_balance = conn2.interact(move |conn| {
-            let service = CreditService::new(config2.clone());
-            service.confirm_reservation(conn, user_id, reservation_id)
-        }).await
+        let confirmed_balance = conn2
+            .interact(move |conn| {
+                let service = CreditService::new(config2.clone());
+                service.confirm_reservation(conn, user_id, reservation_id)
+            })
+            .await
             .expect("Failed to interact")
             .expect("Failed to confirm reservation");
 
@@ -380,29 +387,33 @@ mod payment_security_tests {
         // Clone config for each closure that needs it
         let config1 = app.config.clone();
         let config2 = app.config.clone();
-        
+
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
-        let (_balance, reservation_id) = conn.interact(move |conn| {
-            let service = CreditService::new(config1.clone());
+        let (_balance, reservation_id) = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config1.clone());
 
-            // Initialize and add credits
-            service.initialize_user_credits(conn, user_id)?;
-            service.add_credits(conn, user_id, 100, "test", "Initial", None, None)?;
+                // Initialize and add credits
+                service.initialize_user_credits(conn, user_id)?;
+                service.add_credits(conn, user_id, 100, "test", "Initial", None, None)?;
 
-            // Reserve credits
-            service.reserve_credits(conn, user_id, 40, "To be refunded", None)
-        }).await
+                // Reserve credits
+                service.reserve_credits(conn, user_id, 40, "To be refunded", None)
+            })
+            .await
             .expect("Failed to interact")
             .expect("Failed to reserve");
 
         // Refund the reservation
         let conn2 = app.db_pool.get().await.expect("Failed to get connection");
 
-        let refunded_balance = conn2.interact(move |conn| {
-            let service = CreditService::new(config2.clone());
-            service.refund_reservation(conn, user_id, reservation_id, "Test refund")
-        }).await
+        let refunded_balance = conn2
+            .interact(move |conn| {
+                let service = CreditService::new(config2.clone());
+                service.refund_reservation(conn, user_id, reservation_id, "Test refund")
+            })
+            .await
             .expect("Failed to interact")
             .expect("Failed to refund");
 
@@ -482,10 +493,12 @@ mod payment_security_tests {
         user_id: Uuid,
     ) -> Result<i32, Box<dyn std::error::Error>> {
         let conn = pool.get().await?;
-        let balance = conn.interact(move |conn| {
-            let service = CreditService::new(config.clone());
-            service.get_balance(conn, user_id)
-        }).await??;
+        let balance = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config.clone());
+                service.get_balance(conn, user_id)
+            })
+            .await??;
 
         Ok(balance.balance)
     }

@@ -9,16 +9,16 @@ use crate::{
     config::Config,
     errors::AppError,
     models::payment::{
-        NewSubscription, Subscription, SubscriptionStatus, UpdateSubscription,
-        PlanFeatures, PlanType,
+        NewSubscription, PlanFeatures, PlanType, Subscription, SubscriptionStatus,
+        UpdateSubscription,
     },
-    schema::{subscriptions, plan_features},
+    schema::{plan_features, subscriptions},
     services::EncryptionService,
 };
 #[cfg(feature = "payment")]
 use chrono::{DateTime, Duration, Utc};
 #[cfg(feature = "payment")]
-use diesel::{prelude::*, PgConnection};
+use diesel::{PgConnection, prelude::*};
 #[cfg(feature = "payment")]
 use uuid::Uuid;
 
@@ -50,7 +50,7 @@ impl SubscriptionService {
     ) -> Result<Subscription, AppError> {
         let now = Utc::now();
         let trial_end = trial_days.map(|days| now + Duration::days(days as i64));
-        
+
         // Default subscription period (1 month for non-trial, or trial period)
         let period_start = now;
         let period_end = if let Some(trial_end) = trial_end {
@@ -176,7 +176,8 @@ impl SubscriptionService {
             }
         };
 
-        self.update_subscription(conn, subscription_id, updates).await
+        self.update_subscription(conn, subscription_id, updates)
+            .await
     }
 
     /// Reactivate a cancelled subscription
@@ -191,7 +192,8 @@ impl SubscriptionService {
             ..Default::default()
         };
 
-        self.update_subscription(conn, subscription_id, updates).await
+        self.update_subscription(conn, subscription_id, updates)
+            .await
     }
 
     /// Update subscription period (for renewals)
@@ -209,13 +211,17 @@ impl SubscriptionService {
             ..Default::default()
         };
 
-        self.update_subscription(conn, subscription_id, updates).await
+        self.update_subscription(conn, subscription_id, updates)
+            .await
     }
 
     /// Check if subscription is active
     pub fn is_subscription_active(&self, subscription: &Subscription) -> bool {
         let status = SubscriptionStatus::from(subscription.status.as_str());
-        matches!(status, SubscriptionStatus::Active | SubscriptionStatus::Trialing)
+        matches!(
+            status,
+            SubscriptionStatus::Active | SubscriptionStatus::Trialing
+        )
     }
 
     /// Check if subscription is in trial period
@@ -308,7 +314,10 @@ impl SubscriptionService {
             id if id.contains("pro") => PlanType::Pro.to_string(),
             id if id.contains("enterprise") => PlanType::Enterprise.to_string(),
             _ => {
-                tracing::warn!("Unknown Paddle plan ID: {}, defaulting to free", paddle_plan_id);
+                tracing::warn!(
+                    "Unknown Paddle plan ID: {}, defaulting to free",
+                    paddle_plan_id
+                );
                 PlanType::Free.to_string()
             }
         }
@@ -357,7 +366,10 @@ pub struct SubscriptionService;
 
 #[cfg(not(feature = "payment"))]
 impl SubscriptionService {
-    pub fn new(_config: crate::config::Config, _encryption_service: crate::services::EncryptionService) -> Self {
+    pub fn new(
+        _config: crate::config::Config,
+        _encryption_service: crate::services::EncryptionService,
+    ) -> Self {
         Self
     }
 }
