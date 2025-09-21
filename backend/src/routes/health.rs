@@ -176,10 +176,10 @@ async fn check_database_health(
         #[derive(diesel::QueryableByName)]
         struct HealthCheck {
             #[diesel(sql_type = Integer)]
-            result: i32,
+            _result: i32,
         }
 
-        sql_query("SELECT 1 as result")
+        sql_query("SELECT 1 as _result")
             .get_result::<HealthCheck>(conn)
             .map(|_| ())
             .map_err(|e| format!("Database health check failed: {}", e))

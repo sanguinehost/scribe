@@ -30,12 +30,6 @@ fn create_test_dek_key() -> Vec<u8> {
     dek.expose_secret().clone()
 }
 
-/// Helper to create a SessionDek for search tests
-fn create_test_session_dek() -> SessionDek {
-    let key = create_test_dek_key();
-    SessionDek(SecretBox::new(Box::new(key)))
-}
-
 #[tokio::test]
 #[serial]
 async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {

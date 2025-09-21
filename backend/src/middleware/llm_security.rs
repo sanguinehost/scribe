@@ -283,6 +283,7 @@ fn is_llm_endpoint(path: &str) -> bool {
 }
 
 /// Extract client IP from headers
+#[allow(dead_code)]
 fn extract_client_ip(headers: &HeaderMap) -> Option<String> {
     headers
         .get("x-forwarded-for")

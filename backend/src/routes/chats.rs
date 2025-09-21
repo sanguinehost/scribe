@@ -770,6 +770,7 @@ async fn fetch_paginated_chat_messages(
 }
 
 /// Helper function to get the default variant content for a message (variant index 0)
+#[allow(dead_code)]
 async fn get_default_variant_content(
     pool: PgPool,
     message_id: Uuid,

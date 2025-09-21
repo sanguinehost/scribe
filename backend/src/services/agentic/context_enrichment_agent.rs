@@ -93,7 +93,7 @@ pub struct ToolCall {
 pub struct ContextEnrichmentAgent {
     state: Arc<AppState>,
     search_tool: Arc<SearchKnowledgeBaseTool>,
-    chronicle_service: Arc<ChronicleService>,
+    _chronicle_service: Arc<ChronicleService>,
     model: String, // Flash-Lite for lightweight operation
 }
 
@@ -107,7 +107,7 @@ impl ContextEnrichmentAgent {
         Self {
             state,
             search_tool,
-            chronicle_service,
+            _chronicle_service: chronicle_service,
             model: "gemini-2.5-flash-lite".to_string(), // Lightweight model for speed
         }
     }

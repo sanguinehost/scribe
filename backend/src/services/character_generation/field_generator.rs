@@ -34,6 +34,7 @@ pub struct FieldGenerator {
     state: Arc<AppState>,
 }
 
+#[allow(dead_code)]
 impl FieldGenerator {
     pub fn new(state: Arc<AppState>) -> Self {
         Self { state }

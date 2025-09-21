@@ -24,14 +24,14 @@ use crate::llm::llamacpp::{
 /// Secure LLM service that wraps AI client with security controls
 pub struct SecureLlmService {
     ai_client: Arc<dyn AiClient + Send + Sync>,
-    app_state: Arc<AppState>,
+    _app_state: Arc<AppState>,
 }
 
 impl SecureLlmService {
     pub fn new(ai_client: Arc<dyn AiClient + Send + Sync>, app_state: Arc<AppState>) -> Self {
         Self {
             ai_client,
-            app_state,
+            _app_state: app_state,
         }
     }
 

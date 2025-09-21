@@ -109,14 +109,14 @@ where
 
 /// Visitor that inspects log fields for sensitive data patterns
 struct PrivacyVisitor<'a> {
-    config: &'a PrivacyConfig,
+    _config: &'a PrivacyConfig,
     _fields: HashMap<String, String>,
 }
 
 impl<'a> PrivacyVisitor<'a> {
     fn new(config: &'a PrivacyConfig) -> Self {
         Self {
-            config,
+            _config: config,
             _fields: HashMap::new(),
         }
     }

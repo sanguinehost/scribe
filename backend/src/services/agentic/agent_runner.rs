@@ -84,6 +84,7 @@ pub struct NarrativeAgentRunner {
     token_counter: Arc<HybridTokenCounter>,
 }
 
+#[allow(dead_code)]
 impl NarrativeAgentRunner {
     pub fn new(
         ai_client: Arc<dyn AiClient>,

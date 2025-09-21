@@ -1535,15 +1535,15 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
 /// Tool for updating existing lorebook entries
 pub struct UpdateLorebookEntryTool {
-    lorebook_service: Arc<LorebookService>,
-    app_state: Arc<AppState>,
+    _lorebook_service: Arc<LorebookService>,
+    _app_state: Arc<AppState>,
 }
 
 impl UpdateLorebookEntryTool {
     pub fn new(lorebook_service: Arc<LorebookService>, app_state: Arc<AppState>) -> Self {
         Self {
-            lorebook_service,
-            app_state,
+            _lorebook_service: lorebook_service,
+            _app_state: app_state,
         }
     }
 }

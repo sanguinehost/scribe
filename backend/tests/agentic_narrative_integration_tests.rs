@@ -80,6 +80,7 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
 }
 
 /// Helper to create test chat messages with realistic roleplay content
+#[allow(dead_code)]
 fn create_roleplay_messages(
     user_id: Uuid,
     session_id: Uuid,
@@ -163,6 +164,7 @@ async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResul
 }
 
 /// Helper to get first available lorebook for user (or skip if none)
+#[allow(dead_code)]
 async fn get_test_lorebook(_user_id: Uuid, _test_app: &TestApp) -> AnyhowResult<Option<Uuid>> {
     // For testing, we'll skip lorebook retrieval since it requires auth session
     // In a real integration, the agentic system would create lorebooks as needed
