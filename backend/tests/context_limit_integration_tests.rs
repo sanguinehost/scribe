@@ -56,7 +56,7 @@ mod context_limit_tests {
             // Calculate reasonable budget distributions
             let history_budget = (limit as f64 * 0.75) as usize;
             let rag_budget = (limit as f64 * 0.2) as usize;
-            let buffer = limit - history_budget - rag_budget;
+            let _buffer = limit - history_budget - rag_budget;
 
             assert!(
                 history_budget > 0,

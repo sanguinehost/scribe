@@ -4,7 +4,8 @@
 // DISABLED: This E2E test uses deprecated ExtractTemporalEventsTool and ExtractWorldConceptsTool
 // which have been removed from the simplified agentic architecture.
 // The context enrichment agent now handles extraction through direct AI calls.
-#![cfg(feature = "disabled_deprecated_e2e_tests")]
+// Tests disabled - uses deprecated ExtractTemporalEventsTool and ExtractWorldConceptsTool
+#![cfg(feature = "never_enabled")]
 
 use chrono::Utc;
 use scribe_backend::{

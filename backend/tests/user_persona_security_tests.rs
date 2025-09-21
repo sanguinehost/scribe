@@ -331,7 +331,7 @@ async fn test_rate_limiting_persona_creation() {
 
     // Attempt rapid persona creation
     let mut success_count = 0;
-    let mut rate_limited = false;
+    let mut _rate_limited = false;
 
     for i in 0..10 {
         let create_response = client
@@ -348,7 +348,7 @@ async fn test_rate_limiting_persona_creation() {
         match create_response.status().as_u16() {
             201 => success_count += 1,
             429 => {
-                rate_limited = true;
+                _rate_limited = true;
                 break;
             }
             _ => {
