@@ -2,27 +2,20 @@
 //! Tests verifying that chronicle events created by narrative agents are properly embedded
 //! for RAG retrieval, addressing the issue where agentic events weren't searchable
 
-use chrono::Utc;
-use secrecy::SecretBox;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use scribe_backend::{
-    auth::session_dek::SessionDek,
-    models::{
-        chats::{ChatMessage, MessageRole},
-        chronicle_event::{CreateEventRequest, EventSource},
-    },
     services::{
-        ChronicleService, EncryptionService, LorebookService,
+        ChronicleService,
         agentic::{
-            factory::AgenticNarrativeFactory, narrative_tools::CreateChronicleEventTool,
+            narrative_tools::CreateChronicleEventTool,
             tools::ScribeTool,
         },
     },
     state::AppState,
     state_builder::AppStateServicesBuilder,
-    test_helpers::{MockAiClient, TestDataGuard},
+    test_helpers::TestDataGuard,
 };
 use serde_json::json;
 

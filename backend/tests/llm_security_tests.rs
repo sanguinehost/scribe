@@ -3,22 +3,16 @@
 // Comprehensive security tests for Local LLM integration
 // Tests all OWASP Top 10 LLM vulnerabilities
 
-use anyhow::{Context, Result as AnyhowResult};
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
     response::Response,
 };
-use diesel::prelude::*;
 use http_body_util::BodyExt;
-use scribe_backend::{
-    schema,
-    test_helpers::{self, TestApp, TestDataGuard},
-};
+use scribe_backend::test_helpers::{self, TestDataGuard};
 use serde_json::{Value, json};
 use std::time::Duration;
 use tower::util::ServiceExt;
-use uuid::Uuid;
 
 /// Extract session cookie from response
 fn extract_session_cookie(response: &Response) -> Option<String> {

@@ -18,9 +18,8 @@ use diesel::prelude::*;
 
 // Crate imports
 use scribe_backend::models::chats::{Chat as DbChatSession, ChatMode, CreateChatSessionPayload};
-use scribe_backend::schema::{characters, chat_sessions};
+use scribe_backend::schema::chat_sessions;
 use scribe_backend::test_helpers;
-use secrecy::ExposeSecret;
 
 // Helper function to authenticate and get auth cookie
 async fn authenticate_user(router: &axum::Router<()>, username: &str, password: &str) -> String {
@@ -529,7 +528,7 @@ async fn test_chat_mode_database_constraints() {
     .await
     .expect("Failed to create test user");
 
-    let mut conn = test_app
+    let conn = test_app
         .db_pool
         .get()
         .await

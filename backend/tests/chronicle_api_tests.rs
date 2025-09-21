@@ -11,7 +11,6 @@ use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
     models::{
-        chats::{Chat, ChatMode, DbInsertableChatMessage, MessageRole},
         chronicle::{
             CreateChronicleRequest, PlayerChronicle, PlayerChronicleWithCounts,
             UpdateChronicleRequest,

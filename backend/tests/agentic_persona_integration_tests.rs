@@ -22,7 +22,7 @@ use scribe_backend::{
     },
     test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
 };
-use secrecy::{ExposeSecret, SecretBox, SecretString};
+use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;

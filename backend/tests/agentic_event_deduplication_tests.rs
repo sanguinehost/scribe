@@ -16,11 +16,11 @@ use scribe_backend::{
     schema::users,
     services::{
         ChronicleService, ScribeTool,
-        agentic::{AgenticNarrativeFactory, CreateChronicleEventTool, SearchKnowledgeBaseTool},
+        agentic::{AgenticNarrativeFactory, SearchKnowledgeBaseTool},
     },
     test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
 };
-use secrecy::{ExposeSecret, SecretBox, SecretString};
+use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -302,7 +302,7 @@ async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::
         model_integrity_verifier: None,
     };
 
-    let mut app_state = scribe_backend::state::AppState::new(
+    let app_state = scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         services,

@@ -11,20 +11,19 @@ use scribe_backend::{
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
-        chronicle_event::{EventFilter, EventSource},
-        users::{AccountStatus, NewUser, SerializableSecretDek, UserDbQuery, UserRole},
+        users::{AccountStatus, NewUser, UserDbQuery, UserRole},
     },
     schema::users,
     services::{
         ChronicleService, LorebookService,
         agentic::{
-            AgenticNarrativeFactory, AnalyzeTextSignificanceTool, CreateChronicleEventTool,
+            AnalyzeTextSignificanceTool, CreateChronicleEventTool,
             ScribeTool, SearchKnowledgeBaseTool,
         },
     },
     test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
 };
-use secrecy::{ExposeSecret, SecretBox, SecretString};
+use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;

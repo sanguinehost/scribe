@@ -1296,25 +1296,16 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 }
                                 Err(e) => {
                                     warn!("Failed to decrypt lorebook content: {}", e);
-                                    // Fall back to plaintext field if available
-                                    if lorebook_meta.chunk_text != "[encrypted]" {
-                                        lorebook_meta.chunk_text.clone()
-                                    } else {
-                                        "[decryption failed]".to_string()
-                                    }
+                                    "[decryption failed]".to_string()
                                 }
                             }
                         } else {
-                            // No DEK available, return placeholder or plaintext
-                            if lorebook_meta.chunk_text != "[encrypted]" {
-                                lorebook_meta.chunk_text.clone()
-                            } else {
-                                "[encrypted - no DEK available]".to_string()
-                            }
+                            // No DEK available
+                            "[encrypted - no DEK available]".to_string()
                         }
                     } else {
-                        // Legacy plaintext mode
-                        lorebook_meta.chunk_text.clone()
+                        // No encrypted content available
+                        "[no encrypted content]".to_string()
                     };
 
                     let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
@@ -1408,25 +1399,16 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 }
                                 Err(e) => {
                                     warn!("Failed to decrypt chat message: {}", e);
-                                    // Fall back to plaintext field if available
-                                    if chat_meta.text != "[encrypted]" {
-                                        chat_meta.text.clone()
-                                    } else {
-                                        "[decryption failed]".to_string()
-                                    }
+                                    "[decryption failed]".to_string()
                                 }
                             }
                         } else {
-                            // No DEK available, return placeholder or plaintext
-                            if chat_meta.text != "[encrypted]" {
-                                chat_meta.text.clone()
-                            } else {
-                                "[encrypted - no DEK available]".to_string()
-                            }
+                            // No DEK available
+                            "[encrypted - no DEK available]".to_string()
                         }
                     } else {
-                        // Legacy plaintext mode
-                        chat_meta.text.clone()
+                        // No encrypted content available
+                        "[no encrypted content]".to_string()
                     };
 
                     results.push(json!({
@@ -1485,37 +1467,22 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 }
                                 Err(e) => {
                                     warn!("Failed to decrypt chronicle event content: {}", e);
-                                    // Fall back to plaintext chunk_text if available
-                                    payload_map
-                                        .get("chunk_text")
-                                        .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string())
-                                        .unwrap_or_else(|| "[decryption failed]".to_string())
+                                    "[decryption failed]".to_string()
                                 }
                             }
                         } else {
-                            // No DEK or invalid encrypted data, try plaintext
-                            payload_map
-                                .get("chunk_text")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| "[encrypted - no DEK available]".to_string())
+                            // No DEK or invalid encrypted data
+                            "[encrypted - no DEK available]".to_string()
                         }
                     } else {
-                        // Legacy plaintext mode - get chunk_text directly
-                        payload_map
-                            .get("chunk_text")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| {
-                                // Fallback formatting if no chunk_text
-                                format!(
-                                    "Event type: {}, Chronicle: {}, Created: {}",
-                                    chronicle_meta.event_type,
-                                    chronicle_meta.chronicle_id,
-                                    chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S")
-                                )
-                            })
+                        // No encrypted content available
+                        // Fallback formatting
+                        format!(
+                            "Event type: {}, Chronicle: {}, Created: {}",
+                            chronicle_meta.event_type,
+                            chronicle_meta.chronicle_id,
+                            chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S")
+                        )
                     };
 
                     let result = json!({

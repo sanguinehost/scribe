@@ -1,11 +1,10 @@
 use scribe_backend::config::Config;
 use scribe_backend::vector_db::qdrant_client::{
-    Condition, ConditionOneOf, FieldCondition, Filter, Kind, Match, MatchValue, PointId,
-    QdrantClientService, QdrantClientServiceTrait, ScoredPoint, Value,
+    Kind, PointId,
+    QdrantClientService, QdrantClientServiceTrait, Value,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use uuid::Uuid;
 
 #[tokio::test]
 #[ignore] // Requires Qdrant to be running
@@ -179,6 +178,6 @@ fn create_test_point(
 
 fn generate_random_vector(dim: usize) -> Vec<f32> {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
-    (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect()
+    let mut rng = rand::rng();
+    (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect()
 }

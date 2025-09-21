@@ -281,7 +281,7 @@ mod agent_runner_conversation_tests {
             .expect("Failed to create test chat session");
 
         // Create messages with different roles including System messages
-        let mut messages = vec![
+        let messages = vec![
             ChatMessage {
                 id: Uuid::new_v4(),
                 session_id: chat_session_id,

@@ -68,11 +68,7 @@ mod context_limit_tests {
                 "RAG budget should be positive for limit {}",
                 limit
             );
-            assert!(
-                buffer >= 0,
-                "Buffer should be non-negative for limit {}",
-                limit
-            );
+            // Buffer is always non-negative (usize >= 0)
         }
 
         println!("✅ Context limit range validation passed for all test cases");

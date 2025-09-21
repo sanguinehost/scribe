@@ -1045,25 +1045,16 @@ fn build_rag_context_string(
                                 }
                                 Err(e) => {
                                     warn!("Failed to decrypt lorebook content: {}", e);
-                                    // Fall back to plaintext field if available
-                                    if lorebook_meta.chunk_text != "[encrypted]" {
-                                        lorebook_meta.chunk_text.clone()
-                                    } else {
-                                        "[decryption failed]".to_string()
-                                    }
+                                    "[decryption failed]".to_string()
                                 }
                             }
                         } else {
-                            // No DEK available, return placeholder or plaintext
-                            if lorebook_meta.chunk_text != "[encrypted]" {
-                                lorebook_meta.chunk_text.clone()
-                            } else {
-                                "[encrypted - no DEK available]".to_string()
-                            }
+                            // No DEK available
+                            "[encrypted - no DEK available]".to_string()
                         }
                     } else {
-                        // Legacy plaintext mode
-                        lorebook_meta.chunk_text.clone()
+                        // No encrypted content available
+                        "[no encrypted content]".to_string()
                     };
 
                     // Decrypt title if encrypted fields are present

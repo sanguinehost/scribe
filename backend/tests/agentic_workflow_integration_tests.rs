@@ -13,20 +13,13 @@ use uuid::Uuid;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     config::{ExtractionMode, NarrativeFeatureFlags},
-    llm::{AiClient, EmbeddingClient},
-    models::{
-        chats::{ChatMessage, MessageRole},
-        chronicle::CreateChronicleRequest,
-        lorebook_dtos::CreateLorebookEntryPayload,
-    },
+    llm::EmbeddingClient,
+    models::chats::{ChatMessage, MessageRole},
     schema::chat_sessions,
     services::{
         ChronicleService, EncryptionService, LorebookService,
-        agentic::{
-            AgenticNarrativeFactory, NarrativeAgentRunner, NarrativeWorkflowConfig,
-            NarrativeWorkflowResult,
-        },
-        extraction_dispatcher::{ExtractionDispatcher, ExtractionResult},
+        agentic::AgenticNarrativeFactory,
+        extraction_dispatcher::ExtractionDispatcher,
     },
     test_helpers::{MockAiClient, TestDataGuard, db::create_test_user, spawn_app},
 };

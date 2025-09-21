@@ -8,7 +8,7 @@
 use reqwest;
 use scribe_backend::models::user_personas::UserPersonaDataForClient;
 use scribe_backend::test_helpers::{self, TestDataGuard, db::create_test_user, login_user_via_api};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::time::Duration;
 use tokio::time::sleep;
 use uuid::Uuid;

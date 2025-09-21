@@ -1,7 +1,7 @@
 use axum::{
     Router,
     extract::DefaultBodyLimit,
-    routing::{get, post},
+    routing::get,
 };
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
@@ -348,7 +348,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     // --- Initialize Narrative Intelligence Service ---
     // Note: Will be initialized after AppState is created due to circular dependency
 
-    let mut services = AppStateServices {
+    let services = AppStateServices {
         ai_client: ai_client_arc,
         embedding_client: embedding_client_arc,
         qdrant_service,
@@ -547,7 +547,7 @@ fn build_router(
             characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         ) // 10MB limit for character uploads
         .nest("/chat", {
-            let mut routes =
+            let routes =
                 chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
 
             // Add soft limit enforcement before LLM security
@@ -777,7 +777,7 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
 // --- Test module remains unchanged ---
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
     // Import the necessary trait
 
     // Use the r2d2 Pool directly from deadpool_diesel

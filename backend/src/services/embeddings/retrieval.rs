@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
-/// Helper function to decrypt lorebook content with fallback to plaintext
+/// Helper function to decrypt lorebook content (encryption required)
 fn decrypt_lorebook_content(
     metadata: &LorebookChunkMetadata,
     session_dek: Option<&SessionDek>,
@@ -30,26 +30,20 @@ fn decrypt_lorebook_content(
                 }
                 Err(e) => {
                     warn!("Failed to decrypt lorebook content: {}", e);
-                    // Fall through to plaintext fallback
+                    return "[decryption failed]".to_string();
                 }
             }
-        }
-        // No DEK available or decryption failed
-        // Return placeholder or fall back to plaintext if available
-        #[allow(deprecated)]
-        if metadata.chunk_text != "[encrypted]" {
-            return metadata.chunk_text.clone();
         } else {
+            // No DEK available
             return "[encrypted - no DEK available]".to_string();
         }
     }
 
-    // Legacy plaintext mode
-    #[allow(deprecated)]
-    metadata.chunk_text.clone()
+    // No encrypted content available
+    "[no encrypted content]".to_string()
 }
 
-/// Helper function to decrypt chat message content with fallback to plaintext
+/// Helper function to decrypt chat message content (encryption required)
 fn decrypt_chat_content(
     metadata: &ChatMessageChunkMetadata,
     session_dek: Option<&SessionDek>,
@@ -68,23 +62,17 @@ fn decrypt_chat_content(
                 }
                 Err(e) => {
                     warn!("Failed to decrypt chat message: {}", e);
-                    // Fall through to plaintext fallback
+                    return "[decryption failed]".to_string();
                 }
             }
-        }
-        // No DEK available or decryption failed
-        // Return placeholder or fall back to plaintext if available
-        #[allow(deprecated)]
-        if metadata.text != "[encrypted]" {
-            return metadata.text.clone();
         } else {
+            // No DEK available
             return "[encrypted - no DEK available]".to_string();
         }
     }
 
-    // Legacy plaintext mode
-    #[allow(deprecated)]
-    metadata.text.clone()
+    // No encrypted content available
+    "[no encrypted content]".to_string()
 }
 
 #[derive(Debug, Clone)]

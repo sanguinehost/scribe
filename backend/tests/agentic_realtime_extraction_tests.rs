@@ -20,7 +20,7 @@ use scribe_backend::{
     services::agentic::factory::AgenticNarrativeFactory,
     test_helpers::{MockAiClient, TestApp, TestDataGuard},
 };
-use secrecy::{ExposeSecret, SecretBox, SecretString};
+use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -213,7 +213,7 @@ async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::
         model_integrity_verifier: None,
     };
 
-    let mut app_state = scribe_backend::state::AppState::new(
+    let app_state = scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         services,

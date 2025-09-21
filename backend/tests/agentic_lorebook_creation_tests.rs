@@ -10,9 +10,8 @@ use scribe_backend::{
     models::{
         chats::{ChatMessage, MessageRole},
         lorebook_dtos::CreateLorebookPayload,
-        users::User,
     },
-    services::{LorebookService, agentic::factory::AgenticNarrativeFactory},
+    services::agentic::factory::AgenticNarrativeFactory,
     test_helpers::{MockAiClient, TestDataGuard},
 };
 use secrecy::SecretBox;

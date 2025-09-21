@@ -6,8 +6,6 @@ use diesel::prelude::*;
 use scribe_backend::{
     crypto::generate_dek,
     services::{
-        ChronicleService,
-        agentic::context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
         agentic::narrative_tools::SearchKnowledgeBaseTool,
         agentic::tools::ScribeTool,
         embeddings::{
@@ -19,7 +17,6 @@ use scribe_backend::{
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serial_test::serial;
-use std::sync::Arc;
 use uuid::Uuid;
 
 /// Helper to create a test DEK key  

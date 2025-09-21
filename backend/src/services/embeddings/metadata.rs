@@ -159,15 +159,13 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
                     });
 
                 // If we have encrypted content, still need chunk_text for backward compat
-                let chunk_text =
-                    extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")
-                        .unwrap_or_else(|_| "[encrypted]".to_string());
-
+                // Encrypted content available - use placeholder for deprecated field
+                let chunk_text = "[encrypted]".to_string();
                 (chunk_text, encrypted_bytes, nonce_bytes)
             } else {
-                // Legacy plaintext mode
-                let chunk_text =
-                    extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")?;
+                // No encrypted content - this should not happen in production
+                // Return placeholder for deprecated field
+                let chunk_text = "[no encrypted content]".to_string();
                 (chunk_text, None, None)
             };
 
