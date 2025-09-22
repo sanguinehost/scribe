@@ -100,6 +100,10 @@ class StreamingService {
 	private animationIntervals = new Map<string, NodeJS.Timeout>();
 	private animationSpeed = 15; // ms between character reveals (2x faster than before)
 
+	// Timestamp-based animation tracking
+	private animationStartTimes = new Map<string, number>();
+	private animationRequestIds = new Map<string, number>();
+
 	// LEGACY: Keep old state for gradual migration
 	private typingQueues = new Map<string, string[]>();
 	private typingIntervals = new Map<string, NodeJS.Timeout>();
@@ -116,8 +120,228 @@ class StreamingService {
 		shouldClose: false
 	};
 
+	// Page visibility tracking for background tab handling
+	private isTabVisible = true;
+	private queuedConnection: (() => Promise<void>) | null = null;
+	private visibilityListenersAdded = false;
+
 	constructor(config: Partial<StreamingConfig> = {}) {
 		this.config = { ...DEFAULT_CONFIG, ...config };
+		this.setupVisibilityListeners();
+	}
+
+	/**
+	 * Setup page visibility event listeners to handle background tab behavior
+	 */
+	private setupVisibilityListeners(): void {
+		if (typeof window === 'undefined' || this.visibilityListenersAdded) {
+			return; // Skip on server-side or if already added
+		}
+
+		// Initialize visibility state
+		this.isTabVisible = !document.hidden;
+
+		// Listen for visibility changes
+		const handleVisibilityChange = () => {
+			const wasVisible = this.isTabVisible;
+			this.isTabVisible = !document.hidden;
+
+			console.log(`👁️ Tab visibility changed: ${wasVisible ? 'visible' : 'hidden'} -> ${this.isTabVisible ? 'visible' : 'hidden'}`);
+
+			if (!wasVisible && this.isTabVisible) {
+				// Tab became visible - process any queued connections
+				this.handleTabBecameVisible();
+			}
+		};
+
+		// Listen for focus/blur events as fallback
+		const handleFocus = () => {
+			if (!this.isTabVisible) {
+				this.isTabVisible = true;
+				console.log('👁️ Tab gained focus (fallback visibility detection)');
+				this.handleTabBecameVisible();
+			}
+		};
+
+		const handleBlur = () => {
+			this.isTabVisible = false;
+			console.log('👁️ Tab lost focus');
+		};
+
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		window.addEventListener('focus', handleFocus);
+		window.addEventListener('blur', handleBlur);
+
+		this.visibilityListenersAdded = true;
+		console.log('👁️ Page visibility listeners setup complete');
+	}
+
+	/**
+	 * Handle when tab becomes visible - process any queued connections
+	 */
+	private async handleTabBecameVisible(): Promise<void> {
+		if (this.queuedConnection) {
+			console.log('👁️ Tab became visible, processing queued connection');
+			const connectionToProcess = this.queuedConnection;
+			this.queuedConnection = null;
+
+			try {
+				await connectionToProcess();
+			} catch (error) {
+				console.error('❌ Failed to process queued connection:', error);
+			}
+		}
+
+		// Check for messages with completed content that need to be shown
+		this.processCompletedMessages();
+
+		// Reconcile animation positions for any ongoing animations
+		this.reconcileAnimationPositions();
+
+		// Switch animation modes when tab becomes visible
+		this.switchAnimationModes();
+
+		// Check for stalled connections that need recovery
+		if (this.connectionStatus === 'connecting' && this.abortController) {
+			console.log('👁️ Detected potentially stalled connection, checking if recovery needed');
+			// Give it a moment to see if it's actually working
+			setTimeout(async () => {
+				if (this.connectionStatus === 'connecting') {
+					console.log('🔄 Connection appears stalled, attempting recovery');
+
+					// Store current connection params before disconnect
+					const currentChatId = this.currentChatId;
+
+					// Disconnect the stalled connection
+					this.disconnect();
+
+					// If we have a queued connection, trigger it
+					if (this.queuedConnection) {
+						console.log('🔄 Retrying queued connection after recovery');
+						const connectionToRetry = this.queuedConnection;
+						this.queuedConnection = null;
+
+						try {
+							await connectionToRetry();
+						} catch (error) {
+							console.error('❌ Failed to retry connection after recovery:', error);
+							this.currentError = {
+								type: 'network',
+								message: 'Failed to reconnect after tab became visible',
+								retryable: true
+							};
+							this.connectionStatus = 'error';
+						}
+					} else {
+						// No queued connection, just reset state
+						console.log('🔄 No queued connection to retry, connection state reset');
+						this.connectionStatus = 'idle';
+					}
+				}
+			}, 2000);
+		}
+	}
+
+	/**
+	 * Process any messages that completed while tab was hidden
+	 */
+	private processCompletedMessages(): void {
+		for (const [messageId, buffer] of this.messageBuffers) {
+			if (buffer.isComplete) {
+				const message = this.messages.find((m) => m.id === messageId);
+				// If message exists but doesn't have full content shown yet
+				if (message && message.displayedContent !== buffer.content) {
+					console.log(`👁️ Found completed message that needs content update: ${messageId.slice(-8)}`);
+					this.showCompleteContent(messageId);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Reconcile animation positions when tab becomes visible
+	 * This ensures animations that were throttled in background show correct progress
+	 */
+	private reconcileAnimationPositions(): void {
+		const currentTime = performance.now();
+
+		for (const [messageId, startTime] of this.animationStartTimes) {
+			const buffer = this.messageBuffers.get(messageId);
+			const message = this.messages.find((m) => m.id === messageId);
+
+			if (!buffer || !message || !message.isAnimating) continue;
+
+			const elapsed = currentTime - startTime;
+			const totalDuration = buffer.content.length * this.animationSpeed;
+			const progress = Math.min(elapsed / totalDuration, 1);
+			const expectedCharIndex = Math.floor(progress * buffer.content.length);
+			const expectedContent = buffer.content.slice(0, expectedCharIndex + 1);
+
+			// Check if displayed content is behind where it should be
+			if (message.displayedContent.length < expectedContent.length) {
+				console.log(`👁️ Reconciling animation position for ${messageId.slice(-8)}: ${message.displayedContent.length} -> ${expectedContent.length} chars`);
+
+				// Update to correct position
+				this.messages = this.messages.map((msg) => {
+					if (msg.id === messageId) {
+						return { ...msg, displayedContent: expectedContent };
+					}
+					return msg;
+				});
+
+				// Restart requestAnimationFrame if tab is now visible
+				if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
+					const existingRequestId = this.animationRequestIds.get(messageId);
+					if (!existingRequestId) {
+						const updateAnimation = (currentTime: number) => {
+							const elapsed = currentTime - startTime;
+							const progress = Math.min(elapsed / totalDuration, 1);
+							const charIndex = Math.floor(progress * buffer.content.length);
+							const displayedContent = buffer.content.slice(0, charIndex + 1);
+
+							this.messages = this.messages.map((msg) => {
+								if (msg.id === messageId) {
+									return { ...msg, displayedContent };
+								}
+								return msg;
+							});
+
+							if (progress >= 1) {
+								// Animation complete
+								this.messages = this.messages.map((msg) => {
+									if (msg.id === messageId) {
+										return {
+											...msg,
+											displayedContent: buffer.content,
+											isAnimating: false
+										};
+									}
+									return msg;
+								});
+
+								// Clean up
+								this.animationStartTimes.delete(messageId);
+								const requestId = this.animationRequestIds.get(messageId);
+								if (requestId) {
+									cancelAnimationFrame(requestId);
+									this.animationRequestIds.delete(messageId);
+								}
+								return;
+							}
+
+							// Continue animation
+							if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
+								const requestId = requestAnimationFrame((time) => updateAnimation(time));
+								this.animationRequestIds.set(messageId, requestId);
+							}
+						};
+
+						const requestId = requestAnimationFrame((time) => updateAnimation(time));
+						this.animationRequestIds.set(messageId, requestId);
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -191,18 +415,52 @@ class StreamingService {
 		const message = this.messages.find((m) => m.id === messageId);
 		if (message?.isAnimating) return;
 
-		console.log(`🎯 Conditions met for ${messageId.slice(-8)}, starting animation`);
+		console.log(`🎯 Conditions met for ${messageId.slice(-8)}, starting animation (tab visible: ${this.isTabVisible})`);
+
+		// Always start animation regardless of tab visibility
+		// Animation will use timestamp-based approach to handle background throttling
 		this.startLocalAnimation(messageId);
 	}
 
 	/**
+	 * Show complete content immediately without animation (for background tabs)
+	 */
+	private showCompleteContent(messageId: string): void {
+		const buffer = this.messageBuffers.get(messageId);
+		if (!buffer || !buffer.isComplete) return;
+
+		console.log(`📺 Showing complete content for ${messageId.slice(-8)}: ${buffer.content.length} chars`);
+
+		// Update message with complete content and metadata immediately
+		this.messages = this.messages.map((msg) => {
+			if (msg.id === messageId) {
+				return {
+					...msg,
+					content: buffer.content,
+					displayedContent: buffer.content, // Show full content immediately
+					isAnimating: false, // No animation
+					isRegenerating: false, // Clear regeneration flag
+					prompt_tokens: buffer.prompt_tokens,
+					completion_tokens: buffer.completion_tokens,
+					model_name: buffer.model_name,
+					backend_id: buffer.backend_id
+				};
+			}
+			return msg;
+		});
+
+		console.log(`✅ Complete content shown immediately for ${messageId.slice(-8)}`);
+	}
+
+	/**
 	 * NEW ARCHITECTURE: Start local animation after buffering complete
+	 * Uses timestamp-based approach to handle browser throttling in background tabs
 	 */
 	private startLocalAnimation(messageId: string): void {
 		const buffer = this.messageBuffers.get(messageId);
 		if (!buffer || !buffer.isComplete) return;
 
-		console.log(`🎬 Starting animation for ${messageId.slice(-8)}: ${buffer.content.length} chars`);
+		console.log(`🎬 Starting timestamp-based animation for ${messageId.slice(-8)}: ${buffer.content.length} chars`);
 
 		// Update message with complete content and metadata
 		this.messages = this.messages.map((msg) => {
@@ -222,31 +480,19 @@ class StreamingService {
 			return msg;
 		});
 
-		// Start character-by-character animation
-		let charIndex = 0;
+		// Record animation start time
+		const startTime = performance.now();
+		this.animationStartTimes.set(messageId, startTime);
+
 		const fullContent = buffer.content;
+		const totalDuration = fullContent.length * this.animationSpeed; // Total animation duration
 
-		const animateNextChar = () => {
-			if (charIndex >= fullContent.length) {
-				// Animation complete
-				this.messages = this.messages.map((msg) => {
-					if (msg.id === messageId) {
-						return { ...msg, isAnimating: false };
-					}
-					return msg;
-				});
+		const updateAnimation = (currentTime: number) => {
+			const elapsed = currentTime - startTime;
+			const progress = Math.min(elapsed / totalDuration, 1); // 0 to 1
+			const charIndex = Math.floor(progress * fullContent.length);
 
-				const interval = this.animationIntervals.get(messageId);
-				if (interval) {
-					clearInterval(interval);
-					this.animationIntervals.delete(messageId);
-				}
-
-				console.log(`✅ Animation complete for ${messageId.slice(-8)}`);
-				return;
-			}
-
-			// Reveal next character
+			// Update displayed content based on elapsed time
 			const displayedContent = fullContent.slice(0, charIndex + 1);
 
 			this.messages = this.messages.map((msg) => {
@@ -256,12 +502,91 @@ class StreamingService {
 				return msg;
 			});
 
-			charIndex++;
+			// Check if animation is complete
+			if (progress >= 1) {
+				// Animation complete
+				this.messages = this.messages.map((msg) => {
+					if (msg.id === messageId) {
+						return {
+							...msg,
+							displayedContent: fullContent, // Ensure full content is shown
+							isAnimating: false
+						};
+					}
+					return msg;
+				});
+
+				// Clean up tracking
+				this.animationStartTimes.delete(messageId);
+				const requestId = this.animationRequestIds.get(messageId);
+				if (requestId) {
+					cancelAnimationFrame(requestId);
+					this.animationRequestIds.delete(messageId);
+				}
+				const intervalId = this.animationIntervals.get(messageId);
+				if (intervalId) {
+					clearInterval(intervalId);
+					this.animationIntervals.delete(messageId);
+				}
+
+				console.log(`✅ Timestamp-based animation complete for ${messageId.slice(-8)}`);
+				return;
+			}
+
+			// Continue animation with appropriate method
+			this.scheduleNextAnimationFrame(messageId, updateAnimation);
 		};
 
-		// Start the animation interval
-		const intervalId = setInterval(animateNextChar, this.animationSpeed);
-		this.animationIntervals.set(messageId, intervalId);
+		// Use EITHER requestAnimationFrame OR setInterval, not both
+		if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
+			// Use requestAnimationFrame for smooth updates when visible
+			const requestId = requestAnimationFrame((time) => updateAnimation(time));
+			this.animationRequestIds.set(messageId, requestId);
+		} else {
+			// Use setInterval as fallback when tab is hidden or requestAnimationFrame unavailable
+			const intervalId = setInterval(() => {
+				updateAnimation(performance.now());
+			}, this.animationSpeed);
+			this.animationIntervals.set(messageId, intervalId);
+		}
+	}
+
+	/**
+	 * Switch animation modes from setInterval to requestAnimationFrame when tab becomes visible
+	 */
+	private switchAnimationModes(): void {
+		// If tab is now visible, switch any setInterval animations to requestAnimationFrame
+		if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
+			for (const [messageId, intervalId] of this.animationIntervals) {
+				console.log(`👁️ Switching ${messageId.slice(-8)} from setInterval to requestAnimationFrame`);
+
+				// Clear the setInterval
+				clearInterval(intervalId);
+				this.animationIntervals.delete(messageId);
+
+				// Note: The animation updateFunction will schedule the next requestAnimationFrame
+				// when it runs next, so we don't need to manually start it here
+			}
+		}
+	}
+
+	/**
+	 * Schedule the next animation frame using the appropriate method based on tab visibility
+	 */
+	private scheduleNextAnimationFrame(messageId: string, updateFunction: (time: number) => void): void {
+		if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
+			// Use requestAnimationFrame when tab is visible for smooth updates
+			const requestId = requestAnimationFrame((time) => updateFunction(time));
+			this.animationRequestIds.set(messageId, requestId);
+		} else {
+			// Use setInterval when tab is hidden (only if not already using setInterval for this message)
+			if (!this.animationIntervals.has(messageId)) {
+				const intervalId = setInterval(() => {
+					updateFunction(performance.now());
+				}, this.animationSpeed);
+				this.animationIntervals.set(messageId, intervalId);
+			}
+		}
 	}
 
 	/**
@@ -422,6 +747,30 @@ class StreamingService {
 		if (this.connectionStatus === 'connecting' || this.connectionStatus === 'open') {
 			console.warn('Connection already active. Disconnect first.');
 			return;
+		}
+
+		// Check if tab is visible - if not, queue the connection for later
+		if (!this.isTabVisible) {
+			console.log('👁️ Tab is hidden, queueing connection request');
+			this.queuedConnection = () => this.connect(params);
+
+			// Set a temporary connecting status to show loading state
+			this.connectionStatus = 'connecting';
+			this.currentError = null;
+
+			// Still add user message optimistically for immediate UI feedback
+			if (!params.isRegeneration) {
+				const userMessage: StreamingMessage = {
+					id: crypto.randomUUID(),
+					content: params.userMessage,
+					displayedContent: params.userMessage,
+					sender: 'user',
+					created_at: new Date().toISOString()
+				};
+				this.messages = [...this.messages, userMessage];
+			}
+
+			return; // Exit early, connection will be processed when tab becomes visible
 		}
 
 		this.currentChatId = params.chatId;
@@ -1334,10 +1683,29 @@ class StreamingService {
 			this.abortController = null;
 		}
 
+		// Collect all animating message IDs from both tracking systems BEFORE clearing
+		const allAnimatingMessageIds = new Set([
+			...this.animationIntervals.keys(),
+			...this.animationRequestIds.keys(),
+			...this.animationStartTimes.keys()
+		]);
+
+		// Stop all timestamp-based animations first
+		for (const [messageId, requestId] of this.animationRequestIds) {
+			console.log(`🛑 Canceling requestAnimationFrame for message ${messageId.slice(-8)}`);
+			cancelAnimationFrame(requestId);
+		}
+		this.animationRequestIds.clear();
+
 		// Stop all local animations immediately
 		for (const [messageId, intervalId] of this.animationIntervals) {
-			console.log(`🛑 Stopping animation for message ${messageId.slice(-8)}`);
+			console.log(`🛑 Stopping setInterval animation for message ${messageId.slice(-8)}`);
 			clearInterval(intervalId);
+		}
+
+		// Show full content for all animating messages
+		for (const messageId of allAnimatingMessageIds) {
+			console.log(`🛑 Showing full content for message ${messageId.slice(-8)}`);
 
 			// Immediately show all buffered content without animation
 			const buffer = this.messageBuffers.get(messageId);
@@ -1360,8 +1728,17 @@ class StreamingService {
 			}
 		}
 
-		// Clear all animation intervals
+		// Clear all animation intervals and tracking
 		this.animationIntervals.clear();
+		this.animationStartTimes.clear();
+
+		// Ensure any remaining messages are marked as not animating
+		this.messages = this.messages.map((msg) => {
+			if (msg.isAnimating) {
+				return { ...msg, isAnimating: false };
+			}
+			return msg;
+		});
 
 		// Clear all typing animations (legacy)
 		for (const [messageId] of this.typingIntervals) {
@@ -1407,6 +1784,13 @@ class StreamingService {
 			clearInterval(intervalId);
 		}
 		this.animationIntervals.clear();
+
+		// Clear timestamp-based animation tracking
+		for (const [messageId, requestId] of this.animationRequestIds) {
+			cancelAnimationFrame(requestId);
+		}
+		this.animationRequestIds.clear();
+		this.animationStartTimes.clear();
 
 		// Clean up connection close state
 		if (this.connectionCloseState.closeTimeoutId) {

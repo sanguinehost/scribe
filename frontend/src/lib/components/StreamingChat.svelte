@@ -38,7 +38,9 @@
 
 	// Derived state
 	let isLoading = $derived(
-		streamingState.connectionStatus === 'connecting' || streamingState.connectionStatus === 'open'
+		streamingState.connectionStatus === 'connecting' ||
+		streamingState.connectionStatus === 'open' ||
+		streamingState.messages.some(msg => msg.isAnimating === true)
 	);
 
 	let hasError = $derived(streamingState.currentError !== null);
@@ -180,7 +182,7 @@
 	 * Stop current generation
 	 */
 	function stopGeneration(): void {
-		streamingService.disconnect();
+		streamingService.interrupt();
 		toast.info('Generation stopped.');
 	}
 

@@ -38,6 +38,8 @@ if (isDev) {
 export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
+		hmr: false,
+		watch: null,
 		host: true, // Listen on all network interfaces
 		...(certsExist && {
 			https: {
