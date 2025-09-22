@@ -547,7 +547,7 @@ fn build_router(
             characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         ) // 10MB limit for character uploads
         .nest("/chat", {
-            let routes =
+            let mut routes =
                 chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
 
             // Add soft limit enforcement before LLM security
@@ -610,12 +610,15 @@ fn build_router(
     // With the proxy pattern, requests will appear to come from staging.scribe.sanguinehost.com
     // via Vercel's edge proxy, but they'll have the correct origin headers
     let cors = CorsLayer::new()
-        .allow_origin([
-            "https://staging.scribe.sanguinehost.com".parse().unwrap(), // Primary frontend domain
-            "https://localhost:5173".parse().unwrap(),                  // Local development
-            "http://localhost:5173".parse().unwrap(),                   // Local development (HTTP)
-            "http://localhost:3000".parse().unwrap(), // Local development alt port
-        ])
+        .allow_origin(tower_http::cors::Any) // Allow any origin for now to fix Vercel deployment
+        // TODO: Restrict to specific domains in production:
+        // .allow_origin([
+        //     "https://staging.scribe.sanguinehost.com".parse().unwrap(),
+        //     "https://scribe-frontend.vercel.app".parse().unwrap(),
+        //     "https://localhost:5173".parse().unwrap(),
+        //     "http://localhost:5173".parse().unwrap(),
+        //     "http://localhost:3000".parse().unwrap(),
+        // ])
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,

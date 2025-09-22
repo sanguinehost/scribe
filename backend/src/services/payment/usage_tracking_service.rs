@@ -11,10 +11,9 @@ use crate::{
     errors::AppError,
     models::{
         payment::{
-            NewPaymentUsageTracking, PaymentUsageTracking, PlanFeatures, Subscription,
+            NewPaymentUsageTracking, PaymentUsageTracking,
             UpdatePaymentUsageTracking,
         },
-        users::User as UserDbQuery,
     },
     schema::{payment_usage_tracking, users},
     services::EncryptionService,
@@ -81,7 +80,7 @@ impl UsageTrackingService {
         let period_end = self.get_period_end(period_start);
 
         // Try to find existing usage record for this period
-        if let Some(mut existing) = self
+        if let Some(existing) = self
             .get_current_usage(conn, user_id, subscription_id)
             .await?
         {
@@ -302,8 +301,6 @@ impl UsageTrackingService {
         user_id: Uuid,
         months_back: i32,
     ) -> Result<Vec<(DateTime<Utc>, i32)>, AppError> {
-        use diesel::dsl::sql;
-        use diesel::sql_types::{Integer, Timestamp};
 
         let cutoff = Utc::now() - Duration::days(months_back as i64 * 30);
 
@@ -324,8 +321,8 @@ impl UsageTrackingService {
     /// Get token limit for a user based on their subscription
     async fn get_token_limit_for_user(
         &self,
-        conn: &mut PgConnection,
-        user_id: Uuid,
+        _conn: &mut PgConnection,
+        _user_id: Uuid,
     ) -> Result<i32, AppError> {
         // This would integrate with the subscription service to get the user's plan
         // For now, we'll return the free tier limit from config

@@ -192,7 +192,7 @@ main() {
 
 # Handle script arguments
 AUTO_APPROVE="${AUTO_APPROVE:-false}"
-if [[ "$1" == "--auto-approve" ]] || [[ "$2" == "--auto-approve" ]]; then
+if [[ "${1:-}" == "--auto-approve" ]] || [[ "${2:-}" == "--auto-approve" ]]; then
     AUTO_APPROVE="true"
     shift  # Remove --auto-approve from arguments
 fi

@@ -8,8 +8,6 @@
 #[cfg(feature = "payment")]
 pub mod payment_test_helpers {
     use crate::{
-        auth,
-        auth::user_store::Backend as AuthBackend,
         crypto,
         errors::AppError,
         models::{
@@ -21,14 +19,13 @@ pub mod payment_test_helpers {
         services::payment::CreditService,
         test_helpers::TestApp,
     };
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
     use diesel::{
-        Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
+        PgConnection, RunQueryDsl, SelectableHelper,
     };
     use reqwest::Client;
     use secrecy::{ExposeSecret, SecretBox, SecretString};
     use serde_json::{Value, json};
-    use std::sync::Arc;
     use uuid::Uuid;
 
     /// Test constants for Paddle sandbox
@@ -201,7 +198,7 @@ pub mod payment_test_helpers {
 
     /// Creates an authenticated session for a user and returns the session cookie value
     pub async fn create_authenticated_session(
-        app: &TestApp,
+        _app: &TestApp,
         user: &DbUser,
     ) -> Result<String, AppError> {
         // In a real implementation, this would:

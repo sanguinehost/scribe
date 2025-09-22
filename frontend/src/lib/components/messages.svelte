@@ -100,17 +100,16 @@ import Settings from './settings/Settings.svelte';
 	function isFirstMessage(message: ScribeChatMessage, index: number): boolean {
 		// Check if it's an Assistant message and either:
 		// 1. Has the expected first-message ID pattern, OR
-		// 2. Is the first Assistant message in the conversation, OR
-		// 3. Content matches the character's first_mes
+		// 2. Is the first Assistant message in the conversation
+		// Note: Removed content comparison to support alternate greetings
 		const hasFirstMessageId = message.id.startsWith('first-message-');
 		const isFirstAssistantMessage = message.message_type === 'Assistant' && index === 0;
-		const contentMatchesFirstMes = character && message.content === character.first_mes;
 
 		// Debug logging removed for production
 
 		return (
 			message.message_type === 'Assistant' &&
-			(hasFirstMessageId || isFirstAssistantMessage || contentMatchesFirstMes)
+			(hasFirstMessageId || isFirstAssistantMessage)
 		);
 	}
 

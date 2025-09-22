@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
+use crate::errors::AppError;
 
 /// Simple in-memory rate limiter for template endpoints
 ///
@@ -250,13 +251,12 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
     {
         use crate::AppState;
         use crate::auth::user_store::Backend as AuthBackend;
-        use crate::services::payment::{CreditService, SoftLimitService};
+        use crate::services::payment::SoftLimitService;
         use axum::Json;
-        use axum::extract::State;
         use axum::http::StatusCode;
         use axum::response::IntoResponse;
         use axum_login::AuthSession;
-        use serde_json::{Value, json};
+        use serde_json::json;
         use std::sync::Arc;
 
         // Extract app state from request extensions
@@ -329,7 +329,7 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
                 .await;
 
             match check_result {
-                Ok(Ok((has_limit, usage_percentage, is_over_limit))) => {
+                Ok(Ok((_has_limit, usage_percentage, is_over_limit))) => {
                     if is_over_limit {
                         // Add warning header but continue (soft limit, not hard limit)
                         warn!(
@@ -362,9 +362,9 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
 pub async fn soft_limit_enforcement_middleware(request: Request, next: Next) -> Response {
     use crate::AppState;
     use crate::auth::user_store::Backend as AuthBackend;
-    use crate::services::payment::{SoftLimitService, SubscriptionService};
+    use crate::services::payment::SoftLimitService;
     use axum::Json;
-    use axum::http::{HeaderMap, HeaderValue, StatusCode};
+    use axum::http::{HeaderValue, StatusCode};
     use axum::response::IntoResponse;
     use axum_login::AuthSession;
     use serde_json::json;
@@ -412,7 +412,7 @@ pub async fn soft_limit_enforcement_middleware(request: Request, next: Next) -> 
     };
 
     let user_id = user.id;
-    let state_clone = state.clone();
+    let _state_clone = state.clone();
 
     let check_result = conn
         .interact(move |conn| {

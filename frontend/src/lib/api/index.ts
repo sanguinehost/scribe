@@ -119,16 +119,22 @@ class ApiClient {
 	private fetchFn: typeof fetch = globalThis.fetch;
 
 	constructor(baseUrl: string = '') {
+		// Handle undefined/null environment variables gracefully
+		const apiUrl = env?.PUBLIC_API_URL;
+
 		// Always prioritize PUBLIC_API_URL over the passed baseUrl for production
 		// This ensures the client always uses the correct API URL from environment
 		// Trim whitespace/newlines that might be added by environment variable processing
-		this.baseUrl = (env.PUBLIC_API_URL || baseUrl || '').trim();
+		this.baseUrl = (apiUrl || baseUrl || '').trim();
 
 		// Debug log to verify API URL is set correctly
 		if (browser) {
+			if (!apiUrl) {
+				console.warn('[ApiClient] PUBLIC_API_URL is not defined, using relative paths or provided baseUrl');
+			}
 			console.log(`[ApiClient] Initialized with baseUrl: ${this.baseUrl || '(empty - using relative paths)'}`);
-			if (env.PUBLIC_API_URL) {
-				console.log(`[ApiClient] PUBLIC_API_URL from env: ${env.PUBLIC_API_URL}`);
+			if (apiUrl) {
+				console.log(`[ApiClient] PUBLIC_API_URL from env: ${apiUrl}`);
 			}
 		}
 	}
@@ -144,6 +150,20 @@ class ApiClient {
 		options: RequestInit = {},
 		fetchFn: typeof fetch = this.fetchFn
 	): Promise<Result<T, ApiError>> {
+		// Early validation to prevent errors
+		if (!endpoint) {
+			console.error('[ApiClient] fetch: No endpoint provided');
+			const error = new Error('No endpoint provided');
+			return err(new ApiNetworkError('No endpoint provided', error));
+		}
+
+		// Validate fetch function exists
+		if (!fetchFn || typeof fetchFn !== 'function') {
+			console.error('[ApiClient] fetch: No valid fetch function available');
+			const error = new Error('No fetch function available');
+			return err(new ApiNetworkError('No fetch function available', error));
+		}
+
 		// Add debug logging for production debugging
 		const fullUrl = `${this.baseUrl}${endpoint}`;
 		console.log(`[${new Date().toISOString()}] ApiClient.fetch: Making request to ${fullUrl}`, {
@@ -154,14 +174,20 @@ class ApiClient {
 		});
 
 		try {
-			const response = await fetchFn(fullUrl, {
-				...options,
-				credentials: 'include',
-				headers: {
-					'Content-Type': 'application/json',
-					...options.headers
-				}
-			});
+			let response: Response;
+			try {
+				response = await fetchFn(fullUrl, {
+					...options,
+					credentials: 'include',
+					headers: {
+						'Content-Type': 'application/json',
+						...options.headers
+					}
+				});
+			} catch (fetchError) {
+				console.error(`[ApiClient] Immediate fetch error for ${endpoint}:`, fetchError);
+				throw fetchError; // Re-throw to be caught by outer catch
+			}
 
 			// Log response details for debugging
 			console.log(`[${new Date().toISOString()}] ApiClient.fetch: Response received`, {

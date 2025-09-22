@@ -6,7 +6,7 @@
 //! - Subscription renewal processing
 //! - Expired subscription cleanup
 
-use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc};
+use chrono::{Datelike, NaiveTime, Timelike, Utc};
 use deadpool_diesel::Pool;
 use diesel::prelude::*;
 use std::sync::Arc;
@@ -16,8 +16,8 @@ use tracing::{error, info, warn};
 use crate::{
     config::Config,
     errors::AppError,
-    models::payment::{NewSubscription, Subscription, SubscriptionStatus},
-    schema::{daily_usage_tracking, subscriptions, user_credits, users},
+    models::payment::{Subscription, SubscriptionStatus},
+    schema::{daily_usage_tracking, subscriptions, users},
     services::{
         encryption_service::EncryptionService,
         payment::{CreditService, SubscriptionService, UsageTrackingService},
@@ -194,7 +194,7 @@ impl PaymentScheduler {
 
         conn.interact(move |conn| {
             // Archive yesterday's usage before reset
-            let yesterday = today - chrono::Duration::days(1);
+            let _yesterday = today - chrono::Duration::days(1);
 
             // Update all daily_usage_tracking records from yesterday
             let reset_count = diesel::update(daily_usage_tracking::table)

@@ -392,8 +392,8 @@ pub async fn generate_chat_response(
     let _credit_reservation: Option<((), (), i32)> = None;
 
     // These need to be accessible outside the feature gate
-    let _should_track_usage = false;
-    let _credits_required = 0i32;
+    let mut should_track_usage = false;
+    let mut credits_required = 0i32;
 
     #[cfg(feature = "payment")]
     {
@@ -1310,7 +1310,7 @@ pub async fn generate_chat_response(
 
                     // Calculate actual credit cost based on token usage
                     #[cfg(feature = "payment")]
-                    let actual_credit_cost = if prompt_tokens > 0 || completion_tokens > 0 {
+                    let _actual_credit_cost = if prompt_tokens > 0 || completion_tokens > 0 {
                         // Load token-based pricing from config
                         let config_path =
                             std::path::Path::new("backend/config/subscription_tiers.json");
@@ -1367,7 +1367,7 @@ pub async fn generate_chat_response(
 
                     // Confirm credit reservation on successful LLM response
                     #[cfg(feature = "payment")]
-                    if let Some((credit_service, reservation_id, reserved_credits)) =
+                    if let Some((credit_service, reservation_id, _reserved_credits)) =
                         &credit_reservation
                     {
                         let conn_result = state_arc.pool.get().await;

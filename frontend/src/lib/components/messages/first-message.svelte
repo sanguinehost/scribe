@@ -96,7 +96,9 @@
 					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2'
 				)}
 			>
-				<Markdown md={currentGreeting} />
+				{#key `${message.id}-greeting-${currentGreetingIndex}`}
+					<Markdown md={currentGreeting} />
+				{/key}
 				{#if loading}
 					<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
 				{/if}

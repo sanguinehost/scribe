@@ -11,7 +11,6 @@ use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
@@ -281,7 +280,6 @@ impl PaymentAuditService {
         hours: i64,
     ) -> Result<AggregateStats, AppError> {
         use crate::schema::payment_audit_logs::dsl::*;
-        use diesel::dsl::{count, sum};
 
         let since = Utc::now() - Duration::hours(hours);
 

@@ -2,13 +2,13 @@ use crate::config::Config;
 use crate::errors::AppError;
 use crate::models::credit::{DailyUsage, NewDailyUsage};
 use crate::models::payment::Subscription;
-use crate::schema::{daily_usage_tracking, subscriptions};
-use chrono::{DateTime, Local, NaiveDate, Timelike, Utc};
+use crate::schema::daily_usage_tracking;
+use chrono::{DateTime, Local, Timelike, Utc};
 use diesel::prelude::*;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 /// Service for managing daily usage soft limits
@@ -176,7 +176,7 @@ impl SoftLimitService {
         let usage = self.get_or_create_daily_usage(conn, user_id)?;
 
         // Check if soft limit was triggered
-        if let Some(triggered_at) = usage.soft_limit_triggered_at {
+        if let Some(_triggered_at) = usage.soft_limit_triggered_at {
             // Get user's subscription
             let subscription = self.get_user_subscription(conn, user_id)?;
 

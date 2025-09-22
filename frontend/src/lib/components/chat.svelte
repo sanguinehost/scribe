@@ -59,6 +59,21 @@
 
 	const chatHistory = ChatHistory.fromContext();
 
+	// Track first message variant selection for improved caching
+	let firstMessageVariantIndex = $state<number>(0);
+
+	// Initialize variant index immediately if chat ID is available
+	if (typeof window !== 'undefined' && chat?.id) {
+		const saved = localStorage.getItem(`greeting-variant-${chat.id}`);
+		if (saved) {
+			const variantIndex = parseInt(saved, 10);
+			if (!isNaN(variantIndex)) {
+				console.log(`🎭 Immediately loading saved greeting variant ${variantIndex} for chat ${chat.id}`);
+				firstMessageVariantIndex = variantIndex;
+			}
+		}
+	}
+
 	// Pagination state
 	let nextCursor = $state<string | null>(initialCursor || null);
 	let isLoadingMore = $state(false);
@@ -122,6 +137,20 @@
 	// and cleaning them up when the chat changes or the component is destroyed.
 	let previousChatId = $state<string | null>(null);
 
+	// Load the saved greeting variant index when chat ID becomes available
+	$effect(() => {
+		if (typeof window !== 'undefined' && chat?.id) {
+			const saved = localStorage.getItem(`greeting-variant-${chat.id}`);
+			if (saved) {
+				const variantIndex = parseInt(saved, 10);
+				if (!isNaN(variantIndex) && variantIndex !== firstMessageVariantIndex) {
+					console.log(`🎭 Loading saved greeting variant ${variantIndex} for chat ${chat.id}`);
+					firstMessageVariantIndex = variantIndex;
+				}
+			}
+		}
+	});
+
 	$effect(() => {
 		const currentChatId = chat?.id;
 
@@ -141,18 +170,49 @@
 			if (currentChatId) {
 				let newInitialMessages: StreamingMessage[];
 
-				if (initialMessages.length === 0 && character?.first_mes) {
-					const firstMessageId = `first-message-${currentChatId}`;
-					newInitialMessages = [
-						{
-							id: firstMessageId,
-							sender: 'assistant',
-							content: character.first_mes,
-							displayedContent: character.first_mes, // Show immediately for initial message
-							created_at: chat.created_at ?? new Date().toISOString(),
-							isAnimating: false // Initial messages don't animate
+				if (initialMessages.length === 0 && character) {
+					// Determine which greeting to use based on the selected variant
+					let greetingContent = character.first_mes;
+
+					console.log(`🎭 Creating initial message with variant index ${firstMessageVariantIndex}`, {
+						chatId: currentChatId,
+						hasAlternateGreetings: !!character.alternate_greetings,
+						alternateGreetingsCount: character.alternate_greetings?.length || 0,
+						firstMessageVariantIndex
+					});
+
+					if (firstMessageVariantIndex > 0 && character.alternate_greetings) {
+						const altIndex = firstMessageVariantIndex - 1;
+						if (altIndex < character.alternate_greetings.length && character.alternate_greetings[altIndex]) {
+							greetingContent = character.alternate_greetings[altIndex];
+							console.log(`🎭 Using alternate greeting ${firstMessageVariantIndex} (index ${altIndex})`, {
+								greetingPreview: greetingContent.slice(0, 100) + '...'
+							});
+						} else {
+							console.log(`🎭 Alternate greeting ${firstMessageVariantIndex} not found, using default`);
 						}
-					];
+					} else {
+						console.log(`🎭 Using default greeting (first_mes)`, {
+							greetingPreview: greetingContent?.slice(0, 100) + '...'
+						});
+					}
+
+					if (greetingContent) {
+						const firstMessageId = `first-message-${currentChatId}`;
+						newInitialMessages = [
+							{
+								id: firstMessageId,
+								sender: 'assistant',
+								content: greetingContent,
+								displayedContent: greetingContent, // Show immediately for initial message
+								created_at: chat.created_at ?? new Date().toISOString(),
+								isAnimating: false, // Initial messages don't animate
+								current_variant_index: firstMessageVariantIndex
+							}
+						];
+					} else {
+						newInitialMessages = [];
+					}
 				} else {
 					// Flatten all loaded batches into a single array
 					const allLoadedMessages = loadedMessagesBatches.flat();
@@ -196,6 +256,43 @@
 				streamingService.clearMessages();
 				for (const message of newInitialMessages) {
 					streamingService.messages.push(message);
+				}
+
+				// Apply saved variant selection to the first assistant message (if it's a character greeting)
+				if (character && newInitialMessages.length > 0) {
+					const firstAssistantMessage = newInitialMessages.find(msg => msg.sender === 'assistant');
+					if (firstAssistantMessage && typeof window !== 'undefined') {
+						const savedVariant = localStorage.getItem(`greeting-variant-${currentChatId}`);
+						if (savedVariant) {
+							const variantIndex = parseInt(savedVariant, 10);
+							console.log(`🎭 Found saved variant ${variantIndex} for chat ${currentChatId}, applying to loaded message`);
+
+							// Determine the correct greeting content
+							let greetingContent = character.first_mes;
+							if (variantIndex > 0 && character.alternate_greetings) {
+								const altIndex = variantIndex - 1;
+								if (altIndex < character.alternate_greetings.length && character.alternate_greetings[altIndex]) {
+									greetingContent = character.alternate_greetings[altIndex];
+									console.log(`🎭 Applying alternate greeting ${variantIndex} to loaded message`, {
+										greetingPreview: greetingContent.slice(0, 100) + '...'
+									});
+								}
+							}
+
+							// Update the message content and variant index
+							const messageIndex = streamingService.messages.findIndex(msg => msg.id === firstAssistantMessage.id);
+							if (messageIndex !== -1) {
+								streamingService.messages[messageIndex] = {
+									...streamingService.messages[messageIndex],
+									content: greetingContent,
+									displayedContent: greetingContent,
+									current_variant_index: variantIndex
+								};
+								firstMessageVariantIndex = variantIndex;
+								console.log(`🎭 Updated loaded message with variant ${variantIndex} content`);
+							}
+						}
+					}
 				}
 			}
 
@@ -480,7 +577,9 @@
 					cached.error !== msg.error ||
 					cached.variant_count !== msg.variant_count ||
 					cached.current_variant_index !== msg.current_variant_index ||
-					(cached as any).isRegenerating !== msg.isRegenerating;
+					(cached as any).isRegenerating !== msg.isRegenerating ||
+					// Force re-render when variant changes (especially for first messages)
+					(cached as any)._variantChangedAt !== (msg as any)._variantChangedAt;
 
 				if (hasChanged) {
 					// Message content changed
@@ -506,7 +605,9 @@
 						is_variant: msg.is_variant,
 						parent_message_id: msg.parent_message_id,
 						// Include regeneration flag for loading indicator
-						isRegenerating: msg.isRegenerating
+						isRegenerating: msg.isRegenerating,
+						// Include variant change timestamp to force re-renders
+						_variantChangedAt: (msg as any)._variantChangedAt
 					};
 
 					newCache.set(msg.id, newMessage);
@@ -593,9 +694,8 @@
 
 		displayMessages.forEach((message) => {
 			// Skip first messages (character greetings) - they shouldn't count toward usage
-			const isFirstMessage =
-				message.id.startsWith('first-message-') ||
-				(message.message_type === 'Assistant' && message.content === character?.first_mes);
+			// Note: Removed content comparison to support alternate greetings
+			const isFirstMessage = message.id.startsWith('first-message-');
 
 			if (!isFirstMessage) {
 				const messageInputTokens = message.prompt_tokens || 0;
@@ -1151,6 +1251,16 @@
 				content: m.content // Use full content for API, not displayedContent
 			}));
 
+		// DEBUG: Log the first assistant message content to verify variant is applied
+		const firstAssistantInHistory = existingHistoryForApi.find(msg => msg.role === 'assistant');
+		if (firstAssistantInHistory) {
+			console.log('🎭 First assistant message being sent to backend:', {
+				contentPreview: firstAssistantInHistory.content.slice(0, 150) + '...',
+				fullContentLength: firstAssistantInHistory.content.length,
+				currentVariantIndex: firstMessageVariantIndex
+			});
+		}
+
 		try {
 			// Use StreamingService for the connection
 			const currentModel = await getCurrentChatModel();
@@ -1341,14 +1451,61 @@
 	}
 
 	// Handle greeting changes from alternate greetings
-	function handleGreetingChanged(detail: { index: number; content: string }) {
-		const { content } = detail;
+	async function handleGreetingChanged(detail: { index: number; content: string }) {
+		const { content, index } = detail;
 
-		// Update the first message content in the messages array
+		console.log(`🎭 Greeting changed to variant ${index}`, { chatId: chat?.id, content: content.slice(0, 100) + '...' });
+
+		// Track the selected variant index
+		firstMessageVariantIndex = index;
+
+		// Save to localStorage for persistence
+		if (typeof window !== 'undefined' && chat?.id) {
+			localStorage.setItem(`greeting-variant-${chat.id}`, index.toString());
+			console.log(`🎭 Saved greeting variant ${index} to localStorage for chat ${chat.id}`);
+		}
+
+		// Update the first message content in the messages array with variant metadata
 		const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
+		const firstMessage = streamingService.messages.find(msg => msg.id === firstMessageId);
+
+		// Optimistically update the UI
 		streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) =>
-			msg.id === firstMessageId ? { ...msg, content } : msg
+			msg.id === firstMessageId
+				? {
+					...msg,
+					content,
+					displayedContent: content,
+					current_variant_index: index,
+					// Force re-render by updating a timestamp
+					_variantChangedAt: Date.now()
+				}
+				: msg
 		);
+
+		// If this is a real backend message (has backend_id), persist the variant selection
+		if (firstMessage?.backend_id) {
+			try {
+				console.log('🔄 Persisting first message variant selection to backend:', {
+					messageId: firstMessage.backend_id,
+					variantIndex: index
+				});
+
+				const result = await apiClient.selectMessageVariant(firstMessage.backend_id, {
+					variant_index: index
+				});
+
+				if (result.isOk()) {
+					console.log('✅ Successfully persisted first message variant selection to backend');
+				} else {
+					console.warn('⚠️ Failed to persist variant selection to backend:', result.error);
+					// Don't show error to user since the UI still works without backend sync
+				}
+			} catch (error) {
+				console.warn('⚠️ Error persisting first message variant selection:', error);
+				// Don't show error to user since this is not critical for functionality
+			}
+		}
 	}
 
 	// Message action handlers
@@ -1701,8 +1858,8 @@
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
 	<ChatHeader {user} {chat} {readonly} />
-	{#key displayMessages.length}
-		<!-- Messages component render key -->
+	{#key `${displayMessages.length}-${firstMessageVariantIndex}`}
+		<!-- Messages component render key - includes variant index to force re-render -->
 	{/key}
 
 	<Messages

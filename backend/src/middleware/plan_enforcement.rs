@@ -7,7 +7,6 @@
 #[cfg(feature = "payment")]
 use axum::{
     extract::{Request, State},
-    http::StatusCode,
     middleware::Next,
     response::Response,
 };
@@ -17,11 +16,8 @@ use axum_login::AuthSession;
 #[cfg(feature = "payment")]
 use crate::{
     auth::user_store::Backend as AuthBackend,
-    config::Config,
     errors::AppError,
-    models::payment::{PlanFeatures, Subscription},
-    services::EncryptionService,
-    services::payment::{SubscriptionService, UsageTrackingService},
+    models::payment::Subscription,
     state::AppState,
 };
 
@@ -56,7 +52,7 @@ pub struct EnforcementConfig {
 #[cfg(feature = "payment")]
 pub async fn plan_enforcement_middleware(
     State(app_state): State<AppState>,
-    mut request: Request,
+    request: Request,
     next: Next,
 ) -> Result<Response, AppError> {
     // Check if payment feature is enabled and enforcement is active
@@ -123,8 +119,8 @@ async fn check_plan_limits(
 ) -> Result<EnforcementResult, AppError> {
     let pool = app_state.pool.clone();
     let user_id = user.id;
-    let config_clone = (*app_state.config).clone();
-    let encryption_service = (*app_state.encryption_service).clone();
+    let _config_clone = (*app_state.config).clone();
+    let _encryption_service = (*app_state.encryption_service).clone();
     let enforcement_config = config.clone();
 
     // Use deadpool interaction pattern to work with the database

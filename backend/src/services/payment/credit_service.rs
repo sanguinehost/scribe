@@ -5,14 +5,14 @@ use crate::models::credit::{
     CreditBalance, CreditTransaction, NewCreditBalance, NewCreditTransaction,
 };
 use crate::models::users::UserDbQuery;
-use crate::schema::{credit_transactions, user_credits, users};
+use crate::schema::{credit_transactions, users};
 use crate::services::payment::{AuditEventType, PaymentAuditService};
-use chrono::{DateTime, Datelike, Utc};
+use chrono::{Datelike, Utc};
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 /// Service for managing user credits and credit transactions

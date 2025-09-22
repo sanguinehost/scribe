@@ -341,7 +341,9 @@
 								<!-- Show partial content if any was generated before the error -->
 								<div class="mt-3 border-t border-red-200 pt-3 dark:border-red-800">
 									<p class="mb-2 text-xs text-red-600 dark:text-red-400">Partial response:</p>
-									<Markdown md={processedContent} />
+									{#key `${message.id}-partial-${message.current_variant_index || 0}`}
+										<Markdown md={processedContent} />
+									{/key}
 								</div>
 							{/if}
 						{:else}
@@ -358,7 +360,9 @@
 								<div
 									class="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
 								>
-									<Markdown md={processedContent} />
+									{#key `${message.id}-${message.current_variant_index || 0}`}
+										<Markdown md={processedContent} />
+									{/key}
 								</div>
 							{/if}
 						{/if}

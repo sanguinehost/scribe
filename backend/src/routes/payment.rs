@@ -9,9 +9,8 @@
 #[cfg(feature = "payment")]
 use axum::{
     Router,
-    body::Body,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::{IntoResponse, Json},
     routing::{get, post},
 };
@@ -26,14 +25,13 @@ use uuid::Uuid;
 use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
-    models::credit::{CreditBalance, CreditPackage, CreditTransaction},
-    models::payment::{PlanFeatures, Subscription, SubscriptionStatus},
+    models::credit::CreditPackage,
+    models::payment::{PlanFeatures, Subscription},
     services::payment::{
-        AuditEventType, CreditService, PaddleService, PaymentAuditService, SubscriptionService,
-        UsageTrackingService,
+        CreditService, PaddleService, PaymentAuditService, SubscriptionService,
         paddle_service::{
-            CreateTransactionRequest, CreateTransactionResponse, PaddleEventType, PaddleWebhook,
-            TransactionBillingDetails, TransactionCheckout, TransactionItem,
+            CreateTransactionRequest, PaddleEventType, PaddleWebhook,
+            TransactionCheckout, TransactionItem,
         },
     },
     state::AppState,
@@ -321,7 +319,7 @@ pub async fn get_subscription(
 
 /// Get available subscription plans
 #[cfg(feature = "payment")]
-pub async fn get_plans(State(app_state): State<AppState>) -> Result<Json<PlansResponse>, AppError> {
+pub async fn get_plans(State(_app_state): State<AppState>) -> Result<Json<PlansResponse>, AppError> {
     // TODO: This is a simplified implementation for now
     Ok(Json(PlansResponse { plans: vec![] }))
 }
@@ -781,7 +779,6 @@ pub async fn verify_transaction(
             let existing_subscription = conn
                 .interact(move |conn| {
                     use crate::models::payment::Subscription;
-                    use crate::models::users::User;
                     use crate::schema::subscriptions::dsl as sub_dsl;
                     use diesel::prelude::*;
 
@@ -1098,10 +1095,10 @@ pub async fn create_subscription(
 #[cfg(feature = "payment")]
 pub async fn cancel_subscription(
     auth_session: CurrentAuthSession,
-    State(app_state): State<AppState>,
-    Json(request): Json<CancelSubscriptionRequest>,
+    State(_app_state): State<AppState>,
+    Json(_request): Json<CancelSubscriptionRequest>,
 ) -> Result<Json<SubscriptionResponse>, AppError> {
-    let user = auth_session
+    let _user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
@@ -1117,9 +1114,9 @@ pub async fn cancel_subscription(
 #[cfg(feature = "payment")]
 pub async fn reactivate_subscription(
     auth_session: CurrentAuthSession,
-    State(app_state): State<AppState>,
+    State(_app_state): State<AppState>,
 ) -> Result<Json<SubscriptionResponse>, AppError> {
-    let user = auth_session
+    let _user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
@@ -1695,7 +1692,7 @@ async fn process_transaction_completed(
 /// Process subscription.created webhook event
 #[cfg(feature = "payment")]
 async fn process_subscription_created(
-    app_state: AppState,
+    _app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
     tracing::info!(
@@ -1712,7 +1709,7 @@ async fn process_subscription_created(
 /// Process subscription.updated webhook event
 #[cfg(feature = "payment")]
 async fn process_subscription_updated(
-    app_state: AppState,
+    _app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
     tracing::info!(
@@ -1729,7 +1726,7 @@ async fn process_subscription_updated(
 /// Process subscription.cancelled webhook event
 #[cfg(feature = "payment")]
 async fn process_subscription_cancelled(
-    app_state: AppState,
+    _app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
     tracing::info!(
@@ -1951,7 +1948,7 @@ pub async fn get_credit_transactions(
 /// Get model credit costs configuration
 #[cfg(feature = "payment")]
 pub async fn get_model_costs(
-    State(app_state): State<AppState>,
+    State(_app_state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     use std::fs;
 
