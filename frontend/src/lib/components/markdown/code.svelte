@@ -4,12 +4,10 @@
 
 	let {
 		children,
-		inline,
 		class: c,
 		...props
 	}: {
 		children: any;
-		inline?: boolean;
 		class?: string;
 		[key: string]: any;
 	} = $props();
@@ -17,8 +15,17 @@
 	let element = $state<HTMLElement | null>(null);
 	let hasProcessed = $state(false);
 
+	// Detect if this is inline code by checking if we're inside a pre element
+	let isInlineCode = $state(true); // Default to inline
+
 	onMount(() => {
-		if (!element || hasProcessed || inline) return; // Only process block code, not inline
+		if (!element) return;
+
+		// Check if this code element is inside a pre element
+		const preParent = element.closest('pre');
+		isInlineCode = !preParent;
+
+		if (hasProcessed || isInlineCode) return; // Only process block code for game status styling
 
 		const rawText = element.textContent || '';
 		// Trim the entire text content to remove leading/trailing whitespace
@@ -113,19 +120,16 @@
 	});
 </script>
 
-{#if inline}
-	<code bind:this={element} class={cn('whitespace-pre-wrap break-words text-sm', c)} {...props}
+{#if isInlineCode}
+	<code bind:this={element} class={cn('inline-block rounded bg-muted px-1.5 py-0.5 text-sm font-mono text-foreground break-words border border-border', c)} {...props}
 		>{@render children?.()}</code
 	>
 {:else}
-	<div class="not-prose mt-4 flex flex-col">
-		<pre
-			class="w-full overflow-x-auto rounded-xl border border-zinc-200 p-4 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"><code
-				bind:this={element}
-				class="whitespace-pre-wrap break-words"
-				{...props}>{@render children?.()}</code
-			></pre>
-	</div>
+	<code
+		bind:this={element}
+		class="whitespace-pre-wrap break-words"
+		{...props}>{@render children?.()}</code
+	>
 {/if}
 
 <style>
