@@ -49,7 +49,7 @@
 	}
 
 	function getUpgradeRecommendation(): string | null {
-		if (currentPlan === 'enterprise') return null;
+		if (currentPlan === 'premium') return null;
 		
 		if (isAtLimit) {
 			return 'Upgrade to continue chatting';
@@ -106,7 +106,7 @@
 					{/if}
 				</div>
 
-				{#if !compact && showUpgradeButton && currentPlan !== 'enterprise'}
+				{#if !compact && showUpgradeButton && currentPlan !== 'premium'}
 					{#if currentPlan === 'free'}
 						<Button
 							variant="default"
@@ -147,7 +147,7 @@
 						</p>
 						{#if currentPlan === 'free'}
 							<CheckoutButton
-								planType="pro"
+								planType="premium"
 								buttonText="Upgrade Now"
 								buttonClass="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded"
 							/>

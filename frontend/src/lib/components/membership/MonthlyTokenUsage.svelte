@@ -9,27 +9,8 @@
 	export let showPeriod: boolean = true;
 
 	// Computed properties
-	$: tokensUsed = usageLimits ? usageLimits.tokens_limit - usageLimits.tokens_remaining : 0;
-	$: usagePercentage = calculateUsagePercentage();
-	$: isNearLimit = usagePercentage >= 80;
-	$: isAtLimit = usagePercentage >= 100;
-	$: statusColor = getStatusColor();
+	$: tokensUsed = usageLimits ? usageLimits.tokens_used_total : 0;
 	$: containerClass = getContainerClass();
-
-	function calculateUsagePercentage(): number {
-		if (!usageLimits || usageLimits.is_unlimited) {
-			return 0;
-		}
-
-		const used = usageLimits.tokens_limit - usageLimits.tokens_remaining;
-		return Math.min(100, (used / usageLimits.tokens_limit) * 100);
-	}
-
-	function getStatusColor(): string {
-		if (isAtLimit) return 'bg-red-500';
-		if (isNearLimit) return 'bg-yellow-500';
-		return 'bg-blue-500';
-	}
 
 	function getContainerClass(): string {
 		const heights = {
@@ -76,88 +57,63 @@
 	function getUsageLabel(): string {
 		if (!usageLimits) return 'Loading...';
 
-		if (usageLimits.is_unlimited) {
-			return 'Unlimited';
-		}
-
-		return `${formatTokens(tokensUsed)} / ${formatTokens(usageLimits.tokens_limit)}`;
+		return formatTokens(tokensUsed);
 	}
 </script>
 
 <div class="monthly-token-usage">
 	{#if usageLimits}
-		{#if usageLimits.is_unlimited}
-			<div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-				<div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-				<Zap size={16} class="text-blue-500" />
-				<span class="font-medium">Unlimited tokens</span>
-			</div>
-		{:else}
-			<div class="space-y-3">
-				<!-- Header -->
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-2">
-						<Zap size={16} class="text-blue-500" />
-						<span class="text-sm font-medium text-slate-900 dark:text-slate-100">
-							Monthly Token Usage
-						</span>
-					</div>
-					{#if showPeriod}
-						<div class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-							<Calendar size={12} />
-							<span>{getRemainingTime()}</span>
-						</div>
-					{/if}
+		<div class="space-y-3">
+			<!-- Header -->
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-2">
+					<Zap size={16} class="text-blue-500" />
+					<span class="text-sm font-medium text-slate-900 dark:text-slate-100">
+						Monthly Token Usage
+					</span>
 				</div>
-
-				<!-- Usage numbers -->
-				{#if showNumbers}
-					<div class="flex items-center justify-between text-sm">
-						<span class="font-medium text-slate-900 dark:text-slate-100">
-							{getUsageLabel()} tokens
-						</span>
-						<span class="text-slate-500 dark:text-slate-400">
-							{Math.round(usagePercentage)}% used
-						</span>
-					</div>
-				{/if}
-
-				<!-- Progress bar -->
-				<div class={`bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden ${containerClass} progress-container`}>
-					<div
-						class={`${statusColor} transition-all duration-300 ease-out h-full ${
-							isAtLimit ? 'animate-pulse critical-glow' : isNearLimit ? 'warning-glow' : 'normal-glow'
-						}`}
-						style="width: {usagePercentage}%"
-						role="progressbar"
-						aria-valuenow={usagePercentage}
-						aria-valuemin={0}
-						aria-valuemax={100}
-						aria-label={`Monthly token usage: ${Math.round(usagePercentage)}% used`}
-					></div>
-				</div>
-
-				<!-- Billing period info -->
 				{#if showPeriod}
-					<div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-						<span>
-							{formatDate(usageLimits.period_start)} - {formatDate(usageLimits.period_end)}
-						</span>
-						{#if isAtLimit}
-							<span class="text-red-600 dark:text-red-400 font-medium flex items-center gap-1">
-								<TrendingUp size={12} />
-								Limit reached
-							</span>
-						{:else if isNearLimit}
-							<span class="text-yellow-600 dark:text-yellow-400 font-medium flex items-center gap-1">
-								<TrendingUp size={12} />
-								Near limit
-							</span>
-						{/if}
+					<div class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+						<Calendar size={12} />
+						<span>{getRemainingTime()}</span>
 					</div>
 				{/if}
 			</div>
-		{/if}
+
+			<!-- Usage numbers -->
+			{#if showNumbers}
+				<div class="flex items-center justify-between text-sm">
+					<span class="font-medium text-slate-900 dark:text-slate-100">
+						{getUsageLabel()} tokens used
+					</span>
+					<span class="text-slate-500 dark:text-slate-400">
+						This period
+					</span>
+				</div>
+			{/if}
+
+			<!-- Information display (no progress bar) -->
+			<div class="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+				<div class="flex items-start gap-2">
+					<TrendingUp size={14} class="text-blue-600 dark:text-blue-400 mt-0.5" />
+					<div class="text-xs text-blue-800 dark:text-blue-200">
+						<p class="font-medium">Usage tracking for administrative purposes</p>
+						<p class="mt-1 text-blue-700 dark:text-blue-300">
+							This data helps us understand platform usage patterns and ensure fair resource allocation.
+						</p>
+					</div>
+				</div>
+			</div>
+
+			<!-- Billing period info -->
+			{#if showPeriod}
+				<div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+					<span>
+						{formatDate(usageLimits.period_start)} - {formatDate(usageLimits.period_end)}
+					</span>
+				</div>
+			{/if}
+		</div>
 	{:else}
 		<!-- Loading state -->
 		<div class="space-y-3 animate-pulse">

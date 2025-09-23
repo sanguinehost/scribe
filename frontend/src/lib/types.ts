@@ -1207,8 +1207,7 @@ export interface PlanFeatures {
 }
 
 export interface UsageLimitsResponse {
-	tokens_remaining: number;
-	tokens_limit: number;
+	tokens_used_total: number;
 	period_start: string; // ISO date
 	period_end: string; // ISO date
 	is_unlimited: boolean;

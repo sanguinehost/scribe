@@ -53,8 +53,7 @@ pub struct SubscriptionResponse {
 #[cfg(feature = "payment")]
 #[derive(Serialize)]
 pub struct UsageLimitsResponse {
-    pub tokens_remaining: i32,
-    pub tokens_limit: i32,
+    pub tokens_used_total: i32,
     pub period_start: chrono::DateTime<chrono::Utc>,
     pub period_end: chrono::DateTime<chrono::Utc>,
     pub is_unlimited: bool,
@@ -301,8 +300,7 @@ pub async fn get_subscription(
         match usage_result {
             Ok(usage_limit) => {
                 Some(UsageLimitsResponse {
-                    tokens_remaining: usage_limit.tokens_remaining.max(0),
-                    tokens_limit: usage_limit.tokens_limit.max(0),
+                    tokens_used_total: usage_limit.tokens_used_total,
                     period_start: usage_limit.period_start,
                     period_end: usage_limit.period_end,
                     is_unlimited: usage_limit.is_unlimited,
@@ -314,10 +312,9 @@ pub async fn get_subscription(
             }
             Err(e) => {
                 warn!("Failed to get usage limits for user {}: {}", user.id, e);
-                // Fallback to plan limits without usage
+                // Fallback to default values without usage data
                 Some(UsageLimitsResponse {
-                    tokens_remaining: features.monthly_token_limit.unwrap_or(0),
-                    tokens_limit: features.monthly_token_limit.unwrap_or(0),
+                    tokens_used_total: 0, // Unknown usage, default to 0
                     period_start: chrono::Utc::now(),
                     period_end: chrono::Utc::now() + chrono::Duration::days(30),
                     is_unlimited: features.monthly_token_limit.is_none(),
@@ -403,8 +400,7 @@ pub async fn get_usage(
     match usage_result {
         Ok(usage_limit) => {
             Ok(Json(UsageLimitsResponse {
-                tokens_remaining: usage_limit.tokens_remaining.max(0),
-                tokens_limit: usage_limit.tokens_limit.max(0),
+                tokens_used_total: usage_limit.tokens_used_total,
                 period_start: usage_limit.period_start,
                 period_end: usage_limit.period_end,
                 is_unlimited: usage_limit.is_unlimited,
@@ -418,8 +414,7 @@ pub async fn get_usage(
             warn!("Failed to get usage limits for user {}: {}", user.id, e);
             // Fallback to safe defaults
             Ok(Json(UsageLimitsResponse {
-                tokens_remaining: 0,
-                tokens_limit: 0,
+                tokens_used_total: 0,
                 period_start: chrono::Utc::now(),
                 period_end: chrono::Utc::now() + chrono::Duration::days(30),
                 is_unlimited: false,

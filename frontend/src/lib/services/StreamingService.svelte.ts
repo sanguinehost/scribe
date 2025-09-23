@@ -1002,6 +1002,12 @@ class StreamingService {
 							);
 							// Don't mark for cleanup - just fail immediately
 							throw error;
+						} else if (errorText.includes('Daily message limit reached')) {
+							// Daily limit error - don't retry, preserve original message for user display
+							console.error('❌ Daily message limit reached');
+							const error = new Error(errorText);
+							error.name = 'DailyLimitError';
+							throw error;
 						} else {
 							// Other 400 errors might be retryable (e.g. temporary server issues)
 							throw new Error(
@@ -1521,6 +1527,14 @@ class StreamingService {
 		if (error.name === 'AbortError') {
 			// User cancelled - not really an error
 			return;
+		} else if (error.name === 'DailyLimitError') {
+			// Daily message limit reached - not retryable
+			streamingError = {
+				message: error.message,
+				type: 'server',
+				retryable: false,
+				originalError: error
+			};
 		} else if (error.message.includes('401') || error.message.includes('Authentication')) {
 			streamingError = {
 				message: 'Session expired. Please sign in again.',
@@ -1553,7 +1567,8 @@ class StreamingService {
 				if (msg.id === assistantMessageId) {
 					return {
 						...msg,
-						loading: false,
+						isAnimating: false,
+						isRegenerating: false,
 						error: streamingError.message,
 						retryable: streamingError.retryable
 					};
@@ -1584,6 +1599,12 @@ class StreamingService {
 
 		// Don't retry auth errors
 		if (error?.message?.includes('401') || error?.message?.includes('Authentication')) {
+			return false;
+		}
+
+		// Don't retry daily limit errors
+		if (error?.name === 'DailyLimitError' || error?.message?.includes('Daily message limit reached')) {
+			console.warn('🚫 Not retrying daily limit error:', error.message);
 			return false;
 		}
 

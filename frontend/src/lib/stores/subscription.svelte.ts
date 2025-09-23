@@ -54,11 +54,9 @@ export const subscriptionStore = {
 	},
 
 	get usagePercentage(): number {
-		if (!_usageLimits || _usageLimits.is_unlimited) {
-			return 0;
-		}
-		const used = _usageLimits.tokens_limit - _usageLimits.tokens_remaining;
-		return (used / _usageLimits.tokens_limit) * 100;
+		// No longer using token percentage since we moved away from token limits
+		// This is kept for compatibility but always returns 0
+		return 0;
 	},
 
 	get isNearLimit(): boolean {
@@ -66,10 +64,9 @@ export const subscriptionStore = {
 	},
 
 	get isAtLimit(): boolean {
-		if (!_usageLimits || _usageLimits.is_unlimited) {
-			return false;
-		}
-		return _usageLimits.tokens_remaining <= 0;
+		// No longer using token limits for tracking limits
+		// Daily message limits are enforced server-side
+		return false;
 	},
 
 	get daysUntilRenewal(): number {
@@ -147,13 +144,14 @@ export const subscriptionStore = {
 	 * Update usage limits after message sent/received
 	 */
 	updateUsage(tokensUsed: number): void {
-		if (!_usageLimits || _usageLimits.is_unlimited) {
+		if (!_usageLimits) {
 			return;
 		}
 
+		// Update total tokens used for administrative tracking
 		_usageLimits = {
 			..._usageLimits,
-			tokens_remaining: Math.max(0, _usageLimits.tokens_remaining - tokensUsed)
+			tokens_used_total: _usageLimits.tokens_used_total + tokensUsed
 		};
 	},
 
@@ -188,22 +186,16 @@ export const subscriptionStore = {
 	},
 
 	/**
-	 * Check if user can send messages (not at token limit)
+	 * Check if user can send messages (daily limits are enforced server-side)
 	 */
 	canSendMessage(): boolean {
 		if (!ENABLE_PAYMENTS) {
 			return true; // No limits when payments disabled
 		}
 
-		if (!_usageLimits) {
-			return true; // Assume yes if we don't have data yet
-		}
-
-		if (_usageLimits.is_unlimited) {
-			return true;
-		}
-
-		return _usageLimits.tokens_remaining > 0;
+		// Daily message limits are now enforced server-side in the chat endpoint
+		// Frontend just displays the current usage but doesn't block
+		return true;
 	},
 
 	/**

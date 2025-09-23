@@ -17,12 +17,9 @@
 	$: progressBarClass = getProgressBarClass(size, orientation);
 
 	function calculateUsagePercentage(usage: UsageLimitsResponse | null): number {
-		if (!usage || usage.is_unlimited) {
-			return 0;
-		}
-		
-		const used = usage.tokens_limit - usage.tokens_remaining;
-		return Math.min(100, (used / usage.tokens_limit) * 100);
+		// Since we no longer use token limits for display, return 0
+		// This component should be replaced with DailyMessageUsage for better UX
+		return 0;
 	}
 
 	function getStatusColor(percentage: number): string {
@@ -84,8 +81,7 @@
 			return 'Unlimited';
 		}
 
-		const used = usage.tokens_limit - usage.tokens_remaining;
-		return `${formatTokens(used)}`;
+		return `${formatTokens(usage.tokens_used_total)}`;
 	}
 </script>
 

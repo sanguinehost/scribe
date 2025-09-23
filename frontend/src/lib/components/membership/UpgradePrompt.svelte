@@ -23,9 +23,8 @@
 		dispatch('upgrade', { planType });
 	}
 
-	$: usagePercent = subscriptionStore.usageLimits
-		? Math.round(((subscriptionStore.usageLimits.tokens_limit - subscriptionStore.usageLimits.tokens_remaining) / subscriptionStore.usageLimits.tokens_limit) * 100)
-		: 0;
+	// No longer using token percentage since we moved away from token limits
+	$: usagePercent = 0;
 </script>
 
 <div class="upgrade-prompt upgrade-prompt-{variant}" class:banner-gradient={variant === 'banner'}>
@@ -39,17 +38,17 @@
 				<p class="text-sm text-red-700 dark:text-red-300 mt-1">{message}</p>
 				{#if subscriptionStore.usageLimits && !subscriptionStore.usageLimits.is_unlimited}
 					<div class="text-xs text-red-600 dark:text-red-400 mt-1">
-						{usagePercent}% of tokens used ({subscriptionStore.usageLimits.tokens_limit - subscriptionStore.usageLimits.tokens_remaining} / {subscriptionStore.usageLimits.tokens_limit})
+						{subscriptionStore.usageLimits.tokens_used_total.toLocaleString()} tokens used this period
 					</div>
 				{/if}
 			</div>
 			<div class="flex-shrink-0 flex gap-2">
 				<CheckoutButton
-					planType="pro"
+					planType="premium"
 					buttonText="Upgrade Now"
 					buttonClass="bg-red-600 hover:bg-red-700 text-white px-3 py-1 text-sm rounded border-none cursor-pointer"
 					urgent={subscriptionStore.isAtLimit}
-					on:checkout-start={() => handleUpgrade('pro')}
+					on:checkout-start={() => handleUpgrade('premium')}
 				/>
 				{#if showCloseButton}
 					<Button
@@ -82,25 +81,18 @@
 							<div class="bg-red-600 h-2 rounded-full" style="width: {usagePercent}%"></div>
 						</div>
 						<div class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-							{subscriptionStore.usageLimits.tokens_limit - subscriptionStore.usageLimits.tokens_remaining} / {subscriptionStore.usageLimits.tokens_limit} tokens ({usagePercent}%)
+							{subscriptionStore.usageLimits.tokens_used_total.toLocaleString()} tokens used this period
 						</div>
 					</div>
 				{/if}
 
 				<div class="flex flex-col gap-3">
 					<CheckoutButton
-						planType="pro"
-						buttonText="Upgrade to Pro Plan"
+						planType="premium"
+						buttonText="Upgrade to Premium Plan"
 						buttonClass="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer border-none"
 						urgent={subscriptionStore.isAtLimit}
-						on:checkout-start={() => handleUpgrade('pro')}
-					/>
-					<CheckoutButton
-						planType="enterprise"
-						buttonText="Upgrade to Enterprise"
-						buttonClass="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded cursor-pointer border-none"
-						urgent={subscriptionStore.isAtLimit}
-						on:checkout-start={() => handleUpgrade('enterprise')}
+						on:checkout-start={() => handleUpgrade('premium')}
 					/>
 					{#if showCloseButton}
 						<Button variant="ghost" onclick={handleClose} class="w-full">
@@ -118,11 +110,11 @@
 				<span class="text-sm text-red-700 dark:text-red-300">{message}</span>
 			</div>
 			<CheckoutButton
-				planType="pro"
+				planType="premium"
 				buttonText="Upgrade"
 				buttonClass="bg-red-600 hover:bg-red-700 text-white px-2 py-1 text-xs rounded cursor-pointer border-none"
 				urgent={subscriptionStore.isAtLimit}
-				on:checkout-start={() => handleUpgrade('pro')}
+				on:checkout-start={() => handleUpgrade('premium')}
 			/>
 			{#if showCloseButton}
 				<Button

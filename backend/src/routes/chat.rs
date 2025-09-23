@@ -398,7 +398,7 @@ pub async fn generate_chat_response(
     #[cfg(feature = "payment")]
     {
         use crate::services::encryption_service::EncryptionService;
-        use crate::services::payment::{CreditService, SubscriptionService, UsageTrackingService};
+        use crate::services::payment::{CreditService, SubscriptionService};
 
         let conn = state_arc
             .pool
@@ -448,9 +448,29 @@ pub async fn generate_chat_response(
         let model_costs = &tiers_config["credit_system"]["model_costs"];
         let base_model_cost = model_costs[&model_to_use].as_i64().unwrap_or(0) as i32;
 
+        // Check daily message limits BEFORE processing the message
+        let soft_limit_service = crate::services::payment::SoftLimitService::new(state_arc.config.clone());
+        let current_daily_usage = conn
+            .interact({
+                let soft_limit_service = soft_limit_service.clone();
+                move |conn| soft_limit_service.get_or_create_daily_usage(conn, user_id_value)
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+        let daily_messages_limit = soft_limit_service.get_daily_limit(user_tier);
+
         match user_tier {
             "free" => {
-                // Free tier: Flash/Flash-Lite free until token limit, gemini-2.5-pro blocked/requires credits
+                // Free tier: Hard limit at 20 messages per day
+                if current_daily_usage.message_count >= daily_messages_limit {
+                    return Err(AppError::BadRequest(format!(
+                        "Daily message limit reached ({}/{}). Upgrade to continue chatting.",
+                        current_daily_usage.message_count, daily_messages_limit
+                    )));
+                }
+
+                // Free tier: gemini-2.5-pro blocked/requires credits
                 if model_to_use == "gemini-2.5-pro" {
                     if base_model_cost > 0 {
                         credits_required = base_model_cost;
@@ -463,45 +483,19 @@ pub async fn generate_chat_response(
                 should_track_usage = true; // Track usage to enforce daily limits
             }
             "basic" | "premium" => {
-                // Paid tiers: Check if user has exceeded their included usage
+                // Paid tiers: Apply soft limits (throttling) but allow messages to continue
                 should_track_usage = true;
 
                 // For gemini-2.5-pro, always require credits regardless of tier
                 if model_to_use == "gemini-2.5-pro" {
                     credits_required = base_model_cost;
                 } else {
-                    // For Flash/Flash-Lite, check if user has exceeded included usage
-                    let daily_messages_limit = tier_config["limits"]["daily_messages"]
-                        .as_i64()
-                        .unwrap_or(0) as i32;
+                    // For Flash/Flash-Lite, check if user has exceeded their soft limit
+                    // Note: Basic/Premium users get soft limits (throttling) not hard blocks
+                    // Soft limit enforcement happens later via middleware/throttling
 
-                    // Get current daily usage (simplified check - in production would need proper usage tracking)
-                    let usage_service = UsageTrackingService::new(
-                        state_arc.config.as_ref().clone(),
-                        EncryptionService::new(),
-                    );
-                    let subscription_id = user_subscription.as_ref().map(|s| s.id);
-                    let current_usage = conn
-                        .interact(move |conn| {
-                            usage_service.get_current_usage_sync(
-                                conn,
-                                user_id_value,
-                                subscription_id,
-                            )
-                        })
-                        .await
-                        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
-
-                    let messages_used_today = current_usage.map(|u| u.tokens_used).unwrap_or(0); // Simplified - should track messages not tokens
-
-                    if messages_used_today >= daily_messages_limit {
-                        // Exceeded included usage, require credits for any model (soft limit bypass)
-                        credits_required = if base_model_cost > 0 {
-                            base_model_cost
-                        } else {
-                            10
-                        }; // Default cost for Flash models when over limit
-                    }
+                    // No credit requirement for Flash models within soft limits
+                    // Soft limit throttling is handled by the SoftLimitService during response generation
                 }
             }
             _ => {

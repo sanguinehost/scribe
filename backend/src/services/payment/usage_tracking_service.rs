@@ -43,8 +43,7 @@ pub struct UsageMetadata {
 #[cfg(feature = "payment")]
 #[derive(Debug)]
 pub struct UsageLimit {
-    pub tokens_remaining: i32,
-    pub tokens_limit: i32,
+    pub tokens_used_total: i32,
     pub period_start: DateTime<Utc>,
     pub period_end: DateTime<Utc>,
     pub is_unlimited: bool,
@@ -226,15 +225,8 @@ impl UsageTrackingService {
         let tokens_limit = self.get_token_limit_for_user_sync(conn, user_id)?;
         let is_unlimited = tokens_limit < 0;
 
-        let tokens_remaining = if is_unlimited {
-            i32::MAX
-        } else {
-            (tokens_limit - current_usage).max(0)
-        };
-
         Ok(UsageLimit {
-            tokens_remaining,
-            tokens_limit,
+            tokens_used_total: current_usage,
             period_start,
             period_end,
             is_unlimited,
@@ -258,7 +250,9 @@ impl UsageTrackingService {
             return Ok(true);
         }
 
-        Ok(limits.tokens_remaining >= tokens_needed)
+        // Since we removed token limits, this method should be updated
+        // For now, just check if unlimited or if we're under a reasonable threshold
+        Ok(limits.is_unlimited || limits.tokens_used_total < 1000000) // 1M token reasonable threshold
     }
 
     /// Get usage history for a user

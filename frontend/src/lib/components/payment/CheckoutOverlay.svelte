@@ -76,12 +76,20 @@
 		}
 	};
 
-	// Get current plan details
-	$: currentPlan = plans[selectedPlan];
-	$: currentPrice = selectedBilling === 'monthly' ? currentPlan.monthly : currentPlan.yearly;
+	// Get current plan details - handle free plan which isn't purchasable
+	$: currentPlan = selectedPlan === 'free' ? null : plans[selectedPlan];
+	$: currentPrice = currentPlan ?
+		(selectedBilling === 'monthly' ? currentPlan.monthly : currentPlan.yearly) :
+		null;
 
 	async function handleCheckout() {
 		if (!browser || !ENABLE_PAYMENTS || checkoutLoading) {
+			return;
+		}
+
+		// Validate that we have a purchasable plan
+		if (!currentPlan || !currentPrice) {
+			checkoutError = 'Invalid plan selected. Please select a valid subscription plan.';
 			return;
 		}
 
@@ -267,28 +275,30 @@
 				</div>
 
 				<!-- Order Summary -->
-				<Card class="border-primary/30">
-					<CardContent class="p-4">
-						<div class="flex items-center justify-between">
-							<div>
-								<h4 class="font-semibold">Order Summary</h4>
-								<p class="text-sm text-muted-foreground">
-									{currentPlan.name} Plan - {selectedBilling === 'monthly' ? 'Monthly' : 'Yearly'} Billing
-								</p>
-							</div>
-							<div class="text-right">
-								<div class="text-2xl font-bold text-primary">
-									{currentPrice.display}
+				{#if currentPlan && currentPrice}
+					<Card class="border-primary/30">
+						<CardContent class="p-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<h4 class="font-semibold">Order Summary</h4>
+									<p class="text-sm text-muted-foreground">
+										{currentPlan.name} Plan - {selectedBilling === 'monthly' ? 'Monthly' : 'Yearly'} Billing
+									</p>
 								</div>
-								{#if selectedBilling === 'yearly'}
-									<div class="text-sm text-accent">
-										{currentPrice.savings}
+								<div class="text-right">
+									<div class="text-2xl font-bold text-primary">
+										{currentPrice.display}
 									</div>
-								{/if}
+									{#if selectedBilling === 'yearly'}
+										<div class="text-sm text-accent">
+											{currentPrice.savings}
+										</div>
+									{/if}
 							</div>
 						</div>
 					</CardContent>
 				</Card>
+				{/if}
 
 				<!-- Sandbox Test Card Info -->
 				{#if PUBLIC_PADDLE_CLIENT_SIDE_TOKEN?.startsWith('test_')}

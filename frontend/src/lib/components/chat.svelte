@@ -1280,7 +1280,18 @@
 			console.log(`✅ StreamingService.connect() completed at ${Date.now()}`);
 		} catch (error) {
 			console.error('❌ Failed to send message:', error);
-			toast.error('Failed to send message. Please try again.');
+
+			// Check if this is a daily limit error
+			if (error instanceof Error && (error.name === 'DailyLimitError' || error.message.includes('Daily message limit reached'))) {
+				// Show upgrade prompt for daily limit errors
+				if (ENABLE_PAYMENTS) {
+					showUpgradePrompt = true;
+				} else {
+					toast.error(error.message);
+				}
+			} else {
+				toast.error('Failed to send message. Please try again.');
+			}
 		}
 	}
 
@@ -1326,7 +1337,18 @@
 			});
 		} catch (error) {
 			console.error('Failed to generate AI response:', error);
-			toast.error('Failed to generate response. Please try again.');
+
+			// Check if this is a daily limit error
+			if (error instanceof Error && (error.name === 'DailyLimitError' || error.message.includes('Daily message limit reached'))) {
+				// Show upgrade prompt for daily limit errors
+				if (ENABLE_PAYMENTS) {
+					showUpgradePrompt = true;
+				} else {
+					toast.error(error.message);
+				}
+			} else {
+				toast.error('Failed to generate response. Please try again.');
+			}
 		}
 	}
 
@@ -1446,7 +1468,18 @@
 			chatHistory.updateChatPreview(chat.id, preview);
 		} catch (error) {
 			console.error('Failed to regenerate response:', error);
-			toast.error('Failed to regenerate response. Please try again.');
+
+			// Check if this is a daily limit error
+			if (error instanceof Error && (error.name === 'DailyLimitError' || error.message.includes('Daily message limit reached'))) {
+				// Show upgrade prompt for daily limit errors
+				if (ENABLE_PAYMENTS) {
+					showUpgradePrompt = true;
+				} else {
+					toast.error(error.message);
+				}
+			} else {
+				toast.error('Failed to regenerate response. Please try again.');
+			}
 		}
 	}
 

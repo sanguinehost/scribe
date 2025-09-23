@@ -1,6 +1,11 @@
 // Payment, Credit, and Subscription Types
 // This file consolidates all payment-related types for the frontend
 
+import type { PlanType } from '$lib/types';
+
+// Re-export PlanType for convenience
+export type { PlanType };
+
 // ============================================================================
 // Credit System Types
 // ============================================================================
@@ -97,7 +102,6 @@ export interface CreditReservation {
 // ============================================================================
 
 export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing' | 'unpaid' | 'incomplete' | 'expired';
-export type PlanType = 'free' | 'basic' | 'premium' | 'enterprise';
 
 export interface Subscription {
 	id: string;

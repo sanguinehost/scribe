@@ -32,6 +32,12 @@
 			return;
 		}
 
+		// Validate that the plan is purchasable (not 'free')
+		if (planType === 'free') {
+			console.warn('Cannot open checkout for free plan');
+			return;
+		}
+
 		isOverlayOpen = true;
 		dispatch('checkout-start', { planType });
 	}
