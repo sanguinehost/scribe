@@ -6,6 +6,7 @@
 pub mod payment_test_helpers;
 
 use std::fmt;
+use std::net::SocketAddr;
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
@@ -91,7 +92,7 @@ use time; // For time::Duration for session expiry
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
 use tower_governor::{
-    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
 };
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tower_sessions::{
@@ -1656,7 +1657,7 @@ pub async fn spawn_app_with_rate_limiting_options(
                 GovernorConfigBuilder::default()
                     .per_second(rate_limit_per_second)
                     .burst_size(rate_limit_burst_size)
-                    .key_extractor(GlobalKeyExtractor)
+                    .key_extractor(SmartIpKeyExtractor)
                     .finish()
                     .unwrap(),
             ),
@@ -1678,7 +1679,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     let router_for_test_app = router_for_server.clone(); // Clone before moving
 
     tokio::spawn(async move {
-        axum::serve(listener, router_for_server.into_make_service()) // Use router_for_server
+        axum::serve(listener, router_for_server.into_make_service_with_connect_info::<SocketAddr>()) // Use router_for_server
             .await
             .expect("Test server failed");
     });

@@ -74,7 +74,7 @@ use std::sync::Arc;
 use time::Duration;
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_governor::{
-    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
 };
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
@@ -569,9 +569,12 @@ fn build_router(
             chronicles::create_chronicles_router(app_state.clone()),
         )
         .nest("/documents", document_routes())
-        .nest("/llm", llm_router()) // LLM management routes
-        #[cfg(feature = "payment")]
-        .nest("/payment", payment_routes()) // Payment routes
+        .nest("/llm", llm_router()); // LLM management routes
+
+    #[cfg(feature = "payment")]
+    let protected_api_routes = protected_api_routes.nest("/payment", payment_routes()); // Payment routes
+
+    let protected_api_routes = protected_api_routes
         .nest("/personas", user_personas_router(app_state.clone()))
         .nest("/user-settings", user_settings_routes(app_state.clone()))
         .nest("/", lorebook_routes())
@@ -592,9 +595,9 @@ fn build_router(
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
                 GovernorConfigBuilder::default()
-                    .per_second(2000) // Increased from 500 to allow more requests
-                    .burst_size(5000) // Increased from 1000 to handle rapid bursts
-                    .key_extractor(GlobalKeyExtractor)
+                    .per_second(5000) // Very high rate for development - 1ms per request
+                    .burst_size(5000) // High burst capacity for rapid development requests
+                    .key_extractor(SmartIpKeyExtractor)
                     .finish()
                     .unwrap(),
             ),
@@ -755,7 +758,7 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
     );
 
     axum_server::bind_rustls(addr, tls_config)
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .context("HTTPS server failed to start")?;
 
