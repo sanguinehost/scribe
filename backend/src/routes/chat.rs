@@ -684,6 +684,61 @@ pub async fn generate_chat_response(
         {
             Ok(saved_msg) => {
                 debug!(message_id = %saved_msg.id, session_id = %session_id, message_status = ?saved_msg.status, "Successfully saved user message for agent analysis");
+
+                // Track daily message usage with SoftLimitService for user messages
+                #[cfg(feature = "payment")]
+                if should_track_usage {
+                    let soft_limit_service = crate::services::payment::SoftLimitService::new(state_arc.config.clone());
+                    let user_id_for_tracking = user_id_value;
+                    let model_for_tracking = model_to_use.clone();
+                    let tokens_for_tracking = saved_msg.prompt_tokens.unwrap_or(0) as i64;
+
+                    // Get a connection from the pool for usage tracking
+                    match state_arc.pool.get().await {
+                        Ok(conn) => {
+                            let tracking_result = conn.interact(move |c| {
+                                soft_limit_service.record_usage(
+                                    c,
+                                    user_id_for_tracking,
+                                    &model_for_tracking,
+                                    tokens_for_tracking,
+                                )
+                            }).await;
+
+                            match tracking_result {
+                                Ok(Ok(daily_usage)) => {
+                                    debug!(
+                                        session_id = %session_id,
+                                        message_count = daily_usage.message_count,
+                                        "Successfully updated daily message count for user message"
+                                    );
+                                }
+                                Ok(Err(e)) => {
+                                    warn!(
+                                        session_id = %session_id,
+                                        error = %e,
+                                        "Failed to record usage for user message"
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        session_id = %session_id,
+                                        error = %e,
+                                        "Database interaction failed for user message usage tracking"
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                session_id = %session_id,
+                                error = %e,
+                                "Failed to get database connection for user message usage tracking"
+                            );
+                        }
+                    }
+                }
+
                 saved_msg
             }
             Err(e) => {

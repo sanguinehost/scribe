@@ -617,15 +617,13 @@ fn build_router(
     // With the proxy pattern, requests will appear to come from staging.scribe.sanguinehost.com
     // via Vercel's edge proxy, but they'll have the correct origin headers
     let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any) // Allow any origin for now to fix Vercel deployment
-        // TODO: Restrict to specific domains in production:
-        // .allow_origin([
-        //     "https://staging.scribe.sanguinehost.com".parse().unwrap(),
-        //     "https://scribe-frontend.vercel.app".parse().unwrap(),
-        //     "https://localhost:5173".parse().unwrap(),
-        //     "http://localhost:5173".parse().unwrap(),
-        //     "http://localhost:3000".parse().unwrap(),
-        // ])
+        .allow_origin([
+            "https://staging.scribe.sanguinehost.com".parse().unwrap(),
+            "https://scribe-frontend.vercel.app".parse().unwrap(),
+            "https://localhost:5173".parse().unwrap(),
+            "http://localhost:5173".parse().unwrap(),
+            "http://localhost:3000".parse().unwrap(),
+        ])
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,

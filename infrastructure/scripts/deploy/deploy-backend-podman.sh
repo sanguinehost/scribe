@@ -201,7 +201,15 @@ build_backend() {
 # Push backend image to ECR
 push_backend() {
     log_info "Pushing backend image to ECR..."
-    if $CONTAINER_RUNTIME push $ECR_BACKEND_REPO:latest; then
+
+    # Re-authenticate to ECR before pushing to ensure fresh token
+    log_info "Re-authenticating to ECR..."
+    if ! aws ecr get-login-password --region $AWS_REGION | $CONTAINER_RUNTIME login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com; then
+        log_error "ECR re-authentication failed"
+        exit 1
+    fi
+
+    if $CONTAINER_RUNTIME push --compression-format gzip --remove-signatures $ECR_BACKEND_REPO:latest; then
         log_success "Backend image pushed successfully"
     else
         log_error "Backend push failed"
@@ -220,7 +228,7 @@ build_push_qdrant() {
     $CONTAINER_RUNTIME tag docker.io/qdrant/qdrant:v1.14.0 $ECR_QDRANT_REPO:latest
     
     # Push to ECR
-    $CONTAINER_RUNTIME push $ECR_QDRANT_REPO:latest
+    $CONTAINER_RUNTIME push --compression-format gzip --remove-signatures $ECR_QDRANT_REPO:latest
     
     log_success "Qdrant image pushed successfully"
 }

@@ -39,7 +39,7 @@ use diesel::{
 };
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 // ExposeSecret already imported above
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // Added Deserialize
@@ -1059,6 +1059,60 @@ pub async fn create_message_handler(
             variant_of: None, // Manual message creation doesn't create variants
         })
         .await?;
+
+    // Track daily message usage with SoftLimitService for manually created user messages
+    #[cfg(feature = "payment")]
+    if message_role_enum == MessageRole::User {
+        let soft_limit_service = crate::services::payment::SoftLimitService::new(state.config.clone());
+        let user_id_for_tracking = user_id;
+        let model_for_tracking = chat.model_name.clone();
+        let tokens_for_tracking = saved_db_message.prompt_tokens.unwrap_or(0) as i64;
+
+        // Get a connection from the pool for usage tracking
+        match state.pool.get().await {
+            Ok(conn) => {
+                let tracking_result = conn.interact(move |c| {
+                    soft_limit_service.record_usage(
+                        c,
+                        user_id_for_tracking,
+                        &model_for_tracking,
+                        tokens_for_tracking,
+                    )
+                }).await;
+
+                match tracking_result {
+                    Ok(Ok(daily_usage)) => {
+                        debug!(
+                            chat_id = %chat_id,
+                            message_count = daily_usage.message_count,
+                            "Successfully updated daily message count for manually created user message"
+                        );
+                    }
+                    Ok(Err(e)) => {
+                        warn!(
+                            chat_id = %chat_id,
+                            error = %e,
+                            "Failed to record usage for manually created user message"
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            chat_id = %chat_id,
+                            error = %e,
+                            "Database interaction failed for manually created user message usage tracking"
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    chat_id = %chat_id,
+                    error = %e,
+                    "Failed to get database connection for manually created user message usage tracking"
+                );
+            }
+        }
+    }
 
     // Convert DbChatMessage to ChatMessageForClient to get decrypted content
     // saved_db_message is a ChatMessage. We need to construct a Message to call into_decrypted_for_client.
