@@ -8,6 +8,7 @@
 	import { CreditCard, Zap, MessageCircle, Layers, Shield } from 'lucide-svelte';
 	import PlanBadge from './PlanBadge.svelte';
 	import DailyMessageUsage from './DailyMessageUsage.svelte';
+	import MonthlyTokenUsage from './MonthlyTokenUsage.svelte';
 	import { CheckoutButton } from '$lib/components/payment';
 	import { CreditBalance } from '$lib/components/credits';
 
@@ -174,6 +175,29 @@
 						throttleDelay={throttleDelay}
 						size="md"
 					/>
+				</div>
+
+				<Separator />
+
+				<!-- Monthly Token Usage -->
+				<div class="space-y-4">
+					<h3 class="font-semibold flex items-center gap-2">
+						<Zap size={16} />
+						Monthly Token Usage
+					</h3>
+					<div class="p-4 bg-slate-50 dark:bg-slate-900 rounded-lg">
+						<MonthlyTokenUsage
+							usageLimits={usageLimits}
+							size="md"
+							showNumbers={true}
+							showPeriod={true}
+						/>
+						{#if usageLimits && !usageLimits.is_unlimited}
+							<div class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+								Token usage is tracked for billing and administrative purposes. Daily message limits are used for user throttling.
+							</div>
+						{/if}
+					</div>
 				</div>
 
 				<Separator />

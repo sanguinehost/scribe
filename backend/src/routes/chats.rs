@@ -984,17 +984,6 @@ pub async fn get_messages_by_chat_id_handler(
     }))
 }
 
-// Create a message
-/// Creates a new message in a chat session.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - Authentication fails
-/// - Chat not found or access denied
-/// - Validation fails
-/// - Database operation fails
-/// - Encryption fails
 pub async fn create_message_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -1005,45 +994,68 @@ pub async fn create_message_handler(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    let user_id = user.id;
 
-    // Use the SessionDek which provides the user's DEK
+    // Parse the role into enum for validation
+    let message_role_enum = match payload.role.to_lowercase().as_str() {
+        "user" => MessageRole::User,
+        "assistant" => MessageRole::Assistant,
+        "system" => MessageRole::System,
+        _ => return Err(AppError::BadRequest(format!("Invalid role: {}", payload.role))),
+    };
+
+    // Fetch chat session and verify ownership
+    let chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+
+    let user_id = user.id;
     let user_dek_arc = Some(Arc::new(SecretBox::new(Box::new(
         dek.0.expose_secret().clone(),
     ))));
 
-    // Verify chat session ownership (existing logic is fine)
-    let chat = state
-        .pool
-        .get()
-        .await // Keep this verification block
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(chat_id))
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    // Note: CreateMessageRequest doesn't have validation - basic validation happens in role parsing above
 
-    if chat.user_id != user.id {
-        return Err(AppError::Forbidden(
-            "Access denied to create message".to_string(),
-        ));
+    // Track daily usage for user messages (this happens synchronously, before token tracking)
+    #[cfg(feature = "payment")]
+    if message_role_enum == MessageRole::User {
+        use crate::services::payment::SoftLimitService;
+
+        let soft_limit_service = SoftLimitService::new(state.config.clone());
+        let pool = state.pool.clone();
+        let user_id_for_daily_tracking = user_id;
+
+        let _daily_usage_result = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?
+            .interact(move |conn| {
+                soft_limit_service.record_usage(conn, user_id_for_daily_tracking, "manual_message", 0)
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+        match _daily_usage_result {
+            Ok(_) => {
+                debug!(
+                    user_id = %user_id_for_daily_tracking,
+                    chat_id = %chat_id,
+                    "Successfully incremented daily usage for user message"
+                );
+            }
+            Err(e) => {
+                warn!(
+                    user_id = %user_id_for_daily_tracking,
+                    chat_id = %chat_id,
+                    error = %e,
+                    "Failed to increment daily usage for user message, but proceeding"
+                );
+            }
+        }
     }
 
-    let message_role_enum = if payload.role.to_lowercase() == "user" {
-        MessageRole::User
-    } else {
-        MessageRole::Assistant
-    };
-
-    // Save the message
-    let saved_db_message =
-        chat::message_handling::save_message(chat::message_handling::SaveMessageParams {
-            state: Arc::new(state.clone()),
+    // Create the message using the save_message function
+    let app_state = Arc::new(state.clone());
+    let saved_db_message = crate::services::chat::message_handling::save_message(
+        crate::services::chat::message_handling::SaveMessageParams {
+            state: app_state,
             session_id: chat_id,
             user_id,
             message_type_enum: message_role_enum,
@@ -1053,53 +1065,76 @@ pub async fn create_message_handler(
             attachments: payload.attachments.clone(),
             user_dek_secret_box: user_dek_arc.clone(),
             model_name: chat.model_name.clone(),
-            raw_prompt_debug: None, // Manual message creation doesn't need raw prompt debug
+            raw_prompt_debug: None,
             status: crate::models::chats::MessageStatus::Completed,
             error_message: None,
-            variant_of: None, // Manual message creation doesn't create variants
-        })
-        .await?;
+            variant_of: None,
+        },
+    )
+    .await?;
 
-    // Track daily message usage with SoftLimitService for manually created user messages
+    // Track token usage for payment/quota tracking (for manually created user messages)
     #[cfg(feature = "payment")]
-    if message_role_enum == MessageRole::User {
-        let soft_limit_service = crate::services::payment::SoftLimitService::new(state.config.clone());
-        let user_id_for_tracking = user_id;
-        let model_for_tracking = chat.model_name.clone();
-        let tokens_for_tracking = saved_db_message.prompt_tokens.unwrap_or(0) as i64;
+    if message_role_enum == MessageRole::User && saved_db_message.prompt_tokens.unwrap_or(0) > 0 {
+        use crate::services::encryption_service::EncryptionService;
+        use crate::services::payment::UsageTrackingService;
 
-        // Get a connection from the pool for usage tracking
+        let usage_tracking_service = UsageTrackingService::new(
+            (*state.config).clone(),
+            EncryptionService::new(),
+        );
+
+        let user_id_for_payment = user_id;
+        let tokens_used = saved_db_message.prompt_tokens.unwrap_or(0);
+        let model_name_for_tracking = chat.model_name.clone();
+
+        // Get a database connection for the usage tracking
         match state.pool.get().await {
             Ok(conn) => {
-                let tracking_result = conn.interact(move |c| {
-                    soft_limit_service.record_usage(
-                        c,
-                        user_id_for_tracking,
-                        &model_for_tracking,
-                        tokens_for_tracking,
-                    )
-                }).await;
+                let subscription_id = None; // TODO: Get from user's subscription if needed
+                let mut model_usage = std::collections::HashMap::new();
+                model_usage.insert(model_name_for_tracking, tokens_used);
 
-                match tracking_result {
-                    Ok(Ok(daily_usage)) => {
+                let metadata = Some(crate::services::payment::usage_tracking_service::UsageMetadata {
+                    model_usage,
+                    feature_usage: std::collections::HashMap::new(),
+                    request_count: 1,
+                    last_activity: chrono::Utc::now(),
+                });
+
+                // Use interact to call the async track_usage method
+                let track_result = conn
+                    .interact(move |conn| {
+                        usage_tracking_service.track_usage_sync(
+                            conn,
+                            user_id_for_payment,
+                            subscription_id,
+                            tokens_used,
+                            metadata,
+                        )
+                    })
+                    .await;
+
+                match track_result {
+                    Ok(Ok(_)) => {
                         debug!(
                             chat_id = %chat_id,
-                            message_count = daily_usage.message_count,
-                            "Successfully updated daily message count for manually created user message"
+                            tokens_used = tokens_used,
+                            "Successfully tracked token usage for manually created user message"
                         );
                     }
                     Ok(Err(e)) => {
                         warn!(
                             chat_id = %chat_id,
                             error = %e,
-                            "Failed to record usage for manually created user message"
+                            "Failed to track token usage for manually created user message"
                         );
                     }
                     Err(e) => {
                         warn!(
                             chat_id = %chat_id,
                             error = %e,
-                            "Database interaction failed for manually created user message usage tracking"
+                            "Database interaction failed for token usage tracking"
                         );
                     }
                 }
@@ -1108,7 +1143,7 @@ pub async fn create_message_handler(
                 warn!(
                     chat_id = %chat_id,
                     error = %e,
-                    "Failed to get database connection for manually created user message usage tracking"
+                    "Failed to get database connection for token usage tracking"
                 );
             }
         }
@@ -1161,14 +1196,14 @@ pub async fn create_message_handler(
         raw_prompt: client_message.raw_prompt,
         prompt_tokens: saved_db_message.prompt_tokens,
         completion_tokens: saved_db_message.completion_tokens,
-        model_name: Some(saved_db_message.model_name.clone()),
-        status: saved_db_message.status.clone(),
-        error_message: saved_db_message.error_message.clone(),
+        model_name: Some(saved_db_message.model_name),
+        status: saved_db_message.status,
+        error_message: saved_db_message.error_message,
         variant_count: saved_db_message.variant_count,
         current_variant_index: saved_db_message.current_variant_index,
-        is_variant: false,
-        parent_message_id: None,
-        variants: None,
+        is_variant: saved_db_message.variant_count > 0,
+        parent_message_id: None, // TODO: Add parent_message_id to ChatMessage struct
+        variants: None,          // TODO: Load actual variants
     };
 
     Ok((StatusCode::CREATED, Json(response)))

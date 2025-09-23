@@ -17,7 +17,7 @@ use axum::{
 #[cfg(feature = "payment")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "payment")]
-use tracing::error;
+use tracing::{error, warn};
 #[cfg(feature = "payment")]
 use uuid::Uuid;
 
@@ -226,9 +226,7 @@ pub async fn get_subscription(
     let subscription_service_clone = subscription_service.clone();
     let subscription = conn
         .interact(move |conn| {
-            futures::executor::block_on(
-                subscription_service_clone.get_user_subscription(conn, user_id),
-            )
+            subscription_service_clone.get_user_subscription_sync(conn, user_id)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -239,9 +237,7 @@ pub async fn get_subscription(
         let plan_type = sub.plan_type.clone();
         let subscription_service_clone = subscription_service.clone();
         conn.interact(move |conn| {
-            futures::executor::block_on(
-                subscription_service_clone.get_plan_features(conn, &plan_type),
-            )
+            subscription_service_clone.get_plan_features_sync(conn, &plan_type)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -250,7 +246,7 @@ pub async fn get_subscription(
         // Default to free plan features
         let subscription_service_clone = subscription_service.clone();
         conn.interact(move |conn| {
-            futures::executor::block_on(subscription_service_clone.get_plan_features(conn, "free"))
+            subscription_service_clone.get_plan_features_sync(conn, "free")
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -287,25 +283,50 @@ pub async fn get_subscription(
         .await
         .unwrap_or((0, false, 0));
 
-    // Calculate usage limits - now including daily usage
+    // Calculate usage limits using actual token usage from payment_usage_tracking table
     let usage_limits = if let Some(ref features) = plan_features {
-        // For now, return simple usage limits calculation
-        // In a real system, this would query actual usage from usage_tracking table
-        let now = chrono::Utc::now();
-        let period_start = now;
-        let period_end = now + chrono::Duration::days(30);
+        let usage_tracking_service = crate::services::payment::UsageTrackingService::new(
+            (*app_state.config).clone(),
+            crate::services::encryption_service::EncryptionService::new(),
+        );
 
-        Some(UsageLimitsResponse {
-            tokens_remaining: features.monthly_token_limit.unwrap_or(0),
-            tokens_limit: features.monthly_token_limit.unwrap_or(0),
-            period_start,
-            period_end,
-            is_unlimited: features.monthly_token_limit.is_none(),
-            // Add daily usage fields
-            daily_message_count: Some(daily_message_count),
-            is_throttled: Some(is_throttled),
-            throttle_delay: Some(throttle_delay),
-        })
+        let user_id_for_limits = user.id;
+        let usage_result = conn
+            .interact(move |conn| {
+                usage_tracking_service.get_usage_limits_sync(conn, user_id_for_limits)
+            })
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?;
+
+        match usage_result {
+            Ok(usage_limit) => {
+                Some(UsageLimitsResponse {
+                    tokens_remaining: usage_limit.tokens_remaining.max(0),
+                    tokens_limit: usage_limit.tokens_limit.max(0),
+                    period_start: usage_limit.period_start,
+                    period_end: usage_limit.period_end,
+                    is_unlimited: usage_limit.is_unlimited,
+                    // Add daily usage fields
+                    daily_message_count: Some(daily_message_count),
+                    is_throttled: Some(is_throttled),
+                    throttle_delay: Some(throttle_delay),
+                })
+            }
+            Err(e) => {
+                warn!("Failed to get usage limits for user {}: {}", user.id, e);
+                // Fallback to plan limits without usage
+                Some(UsageLimitsResponse {
+                    tokens_remaining: features.monthly_token_limit.unwrap_or(0),
+                    tokens_limit: features.monthly_token_limit.unwrap_or(0),
+                    period_start: chrono::Utc::now(),
+                    period_end: chrono::Utc::now() + chrono::Duration::days(30),
+                    is_unlimited: features.monthly_token_limit.is_none(),
+                    daily_message_count: Some(daily_message_count),
+                    is_throttled: Some(is_throttled),
+                    throttle_delay: Some(throttle_delay),
+                })
+            }
+        }
     } else {
         None
     };
@@ -365,18 +386,49 @@ pub async fn get_usage(
         .await
         .unwrap_or((0, false, 0));
 
-    // TODO: Get actual token usage from usage_tracking table
-    Ok(Json(UsageLimitsResponse {
-        tokens_remaining: 0,
-        tokens_limit: 0,
-        period_start: chrono::Utc::now(),
-        period_end: chrono::Utc::now() + chrono::Duration::days(30),
-        is_unlimited: false,
-        // Add daily usage fields
-        daily_message_count: Some(daily_message_count),
-        is_throttled: Some(is_throttled),
-        throttle_delay: Some(throttle_delay),
-    }))
+    // Get actual token usage from payment_usage_tracking table
+    let usage_tracking_service = crate::services::payment::UsageTrackingService::new(
+        (*app_state.config).clone(),
+        crate::services::encryption_service::EncryptionService::new(),
+    );
+
+    let user_id_for_limits = user.id;
+    let usage_result = conn
+        .interact(move |conn| {
+            usage_tracking_service.get_usage_limits_sync(conn, user_id_for_limits)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?;
+
+    match usage_result {
+        Ok(usage_limit) => {
+            Ok(Json(UsageLimitsResponse {
+                tokens_remaining: usage_limit.tokens_remaining.max(0),
+                tokens_limit: usage_limit.tokens_limit.max(0),
+                period_start: usage_limit.period_start,
+                period_end: usage_limit.period_end,
+                is_unlimited: usage_limit.is_unlimited,
+                // Add daily usage fields
+                daily_message_count: Some(daily_message_count),
+                is_throttled: Some(is_throttled),
+                throttle_delay: Some(throttle_delay),
+            }))
+        }
+        Err(e) => {
+            warn!("Failed to get usage limits for user {}: {}", user.id, e);
+            // Fallback to safe defaults
+            Ok(Json(UsageLimitsResponse {
+                tokens_remaining: 0,
+                tokens_limit: 0,
+                period_start: chrono::Utc::now(),
+                period_end: chrono::Utc::now() + chrono::Duration::days(30),
+                is_unlimited: false,
+                daily_message_count: Some(daily_message_count),
+                is_throttled: Some(is_throttled),
+                throttle_delay: Some(throttle_delay),
+            }))
+        }
+    }
 }
 
 /// Create a new payment transaction (replaces direct subscription creation)
@@ -441,9 +493,7 @@ pub async fn create_payment(
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
         .interact(move |conn| {
-            futures::executor::block_on(
-                subscription_service_clone.get_plan_features(conn, &plan_type_clone),
-            )
+            subscription_service_clone.get_plan_features_sync(conn, &plan_type_clone)
         })
         .await
         .map_err(|e| {
@@ -640,14 +690,14 @@ pub async fn verify_transaction(
             let paddle_customer_id = transaction.paddle_customer_id.clone();
             let new_subscription = conn
                 .interact(move |conn| {
-                    futures::executor::block_on(subscription_service.create_subscription(
+                    subscription_service.create_subscription_sync(
                         conn,
                         user.id,
                         plan_type,
                         paddle_customer_id,
                         None,
                         None,
-                    ))
+                    )
                 })
                 .await
                 .map_err(|e| AppError::DbInteractError(e.to_string()))??;
@@ -874,14 +924,14 @@ pub async fn verify_transaction(
 
                 let new_subscription = conn
                     .interact(move |conn| {
-                        futures::executor::block_on(subscription_service.create_subscription(
+                        subscription_service.create_subscription_sync(
                             conn,
                             user.id,
                             plan_type,
                             Some(customer_id.to_string()),
                             None, // No paddle subscription ID for transaction-based billing
                             trial_days, // Pass trial_days if this is a trial
-                        ))
+                        )
                     })
                     .await
                     .map_err(|e| AppError::DbInteractError(e.to_string()))??;
@@ -945,9 +995,7 @@ pub async fn preview_order(
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
         .interact(move |conn| {
-            futures::executor::block_on(
-                subscription_service_clone.get_plan_features(conn, &plan_type),
-            )
+            subscription_service_clone.get_plan_features_sync(conn, &plan_type)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -1033,9 +1081,7 @@ pub async fn create_subscription(
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
         .interact(move |conn| {
-            futures::executor::block_on(
-                subscription_service_clone.get_plan_features(conn, &plan_type),
-            )
+            subscription_service_clone.get_plan_features_sync(conn, &plan_type)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -1630,14 +1676,14 @@ async fn process_transaction_completed(
 
     let subscription = conn_clone
         .interact(move |conn| {
-            futures::executor::block_on(subscription_service.create_subscription(
+            subscription_service.create_subscription_sync(
                 conn,
                 user.id,
                 plan_type,
                 Some(customer_id.clone()),
                 None, // No paddle subscription ID for transaction-based billing
                 None, // No trial
-            ))
+            )
         })
         .await
         .map_err(|e| AppError::DbInteractError(e.to_string()))??;

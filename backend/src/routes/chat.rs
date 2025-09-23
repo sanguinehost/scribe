@@ -411,10 +411,7 @@ pub async fn generate_chat_response(
             SubscriptionService::new(state_arc.config.as_ref().clone(), EncryptionService::new());
         let user_subscription = conn
             .interact(move |conn| {
-                // Use async block wrapper since the service method is async
-                futures::executor::block_on(
-                    subscription_service.get_user_subscription(conn, user_id_value),
-                )
+                subscription_service.get_user_subscription_sync(conn, user_id_value)
             })
             .await
             .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
@@ -486,11 +483,11 @@ pub async fn generate_chat_response(
                     let subscription_id = user_subscription.as_ref().map(|s| s.id);
                     let current_usage = conn
                         .interact(move |conn| {
-                            futures::executor::block_on(usage_service.get_current_usage(
+                            usage_service.get_current_usage_sync(
                                 conn,
                                 user_id_value,
                                 subscription_id,
-                            ))
+                            )
                         })
                         .await
                         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
@@ -1339,13 +1336,13 @@ pub async fn generate_chat_response(
 
                             let track_result = conn
                                 .interact(move |conn| {
-                                    futures::executor::block_on(usage_service.track_usage(
+                                    usage_service.track_usage_sync(
                                         conn,
                                         user_id_value,
                                         subscription_id,
                                         total_tokens as i32,
                                         metadata,
-                                    ))
+                                    )
                                 })
                                 .await;
 

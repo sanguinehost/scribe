@@ -75,14 +75,25 @@ impl UsageTrackingService {
         tokens_used: i32,
         metadata: Option<UsageMetadata>,
     ) -> Result<PaymentUsageTracking, AppError> {
+        self.track_usage_sync(conn, user_id, subscription_id, tokens_used, metadata)
+    }
+
+    /// Track token usage for a user (sync version)
+    pub fn track_usage_sync(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        subscription_id: Option<Uuid>,
+        tokens_used: i32,
+        metadata: Option<UsageMetadata>,
+    ) -> Result<PaymentUsageTracking, AppError> {
         let now = Utc::now();
         let period_start = self.get_period_start(now);
         let period_end = self.get_period_end(period_start);
 
         // Try to find existing usage record for this period
         if let Some(existing) = self
-            .get_current_usage(conn, user_id, subscription_id)
-            .await?
+            .get_current_usage_sync(conn, user_id, subscription_id)?
         {
             // Update existing record
             let new_total = existing.tokens_used + tokens_used;
@@ -114,7 +125,7 @@ impl UsageTrackingService {
         }
 
         // Create new usage record
-        let tokens_limit = self.get_token_limit_for_user(conn, user_id).await?;
+        let tokens_limit = self.get_token_limit_for_user_sync(conn, user_id)?;
 
         let (metadata_encrypted, metadata_nonce) = if let Some(meta) = metadata {
             // Encrypt the metadata using the user's DEK
@@ -152,6 +163,16 @@ impl UsageTrackingService {
         user_id: Uuid,
         subscription_id: Option<Uuid>,
     ) -> Result<Option<PaymentUsageTracking>, AppError> {
+        self.get_current_usage_sync(conn, user_id, subscription_id)
+    }
+
+    /// Get current usage for a user in the current period (sync version)
+    pub fn get_current_usage_sync(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        subscription_id: Option<Uuid>,
+    ) -> Result<Option<PaymentUsageTracking>, AppError> {
         let now = Utc::now();
         let period_start = self.get_period_start(now);
         let period_end = self.get_period_end(period_start);
@@ -182,19 +203,27 @@ impl UsageTrackingService {
         conn: &mut PgConnection,
         user_id: Uuid,
     ) -> Result<UsageLimit, AppError> {
+        self.get_usage_limits_sync(conn, user_id)
+    }
+
+    /// Get usage limits for a user (sync version)
+    pub fn get_usage_limits_sync(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+    ) -> Result<UsageLimit, AppError> {
         let now = Utc::now();
         let period_start = self.get_period_start(now);
         let period_end = self.get_period_end(period_start);
 
         // Get current usage
         let current_usage = self
-            .get_current_usage(conn, user_id, None)
-            .await?
+            .get_current_usage_sync(conn, user_id, None)?
             .map(|u| u.tokens_used)
             .unwrap_or(0);
 
         // Get token limit based on subscription
-        let tokens_limit = self.get_token_limit_for_user(conn, user_id).await?;
+        let tokens_limit = self.get_token_limit_for_user_sync(conn, user_id)?;
         let is_unlimited = tokens_limit < 0;
 
         let tokens_remaining = if is_unlimited {
@@ -320,6 +349,15 @@ impl UsageTrackingService {
 
     /// Get token limit for a user based on their subscription
     async fn get_token_limit_for_user(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+    ) -> Result<i32, AppError> {
+        self.get_token_limit_for_user_sync(conn, user_id)
+    }
+
+    /// Get token limit for a user based on their subscription (sync version)
+    fn get_token_limit_for_user_sync(
         &self,
         _conn: &mut PgConnection,
         _user_id: Uuid,

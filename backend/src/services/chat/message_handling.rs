@@ -354,6 +354,10 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         let session_id_for_tokens = session_id;
         let user_id_for_tokens = user_id;
 
+        // Clone config for payment tracking outside the spawned task
+        #[cfg(feature = "payment")]
+        let state_config_for_payment = state.config.clone();
+
         // Spawn async task to update token counts to avoid blocking message save
         tokio::spawn(async move {
             if let Err(e) = update_cumulative_token_counts(
@@ -369,6 +373,62 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, error = ?e, "Failed to update cumulative token counts");
             } else {
                 info!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, "Successfully updated cumulative token counts");
+            }
+
+            // Also track usage in payment_usage_tracking table for billing
+            #[cfg(feature = "payment")]
+            {
+                use crate::services::payment::usage_tracking_service::{UsageTrackingService, UsageMetadata};
+                use crate::services::EncryptionService;
+                use std::collections::HashMap;
+
+                let total_tokens = prompt_tokens + completion_tokens;
+                if total_tokens > 0 {
+                    let conn_result = db_pool_for_tokens.get().await;
+                    if let Ok(conn) = conn_result {
+                        let model_name_clone = model_name_for_tracking.clone();
+
+                        let track_result = conn.interact(move |conn| {
+                            let usage_service = UsageTrackingService::new((*state_config_for_payment).clone(), EncryptionService::new());
+
+                            // Create metadata about this token usage
+                            let mut model_usage = HashMap::new();
+                            model_usage.insert(model_name_clone, total_tokens);
+
+                            let mut feature_usage = HashMap::new();
+                            feature_usage.insert("chat_message".to_string(), 1);
+
+                            let metadata = UsageMetadata {
+                                model_usage,
+                                feature_usage,
+                                request_count: 1,
+                                last_activity: chrono::Utc::now(),
+                            };
+
+                            usage_service.track_usage_sync(
+                                conn,
+                                user_id_for_tokens,
+                                None, // subscription_id will be looked up by the service
+                                total_tokens,
+                                Some(metadata),
+                            )
+                        }).await;
+
+                        match track_result {
+                            Ok(Ok(_)) => {
+                                info!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, total_tokens = total_tokens, "Successfully tracked payment usage");
+                            }
+                            Ok(Err(e)) => {
+                                error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, error = ?e, "Failed to track payment usage");
+                            }
+                            Err(e) => {
+                                error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, error = ?e, "Database interaction failed for payment usage tracking");
+                            }
+                        }
+                    } else {
+                        error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, "Failed to get database connection for payment usage tracking");
+                    }
+                }
             }
         });
     } else {

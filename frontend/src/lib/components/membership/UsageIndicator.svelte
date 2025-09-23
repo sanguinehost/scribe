@@ -79,13 +79,13 @@
 
 	function getUsageLabel(): string {
 		if (!usage) return 'Loading...';
-		
+
 		if (usage.is_unlimited) {
 			return 'Unlimited';
 		}
 
 		const used = usage.tokens_limit - usage.tokens_remaining;
-		return `${formatTokens(used)} / ${formatTokens(usage.tokens_limit)}`;
+		return `${formatTokens(used)}`;
 	}
 </script>
 
@@ -103,7 +103,7 @@
 					<div class="flex items-center justify-between text-sm">
 						{#if showNumbers}
 							<span class="font-medium text-slate-900 dark:text-slate-100">
-								{getUsageLabel()} tokens
+								{getUsageLabel()} tokens this month
 							</span>
 						{/if}
 						{#if showPercentage}

@@ -48,6 +48,19 @@ impl SubscriptionService {
         paddle_subscription_id: Option<String>,
         trial_days: Option<i32>,
     ) -> Result<Subscription, AppError> {
+        self.create_subscription_sync(conn, user_id, plan_type, paddle_customer_id, paddle_subscription_id, trial_days)
+    }
+
+    /// Create a new subscription for a user (sync version)
+    pub fn create_subscription_sync(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        plan_type: &str,
+        paddle_customer_id: Option<String>,
+        paddle_subscription_id: Option<String>,
+        trial_days: Option<i32>,
+    ) -> Result<Subscription, AppError> {
         let now = Utc::now();
         let trial_end = trial_days.map(|days| now + Duration::days(days as i64));
 
@@ -92,6 +105,15 @@ impl SubscriptionService {
 
     /// Get subscription by user ID
     pub async fn get_user_subscription(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+    ) -> Result<Option<Subscription>, AppError> {
+        self.get_user_subscription_sync(conn, user_id)
+    }
+
+    /// Get subscription by user ID (sync version)
+    pub fn get_user_subscription_sync(
         &self,
         conn: &mut PgConnection,
         user_id: Uuid,
@@ -235,6 +257,15 @@ impl SubscriptionService {
 
     /// Get plan features for a subscription
     pub async fn get_plan_features(
+        &self,
+        conn: &mut PgConnection,
+        plan_type: &str,
+    ) -> Result<Option<PlanFeatures>, AppError> {
+        self.get_plan_features_sync(conn, plan_type)
+    }
+
+    /// Get plan features for a subscription (sync version)
+    pub fn get_plan_features_sync(
         &self,
         conn: &mut PgConnection,
         plan_type: &str,

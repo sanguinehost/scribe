@@ -13,7 +13,7 @@
 	import { apiClient } from '$lib/api';
 	import { performLogout } from '$lib/auth.svelte';
 	import { goto } from '$app/navigation';
-	import { PlanBadge, subscriptionStore } from './membership';
+	import { PlanBadge, subscriptionStore, DailyMessageUsage } from './membership';
 	import { CheckoutButton } from './payment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
@@ -82,9 +82,9 @@
 				{#if ENABLE_PAYMENTS && getCurrentUser() && !getHasConnectionError()}
 					<div class="px-2 py-2">
 						<div class="flex items-center gap-2 mb-2">
-							<PlanBadge 
-								planType={subscriptionStore.currentPlan} 
-								status={subscriptionStore.subscription?.status} 
+							<PlanBadge
+								planType={subscriptionStore.currentPlan}
+								status={subscriptionStore.subscription?.status}
 								size="sm"
 								showStatus={true}
 							/>
@@ -92,31 +92,25 @@
 								{subscriptionStore.getPlanDisplayName()}
 							</span>
 						</div>
-						
-						{#if subscriptionStore.isAtLimit}
-							<div class="text-xs text-red-600 dark:text-red-400 mb-1">
-								Token limit reached
-							</div>
-						{:else if subscriptionStore.isNearLimit}
-							<div class="text-xs text-yellow-600 dark:text-yellow-400 mb-1">
-								Near token limit
-							</div>
-						{/if}
-						
-						{#if subscriptionStore.usageLimits && !subscriptionStore.usageLimits.is_unlimited}
-							<div class="text-xs text-slate-500 dark:text-slate-400">
-								{subscriptionStore.usageLimits.tokens_limit - subscriptionStore.usageLimits.tokens_remaining} / {subscriptionStore.usageLimits.tokens_limit} tokens
-							</div>
-						{/if}
-						
-						<!-- Upgrade button for free users or when at limit -->
-						{#if subscriptionStore.currentPlan === 'free' || subscriptionStore.isAtLimit}
+
+						<!-- Daily Activity Display -->
+						<div class="mb-2">
+							<DailyMessageUsage
+								messageCount={subscriptionStore.dailyMessageCount}
+								planType={subscriptionStore.currentPlan}
+								isThrottled={subscriptionStore.isThrottled}
+								throttleDelay={subscriptionStore.throttleDelay}
+								size="sm"
+							/>
+						</div>
+
+						<!-- Upgrade button for free users or when at daily limit -->
+						{#if subscriptionStore.currentPlan === 'free' || (subscriptionStore.usageLimits?.daily_message_count >= 20 && subscriptionStore.currentPlan === 'free')}
 							<div class="mt-2">
 								<CheckoutButton
 									planType="basic"
-									buttonText={subscriptionStore.isAtLimit ? "Upgrade Now" : "Upgrade Plan"}
+									buttonText="Upgrade Plan"
 									buttonClass="w-full text-xs py-1 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded border-none cursor-pointer"
-									urgent={subscriptionStore.isAtLimit}
 								/>
 							</div>
 						{/if}
