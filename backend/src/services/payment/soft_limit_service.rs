@@ -61,7 +61,7 @@ impl SoftLimitService {
         conn: &mut PgConnection,
         user_id: Uuid,
     ) -> Result<DailyUsage, AppError> {
-        let today = Local::now().naive_local().date();
+        let today = Utc::now().naive_utc().date();
 
         use crate::schema::daily_usage_tracking::dsl;
 
@@ -275,7 +275,7 @@ impl SoftLimitService {
             .into_boxed();
 
         if let Some(d) = days {
-            let start_date = Local::now().naive_local().date() - chrono::Duration::days(d);
+            let start_date = Utc::now().naive_utc().date() - chrono::Duration::days(d);
             query = query.filter(dsl::date.ge(start_date));
         }
 

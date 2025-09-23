@@ -189,25 +189,22 @@ impl PaymentScheduler {
 
     /// Reset daily usage counters for all users
     async fn reset_daily_usage(&self) -> Result<(), AppError> {
+        info!("Starting daily usage reset at {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"));
         let conn = self.pool.get().await?;
         let today = Utc::now().date_naive();
 
         conn.interact(move |conn| {
             // Archive yesterday's usage before reset
             let _yesterday = today - chrono::Duration::days(1);
+            info!("Resetting daily usage for date: {} (deleting records before this date)", today);
 
-            // Update all daily_usage_tracking records from yesterday
-            let reset_count = diesel::update(daily_usage_tracking::table)
+            // Delete old daily_usage_tracking records from previous days
+            // This allows fresh records to be created for today with correct date
+            let reset_count = diesel::delete(daily_usage_tracking::table)
                 .filter(daily_usage_tracking::date.lt(today))
-                .set((
-                    daily_usage_tracking::message_count.eq(0),
-                    daily_usage_tracking::token_count.eq(0i64),
-                    daily_usage_tracking::soft_limit_triggered_at.eq(Option::<i32>::None),
-                    daily_usage_tracking::updated_at.eq(Utc::now()),
-                ))
                 .execute(conn)?;
 
-            info!("Reset daily usage for {} records", reset_count);
+            info!("Successfully deleted {} old daily usage records", reset_count);
 
             // Update user last_daily_usage_reset timestamps
             let user_update_count = diesel::update(users::table)
@@ -229,7 +226,10 @@ impl PaymentScheduler {
         .map_err(|e| {
             error!("Failed to reset daily usage: {}", e);
             AppError::DatabaseQueryError(e.to_string())
-        })
+        })?;
+
+        info!("Daily usage reset completed successfully at {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"));
+        Ok(())
     }
 
     /// Allocate monthly credits to all active subscribers
