@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { ThemeProvider } from '@sejohnson/svelte-themes';
 	import { Toaster } from '$lib/components/ui/sonner';
+	import { TooltipProvider } from '$lib/components/ui/tooltip';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { PaddleLoader } from '$lib/components/payment';
@@ -188,9 +189,11 @@
 </script>
 
 <ThemeProvider attribute="class" disableTransitionOnChange>
-	<Toaster position="top-center" />
-	{#if ENABLE_PAYMENTS}
-		<PaddleLoader />
-	{/if}
-	{@render children()}
+	<TooltipProvider>
+		<Toaster position="top-center" />
+		{#if ENABLE_PAYMENTS}
+			<PaddleLoader />
+		{/if}
+		{@render children()}
+	</TooltipProvider>
 </ThemeProvider>

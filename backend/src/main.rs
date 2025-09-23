@@ -570,6 +570,7 @@ fn build_router(
         )
         .nest("/documents", document_routes())
         .nest("/llm", llm_router()) // LLM management routes
+        #[cfg(feature = "payment")]
         .nest("/payment", payment_routes()) // Payment routes
         .nest("/personas", user_personas_router(app_state.clone()))
         .nest("/user-settings", user_settings_routes(app_state.clone()))
@@ -600,10 +601,13 @@ fn build_router(
         });
 
     // Webhook routes (no authentication, no rate limiting - signature verified in handler)
+    #[cfg(feature = "payment")]
     tracing::info!("🎯 Setting up webhook routes in main.rs");
+    #[cfg(feature = "payment")]
     let webhook_routes = Router::new()
         .nest("/api/payment", payment_webhook_routes()) // Webhook routes under /api/payment
         .with_state(app_state.clone());
+    #[cfg(feature = "payment")]
     tracing::info!("🎯 Webhook routes configured");
 
     // Configure CORS for the frontend
@@ -642,10 +646,17 @@ fn build_router(
         .with_state(app_state.clone());
 
     // Combine all routes
-    Router::new()
+    let mut final_router = Router::new()
         .merge(health_routes) // Health endpoint not rate limited
-        .merge(webhook_routes) // Webhook routes without auth
-        .merge(authenticated_api) // Regular API with auth
+        .merge(authenticated_api); // All authenticated API routes
+
+    // Add webhook routes only if payment feature is enabled
+    #[cfg(feature = "payment")]
+    {
+        final_router = final_router.merge(webhook_routes); // Webhook routes without auth
+    }
+
+    final_router
         .layer(cors)
         .layer(CookieManagerLayer::new())
         .with_state(app_state)
