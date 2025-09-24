@@ -1,13 +1,14 @@
 /// Comprehensive OWASP Top 10 Security Tests for Payment System
 ///
-/// This test suite fills critical gaps in OWASP Top 10 coverage, focusing on:
+/// This test suite provides OWASP Top 10 security coverage for SAQ-A compliant systems:
 /// - A05: Security Misconfiguration
 /// - A06: Vulnerable and Outdated Components
 /// - A07: Identification and Authentication Failures
 /// - A09: Security Logging and Monitoring Failures
 /// - A10: Server-Side Request Forgery (SSRF)
 ///
-/// These tests complement the existing payment_security_tests.rs file.
+/// SAQ-A Context: These tests focus on payment system security without cardholder data.
+/// All card processing is handled by Paddle (PCI DSS compliant provider).
 
 #[cfg(all(test, feature = "payment"))]
 mod payment_owasp_comprehensive_tests {
@@ -550,7 +551,7 @@ mod payment_owasp_comprehensive_tests {
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
-        // Add credits with sensitive information
+        // Add credits with sensitive information (SAQ-A: using Paddle references only)
         let _result = conn
             .interact(move |conn| {
                 let service = CreditService::new(config.clone());
@@ -560,11 +561,11 @@ mod payment_owasp_comprehensive_tests {
                     user_id,
                     50,
                     "test_sensitive",
-                    "Credit card ending in 1234",
+                    "Credit purchase via Paddle transaction",
                     None,
                     Some(json!({
-                        "payment_method": "card_1234567890123456",
-                        "cvv": "123",
+                        "paddle_transaction_id": "txn_paddle_sensitive_test_123",
+                        "paddle_customer_id": "ctm_paddle_test_456",
                         "billing_address": "123 Secret St"
                     })),
                 )

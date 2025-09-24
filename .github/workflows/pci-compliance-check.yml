@@ -1,0 +1,99 @@
+name: PCI DSS SAQ-A Compliance Check
+
+# This workflow helps maintain SAQ-A compliance by scanning for potential cardholder data
+# patterns that should never be committed to the repository.
+
+on:
+  push:
+    branches: [ main, develop, feat/payment-* ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  pci-compliance-scan:
+    runs-on: ubuntu-latest
+    name: Scan for Cardholder Data Patterns
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Run cardholder data pattern scan
+      run: |
+        python .pre-commit-card-scan.py --all
+
+    - name: Verify SAQ-A architecture compliance
+      run: |
+        echo "🔍 Verifying SAQ-A compliance requirements..."
+
+        # Check that no card data fields exist in database schema
+        echo "✅ Checking database schema for card data fields..."
+        if grep -r "card_number\|cvv\|cvc\|expir.*date" backend/src/schema.rs; then
+          echo "❌ FAIL: Found potential card data fields in database schema"
+          exit 1
+        fi
+
+        # Check that payment processing uses Paddle references only
+        echo "✅ Checking payment processing uses Paddle references..."
+        if ! grep -q "paddle_transaction_id\|paddle_customer_id\|paddle_subscription_id" backend/src/schema.rs; then
+          echo "❌ FAIL: Paddle reference fields not found in schema"
+          exit 1
+        fi
+
+        # Check that frontend uses Paddle checkout
+        echo "✅ Checking frontend uses Paddle hosted checkout..."
+        if ! grep -q "Paddle\.Checkout\.open" frontend/src/lib/components/payment/CheckoutOverlay.svelte; then
+          echo "❌ FAIL: Paddle hosted checkout not found in frontend"
+          exit 1
+        fi
+
+        echo "✅ SAQ-A architecture compliance verification passed"
+
+    - name: Generate compliance summary
+      run: |
+        echo "## 🛡️ PCI DSS SAQ-A Compliance Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ✅ Compliance Status: PASSED" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**SAQ-A Requirements Verified:**" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ No cardholder data stored, processed, or transmitted" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ All payment processing handled by Paddle (PCI DSS Level 1)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Only payment reference IDs stored in database" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Frontend uses Paddle hosted checkout pages" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ No cardholder data patterns detected in codebase" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+        echo "- 📋 Complete annual SAQ-A self-assessment questionnaire" >> $GITHUB_STEP_SUMMARY
+        echo "- 🔍 Verify Paddle's current PCI DSS compliance certificate" >> $GITHUB_STEP_SUMMARY
+        echo "- 📄 Document service provider agreements" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Report generated:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  # Optional: Add a job to check for security vulnerabilities
+  security-audit:
+    runs-on: ubuntu-latest
+    name: Security Audit
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Run cargo audit
+      run: |
+        cargo install cargo-audit
+        cargo audit --ignore RUSTSEC-0000-0000 # Add specific ignores if needed
+
+    - name: Run cargo clippy for security lints
+      run: |
+        cargo clippy -- -W clippy::suspicious -W clippy::complexity -W clippy::perf
