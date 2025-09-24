@@ -103,6 +103,7 @@ class StreamingService {
 	// Timestamp-based animation tracking
 	private animationStartTimes = new Map<string, number>();
 	private animationRequestIds = new Map<string, number>();
+	private animationFallbackTimeouts = new Map<string, NodeJS.Timeout>();
 
 	// LEGACY: Keep old state for gradual migration
 	private typingQueues = new Map<string, string[]>();
@@ -120,9 +121,8 @@ class StreamingService {
 		shouldClose: false
 	};
 
-	// Page visibility tracking for background tab handling
+	// Page visibility tracking for recovery checks only
 	private isTabVisible = true;
-	private queuedConnection: (() => Promise<void>) | null = null;
 	private visibilityListenersAdded = false;
 
 	constructor(config: Partial<StreamingConfig> = {}) {
@@ -177,20 +177,10 @@ class StreamingService {
 	}
 
 	/**
-	 * Handle when tab becomes visible - process any queued connections
+	 * Handle when tab becomes visible - check for any recovery needs
 	 */
 	private async handleTabBecameVisible(): Promise<void> {
-		if (this.queuedConnection) {
-			console.log('👁️ Tab became visible, processing queued connection');
-			const connectionToProcess = this.queuedConnection;
-			this.queuedConnection = null;
-
-			try {
-				await connectionToProcess();
-			} catch (error) {
-				console.error('❌ Failed to process queued connection:', error);
-			}
-		}
+		console.log('👁️ Tab became visible, performing visibility recovery checks');
 
 		// Check for messages with completed content that need to be shown
 		this.processCompletedMessages();
@@ -198,8 +188,6 @@ class StreamingService {
 		// Reconcile animation positions for any ongoing animations
 		this.reconcileAnimationPositions();
 
-		// Switch animation modes when tab becomes visible
-		this.switchAnimationModes();
 
 		// Check for stalled connections that need recovery
 		if (this.connectionStatus === 'connecting' && this.abortController) {
@@ -212,31 +200,10 @@ class StreamingService {
 					// Store current connection params before disconnect
 					const currentChatId = this.currentChatId;
 
-					// Disconnect the stalled connection
+					// Disconnect the stalled connection and reset state
+					console.log('🔄 Recovering from stalled connection');
 					this.disconnect();
-
-					// If we have a queued connection, trigger it
-					if (this.queuedConnection) {
-						console.log('🔄 Retrying queued connection after recovery');
-						const connectionToRetry = this.queuedConnection;
-						this.queuedConnection = null;
-
-						try {
-							await connectionToRetry();
-						} catch (error) {
-							console.error('❌ Failed to retry connection after recovery:', error);
-							this.currentError = {
-								type: 'network',
-								message: 'Failed to reconnect after tab became visible',
-								retryable: true
-							};
-							this.connectionStatus = 'error';
-						}
-					} else {
-						// No queued connection, just reset state
-						console.log('🔄 No queued connection to retry, connection state reset');
-						this.connectionStatus = 'idle';
-					}
+					this.connectionStatus = 'idle';
 				}
 			}, 2000);
 		}
@@ -289,8 +256,8 @@ class StreamingService {
 					return msg;
 				});
 
-				// Restart requestAnimationFrame if tab is now visible
-				if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
+				// Restart requestAnimationFrame if available
+				if (typeof requestAnimationFrame !== 'undefined') {
 					const existingRequestId = this.animationRequestIds.get(messageId);
 					if (!existingRequestId) {
 						const updateAnimation = (currentTime: number) => {
@@ -330,7 +297,7 @@ class StreamingService {
 							}
 
 							// Continue animation
-							if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
+							if (typeof requestAnimationFrame !== 'undefined') {
 								const requestId = requestAnimationFrame((time) => updateAnimation(time));
 								this.animationRequestIds.set(messageId, requestId);
 							}
@@ -415,7 +382,7 @@ class StreamingService {
 		const message = this.messages.find((m) => m.id === messageId);
 		if (message?.isAnimating) return;
 
-		console.log(`🎯 Conditions met for ${messageId.slice(-8)}, starting animation (tab visible: ${this.isTabVisible})`);
+		console.log(`🎯 Conditions met for ${messageId.slice(-8)}, starting animation`);
 
 		// Always start animation regardless of tab visibility
 		// Animation will use timestamp-based approach to handle background throttling
@@ -448,6 +415,24 @@ class StreamingService {
 			}
 			return msg;
 		});
+
+		// Clean up any ongoing animation tracking
+		this.animationStartTimes.delete(messageId);
+		const requestId = this.animationRequestIds.get(messageId);
+		if (requestId) {
+			cancelAnimationFrame(requestId);
+			this.animationRequestIds.delete(messageId);
+		}
+		const intervalId = this.animationIntervals.get(messageId);
+		if (intervalId) {
+			clearInterval(intervalId);
+			this.animationIntervals.delete(messageId);
+		}
+		const fallbackTimeout = this.animationFallbackTimeouts.get(messageId);
+		if (fallbackTimeout) {
+			clearTimeout(fallbackTimeout);
+			this.animationFallbackTimeouts.delete(messageId);
+		}
 
 		console.log(`✅ Complete content shown immediately for ${messageId.slice(-8)}`);
 	}
@@ -486,6 +471,17 @@ class StreamingService {
 
 		const fullContent = buffer.content;
 		const totalDuration = fullContent.length * this.animationSpeed; // Total animation duration
+
+		// Add fallback timeout for severely delayed animations (e.g., in background tabs)
+		const maxWaitTime = Math.min(totalDuration * 2, 3000); // Max 3 seconds or 2x expected duration
+		const fallbackTimeout = setTimeout(() => {
+			// If animation is still running after max wait time, show complete content immediately
+			if (this.animationStartTimes.has(messageId)) {
+				console.log(`⏰ Animation fallback timeout triggered for ${messageId.slice(-8)}, showing complete content`);
+				this.showCompleteContent(messageId);
+			}
+		}, maxWaitTime);
+		this.animationFallbackTimeouts.set(messageId, fallbackTimeout);
 
 		const updateAnimation = (currentTime: number) => {
 			const elapsed = currentTime - startTime;
@@ -528,6 +524,11 @@ class StreamingService {
 					clearInterval(intervalId);
 					this.animationIntervals.delete(messageId);
 				}
+				const fallbackTimeout = this.animationFallbackTimeouts.get(messageId);
+				if (fallbackTimeout) {
+					clearTimeout(fallbackTimeout);
+					this.animationFallbackTimeouts.delete(messageId);
+				}
 
 				console.log(`✅ Timestamp-based animation complete for ${messageId.slice(-8)}`);
 				return;
@@ -537,13 +538,13 @@ class StreamingService {
 			this.scheduleNextAnimationFrame(messageId, updateAnimation);
 		};
 
-		// Use EITHER requestAnimationFrame OR setInterval, not both
-		if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
-			// Use requestAnimationFrame for smooth updates when visible
+		// Use requestAnimationFrame when available, setInterval as fallback
+		if (typeof requestAnimationFrame !== 'undefined') {
+			// Use requestAnimationFrame for smooth updates (works in background tabs too)
 			const requestId = requestAnimationFrame((time) => updateAnimation(time));
 			this.animationRequestIds.set(messageId, requestId);
 		} else {
-			// Use setInterval as fallback when tab is hidden or requestAnimationFrame unavailable
+			// Use setInterval as fallback when requestAnimationFrame unavailable
 			const intervalId = setInterval(() => {
 				updateAnimation(performance.now());
 			}, this.animationSpeed);
@@ -551,35 +552,17 @@ class StreamingService {
 		}
 	}
 
-	/**
-	 * Switch animation modes from setInterval to requestAnimationFrame when tab becomes visible
-	 */
-	private switchAnimationModes(): void {
-		// If tab is now visible, switch any setInterval animations to requestAnimationFrame
-		if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
-			for (const [messageId, intervalId] of this.animationIntervals) {
-				console.log(`👁️ Switching ${messageId.slice(-8)} from setInterval to requestAnimationFrame`);
-
-				// Clear the setInterval
-				clearInterval(intervalId);
-				this.animationIntervals.delete(messageId);
-
-				// Note: The animation updateFunction will schedule the next requestAnimationFrame
-				// when it runs next, so we don't need to manually start it here
-			}
-		}
-	}
 
 	/**
-	 * Schedule the next animation frame using the appropriate method based on tab visibility
+	 * Schedule the next animation frame using the appropriate method
 	 */
 	private scheduleNextAnimationFrame(messageId: string, updateFunction: (time: number) => void): void {
-		if (this.isTabVisible && typeof requestAnimationFrame !== 'undefined') {
-			// Use requestAnimationFrame when tab is visible for smooth updates
+		if (typeof requestAnimationFrame !== 'undefined') {
+			// Use requestAnimationFrame for smooth updates
 			const requestId = requestAnimationFrame((time) => updateFunction(time));
 			this.animationRequestIds.set(messageId, requestId);
 		} else {
-			// Use setInterval when tab is hidden (only if not already using setInterval for this message)
+			// Use setInterval as fallback (only if not already using setInterval for this message)
 			if (!this.animationIntervals.has(messageId)) {
 				const intervalId = setInterval(() => {
 					updateFunction(performance.now());
@@ -749,29 +732,7 @@ class StreamingService {
 			return;
 		}
 
-		// Check if tab is visible - if not, queue the connection for later
-		if (!this.isTabVisible) {
-			console.log('👁️ Tab is hidden, queueing connection request');
-			this.queuedConnection = () => this.connect(params);
-
-			// Set a temporary connecting status to show loading state
-			this.connectionStatus = 'connecting';
-			this.currentError = null;
-
-			// Still add user message optimistically for immediate UI feedback
-			if (!params.isRegeneration) {
-				const userMessage: StreamingMessage = {
-					id: crypto.randomUUID(),
-					content: params.userMessage,
-					displayedContent: params.userMessage,
-					sender: 'user',
-					created_at: new Date().toISOString()
-				};
-				this.messages = [...this.messages, userMessage];
-			}
-
-			return; // Exit early, connection will be processed when tab becomes visible
-		}
+		// Note: Removed tab visibility check - connections should proceed regardless of tab focus
 
 		this.currentChatId = params.chatId;
 		this.abortController = new AbortController();
