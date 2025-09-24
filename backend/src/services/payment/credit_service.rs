@@ -12,7 +12,7 @@ use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// Service for managing user credits and credit transactions
@@ -91,13 +91,26 @@ impl CreditService {
             last_monthly_grant: None,
         };
 
-        diesel::insert_into(user_credits::table)
+        let result = diesel::insert_into(user_credits::table)
             .values(&new_balance)
             .get_result(conn)
             .map_err(|e| {
                 error!("Failed to initialize user credits: {}", e);
                 AppError::DatabaseQueryError(e.to_string())
-            })
+            })?;
+
+        // Log the credit initialization in audit log (privacy-focused)
+        // Don't fail the transaction if audit logging fails
+        if let Err(e) = self.audit_service.log_credit_operation(
+            conn,
+            user_id,
+            AuditEventType::CreditAdded,
+            0, // Initial balance is 0
+        ) {
+            warn!("Failed to log credit initialization audit event: {}", e);
+        }
+
+        Ok(result)
     }
 
     /// Add credits to user account (purchase, grant, refund)
@@ -400,6 +413,17 @@ impl CreditService {
                     AppError::DatabaseQueryError(e.to_string())
                 })
         })?;
+
+        // Log the credit reservation in audit log (privacy-focused)
+        // Don't fail the transaction if audit logging fails
+        if let Err(e) = self.audit_service.log_credit_operation(
+            conn,
+            user_id,
+            AuditEventType::CreditDeducted,
+            amount,
+        ) {
+            warn!("Failed to log credit reservation audit event: {}", e);
+        }
 
         info!(
             "Reserved {} credits for user {} (reservation: {})",

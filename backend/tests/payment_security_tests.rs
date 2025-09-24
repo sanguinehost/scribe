@@ -486,6 +486,456 @@ mod payment_security_tests {
         // This test documents the expected behavior
     }
 
+    // ===== Missing Endpoint Security Tests =====
+
+    #[tokio::test]
+    async fn test_subscription_cancel_endpoint_security() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let client = Client::new();
+
+        // Test subscription cancel without authentication
+        let response = client
+            .delete(&format!("{}/api/payment/subscription/cancel", app.address))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Subscription cancel should require authentication"
+        );
+
+        // Test with malformed subscription ID
+        let malformed_ids = vec![
+            "not-a-uuid",
+            "../../../admin",
+            "'; DROP TABLE subscriptions; --",
+            "%00%00%00%00",
+        ];
+
+        for malformed_id in malformed_ids {
+            let response = client
+                .delete(&format!(
+                    "{}/api/payment/subscription/{}/cancel",
+                    app.address, malformed_id
+                ))
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            // Should be unauthorized or bad request, not internal server error
+            assert!(
+                response.status() == StatusCode::UNAUTHORIZED
+                    || response.status() == StatusCode::BAD_REQUEST
+                    || response.status() == StatusCode::NOT_FOUND,
+                "Malformed subscription ID should be handled safely: {}",
+                malformed_id
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_subscription_preview_endpoint_security() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let client = Client::new();
+
+        // Test subscription preview without authentication
+        let preview_request = json!({
+            "plan_type": "premium",
+            "billing_period": "monthly"
+        });
+
+        let response = client
+            .post(&format!("{}/api/payment/subscription/preview", app.address))
+            .json(&preview_request)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Subscription preview should require authentication"
+        );
+
+        // Test with malicious input
+        let malicious_inputs = vec![
+            json!({
+                "plan_type": "<script>alert('xss')</script>",
+                "billing_period": "monthly"
+            }),
+            json!({
+                "plan_type": "premium",
+                "billing_period": "'; DROP TABLE plan_features; --"
+            }),
+            json!({
+                "plan_type": "../../../etc/passwd",
+                "billing_period": "yearly"
+            }),
+        ];
+
+        for malicious_input in malicious_inputs {
+            let response = client
+                .post(&format!("{}/api/payment/subscription/preview", app.address))
+                .json(&malicious_input)
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            // Should be unauthorized or bad request, not process malicious input
+            assert!(
+                response.status() == StatusCode::UNAUTHORIZED
+                    || response.status().is_client_error(),
+                "Malicious input should be rejected safely"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_transaction_verification_endpoint_security() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let client = Client::new();
+
+        // Test transaction verification without authentication
+        let fake_transaction_id = "txn_fake_12345";
+        let response = client
+            .get(&format!(
+                "{}/api/payment/transaction/{}/verify",
+                app.address, fake_transaction_id
+            ))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Transaction verification should require authentication"
+        );
+
+        // Test with malicious transaction IDs
+        let malicious_ids = vec![
+            "../../admin/transactions",
+            "'; SELECT * FROM payment_transactions; --",
+            "%2e%2e%2f%2e%2e%2fadmin",
+            "txn_<script>alert('xss')</script>",
+        ];
+
+        for malicious_id in malicious_ids {
+            let response = client
+                .get(&format!(
+                    "{}/api/payment/transaction/{}/verify",
+                    app.address, malicious_id
+                ))
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            assert!(
+                response.status() == StatusCode::UNAUTHORIZED
+                    || response.status().is_client_error(),
+                "Malicious transaction ID should be handled safely: {}",
+                malicious_id
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_payment_page_redirect_security() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let client = Client::new();
+
+        // Test payment completion page with malicious redirects
+        let malicious_params = vec![
+            ("success_url", "javascript:alert('xss')"),
+            ("success_url", "http://malicious-site.com/steal-data"),
+            ("success_url", "file:///etc/passwd"),
+            ("cancel_url", "http://attacker.com/phishing"),
+            ("transaction_id", "'; DROP TABLE transactions; --"),
+        ];
+
+        for (param, value) in malicious_params {
+            let response = client
+                .get(&format!(
+                    "{}/api/payment/pay?{}={}",
+                    app.address, param, value
+                ))
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            // Should handle malicious parameters safely
+            let response_text = response.text().await.unwrap_or_default();
+
+            assert!(
+                !response_text.contains("javascript:"),
+                "Should not include javascript: URLs"
+            );
+            assert!(
+                !response_text.contains("malicious-site.com"),
+                "Should not include malicious domains"
+            );
+            assert!(
+                !response_text.contains("file://"),
+                "Should not include file:// URLs"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_credit_packages_endpoint_authorization() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let client = Client::new();
+
+        // Test credit packages endpoint without authentication
+        let response = client
+            .get(&format!("{}/api/payment/credits/packages", app.address))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Credit packages endpoint should require authentication"
+        );
+
+        // Test with various HTTP methods
+        let methods = vec!["POST", "PUT", "DELETE", "PATCH"];
+        for method in methods {
+            let request_method = match method {
+                "POST" => reqwest::Method::POST,
+                "PUT" => reqwest::Method::PUT,
+                "DELETE" => reqwest::Method::DELETE,
+                "PATCH" => reqwest::Method::PATCH,
+                _ => continue,
+            };
+
+            let response = client
+                .request(request_method, &format!("{}/api/payment/credits/packages", app.address))
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            // Should either be unauthorized or method not allowed
+            assert!(
+                response.status() == StatusCode::UNAUTHORIZED
+                    || response.status() == StatusCode::METHOD_NOT_ALLOWED,
+                "Unexpected method {} should be handled securely",
+                method
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_model_costs_endpoint_security() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let client = Client::new();
+
+        // Test model costs endpoint without authentication
+        let response = client
+            .get(&format!("{}/api/payment/credits/model-costs", app.address))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Model costs endpoint should require authentication"
+        );
+
+        // Test with query injection attempts
+        let malicious_queries = vec![
+            "?model='; DROP TABLE model_costs; --",
+            "?model=<script>alert('xss')</script>",
+            "?model=../../admin/costs",
+            "?filter=%00%00%00",
+        ];
+
+        for query in malicious_queries {
+            let response = client
+                .get(&format!(
+                    "{}/api/payment/credits/model-costs{}",
+                    app.address, query
+                ))
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            assert!(
+                response.status() == StatusCode::UNAUTHORIZED
+                    || response.status().is_client_error(),
+                "Malicious query should be handled safely: {}",
+                query
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_usage_endpoint_data_isolation() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let client = Client::new();
+
+        // Test usage endpoint without authentication
+        let response = client
+            .get(&format!("{}/api/payment/usage", app.address))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Usage endpoint should require authentication"
+        );
+
+        // Test with user ID injection attempts
+        let user_id_injections = vec![
+            "?user_id=00000000-0000-0000-0000-000000000000",
+            "?user_id=' OR '1'='1",
+            "?user_id=admin",
+            "?user_id=*",
+        ];
+
+        for injection in user_id_injections {
+            let response = client
+                .get(&format!("{}/api/payment/usage{}", app.address, injection))
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            // Should be unauthorized regardless of injection attempt
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "User ID injection should not bypass authentication: {}",
+                injection
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_plans_endpoint_information_disclosure() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let client = Client::new();
+
+        // Plans endpoint might be accessible without auth (public pricing info)
+        let response = client
+            .get(&format!("{}/api/payment/plans", app.address))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        if response.status() == StatusCode::OK {
+            let response_text = response.text().await.unwrap_or_default();
+
+            // Even if accessible, should not leak sensitive information
+            assert!(
+                !response_text.to_lowercase().contains("internal"),
+                "Plans response should not contain internal information"
+            );
+            assert!(
+                !response_text.to_lowercase().contains("debug"),
+                "Plans response should not contain debug information"
+            );
+            assert!(
+                !response_text.to_lowercase().contains("admin"),
+                "Plans response should not contain admin information"
+            );
+            assert!(
+                !response_text.contains("password"),
+                "Plans response should not contain password information"
+            );
+        }
+    }
+
+    // ===== Enhanced Cross-User Access Prevention =====
+
+    #[tokio::test]
+    async fn test_cross_user_transaction_access_prevention() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Create two users
+        let user1_id = Uuid::new_v4();
+        let user2_id = Uuid::new_v4();
+
+        create_test_user(&app.db_pool, user1_id, "user1_tx", "user1_tx@test.com")
+            .await
+            .expect("Failed to create user1");
+        create_test_user(&app.db_pool, user2_id, "user2_tx", "user2_tx@test.com")
+            .await
+            .expect("Failed to create user2");
+
+        // Create transactions for user1
+        let config = app.config.clone();
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+
+        conn.interact(move |conn| {
+            let service = CreditService::new(config.clone());
+            service.initialize_user_credits(conn, user1_id)?;
+            service.add_credits(
+                conn,
+                user1_id,
+                100,
+                "cross_user_test",
+                "User1 transaction",
+                None,
+                None,
+            )
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to create user1 transaction");
+
+        // In a real test with proper authentication, user2 would attempt to access user1's transactions
+        // This test documents the requirement for proper authorization checks
+
+        let client = Client::new();
+
+        // Attempt to access transactions with various user ID manipulations
+        let manipulation_attempts = vec![
+            format!("/api/payment/credits/transactions?user_id={}", user1_id),
+            format!("/api/payment/credits/balance?user_id={}", user1_id),
+            "/api/payment/credits/transactions?user_id=*".to_string(),
+            "/api/payment/credits/transactions?user_id=admin".to_string(),
+        ];
+
+        for attempt in manipulation_attempts {
+            let response = client
+                .get(&format!("{}{}", app.address, attempt))
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            // Should be unauthorized (no session) or forbidden (wrong user)
+            assert!(
+                response.status() == StatusCode::UNAUTHORIZED
+                    || response.status() == StatusCode::FORBIDDEN,
+                "Cross-user access attempt should be denied: {}",
+                attempt
+            );
+        }
+    }
+
     // ===== Helper function to get balance =====
     async fn get_user_balance(
         pool: &Pool<DeadpoolManager<diesel::PgConnection>>,
