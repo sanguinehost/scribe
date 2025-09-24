@@ -33,11 +33,12 @@ use scribe_backend::routes::{
     documents::document_routes,
     llm_routes::llm_router,           // Added for LLM management routes
     lorebook_routes::lorebook_routes, // Added for lorebook routes
-    payment::{payment_routes, payment_webhook_routes}, // Added for payment routes
     templates,                        // Added for template routes
     user_persona_routes::user_personas_router, // Added for user persona routes
     user_settings_routes::user_settings_routes,
 };
+#[cfg(feature = "payment")]
+use scribe_backend::routes::payment::{payment_routes, payment_webhook_routes};
 use scribe_backend::state::{AppState, AppStateServices};
 use std::env; // Added for current_dir
 
@@ -547,16 +548,20 @@ fn build_router(
             characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         ) // 10MB limit for character uploads
         .nest("/chat", {
-            let mut routes =
-                chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
-
-            // Add soft limit enforcement before LLM security
             #[cfg(feature = "payment")]
-            {
-                routes = routes.layer(axum::middleware::from_fn(
+            let routes = {
+                let routes =
+                    chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
+
+                // Add soft limit enforcement before LLM security
+                routes.layer(axum::middleware::from_fn(
                     scribe_backend::middleware::soft_limit_enforcement_middleware,
-                ));
-            }
+                ))
+            };
+
+            #[cfg(not(feature = "payment"))]
+            let routes =
+                chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
 
             routes.layer(axum::middleware::from_fn_with_state(
                 app_state.clone(),
@@ -647,15 +652,18 @@ fn build_router(
         .with_state(app_state.clone());
 
     // Combine all routes
-    let mut final_router = Router::new()
+    #[cfg(feature = "payment")]
+    let final_router = {
+        let base_router = Router::new()
+            .merge(health_routes) // Health endpoint not rate limited
+            .merge(authenticated_api); // All authenticated API routes
+        base_router.merge(webhook_routes) // Webhook routes without auth
+    };
+
+    #[cfg(not(feature = "payment"))]
+    let final_router = Router::new()
         .merge(health_routes) // Health endpoint not rate limited
         .merge(authenticated_api); // All authenticated API routes
-
-    // Add webhook routes only if payment feature is enabled
-    #[cfg(feature = "payment")]
-    {
-        final_router = final_router.merge(webhook_routes); // Webhook routes without auth
-    }
 
     final_router
         .layer(cors)

@@ -391,9 +391,16 @@ pub async fn generate_chat_response(
     #[cfg(not(feature = "payment"))]
     let _credit_reservation: Option<((), (), i32)> = None;
 
-    // These need to be accessible outside the feature gate
+    // These need to be accessible outside the feature gate but are only meaningful with payment
+    #[cfg(feature = "payment")]
     let mut should_track_usage = false;
+    #[cfg(not(feature = "payment"))]
+    let _should_track_usage = false;
+
+    #[cfg(feature = "payment")]
     let mut credits_required = 0i32;
+    #[cfg(not(feature = "payment"))]
+    let _credits_required = 0i32;
 
     #[cfg(feature = "payment")]
     {

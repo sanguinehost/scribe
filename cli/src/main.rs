@@ -19,7 +19,6 @@ use tracing_subscriber::{EnvFilter, fmt};
 use clap::Parser;
 use scribe_backend::models::users::User; // Corrected User import
 use scribe_cli::{
-    AdminArgs,
     AdminCommand,
     CharacterCommand,
     ChatCommand,

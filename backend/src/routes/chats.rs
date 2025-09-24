@@ -39,7 +39,7 @@ use diesel::{
 };
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 // ExposeSecret already imported above
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // Added Deserialize

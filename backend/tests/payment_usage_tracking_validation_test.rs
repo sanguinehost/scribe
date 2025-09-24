@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use uuid::Uuid;
+#[cfg(feature = "payment")]
 use std::collections::HashMap;
 
 #[cfg(feature = "payment")]
@@ -11,7 +11,6 @@ use scribe_backend::{
     services::EncryptionService,
     test_helpers::{TestDataGuard, spawn_app_permissive_rate_limiting, db},
 };
-use diesel::prelude::*;
 
 #[tokio::test]
 #[cfg(feature = "payment")]

@@ -1,25 +1,31 @@
 #![cfg(test)]
 
+#[cfg(feature = "payment")]
+use anyhow::Context as _;
+#[cfg(feature = "payment")]
+use scribe_backend::models::chats::Chat;
+#[cfg(feature = "payment")]
+use scribe_backend::test_helpers;
+
+#[cfg(feature = "payment")]
+use scribe_backend::models::{
+    characters::Character as DbCharacter,
+    chats::CreateMessageRequest,
+    users::User,
+};
+
+#[cfg(feature = "payment")]
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
+#[cfg(feature = "payment")]
 use tower::ServiceExt;
-
-use anyhow::Context as _;
-use scribe_backend::{
-    models::{
-        characters::Character as DbCharacter,
-        chats::{Chat, CreateMessageRequest},
-        users::User,
-    },
-    test_helpers::{self},
-};
-
 #[cfg(feature = "payment")]
 use scribe_backend::services::payment::SoftLimitService;
-
+#[cfg(feature = "payment")]
 use serde_json::json;
+#[cfg(feature = "payment")]
 use tower_cookies::Cookie;
 
 #[tokio::test]
@@ -299,6 +305,7 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "payment")]
 async fn create_test_chat_session(
     pool: &deadpool_diesel::postgres::Pool,
     user_id: uuid::Uuid,
