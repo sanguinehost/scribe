@@ -151,7 +151,7 @@ DEPLOYMENT MODES:
 
 For more advanced options, use the underlying scripts:
     ./scripts/podman-dev.sh     - Advanced Podman management
-    ./scripts/docker-dev.sh     - Advanced Docker management  
+    ./scripts/docker-dev.sh     - Advanced Docker management
     ./scripts/certs/manage.sh   - Certificate management
 
 EOF
@@ -163,12 +163,12 @@ detect_runtime() {
         log_info "Using specified runtime: $RUNTIME"
         return
     fi
-    
+
     if command -v podman &> /dev/null; then
         RUNTIME="podman"
         log_info "Auto-detected runtime: Podman (preferred)"
     elif command -v docker &> /dev/null; then
-        RUNTIME="docker" 
+        RUNTIME="docker"
         log_info "Auto-detected runtime: Docker (fallback)"
     else
         log_error "No container runtime found. Please install Podman or Docker."
@@ -184,7 +184,7 @@ detect_mode() {
         log_info "Using specified mode: $MODE"
         return
     fi
-    
+
     # Check if backend container image exists
     local backend_exists=false
     if [[ "$RUNTIME" == "podman" ]] && podman image exists localhost/scribe-backend:latest 2>/dev/null; then
@@ -192,7 +192,7 @@ detect_mode() {
     elif [[ "$RUNTIME" == "docker" ]] && docker image inspect localhost/scribe-backend:latest &> /dev/null; then
         backend_exists=true
     fi
-    
+
     if $backend_exists; then
         MODE="container"
         log_info "Auto-detected mode: container (backend image found)"
@@ -205,7 +205,7 @@ detect_mode() {
 # Check prerequisites
 check_prerequisites() {
     log_step "Checking prerequisites..."
-    
+
     # Check if .env exists
     if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
         if $SKIP_ENV_CHECK; then
@@ -213,18 +213,18 @@ check_prerequisites() {
             log_info "Either create a .env file manually or run without --skip-env-check"
             exit 1
         fi
-        
+
         echo
         log_warn ".env file not found."
         echo -n "Would you like to generate one now? [Y/n]: "
         read -r generate_choice
-        
+
         if [[ "$generate_choice" == "n" || "$generate_choice" == "N" ]]; then
             log_info "Skipping .env generation. You'll need to create one manually."
             log_info "You can run: scripts/utils/generate-env.sh"
             exit 1
         fi
-        
+
         echo
         log_info "Starting environment setup wizard..."
         if ! "$PROJECT_ROOT/scripts/utils/generate-env.sh"; then
@@ -233,7 +233,7 @@ check_prerequisites() {
         fi
         echo
     fi
-    
+
     # Check for required tools based on runtime
     if [[ "$RUNTIME" == "podman" ]]; then
         if ! command -v podman &> /dev/null; then
@@ -255,20 +255,20 @@ check_prerequisites() {
             exit 1
         fi
     fi
-    
+
     # Check for Rust/Cargo in local mode
     if [[ "$MODE" == "local" ]] && ! command -v cargo &> /dev/null; then
         log_warn "Cargo not found. You'll need Rust installed to run 'cargo run' for the backend."
         log_info "Install Rust: https://rustup.rs/"
     fi
-    
+
     log_success "Prerequisites check completed"
 }
 
 # Ensure certificates exist
 ensure_certificates() {
     log_step "Checking TLS certificates..."
-    
+
     if $CLEAN; then
         log_info "Clean mode: checking for existing certificates to remove"
         local cert_dirs=($(find "$PROJECT_ROOT" -maxdepth 1 -type d -name ".certs*" 2>/dev/null))
@@ -283,7 +283,7 @@ ensure_certificates() {
             exit 1
         fi
     fi
-    
+
     # Determine certificate mode based on deployment mode
     local cert_mode
     if [[ "$MODE" == "local" ]]; then
@@ -291,7 +291,7 @@ ensure_certificates() {
     else
         cert_mode="container"
     fi
-    
+
     # Check if certificates exist
     local certs_exist=false
     if [[ "$cert_mode" == "local" ]]; then
@@ -307,7 +307,7 @@ ensure_certificates() {
             certs_exist=true
         fi
     fi
-    
+
     if ! $certs_exist; then
         log_info "Generating TLS certificates for $cert_mode mode..."
         if ! "$CERTS_SCRIPT" "$cert_mode" init --runtime="$RUNTIME"; then
@@ -325,14 +325,14 @@ build_images() {
         log_info "Local mode: skipping backend image build (use 'cargo run')"
         return
     fi
-    
+
     if $SKIP_BUILD; then
         log_info "Skipping image build as requested"
         return
     fi
-    
+
     log_step "Building container images..."
-    
+
     # Check if backend image exists
     local backend_exists=false
     if [[ "$RUNTIME" == "podman" ]] && podman image exists localhost/scribe-backend:latest 2>/dev/null; then
@@ -340,12 +340,12 @@ build_images() {
     elif [[ "$RUNTIME" == "docker" ]] && docker image inspect localhost/scribe-backend:latest &> /dev/null; then
         backend_exists=true
     fi
-    
+
     if $backend_exists && ! $NO_CACHE; then
         log_info "Backend image already exists, skipping build"
         return
     fi
-    
+
     log_info "Building backend image with $RUNTIME..."
     local build_script
     if [[ "$RUNTIME" == "podman" ]]; then
@@ -353,28 +353,28 @@ build_images() {
     else
         build_script="$PROJECT_ROOT/scripts/docker/build-backend.sh"
     fi
-    
+
     local build_args=""
     if $NO_CACHE; then
         build_args="--no-cache"
     fi
-    
+
     if ! $QUIET; then
         log_info "This may take several minutes on first build..."
     fi
-    
+
     if ! bash "$build_script" --local-only $build_args; then
         log_error "Backend image build failed"
         exit 1
     fi
-    
+
     log_success "Backend image built successfully"
 }
 
 # Start services based on mode
 start_services() {
     log_step "Starting services in $MODE mode..."
-    
+
     if [[ "$MODE" == "local" ]]; then
         start_local_services
     else
@@ -385,7 +385,7 @@ start_services() {
 # Start services for local development
 start_local_services() {
     log_info "Starting PostgreSQL and Qdrant containers for local development..."
-    
+
     if [[ "$RUNTIME" == "podman" ]]; then
         if ! bash "$SCRIPTS_DIR/podman-dev.sh" up; then
             log_error "Failed to start Podman services"
@@ -395,7 +395,7 @@ start_local_services() {
         log_error "Local mode with Docker not yet implemented. Use --mode=container or switch to Podman."
         exit 1
     fi
-    
+
     log_success "Database services started"
     log_info "Run 'cargo run --bin scribe-backend' to start the backend"
 }
@@ -403,16 +403,16 @@ start_local_services() {
 # Start all services in containers
 start_container_services() {
     log_info "Starting all services in containers..."
-    
+
     if $CLEAN; then
         log_info "Clean mode: removing existing containers and volumes"
         if [[ "$RUNTIME" == "podman" ]]; then
             podman-compose -f docker-compose.yml down -v 2>/dev/null || true
         else
-            docker-compose down -v 2>/dev/null || true  
+            docker-compose down -v 2>/dev/null || true
         fi
     fi
-    
+
     if [[ "$RUNTIME" == "podman" ]]; then
         # Use podman-compose with docker-compose.yml
         export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
@@ -423,18 +423,18 @@ start_container_services() {
         fi
     else
         if ! bash "$SCRIPTS_DIR/docker-dev.sh" --no-build; then
-            log_error "Failed to start Docker container services"  
+            log_error "Failed to start Docker container services"
             exit 1
         fi
     fi
-    
+
     log_success "All services started in containers"
 }
 
 # Health check services
 health_check() {
     log_step "Performing health checks..."
-    
+
     # Wait for PostgreSQL
     log_info "Waiting for PostgreSQL..."
     local pg_ready=false
@@ -447,13 +447,13 @@ health_check() {
         [[ ! $QUIET ]] && echo -n "."
     done
     echo
-    
+
     if $pg_ready; then
         log_success "PostgreSQL is ready"
     else
         log_warn "PostgreSQL health check timed out (may still be starting)"
     fi
-    
+
     # Wait for Qdrant
     log_info "Waiting for Qdrant..."
     local qdrant_ready=false
@@ -466,13 +466,13 @@ health_check() {
         [[ ! $QUIET ]] && echo -n "."
     done
     echo
-    
+
     if $qdrant_ready; then
         log_success "Qdrant is ready"
     else
         log_warn "Qdrant health check timed out (may still be starting)"
     fi
-    
+
     # Check backend if in container mode
     if [[ "$MODE" == "container" ]]; then
         log_info "Waiting for backend API..."
@@ -486,7 +486,7 @@ health_check() {
             [[ ! $QUIET ]] && echo -n "."
         done
         echo
-        
+
         if $backend_ready; then
             log_success "Backend API is ready"
         else
@@ -500,16 +500,16 @@ start_frontend() {
     if ! $START_FRONTEND; then
         return
     fi
-    
+
     log_step "Starting frontend development server..."
-    
+
     if [[ ! -d "$PROJECT_ROOT/frontend" ]]; then
         log_warn "Frontend directory not found, skipping frontend startup"
         return
     fi
-    
+
     cd "$PROJECT_ROOT/frontend"
-    
+
     # Check if node_modules exists
     if [[ ! -d "node_modules" ]]; then
         log_info "Installing frontend dependencies..."
@@ -522,17 +522,17 @@ start_frontend() {
             return
         fi
     fi
-    
+
     log_info "Starting frontend dev server in background..."
     if command -v pnpm &> /dev/null; then
         pnpm dev > /dev/null 2>&1 &
     else
         npm run dev > /dev/null 2>&1 &
     fi
-    
+
     log_success "Frontend development server started"
     echo "   Frontend URL: https://localhost:5173"
-    
+
     cd "$PROJECT_ROOT"
 }
 
@@ -540,25 +540,25 @@ start_frontend() {
 show_status() {
     log_header "🎉 Sanguine Scribe Development Environment Ready!"
     echo
-    
+
     log_info "Services started in $MODE mode using $RUNTIME"
     echo
-    
+
     # Service URLs
     log_success "Service URLs:"
     echo "   PostgreSQL: localhost:5432 (devuser/devpassword/sanguine_scribe_dev)"
     echo "   Qdrant:     https://localhost:6334"
-    
+
     if [[ "$MODE" == "container" ]]; then
         echo "   Backend:    https://localhost:8080/api/health"
     fi
-    
+
     if $START_FRONTEND; then
         echo "   Frontend:   https://localhost:5173"
     fi
-    
+
     echo
-    
+
     # Next steps based on mode
     if [[ "$MODE" == "local" ]]; then
         log_info "Next steps for local development:"
@@ -574,7 +574,7 @@ show_status() {
             echo "   Frontend: ./start.sh --frontend (to start frontend)"
         fi
     fi
-    
+
     echo
     log_info "Useful commands:"
     echo "   View logs: docker-compose logs -f"
@@ -589,30 +589,30 @@ show_status() {
 # Main execution flow
 main() {
     parse_args "$@"
-    
+
     if $HELP; then
         show_help
         exit 0
     fi
-    
+
     if ! $QUIET; then
         log_header "🚀 Sanguine Scribe Intelligent Development Environment Starter"
         echo
     fi
-    
+
     detect_runtime
     detect_mode
     check_prerequisites
     ensure_certificates
     build_images
     start_services
-    
+
     # Small delay for services to initialize
     sleep 2
-    
+
     health_check
     start_frontend
-    
+
     if ! $QUIET; then
         echo
         show_status

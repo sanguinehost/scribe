@@ -96,10 +96,10 @@ case "$COMMAND" in
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             up -d postgres qdrant
-        
+
         echo "Waiting for database to initialize..."
         sleep 30
-        
+
         echo "Running database migrations..."
         if command -v diesel &>/dev/null; then
             (cd "$PROJECT_ROOT/backend" && DATABASE_URL="$DATABASE_URL" diesel migration run)
@@ -107,62 +107,62 @@ case "$COMMAND" in
             echo "Warning: diesel not found. Skipping migrations."
             echo "Install diesel-cli: cargo install diesel_cli --no-default-features --features postgres"
         fi
-        
+
         echo ""
         echo "✅ Development environment ready!"
         echo "📊 PostgreSQL: localhost:5432 (TLS enabled)"
         echo "🔍 Qdrant: https://localhost:6333, gRPC: https://localhost:6334"
         ;;
-        
+
     down)
         echo "Stopping development environment..."
         check_deps
-        
+
         podman compose \
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             down
         ;;
-        
+
     reset)
         echo "Resetting development environment (removing volumes)..."
         check_deps
-        
+
         podman compose \
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             down -v
         ;;
-        
+
     logs)
         echo "Following logs (Ctrl+C to stop)..."
         check_deps
-        
+
         podman compose \
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             logs -f
         ;;
-        
+
     ps)
         echo "Container status:"
         check_deps
-        
+
         podman compose \
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             ps
         ;;
-        
+
     certs)
         echo "Generating TLS certificates..."
         "$PROJECT_ROOT/scripts/certs/manage.sh" local init
         ;;
-        
+
     help|--help|-h)
         usage
         ;;
-        
+
     *)
         echo "Error: Unknown command '$COMMAND'"
         echo ""

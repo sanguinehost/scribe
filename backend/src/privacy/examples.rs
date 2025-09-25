@@ -36,7 +36,7 @@ pub mod ai_client_factory_example {
     }
 }
 
-/// Example 2: Chat generation logging transformation  
+/// Example 2: Chat generation logging transformation
 pub mod chat_generation_example {
     use super::*;
 

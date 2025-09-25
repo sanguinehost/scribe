@@ -275,7 +275,7 @@ pub struct CreateSubscriptionRequest {
     pub return_url: Option<String>,
 }
 
-/// Legacy - keep for backward compatibility  
+/// Legacy - keep for backward compatibility
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateSubscriptionResponse {
     pub subscription_id: String,

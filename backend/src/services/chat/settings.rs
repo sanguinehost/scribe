@@ -270,10 +270,10 @@ fn decrypt_system_prompt(
     session_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<String>, AppError> {
-    info!(%session_id, %user_id, 
-          has_ciphertext = ciphertext.is_some(), 
+    info!(%session_id, %user_id,
+          has_ciphertext = ciphertext.is_some(),
           ciphertext_len = ciphertext.map(|c| c.len()).unwrap_or(0),
-          has_nonce = nonce.is_some(), 
+          has_nonce = nonce.is_some(),
           nonce_len = nonce.map(|n| n.len()).unwrap_or(0),
           has_dek = user_dek.is_some(),
           "decrypt_system_prompt: Input parameters");
@@ -391,7 +391,7 @@ pub async fn get_session_settings(
             user_id,
         )?;
 
-        info!(%session_id, %user_id, 
+        info!(%session_id, %user_id,
               decrypted_system_prompt_is_some = decrypted_system_prompt.is_some(),
               decrypted_system_prompt_len = decrypted_system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
               "get_session_settings: Creating ChatSettingsResponse");
@@ -417,7 +417,7 @@ pub async fn get_session_settings(
             prompt_template_id: Some(prompt_template_id),
         };
 
-        info!(%session_id, %user_id, 
+        info!(%session_id, %user_id,
               response_system_prompt_is_some = response.system_prompt.is_some(),
               response_system_prompt_len = response.system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
               "get_session_settings: Response created successfully");

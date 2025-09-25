@@ -174,7 +174,7 @@ Chronicle system tracks character interactions and story developments without ma
 
 ### Phase 1: Alpha Release ✅ (Complete)
 - [x] Core chat functionality
-- [x] Character and persona management  
+- [x] Character and persona management
 - [x] Chronicle system with automatic event extraction
 - [x] Lorebook with semantic search
 - [x] End-to-end encryption
@@ -212,10 +212,39 @@ Chronicle system tracks character interactions and story developments without ma
 
 - [ ] **Unity/Unreal SDKs** - Game engine integration
 - [ ] **Dating Sim Components** - Relationship mechanics, stats
-- [ ] **RPG Integration** - Character stats, combat systems  
+- [ ] **RPG Integration** - Character stats, combat systems
 - [ ] **Community Marketplace** - User-generated content monetization
 - [ ] **Developer APIs** - Third-party game integration
 - [ ] **Optional Data Sharing** - Opt-in training data contribution (privacy-first)
+
+## 🔧 Development Setup
+
+### Pre-commit Hooks (Recommended)
+
+For professional code quality, set up pre-commit hooks that automatically format and lint your code:
+
+```bash
+# One-time setup - installs pre-commit and all hooks
+./setup-pre-commit.sh
+```
+
+**What it enforces:**
+- 🦀 **Rust**: `cargo fmt`, `cargo clippy`, `cargo check`
+- 🎨 **Frontend**: `pnpm format` (Prettier), `pnpm lint` (ESLint), TypeScript checking
+- 🔒 **Security**: Credit card data scanning, Gitleaks secrets detection
+- 📝 **Standards**: Conventional commit messages, trailing whitespace removal
+
+**Manual commands:**
+```bash
+# Run all hooks manually
+pre-commit run --all-files
+
+# Skip hooks (emergency only)
+git commit --no-verify
+
+# Update hook versions
+pre-commit autoupdate
+```
 
 ## 🤝 Contributing
 
@@ -305,7 +334,7 @@ Special thanks to:
 <div align="center">
   <strong>Built with ❤️ for the AI roleplay community</strong>
   <br>
-  <a href="https://sanguinehost.com">Hosted by Sanguine Host</a> • 
-  <a href="https://github.com/sanguinehost/scribe">Star on GitHub</a> • 
+  <a href="https://sanguinehost.com">Hosted by Sanguine Host</a> •
+  <a href="https://github.com/sanguinehost/scribe">Star on GitHub</a> •
   <a href="https://discord.gg/Qd93Pascvp">Join Discord</a>
 </div>

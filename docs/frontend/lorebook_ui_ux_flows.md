@@ -189,7 +189,7 @@ graph TD
 
     BtnAddNewEntry -- "Click" --> EntryForm
     ActionEditEntry1 -- "Click" --> EntryFormPreFilled["Entry Form (Pre-filled with Entry 1 data)"]
-    
+
     EntryFormPreFilled -- "User Edits & Clicks" --> BtnSaveEntry
     EntryForm -- "User Fills & Clicks" --> BtnSaveEntry
 
@@ -244,11 +244,11 @@ graph TD
     AssocLB1 -- "Click 'X'" --> ConfirmDisassociateDialog["Dialog: 'Remove Lorebook Alpha?'"]
     ConfirmDisassociateDialog -- "Confirm" --> UpdateTempDissociation["Internal UI state updates for immediate feedback"]
     UpdateTempDissociation --> CurrentLBsList
-    
+
     BtnSaveChangesForSettings -- "Click" --> ProcessAssociations["Process Changes"]
     ProcessAssociations -- "For each newly selected LB" --> CallAssociateApi["API: POST /api/chats/:id/lorebooks"]
     ProcessAssociations -- "For each deselected LB" --> CallDisassociateApi["API: DELETE /api/chats/:id/lorebooks/:lbid"]
-    
+
     CallAssociateApi -- "Success" --> NotifyAssociation["Notification: 'Lorebook(s) Associated'"]
     CallDisassociateApi -- "Success" --> NotifyDisassociation["Notification: 'Lorebook(s) Disassociated'"]
 

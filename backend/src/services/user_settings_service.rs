@@ -137,9 +137,9 @@ impl UserSettingsService {
                     sql_query(
                         r#"
                         INSERT INTO user_settings (
-                            user_id, default_model_name, default_context_total_token_limit, 
-                            default_context_recent_history_budget, default_context_rag_budget, 
-                            auto_save_chats, theme, notifications_enabled, typing_speed, 
+                            user_id, default_model_name, default_context_total_token_limit,
+                            default_context_recent_history_budget, default_context_rag_budget,
+                            auto_save_chats, theme, notifications_enabled, typing_speed,
                             local_llm_enabled
                         ) VALUES (
                             $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE

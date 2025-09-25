@@ -216,7 +216,7 @@ async fn create_existing_everest_events(
             chat_session_id: None,
         },
         CreateEventRequest {
-            event_type: "COSMIC_INTERVENTION".to_string(), 
+            event_type: "COSMIC_INTERVENTION".to_string(),
             summary: "The user, now enlightened and possessing vast cosmic powers, descended upon Mount Everest and cleansed it to a pristine state".to_string(),
             source: EventSource::AiExtracted,
             keywords: Some(vec!["cosmic powers".to_string(), "Mount Everest".to_string(), "pristine".to_string()]),

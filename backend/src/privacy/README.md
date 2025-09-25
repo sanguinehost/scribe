@@ -6,7 +6,7 @@ This module provides a comprehensive privacy-preserving logging system that ensu
 
 The privacy system addresses critical privacy issues identified in the original logging:
 - **User IDs exposed directly** (e.g., `user_id = %user_id`)
-- **Session IDs exposed** (e.g., `session_id = %session_id`) 
+- **Session IDs exposed** (e.g., `session_id = %session_id`)
 - **Chat content and prompts** logged in debug messages
 - **Personal information** (emails, usernames) in logs
 - **Sensitive API parameters** logged without redaction
@@ -49,14 +49,14 @@ fn example_logging() {
     let user_id = Uuid::new_v4();
     let session_id = Uuid::new_v4();
     let user_content = "Tell me about my account";
-    
+
     // Privacy-safe logging
     privacy_info!(
         user_id = %loggable_user_id(user_id),
         session_id = %loggable_session_id(session_id),
         "Processing user request"
     );
-    
+
     privacy_debug!(
         user_id = %loggable_user_id(user_id),
         content = %sanitize_content(user_content),
@@ -72,13 +72,13 @@ use crate::privacy::middleware::ExtractPrivacyContext;
 
 async fn handler(privacy: ExtractPrivacyContext) -> String {
     let user_id = get_current_user_id();
-    
+
     privacy_info!(
         request_id = %privacy.0.request_id(),
         user_id = %privacy.0.obfuscate_user_id(user_id),
         "Processing authenticated request"
     );
-    
+
     "Success".to_string()
 }
 ```
@@ -205,7 +205,7 @@ Different content types have specific redaction patterns:
 let content = sanitize_content("User's personal message");
 // Output: <content-redacted:23-chars>
 
-// System prompts  
+// System prompts
 let prompt = sanitize_system_prompt("You are a helpful AI...");
 // Output: <system-prompt-redacted:25-chars>
 
@@ -225,7 +225,7 @@ let token = sanitize_credentials("secret_api_key");
 // ❌ Never log raw UUIDs
 info!(%user_id, "User action");
 
-// ✅ Always use privacy wrappers  
+// ✅ Always use privacy wrappers
 privacy_info!(user_id = %loggable_user_id(user_id), "User action");
 ```
 
@@ -257,7 +257,7 @@ error!("Database error: {}", db_error);
 // ✅ Structure error information safely
 privacy_error!(
     error_type = "database_connection",
-    error_category = "infrastructure", 
+    error_category = "infrastructure",
     operation = "user_query",
     "Database operation failed"
 );
@@ -285,10 +285,10 @@ The system includes utilities for testing privacy compliance:
 fn test_no_pii_in_logs() {
     let user_id = Uuid::new_v4();
     let loggable = loggable_user_id(user_id);
-    
+
     // Ensure original UUID is not in output
     assert!(!loggable.to_string().contains(&user_id.to_string()));
-    
+
     // Ensure consistent hashing
     assert_eq!(loggable.to_string(), loggable_user_id(user_id).to_string());
 }

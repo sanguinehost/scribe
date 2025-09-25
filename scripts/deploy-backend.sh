@@ -51,21 +51,21 @@ log_error() {
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
+
     log_info "Detected container runtime: $RUNTIME"
-    
+
     if ! command -v "$RUNTIME" &> /dev/null; then
         log_error "$RUNTIME is not installed. Please install $RUNTIME first."
         log_info "Podman: https://podman.io/getting-started/installation"
         log_info "Docker: https://docs.docker.com/get-docker/"
         exit 1
     fi
-    
+
     if ! command -v aws &> /dev/null; then
         log_error "AWS CLI is not installed. Please install AWS CLI first."
         exit 1
     fi
-    
+
     log_success "All prerequisites met"
 }
 
@@ -80,25 +80,25 @@ ecr_login() {
 build_backend() {
     log_info "Building backend image with $RUNTIME..."
     cd "$PROJECT_ROOT"  # Build from project root, not backend dir
-    
+
     # Prepare build command
     BUILD_CMD="$RUNTIME build -f infrastructure/containers/backend/Containerfile"
-    
+
     # Add features if specified
     if [ -n "$FEATURES" ]; then
         BUILD_CMD="$BUILD_CMD --build-arg FEATURES='$FEATURES'"
         log_info "Building with features: $FEATURES"
     fi
-    
+
     # Add no-cache flag if requested
     if [[ "${NO_CACHE:-false}" == "true" ]]; then
         BUILD_CMD="$BUILD_CMD --no-cache"
         log_info "Building with --no-cache option"
     fi
-    
+
     # Add tags and build context
     BUILD_CMD="$BUILD_CMD -t scribe-backend:latest -t $ECR_BACKEND_REPO:latest ."
-    
+
     # Execute build
     log_info "Build command: $BUILD_CMD"
     if eval "$BUILD_CMD"; then
@@ -119,23 +119,23 @@ push_backend() {
 # Deploy Qdrant
 deploy_qdrant() {
     log_info "Deploying Qdrant image..."
-    
+
     # Pull official Qdrant image
     $RUNTIME pull qdrant/qdrant:latest
-    
+
     # Tag for ECR
     $RUNTIME tag qdrant/qdrant:latest $ECR_QDRANT_REPO:latest
-    
+
     # Push to ECR
     $RUNTIME push $ECR_QDRANT_REPO:latest
-    
+
     log_success "Qdrant image deployed"
 }
 
 # Update ECS services
 update_ecs_services() {
     log_info "Updating ECS services..."
-    
+
     # Force new deployment for backend
     log_info "Updating backend service..."
     aws ecs update-service \
@@ -143,7 +143,7 @@ update_ecs_services() {
         --service $BACKEND_SERVICE \
         --force-new-deployment \
         --region $AWS_REGION
-    
+
     # Force new deployment for Qdrant
     log_info "Updating Qdrant service..."
     aws ecs update-service \
@@ -151,35 +151,35 @@ update_ecs_services() {
         --service $QDRANT_SERVICE \
         --force-new-deployment \
         --region $AWS_REGION
-    
+
     log_success "ECS services updated"
 }
 
 # Wait for services to stabilize
 wait_for_services() {
     log_info "Waiting for services to stabilize..."
-    
+
     # Wait for backend service
     log_info "Waiting for backend service..."
     aws ecs wait services-stable \
         --cluster $ECS_CLUSTER \
         --services $BACKEND_SERVICE \
         --region $AWS_REGION
-    
+
     # Wait for Qdrant service
     log_info "Waiting for Qdrant service..."
     aws ecs wait services-stable \
         --cluster $ECS_CLUSTER \
         --services $QDRANT_SERVICE \
         --region $AWS_REGION
-    
+
     log_success "All services are stable"
 }
 
 # Check service health
 check_service_health() {
     log_info "Checking service health..."
-    
+
     # Get service details
     aws ecs describe-services \
         --cluster $ECS_CLUSTER \
@@ -187,17 +187,17 @@ check_service_health() {
         --region $AWS_REGION \
         --query 'services[*].[serviceName,runningCount,desiredCount,status]' \
         --output table
-    
+
     log_success "Service health check complete"
 }
 
 # Main execution
 main() {
     log_info "Starting backend deployment..."
-    
+
     # Parse arguments
     TARGET="${1:-all}"
-    
+
     # Parse all arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -220,10 +220,10 @@ main() {
                 ;;
         esac
     done
-    
+
     check_prerequisites
     ecr_login
-    
+
     case "$TARGET" in
         "backend")
             build_backend
@@ -247,7 +247,7 @@ main() {
             echo ""
             echo "Arguments:"
             echo "  backend           Deploy only backend service"
-            echo "  qdrant            Deploy only Qdrant service"  
+            echo "  qdrant            Deploy only Qdrant service"
             echo "  all               Deploy both services (default)"
             echo ""
             echo "Options:"
@@ -261,7 +261,7 @@ main() {
             exit 1
             ;;
     esac
-    
+
     log_success "🚀 Deployment completed successfully!"
     log_info "Next steps:"
     echo "1. Run database migrations if needed: ./scripts/run-migrations.sh"

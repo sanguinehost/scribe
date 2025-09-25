@@ -3,7 +3,7 @@
 #
 # Modern approaches (recommended):
 #   1. Development: ./scripts/podman-dev.sh
-#   2. Systemd services: ./scripts/quadlet-dev.sh  
+#   2. Systemd services: ./scripts/quadlet-dev.sh
 #   3. Docker compatibility: Use this file
 #
 # For production and advanced setups, see: infrastructure/containers/compose/

@@ -42,10 +42,10 @@ check_quadlets() {
 install_quadlets() {
     PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
     QUADLET_DIR="$HOME/.config/containers/systemd"
-    
+
     echo "Installing Quadlet definitions..."
     mkdir -p "$QUADLET_DIR"
-    
+
     # Copy quadlet files from the script location to the proper systemd location
     if [[ -f "$QUADLET_DIR/postgres.container" ]]; then
         echo "✅ postgres.container already exists"
@@ -53,18 +53,18 @@ install_quadlets() {
         echo "❌ postgres.container not found - please ensure Quadlet files are properly created"
         exit 1
     fi
-    
+
     if [[ -f "$QUADLET_DIR/qdrant.container" ]]; then
         echo "✅ qdrant.container already exists"
     else
         echo "❌ qdrant.container not found - please ensure Quadlet files are properly created"
         exit 1
     fi
-    
+
     # Reload systemd to pick up new quadlet files
     echo "Reloading systemd daemon..."
     systemctl --user daemon-reload
-    
+
     echo ""
     echo "✅ Quadlet installation complete!"
     echo "Services available:"
@@ -80,7 +80,7 @@ install_quadlets() {
 ensure_certs() {
     PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
     CERTS_DIR="$PROJECT_ROOT/.certs"
-    
+
     if [[ ! -f "$CERTS_DIR/cert.pem" || ! -f "$CERTS_DIR/key.pem" ]]; then
         echo "Generating TLS certificates..."
         "$PROJECT_ROOT/scripts/certs/manage.sh" local init
@@ -95,20 +95,20 @@ case "$COMMAND" in
         systemctl --user start postgres.service qdrant.service
         echo "✅ Services started"
         ;;
-        
+
     stop)
         echo "Stopping Quadlet services..."
         systemctl --user stop postgres.service qdrant.service
         echo "✅ Services stopped"
         ;;
-        
+
     restart)
         check_quadlets
         echo "Restarting Quadlet services..."
         systemctl --user restart postgres.service qdrant.service
         echo "✅ Services restarted"
         ;;
-        
+
     status)
         echo "=== Service Status ==="
         systemctl --user status postgres.service qdrant.service --no-pager -l
@@ -116,20 +116,20 @@ case "$COMMAND" in
         echo "=== Container Status ==="
         podman ps --filter name=scribe_postgres_quadlet --filter name=scribe_qdrant_quadlet
         ;;
-        
+
     enable)
         check_quadlets
         echo "Enabling Quadlet services for auto-start..."
         systemctl --user enable postgres.service qdrant.service
         echo "✅ Services enabled - will start automatically on login"
         ;;
-        
+
     disable)
         echo "Disabling Quadlet services..."
         systemctl --user disable postgres.service qdrant.service
         echo "✅ Services disabled"
         ;;
-        
+
     logs)
         echo "=== PostgreSQL Logs ==="
         systemctl --user --no-pager -l logs postgres.service
@@ -137,15 +137,15 @@ case "$COMMAND" in
         echo "=== Qdrant Logs ==="
         systemctl --user --no-pager -l logs qdrant.service
         ;;
-        
+
     install)
         install_quadlets
         ;;
-        
+
     help|--help|-h)
         usage
         ;;
-        
+
     *)
         echo "Error: Unknown command '$COMMAND'"
         echo ""

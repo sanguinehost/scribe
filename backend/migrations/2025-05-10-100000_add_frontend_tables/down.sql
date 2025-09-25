@@ -13,4 +13,4 @@ DROP TABLE IF EXISTS suggestions;
 DROP TABLE IF EXISTS documents;
 
 -- Drop votes table
-DROP TABLE IF EXISTS votes; 
+DROP TABLE IF EXISTS votes;

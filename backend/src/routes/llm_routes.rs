@@ -28,7 +28,7 @@ use std::time::Duration;
 #[cfg(feature = "local-llm")]
 use tokio_stream::wrappers::UnboundedReceiverStream;
 #[cfg(feature = "local-llm")]
-use tracing::error;
+use tracing::{debug, error};
 
 #[cfg(feature = "local-llm")]
 #[derive(Debug, Serialize)]

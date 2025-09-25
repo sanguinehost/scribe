@@ -68,9 +68,9 @@ variable "from_email" {
 locals {
   # Construct full domain dynamically
   full_domain = var.subdomain_prefix != "" ? "${var.subdomain_prefix}.${var.app_subdomain}.${var.base_domain}" : "${var.app_subdomain}.${var.base_domain}"
-  
+
   api_domain = var.subdomain_prefix != "" ? "api.${var.subdomain_prefix}.${var.app_subdomain}.${var.base_domain}" : "api.${var.app_subdomain}.${var.base_domain}"
-  
+
   from_email = var.from_email != "" ? var.from_email : "noreply@${var.app_subdomain}.${var.base_domain}"
 }
 

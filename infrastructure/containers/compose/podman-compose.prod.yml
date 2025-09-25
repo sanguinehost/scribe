@@ -18,7 +18,7 @@ services:
       options:
         max-size: "100m"
         max-file: "5"
-    
+
   qdrant:
     environment:
       QDRANT__SERVICE__ENABLE_TLS: "false"

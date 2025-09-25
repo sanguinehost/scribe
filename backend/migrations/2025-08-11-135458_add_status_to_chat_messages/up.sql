@@ -1,5 +1,5 @@
 -- Add status tracking fields to chat_messages table
-ALTER TABLE chat_messages 
+ALTER TABLE chat_messages
 ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'completed',
 ADD COLUMN error_message TEXT,
 ADD COLUMN superseded_at TIMESTAMPTZ;

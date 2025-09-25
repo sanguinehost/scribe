@@ -1,5 +1,5 @@
 -- Drop old plaintext columns and add encrypted ones for chat sessions user data
-ALTER TABLE chat_sessions 
+ALTER TABLE chat_sessions
 DROP COLUMN system_prompt,
 DROP COLUMN title,
 ADD COLUMN system_prompt_ciphertext BYTEA,

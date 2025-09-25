@@ -270,7 +270,7 @@ pub async fn llm_security_middleware(
 
 /// Check if endpoint is an LLM endpoint that needs rate limiting
 fn is_llm_endpoint(path: &str) -> bool {
-    path.starts_with("/api/llm/chat") || 
+    path.starts_with("/api/llm/chat") ||
     path.starts_with("/api/llm/generate") ||
     path == "/api/llm/chat" ||
     path == "/api/llm/stream" ||

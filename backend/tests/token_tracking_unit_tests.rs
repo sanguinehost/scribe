@@ -19,7 +19,7 @@ async fn test_gemini_cost_calculation() {
     // The cost calculation we expect from our implementation
     // Should match the logic in message_handling.rs
     let calculated_prompt_cost = (prompt_tokens as f64 * 0.075 / 10.0) as i64; // 0.075 per 10K tokens = 0.0075 per 100 tokens
-    let calculated_completion_cost = (completion_tokens as f64 * 0.30 / 10.0) as i64; // 0.30 per 10K tokens = 0.03 per 100 tokens 
+    let calculated_completion_cost = (completion_tokens as f64 * 0.30 / 10.0) as i64; // 0.30 per 10K tokens = 0.03 per 100 tokens
     let calculated_total = calculated_prompt_cost + calculated_completion_cost;
 
     println!(

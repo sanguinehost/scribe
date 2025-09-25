@@ -207,10 +207,10 @@ module "ecs" {
 
   # Backend secrets
   backend_secrets = module.secrets.backend_secrets_list
-  
+
   # Email configuration
   from_email = local.from_email
-  
+
   # Domain configuration
   domain_name     = local.full_domain
   api_domain_name = local.api_domain
@@ -253,4 +253,3 @@ module "ses" {
 
   depends_on = [module.ecs]
 }
-

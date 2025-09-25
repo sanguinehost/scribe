@@ -3,7 +3,7 @@
 //!
 //! Usage:
 //!   cargo run --bin re_embed_chronicles -- --username <username> --password <password>
-//!   
+//!
 //! This tool requires user credentials to decrypt encrypted chronicle events.
 
 use anyhow::{Context, Result};

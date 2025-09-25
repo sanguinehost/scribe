@@ -39,7 +39,7 @@ use diesel::{
 };
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 // ExposeSecret already imported above
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // Added Deserialize
@@ -1668,7 +1668,7 @@ pub async fn delete_trailing_messages_handler(
 /// # Errors
 ///
 /// Returns an error if:
-/// - Authentication fails  
+/// - Authentication fails
 /// - Message not found or access denied
 /// - Database operation fails
 pub async fn delete_message_handler(

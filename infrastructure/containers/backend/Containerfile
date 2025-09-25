@@ -69,7 +69,7 @@ WORKDIR /app
 # Copy the binary from builder
 COPY --from=builder --chown=1001:1001 /app/target/release/scribe-backend /app/scribe-backend
 
-# Copy migrations (needed for runtime migration checks)  
+# Copy migrations (needed for runtime migration checks)
 COPY --from=builder --chown=1001:1001 /app/backend/migrations /app/migrations
 
 # Create backend directory structure and copy resources, data, and config

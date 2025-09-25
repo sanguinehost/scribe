@@ -53,7 +53,7 @@ impl ObfuscatedId {
         Self::new(uuid, salt, "user")
     }
 
-    /// Create from session ID  
+    /// Create from session ID
     pub fn session_id(uuid: Uuid, salt: &str) -> Self {
         Self::new(uuid, salt, "session")
     }

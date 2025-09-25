@@ -1,3 +1,4 @@
+use crate::errors::AppError;
 use axum::{extract::Request, middleware::Next, response::Response};
 use std::collections::HashMap;
 use std::net::SocketAddr;

@@ -55,8 +55,8 @@ async fn ensure_encryption_columns_exist(pool: &DeadpoolPool<DeadpoolManager>) -
             // Check if dek_nonce column exists, if not add it
             let result = diesel::sql_query(
                 "
-            SELECT column_name 
-            FROM information_schema.columns 
+            SELECT column_name
+            FROM information_schema.columns
             WHERE table_name = 'users' AND column_name = 'dek_nonce'
         ",
             )

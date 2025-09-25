@@ -19,7 +19,7 @@ use secrecy::{ExposeSecret, SecretBox};
 use serial_test::serial;
 use uuid::Uuid;
 
-/// Helper to create a test DEK key  
+/// Helper to create a test DEK key
 fn create_test_dek_key() -> Vec<u8> {
     let dek = generate_dek().expect("Failed to generate DEK");
     dek.expose_secret().clone()

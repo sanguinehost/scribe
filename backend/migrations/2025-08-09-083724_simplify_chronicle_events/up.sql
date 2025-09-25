@@ -1,6 +1,6 @@
 -- Simplify chronicle events to text summaries with keywords
 -- Add new fields
-ALTER TABLE chronicle_events 
+ALTER TABLE chronicle_events
     ADD COLUMN IF NOT EXISTS keywords TEXT[] DEFAULT '{}',
     ADD COLUMN IF NOT EXISTS keywords_encrypted BYTEA,
     ADD COLUMN IF NOT EXISTS keywords_nonce BYTEA,

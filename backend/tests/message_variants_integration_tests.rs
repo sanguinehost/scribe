@@ -455,7 +455,7 @@ async fn test_variant_display_persistence() -> anyhow::Result<()> {
 
 /// Test that AI context generation uses selected variant content
 #[tokio::test]
-#[ignore] // Run with RUN_INTEGRATION_TESTS=true  
+#[ignore] // Run with RUN_INTEGRATION_TESTS=true
 async fn test_ai_context_uses_selected_variant() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
     let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());

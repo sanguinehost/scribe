@@ -37,7 +37,7 @@ graph TD
         HEALTH["HealthChecker"]
         SECURITY["Security Layer"]
         METRICS["MetricsCollector"]
-        
+
         subgraph "llama.cpp Integration"
             BUILD_SYSTEM["build.rs (Compile llama.cpp)"]
             BINARY["llama-server Binary"]
@@ -252,12 +252,12 @@ sequenceDiagram
     Manager->>Manager: find_executable()
     Manager->>Process: spawn_server()
     Manager->>Health: start_monitoring()
-    
+
     loop Health Check
         Health->>Process: GET /health
         Process-->>Health: 200 OK
     end
-    
+
     Health-->>Manager: server_ready
     Manager-->>Client: initialization_complete
 ```
@@ -422,7 +422,7 @@ interface ModelProvider {
 
 **Real-time Status:**
 - Server health indicators
-- Model loading progress bars  
+- Model loading progress bars
 - Hardware utilization displays
 - Fallback notifications
 

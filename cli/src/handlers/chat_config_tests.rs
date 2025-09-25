@@ -17,7 +17,7 @@ mod tests {
         let character_id = Uuid::new_v4();
         let chat_id = Uuid::new_v4();
         let chat_sessions = vec![mock_chat_session(chat_id, character_id)];
-        
+
         // 2. Setup mock response for chat settings update
         let temp_bd = BigDecimal::from_str("0.8").unwrap();
         let updated_settings = ChatSettingsResponse {
@@ -123,7 +123,7 @@ mod tests {
         let character_id = Uuid::new_v4();
         let chat_id = Uuid::new_v4();
         let chat_sessions = vec![mock_chat_session(chat_id, character_id)];
-        
+
         // 2. Setup mock response for chat settings update
         let temp_bd = BigDecimal::from_str("0.8").unwrap();
         let updated_settings = ChatSettingsResponse {

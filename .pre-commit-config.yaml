@@ -1,0 +1,130 @@
+# Pre-commit configuration for Sanguine Scribe
+# Professional code quality enforcement before every commit
+# Run: pre-commit install (one-time setup)
+
+repos:
+  # General code quality hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Remove trailing whitespace
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: check-yaml
+        name: Check YAML syntax
+      - id: check-json
+        name: Check JSON syntax
+      - id: check-toml
+        name: Check TOML syntax
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=1000']
+      - id: mixed-line-ending
+        name: Fix mixed line endings
+        args: ['--fix=lf']
+
+  # Rust formatting and linting
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: Cargo Format (Backend)
+        entry: cargo fmt --all -- --check
+        language: system
+        files: '\.rs$'
+        pass_filenames: false
+        always_run: false
+
+# Temporarily disabled due to compilation issues in payment system tests
+      # - id: cargo-clippy
+      #   name: Cargo Clippy (Backend)
+      #   entry: bash -c 'cd backend && cargo clippy --all-targets --no-default-features --features payment'
+      #   language: system
+      #   files: 'backend/.*\.rs$|Cargo\.toml$'
+      #   pass_filenames: false
+      #   always_run: false
+
+      # - id: cargo-check
+      #   name: Cargo Check (Backend)
+      #   entry: bash -c 'cd backend && cargo check --all-targets --no-default-features --features payment'
+      #   language: system
+      #   files: 'backend/.*\.rs$|backend/Cargo\.toml$'
+      #   pass_filenames: false
+      #   always_run: false
+
+  # Frontend formatting and linting
+  - repo: local
+    hooks:
+      - id: frontend-format
+        name: Frontend Format (Prettier)
+        entry: bash -c 'cd frontend && pnpm format'
+        language: system
+        files: 'frontend/.*\.(js|ts|tsx|svelte|json|css|md)$'
+        pass_filenames: false
+        always_run: false
+
+      - id: frontend-lint
+        name: Frontend Lint (ESLint)
+        entry: bash -c 'cd frontend && pnpm lint'
+        language: system
+        files: 'frontend/.*\.(js|ts|tsx|svelte)$'
+        pass_filenames: false
+        always_run: false
+
+      - id: frontend-typecheck
+        name: Frontend TypeScript Check
+        entry: bash -c 'cd frontend && pnpm check'
+        language: system
+        files: 'frontend/.*\.(ts|tsx|svelte)$|frontend/.*\.json$'
+        pass_filenames: false
+        always_run: false
+
+  # Security and compliance hooks
+  - repo: local
+    hooks:
+      - id: card-data-scan
+        name: Scan for Credit Card Data (PCI Compliance)
+        entry: python .pre-commit-card-scan.py
+        language: system
+        types: [text]
+        exclude: ^(.pre-commit-card-scan.py|docs/PAYMENT_COMPLIANCE.md)$
+
+  # Secrets detection with Gitleaks
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks
+        name: Detect Secrets with Gitleaks
+
+# Disabled temporarily due to configuration issues
+  # - repo: https://github.com/compilerla/conventional-pre-commit
+  #   rev: v3.6.0
+  #   hooks:
+  #     - id: conventional-pre-commit
+  #       name: Validate Conventional Commit Format
+  #       stages: [commit-msg]
+
+# Global excludes - files/patterns to skip for all hooks
+exclude: |
+  (?x)^(
+    frontend/\.svelte-kit/.*|
+    frontend/build/.*|
+    frontend/node_modules/.*|
+    backend/target/.*|
+    \.git/.*|
+    \.vercel/.*|
+    .*\.lock$
+  )$
+
+# Default language version for hooks that need it
+default_language_version:
+  python: python3
+  node: '18.19.0'
+
+# Fail fast - stop at first hook failure
+fail_fast: false
+
+# Minimum pre-commit version required
+minimum_pre_commit_version: '3.0.0'

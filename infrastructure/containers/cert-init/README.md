@@ -32,7 +32,7 @@ services:
     volumes:
       - certificates:/shared/certs
     restart: "no"  # Run once only
-    
+
   backend:
     image: scribe-backend:latest
     depends_on:
@@ -61,7 +61,7 @@ volumes:
           "valueFrom": "arn:aws:secretsmanager:region:account:secret:env/scribe/app:tls_cert_pem::"
         },
         {
-          "name": "TLS_KEY_PEM", 
+          "name": "TLS_KEY_PEM",
           "valueFrom": "arn:aws:secretsmanager:region:account:secret:env/scribe/app:tls_key_pem::"
         }
       ],

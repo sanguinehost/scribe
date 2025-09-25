@@ -49,40 +49,40 @@ case "$COMMAND" in
     run)
         echo -e "${GREEN}🗃️  Running database migrations...${NC}"
         check_diesel
-        
+
         DATABASE_URL=$(get_database_url)
         echo -e "${BLUE}Database: $DATABASE_URL${NC}"
-        
+
         cd "$PROJECT_ROOT/backend"
         DATABASE_URL="$DATABASE_URL" diesel migration run
-        
+
         echo -e "${GREEN}✅ Migrations completed${NC}"
         ;;
-        
+
     status)
         echo -e "${GREEN}📊 Checking migration status...${NC}"
         check_diesel
-        
+
         DATABASE_URL=$(get_database_url)
         echo -e "${BLUE}Database: $DATABASE_URL${NC}"
-        
+
         cd "$PROJECT_ROOT/backend"
         DATABASE_URL="$DATABASE_URL" diesel migration list
         ;;
-        
+
     redo)
         echo -e "${GREEN}🔄 Redoing last migration...${NC}"
         check_diesel
-        
+
         DATABASE_URL=$(get_database_url)
         echo -e "${BLUE}Database: $DATABASE_URL${NC}"
-        
+
         cd "$PROJECT_ROOT/backend"
         DATABASE_URL="$DATABASE_URL" diesel migration redo
-        
+
         echo -e "${GREEN}✅ Migration redo completed${NC}"
         ;;
-        
+
     generate)
         MIGRATION_NAME="${2:-}"
         if [[ -z "$MIGRATION_NAME" ]]; then
@@ -90,20 +90,20 @@ case "$COMMAND" in
             echo "Usage: $0 generate <migration_name>"
             exit 1
         fi
-        
+
         echo -e "${GREEN}📝 Generating new migration: $MIGRATION_NAME${NC}"
         check_diesel
-        
+
         cd "$PROJECT_ROOT/backend"
         diesel migration generate "$MIGRATION_NAME"
-        
+
         echo -e "${GREEN}✅ Migration generated${NC}"
         ;;
-        
+
     help|--help|-h)
         usage
         ;;
-        
+
     *)
         echo "Error: Unknown command '$COMMAND'"
         usage

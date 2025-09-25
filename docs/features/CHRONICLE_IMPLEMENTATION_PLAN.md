@@ -30,7 +30,7 @@ graph TD
     subgraph "User Experience (Frontend)"
         UIMain[Scribe Web App] -->|Manages| ChronicleView[Chronicles Page]
         UIMain -->|Uses| ChatView[Chat Interface]
-        
+
         ChronicleView -->|Create/View| ChronicleAPI[Chronicle API]
         ChatView -->|Link/Create In| ChronicleAPI
         ChatView -->|Sends/Receives Msgs| ChatAPI[Chat API]
@@ -49,7 +49,7 @@ graph TD
         ChatAPI --> AsyncExtractor[Async Event Extractor]
 
         ChronicleAPI --> ChronicleService[Chronicle Service]
-        
+
         RAGService -->|Queries| Qdrant & PostgreSQL
         AsyncExtractor -->|Creates Events| ChronicleService
         ChronicleService -->|Writes| PostgreSQL & EmbeddingPipeline[Embedding Pipeline]

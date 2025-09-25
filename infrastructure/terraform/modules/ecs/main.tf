@@ -222,7 +222,7 @@ resource "aws_ecs_task_definition" "backend_task" {
     {
       name  = "backend"
       image = "${aws_ecr_repository.backend_repo.repository_url}:latest"
-      
+
       portMappings = [
         {
           containerPort = 8080
@@ -299,7 +299,7 @@ resource "aws_ecs_task_definition" "qdrant_task" {
     {
       name  = "qdrant"
       image = "qdrant/qdrant:v1.15.4"
-      
+
       portMappings = [
         {
           containerPort = 6333

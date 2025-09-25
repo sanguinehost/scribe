@@ -196,7 +196,7 @@ Choose the format that best matches the character's setting and intended rolepla
 
 **For Narrative/Character-Driven Roleplay:**
 1. **Opening Hook**: Start with dialogue, action, or compelling scene setting
-2. **Scene/Context**: Establish where this is happening and what's going on  
+2. **Scene/Context**: Establish where this is happening and what's going on
 3. **Character Voice**: Show personality through thoughts, actions, and speech
 4. **User Integration**: Set up the scenario for user interaction
 5. **Proper Length**: Multiple paragraphs that create immersion

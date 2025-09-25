@@ -25,7 +25,7 @@ CREATE TABLE chronicle_events (
 );
 
 -- Add player_chronicle_id to chat_sessions table
-ALTER TABLE chat_sessions 
+ALTER TABLE chat_sessions
 ADD COLUMN player_chronicle_id UUID REFERENCES player_chronicles(id) ON DELETE SET NULL;
 
 -- Create indexes for performance
@@ -38,5 +38,5 @@ CREATE INDEX idx_chronicle_events_created_at ON chronicle_events(created_at);
 CREATE INDEX idx_chat_sessions_player_chronicle_id ON chat_sessions(player_chronicle_id);
 
 -- Create partial index for chronicle events with event_data
-CREATE INDEX idx_chronicle_events_event_data_gin ON chronicle_events USING GIN(event_data) 
+CREATE INDEX idx_chronicle_events_event_data_gin ON chronicle_events USING GIN(event_data)
 WHERE event_data IS NOT NULL;

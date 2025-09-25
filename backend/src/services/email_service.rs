@@ -172,25 +172,25 @@ impl EmailService for SesEmailService {
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
                     <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to Sanguine Scribe</h1>
                 </div>
-                
+
                 <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #ddd;">
                     <h2 style="color: #333; margin-top: 0;">Hi {}!</h2>
-                    
+
                     <p>Thank you for signing up for Sanguine Scribe. To complete your registration and start your journey into creative writing with AI, please verify your email address.</p>
-                    
+
                     <div style="text-align: center; margin: 30px 0;">
                         <a href="{}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Verify Email Address</a>
                     </div>
-                    
+
                     <p>If the button above doesn't work, you can also click on this link:</p>
                     <p style="word-break: break-all; color: #667eea;"><a href="{}" style="color: #667eea;">{}</a></p>
-                    
+
                     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-                    
+
                     <p style="font-size: 14px; color: #666;">
                         This verification link will expire in 24 hours. If you didn't create an account with us, you can safely ignore this email.
                     </p>
-                    
+
                     <p style="font-size: 14px; color: #666;">
                         Best regards,<br>
                         The Sanguine Scribe Team

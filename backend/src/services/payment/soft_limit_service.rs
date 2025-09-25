@@ -346,9 +346,9 @@ mod tests {
     use super::*;
     use crate::test_helpers::{TestDataGuard, spawn_app};
 
-    #[test]
-    fn test_soft_limit_tracking() {
-        let app = spawn_app();
+    #[tokio::test]
+    async fn test_soft_limit_tracking() {
+        let app = spawn_app(false, false, false).await;
         let _test_guard = TestDataGuard::new(&app.test_id);
 
         let mut conn = app.db_pool.get().unwrap();
@@ -375,9 +375,9 @@ mod tests {
         assert_eq!(breakdown["gemini-2.5-flash"], 2);
     }
 
-    #[test]
-    fn test_throttle_calculation() {
-        let app = spawn_app();
+    #[tokio::test]
+    async fn test_throttle_calculation() {
+        let app = spawn_app(false, false, false).await;
         let service = SoftLimitService::new(app.config.clone());
 
         // Test progressive throttling based on tier limits

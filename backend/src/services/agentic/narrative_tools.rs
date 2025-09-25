@@ -301,7 +301,7 @@ CONVERSATION:
 
 Consider significant:
 - Character deaths, injuries, or major changes
-- Discovery of new locations, items, or lore  
+- Discovery of new locations, items, or lore
 - Combat or conflict with consequences
 - Major plot developments or revelations
 - Changes to relationships or world state

@@ -30,7 +30,7 @@ async fn test_comprehensive_lorebook_ids_basic_functionality() {
         let lorebook3_id = Uuid::new_v4(); // Unlinked
         // Insert test user
         diesel::sql_query(
-            "INSERT INTO users (id, username, password_hash, email, kek_salt, encrypted_dek, dek_nonce, role, account_status, created_at, updated_at) 
+            "INSERT INTO users (id, username, password_hash, email, kek_salt, encrypted_dek, dek_nonce, role, account_status, created_at, updated_at)
              VALUES ($1, 'testuser', 'hash', 'test@example.com', 'salt', $2, $3, 'User', 'active', $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(user_id)
@@ -41,7 +41,7 @@ async fn test_comprehensive_lorebook_ids_basic_functionality() {
         .execute(conn)?;
         // Insert test character
         diesel::sql_query(
-            "INSERT INTO characters (id, user_id, name, spec, spec_version, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings, tags, creator, character_version, extensions, visibility, created_at, updated_at) 
+            "INSERT INTO characters (id, user_id, name, spec, spec_version, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings, tags, creator, character_version, extensions, visibility, created_at, updated_at)
              VALUES ($1, $2, 'Test Character', 'chara_card_v3', '3.0', $3, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'private', $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(character_id)
@@ -52,7 +52,7 @@ async fn test_comprehensive_lorebook_ids_basic_functionality() {
         .execute(conn)?;
         // Insert test chat session
         diesel::sql_query(
-            "INSERT INTO chat_sessions (id, user_id, character_id, title, system_prompt, temperature, max_output_tokens, frequency_penalty, presence_penalty, top_k, top_p, seed, stop_sequences, history_management_strategy, history_management_limit, visibility, created_at, updated_at, active_custom_persona_id, model_name, gemini_thinking_budget, gemini_enable_code_execution, active_impersonated_character_id) 
+            "INSERT INTO chat_sessions (id, user_id, character_id, title, system_prompt, temperature, max_output_tokens, frequency_penalty, presence_penalty, top_k, top_p, seed, stop_sequences, history_management_strategy, history_management_limit, visibility, created_at, updated_at, active_custom_persona_id, model_name, gemini_thinking_budget, gemini_enable_code_execution, active_impersonated_character_id)
              VALUES ($1, $2, $3, 'Test Session', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'keep_recent', 50, 'private', $4, $5, NULL, 'gemini-2.0-flash-exp', NULL, NULL, NULL)"
         )
         .bind::<diesel::sql_types::Uuid, _>(session_id)
@@ -68,7 +68,7 @@ async fn test_comprehensive_lorebook_ids_basic_functionality() {
             (lorebook3_id, "Unlinked Lorebook"),
         ] {
             diesel::sql_query(
-                "INSERT INTO lorebooks (id, user_id, name, description, source_format, is_public, created_at, updated_at) 
+                "INSERT INTO lorebooks (id, user_id, name, description, source_format, is_public, created_at, updated_at)
                  VALUES ($1, $2, $3, $4, 'scribe', false, $5, $6)"
             )
             .bind::<diesel::sql_types::Uuid, _>(id)
@@ -81,7 +81,7 @@ async fn test_comprehensive_lorebook_ids_basic_functionality() {
         }
         // Link lorebook1 to character
         diesel::sql_query(
-            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at) 
+            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(character_id)
@@ -92,7 +92,7 @@ async fn test_comprehensive_lorebook_ids_basic_functionality() {
         .execute(conn)?;
         // Link lorebook2 to session
         diesel::sql_query(
-            "INSERT INTO chat_session_lorebooks (chat_session_id, lorebook_id, user_id, created_at, updated_at) 
+            "INSERT INTO chat_session_lorebooks (chat_session_id, lorebook_id, user_id, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(session_id)
@@ -116,7 +116,7 @@ async fn test_comprehensive_lorebook_ids_basic_functionality() {
         assert!(!ids.contains(&lorebook3_id), "Should NOT include unlinked lorebook");
         // TEST 2: Test deduplication - link same lorebook to both character and session
         diesel::sql_query(
-            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at) 
+            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(character_id)
@@ -191,7 +191,7 @@ async fn test_cross_user_lorebook_isolation() {
         // Insert users
         for (user_id, username) in [(user1_id, "user1"), (user2_id, "user2")] {
             diesel::sql_query(
-                "INSERT INTO users (id, username, password_hash, email, kek_salt, encrypted_dek, dek_nonce, role, account_status, created_at, updated_at) 
+                "INSERT INTO users (id, username, password_hash, email, kek_salt, encrypted_dek, dek_nonce, role, account_status, created_at, updated_at)
                  VALUES ($1, $2, 'hash', $3, 'salt', $4, $5, 'User', 'active', $6, $7)"
             )
             .bind::<diesel::sql_types::Uuid, _>(user_id)
@@ -206,7 +206,7 @@ async fn test_cross_user_lorebook_isolation() {
         // Insert characters for each user
         for (char_id, user_id, name) in [(character1_id, user1_id, "User1 Character"), (character2_id, user2_id, "User2 Character")] {
             diesel::sql_query(
-                "INSERT INTO characters (id, user_id, name, spec, spec_version, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings, tags, creator, character_version, extensions, visibility, created_at, updated_at) 
+                "INSERT INTO characters (id, user_id, name, spec, spec_version, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings, tags, creator, character_version, extensions, visibility, created_at, updated_at)
                  VALUES ($1, $2, $3, 'chara_card_v3', '3.0', $4, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'private', $5, $6)"
             )
             .bind::<diesel::sql_types::Uuid, _>(char_id)
@@ -220,7 +220,7 @@ async fn test_cross_user_lorebook_isolation() {
         // Insert chat sessions for each user
         for (session_id, user_id, character_id, title) in [(session1_id, user1_id, character1_id, "User1 Session"), (session2_id, user2_id, character2_id, "User2 Session")] {
             diesel::sql_query(
-                "INSERT INTO chat_sessions (id, user_id, character_id, title, system_prompt, temperature, max_output_tokens, frequency_penalty, presence_penalty, top_k, top_p, seed, stop_sequences, history_management_strategy, history_management_limit, visibility, created_at, updated_at, active_custom_persona_id, model_name, gemini_thinking_budget, gemini_enable_code_execution, active_impersonated_character_id) 
+                "INSERT INTO chat_sessions (id, user_id, character_id, title, system_prompt, temperature, max_output_tokens, frequency_penalty, presence_penalty, top_k, top_p, seed, stop_sequences, history_management_strategy, history_management_limit, visibility, created_at, updated_at, active_custom_persona_id, model_name, gemini_thinking_budget, gemini_enable_code_execution, active_impersonated_character_id)
                  VALUES ($1, $2, $3, $4, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'keep_recent', 50, 'private', $5, $6, NULL, 'gemini-2.0-flash-exp', NULL, NULL, NULL)"
             )
             .bind::<diesel::sql_types::Uuid, _>(session_id)
@@ -234,7 +234,7 @@ async fn test_cross_user_lorebook_isolation() {
         // Insert lorebooks owned by each user
         for (id, user_id, name) in [(lorebook1_id, user1_id, "User1 Lorebook"), (lorebook2_id, user2_id, "User2 Lorebook")] {
             diesel::sql_query(
-                "INSERT INTO lorebooks (id, user_id, name, description, source_format, is_public, created_at, updated_at) 
+                "INSERT INTO lorebooks (id, user_id, name, description, source_format, is_public, created_at, updated_at)
                  VALUES ($1, $2, $3, $4, 'scribe', false, $5, $6)"
             )
             .bind::<diesel::sql_types::Uuid, _>(id)
@@ -248,7 +248,7 @@ async fn test_cross_user_lorebook_isolation() {
         // CROSS-USER ATTACK SIMULATION: Try to link User2's lorebook to User1's character
         // This simulates a potential attack or bug where cross-user data gets linked
         diesel::sql_query(
-            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at) 
+            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(character1_id) // User1's character
@@ -276,7 +276,7 @@ async fn test_cross_user_lorebook_isolation() {
                 "User1 should have no active lorebooks when only other users' lorebooks are linked");
         // POSITIVE TEST: Verify User1 can still access their own lorebook when properly linked
         diesel::sql_query(
-            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at) 
+            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(character1_id) // User1's character
@@ -331,7 +331,7 @@ async fn test_lorebook_activation_hierarchy() {
         let unlinked_lorebook_id = Uuid::new_v4();  // Not linked to anything
         // Insert test user
         diesel::sql_query(
-            "INSERT INTO users (id, username, password_hash, email, kek_salt, encrypted_dek, dek_nonce, role, account_status, created_at, updated_at) 
+            "INSERT INTO users (id, username, password_hash, email, kek_salt, encrypted_dek, dek_nonce, role, account_status, created_at, updated_at)
              VALUES ($1, 'testuser', 'hash', 'test@example.com', 'salt', $2, $3, 'User', 'active', $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(user_id)
@@ -342,7 +342,7 @@ async fn test_lorebook_activation_hierarchy() {
         .execute(conn)?;
         // Insert test character
         diesel::sql_query(
-            "INSERT INTO characters (id, user_id, name, spec, spec_version, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings, tags, creator, character_version, extensions, visibility, created_at, updated_at) 
+            "INSERT INTO characters (id, user_id, name, spec, spec_version, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings, tags, creator, character_version, extensions, visibility, created_at, updated_at)
              VALUES ($1, $2, 'Test Character', 'chara_card_v3', '3.0', $3, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'private', $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(character_id)
@@ -353,7 +353,7 @@ async fn test_lorebook_activation_hierarchy() {
         .execute(conn)?;
         // Insert test chat session
         diesel::sql_query(
-            "INSERT INTO chat_sessions (id, user_id, character_id, title, system_prompt, temperature, max_output_tokens, frequency_penalty, presence_penalty, top_k, top_p, seed, stop_sequences, history_management_strategy, history_management_limit, visibility, created_at, updated_at, active_custom_persona_id, model_name, gemini_thinking_budget, gemini_enable_code_execution, active_impersonated_character_id) 
+            "INSERT INTO chat_sessions (id, user_id, character_id, title, system_prompt, temperature, max_output_tokens, frequency_penalty, presence_penalty, top_k, top_p, seed, stop_sequences, history_management_strategy, history_management_limit, visibility, created_at, updated_at, active_custom_persona_id, model_name, gemini_thinking_budget, gemini_enable_code_execution, active_impersonated_character_id)
              VALUES ($1, $2, $3, 'Test Session', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'keep_recent', 50, 'private', $4, $5, NULL, 'gemini-2.0-flash-exp', NULL, NULL, NULL)"
         )
         .bind::<diesel::sql_types::Uuid, _>(session_id)
@@ -369,7 +369,7 @@ async fn test_lorebook_activation_hierarchy() {
             (unlinked_lorebook_id, "Unlinked Lorebook"),
         ] {
             diesel::sql_query(
-                "INSERT INTO lorebooks (id, user_id, name, description, source_format, is_public, created_at, updated_at) 
+                "INSERT INTO lorebooks (id, user_id, name, description, source_format, is_public, created_at, updated_at)
                  VALUES ($1, $2, $3, $4, 'scribe', false, $5, $6)"
             )
             .bind::<diesel::sql_types::Uuid, _>(id)
@@ -382,7 +382,7 @@ async fn test_lorebook_activation_hierarchy() {
         }
         // TEST 1: Only character-linked lorebook
         diesel::sql_query(
-            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at) 
+            "INSERT INTO character_lorebooks (character_id, lorebook_id, user_id, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(character_id)
@@ -405,7 +405,7 @@ async fn test_lorebook_activation_hierarchy() {
         assert!(!char_ids.contains(&unlinked_lorebook_id), "Should NOT include unlinked lorebook");
         // TEST 2: Add session-linked lorebook
         diesel::sql_query(
-            "INSERT INTO chat_session_lorebooks (chat_session_id, lorebook_id, user_id, created_at, updated_at) 
+            "INSERT INTO chat_session_lorebooks (chat_session_id, lorebook_id, user_id, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5)"
         )
         .bind::<diesel::sql_types::Uuid, _>(session_id)

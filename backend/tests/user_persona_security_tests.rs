@@ -211,7 +211,7 @@ async fn test_a03_injection_sql_injection_prevention() {
     }
 }
 
-/// A04:2021 - Insecure Design Tests  
+/// A04:2021 - Insecure Design Tests
 /// Ensures business logic security and proper validation
 #[tokio::test]
 async fn test_a04_insecure_design_persona_data_validation() {

@@ -59,7 +59,7 @@ The payment system is implemented with feature flags and can be enabled/disabled
    docker build -t backend --build-arg FEATURES="payment" .
    docker tag backend:latest your-ecr-url:latest
    docker push your-ecr-url:latest
-   
+
    # Update ECS service
    aws ecs update-service --cluster staging-scribe --service backend --force-new-deployment
    ```
@@ -71,7 +71,7 @@ The payment system is implemented with feature flags and can be enabled/disabled
    # Via Vercel CLI
    vercel env add PUBLIC_ENABLE_PAYMENTS
    # Enter: true
-   
+
    # Or via Vercel Dashboard:
    # Project Settings > Environment Variables
    # PUBLIC_ENABLE_PAYMENTS = true

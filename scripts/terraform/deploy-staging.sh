@@ -35,32 +35,32 @@ log_error() {
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
+
     # Check if terraform is installed
     if ! command -v terraform &> /dev/null; then
         log_error "Terraform is not installed. Please install Terraform first."
         exit 1
     fi
-    
+
     # Check if AWS CLI is installed
     if ! command -v aws &> /dev/null; then
         log_error "AWS CLI is not installed. Please install AWS CLI first."
         exit 1
     fi
-    
+
     # Check if AWS credentials are configured
     if ! aws sts get-caller-identity &> /dev/null; then
         log_error "AWS credentials are not configured. Please run 'aws configure' first."
         exit 1
     fi
-    
+
     # Check if terraform.tfvars exists
     if [ ! -f "$TERRAFORM_DIR/terraform.tfvars" ]; then
         log_error "terraform.tfvars not found in $TERRAFORM_DIR"
         log_info "Please copy terraform.tfvars.example to terraform.tfvars and customize the values."
         exit 1
     fi
-    
+
     # Check for payment configuration
     if grep -q "enable_payments.*=.*true" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null; then
         log_info "Payment features are ENABLED in terraform.tfvars"
@@ -71,7 +71,7 @@ check_prerequisites() {
     else
         log_info "Payment features are disabled in terraform.tfvars"
     fi
-    
+
     log_success "All prerequisites met"
 }
 
@@ -119,15 +119,15 @@ show_outputs() {
     log_info "Deployment outputs:"
     cd "$TERRAFORM_DIR"
     terraform output
-    
+
     echo
     log_info "Getting additional information..."
-    
+
     # Get ALB DNS name for DNS configuration
     ALB_DNS=$(terraform output -raw alb_dns_name 2>/dev/null || echo "Not available")
     ALB_ZONE_ID=$(terraform output -raw alb_zone_id 2>/dev/null || echo "Not available")
     DOMAIN_NAME=$(terraform output -raw api_endpoint 2>/dev/null | sed 's|https://||' || echo "Not available")
-    
+
     echo
     log_info "DNS Configuration Required:"
     echo "1. Create a CNAME record in Route 53 for $DOMAIN_NAME pointing to $ALB_DNS"
@@ -140,25 +140,25 @@ show_outputs() {
     log_info "ECR Repository URLs (for CI/CD):"
     terraform output -raw backend_ecr_repository_url 2>/dev/null || echo "Backend ECR: Not available"
     echo
-    
+
     log_success "Deployment information displayed above"
 }
 
 # Main execution
 main() {
     log_info "Starting Scribe staging deployment..."
-    
+
     check_prerequisites
     init_terraform
     plan_deployment
     apply_deployment
     show_outputs
-    
+
     echo
     log_success "🎉 Staging environment deployed successfully!"
     log_info "Next steps:"
     echo "1. DNS records are auto-configured if using Route 53 for sanguinehost.com"
-    
+
     # Check if payment features are enabled for deployment instructions
     if grep -q "enable_payments.*=.*true" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null; then
         echo "2. Build and deploy backend WITH payment features:"
@@ -168,9 +168,9 @@ main() {
         echo "2. Build and deploy backend (without payment features):"
         echo "   ./scripts/deploy-backend.sh"
     fi
-    
-    echo "3. Run database migrations: ./scripts/run-migrations.sh"  
-    
+
+    echo "3. Run database migrations: ./scripts/run-migrations.sh"
+
     if grep -q "enable_payments.*=.*true" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null; then
         echo "4. Deploy frontend WITH payment features:"
         echo "   ./scripts/deploy-frontend-vercel.sh --environment staging --production"
@@ -178,9 +178,9 @@ main() {
         echo "4. Deploy frontend (without payment features):"
         echo "   ./scripts/deploy-frontend-vercel.sh --disable-payments --environment staging --production"
     fi
-    
+
     echo "5. Test the complete application at: https://staging.scribe.sanguinehost.com"
-    
+
     if grep -q "enable_payments.*=.*true" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null; then
         echo ""
         log_info "💳 Payment Features Enabled:"

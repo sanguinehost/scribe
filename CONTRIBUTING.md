@@ -127,7 +127,7 @@ refactor(frontend): simplify component structure
    - [ ] Manual testing completed
 
    ## Screenshots (if applicable)
-   
+
    ## Additional Notes
    ```
 

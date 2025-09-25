@@ -363,7 +363,7 @@ impl ContextEnrichmentAgent {
                 "You are a context enrichment planning agent. Your role is to analyze roleplay conversations and identify what background information would be helpful.
 
 IMPORTANT: Generate search queries using broad, semantic terms that focus on:
-- Named entities (countries, organizations, people, locations)  
+- Named entities (countries, organizations, people, locations)
 - Key concepts (technologies, ideologies, events)
 - Core topics that might have rich background information
 
@@ -629,7 +629,7 @@ Type: [all/chronicles/lorebooks]
 
 SEARCH 2:
 Query: [broad keywords - entities/locations/concepts only]
-Reason: [why this search]  
+Reason: [why this search]
 Type: [all/chronicles/lorebooks]
 
 Examples of GOOD searches: \"China\", \"geopolitics\", \"Mount Everest\", \"climate change\"

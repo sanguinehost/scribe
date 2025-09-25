@@ -129,33 +129,33 @@ fi
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
+
     if ! command -v aws &> /dev/null; then
         log_error "AWS CLI is not installed. Please install AWS CLI first."
         exit 1
     fi
-    
+
     if ! aws sts get-caller-identity &> /dev/null; then
         log_error "AWS credentials not configured. Please run 'aws configure' first."
         exit 1
     fi
-    
+
     if [ "$AWS_ACCOUNT_ID" = "UNKNOWN" ]; then
         log_error "Could not determine AWS account ID. Please set AWS_ACCOUNT_ID environment variable."
         exit 1
     fi
-    
+
     # Validate paths
     if [ ! -f "$CONTAINERFILE" ]; then
         log_error "Containerfile not found at $CONTAINERFILE"
         exit 1
     fi
-    
+
     if [ ! -d "$BACKEND_DIR" ]; then
         log_error "Backend directory not found at $BACKEND_DIR"
         exit 1
     fi
-    
+
     log_success "Prerequisites check passed"
 }
 
@@ -170,25 +170,25 @@ ecr_login() {
 build_backend() {
     log_info "Building backend container image..."
     cd "$PROJECT_ROOT"
-    
+
     BUILD_CMD="$CONTAINER_RUNTIME build"
     BUILD_CMD="$BUILD_CMD --format docker"  # Ensure Docker format for ECR compatibility
     BUILD_CMD="$BUILD_CMD -f $CONTAINERFILE"
     BUILD_CMD="$BUILD_CMD -t scribe-backend:latest"
     BUILD_CMD="$BUILD_CMD -t $ECR_BACKEND_REPO:latest"
-    
+
     if [ -n "$FEATURES" ]; then
         BUILD_CMD="$BUILD_CMD --build-arg FEATURES='$FEATURES'"
         log_info "Building with features: $FEATURES"
     fi
-    
+
     if [ "$NO_CACHE" = true ]; then
         BUILD_CMD="$BUILD_CMD --no-cache"
         log_info "Building with --no-cache option"
     fi
 
     BUILD_CMD="$BUILD_CMD ."
-    
+
     log_info "Build command: $BUILD_CMD"
     if eval "$BUILD_CMD"; then
         log_success "Backend image built successfully"
@@ -220,16 +220,16 @@ push_backend() {
 # Build and push Qdrant image
 build_push_qdrant() {
     log_info "Pulling and pushing Qdrant image..."
-    
+
     # Pull official Qdrant image
     $CONTAINER_RUNTIME pull docker.io/qdrant/qdrant:v1.14.0
-    
+
     # Tag for ECR
     $CONTAINER_RUNTIME tag docker.io/qdrant/qdrant:v1.14.0 $ECR_QDRANT_REPO:latest
-    
+
     # Push to ECR
     $CONTAINER_RUNTIME push --compression-format gzip --remove-signatures $ECR_QDRANT_REPO:latest
-    
+
     log_success "Qdrant image pushed successfully"
 }
 
@@ -237,22 +237,22 @@ build_push_qdrant() {
 deploy_service() {
     local service_name=$1
     log_info "Deploying $service_name to ECS..."
-    
+
     aws ecs update-service \
         --cluster $ECS_CLUSTER \
         --service $service_name \
         --force-new-deployment \
         --region $AWS_REGION
-    
+
     log_success "$service_name deployment initiated"
-    
+
     # Wait for deployment to complete
     log_info "Waiting for $service_name deployment to complete..."
     aws ecs wait services-stable \
         --cluster $ECS_CLUSTER \
         --services $service_name \
         --region $AWS_REGION
-    
+
     log_success "$service_name deployment completed"
 }
 
@@ -267,21 +267,21 @@ main() {
     log_info "  Features: ${FEATURES:-'default'}"
     log_info "  Backend only: $BACKEND_ONLY"
     log_info "  Qdrant only: $QDRANT_ONLY"
-    
+
     check_prerequisites
     ecr_login
-    
+
     if [ "$QDRANT_ONLY" != true ]; then
         build_backend
         push_backend
         deploy_service $BACKEND_SERVICE
     fi
-    
+
     if [ "$BACKEND_ONLY" != true ]; then
         build_push_qdrant
         deploy_service $QDRANT_SERVICE
     fi
-    
+
     log_success "Deployment process completed successfully!"
     log_info "Check the ECS console for service status: https://console.aws.amazon.com/ecs/home?region=$AWS_REGION#/clusters/$ECS_CLUSTER/services"
 }

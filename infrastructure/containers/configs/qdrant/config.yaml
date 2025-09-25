@@ -6,17 +6,17 @@ service:
   host: "0.0.0.0"
   http_port: 6333
   grpc_port: 6334
-  
+
   # Enable CORS for web access
   enable_cors: true
   cors_origins: ["*"]
-  
+
   # API key for authentication (set via environment variable)
   # api_key: ${QDRANT_API_KEY}
-  
+
   # Maximum request size (32MB)
   max_request_size_mb: 32
-  
+
   # Maximum workers for handling requests
   max_workers: 0  # Use all available cores
 
@@ -30,10 +30,10 @@ tls:
 storage:
   # Storage path
   storage_path: "/qdrant/storage"
-  
+
   # Snapshot configuration
   snapshots_path: "/qdrant/snapshots"
-  
+
   # Performance settings
   hnsw_config:
     # Memory usage optimization
@@ -41,7 +41,7 @@ storage:
     ef_construct: 100        # Size of the dynamic candidate list
     full_scan_threshold: 10000  # Threshold for switching to full scan
     max_indexing_threads: 0  # Use all available threads
-    
+
   # Optimistic concurrency control
   wal_config:
     wal_capacity_mb: 32

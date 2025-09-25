@@ -129,7 +129,7 @@ BACKEND_CERTS_DIR="$PROJECT_ROOT/.certs-backend"
 
 generate_service_specific_certs() {
     log_info "Generating service-specific certificates..."
-    
+
     # Check if mkcert is available
     if ! command -v mkcert &> /dev/null; then
         log_error "mkcert is not installed. Please install it first:"
@@ -137,7 +137,7 @@ generate_service_specific_certs() {
         log_info "  Linux: See https://github.com/FiloSottile/mkcert#installation"
         exit 1
     fi
-    
+
     log_info "Ensuring local CA is installed (may require password)..."
     if ! mkcert -install; then
         log_error "Failed to install mkcert local CA."
@@ -147,45 +147,45 @@ generate_service_specific_certs() {
     # Create all certificate directories
     log_info "Creating certificate directories..."
     mkdir -p "$MAIN_CERTS_DIR" "$POSTGRES_CERTS_DIR" "$QDRANT_CERTS_DIR" "$BACKEND_CERTS_DIR"
-    
+
     # Get CA certificate location for copying to all directories
     local ca_root="$(mkcert -CAROOT)"
     local ca_cert_source="$ca_root/rootCA.pem"
-    
+
     # Generate backend certificate (both in main dir and backend-specific dir)
     log_info "Generating backend certificate..."
     local backend_key="$BACKEND_CERTS_DIR/key.pem"
     local backend_cert="$BACKEND_CERTS_DIR/cert.pem"
     local backend_ca="$BACKEND_CERTS_DIR/ca.pem"
-    
+
     if ! mkcert -key-file "$backend_key" -cert-file "$backend_cert" \
         localhost 127.0.0.1 ::1 backend; then
         log_error "Failed to generate backend certificate."
         exit 1
     fi
-    
+
     # Also create copies in the main certs dir for backward compatibility
     cp "$backend_cert" "$MAIN_CERTS_DIR/cert.pem"
     cp "$backend_key" "$MAIN_CERTS_DIR/key.pem"
-    
+
     # Generate PostgreSQL certificate
     log_info "Generating PostgreSQL certificate..."
     local postgres_key="$POSTGRES_CERTS_DIR/key.pem"
     local postgres_cert="$POSTGRES_CERTS_DIR/cert.pem"
     local postgres_ca="$POSTGRES_CERTS_DIR/ca.pem"
-    
+
     if ! mkcert -key-file "$postgres_key" -cert-file "$postgres_cert" \
         localhost 127.0.0.1 ::1 postgres; then
         log_error "Failed to generate PostgreSQL certificate."
         exit 1
     fi
-    
+
     # Generate Qdrant certificate
     log_info "Generating Qdrant certificate..."
     local qdrant_key="$QDRANT_CERTS_DIR/key.pem"
     local qdrant_cert="$QDRANT_CERTS_DIR/cert.pem"
     local qdrant_ca="$QDRANT_CERTS_DIR/ca.pem"
-    
+
     if ! mkcert -key-file "$qdrant_key" -cert-file "$qdrant_cert" \
         localhost 127.0.0.1 ::1 qdrant; then
         log_error "Failed to generate Qdrant certificate."
@@ -204,10 +204,10 @@ generate_service_specific_certs() {
     else
         log_warning "mkcert CA certificate not found - containers may have trust issues"
     fi
-    
+
     # Set proper permissions for all certificates
     log_info "Setting certificate permissions..."
-    
+
     # Backend certificates (user permissions)
     chmod 755 "$MAIN_CERTS_DIR"
     chmod 755 "$BACKEND_CERTS_DIR"
@@ -218,19 +218,19 @@ generate_service_specific_certs() {
     chmod 644 "$MAIN_CERTS_DIR/cert.pem"
     chmod 600 "$MAIN_CERTS_DIR/key.pem"
     [[ -f "$MAIN_CERTS_DIR/ca.pem" ]] && chmod 644 "$MAIN_CERTS_DIR/ca.pem"
-    
+
     # PostgreSQL certificates (user permissions, will be changed to container UID later)
     chmod 755 "$POSTGRES_CERTS_DIR"
     chmod 644 "$postgres_cert"
     chmod 600 "$postgres_key"
     [[ -f "$postgres_ca" ]] && chmod 644 "$postgres_ca"
-    
+
     # Qdrant certificates (permissive permissions)
     chmod 755 "$QDRANT_CERTS_DIR"
     chmod 644 "$qdrant_cert"
     chmod 644 "$qdrant_key"
     [[ -f "$qdrant_ca" ]] && chmod 644 "$qdrant_ca"
-    
+
     log_success "Service-specific certificates generated:"
     log_info "  Backend: $backend_cert, $backend_key"
     log_info "  PostgreSQL: $postgres_cert, $postgres_key"
@@ -240,55 +240,55 @@ generate_service_specific_certs() {
 init_local_mode() {
     log_info "Initializing certificates for local development mode..."
     log_info "Mode: Local backend + containerized PostgreSQL/Qdrant"
-    
+
     generate_service_specific_certs
-    
+
     # Apply PostgreSQL-specific permissions for container UID
     log_info "Applying PostgreSQL container permissions..."
     if command -v podman &> /dev/null; then
         podman unshare chown -R 999:999 "$POSTGRES_CERTS_DIR"
         podman unshare chmod 600 "$POSTGRES_CERTS_DIR/key.pem"
     fi
-    
+
     log_success "Local development certificates ready"
     log_info "Use these certificates in your Rust backend configuration"
 }
 
 #############################################
-# Container Development Mode  
+# Container Development Mode
 #############################################
 
 copy_certificates_to_service_dirs() {
     local runtime="$1"
-    
+
     log_info "Creating service-specific certificate directories..."
     mkdir -p "$POSTGRES_CERTS_DIR" "$QDRANT_CERTS_DIR" "$BACKEND_CERTS_DIR"
-    
+
     # Ensure source certificates exist
     if [[ ! -f "$MAIN_CERTS_DIR/cert.pem" ]] || [[ ! -f "$MAIN_CERTS_DIR/key.pem" ]]; then
         log_error "Source certificates not found. Generating them first..."
         generate_local_certs
     fi
-    
+
     # Copy certificates to each service directory
     local cert_files=("cert.pem" "key.pem")
     [[ -f "$MAIN_CERTS_DIR/ca.pem" ]] && cert_files+=("ca.pem")
-    
+
     for file in "${cert_files[@]}"; do
         cp "$MAIN_CERTS_DIR/$file" "$POSTGRES_CERTS_DIR/$file"
         cp "$MAIN_CERTS_DIR/$file" "$QDRANT_CERTS_DIR/$file"
         cp "$MAIN_CERTS_DIR/$file" "$BACKEND_CERTS_DIR/$file"
     done
-    
+
     # Apply service-specific permissions
     apply_service_permissions "$runtime"
 }
 
 apply_container_permissions() {
     local runtime="$1"
-    
+
     log_info "Applying service-specific permissions for $runtime runtime..."
-    
+
     # PostgreSQL permissions (UID 999, restrictive)
     log_info "Setting PostgreSQL certificate permissions (UID 999)..."
     if [[ "$runtime" == "podman" ]]; then
@@ -300,7 +300,7 @@ apply_container_permissions() {
     else
         # Docker mode - Try to set proper ownership for PostgreSQL
         log_info "Docker runtime: Setting ownership for PostgreSQL certificates"
-        
+
         # Check if we can use a containerized approach to set ownership
         if command -v docker &> /dev/null; then
             log_info "Using Docker to set proper certificate ownership..."
@@ -317,19 +317,19 @@ apply_container_permissions() {
             [[ -f "$POSTGRES_CERTS_DIR/ca.pem" ]] && chmod 644 "$POSTGRES_CERTS_DIR/ca.pem"
         fi
     fi
-    
+
     # Qdrant permissions (permissive)
     log_info "Setting Qdrant certificate permissions (permissive)..."
     chmod 644 "$QDRANT_CERTS_DIR/cert.pem"
     chmod 644 "$QDRANT_CERTS_DIR/key.pem"
     [[ -f "$QDRANT_CERTS_DIR/ca.pem" ]] && chmod 644 "$QDRANT_CERTS_DIR/ca.pem"
-    
+
     # Backend permissions (user ownership)
     log_info "Setting backend certificate permissions (user ownership)..."
     chmod 644 "$BACKEND_CERTS_DIR/cert.pem"
     chmod 600 "$BACKEND_CERTS_DIR/key.pem"
     [[ -f "$BACKEND_CERTS_DIR/ca.pem" ]] && chmod 644 "$BACKEND_CERTS_DIR/ca.pem"
-    
+
     log_success "Service-specific certificate permissions applied"
     log_info "PostgreSQL certificates: $POSTGRES_CERTS_DIR (UID 999 for Podman, Docker internal for Docker)"
     log_info "Qdrant certificates: $QDRANT_CERTS_DIR (permissive 644)"
@@ -338,19 +338,19 @@ apply_container_permissions() {
 
 init_container_mode() {
     local runtime=$(detect_runtime)
-    
+
     log_info "Initializing certificates for container development mode..."
     log_info "Mode: Fully containerized backend + services"
     log_info "Runtime: $runtime"
-    
+
     if [[ "$runtime" == "none" ]]; then
         log_error "No container runtime detected. Please install Docker or Podman."
         exit 1
     fi
-    
+
     generate_service_specific_certs
     apply_container_permissions "$runtime"
-    
+
     log_success "Container development certificates ready"
     if [[ -f "$MAIN_CERTS_DIR/ca.pem" ]]; then
         log_success "CA certificate included for container trust"
@@ -366,42 +366,42 @@ init_container_mode() {
 validate_certificate() {
     local cert_file="$1"
     local key_file="$2"
-    
+
     if ! openssl x509 -in "$cert_file" -text -noout >/dev/null 2>&1; then
         log_error "Invalid certificate format in $cert_file"
         return 1
     fi
-    
+
     if ! openssl rsa -in "$key_file" -check -noout >/dev/null 2>&1; then
         log_error "Invalid private key format in $key_file"
         return 1
     fi
-    
+
     # Check if certificate and key match
     local cert_modulus=$(openssl x509 -noout -modulus -in "$cert_file" 2>/dev/null | openssl md5)
     local key_modulus=$(openssl rsa -noout -modulus -in "$key_file" 2>/dev/null | openssl md5)
-    
+
     if [[ "$cert_modulus" != "$key_modulus" ]]; then
         log_error "Certificate and private key do not match"
         return 1
     fi
-    
+
     log_success "Certificate validation passed"
     return 0
 }
 
 show_certificate_info() {
     local cert_file="$1"
-    
+
     log_info "Certificate information:"
-    
+
     local subject=$(openssl x509 -noout -subject -in "$cert_file" 2>/dev/null | sed 's/^subject=//')
     local issuer=$(openssl x509 -noout -issuer -in "$cert_file" 2>/dev/null | sed 's/^issuer=//')
     local start_date=$(openssl x509 -noout -startdate -in "$cert_file" 2>/dev/null | sed 's/^notBefore=//')
     local end_date=$(openssl x509 -noout -enddate -in "$cert_file" 2>/dev/null | sed 's/^notAfter=//')
-    
+
     log_info "  Subject: $subject"
-    log_info "  Issuer: $issuer" 
+    log_info "  Issuer: $issuer"
     log_info "  Valid from: $start_date"
     log_info "  Valid until: $end_date"
 }
@@ -410,18 +410,18 @@ generate_self_signed_cert() {
     local cert_dir="$1"
     local cert_file="$cert_dir/cert.pem"
     local key_file="$cert_dir/key.pem"
-    
+
     log_warning "Generating self-signed certificate for development..."
-    
+
     mkdir -p "$cert_dir"
     openssl req -x509 -newkey rsa:4096 -keyout "$key_file" -out "$cert_file" \
         -days 365 -nodes \
         -subj "/CN=localhost/O=Scribe Development/C=US" \
         -addext "subjectAltName=DNS:localhost,DNS:backend,DNS:qdrant,DNS:postgres,IP:127.0.0.1"
-        
+
     chmod 644 "$cert_file"
     chmod 600 "$key_file"
-    
+
     log_warning "Self-signed certificate generated for development use"
     show_certificate_info "$cert_file"
 }
@@ -430,13 +430,13 @@ init_aws_mode() {
     local environment="$AWS_ENVIRONMENT"
     log_info "Initializing certificates for AWS ECS deployment..."
     log_info "Environment: $environment"
-    
+
     # Certificate directory for ECS
     local cert_dir="${CERT_DIR:-/shared/certs}"
     local cert_file="$cert_dir/cert.pem"
     local key_file="$cert_dir/key.pem"
     local ca_file="$cert_dir/ca.crt"
-    
+
     # For local testing, use project directories
     if [[ ! -d "/shared" ]]; then
         cert_dir="$PROJECT_ROOT/.certs-aws"
@@ -445,34 +445,34 @@ init_aws_mode() {
         ca_file="$cert_dir/ca.pem"
         log_info "Using local directory for testing: $cert_dir"
     fi
-    
+
     mkdir -p "$cert_dir"
-    
+
     log_info "Checking for TLS certificate environment variables..."
-    
+
     if [[ -n "${TLS_CERT_PEM:-}" ]] && [[ -n "${TLS_KEY_PEM:-}" ]]; then
         log_success "Found TLS certificate environment variables"
-        
+
         # Write certificate to file
         echo "$TLS_CERT_PEM" > "$cert_file"
         log_success "Certificate written to $cert_file"
-        
+
         # Write private key to file
         echo "$TLS_KEY_PEM" > "$key_file"
         log_success "Private key written to $key_file"
-        
+
         # Set proper permissions
         chmod 644 "$cert_file"
         chmod 600 "$key_file"
         log_success "Certificate permissions set (cert: 644, key: 600)"
-        
+
         # Write CA certificate if provided
         if [[ -n "${TLS_CA_PEM:-}" ]]; then
             echo "$TLS_CA_PEM" > "$ca_file"
             chmod 644 "$ca_file"
             log_success "CA certificate written to $ca_file"
         fi
-        
+
         # Validate certificates
         if validate_certificate "$cert_file" "$key_file"; then
             show_certificate_info "$cert_file"
@@ -481,26 +481,26 @@ init_aws_mode() {
             log_error "Certificate validation failed"
             exit 1
         fi
-        
+
     else
         # Check AWS Secrets Manager for production
         if command -v aws &> /dev/null; then
             local secret_name="${environment}/scribe/app"
             log_info "Checking AWS Secrets Manager: $secret_name"
-            
+
             if aws secretsmanager get-secret-value --secret-id "$secret_name" --query 'SecretString' --output text >/dev/null 2>&1; then
                 local cert_exists=$(aws secretsmanager get-secret-value \
                     --secret-id "$secret_name" \
                     --query 'SecretString' \
                     --output text | jq -r '.tls_cert_pem' 2>/dev/null)
-                    
+
                 if [[ -n "$cert_exists" ]] && [[ "$cert_exists" != "null" ]]; then
                     log_success "TLS certificates found in AWS Secrets Manager ($secret_name)"
                     return 0
                 fi
             fi
         fi
-        
+
         # Fallback for development environment
         if [[ "${ENVIRONMENT:-}" == "development" ]] || [[ "${ENVIRONMENT:-}" == "local" ]] || [[ ! -d "/shared" ]]; then
             generate_self_signed_cert "$cert_dir"
@@ -521,12 +521,12 @@ check_local_certs() {
         log_success "Local certificates exist"
         log_info "Certificate: $MAIN_CERTS_DIR/cert.pem"
         log_info "Private key: $MAIN_CERTS_DIR/key.pem"
-        
+
         if command -v openssl &> /dev/null; then
             local expiry=$(openssl x509 -in "$MAIN_CERTS_DIR/cert.pem" -noout -enddate 2>/dev/null | cut -d= -f2)
             log_info "Certificate expires: $expiry"
         fi
-        
+
         if [[ -f "$MAIN_CERTS_DIR/ca.pem" ]]; then
             log_success "CA certificate: $MAIN_CERTS_DIR/ca.pem"
         fi
@@ -538,21 +538,21 @@ check_local_certs() {
 
 check_container_certs() {
     check_local_certs
-    
+
     local service_dirs=("$POSTGRES_CERTS_DIR" "$QDRANT_CERTS_DIR" "$BACKEND_CERTS_DIR")
     local service_names=("PostgreSQL" "Qdrant" "Backend")
-    
+
     for i in "${!service_dirs[@]}"; do
         local dir="${service_dirs[$i]}"
         local name="${service_names[$i]}"
-        
+
         if [[ -f "$dir/cert.pem" ]] && [[ -f "$dir/key.pem" ]]; then
             log_success "$name certificates exist: $dir"
         else
             log_warning "$name certificates not found: $dir"
         fi
     done
-    
+
     if [[ ! -f "$POSTGRES_CERTS_DIR/cert.pem" ]]; then
         log_info "Run: $0 container init"
     fi
@@ -560,10 +560,10 @@ check_container_certs() {
 
 check_aws_certs() {
     local environment="$AWS_ENVIRONMENT"
-    
+
     if command -v aws &> /dev/null; then
         local secret_name="${environment}/scribe/app"
-        
+
         if aws secretsmanager get-secret-value --secret-id "$secret_name" --query 'SecretString' --output text >/dev/null 2>&1; then
             log_success "AWS Secrets Manager accessible: $secret_name"
         else
@@ -572,7 +572,7 @@ check_aws_certs() {
     else
         log_warning "AWS CLI not available for checking"
     fi
-    
+
     # Check local AWS test directory
     local aws_test_dir="$PROJECT_ROOT/.certs-aws"
     if [[ -f "$aws_test_dir/cert.pem" ]] && [[ -f "$aws_test_dir/key.pem" ]]; then
@@ -582,7 +582,7 @@ check_aws_certs() {
 
 clean_certs() {
     local mode="$1"
-    
+
     case "$mode" in
         local)
             if [[ -d "$MAIN_CERTS_DIR" ]]; then
@@ -628,13 +628,13 @@ main() {
         show_usage
         return 0
     fi
-    
+
     # Auto-detect mode if not specified
     if [[ -z "$MODE" ]]; then
         MODE=$(detect_environment)
         log_info "Auto-detected mode: $MODE"
     fi
-    
+
     case "$ACTION" in
         init)
             case "$MODE" in

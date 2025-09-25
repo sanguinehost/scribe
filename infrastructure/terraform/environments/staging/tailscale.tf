@@ -18,12 +18,12 @@ variable "tailscale_auth_key" {
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
-  
+
   filter {
     name   = "name"
     values = ["amzn2-ami-hvm-*-x86_64-gp2"]
   }
-  
+
   filter {
     name   = "state"
     values = ["available"]
@@ -127,7 +127,7 @@ resource "aws_instance" "tailscale_router" {
   vpc_security_group_ids      = [aws_security_group.tailscale_sg.id]
   associate_public_ip_address = true
   iam_instance_profile        = aws_iam_instance_profile.tailscale_ec2_profile.name
-  
+
   # User data script using template file with dynamic variables
   user_data = base64encode(templatefile("${path.module}/tailscale-setup.sh.tpl", {
     vpc_cidr           = var.vpc_cidr
@@ -168,7 +168,7 @@ Tailscale Subnet Router Setup:
 
 6. Once connected, you can access the database from your local machine using:
    ./connect-db.sh (on the EC2 instance)
-   
+
    Or directly with the database endpoint: ${module.rds.rds_instance_endpoint}
 
 Instance Public IP: ${aws_instance.tailscale_router.public_ip}

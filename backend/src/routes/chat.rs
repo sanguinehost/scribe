@@ -2941,7 +2941,7 @@ pub async fn expand_text_handler(
         5. Make the text more detailed and natural within the conversation context
         6. Write as if you ARE the user/persona, not as the character responding to them
         7. Do NOT write from the character's perspective or as a response to the user
-        
+
         When the user asks you to expand text, take their brief input and elaborate it while writing AS THE USER."
     );
 

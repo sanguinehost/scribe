@@ -11,6 +11,9 @@ use crate::{
 };
 use std::sync::Arc;
 use tracing::{info, warn};
+
+#[cfg(feature = "local-llm")]
+use tracing::error;
 use uuid::Uuid;
 
 #[cfg(feature = "local-llm")]

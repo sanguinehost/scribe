@@ -64,7 +64,7 @@ pub fn sanitize_content<S: Into<String>>(content: S) -> SanitizedString {
     SanitizedString::content(content)
 }
 
-/// Sanitize system prompt for logging  
+/// Sanitize system prompt for logging
 pub fn sanitize_system_prompt<S: Into<String>>(content: S) -> SanitizedString {
     SanitizedString::system_prompt(content)
 }
