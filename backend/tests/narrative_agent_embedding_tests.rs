@@ -8,10 +8,7 @@ use uuid::Uuid;
 use scribe_backend::{
     services::{
         ChronicleService,
-        agentic::{
-            narrative_tools::CreateChronicleEventTool,
-            tools::ScribeTool,
-        },
+        agentic::{narrative_tools::CreateChronicleEventTool, tools::ScribeTool},
     },
     state::AppState,
     state_builder::AppStateServicesBuilder,

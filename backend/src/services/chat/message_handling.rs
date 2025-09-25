@@ -378,8 +378,10 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             // Also track usage in payment_usage_tracking table for billing
             #[cfg(feature = "payment")]
             {
-                use crate::services::payment::usage_tracking_service::{UsageTrackingService, UsageMetadata};
                 use crate::services::EncryptionService;
+                use crate::services::payment::usage_tracking_service::{
+                    UsageMetadata, UsageTrackingService,
+                };
                 use std::collections::HashMap;
 
                 let total_tokens = prompt_tokens + completion_tokens;
@@ -388,31 +390,36 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                     if let Ok(conn) = conn_result {
                         let model_name_clone = model_name_for_tracking.clone();
 
-                        let track_result = conn.interact(move |conn| {
-                            let usage_service = UsageTrackingService::new((*state_config_for_payment).clone(), EncryptionService::new());
+                        let track_result = conn
+                            .interact(move |conn| {
+                                let usage_service = UsageTrackingService::new(
+                                    (*state_config_for_payment).clone(),
+                                    EncryptionService::new(),
+                                );
 
-                            // Create metadata about this token usage
-                            let mut model_usage = HashMap::new();
-                            model_usage.insert(model_name_clone, total_tokens);
+                                // Create metadata about this token usage
+                                let mut model_usage = HashMap::new();
+                                model_usage.insert(model_name_clone, total_tokens);
 
-                            let mut feature_usage = HashMap::new();
-                            feature_usage.insert("chat_message".to_string(), 1);
+                                let mut feature_usage = HashMap::new();
+                                feature_usage.insert("chat_message".to_string(), 1);
 
-                            let metadata = UsageMetadata {
-                                model_usage,
-                                feature_usage,
-                                request_count: 1,
-                                last_activity: chrono::Utc::now(),
-                            };
+                                let metadata = UsageMetadata {
+                                    model_usage,
+                                    feature_usage,
+                                    request_count: 1,
+                                    last_activity: chrono::Utc::now(),
+                                };
 
-                            usage_service.track_usage_sync(
-                                conn,
-                                user_id_for_tokens,
-                                None, // subscription_id will be looked up by the service
-                                total_tokens,
-                                Some(metadata),
-                            )
-                        }).await;
+                                usage_service.track_usage_sync(
+                                    conn,
+                                    user_id_for_tokens,
+                                    None, // subscription_id will be looked up by the service
+                                    total_tokens,
+                                    Some(metadata),
+                                )
+                            })
+                            .await;
 
                         match track_result {
                             Ok(Ok(_)) => {

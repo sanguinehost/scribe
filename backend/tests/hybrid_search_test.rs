@@ -1,7 +1,6 @@
 use scribe_backend::config::Config;
 use scribe_backend::vector_db::qdrant_client::{
-    Kind, PointId,
-    QdrantClientService, QdrantClientServiceTrait, Value,
+    Kind, PointId, QdrantClientService, QdrantClientServiceTrait, Value,
 };
 use std::collections::HashMap;
 use std::sync::Arc;

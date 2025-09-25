@@ -17,8 +17,8 @@ use scribe_backend::{
     services::{
         ChronicleService, LorebookService,
         agentic::{
-            AnalyzeTextSignificanceTool, CreateChronicleEventTool,
-            ScribeTool, SearchKnowledgeBaseTool,
+            AnalyzeTextSignificanceTool, CreateChronicleEventTool, ScribeTool,
+            SearchKnowledgeBaseTool,
         },
     },
     test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},

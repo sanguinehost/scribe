@@ -30,8 +30,8 @@ use crate::{
     services::payment::{
         CreditService, PaddleService, PaymentAuditService, SubscriptionService,
         paddle_service::{
-            CreateTransactionRequest, PaddleEventType, PaddleWebhook,
-            TransactionCheckout, TransactionItem,
+            CreateTransactionRequest, PaddleEventType, PaddleWebhook, TransactionCheckout,
+            TransactionItem,
         },
     },
     state::AppState,
@@ -224,9 +224,7 @@ pub async fn get_subscription(
     let user_id = user.id;
     let subscription_service_clone = subscription_service.clone();
     let subscription = conn
-        .interact(move |conn| {
-            subscription_service_clone.get_user_subscription_sync(conn, user_id)
-        })
+        .interact(move |conn| subscription_service_clone.get_user_subscription_sync(conn, user_id))
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get subscription: {}", e)))?;
@@ -244,14 +242,14 @@ pub async fn get_subscription(
     } else {
         // Default to free plan features
         let subscription_service_clone = subscription_service.clone();
-        conn.interact(move |conn| {
-            subscription_service_clone.get_plan_features_sync(conn, "free")
-        })
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-        .map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to get free plan features: {}", e))
-        })?
+        conn.interact(move |conn| subscription_service_clone.get_plan_features_sync(conn, "free"))
+            .await
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
+            })?
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to get free plan features: {}", e))
+            })?
     };
 
     // Get daily usage from SoftLimitService
@@ -295,7 +293,9 @@ pub async fn get_subscription(
                 usage_tracking_service.get_usage_limits_sync(conn, user_id_for_limits)
             })
             .await
-            .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?;
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
+            })?;
 
         match usage_result {
             Ok(usage_limit) => {
@@ -337,7 +337,9 @@ pub async fn get_subscription(
 
 /// Get available subscription plans
 #[cfg(feature = "payment")]
-pub async fn get_plans(State(_app_state): State<AppState>) -> Result<Json<PlansResponse>, AppError> {
+pub async fn get_plans(
+    State(_app_state): State<AppState>,
+) -> Result<Json<PlansResponse>, AppError> {
     // TODO: This is a simplified implementation for now
     Ok(Json(PlansResponse { plans: vec![] }))
 }
@@ -989,9 +991,7 @@ pub async fn preview_order(
     let plan_type = request.plan_type.clone();
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
-        .interact(move |conn| {
-            subscription_service_clone.get_plan_features_sync(conn, &plan_type)
-        })
+        .interact(move |conn| subscription_service_clone.get_plan_features_sync(conn, &plan_type))
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
@@ -1075,9 +1075,7 @@ pub async fn create_subscription(
     let plan_type = request.plan_type.clone();
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
-        .interact(move |conn| {
-            subscription_service_clone.get_plan_features_sync(conn, &plan_type)
-        })
+        .interact(move |conn| subscription_service_clone.get_plan_features_sync(conn, &plan_type))
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?

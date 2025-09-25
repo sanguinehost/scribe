@@ -9,9 +9,7 @@ use scribe_backend::test_helpers;
 
 #[cfg(feature = "payment")]
 use scribe_backend::models::{
-    characters::Character as DbCharacter,
-    chats::CreateMessageRequest,
-    users::User,
+    characters::Character as DbCharacter, chats::CreateMessageRequest, users::User,
 };
 
 #[cfg(feature = "payment")]
@@ -20,11 +18,11 @@ use axum::{
     http::{Method, Request, StatusCode, header},
 };
 #[cfg(feature = "payment")]
-use tower::ServiceExt;
-#[cfg(feature = "payment")]
 use scribe_backend::services::payment::SoftLimitService;
 #[cfg(feature = "payment")]
 use serde_json::json;
+#[cfg(feature = "payment")]
+use tower::ServiceExt;
 #[cfg(feature = "payment")]
 use tower_cookies::Cookie;
 
@@ -102,9 +100,7 @@ async fn test_manual_message_creation_increments_daily_usage() -> anyhow::Result
         pool.get()
             .await
             .context("Failed to get DB connection")?
-            .interact(move |conn| {
-                service_clone.get_or_create_daily_usage(conn, user_id)
-            })
+            .interact(move |conn| service_clone.get_or_create_daily_usage(conn, user_id))
             .await
             .expect("DB interaction for get initial usage failed")
             .expect("Error getting initial usage")
@@ -129,12 +125,18 @@ async fn test_manual_message_creation_increments_daily_usage() -> anyhow::Result
                 .method(Method::POST)
                 .uri(&format!("/api/chats/{}/messages", chat_session.id))
                 .header(header::CONTENT_TYPE, "application/json")
-                .header(header::COOKIE, format!("{}={}", session_cookie.name(), session_cookie.value()))
+                .header(
+                    header::COOKIE,
+                    format!("{}={}", session_cookie.name(), session_cookie.value()),
+                )
                 .body(Body::from(serde_json::to_string(&message_request)?))?,
         )
         .await?;
 
-    println!("Message creation response status: {}", message_response.status());
+    println!(
+        "Message creation response status: {}",
+        message_response.status()
+    );
     let response_body = axum::body::to_bytes(message_response.into_body(), usize::MAX).await?;
     let response_text = String::from_utf8_lossy(&response_body);
     println!("Message creation response body: {}", response_text);
@@ -147,16 +149,17 @@ async fn test_manual_message_creation_increments_daily_usage() -> anyhow::Result
         pool.get()
             .await
             .context("Failed to get DB connection")?
-            .interact(move |conn| {
-                service_clone.get_or_create_daily_usage(conn, user_id)
-            })
+            .interact(move |conn| service_clone.get_or_create_daily_usage(conn, user_id))
             .await
             .expect("DB interaction for get updated usage failed")
             .expect("Error getting updated usage")
     };
 
     println!("Updated daily usage: {}", updated_usage.message_count);
-    assert_eq!(updated_usage.message_count, 1, "Daily message count should be incremented by 1 after sending a user message");
+    assert_eq!(
+        updated_usage.message_count, 1,
+        "Daily message count should be incremented by 1 after sending a user message"
+    );
 
     Ok(())
 }
@@ -239,8 +242,13 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
                 .method(Method::POST)
                 .uri(&format!("/api/chats/{}/messages", chat_session.id))
                 .header(header::CONTENT_TYPE, "application/json")
-                .header(header::COOKIE, format!("{}={}", session_cookie.name(), session_cookie.value()))
-                .body(Body::from(serde_json::to_string(&assistant_message_request)?))?,
+                .header(
+                    header::COOKIE,
+                    format!("{}={}", session_cookie.name(), session_cookie.value()),
+                )
+                .body(Body::from(serde_json::to_string(
+                    &assistant_message_request,
+                )?))?,
         )
         .await?;
 
@@ -253,15 +261,16 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
         pool.get()
             .await
             .context("Failed to get DB connection")?
-            .interact(move |conn| {
-                service_clone.get_or_create_daily_usage(conn, user_id)
-            })
+            .interact(move |conn| service_clone.get_or_create_daily_usage(conn, user_id))
             .await
             .expect("DB interaction for get usage after assistant failed")
             .expect("Error getting usage after assistant message")
     };
 
-    assert_eq!(usage_after_assistant.message_count, 0, "Assistant messages should not increment daily usage");
+    assert_eq!(
+        usage_after_assistant.message_count, 0,
+        "Assistant messages should not increment daily usage"
+    );
 
     // Now send a user message (should increment usage)
     let user_message_request = CreateMessageRequest {
@@ -279,7 +288,10 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
                 .method(Method::POST)
                 .uri(&format!("/api/chats/{}/messages", chat_session.id))
                 .header(header::CONTENT_TYPE, "application/json")
-                .header(header::COOKIE, format!("{}={}", session_cookie.name(), session_cookie.value()))
+                .header(
+                    header::COOKIE,
+                    format!("{}={}", session_cookie.name(), session_cookie.value()),
+                )
                 .body(Body::from(serde_json::to_string(&user_message_request)?))?,
         )
         .await?;
@@ -292,15 +304,16 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
         pool.get()
             .await
             .context("Failed to get DB connection")?
-            .interact(move |conn| {
-                service_clone.get_or_create_daily_usage(conn, user_id)
-            })
+            .interact(move |conn| service_clone.get_or_create_daily_usage(conn, user_id))
             .await
             .expect("DB interaction for get final usage failed")
             .expect("Error getting final usage")
     };
 
-    assert_eq!(final_usage.message_count, 1, "Only user messages should increment daily usage");
+    assert_eq!(
+        final_usage.message_count, 1,
+        "Only user messages should increment daily usage"
+    );
 
     Ok(())
 }
@@ -363,6 +376,6 @@ async fn create_test_chat_session(
         .await
         .expect("DB interaction for create session failed")
         .expect("Error saving new session");
-    
+
     Ok(result)
 }

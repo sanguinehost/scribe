@@ -189,9 +189,15 @@ mod payment_audit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "metadata_audit", "metadata_audit@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "metadata_audit",
+            "metadata_audit@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -242,8 +248,14 @@ mod payment_audit_tests {
 
         // SAQ-A compliance: No cardholder data is stored, only payment references
         // Metadata would contain Paddle references and internal transaction IDs
-        println!("Audit log SAQ-A compliance test: Entry found with ID {:?}", audit_entry);
-        assert!(true, "Transaction metadata should be logged (no card data in SAQ-A)");
+        println!(
+            "Audit log SAQ-A compliance test: Entry found with ID {:?}",
+            audit_entry
+        );
+        assert!(
+            true,
+            "Transaction metadata should be logged (no card data in SAQ-A)"
+        );
     }
 
     #[tokio::test]
@@ -252,9 +264,15 @@ mod payment_audit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "integrity_test", "integrity@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "integrity_test",
+            "integrity@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -327,7 +345,10 @@ mod payment_audit_tests {
 
         // Only operations that currently generate audit events are counted
         // Currently only add_credits operations generate audit logs
-        assert!(audit_entries.len() >= 2, "Should have at least 2 audit entries for add_credits operations");
+        assert!(
+            audit_entries.len() >= 2,
+            "Should have at least 2 audit entries for add_credits operations"
+        );
 
         // Verify chronological order
         for window in audit_entries.windows(2) {
@@ -341,7 +362,10 @@ mod payment_audit_tests {
         let operations_seq: Vec<&str> = audit_entries.iter().map(|(op, _)| op.as_str()).collect();
         // Note: Only operations that currently generate audit events are expected
         // initialize_user_credits and reserve_credits don't yet generate audit events
-        assert!(operations_seq.contains(&"credit_added"), "Should contain credit_added operations");
+        assert!(
+            operations_seq.contains(&"credit_added"),
+            "Should contain credit_added operations"
+        );
     }
 
     // ===== Security Event Audit Tests =====
@@ -396,7 +420,10 @@ mod payment_audit_tests {
         }
 
         // Unauthorized access attempts should be audited
-        assert!(true, "Unauthorized payment access attempts should be logged");
+        assert!(
+            true,
+            "Unauthorized payment access attempts should be logged"
+        );
     }
 
     #[tokio::test]
@@ -405,9 +432,15 @@ mod payment_audit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "suspicious_test", "suspicious@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "suspicious_test",
+            "suspicious@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -446,7 +479,10 @@ mod payment_audit_tests {
         );
 
         // In production, suspicious patterns should trigger additional logging
-        assert!(true, "Suspicious payment patterns should be flagged in audit logs");
+        assert!(
+            true,
+            "Suspicious payment patterns should be flagged in audit logs"
+        );
     }
 
     // ===== Compliance and Regulatory Tests =====
@@ -457,9 +493,15 @@ mod payment_audit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "payment_security_test", "payment_security@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "payment_security_test",
+            "payment_security@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -508,7 +550,10 @@ mod payment_audit_tests {
             .expect("Failed to interact")
             .expect("Failed to query audit entry");
 
-        assert!(audit_entry.is_some(), "Payment operations must be audited (SAQ-A compliance)");
+        assert!(
+            audit_entry.is_some(),
+            "Payment operations must be audited (SAQ-A compliance)"
+        );
 
         if let Some((event_type, timestamp, success)) = audit_entry {
             // SAQ-A audit requirements verification:
@@ -523,11 +568,17 @@ mod payment_audit_tests {
             // User ID is hashed for privacy, only Paddle references stored
 
             // SAQ-A compliant: No cardholder data, only payment provider references
-            println!("SAQ-A audit verification: event_type={}, success={}", event_type, success);
+            println!(
+                "SAQ-A audit verification: event_type={}, success={}",
+                event_type, success
+            );
         }
 
         // Audit log retention and protection requirements for payment security
-        assert!(true, "Audit logs must be retained and protected for payment security");
+        assert!(
+            true,
+            "Audit logs must be retained and protected for payment security"
+        );
     }
 
     #[tokio::test]
@@ -536,9 +587,15 @@ mod payment_audit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "financial_audit", "financial@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "financial_audit",
+            "financial@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -610,13 +667,25 @@ mod payment_audit_tests {
 
         // Currently only some operations generate audit logs (add_credits, deduct_credits)
         // reserve_credits and initialize_user_credits don't yet generate audit logs
-        assert!(audit_summary.len() >= 1, "Operations that generate audit logs should be present");
+        assert!(
+            audit_summary.len() >= 1,
+            "Operations that generate audit logs should be present"
+        );
 
         // Verify final balance matches expected value
-        assert_eq!(final_balance.balance, 700, "Final balance should be 1000 - 300");
-        assert_eq!(final_balance.lifetime_spent, 300, "Lifetime spent should be 300");
+        assert_eq!(
+            final_balance.balance, 700,
+            "Final balance should be 1000 - 300"
+        );
+        assert_eq!(
+            final_balance.lifetime_spent, 300,
+            "Lifetime spent should be 300"
+        );
 
-        println!("Financial audit trail verification complete: {} audit entries", audit_summary.len());
+        println!(
+            "Financial audit trail verification complete: {} audit entries",
+            audit_summary.len()
+        );
     }
 
     // ===== Audit Data Protection Tests =====
@@ -627,9 +696,15 @@ mod payment_audit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "tamper_test", "tamper@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "tamper_test",
+            "tamper@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -679,7 +754,10 @@ mod payment_audit_tests {
             // - Write-only audit storage
             // - Regular integrity verification
             // - Encrypted sensitive details with nonces
-            println!("Tamper resistance test: ID={}, timestamp={}", audit_id, timestamp);
+            println!(
+                "Tamper resistance test: ID={}, timestamp={}",
+                audit_id, timestamp
+            );
             assert!(true, "Audit logs should be tamper-resistant");
         }
     }
@@ -690,9 +768,15 @@ mod payment_audit_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "retention_test", "retention@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "retention_test",
+            "retention@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         // This test documents retention requirements
         // In production, audit logs should be retained according to:
@@ -743,12 +827,24 @@ mod payment_audit_tests {
         let user1_id = Uuid::new_v4();
         let user2_id = Uuid::new_v4();
 
-        create_test_user(&app.db_pool, user1_id, "audit_user1", "audit1@test.com", None)
-            .await
-            .expect("Failed to create user1");
-        create_test_user(&app.db_pool, user2_id, "audit_user2", "audit2@test.com", None)
-            .await
-            .expect("Failed to create user2");
+        create_test_user(
+            &app.db_pool,
+            user1_id,
+            "audit_user1",
+            "audit1@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user1");
+        create_test_user(
+            &app.db_pool,
+            user2_id,
+            "audit_user2",
+            "audit2@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user2");
 
         let config = app.config.clone();
 
@@ -784,9 +880,7 @@ mod payment_audit_tests {
             .interact(move |conn| {
                 use scribe_backend::schema::payment_audit_logs::dsl::*;
 
-                payment_audit_logs
-                    .count()
-                    .get_result::<i64>(conn)
+                payment_audit_logs.count().get_result::<i64>(conn)
             })
             .await
             .expect("Failed to interact")
@@ -803,7 +897,13 @@ mod payment_audit_tests {
         // In production, this would involve checking that user1's hashed ID doesn't appear
         // in audit logs for operations by user2, and vice versa
         // For now, we document the requirement
-        println!("Cross-user contamination test: {} total audit entries", total_audit_count);
-        assert!(true, "Audit logs should be isolated by user and prevent cross-contamination");
+        println!(
+            "Cross-user contamination test: {} total audit entries",
+            total_audit_count
+        );
+        assert!(
+            true,
+            "Audit logs should be isolated by user and prevent cross-contamination"
+        );
     }
 }

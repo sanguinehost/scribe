@@ -614,7 +614,10 @@ async fn get_character_for_session(
     user_id: Uuid,
 ) -> Result<Option<crate::models::characters::Character>, AppError> {
     use crate::schema::{characters, chat_sessions};
-    use diesel::{ExpressionMethods, JoinOnDsl, NullableExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
+    use diesel::{
+        ExpressionMethods, JoinOnDsl, NullableExpressionMethods, OptionalExtension, QueryDsl,
+        RunQueryDsl, SelectableHelper,
+    };
 
     let conn = state.pool.get().await?;
 
@@ -632,9 +635,7 @@ async fn get_character_for_session(
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
         .optional()
-        .map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to fetch character: {}", e))
-        })?;
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch character: {}", e)))?;
 
     Ok(character)
 }
@@ -673,16 +674,20 @@ async fn get_chat_messages(
         })?;
 
     // Apply variant content to the first assistant message if a variant is selected
-    if let Some(first_assistant_msg) = messages.iter_mut()
+    if let Some(first_assistant_msg) = messages
+        .iter_mut()
         .find(|m| m.message_type == crate::models::chats::MessageRole::Assistant)
     {
         if first_assistant_msg.current_variant_index > 0 {
             // Get character data to access alternate greetings
-            if let Ok(character) = get_character_for_session(state, chat_session_id, user_id).await {
+            if let Ok(character) = get_character_for_session(state, chat_session_id, user_id).await
+            {
                 if let Some(character) = character {
                     let variant_index = (first_assistant_msg.current_variant_index - 1) as usize;
                     if let Some(alternate_greetings) = &character.alternate_greetings {
-                        if let Some(Some(alternate_greeting)) = alternate_greetings.get(variant_index) {
+                        if let Some(Some(alternate_greeting)) =
+                            alternate_greetings.get(variant_index)
+                        {
                             // Replace the message content with the selected variant
                             // For now, we'll store it as plaintext - in a real implementation,
                             // we might want to encrypt it with the session DEK
@@ -691,8 +696,7 @@ async fn get_chat_messages(
 
                             info!(
                                 "Applied variant {} to first assistant message for session {}",
-                                first_assistant_msg.current_variant_index,
-                                chat_session_id
+                                first_assistant_msg.current_variant_index, chat_session_id
                             );
                         }
                     }

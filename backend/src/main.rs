@@ -1,8 +1,4 @@
-use axum::{
-    Router,
-    extract::DefaultBodyLimit,
-    routing::get,
-};
+use axum::{Router, extract::DefaultBodyLimit, routing::get};
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
 };
@@ -24,6 +20,8 @@ use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
 use scribe_backend::routes::health::health_check;
+#[cfg(feature = "payment")]
+use scribe_backend::routes::payment::{payment_routes, payment_webhook_routes};
 use scribe_backend::routes::{
     avatars::avatar_routes,        // Added for avatar routes
     characters::characters_router, // Use the router function import
@@ -37,8 +35,6 @@ use scribe_backend::routes::{
     user_persona_routes::user_personas_router, // Added for user persona routes
     user_settings_routes::user_settings_routes,
 };
-#[cfg(feature = "payment")]
-use scribe_backend::routes::payment::{payment_routes, payment_webhook_routes};
 use scribe_backend::state::{AppState, AppStateServices};
 use std::env; // Added for current_dir
 
@@ -800,7 +796,7 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
 // --- Test module remains unchanged ---
 #[cfg(test)]
 mod tests {
-    
+
     // Import the necessary trait
 
     // Use the r2d2 Pool directly from deadpool_diesel

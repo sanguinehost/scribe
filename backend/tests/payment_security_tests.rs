@@ -723,7 +723,10 @@ mod payment_security_tests {
             };
 
             let response = client
-                .request(request_method, &format!("{}/api/payment/credits/packages", app.address))
+                .request(
+                    request_method,
+                    &format!("{}/api/payment/credits/packages", app.address),
+                )
                 .send()
                 .await
                 .expect("Failed to execute request");

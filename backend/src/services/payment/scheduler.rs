@@ -189,14 +189,20 @@ impl PaymentScheduler {
 
     /// Reset daily usage counters for all users
     async fn reset_daily_usage(&self) -> Result<(), AppError> {
-        info!("Starting daily usage reset at {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"));
+        info!(
+            "Starting daily usage reset at {}",
+            Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        );
         let conn = self.pool.get().await?;
         let today = Utc::now().date_naive();
 
         conn.interact(move |conn| {
             // Archive yesterday's usage before reset
             let _yesterday = today - chrono::Duration::days(1);
-            info!("Resetting daily usage for date: {} (deleting records before this date)", today);
+            info!(
+                "Resetting daily usage for date: {} (deleting records before this date)",
+                today
+            );
 
             // Delete old daily_usage_tracking records from previous days
             // This allows fresh records to be created for today with correct date
@@ -204,7 +210,10 @@ impl PaymentScheduler {
                 .filter(daily_usage_tracking::date.lt(today))
                 .execute(conn)?;
 
-            info!("Successfully deleted {} old daily usage records", reset_count);
+            info!(
+                "Successfully deleted {} old daily usage records",
+                reset_count
+            );
 
             // Update user last_daily_usage_reset timestamps
             let user_update_count = diesel::update(users::table)
@@ -228,7 +237,10 @@ impl PaymentScheduler {
             AppError::DatabaseQueryError(e.to_string())
         })?;
 
-        info!("Daily usage reset completed successfully at {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"));
+        info!(
+            "Daily usage reset completed successfully at {}",
+            Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        );
         Ok(())
     }
 

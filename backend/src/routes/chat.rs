@@ -456,7 +456,8 @@ pub async fn generate_chat_response(
         let base_model_cost = model_costs[&model_to_use].as_i64().unwrap_or(0) as i32;
 
         // Check daily message limits BEFORE processing the message
-        let soft_limit_service = crate::services::payment::SoftLimitService::new(state_arc.config.clone());
+        let soft_limit_service =
+            crate::services::payment::SoftLimitService::new(state_arc.config.clone());
         let current_daily_usage = conn
             .interact({
                 let soft_limit_service = soft_limit_service.clone();
@@ -686,7 +687,8 @@ pub async fn generate_chat_response(
                 // Track daily message usage with SoftLimitService for user messages
                 #[cfg(feature = "payment")]
                 if should_track_usage {
-                    let soft_limit_service = crate::services::payment::SoftLimitService::new(state_arc.config.clone());
+                    let soft_limit_service =
+                        crate::services::payment::SoftLimitService::new(state_arc.config.clone());
                     let user_id_for_tracking = user_id_value;
                     let model_for_tracking = model_to_use.clone();
                     let tokens_for_tracking = saved_msg.prompt_tokens.unwrap_or(0) as i64;
@@ -694,14 +696,16 @@ pub async fn generate_chat_response(
                     // Get a connection from the pool for usage tracking
                     match state_arc.pool.get().await {
                         Ok(conn) => {
-                            let tracking_result = conn.interact(move |c| {
-                                soft_limit_service.record_usage(
-                                    c,
-                                    user_id_for_tracking,
-                                    &model_for_tracking,
-                                    tokens_for_tracking,
-                                )
-                            }).await;
+                            let tracking_result = conn
+                                .interact(move |c| {
+                                    soft_limit_service.record_usage(
+                                        c,
+                                        user_id_for_tracking,
+                                        &model_for_tracking,
+                                        tokens_for_tracking,
+                                    )
+                                })
+                                .await;
 
                             match tracking_result {
                                 Ok(Ok(daily_usage)) => {

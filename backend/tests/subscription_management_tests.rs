@@ -6,8 +6,8 @@ mod subscription_management_tests {
     use scribe_backend::{
         models::users::UserRole,
         services::{
-            payment::{SubscriptionService, UsageTrackingService},
             EncryptionService,
+            payment::{SubscriptionService, UsageTrackingService},
         },
         test_helpers::{TestDataGuard, spawn_app},
     };
@@ -77,7 +77,8 @@ mod subscription_management_tests {
 
         // Test that SubscriptionService can be created with the app config
         let encryption_service = EncryptionService::new();
-        let subscription_service = SubscriptionService::new((*app.config).clone(), encryption_service);
+        let subscription_service =
+            SubscriptionService::new((*app.config).clone(), encryption_service);
 
         // Basic smoke test - service should be created successfully
         assert!(true, "SubscriptionService created successfully");
@@ -112,7 +113,8 @@ mod subscription_management_tests {
             .expect("Failed to create user");
 
         let encryption_service = EncryptionService::new();
-        let subscription_service = SubscriptionService::new((*app.config).clone(), encryption_service);
+        let subscription_service =
+            SubscriptionService::new((*app.config).clone(), encryption_service);
 
         // Note: Actual subscription operations would require more setup
         // This is a placeholder test for basic service functionality
@@ -125,9 +127,15 @@ mod subscription_management_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "tracking_test", "tracking@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "tracking_test",
+            "tracking@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let encryption_service = EncryptionService::new();
         let usage_service = UsageTrackingService::new((*app.config).clone(), encryption_service);

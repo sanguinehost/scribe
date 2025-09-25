@@ -9,12 +9,7 @@ use crate::{
     config::Config,
     crypto::encrypt_gcm,
     errors::AppError,
-    models::{
-        payment::{
-            NewPaymentUsageTracking, PaymentUsageTracking,
-            UpdatePaymentUsageTracking,
-        },
-    },
+    models::payment::{NewPaymentUsageTracking, PaymentUsageTracking, UpdatePaymentUsageTracking},
     schema::{payment_usage_tracking, users},
     services::EncryptionService,
 };
@@ -91,9 +86,7 @@ impl UsageTrackingService {
         let period_end = self.get_period_end(period_start);
 
         // Try to find existing usage record for this period
-        if let Some(existing) = self
-            .get_current_usage_sync(conn, user_id, subscription_id)?
-        {
+        if let Some(existing) = self.get_current_usage_sync(conn, user_id, subscription_id)? {
             // Update existing record
             let new_total = existing.tokens_used + tokens_used;
 
@@ -324,7 +317,6 @@ impl UsageTrackingService {
         user_id: Uuid,
         months_back: i32,
     ) -> Result<Vec<(DateTime<Utc>, i32)>, AppError> {
-
         let cutoff = Utc::now() - Duration::days(months_back as i64 * 30);
 
         let stats: Vec<(DateTime<Utc>, i32)> = payment_usage_tracking::table

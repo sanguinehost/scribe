@@ -48,7 +48,14 @@ impl SubscriptionService {
         paddle_subscription_id: Option<String>,
         trial_days: Option<i32>,
     ) -> Result<Subscription, AppError> {
-        self.create_subscription_sync(conn, user_id, plan_type, paddle_customer_id, paddle_subscription_id, trial_days)
+        self.create_subscription_sync(
+            conn,
+            user_id,
+            plan_type,
+            paddle_customer_id,
+            paddle_subscription_id,
+            trial_days,
+        )
     }
 
     /// Create a new subscription for a user (sync version)

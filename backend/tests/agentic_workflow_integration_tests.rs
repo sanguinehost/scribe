@@ -17,8 +17,7 @@ use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
     schema::chat_sessions,
     services::{
-        ChronicleService, EncryptionService, LorebookService,
-        agentic::AgenticNarrativeFactory,
+        ChronicleService, EncryptionService, LorebookService, agentic::AgenticNarrativeFactory,
         extraction_dispatcher::ExtractionDispatcher,
     },
     test_helpers::{MockAiClient, TestDataGuard, db::create_test_user, spawn_app},

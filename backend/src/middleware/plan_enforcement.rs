@@ -15,9 +15,7 @@ use axum_login::AuthSession;
 
 #[cfg(feature = "payment")]
 use crate::{
-    auth::user_store::Backend as AuthBackend,
-    errors::AppError,
-    models::payment::Subscription,
+    auth::user_store::Backend as AuthBackend, errors::AppError, models::payment::Subscription,
     state::AppState,
 };
 

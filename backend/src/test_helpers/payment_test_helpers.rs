@@ -20,9 +20,7 @@ pub mod payment_test_helpers {
         test_helpers::TestApp,
     };
     use chrono::Utc;
-    use diesel::{
-        PgConnection, RunQueryDsl, SelectableHelper,
-    };
+    use diesel::{PgConnection, RunQueryDsl, SelectableHelper};
     use reqwest::Client;
     use secrecy::{ExposeSecret, SecretBox, SecretString};
     use serde_json::{Value, json};

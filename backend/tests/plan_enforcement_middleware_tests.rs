@@ -6,7 +6,7 @@ mod plan_enforcement_middleware_tests {
     use scribe_backend::{
         middleware::plan_enforcement::{EnforcementConfig, EnforcementResult},
         models::users::UserRole,
-        services::{payment::SubscriptionService, EncryptionService},
+        services::{EncryptionService, payment::SubscriptionService},
         test_helpers::{TestDataGuard, spawn_app},
     };
     use serde_json::json;
@@ -100,7 +100,11 @@ mod plan_enforcement_middleware_tests {
             EnforcementConfig::disabled(),
         ];
 
-        assert_eq!(configs.len(), 6, "All enforcement config variants should be available");
+        assert_eq!(
+            configs.len(),
+            6,
+            "All enforcement config variants should be available"
+        );
     }
 
     #[tokio::test]
@@ -109,16 +113,26 @@ mod plan_enforcement_middleware_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "sub_enforcement_test", "subtest@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "sub_enforcement_test",
+            "subtest@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         // Test that SubscriptionService can be created for plan enforcement
         let encryption_service = EncryptionService::new();
-        let subscription_service = SubscriptionService::new((*app.config).clone(), encryption_service);
+        let subscription_service =
+            SubscriptionService::new((*app.config).clone(), encryption_service);
 
         // Basic smoke test - service should be created successfully
-        assert!(true, "SubscriptionService created for plan enforcement testing");
+        assert!(
+            true,
+            "SubscriptionService created for plan enforcement testing"
+        );
     }
 
     #[tokio::test]

@@ -1000,7 +1000,12 @@ pub async fn create_message_handler(
         "user" => MessageRole::User,
         "assistant" => MessageRole::Assistant,
         "system" => MessageRole::System,
-        _ => return Err(AppError::BadRequest(format!("Invalid role: {}", payload.role))),
+        _ => {
+            return Err(AppError::BadRequest(format!(
+                "Invalid role: {}",
+                payload.role
+            )));
+        }
     };
 
     // Fetch chat session and verify ownership
@@ -1027,7 +1032,12 @@ pub async fn create_message_handler(
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?
             .interact(move |conn| {
-                soft_limit_service.record_usage(conn, user_id_for_daily_tracking, "manual_message", 0)
+                soft_limit_service.record_usage(
+                    conn,
+                    user_id_for_daily_tracking,
+                    "manual_message",
+                    0,
+                )
             })
             .await
             .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
@@ -1079,10 +1089,8 @@ pub async fn create_message_handler(
         use crate::services::encryption_service::EncryptionService;
         use crate::services::payment::UsageTrackingService;
 
-        let usage_tracking_service = UsageTrackingService::new(
-            (*state.config).clone(),
-            EncryptionService::new(),
-        );
+        let usage_tracking_service =
+            UsageTrackingService::new((*state.config).clone(), EncryptionService::new());
 
         let user_id_for_payment = user_id;
         let tokens_used = saved_db_message.prompt_tokens.unwrap_or(0);
@@ -1095,12 +1103,14 @@ pub async fn create_message_handler(
                 let mut model_usage = std::collections::HashMap::new();
                 model_usage.insert(model_name_for_tracking, tokens_used);
 
-                let metadata = Some(crate::services::payment::usage_tracking_service::UsageMetadata {
-                    model_usage,
-                    feature_usage: std::collections::HashMap::new(),
-                    request_count: 1,
-                    last_activity: chrono::Utc::now(),
-                });
+                let metadata = Some(
+                    crate::services::payment::usage_tracking_service::UsageMetadata {
+                        model_usage,
+                        feature_usage: std::collections::HashMap::new(),
+                        request_count: 1,
+                        last_activity: chrono::Utc::now(),
+                    },
+                );
 
                 // Use interact to call the async track_usage method
                 let track_result = conn

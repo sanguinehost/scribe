@@ -9,8 +9,8 @@ mod payment_race_condition_tests {
         services::payment::CreditService,
         test_helpers::{TestDataGuard, spawn_app},
     };
-    use std::sync::{Arc, Barrier};
     use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+    use std::sync::{Arc, Barrier};
     use std::time::Duration;
     use tokio::task::JoinSet;
     use uuid::Uuid;
@@ -107,7 +107,10 @@ mod payment_race_condition_tests {
 
             // Check final balance
             let balance = service.get_balance(conn, user_id)?;
-            assert_eq!(balance.balance, 500, "Sequential operations should sum correctly");
+            assert_eq!(
+                balance.balance, 500,
+                "Sequential operations should sum correctly"
+            );
 
             Ok::<_, scribe_backend::errors::AppError>(())
         })
@@ -122,9 +125,15 @@ mod payment_race_condition_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "concurrent_test", "concurrent@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "concurrent_test",
+            "concurrent@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         // Initialize user credits first
         let config = app.config.clone();
@@ -175,23 +184,33 @@ mod payment_race_condition_tests {
         }
 
         // Verify that at least some operations succeeded (allowing for race conditions)
-        assert!(successful_ops >= 1, "At least one concurrent operation should succeed");
+        assert!(
+            successful_ops >= 1,
+            "At least one concurrent operation should succeed"
+        );
 
         // Check final balance is reasonable
         let conn2 = app.db_pool.get().await.expect("Failed to get connection");
-        let final_balance = conn2.interact({
-            let config = config.clone();
-            move |conn| {
-                let service = CreditService::new(config.clone());
-                service.get_balance(conn, user_id)
-            }
-        })
-        .await
-        .expect("Failed to interact")
-        .expect("Failed to get balance");
+        let final_balance = conn2
+            .interact({
+                let config = config.clone();
+                move |conn| {
+                    let service = CreditService::new(config.clone());
+                    service.get_balance(conn, user_id)
+                }
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get balance");
 
-        assert!(final_balance.balance >= 50, "Balance should reflect at least one successful operation");
-        assert!(final_balance.balance <= 150, "Balance should not exceed maximum possible");
+        assert!(
+            final_balance.balance >= 50,
+            "Balance should reflect at least one successful operation"
+        );
+        assert!(
+            final_balance.balance <= 150,
+            "Balance should not exceed maximum possible"
+        );
     }
 
     #[tokio::test]
@@ -200,9 +219,15 @@ mod payment_race_condition_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "reservation_test", "reservation@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "reservation_test",
+            "reservation@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -223,19 +248,20 @@ mod payment_race_condition_tests {
             )?;
 
             // Reserve credits
-            let (_balance, reservation_id) = service.reserve_credits(
-                conn,
-                user_id,
-                300,
-                "Test reservation",
-                None,
-            )?;
+            let (_balance, reservation_id) =
+                service.reserve_credits(conn, user_id, 300, "Test reservation", None)?;
 
             // Confirm reservation
             let final_balance = service.confirm_reservation(conn, user_id, reservation_id)?;
 
-            assert_eq!(final_balance.balance, 700, "Balance should be reduced after confirmed reservation");
-            assert_eq!(final_balance.lifetime_spent, 300, "Lifetime spent should track confirmed reservation");
+            assert_eq!(
+                final_balance.balance, 700,
+                "Balance should be reduced after confirmed reservation"
+            );
+            assert_eq!(
+                final_balance.lifetime_spent, 300,
+                "Lifetime spent should track confirmed reservation"
+            );
 
             Ok::<_, scribe_backend::errors::AppError>(())
         })
@@ -250,32 +276,42 @@ mod payment_race_condition_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "insufficient_test", "insufficient@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "insufficient_test",
+            "insufficient@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
-        let result = conn.interact(move |conn| {
-            let service = CreditService::new(config.clone());
+        let result = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config.clone());
 
-            // Initialize user with no additional credits
-            service.initialize_user_credits(conn, user_id)?;
+                // Initialize user with no additional credits
+                service.initialize_user_credits(conn, user_id)?;
 
-            // Try to reserve more credits than available
-            service.reserve_credits(
-                conn,
-                user_id,
-                500,
-                "Should fail - insufficient credits",
-                None,
-            )
-        })
-        .await
-        .expect("Failed to interact");
+                // Try to reserve more credits than available
+                service.reserve_credits(
+                    conn,
+                    user_id,
+                    500,
+                    "Should fail - insufficient credits",
+                    None,
+                )
+            })
+            .await
+            .expect("Failed to interact");
 
-        assert!(result.is_err(), "Reserving more credits than available should fail");
+        assert!(
+            result.is_err(),
+            "Reserving more credits than available should fail"
+        );
     }
 
     #[tokio::test]
@@ -284,9 +320,15 @@ mod payment_race_condition_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "isolation_test", "isolation@test.com", None)
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "isolation_test",
+            "isolation@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -309,25 +351,26 @@ mod payment_race_condition_tests {
             // Perform multiple operations in sequence
             let balance1 = service.get_balance(conn, user_id)?;
 
-            let (_balance, reservation_id) = service.reserve_credits(
-                conn,
-                user_id,
-                100,
-                "Isolation test reservation",
-                None,
-            )?;
+            let (_balance, reservation_id) =
+                service.reserve_credits(conn, user_id, 100, "Isolation test reservation", None)?;
 
             let balance2 = service.get_balance(conn, user_id)?;
 
             // Balances should be consistent
             assert_eq!(balance1.balance, 200, "Initial balance should be correct");
-            assert_eq!(balance2.balance, 100, "Balance after reservation should be reduced");
+            assert_eq!(
+                balance2.balance, 100,
+                "Balance after reservation should be reduced"
+            );
 
             // Confirm reservation
             service.confirm_reservation(conn, user_id, reservation_id)?;
 
             let final_balance = service.get_balance(conn, user_id)?;
-            assert_eq!(final_balance.balance, 100, "Final balance should remain consistent");
+            assert_eq!(
+                final_balance.balance, 100,
+                "Final balance should remain consistent"
+            );
 
             Ok::<_, scribe_backend::errors::AppError>(())
         })

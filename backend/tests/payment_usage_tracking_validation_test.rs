@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use scribe_backend::{
     models::payment::PaymentUsageTracking,
     schema::payment_usage_tracking,
-    services::payment::usage_tracking_service::{UsageTrackingService, UsageMetadata},
     services::EncryptionService,
-    test_helpers::{TestDataGuard, spawn_app_permissive_rate_limiting, db},
+    services::payment::usage_tracking_service::{UsageMetadata, UsageTrackingService},
+    test_helpers::{TestDataGuard, db, spawn_app_permissive_rate_limiting},
 };
 
 #[tokio::test]
@@ -19,9 +19,13 @@ async fn test_payment_usage_tracking_direct() {
     let mut tdg = TestDataGuard::new(app.db_pool.clone());
 
     // Create a real test user (needed for DEK encryption)
-    let user_db = db::create_test_user(&app.db_pool, "test_user".to_string(), "password123".to_string())
-        .await
-        .unwrap();
+    let user_db = db::create_test_user(
+        &app.db_pool,
+        "test_user".to_string(),
+        "password123".to_string(),
+    )
+    .await
+    .unwrap();
     tdg.add_user(user_db.id);
 
     let test_user_id = user_db.id;
@@ -49,26 +53,34 @@ async fn test_payment_usage_tracking_direct() {
 
     // Track usage
     let conn = app.db_pool.get().await.unwrap();
-    let tracked = conn.interact(move |conn| {
-        usage_service.track_usage_sync(
-            conn,
-            test_user_id,
-            None, // no subscription
-            50,   // 50 tokens
-            Some(metadata),
-        )
-    }).await.unwrap().unwrap();
+    let tracked = conn
+        .interact(move |conn| {
+            usage_service.track_usage_sync(
+                conn,
+                test_user_id,
+                None, // no subscription
+                50,   // 50 tokens
+                Some(metadata),
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
     println!("Usage tracked successfully: {:?}", tracked);
 
     // Verify the data was stored in payment_usage_tracking table
     let conn = app.db_pool.get().await.unwrap();
-    let stored_usage = conn.interact(move |conn| {
-        payment_usage_tracking::table
-            .filter(payment_usage_tracking::user_id.eq(test_user_id))
-            .first::<PaymentUsageTracking>(conn)
-            .optional()
-    }).await.unwrap().unwrap();
+    let stored_usage = conn
+        .interact(move |conn| {
+            payment_usage_tracking::table
+                .filter(payment_usage_tracking::user_id.eq(test_user_id))
+                .first::<PaymentUsageTracking>(conn)
+                .optional()
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
     match stored_usage {
         Some(usage) => {
@@ -84,7 +96,10 @@ async fn test_payment_usage_tracking_direct() {
             assert!(usage.metadata_encrypted.is_some());
         }
         None => {
-            panic!("❌ ERROR: No payment usage tracking record found for user {}", test_user_id);
+            panic!(
+                "❌ ERROR: No payment usage tracking record found for user {}",
+                test_user_id
+            );
         }
     }
 

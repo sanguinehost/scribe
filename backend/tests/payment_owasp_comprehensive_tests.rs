@@ -105,12 +105,18 @@ mod payment_owasp_comprehensive_tests {
         } else {
             // In test environment, security headers may not be configured
             // This test documents the production requirement
-            println!("Security headers not configured in test environment - this should be configured in production");
+            println!(
+                "Security headers not configured in test environment - this should be configured in production"
+            );
         }
 
         // Check for X-Frame-Options (may not be present in test environment)
-        if !(headers.contains_key("X-Frame-Options") || headers.contains_key("Content-Security-Policy")) {
-            println!("Clickjacking protection headers not configured in test environment - should be configured in production");
+        if !(headers.contains_key("X-Frame-Options")
+            || headers.contains_key("Content-Security-Policy"))
+        {
+            println!(
+                "Clickjacking protection headers not configured in test environment - should be configured in production"
+            );
         }
     }
 
@@ -123,7 +129,10 @@ mod payment_owasp_comprehensive_tests {
 
         // Test CORS preflight request
         let response = client
-            .request(reqwest::Method::OPTIONS, &format!("{}/api/payment/plans", app.address))
+            .request(
+                reqwest::Method::OPTIONS,
+                &format!("{}/api/payment/plans", app.address),
+            )
             .header("Origin", "https://malicious-site.com")
             .header("Access-Control-Request-Method", "GET")
             .send()
@@ -158,10 +167,21 @@ mod payment_owasp_comprehensive_tests {
 
         for (endpoint, method) in test_cases {
             let response = match method {
-                "GET" => client.get(&format!("{}{}", app.address, endpoint)).send().await,
-                "POST" => client.post(&format!("{}{}", app.address, endpoint)).send().await,
+                "GET" => {
+                    client
+                        .get(&format!("{}{}", app.address, endpoint))
+                        .send()
+                        .await
+                }
+                "POST" => {
+                    client
+                        .post(&format!("{}{}", app.address, endpoint))
+                        .send()
+                        .await
+                }
                 _ => continue,
-            }.expect("Failed to execute request");
+            }
+            .expect("Failed to execute request");
 
             if response.status().is_client_error() || response.status().is_server_error() {
                 let error_text = response.text().await.unwrap_or_default();
@@ -372,9 +392,14 @@ mod payment_owasp_comprehensive_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "concurrent_test", "concurrent@test.com")
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "concurrent_test",
+            "concurrent@test.com",
+        )
+        .await
+        .expect("Failed to create user");
 
         // Test that multiple concurrent sessions from the same user are handled properly
         let client1 = reqwest::Client::builder()
@@ -488,7 +513,10 @@ mod payment_owasp_comprehensive_tests {
 
         // Payment operations should be logged (verified by successful execution)
         // Actual audit logging verification would check the privacy-focused audit table
-        assert!(true, "Payment operations should be logged for security monitoring");
+        assert!(
+            true,
+            "Payment operations should be logged for security monitoring"
+        );
     }
 
     #[tokio::test]
@@ -503,10 +531,14 @@ mod payment_owasp_comprehensive_tests {
             // Unauthorized access attempt
             ("/api/payment/credits/balance", "GET", None),
             // Invalid webhook signature
-            ("/api/payment/webhook/paddle", "POST", Some(json!({
-                "event_type": "test.event",
-                "data": {"test": "data"}
-            }))),
+            (
+                "/api/payment/webhook/paddle",
+                "POST",
+                Some(json!({
+                    "event_type": "test.event",
+                    "data": {"test": "data"}
+                })),
+            ),
         ];
 
         for (endpoint, method, body) in security_events {
@@ -522,10 +554,7 @@ mod payment_owasp_comprehensive_tests {
                 _ => continue,
             };
 
-            let _response = request
-                .send()
-                .await
-                .expect("Failed to execute request");
+            let _response = request.send().await.expect("Failed to execute request");
 
             // Security events should be logged (verified by successful execution)
         }
@@ -544,9 +573,14 @@ mod payment_owasp_comprehensive_tests {
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         let user_id = Uuid::new_v4();
-        create_test_user(&app.db_pool, user_id, "sensitive_test", "sensitive@test.com")
-            .await
-            .expect("Failed to create user");
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "sensitive_test",
+            "sensitive@test.com",
+        )
+        .await
+        .expect("Failed to create user");
 
         let config = app.config.clone();
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -601,12 +635,17 @@ mod payment_owasp_comprehensive_tests {
         for (hash, category, logged_amount) in audit_entries {
             // Verify user ID is properly hashed (privacy-focused)
             assert!(hash.len() == 64, "User ID should be hashed (SHA-256)");
-            assert!(!hash.contains(&user_id.to_string()), 
-                   "Hash should not contain plaintext user ID");
-            
+            assert!(
+                !hash.contains(&user_id.to_string()),
+                "Hash should not contain plaintext user ID"
+            );
+
             // Verify proper categorization
-            assert_eq!(category, "credit_operation", "Should be properly categorized");
-            
+            assert_eq!(
+                category, "credit_operation",
+                "Should be properly categorized"
+            );
+
             // Verify sensitive details are not in plaintext
             // (The actual implementation uses encryption for sensitive data)
             if let Some(amount) = logged_amount {
@@ -698,8 +737,7 @@ mod payment_owasp_comprehensive_tests {
 
         // Should be unauthorized (no auth) or reject malicious URLs if auth was present
         assert!(
-            response.status() == StatusCode::UNAUTHORIZED ||
-            response.status().is_client_error(),
+            response.status() == StatusCode::UNAUTHORIZED || response.status().is_client_error(),
             "Should not process requests with malicious URLs"
         );
     }
@@ -764,8 +802,14 @@ mod payment_owasp_comprehensive_tests {
         for test_url in test_urls {
             // Test various endpoints that might accept URL parameters
             let endpoints_to_test = vec![
-                ("/api/payment/subscription", json!({"callback_url": test_url})),
-                ("/api/payment/webhook/paddle", json!({"data": {"url": test_url}})),
+                (
+                    "/api/payment/subscription",
+                    json!({"callback_url": test_url}),
+                ),
+                (
+                    "/api/payment/webhook/paddle",
+                    json!({"data": {"url": test_url}}),
+                ),
             ];
 
             for (endpoint, payload) in endpoints_to_test {
@@ -779,7 +823,8 @@ mod payment_owasp_comprehensive_tests {
                 // Should not make requests to internal networks
                 // Most likely will be unauthorized or bad request
                 assert!(
-                    !response.status().is_success() || response.status() == StatusCode::UNAUTHORIZED,
+                    !response.status().is_success()
+                        || response.status() == StatusCode::UNAUTHORIZED,
                     "Should not process requests that could lead to SSRF"
                 );
             }

@@ -38,8 +38,7 @@ impl SecureLlmService {
     /// Secure chat execution with encryption, sanitization, and audit logging
     pub async fn secure_exec_chat(
         &self,
-        #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))]
-        mut request: ChatRequest,
+        #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))] mut request: ChatRequest,
         user_id: Uuid,
         _session_dek: &SessionDek,
     ) -> Result<ChatResponse, AppError> {
@@ -153,8 +152,7 @@ impl SecureLlmService {
     /// Secure streaming chat with real-time encryption
     pub async fn secure_stream_chat(
         &self,
-        #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))]
-        mut request: ChatRequest,
+        #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))] mut request: ChatRequest,
         user_id: Uuid,
         _session_dek: &SessionDek,
     ) -> Result<ChatStream, AppError> {

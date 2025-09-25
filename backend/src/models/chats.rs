@@ -2198,7 +2198,6 @@ fn validate_optional_template_id(template_id: &String) -> Result<(), ValidationE
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

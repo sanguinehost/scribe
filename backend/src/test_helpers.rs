@@ -1679,9 +1679,12 @@ pub async fn spawn_app_with_rate_limiting_options(
     let router_for_test_app = router_for_server.clone(); // Clone before moving
 
     tokio::spawn(async move {
-        axum::serve(listener, router_for_server.into_make_service_with_connect_info::<SocketAddr>()) // Use router_for_server
-            .await
-            .expect("Test server failed");
+        axum::serve(
+            listener,
+            router_for_server.into_make_service_with_connect_info::<SocketAddr>(),
+        ) // Use router_for_server
+        .await
+        .expect("Test server failed");
     });
 
     TestApp {
