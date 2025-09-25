@@ -35,6 +35,14 @@ mod payment_integration_tests {
             free_tier_token_limit: 50000,
             enforce_limits: false,
             grace_period_days: 7,
+            subscription_config_path: "backend/config/subscription_tiers.json".to_string(),
+            credits_enabled: true,
+            soft_limits_enabled: false,
+            credit_expiry_days: 365,
+            min_credit_purchase: 100,
+            max_credit_balance: 10000,
+            usage_tracking_enabled: false,
+            usage_reset_hour_utc: 0,
         }
     }
 

@@ -6,11 +6,13 @@ use std::collections::HashMap;
 #[cfg(feature = "payment")]
 use scribe_backend::{
     models::payment::PaymentUsageTracking,
-    schema::payment_usage_tracking,
     services::EncryptionService,
     services::payment::usage_tracking_service::{UsageMetadata, UsageTrackingService},
     test_helpers::{TestDataGuard, db, spawn_app_permissive_rate_limiting},
 };
+
+#[cfg(feature = "payment")]
+use diesel::prelude::*;
 
 #[tokio::test]
 #[cfg(feature = "payment")]
@@ -73,8 +75,9 @@ async fn test_payment_usage_tracking_direct() {
     let conn = app.db_pool.get().await.unwrap();
     let stored_usage = conn
         .interact(move |conn| {
-            payment_usage_tracking::table
-                .filter(payment_usage_tracking::user_id.eq(test_user_id))
+            use scribe_backend::schema::payment_usage_tracking::dsl::*;
+            payment_usage_tracking
+                .filter(user_id.eq(test_user_id))
                 .first::<PaymentUsageTracking>(conn)
                 .optional()
         })

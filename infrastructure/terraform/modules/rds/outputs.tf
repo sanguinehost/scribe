@@ -35,4 +35,3 @@ output "database_url" {
   value       = "postgresql://${aws_db_instance.scribe_postgres.username}:${urlencode(random_password.db_master_password.result)}@${aws_db_instance.scribe_postgres.endpoint}/${aws_db_instance.scribe_postgres.db_name}"
   sensitive   = true
 }
-

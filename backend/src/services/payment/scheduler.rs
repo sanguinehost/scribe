@@ -451,7 +451,6 @@ impl PaymentScheduler {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_scheduler_creation() {

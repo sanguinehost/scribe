@@ -3,7 +3,7 @@ use crate::errors::AppError;
 use crate::models::credit::{DailyUsage, NewDailyUsage};
 use crate::models::payment::Subscription;
 use crate::schema::daily_usage_tracking;
-use chrono::{DateTime, Local, Timelike, Utc};
+use chrono::{DateTime, Timelike, Utc};
 use diesel::prelude::*;
 use serde_json::json;
 use std::sync::Arc;
@@ -349,23 +349,33 @@ mod tests {
     #[tokio::test]
     async fn test_soft_limit_tracking() {
         let app = spawn_app(false, false, false).await;
-        let _test_guard = TestDataGuard::new(&app.test_id);
+        let _test_guard = TestDataGuard::new(app.db_pool.clone());
 
-        let mut conn = app.db_pool.get().unwrap();
+        let conn = app.db_pool.get().await.unwrap();
         let user_id = Uuid::new_v4();
 
         let service = SoftLimitService::new(app.config.clone());
 
         // Record usage
-        let usage = service
-            .record_usage(&mut conn, user_id, "gemini-2.5-flash", 1000)
+        let service_clone = service.clone();
+        let usage = conn
+            .interact(move |conn| {
+                service_clone.record_usage(conn, user_id, "gemini-2.5-flash", 1000)
+            })
+            .await
+            .unwrap()
             .unwrap();
         assert_eq!(usage.message_count, 1);
         assert_eq!(usage.token_count, 1000);
 
         // Record more usage
-        let usage = service
-            .record_usage(&mut conn, user_id, "gemini-2.5-flash", 500)
+        let service_clone = service.clone();
+        let usage = conn
+            .interact(move |conn| {
+                service_clone.record_usage(conn, user_id, "gemini-2.5-flash", 500)
+            })
+            .await
+            .unwrap()
             .unwrap();
         assert_eq!(usage.message_count, 2);
         assert_eq!(usage.token_count, 1500);

@@ -231,7 +231,7 @@ impl UsageTrackingService {
         &self,
         conn: &mut PgConnection,
         user_id: Uuid,
-        tokens_needed: i32,
+        _tokens_needed: i32,
     ) -> Result<bool, AppError> {
         if !self.config.payment.enforce_limits {
             return Ok(true);

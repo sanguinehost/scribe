@@ -1015,9 +1015,18 @@ mod tests {
             paddle_api_key: Some("test_api_key".to_string()),
             paddle_webhook_secret: Some("test_webhook_secret".to_string()),
             paddle_sandbox_mode: true,
+            payment_base_url: "https://localhost:8080".to_string(),
             free_tier_token_limit: 50000,
             enforce_limits: false,
             grace_period_days: 7,
+            subscription_config_path: "backend/config/subscription_tiers.json".to_string(),
+            credits_enabled: true,
+            soft_limits_enabled: false,
+            credit_expiry_days: 365,
+            min_credit_purchase: 100,
+            max_credit_balance: 10000,
+            usage_tracking_enabled: false,
+            usage_reset_hour_utc: 0,
         }
     }
 

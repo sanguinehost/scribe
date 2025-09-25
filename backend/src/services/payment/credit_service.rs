@@ -962,46 +962,65 @@ mod tests {
     use super::*;
     use crate::test_helpers::{TestDataGuard, spawn_app};
 
-    #[test]
-    fn test_credit_balance_lifecycle() {
-        let app = spawn_app();
-        let _test_guard = TestDataGuard::new(&app.test_id);
+    #[tokio::test]
+    async fn test_credit_balance_lifecycle() {
+        let app = spawn_app(false, false, false).await;
+        let _test_guard = TestDataGuard::new(app.db_pool.clone());
 
-        let mut conn = app.db_pool.get().unwrap();
+        let conn = app.db_pool.get().await.unwrap();
         let user_id = Uuid::new_v4();
 
         let credit_service = CreditService::new(app.config.clone());
 
         // Initialize credits
-        let balance = credit_service
-            .initialize_user_credits(&mut conn, user_id)
+        let credit_service_clone = credit_service.clone();
+        let balance = conn
+            .interact(move |conn| credit_service_clone.initialize_user_credits(conn, user_id))
+            .await
+            .unwrap()
             .unwrap();
         assert_eq!(balance.balance, 0);
 
         // Add credits
-        let balance = credit_service
-            .add_credits(
-                &mut conn,
-                user_id,
-                100,
-                "test",
-                "Test credit addition",
-                None,
-                None,
-            )
+        let credit_service_clone = credit_service.clone();
+        let balance = conn
+            .interact(move |conn| {
+                credit_service_clone.add_credits(
+                    conn,
+                    user_id,
+                    100,
+                    "test",
+                    "Test credit addition",
+                    None,
+                    None,
+                )
+            })
+            .await
+            .unwrap()
             .unwrap();
         assert_eq!(balance.balance, 100);
         assert_eq!(balance.lifetime_earned, 100);
 
         // Deduct credits
-        let balance = credit_service
-            .deduct_credits(&mut conn, user_id, 30, "Test usage", None)
+        let credit_service_clone = credit_service.clone();
+        let balance = conn
+            .interact(move |conn| {
+                credit_service_clone.deduct_credits(conn, user_id, 30, "Test usage", None)
+            })
+            .await
+            .unwrap()
             .unwrap();
         assert_eq!(balance.balance, 70);
         assert_eq!(balance.lifetime_spent, 30);
 
         // Check insufficient credits
-        let result = credit_service.deduct_credits(&mut conn, user_id, 100, "Too much", None);
+        let credit_service_clone = credit_service.clone();
+        let result = conn
+            .interact(move |conn| {
+                credit_service_clone.deduct_credits(conn, user_id, 100, "Too much", None)
+            })
+            .await
+            .unwrap();
         assert!(result.is_err());
     }
 }
