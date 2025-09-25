@@ -93,9 +93,7 @@
 	/>
 {:else}
 	<!-- Fallback when payments disabled -->
-	<button class="btn-disabled" disabled>
-		Payments Not Available
-	</button>
+	<button class="btn-disabled" disabled> Payments Not Available </button>
 {/if}
 
 <style>

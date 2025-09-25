@@ -124,7 +124,7 @@ export const subscriptionStore = {
 
 		try {
 			const result = await apiClient.getSubscription();
-			
+
 			if (result.isOk()) {
 				_subscription = result.value.subscription || null;
 				_planFeatures = result.value.plan_features || null;
@@ -205,13 +205,17 @@ export const subscriptionStore = {
 		if (_planFeatures?.display_name) {
 			return _planFeatures.display_name;
 		}
-		
+
 		// Fallback based on plan type
 		switch (subscriptionStore.currentPlan) {
-			case 'free': return 'Free';
-			case 'basic': return 'Basic';
-			case 'premium': return 'Premium';
-			default: return 'Free';
+			case 'free':
+				return 'Free';
+			case 'basic':
+				return 'Basic';
+			case 'premium':
+				return 'Premium';
+			default:
+				return 'Free';
 		}
 	},
 

@@ -87,16 +87,12 @@
 </script>
 
 <div class="daily-usage-container">
-	<div class="flex items-center justify-between mb-2">
+	<div class="mb-2 flex items-center justify-between">
 		<div class="flex items-center gap-2">
 			<MessageCircle size={16} class="text-slate-500 dark:text-slate-400" />
-			<span class="text-sm font-medium text-slate-900 dark:text-slate-100">
-				Daily Messages
-			</span>
+			<span class="text-sm font-medium text-slate-900 dark:text-slate-100"> Daily Messages </span>
 			{#if currentLimit && currentLimit.type === 'soft'}
-				<span class="text-xs text-slate-500 dark:text-slate-400 italic">
-					(soft limit)
-				</span>
+				<span class="text-xs italic text-slate-500 dark:text-slate-400"> (soft limit) </span>
 			{/if}
 		</div>
 		<div class="flex items-center gap-1">
@@ -114,10 +110,12 @@
 	</div>
 
 	<!-- Progress bar -->
-	<div class={`bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden ${containerClass}`}>
+	<div class={`overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700 ${containerClass}`}>
 		<div
-			class={`${statusColor} transition-all duration-300 ease-out h-full ${
-				isThrottled || (currentLimit && currentLimit.type === 'hard' && isAtLimit) ? 'animate-pulse' : ''
+			class={`${statusColor} h-full transition-all duration-300 ease-out ${
+				isThrottled || (currentLimit && currentLimit.type === 'hard' && isAtLimit)
+					? 'animate-pulse'
+					: ''
 			}`}
 			style="width: {Math.min(100, usagePercentage)}%"
 			role="progressbar"
@@ -129,18 +127,16 @@
 	</div>
 
 	<!-- Additional info -->
-	<div class="flex items-center justify-between mt-1">
+	<div class="mt-1 flex items-center justify-between">
 		<span class="text-xs text-slate-500 dark:text-slate-400">
 			{formatTime()}
 		</span>
 		{#if isThrottled}
-			<span class="text-xs text-orange-500 dark:text-orange-400 font-medium">
+			<span class="text-xs font-medium text-orange-500 dark:text-orange-400">
 				Response delay active
 			</span>
 		{:else if currentLimit && currentLimit.type === 'soft' && isOverLimit}
-			<span class="text-xs text-yellow-500 dark:text-yellow-400">
-				Soft limit exceeded
-			</span>
+			<span class="text-xs text-yellow-500 dark:text-yellow-400"> Soft limit exceeded </span>
 		{/if}
 	</div>
 </div>

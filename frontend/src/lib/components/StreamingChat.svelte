@@ -39,8 +39,8 @@
 	// Derived state
 	let isLoading = $derived(
 		streamingState.connectionStatus === 'connecting' ||
-		streamingState.connectionStatus === 'open' ||
-		streamingState.messages.some(msg => msg.isAnimating === true)
+			streamingState.connectionStatus === 'open' ||
+			streamingState.messages.some((msg) => msg.isAnimating === true)
 	);
 
 	let hasError = $derived(streamingState.currentError !== null);

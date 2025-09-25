@@ -348,8 +348,10 @@
 				<Card class="border border-border shadow-sm">
 					<CardHeader class="px-6 py-6">
 						<div class="flex items-start space-x-6">
-							<Avatar 
-								class="h-24 w-24 border-2 border-muted transition-transform hover:scale-105 {persona.avatar ? 'cursor-pointer' : ''}"
+							<Avatar
+								class="h-24 w-24 border-2 border-muted transition-transform hover:scale-105 {persona.avatar
+									? 'cursor-pointer'
+									: ''}"
 								onclick={() => persona?.avatar && (avatarLightboxOpen = true)}
 							>
 								{#if persona.avatar}
@@ -568,11 +570,7 @@
 
 <!-- Avatar Image Lightbox -->
 {#if persona && persona.avatar}
-	<ImageLightbox
-		src={persona.avatar}
-		alt={persona.name}
-		bind:open={avatarLightboxOpen}
-	/>
+	<ImageLightbox src={persona.avatar} alt={persona.name} bind:open={avatarLightboxOpen} />
 {/if}
 
 <style>

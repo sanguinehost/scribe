@@ -48,7 +48,7 @@
 		<div class="space-y-2 p-4">
 			{#each Array(3) as _}
 				<div class="animate-pulse">
-					<div class="h-10 rounded bg-primary/5 border border-primary/10"></div>
+					<div class="h-10 rounded border border-primary/10 bg-primary/5"></div>
 				</div>
 			{/each}
 		</div>
@@ -58,7 +58,12 @@
 			<div class="text-center">
 				<BookOpen class="mx-auto mb-2 h-8 w-8 text-primary/50" />
 				<p class="mb-2 text-sm text-muted-foreground">No lorebooks yet</p>
-				<Button variant="outline" size="sm" onclick={handleViewAll} class="border-primary/20 hover:bg-primary/10 hover:border-primary/30">
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={handleViewAll}
+					class="border-primary/20 hover:border-primary/30 hover:bg-primary/10"
+				>
 					<Plus class="mr-1 h-4 w-4" />
 					Create First
 				</Button>
@@ -75,7 +80,7 @@
 							out:slideAndFade={{ y: -20, duration: 200 }}
 						>
 							<button
-								class="group w-full rounded-md p-2 text-left transition-colors bg-muted/50 border-border/40 border hover:bg-muted/70 hover:border-primary"
+								class="group w-full rounded-md border border-border/40 bg-muted/50 p-2 text-left transition-colors hover:border-primary hover:bg-muted/70"
 								onclick={() => handleSelectLorebook(lorebook.id)}
 							>
 								<div class="flex items-center gap-2">

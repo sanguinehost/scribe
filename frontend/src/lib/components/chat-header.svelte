@@ -159,7 +159,11 @@
 	{#if !readonly && chat}
 		<div class="ml-auto flex items-center gap-2">
 			{#if PAYMENT_FEATURES.credits}
-				<CreditBalance compact={true} showPurchaseButton={true} onPurchaseClick={handlePurchaseClick} />
+				<CreditBalance
+					compact={true}
+					showPurchaseButton={true}
+					onPurchaseClick={handlePurchaseClick}
+				/>
 			{/if}
 			<ModelSelector {chat} class="" />
 		</div>

@@ -58,13 +58,16 @@ export async function load({ params: { chatId }, parent }) {
 			error(500, 'Invalid response format from server');
 		}
 
-		console.log('📥 Raw messages from backend:', messagesResponseJson.map(msg => ({
-			id: msg.id,
-			variant_count: msg.variant_count,
-			current_variant_index: msg.current_variant_index,
-			is_variant: msg.is_variant,
-			parent_message_id: msg.parent_message_id
-		})));
+		console.log(
+			'📥 Raw messages from backend:',
+			messagesResponseJson.map((msg) => ({
+				id: msg.id,
+				variant_count: msg.variant_count,
+				current_variant_index: msg.current_variant_index,
+				is_variant: msg.is_variant,
+				parent_message_id: msg.parent_message_id
+			}))
+		);
 
 		const messages: ScribeChatMessage[] = messagesResponseJson.map(
 			(rawMsg): ScribeChatMessage => ({

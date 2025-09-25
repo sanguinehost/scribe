@@ -92,7 +92,7 @@
 	let currentChronicleId = $state<string | null>(null);
 	let availableChronicles = $state<PlayerChronicleWithCounts[]>([]);
 	let isLoadingChronicles = $state(false);
-	
+
 	// Chronicle creation state
 	let showChronicleCreationForm = $state(false);
 	let newChronicleName = $state('');
@@ -470,7 +470,7 @@
 
 		try {
 			localSettings.prompt_template_id = templateId;
-			
+
 			const result = await apiClient.updateChatSessionSettings(chat.id, {
 				prompt_template_id: templateId
 			});
@@ -801,8 +801,8 @@
 												{/each}
 											</select>
 											<p class="text-xs text-muted-foreground">
-												Link this chat to a chronicle to organize related conversations and make them
-												available for RAG queries.
+												Link this chat to a chronicle to organize related conversations and make
+												them available for RAG queries.
 											</p>
 										</div>
 									{:else}

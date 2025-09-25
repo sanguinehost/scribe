@@ -130,9 +130,13 @@ class ApiClient {
 		// Debug log to verify API URL is set correctly
 		if (browser) {
 			if (!apiUrl) {
-				console.warn('[ApiClient] PUBLIC_API_URL is not defined, using relative paths or provided baseUrl');
+				console.warn(
+					'[ApiClient] PUBLIC_API_URL is not defined, using relative paths or provided baseUrl'
+				);
 			}
-			console.log(`[ApiClient] Initialized with baseUrl: ${this.baseUrl || '(empty - using relative paths)'}`);
+			console.log(
+				`[ApiClient] Initialized with baseUrl: ${this.baseUrl || '(empty - using relative paths)'}`
+			);
 			if (apiUrl) {
 				console.log(`[ApiClient] PUBLIC_API_URL from env: ${apiUrl}`);
 			}
@@ -1503,7 +1507,9 @@ class ApiClient {
 	/**
 	 * Create a subscription checkout session
 	 */
-	async createSubscription(request: CreateSubscriptionRequest): Promise<Result<CreateSubscriptionResponse, ApiError>> {
+	async createSubscription(
+		request: CreateSubscriptionRequest
+	): Promise<Result<CreateSubscriptionResponse, ApiError>> {
 		return this.fetch<CreateSubscriptionResponse>('/api/payment/subscription', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1523,7 +1529,9 @@ class ApiClient {
 	/**
 	 * Create a payment transaction for subscription
 	 */
-	async createPayment(request: CreatePaymentRequest): Promise<Result<CreatePaymentResponse, ApiError>> {
+	async createPayment(
+		request: CreatePaymentRequest
+	): Promise<Result<CreatePaymentResponse, ApiError>> {
 		return this.fetch<CreatePaymentResponse>('/api/payment/payment', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1540,7 +1548,9 @@ class ApiClient {
 	/**
 	 * Cancel current subscription
 	 */
-	async cancelSubscription(request: CancelSubscriptionRequest = {}): Promise<Result<SubscriptionResponse, ApiError>> {
+	async cancelSubscription(
+		request: CancelSubscriptionRequest = {}
+	): Promise<Result<SubscriptionResponse, ApiError>> {
 		return this.fetch<SubscriptionResponse>('/api/payment/subscription/cancel', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1574,7 +1584,10 @@ class ApiClient {
 	/**
 	 * Get user's credit transaction history
 	 */
-	async getCreditTransactions(limit = 50, offset = 0): Promise<Result<CreditTransactionsResponse, ApiError>> {
+	async getCreditTransactions(
+		limit = 50,
+		offset = 0
+	): Promise<Result<CreditTransactionsResponse, ApiError>> {
 		if (!PAYMENT_FEATURES.credits) {
 			return err(new ApiResponseError(501, 'Credits feature not enabled'));
 		}

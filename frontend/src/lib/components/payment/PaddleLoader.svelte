@@ -46,7 +46,8 @@
 			// Environment is auto-detected from token prefix (test_ for sandbox, live_ for production)
 			if (window.Paddle?.Initialize) {
 				// Detect user's theme preference
-				const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+				const isDarkMode =
+					window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 				const theme = isDarkMode ? 'dark' : 'light';
 
 				// Detect user's locale (fallback to 'en')
@@ -61,7 +62,8 @@
 							locale: locale,
 							variant: 'one-page', // Use simpler one-page checkout
 							allowLogout: false, // Don't allow logout in checkout
-							frameStyle: 'width: 100%; min-width: 312px; background-color: transparent; border: none;' // For inline mode if needed
+							frameStyle:
+								'width: 100%; min-width: 312px; background-color: transparent; border: none;' // For inline mode if needed
 						}
 					},
 					eventCallback: (event) => {
@@ -72,8 +74,9 @@
 			}
 
 			paddleLoaded = true;
-			console.log(`Paddle.js loaded successfully with token: ${PUBLIC_PADDLE_CLIENT_SIDE_TOKEN.substring(0, 8)}...`);
-
+			console.log(
+				`Paddle.js loaded successfully with token: ${PUBLIC_PADDLE_CLIENT_SIDE_TOKEN.substring(0, 8)}...`
+			);
 		} catch (error) {
 			console.error('Failed to load Paddle.js:', error);
 			paddleError = error instanceof Error ? error.message : 'Unknown error loading Paddle.js';

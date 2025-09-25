@@ -13,4 +13,3 @@ export interface PaymentPlan {
 	features: string[];
 	popular?: boolean;
 }
-

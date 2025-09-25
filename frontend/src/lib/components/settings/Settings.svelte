@@ -527,7 +527,6 @@
 					{/await}
 				{/if}
 
-
 				<!-- Save Button -->
 				<div class="flex justify-end gap-4 border-t pt-6">
 					<Button variant="outline" onclick={closeSettings}>Cancel</Button>

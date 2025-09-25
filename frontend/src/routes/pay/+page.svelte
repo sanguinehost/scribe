@@ -78,15 +78,21 @@
 					break;
 				} else if (retryCount < maxRetries - 1) {
 					// Wait before retrying (exponential backoff)
-					console.log(`Verification attempt ${retryCount + 1} needs retry, waiting ${retryDelay * (retryCount + 1) / 1000}s...`);
-					await new Promise(resolve => setTimeout(resolve, retryDelay * (retryCount + 1)));
+					console.log(
+						`Verification attempt ${retryCount + 1} needs retry, waiting ${(retryDelay * (retryCount + 1)) / 1000}s...`
+					);
+					await new Promise((resolve) => setTimeout(resolve, retryDelay * (retryCount + 1)));
 					retryCount++;
 				} else {
 					break;
 				}
 			}
 
-			if (result && result.isOk() && (result.value?.success === true || result.value?.source === 'database')) {
+			if (
+				result &&
+				result.isOk() &&
+				(result.value?.success === true || result.value?.source === 'database')
+			) {
 				console.log('Transaction verified successfully:', result.value);
 
 				// Check if this is a trial subscription
@@ -122,7 +128,10 @@
 
 				// If user now has an active or trialing subscription, consider it a success
 				const subscription = subscriptionStore.subscription;
-				if (subscription && (subscription.status === 'active' || subscription.status === 'trialing')) {
+				if (
+					subscription &&
+					(subscription.status === 'active' || subscription.status === 'trialing')
+				) {
 					console.log(`Subscription is ${subscription.status} despite verification failure`);
 					error = null;
 
@@ -132,13 +141,15 @@
 					}, 2000);
 				} else {
 					// Show error but provide options
-					error = 'Transaction verification is taking longer than expected. Your payment may still be processing.';
+					error =
+						'Transaction verification is taking longer than expected. Your payment may still be processing.';
 					loading = false;
 				}
 			}
 		} catch (err) {
 			console.error('Error handling transaction completion:', err);
-			error = 'Unable to verify payment status. Please refresh the page or contact support if the issue persists.';
+			error =
+				'Unable to verify payment status. Please refresh the page or contact support if the issue persists.';
 			loading = false;
 		}
 	}
@@ -154,30 +165,48 @@
 	<meta name="description" content="Payment processing and completion" />
 </svelte:head>
 
-<div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+<div
+	class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800"
+>
 	<div class="container mx-auto px-4 py-8">
-		<div class="max-w-md mx-auto">
+		<div class="mx-auto max-w-md">
 			{#if loading}
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8 text-center">
-					<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+				<div class="rounded-lg bg-white p-8 text-center shadow-lg dark:bg-slate-800">
+					<div
+						class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600"
+					></div>
 					<p class="text-slate-600 dark:text-slate-300">Processing payment...</p>
 				</div>
 			{:else if error}
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8">
+				<div class="rounded-lg bg-white p-8 shadow-lg dark:bg-slate-800">
 					<div class="text-center">
-						<div class="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-							<svg class="w-6 h-6 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+						<div
+							class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100 dark:bg-yellow-900/30"
+						>
+							<svg
+								class="h-6 w-6 text-yellow-600 dark:text-yellow-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+								/>
 							</svg>
 						</div>
-						<h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+						<h1 class="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
 							Payment Processing
 						</h1>
-						<p class="text-slate-600 dark:text-slate-300 mb-4">{error}</p>
+						<p class="mb-4 text-slate-600 dark:text-slate-300">{error}</p>
 
 						{#if transactionId}
-							<p class="text-sm text-slate-500 dark:text-slate-400 mb-6">
-								Transaction ID: <code class="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{transactionId}</code>
+							<p class="mb-6 text-sm text-slate-500 dark:text-slate-400">
+								Transaction ID: <code class="rounded bg-slate-100 px-2 py-1 dark:bg-slate-700"
+									>{transactionId}</code
+								>
 							</p>
 							<div class="space-y-3">
 								<button
@@ -186,13 +215,13 @@
 										error = null;
 										handleTransactionCompletion();
 									}}
-									class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+									class="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700"
 								>
 									Retry Verification
 								</button>
 								<button
 									on:click={handleContinue}
-									class="w-full bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 font-medium py-3 px-4 rounded-lg transition-colors"
+									class="w-full rounded-lg bg-slate-200 px-4 py-3 font-medium text-slate-900 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
 								>
 									Continue to App
 								</button>
@@ -200,7 +229,7 @@
 						{:else}
 							<button
 								on:click={handleContinue}
-								class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+								class="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700"
 							>
 								Return to App
 							</button>
@@ -208,47 +237,73 @@
 					</div>
 				</div>
 			{:else if transactionId}
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8">
+				<div class="rounded-lg bg-white p-8 shadow-lg dark:bg-slate-800">
 					<div class="text-center">
-						<div class="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-							<svg class="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+						<div
+							class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30"
+						>
+							<svg
+								class="h-6 w-6 text-green-600 dark:text-green-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M5 13l4 4L19 7"
+								/>
 							</svg>
 						</div>
-						<h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+						<h1 class="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
 							Payment {status === 'success' ? 'Successful' : 'Processed'}
 						</h1>
-						<p class="text-slate-600 dark:text-slate-300 mb-2">
+						<p class="mb-2 text-slate-600 dark:text-slate-300">
 							Thank you for your payment! Your transaction has been processed.
 						</p>
-						<p class="text-sm text-slate-500 dark:text-slate-400 mb-6">
-							Transaction ID: <code class="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{transactionId}</code>
+						<p class="mb-6 text-sm text-slate-500 dark:text-slate-400">
+							Transaction ID: <code class="rounded bg-slate-100 px-2 py-1 dark:bg-slate-700"
+								>{transactionId}</code
+							>
 						</p>
 						<button
 							on:click={handleContinue}
-							class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+							class="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700"
 						>
 							Continue to App
 						</button>
 					</div>
 				</div>
 			{:else}
-				<div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8">
+				<div class="rounded-lg bg-white p-8 shadow-lg dark:bg-slate-800">
 					<div class="text-center">
-						<div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-							<svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+						<div
+							class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30"
+						>
+							<svg
+								class="h-6 w-6 text-blue-600 dark:text-blue-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+								/>
 							</svg>
 						</div>
-						<h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+						<h1 class="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
 							Payment Portal
 						</h1>
-						<p class="text-slate-600 dark:text-slate-300 mb-6">
+						<p class="mb-6 text-slate-600 dark:text-slate-300">
 							No payment transaction detected. Redirecting you back to the app...
 						</p>
 						<button
 							on:click={handleContinue}
-							class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+							class="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700"
 						>
 							Return to App
 						</button>

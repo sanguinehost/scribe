@@ -97,7 +97,8 @@ function createCreditStore() {
 
 			return data;
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Failed to fetch credit balance';
+			const errorMessage =
+				error instanceof Error ? error.message : 'Failed to fetch credit balance';
 			update((state) => ({
 				...state,
 				isLoading: false,
@@ -169,7 +170,8 @@ function createCreditStore() {
 
 			return data.packages;
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Failed to fetch credit packages';
+			const errorMessage =
+				error instanceof Error ? error.message : 'Failed to fetch credit packages';
 			update((state) => ({
 				...state,
 				isLoading: false,
@@ -305,7 +307,7 @@ function createCreditStore() {
 			'gpt-4o': 40,
 			'gpt-4o-mini': 15,
 			'claude-3-5-sonnet-20241022': 60,
-			'claude-3-5-haiku-20241022': 20,
+			'claude-3-5-haiku-20241022': 20
 		};
 
 		return defaultCosts[modelName] || 10; // Default to 10 credits
@@ -345,36 +347,24 @@ function createCreditStore() {
 export const creditStore = createCreditStore();
 
 // Derived store for formatted balance display
-export const formattedBalance = derived(
-	creditStore,
-	($creditStore) => {
-		if (!$creditStore.balance) return '---';
-		return $creditStore.balance.balance.toLocaleString();
-	}
-);
+export const formattedBalance = derived(creditStore, ($creditStore) => {
+	if (!$creditStore.balance) return '---';
+	return $creditStore.balance.balance.toLocaleString();
+});
 
 // Derived store for usage percentage
-export const usagePercentage = derived(
-	creditStore,
-	($creditStore) => {
-		if (!$creditStore.dailyUsage) return 0;
-		return Math.min(100, $creditStore.dailyUsage.usage_percentage);
-	}
-);
+export const usagePercentage = derived(creditStore, ($creditStore) => {
+	if (!$creditStore.dailyUsage) return 0;
+	return Math.min(100, $creditStore.dailyUsage.usage_percentage);
+});
 
 // Derived store for whether user is near or over limit
-export const isNearLimit = derived(
-	creditStore,
-	($creditStore) => {
-		if (!$creditStore.dailyUsage) return false;
-		return $creditStore.dailyUsage.usage_percentage >= 80;
-	}
-);
+export const isNearLimit = derived(creditStore, ($creditStore) => {
+	if (!$creditStore.dailyUsage) return false;
+	return $creditStore.dailyUsage.usage_percentage >= 80;
+});
 
-export const isOverLimit = derived(
-	creditStore,
-	($creditStore) => {
-		if (!$creditStore.dailyUsage) return false;
-		return $creditStore.dailyUsage.usage_percentage >= 100;
-	}
-);
+export const isOverLimit = derived(creditStore, ($creditStore) => {
+	if (!$creditStore.dailyUsage) return false;
+	return $creditStore.dailyUsage.usage_percentage >= 100;
+});

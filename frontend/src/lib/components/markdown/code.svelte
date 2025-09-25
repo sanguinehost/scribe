@@ -121,14 +121,17 @@
 </script>
 
 {#if isInlineCode}
-	<code bind:this={element} class={cn('inline-block rounded bg-muted px-1.5 py-0.5 text-sm font-mono text-foreground break-words border border-border', c)} {...props}
-		>{@render children?.()}</code
-	>
-{:else}
 	<code
 		bind:this={element}
-		class="whitespace-pre-wrap break-words"
+		class={cn(
+			'inline-block break-words rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground',
+			c
+		)}
 		{...props}>{@render children?.()}</code
+	>
+{:else}
+	<code bind:this={element} class="whitespace-pre-wrap break-words" {...props}
+		>{@render children?.()}</code
 	>
 {/if}
 

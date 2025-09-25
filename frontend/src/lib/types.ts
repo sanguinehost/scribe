@@ -1133,7 +1133,13 @@ export interface PromptTemplateListResponse {
 // Payment & Subscription Types
 // ============================================================================
 
-export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing' | 'unpaid' | 'incomplete';
+export type SubscriptionStatus =
+	| 'active'
+	| 'canceled'
+	| 'past_due'
+	| 'trialing'
+	| 'unpaid'
+	| 'incomplete';
 export type PlanType = 'free' | 'basic' | 'premium';
 
 export interface Subscription {

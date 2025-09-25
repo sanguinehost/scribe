@@ -14,7 +14,7 @@
 
 <code
 	class={cn(
-		'inline-block rounded bg-muted px-1.5 py-0.5 text-sm font-mono text-foreground break-words',
+		'inline-block break-words rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground',
 		c
 	)}
 	{...props}

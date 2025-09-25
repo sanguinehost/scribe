@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { creditStore, formattedBalance, usagePercentage, isNearLimit, isOverLimit } from '$lib/stores/credits';
+	import {
+		creditStore,
+		formattedBalance,
+		usagePercentage,
+		isNearLimit,
+		isOverLimit
+	} from '$lib/stores/credits';
 	import { PAYMENT_FEATURES } from '$lib/utils/features';
 	import { Coins, AlertCircle, TrendingUp, Clock } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -19,21 +25,21 @@
 		}
 
 		try {
-			await Promise.all([
-				creditStore.fetchBalance(),
-				creditStore.fetchModelCosts()
-			]);
+			await Promise.all([creditStore.fetchBalance(), creditStore.fetchModelCosts()]);
 		} catch (error) {
 			console.error('Failed to fetch credit data:', error);
 		}
 	});
 
 	// Auto-refresh balance every 5 minutes
-	const refreshInterval = setInterval(() => {
-		if (PAYMENT_FEATURES.credits) {
-			creditStore.fetchBalance();
-		}
-	}, 5 * 60 * 1000);
+	const refreshInterval = setInterval(
+		() => {
+			if (PAYMENT_FEATURES.credits) {
+				creditStore.fetchBalance();
+			}
+		},
+		5 * 60 * 1000
+	);
 
 	// Cleanup
 	onMount(() => {
@@ -53,7 +59,10 @@
 	<div class="flex items-center gap-2">
 		<Tooltip.Root>
 			<Tooltip.Trigger
-				class="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-accent transition-colors {$isNearLimit && !$isOverLimit ? 'text-orange-500' : ''} {$isOverLimit ? 'text-red-500' : ''}"
+				class="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-accent {$isNearLimit &&
+				!$isOverLimit
+					? 'text-orange-500'
+					: ''} {$isOverLimit ? 'text-red-500' : ''}"
 			>
 				<Coins class="h-4 w-4" />
 				<span class="font-medium">{$formattedBalance}</span>
@@ -79,12 +88,8 @@
 		</Tooltip.Root>
 
 		{#if showPurchaseButton}
-			<Button
-				variant="outline"
-				size="sm"
-				on:click={onPurchaseClick}
-			>
-				<TrendingUp class="h-3.5 w-3.5 mr-1" />
+			<Button variant="outline" size="sm" on:click={onPurchaseClick}>
+				<TrendingUp class="mr-1 h-3.5 w-3.5" />
 				Buy
 			</Button>
 		{/if}
@@ -99,19 +104,13 @@
 					Credit Balance
 				</Card.Title>
 				{#if showPurchaseButton}
-					<Button
-						variant="outline"
-						size="sm"
-						on:click={onPurchaseClick}
-					>
-						<TrendingUp class="h-4 w-4 mr-1.5" />
+					<Button variant="outline" size="sm" on:click={onPurchaseClick}>
+						<TrendingUp class="mr-1.5 h-4 w-4" />
 						Purchase Credits
 					</Button>
 				{/if}
 			</div>
-			<Card.Description>
-				Manage your credits and track usage
-			</Card.Description>
+			<Card.Description>Manage your credits and track usage</Card.Description>
 		</Card.Header>
 		<Card.Content class="space-y-4">
 			{#if error}
@@ -121,14 +120,14 @@
 				</div>
 			{:else if isLoading && !balance}
 				<div class="animate-pulse space-y-3">
-					<div class="h-8 bg-muted rounded w-32"></div>
-					<div class="h-2 bg-muted rounded w-full"></div>
-					<div class="h-4 bg-muted rounded w-48"></div>
+					<div class="h-8 w-32 rounded bg-muted"></div>
+					<div class="h-2 w-full rounded bg-muted"></div>
+					<div class="h-4 w-48 rounded bg-muted"></div>
 				</div>
 			{:else if balance}
 				<!-- Current Balance -->
 				<div>
-					<div class="flex items-baseline gap-2 mb-1">
+					<div class="mb-1 flex items-baseline gap-2">
 						<span class="text-3xl font-bold">{balance.balance.toLocaleString()}</span>
 						<span class="text-muted-foreground">credits</span>
 					</div>
@@ -144,13 +143,17 @@
 					<div class="space-y-2">
 						<div class="flex items-center justify-between text-sm">
 							<span class="text-muted-foreground">Daily Usage</span>
-							<span class="font-medium {$isNearLimit && !$isOverLimit ? 'text-orange-500' : ''} {$isOverLimit ? 'text-red-500' : ''}">
+							<span
+								class="font-medium {$isNearLimit && !$isOverLimit
+									? 'text-orange-500'
+									: ''} {$isOverLimit ? 'text-red-500' : ''}"
+							>
 								{dailyUsage.message_count} / {dailyUsage.daily_limit} messages
 							</span>
 						</div>
 						<Progress.Root value={$usagePercentage} class="h-2" />
 						{#if dailyUsage.reset_time}
-							<p class="text-xs text-muted-foreground flex items-center gap-1">
+							<p class="flex items-center gap-1 text-xs text-muted-foreground">
 								<Clock class="h-3 w-3" />
 								Resets at {dailyUsage.reset_time}
 							</p>
@@ -176,16 +179,16 @@
 
 				<!-- Monthly Grant Info -->
 				{#if balance.last_monthly_grant}
-					<div class="pt-2 border-t">
+					<div class="border-t pt-2">
 						<p class="text-sm text-muted-foreground">
-							Last monthly grant received on {new Date(balance.last_monthly_grant).toLocaleDateString()}
+							Last monthly grant received on {new Date(
+								balance.last_monthly_grant
+							).toLocaleDateString()}
 						</p>
 					</div>
 				{/if}
 			{:else}
-				<div class="text-center py-4 text-muted-foreground">
-					No credit data available
-				</div>
+				<div class="py-4 text-center text-muted-foreground">No credit data available</div>
 			{/if}
 		</Card.Content>
 	</Card.Root>

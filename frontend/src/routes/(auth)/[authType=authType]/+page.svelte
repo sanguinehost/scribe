@@ -66,7 +66,7 @@
 	<div class="flex w-full max-w-md flex-col gap-12 overflow-hidden rounded-2xl">
 		<div class="flex flex-col items-center justify-center gap-4 px-4 text-center sm:px-16">
 			<div class="flex flex-col items-center gap-3">
-				<div class="h-12 w-12 rounded-xl overflow-hidden">
+				<div class="h-12 w-12 overflow-hidden rounded-xl">
 					<img
 						src="/logo_mini.png"
 						alt="Sanguine Scribe Logo"

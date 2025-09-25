@@ -4,7 +4,13 @@
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { apiClient } from '$lib/api';
 	import { PUBLIC_PADDLE_CLIENT_SIDE_TOKEN } from '$env/static/public';
-	import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '$lib/components/ui/dialog';
+	import {
+		Dialog,
+		DialogContent,
+		DialogHeader,
+		DialogTitle,
+		DialogDescription
+	} from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -78,9 +84,11 @@
 
 	// Get current plan details - handle free plan which isn't purchasable
 	$: currentPlan = selectedPlan === 'free' ? null : plans[selectedPlan];
-	$: currentPrice = currentPlan ?
-		(selectedBilling === 'monthly' ? currentPlan.monthly : currentPlan.yearly) :
-		null;
+	$: currentPrice = currentPlan
+		? selectedBilling === 'monthly'
+			? currentPlan.monthly
+			: currentPlan.yearly
+		: null;
 
 	async function handleCheckout() {
 		if (!browser || !ENABLE_PAYMENTS || checkoutLoading) {
@@ -121,7 +129,9 @@
 
 			// Note for sandbox testing
 			if (PUBLIC_PADDLE_CLIENT_SIDE_TOKEN?.startsWith('test_')) {
-				console.log('🧪 Sandbox Mode - Use test cards: 4242 4242 4242 4242 (Visa) or 4000 0566 5566 5556 (Visa Debit)');
+				console.log(
+					'🧪 Sandbox Mode - Use test cards: 4242 4242 4242 4242 (Visa) or 4000 0566 5566 5556 (Visa Debit)'
+				);
 			}
 
 			// Open Paddle checkout overlay with proper settings
@@ -152,7 +162,8 @@
 				successCallback: (data: any) => {
 					console.log('✅ Paddle checkout success:', data);
 					// Extract transaction ID from the data
-					const transactionId = data.transactionId || data.transaction?.id || data.checkout?.transactionId;
+					const transactionId =
+						data.transactionId || data.transaction?.id || data.checkout?.transactionId;
 					if (transactionId) {
 						dispatch('checkout-complete', { transactionId });
 						// The successUrl will handle redirect, but fallback just in case
@@ -168,7 +179,6 @@
 					handleClose();
 				}
 			});
-
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : 'Payment initialization failed';
 			console.error('❌ Checkout error:', errorMessage);
@@ -205,17 +215,21 @@
 			<div class="space-y-6">
 				<!-- Billing Toggle -->
 				<div class="flex justify-center">
-					<div class="inline-flex items-center gap-3 p-1 bg-muted rounded-lg">
+					<div class="inline-flex items-center gap-3 rounded-lg bg-muted p-1">
 						<button
-							class="px-4 py-2 rounded-md transition-all {selectedBilling === 'monthly' ? 'bg-background shadow-sm' : ''}"
-							on:click={() => selectedBilling = 'monthly'}
+							class="rounded-md px-4 py-2 transition-all {selectedBilling === 'monthly'
+								? 'bg-background shadow-sm'
+								: ''}"
+							on:click={() => (selectedBilling = 'monthly')}
 							disabled={checkoutLoading}
 						>
 							Monthly
 						</button>
 						<button
-							class="px-4 py-2 rounded-md transition-all {selectedBilling === 'yearly' ? 'bg-background shadow-sm' : ''}"
-							on:click={() => selectedBilling = 'yearly'}
+							class="rounded-md px-4 py-2 transition-all {selectedBilling === 'yearly'
+								? 'bg-background shadow-sm'
+								: ''}"
+							on:click={() => (selectedBilling = 'yearly')}
 							disabled={checkoutLoading}
 						>
 							Yearly
@@ -225,10 +239,12 @@
 				</div>
 
 				<!-- Plan Cards -->
-				<div class="grid md:grid-cols-2 gap-4">
+				<div class="grid gap-4 md:grid-cols-2">
 					{#each Object.entries(plans) as [planKey, plan]}
 						<Card
-							class="cursor-pointer transition-all {selectedPlan === planKey ? 'ring-2 ring-primary' : ''}"
+							class="cursor-pointer transition-all {selectedPlan === planKey
+								? 'ring-2 ring-primary'
+								: ''}"
 							on:click={() => selectPlan(planKey)}
 						>
 							<CardContent class="p-6">
@@ -255,8 +271,18 @@
 									<ul class="space-y-2">
 										{#each plan.features as feature}
 											<li class="flex items-start gap-2">
-												<svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+												<svg
+													class="mt-0.5 h-5 w-5 text-accent"
+													fill="none"
+													stroke="currentColor"
+													viewBox="0 0 24 24"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M5 13l4 4L19 7"
+													/>
 												</svg>
 												<span class="text-sm">{feature}</span>
 											</li>
@@ -282,7 +308,8 @@
 								<div>
 									<h4 class="font-semibold">Order Summary</h4>
 									<p class="text-sm text-muted-foreground">
-										{currentPlan.name} Plan - {selectedBilling === 'monthly' ? 'Monthly' : 'Yearly'} Billing
+										{currentPlan.name} Plan - {selectedBilling === 'monthly' ? 'Monthly' : 'Yearly'}
+										Billing
 									</p>
 								</div>
 								<div class="text-right">
@@ -294,26 +321,31 @@
 											{currentPrice.savings}
 										</div>
 									{/if}
+								</div>
 							</div>
-						</div>
-					</CardContent>
-				</Card>
+						</CardContent>
+					</Card>
 				{/if}
 
 				<!-- Sandbox Test Card Info -->
 				{#if PUBLIC_PADDLE_CLIENT_SIDE_TOKEN?.startsWith('test_')}
-					<Card class="bg-accent/10 border-accent/30">
+					<Card class="border-accent/30 bg-accent/10">
 						<CardContent class="p-4">
 							<div class="flex items-start gap-3">
 								<span class="text-lg">🧪</span>
 								<div class="flex-1">
-									<h5 class="font-semibold text-sm text-accent">Sandbox Mode - Test Cards</h5>
-									<p class="text-xs text-muted-foreground mt-1">
+									<h5 class="text-sm font-semibold text-accent">Sandbox Mode - Test Cards</h5>
+									<p class="mt-1 text-xs text-muted-foreground">
 										Use these test card numbers for sandbox testing:
 									</p>
-									<ul class="text-xs text-muted-foreground mt-2 space-y-1">
-										<li>• <code class="bg-muted px-1 py-0.5 rounded">4242 4242 4242 4242</code> - Visa</li>
-										<li>• <code class="bg-muted px-1 py-0.5 rounded">4000 0566 5566 5556</code> - Visa Debit</li>
+									<ul class="mt-2 space-y-1 text-xs text-muted-foreground">
+										<li>
+											• <code class="rounded bg-muted px-1 py-0.5">4242 4242 4242 4242</code> - Visa
+										</li>
+										<li>
+											• <code class="rounded bg-muted px-1 py-0.5">4000 0566 5566 5556</code> - Visa
+											Debit
+										</li>
 										<li>• Any expiry date in the future, any CVV</li>
 									</ul>
 								</div>
@@ -324,29 +356,25 @@
 
 				<!-- Error Message -->
 				{#if checkoutError}
-					<div class="p-4 border border-red-200 dark:border-red-800 rounded-lg bg-red-50 dark:bg-red-950/30">
-						<p class="text-red-600 dark:text-red-400 text-sm">
+					<div
+						class="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/30"
+					>
+						<p class="text-sm text-red-600 dark:text-red-400">
 							{checkoutError}
 						</p>
 					</div>
 				{/if}
 
 				<!-- Action Buttons -->
-				<div class="flex gap-3 justify-end">
-					<Button
-						variant="outline"
-						on:click={handleClose}
-						disabled={checkoutLoading}
-					>
+				<div class="flex justify-end gap-3">
+					<Button variant="outline" on:click={handleClose} disabled={checkoutLoading}>
 						Cancel
 					</Button>
-					<Button
-						on:click={handleCheckout}
-						disabled={checkoutLoading}
-						class="min-w-[150px]"
-					>
+					<Button on:click={handleCheckout} disabled={checkoutLoading} class="min-w-[150px]">
 						{#if checkoutLoading}
-							<div class="inline-block w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+							<div
+								class="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+							></div>
 							Processing...
 						{:else}
 							Continue to Checkout

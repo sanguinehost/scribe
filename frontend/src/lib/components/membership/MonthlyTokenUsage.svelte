@@ -86,20 +86,21 @@
 					<span class="font-medium text-slate-900 dark:text-slate-100">
 						{getUsageLabel()} tokens used
 					</span>
-					<span class="text-slate-500 dark:text-slate-400">
-						This period
-					</span>
+					<span class="text-slate-500 dark:text-slate-400"> This period </span>
 				</div>
 			{/if}
 
 			<!-- Information display (no progress bar) -->
-			<div class="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+			<div
+				class="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/30"
+			>
 				<div class="flex items-start gap-2">
-					<TrendingUp size={14} class="text-blue-600 dark:text-blue-400 mt-0.5" />
+					<TrendingUp size={14} class="mt-0.5 text-blue-600 dark:text-blue-400" />
 					<div class="text-xs text-blue-800 dark:text-blue-200">
 						<p class="font-medium">Usage tracking for administrative purposes</p>
 						<p class="mt-1 text-blue-700 dark:text-blue-300">
-							This data helps us understand platform usage patterns and ensure fair resource allocation.
+							This data helps us understand platform usage patterns and ensure fair resource
+							allocation.
 						</p>
 					</div>
 				</div>
@@ -116,17 +117,17 @@
 		</div>
 	{:else}
 		<!-- Loading state -->
-		<div class="space-y-3 animate-pulse">
+		<div class="animate-pulse space-y-3">
 			<div class="flex justify-between">
-				<div class="h-4 bg-slate-200 dark:bg-slate-700 rounded w-24"></div>
-				<div class="h-4 bg-slate-200 dark:bg-slate-700 rounded w-16"></div>
+				<div class="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700"></div>
+				<div class="h-4 w-16 rounded bg-slate-200 dark:bg-slate-700"></div>
 			</div>
 			<div class="flex justify-between">
-				<div class="h-4 bg-slate-200 dark:bg-slate-700 rounded w-20"></div>
-				<div class="h-4 bg-slate-200 dark:bg-slate-700 rounded w-12"></div>
+				<div class="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700"></div>
+				<div class="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700"></div>
 			</div>
-			<div class={`bg-slate-200 dark:bg-slate-700 rounded-full ${containerClass}`}></div>
-			<div class="h-3 bg-slate-200 dark:bg-slate-700 rounded w-32"></div>
+			<div class={`rounded-full bg-slate-200 dark:bg-slate-700 ${containerClass}`}></div>
+			<div class="h-3 w-32 rounded bg-slate-200 dark:bg-slate-700"></div>
 		</div>
 	{/if}
 </div>
@@ -156,7 +157,8 @@
 	}
 
 	@keyframes warningPulse {
-		0%, 100% {
+		0%,
+		100% {
 			box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
 		}
 		50% {
@@ -165,7 +167,8 @@
 	}
 
 	@keyframes criticalPulse {
-		0%, 100% {
+		0%,
+		100% {
 			box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
 		}
 		50% {

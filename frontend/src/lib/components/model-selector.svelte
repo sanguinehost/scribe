@@ -161,18 +161,20 @@
 						{availableModels().find((m) => m.id === selectedChatModel.value)?.name ||
 							'Default Model'}
 						{#if PAYMENT_FEATURES.credits}
-							{@const defaultModel = availableModels().find((m) => m.id === selectedChatModel.value)}
+							{@const defaultModel = availableModels().find(
+								(m) => m.id === selectedChatModel.value
+							)}
 							{#if defaultModel && !defaultModel.isLocal}
 								{@const creditCost = getModelCreditCost(defaultModel.id)}
 								{@const hasCredits = hasSufficientCredits(defaultModel.id)}
-								<div class="flex items-center gap-1 mt-1">
+								<div class="mt-1 flex items-center gap-1">
 									<Coins class="h-3 w-3" />
 									<span class={hasCredits ? '' : 'text-red-500'}>
 										{creditCost} credits per message
 									</span>
 								</div>
 							{:else if defaultModel && defaultModel.isLocal}
-								<div class="flex items-center gap-1 mt-1 text-green-600 dark:text-green-400">
+								<div class="mt-1 flex items-center gap-1 text-green-600 dark:text-green-400">
 									<Coins class="h-3 w-3" />
 									<span>Free (local model)</span>
 								</div>
@@ -191,8 +193,10 @@
 		{#each availableModels() as chatModel (chatModel.id)}
 			{@const hasCredits = hasSufficientCredits(chatModel.id)}
 			<DropdownMenuItem
-				onSelect={() => hasCredits ? handleModelSelect(chatModel.id) : undefined}
-				class="group/item flex flex-row items-center justify-between gap-4 {!hasCredits ? 'opacity-50 cursor-not-allowed' : ''}"
+				onSelect={() => (hasCredits ? handleModelSelect(chatModel.id) : undefined)}
+				class="group/item flex flex-row items-center justify-between gap-4 {!hasCredits
+					? 'cursor-not-allowed opacity-50'
+					: ''}"
 				data-active={chat
 					? chatModelOverride === chatModel.id
 					: chatModel.id === selectedChatModel.value}
@@ -231,17 +235,17 @@
 						{#if PAYMENT_FEATURES.credits && !chatModel.isLocal}
 							{@const creditCost = getModelCreditCost(chatModel.id)}
 							{@const hasCredits = hasSufficientCredits(chatModel.id)}
-							<div class="flex items-center gap-1 mt-1">
+							<div class="mt-1 flex items-center gap-1">
 								<Coins class="h-3 w-3" />
 								<span class={hasCredits ? '' : 'text-red-500'}>
 									{creditCost} credits per message
 								</span>
 								{#if !hasCredits}
-									<span class="text-red-500 text-xs">(insufficient credits)</span>
+									<span class="text-xs text-red-500">(insufficient credits)</span>
 								{/if}
 							</div>
 						{:else if PAYMENT_FEATURES.credits && chatModel.isLocal}
-							<div class="flex items-center gap-1 mt-1 text-green-600 dark:text-green-400">
+							<div class="mt-1 flex items-center gap-1 text-green-600 dark:text-green-400">
 								<Coins class="h-3 w-3" />
 								<span>Free (local model)</span>
 							</div>

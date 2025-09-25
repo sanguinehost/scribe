@@ -162,24 +162,24 @@
 			<!-- Selected Template Display -->
 			<Button
 				variant="outline"
-				class="h-auto w-full justify-between p-3 text-left overflow-hidden"
+				class="h-auto w-full justify-between overflow-hidden p-3 text-left"
 				{disabled}
 				onclick={toggleDropdown}
 			>
-				<div class="flex flex-col items-start gap-1 min-w-0 flex-1 overflow-hidden">
-					<span class="font-medium truncate w-full">
+				<div class="flex min-w-0 flex-1 flex-col items-start gap-1 overflow-hidden">
+					<span class="w-full truncate font-medium">
 						{selectedTemplate?.name || 'Select Template'}
 					</span>
 					{#if selectedTemplate}
-						<span class="text-xs text-muted-foreground truncate w-full">
+						<span class="w-full truncate text-xs text-muted-foreground">
 							{selectedTemplate.description}
 						</span>
 					{/if}
 				</div>
 				{#if isDropdownOpen}
-					<ChevronUp class="h-4 w-4 opacity-50 shrink-0" />
+					<ChevronUp class="h-4 w-4 shrink-0 opacity-50" />
 				{:else}
-					<ChevronDown class="h-4 w-4 opacity-50 shrink-0" />
+					<ChevronDown class="h-4 w-4 shrink-0 opacity-50" />
 				{/if}
 			</Button>
 
@@ -191,14 +191,14 @@
 					{#each availableTemplates as template (template.id)}
 						<button
 							type="button"
-							class="flex w-full flex-col items-start gap-1 rounded-sm px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground overflow-hidden {selectedTemplateId ===
+							class="flex w-full flex-col items-start gap-1 overflow-hidden rounded-sm px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground {selectedTemplateId ===
 							template.id
 								? 'bg-accent text-accent-foreground'
 								: ''}"
 							onclick={() => handleTemplateSelect(template)}
 						>
-							<span class="font-medium truncate w-full text-left">{template.name}</span>
-							<span class="text-left text-xs text-muted-foreground truncate w-full">
+							<span class="w-full truncate text-left font-medium">{template.name}</span>
+							<span class="w-full truncate text-left text-xs text-muted-foreground">
 								{template.description}
 							</span>
 						</button>

@@ -10,7 +10,7 @@
 	import ChroniclesListOverview from './messages/chronicles-list-overview.svelte';
 	import ChronicleCreation from './messages/chronicle-creation.svelte';
 	import SettingsOverview from './messages/settings-overview.svelte';
-import Settings from './settings/Settings.svelte';
+	import Settings from './settings/Settings.svelte';
 	import { onMount } from 'svelte';
 	import Message from './messages/message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
@@ -107,10 +107,7 @@ import Settings from './settings/Settings.svelte';
 
 		// Debug logging removed for production
 
-		return (
-			message.message_type === 'Assistant' &&
-			(hasFirstMessageId || isFirstAssistantMessage)
-		);
+		return message.message_type === 'Assistant' && (hasFirstMessageId || isFirstAssistantMessage);
 	}
 
 	function handleGreetingChanged(event: CustomEvent) {
@@ -519,7 +516,6 @@ import Settings from './settings/Settings.svelte';
 				{@const variantInfo = hasVariants
 					? { current: currentIndex + 1, total: variantCount }
 					: null}
-
 
 				<Message
 					{message}

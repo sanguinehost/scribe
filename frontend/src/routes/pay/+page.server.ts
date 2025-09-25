@@ -15,7 +15,6 @@ export const load: PageServerLoad = async ({ url, fetch }) => {
 			// 		'Content-Type': 'application/json'
 			// 	}
 			// });
-			
 			// if (response.ok) {
 			// 	const verificationResult = await response.json();
 			// 	return {

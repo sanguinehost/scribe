@@ -26,14 +26,20 @@
 		// Plan-specific colors
 		const planClasses = {
 			free: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200',
-			basic: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 ring-1 ring-blue-600/20',
-			premium: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 ring-1 ring-purple-600/20'
+			basic:
+				'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 ring-1 ring-blue-600/20',
+			premium:
+				'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 ring-1 ring-purple-600/20'
 		};
 
 		return `${baseClass} ${sizeClasses[size]} ${planClasses[plan]}`;
 	}
 
-	function getDisplayText(plan: PlanType, status: SubscriptionStatus | null, showStatus: boolean): string {
+	function getDisplayText(
+		plan: PlanType,
+		status: SubscriptionStatus | null,
+		showStatus: boolean
+	): string {
 		const planNames = {
 			free: 'Free',
 			basic: 'Basic',

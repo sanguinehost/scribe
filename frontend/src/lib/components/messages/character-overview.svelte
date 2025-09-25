@@ -84,7 +84,7 @@
 	let descriptionFullScreen = $state(false);
 	let scenarioFullScreen = $state(false);
 	let personalityFullScreen = $state(false);
-	
+
 	// Image lightbox state
 	let avatarLightboxOpen = $state(false);
 
@@ -536,8 +536,10 @@
 				<CardHeader class="py-4">
 					<div class="flex items-center gap-4">
 						<!-- Compact Avatar -->
-						<Avatar 
-							class="h-16 w-16 border-2 border-muted transition-transform hover:scale-105 {characterAvatarSrc ? 'cursor-pointer' : ''}" 
+						<Avatar
+							class="h-16 w-16 border-2 border-muted transition-transform hover:scale-105 {characterAvatarSrc
+								? 'cursor-pointer'
+								: ''}"
 							onclick={() => characterAvatarSrc && (avatarLightboxOpen = true)}
 						>
 							{#if characterAvatarSrc}
@@ -1206,11 +1208,7 @@
 
 <!-- Avatar Image Lightbox -->
 {#if character && characterAvatarSrc}
-	<ImageLightbox
-		src={characterAvatarSrc}
-		alt={character.name}
-		bind:open={avatarLightboxOpen}
-	/>
+	<ImageLightbox src={characterAvatarSrc} alt={character.name} bind:open={avatarLightboxOpen} />
 {/if}
 
 <!-- Pop-out Editor Dialog for inline editing -->

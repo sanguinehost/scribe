@@ -60,15 +60,21 @@
 		}
 	}
 
-	function handlePlanSelected(event: CustomEvent<{ planType: PlanType; billingCycle: 'monthly' | 'yearly' }>) {
+	function handlePlanSelected(
+		event: CustomEvent<{ planType: PlanType; billingCycle: 'monthly' | 'yearly' }>
+	) {
 		console.log('Plan selected:', event.detail);
 	}
 
-	function handleCheckoutStarted(event: CustomEvent<{ planType: PlanType; billingCycle: 'monthly' | 'yearly' }>) {
+	function handleCheckoutStarted(
+		event: CustomEvent<{ planType: PlanType; billingCycle: 'monthly' | 'yearly' }>
+	) {
 		console.log('Checkout started:', event.detail);
 	}
 
-	function handleSubscriptionCreated(event: CustomEvent<{ planType: PlanType; billingCycle: 'monthly' | 'yearly' }>) {
+	function handleSubscriptionCreated(
+		event: CustomEvent<{ planType: PlanType; billingCycle: 'monthly' | 'yearly' }>
+	) {
 		// For free plan, just redirect to app
 		if (event.detail.planType === 'free') {
 			goto('/');
@@ -81,45 +87,38 @@
 	<meta name="description" content="Choose the perfect plan for your character AI conversations" />
 </svelte:head>
 
-<div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+<div
+	class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800"
+>
 	<div class="container mx-auto px-4 py-12">
 		{#if !ENABLE_PAYMENTS}
 			<!-- Payments disabled -->
-			<div class="text-center space-y-6">
-				<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100">
-					Pricing
-				</h1>
-				<Alert variant="destructive" class="max-w-2xl mx-auto">
+			<div class="space-y-6 text-center">
+				<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100">Pricing</h1>
+				<Alert variant="destructive" class="mx-auto max-w-2xl">
 					<AlertCircle class="h-4 w-4" />
 					<AlertDescription>
 						Payment features are currently disabled. Please try again later or contact support.
 					</AlertDescription>
 				</Alert>
 			</div>
-
 		{:else if isLoading}
 			<!-- Loading state -->
-			<div class="text-center space-y-6">
-				<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100">
-					Loading Plans...
-				</h1>
+			<div class="space-y-6 text-center">
+				<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100">Loading Plans...</h1>
 				<div class="flex justify-center">
-					<Loader class="w-8 h-8 animate-spin" />
+					<Loader class="h-8 w-8 animate-spin" />
 				</div>
 			</div>
-
 		{:else if error}
 			<!-- Error state -->
-			<div class="text-center space-y-6">
-				<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100">
-					Pricing
-				</h1>
-				<Alert variant="destructive" class="max-w-2xl mx-auto">
+			<div class="space-y-6 text-center">
+				<h1 class="text-4xl font-bold text-slate-900 dark:text-slate-100">Pricing</h1>
+				<Alert variant="destructive" class="mx-auto max-w-2xl">
 					<AlertCircle class="h-4 w-4" />
 					<AlertDescription>{error}</AlertDescription>
 				</Alert>
 			</div>
-
 		{:else}
 			<!-- Main subscription checkout -->
 			<SubscriptionCheckout
@@ -134,54 +133,61 @@
 			/>
 
 			<!-- FAQ Section -->
-			<div class="mt-20 max-w-4xl mx-auto">
-				<h2 class="text-3xl font-bold text-slate-900 dark:text-slate-100 text-center mb-12">
+			<div class="mx-auto mt-20 max-w-4xl">
+				<h2 class="mb-12 text-center text-3xl font-bold text-slate-900 dark:text-slate-100">
 					Frequently Asked Questions
 				</h2>
 
 				<div class="space-y-8">
-					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+					<div class="rounded-lg bg-white p-6 shadow-lg dark:bg-slate-800">
+						<h3 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
 							What are credits?
 						</h3>
 						<p class="text-slate-600 dark:text-slate-300">
-							Credits are used to access premium AI models. Each model has different credit costs based on its capabilities. Your monthly plan includes credits, and you can purchase additional credits if needed.
+							Credits are used to access premium AI models. Each model has different credit costs
+							based on its capabilities. Your monthly plan includes credits, and you can purchase
+							additional credits if needed.
 						</p>
 					</div>
 
-					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+					<div class="rounded-lg bg-white p-6 shadow-lg dark:bg-slate-800">
+						<h3 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
 							Can I change plans at any time?
 						</h3>
 						<p class="text-slate-600 dark:text-slate-300">
-							Yes! You can upgrade or downgrade your plan at any time. Changes take effect at the next billing cycle, and we'll prorate any differences. Unused credits roll over with paid plans.
+							Yes! You can upgrade or downgrade your plan at any time. Changes take effect at the
+							next billing cycle, and we'll prorate any differences. Unused credits roll over with
+							paid plans.
 						</p>
 					</div>
 
-					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+					<div class="rounded-lg bg-white p-6 shadow-lg dark:bg-slate-800">
+						<h3 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
 							What's the difference between annual and monthly billing?
 						</h3>
 						<p class="text-slate-600 dark:text-slate-300">
-							Annual billing saves you 17% compared to monthly billing. You get the same features and credits, just at a discounted rate when you pay yearly.
+							Annual billing saves you 17% compared to monthly billing. You get the same features
+							and credits, just at a discounted rate when you pay yearly.
 						</p>
 					</div>
 
-					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+					<div class="rounded-lg bg-white p-6 shadow-lg dark:bg-slate-800">
+						<h3 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
 							What payment methods do you accept?
 						</h3>
 						<p class="text-slate-600 dark:text-slate-300">
-							We accept all major credit cards, PayPal, and other payment methods through our secure payment processor Paddle. All transactions are encrypted and secure.
+							We accept all major credit cards, PayPal, and other payment methods through our secure
+							payment processor Paddle. All transactions are encrypted and secure.
 						</p>
 					</div>
 
-					<div class="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg">
-						<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+					<div class="rounded-lg bg-white p-6 shadow-lg dark:bg-slate-800">
+						<h3 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
 							Can I cancel anytime?
 						</h3>
 						<p class="text-slate-600 dark:text-slate-300">
-							Absolutely! All plans can be cancelled anytime with no cancellation fees. Your subscription will remain active until the end of your current billing period.
+							Absolutely! All plans can be cancelled anytime with no cancellation fees. Your
+							subscription will remain active until the end of your current billing period.
 						</p>
 					</div>
 				</div>

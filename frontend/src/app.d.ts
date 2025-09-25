@@ -16,10 +16,7 @@ declare global {
 	// Paddle.js types
 	interface Window {
 		Paddle?: {
-			Initialize: (config: { 
-				token: string;
-				pwCustomer?: Record<string, any>;
-			}) => void;
+			Initialize: (config: { token: string; pwCustomer?: Record<string, any> }) => void;
 			Checkout: {
 				open: (options: {
 					items: Array<{ priceId: string; quantity: number }>;

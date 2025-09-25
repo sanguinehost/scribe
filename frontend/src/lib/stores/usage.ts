@@ -84,12 +84,14 @@ function createUsageStore() {
 
 			update((state) => ({
 				...state,
-				softLimitStatus: active ? {
-					active,
-					current_delay_ms: delayMs,
-					next_threshold: undefined, // We'd need more headers for this
-					warning_message: active ? `Rate limiting active with ${delayMs}ms delay` : undefined
-				} : null
+				softLimitStatus: active
+					? {
+							active,
+							current_delay_ms: delayMs,
+							next_threshold: undefined, // We'd need more headers for this
+							warning_message: active ? `Rate limiting active with ${delayMs}ms delay` : undefined
+						}
+					: null
 			}));
 		}
 	}
@@ -109,7 +111,8 @@ function createUsageStore() {
 	// Auto-refresh usage stats (useful for monitoring soft limits)
 	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
-	function startAutoRefresh(intervalMs: number = 30000) { // 30 seconds default
+	function startAutoRefresh(intervalMs: number = 30000) {
+		// 30 seconds default
 		if (refreshInterval) {
 			clearInterval(refreshInterval);
 		}
@@ -142,37 +145,25 @@ function createUsageStore() {
 export const usageStore = createUsageStore();
 
 // Derived store for soft limit status
-export const softLimitStatus = derived(
-	usageStore,
-	($usageStore) => {
-		if (!PAYMENT_FEATURES.softLimits) return null;
-		return $usageStore.softLimitStatus || null;
-	}
-);
+export const softLimitStatus = derived(usageStore, ($usageStore) => {
+	if (!PAYMENT_FEATURES.softLimits) return null;
+	return $usageStore.softLimitStatus || null;
+});
 
 // Derived store for whether soft limits are active
-export const isSoftLimitActive = derived(
-	softLimitStatus,
-	($softLimitStatus) => {
-		return $softLimitStatus?.active || false;
-	}
-);
+export const isSoftLimitActive = derived(softLimitStatus, ($softLimitStatus) => {
+	return $softLimitStatus?.active || false;
+});
 
 // Derived store for current soft limit delay
-export const currentSoftLimitDelay = derived(
-	softLimitStatus,
-	($softLimitStatus) => {
-		return $softLimitStatus?.current_delay_ms || 0;
-	}
-);
+export const currentSoftLimitDelay = derived(softLimitStatus, ($softLimitStatus) => {
+	return $softLimitStatus?.current_delay_ms || 0;
+});
 
 // Derived store for whether user should be warned about upcoming limits
-export const shouldShowSoftLimitWarning = derived(
-	softLimitStatus,
-	($softLimitStatus) => {
-		if (!PAYMENT_FEATURES.softLimits || !$softLimitStatus) return false;
+export const shouldShowSoftLimitWarning = derived(softLimitStatus, ($softLimitStatus) => {
+	if (!PAYMENT_FEATURES.softLimits || !$softLimitStatus) return false;
 
-		// Show warning if active OR if there's a next threshold coming up
-		return $softLimitStatus.active || !!$softLimitStatus.next_threshold;
-	}
-);
+	// Show warning if active OR if there's a next threshold coming up
+	return $softLimitStatus.active || !!$softLimitStatus.next_threshold;
+});

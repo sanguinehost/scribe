@@ -125,7 +125,7 @@
 						out:slideAndFade={{ y: -20, duration: 200 }}
 					>
 						<Card
-							class="cursor-pointer transition-all bg-muted/50 border-border/40 hover:bg-muted/70 hover:border-primary hover:shadow-md {selectedPersonaId ===
+							class="cursor-pointer border-border/40 bg-muted/50 transition-all hover:border-primary hover:bg-muted/70 hover:shadow-md {selectedPersonaId ===
 							persona.id
 								? 'border-primary ring-2 ring-primary'
 								: ''}"

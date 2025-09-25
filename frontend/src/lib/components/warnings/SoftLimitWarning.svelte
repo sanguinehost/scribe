@@ -45,14 +45,16 @@
 {#if showWarning}
 	{#if compact}
 		<!-- Compact warning for header/sidebar -->
-		<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800">
+		<div
+			class="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-2 py-1 dark:border-orange-800 dark:bg-orange-950"
+		>
 			<Clock class="h-4 w-4 text-orange-600 dark:text-orange-400" />
 			<span class="text-sm font-medium text-orange-800 dark:text-orange-200">
 				Rate limited (+{formatDelay(safeDelayMs)} delay)
 			</span>
 			{#if showUpgradeButton}
 				<Button variant="outline" size="sm" on:click={onUpgrade} class="ml-2">
-					<Zap class="h-3 w-3 mr-1" />
+					<Zap class="mr-1 h-3 w-3" />
 					Upgrade
 				</Button>
 			{/if}
@@ -62,7 +64,7 @@
 		<Alert variant={getWarningVariant(safeDelayMs)}>
 			<AlertTriangle class="h-4 w-4" />
 			<h4 class="font-medium">Rate Limit Active</h4>
-			<AlertDescription class="space-y-3 mt-2">
+			<AlertDescription class="mt-2 space-y-3">
 				<div>
 					Your messages are being delayed by <strong>{formatDelay(safeDelayMs)}</strong>
 					due to rate limiting.
@@ -75,15 +77,16 @@
 				{/if}
 
 				{#if safeNextThreshold}
-					<div class="text-sm bg-background/50 p-3 rounded border">
-						<div class="font-medium mb-1">Next threshold:</div>
+					<div class="rounded border bg-background/50 p-3 text-sm">
+						<div class="mb-1 font-medium">Next threshold:</div>
 						<div>
-							After <strong>{safeNextThreshold.after_messages} more messages</strong>,
-							delays will increase to <strong>{formatDelay(safeNextThreshold.delay_ms)}</strong>
+							After <strong>{safeNextThreshold.after_messages} more messages</strong>, delays will
+							increase to <strong>{formatDelay(safeNextThreshold.delay_ms)}</strong>
 						</div>
 						{#if safeNextThreshold.fallback_model}
 							<div class="mt-1">
-								Requests will use fallback model: <strong>{safeNextThreshold.fallback_model}</strong>
+								Requests will use fallback model: <strong>{safeNextThreshold.fallback_model}</strong
+								>
 							</div>
 						{/if}
 						{#if safeNextThreshold.warning_message}
@@ -97,10 +100,14 @@
 				{#if showUpgradeButton}
 					<div class="flex gap-2 pt-2">
 						<Button on:click={onUpgrade} size="sm">
-							<Zap class="h-4 w-4 mr-1.5" />
+							<Zap class="mr-1.5 h-4 w-4" />
 							Upgrade Plan
 						</Button>
-						<Button variant="outline" size="sm" on:click={() => window.open('/docs/rate-limits', '_blank')}>
+						<Button
+							variant="outline"
+							size="sm"
+							on:click={() => window.open('/docs/rate-limits', '_blank')}
+						>
 							Learn More
 						</Button>
 					</div>

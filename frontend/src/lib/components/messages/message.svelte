@@ -201,8 +201,10 @@
 		<!-- Avatar container (simplified) -->
 		<div class="size-8 shrink-0">
 			{#if message.message_type === 'Assistant'}
-				<Avatar 
-					class="size-8 transition-transform hover:scale-105 {characterAvatarSrc ? 'cursor-pointer' : ''}"
+				<Avatar
+					class="size-8 transition-transform hover:scale-105 {characterAvatarSrc
+						? 'cursor-pointer'
+						: ''}"
 					onclick={() => {
 						if (characterAvatarSrc && character) {
 							avatarLightboxSrc = characterAvatarSrc;
@@ -212,17 +214,14 @@
 					}}
 				>
 					{#if characterAvatarSrc && character}
-						<AvatarImage 
-							src={characterAvatarSrc} 
-							alt={character.name} 
-						/>
+						<AvatarImage src={characterAvatarSrc} alt={character.name} />
 					{/if}
 					<AvatarFallback>
 						{getInitials(character?.name)}
 					</AvatarFallback>
 				</Avatar>
 			{:else if message.message_type === 'User'}
-				<Avatar 
+				<Avatar
 					class="size-8 transition-transform hover:scale-105 {user?.avatar ? 'cursor-pointer' : ''}"
 					onclick={() => {
 						if (user?.avatar) {
@@ -234,10 +233,7 @@
 				>
 					{#if user?.avatar}
 						<!-- Assuming user.avatar will be a URL -->
-						<AvatarImage 
-							src={user.avatar} 
-							alt={user.username} 
-						/>
+						<AvatarImage src={user.avatar} alt={user.username} />
 					{/if}
 					<AvatarFallback>
 						{getInitials(user?.username)}

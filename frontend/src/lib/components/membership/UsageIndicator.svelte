@@ -28,7 +28,10 @@
 		return 'bg-green-500';
 	}
 
-	function getContainerClass(size: 'sm' | 'md' | 'lg', orientation: 'horizontal' | 'vertical'): string {
+	function getContainerClass(
+		size: 'sm' | 'md' | 'lg',
+		orientation: 'horizontal' | 'vertical'
+	): string {
 		if (orientation === 'vertical') {
 			const widths = { sm: 'w-2', md: 'w-3', lg: 'w-4' };
 			return `${widths[size]} h-full`;
@@ -38,16 +41,19 @@
 		}
 	}
 
-	function getProgressBarClass(size: 'sm' | 'md' | 'lg', orientation: 'horizontal' | 'vertical'): string {
+	function getProgressBarClass(
+		size: 'sm' | 'md' | 'lg',
+		orientation: 'horizontal' | 'vertical'
+	): string {
 		let baseClass = `${statusColor} transition-all duration-300 ease-out rounded-full`;
-		
+
 		// Add pulsing animation when at critical levels
 		if (isAtLimit) {
 			baseClass += ' animate-pulse';
 		} else if (isNearLimit && usagePercentage >= 90) {
 			baseClass += ' animate-pulse';
 		}
-		
+
 		return baseClass;
 	}
 
@@ -63,12 +69,12 @@
 
 	function getRemainingTime(usage: UsageLimitsResponse | null): string {
 		if (!usage) return '';
-		
+
 		const now = new Date();
 		const periodEnd = new Date(usage.period_end);
 		const diffTime = periodEnd.getTime() - now.getTime();
 		const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-		
+
 		if (diffDays <= 0) return 'Resets soon';
 		if (diffDays === 1) return 'Resets tomorrow';
 		return `Resets in ${diffDays} days`;
@@ -89,7 +95,7 @@
 	{#if usage}
 		{#if usage.is_unlimited}
 			<div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-				<div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+				<div class="h-2 w-2 animate-pulse rounded-full bg-green-500"></div>
 				<span class="font-medium">Unlimited tokens</span>
 			</div>
 		{:else}
@@ -111,13 +117,14 @@
 				{/if}
 
 				<!-- Progress bar -->
-				<div class={`bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden ${containerClass} progress-container`}>
-					<div 
+				<div
+					class={`overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700 ${containerClass} progress-container`}
+				>
+					<div
 						class={`${progressBarClass} ${isAtLimit ? 'critical-glow' : isNearLimit ? 'warning-glow' : 'normal-glow'}`}
-						style={orientation === 'horizontal' 
-							? `width: ${usagePercentage}%` 
-							: `height: ${usagePercentage}%`
-						}
+						style={orientation === 'horizontal'
+							? `width: ${usagePercentage}%`
+							: `height: ${usagePercentage}%`}
 						role="progressbar"
 						aria-valuenow={usagePercentage}
 						aria-valuemin={0}
@@ -130,22 +137,22 @@
 				<div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
 					<span>{getRemainingTime(usage)}</span>
 					{#if isAtLimit}
-						<span class="text-red-600 dark:text-red-400 font-medium">Limit reached</span>
+						<span class="font-medium text-red-600 dark:text-red-400">Limit reached</span>
 					{:else if isNearLimit}
-						<span class="text-yellow-600 dark:text-yellow-400 font-medium">Near limit</span>
+						<span class="font-medium text-yellow-600 dark:text-yellow-400">Near limit</span>
 					{/if}
 				</div>
 			</div>
 		{/if}
 	{:else}
 		<!-- Loading state -->
-		<div class="space-y-2 animate-pulse">
+		<div class="animate-pulse space-y-2">
 			<div class="flex justify-between">
-				<div class="h-4 bg-slate-200 dark:bg-slate-700 rounded w-20"></div>
-				<div class="h-4 bg-slate-200 dark:bg-slate-700 rounded w-12"></div>
+				<div class="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700"></div>
+				<div class="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700"></div>
 			</div>
-			<div class={`bg-slate-200 dark:bg-slate-700 rounded-full ${containerClass}`}></div>
-			<div class="h-3 bg-slate-200 dark:bg-slate-700 rounded w-16"></div>
+			<div class={`rounded-full bg-slate-200 dark:bg-slate-700 ${containerClass}`}></div>
+			<div class="h-3 w-16 rounded bg-slate-200 dark:bg-slate-700"></div>
 		</div>
 	{/if}
 </div>
@@ -175,7 +182,8 @@
 	}
 
 	@keyframes warningPulse {
-		0%, 100% {
+		0%,
+		100% {
 			box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
 		}
 		50% {
@@ -184,7 +192,8 @@
 	}
 
 	@keyframes criticalPulse {
-		0%, 100% {
+		0%,
+		100% {
 			box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
 		}
 		50% {

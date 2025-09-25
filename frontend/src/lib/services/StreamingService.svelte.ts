@@ -146,7 +146,9 @@ class StreamingService {
 			const wasVisible = this.isTabVisible;
 			this.isTabVisible = !document.hidden;
 
-			console.log(`👁️ Tab visibility changed: ${wasVisible ? 'visible' : 'hidden'} -> ${this.isTabVisible ? 'visible' : 'hidden'}`);
+			console.log(
+				`👁️ Tab visibility changed: ${wasVisible ? 'visible' : 'hidden'} -> ${this.isTabVisible ? 'visible' : 'hidden'}`
+			);
 
 			if (!wasVisible && this.isTabVisible) {
 				// Tab became visible - process any queued connections
@@ -188,7 +190,6 @@ class StreamingService {
 		// Reconcile animation positions for any ongoing animations
 		this.reconcileAnimationPositions();
 
-
 		// Check for stalled connections that need recovery
 		if (this.connectionStatus === 'connecting' && this.abortController) {
 			console.log('👁️ Detected potentially stalled connection, checking if recovery needed');
@@ -218,7 +219,9 @@ class StreamingService {
 				const message = this.messages.find((m) => m.id === messageId);
 				// If message exists but doesn't have full content shown yet
 				if (message && message.displayedContent !== buffer.content) {
-					console.log(`👁️ Found completed message that needs content update: ${messageId.slice(-8)}`);
+					console.log(
+						`👁️ Found completed message that needs content update: ${messageId.slice(-8)}`
+					);
 					this.showCompleteContent(messageId);
 				}
 			}
@@ -246,7 +249,9 @@ class StreamingService {
 
 			// Check if displayed content is behind where it should be
 			if (message.displayedContent.length < expectedContent.length) {
-				console.log(`👁️ Reconciling animation position for ${messageId.slice(-8)}: ${message.displayedContent.length} -> ${expectedContent.length} chars`);
+				console.log(
+					`👁️ Reconciling animation position for ${messageId.slice(-8)}: ${message.displayedContent.length} -> ${expectedContent.length} chars`
+				);
 
 				// Update to correct position
 				this.messages = this.messages.map((msg) => {
@@ -396,7 +401,9 @@ class StreamingService {
 		const buffer = this.messageBuffers.get(messageId);
 		if (!buffer || !buffer.isComplete) return;
 
-		console.log(`📺 Showing complete content for ${messageId.slice(-8)}: ${buffer.content.length} chars`);
+		console.log(
+			`📺 Showing complete content for ${messageId.slice(-8)}: ${buffer.content.length} chars`
+		);
 
 		// Update message with complete content and metadata immediately
 		this.messages = this.messages.map((msg) => {
@@ -445,7 +452,9 @@ class StreamingService {
 		const buffer = this.messageBuffers.get(messageId);
 		if (!buffer || !buffer.isComplete) return;
 
-		console.log(`🎬 Starting timestamp-based animation for ${messageId.slice(-8)}: ${buffer.content.length} chars`);
+		console.log(
+			`🎬 Starting timestamp-based animation for ${messageId.slice(-8)}: ${buffer.content.length} chars`
+		);
 
 		// Update message with complete content and metadata
 		this.messages = this.messages.map((msg) => {
@@ -477,7 +486,9 @@ class StreamingService {
 		const fallbackTimeout = setTimeout(() => {
 			// If animation is still running after max wait time, show complete content immediately
 			if (this.animationStartTimes.has(messageId)) {
-				console.log(`⏰ Animation fallback timeout triggered for ${messageId.slice(-8)}, showing complete content`);
+				console.log(
+					`⏰ Animation fallback timeout triggered for ${messageId.slice(-8)}, showing complete content`
+				);
 				this.showCompleteContent(messageId);
 			}
 		}, maxWaitTime);
@@ -552,11 +563,13 @@ class StreamingService {
 		}
 	}
 
-
 	/**
 	 * Schedule the next animation frame using the appropriate method
 	 */
-	private scheduleNextAnimationFrame(messageId: string, updateFunction: (time: number) => void): void {
+	private scheduleNextAnimationFrame(
+		messageId: string,
+		updateFunction: (time: number) => void
+	): void {
 		if (typeof requestAnimationFrame !== 'undefined') {
 			// Use requestAnimationFrame for smooth updates
 			const requestId = requestAnimationFrame((time) => updateFunction(time));
@@ -578,7 +591,7 @@ class StreamingService {
 	private parseMultipleJsonChunks(data: string): StreamedChunk[] {
 		const chunks: StreamedChunk[] = [];
 		let remaining = data.trim();
-		
+
 		while (remaining.length > 0) {
 			try {
 				// Find the end of the current JSON object by counting braces
@@ -586,25 +599,25 @@ class StreamingService {
 				let inString = false;
 				let escaped = false;
 				let jsonEnd = -1;
-				
+
 				for (let i = 0; i < remaining.length; i++) {
 					const char = remaining[i];
-					
+
 					if (escaped) {
 						escaped = false;
 						continue;
 					}
-					
+
 					if (char === '\\' && inString) {
 						escaped = true;
 						continue;
 					}
-					
+
 					if (char === '"') {
 						inString = !inString;
 						continue;
 					}
-					
+
 					if (!inString) {
 						if (char === '{') {
 							braceCount++;
@@ -617,24 +630,24 @@ class StreamingService {
 						}
 					}
 				}
-				
+
 				if (jsonEnd === -1) {
 					// No complete JSON object found
 					console.warn('Incomplete JSON chunk found:', remaining.substring(0, 100) + '...');
 					break;
 				}
-				
+
 				const jsonStr = remaining.substring(0, jsonEnd);
 				const chunk = JSON.parse(jsonStr);
 				chunks.push(chunk);
-				
+
 				remaining = remaining.substring(jsonEnd).trim();
 			} catch (e) {
 				console.error('Failed to parse JSON chunk:', e, 'Remaining:', remaining.substring(0, 100));
 				break;
 			}
 		}
-		
+
 		return chunks;
 	}
 
@@ -1041,10 +1054,10 @@ class StreamingService {
 						try {
 							// Parse multiple JSON chunks that may be concatenated in a single SSE event
 							const chunks = this.parseMultipleJsonChunks(event.data);
-							
+
 							const messageId = this.currentAssistantMessageId || assistantMessageId;
 							const messageBuffer = this.messageBuffers.get(messageId);
-							
+
 							if (!messageBuffer) {
 								console.warn(`No buffer found for message ${messageId}`);
 								break;
@@ -1564,7 +1577,10 @@ class StreamingService {
 		}
 
 		// Don't retry daily limit errors
-		if (error?.name === 'DailyLimitError' || error?.message?.includes('Daily message limit reached')) {
+		if (
+			error?.name === 'DailyLimitError' ||
+			error?.message?.includes('Daily message limit reached')
+		) {
 			console.warn('🚫 Not retrying daily limit error:', error.message);
 			return false;
 		}

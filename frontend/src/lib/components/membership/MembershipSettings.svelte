@@ -50,22 +50,22 @@
 		// 1. Show a modal with management options (cancel, reactivate, change plan)
 		// 2. Use Paddle's customer portal if available
 		// 3. Redirect to a dedicated subscription management page
-		
+
 		toast.info('Subscription management coming soon. Contact support for assistance.');
 		console.log('Manage subscription clicked for:', subscription);
 	}
 
 	function getRenewalText(): string {
 		if (!subscription) return '';
-		
+
 		if (subscription.cancel_at_period_end) {
 			return `Subscription cancels in ${daysUntilRenewal} days`;
 		}
-		
+
 		if (isTrialing) {
 			return `Trial ends in ${trialDaysRemaining} days`;
 		}
-		
+
 		return `Subscription renews in ${daysUntilRenewal} days`;
 	}
 
@@ -89,17 +89,19 @@
 		</CardHeader>
 		<CardContent class="space-y-6">
 			{#if loading}
-				<div class="space-y-4 animate-pulse">
-					<div class="h-8 bg-slate-200 dark:bg-slate-700 rounded"></div>
-					<div class="h-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
-					<div class="h-16 bg-slate-200 dark:bg-slate-700 rounded"></div>
+				<div class="animate-pulse space-y-4">
+					<div class="h-8 rounded bg-slate-200 dark:bg-slate-700"></div>
+					<div class="h-20 rounded bg-slate-200 dark:bg-slate-700"></div>
+					<div class="h-16 rounded bg-slate-200 dark:bg-slate-700"></div>
 				</div>
 			{:else if error}
-				<div class="p-4 border border-red-200 dark:border-red-800 rounded-lg bg-red-50 dark:bg-red-950/30">
-					<p class="text-red-600 dark:text-red-400 text-sm font-medium">
+				<div
+					class="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/30"
+				>
+					<p class="text-sm font-medium text-red-600 dark:text-red-400">
 						Error loading membership data
 					</p>
-					<p class="text-red-600 dark:text-red-400 text-sm mt-1">
+					<p class="mt-1 text-sm text-red-600 dark:text-red-400">
 						{error}
 					</p>
 				</div>
@@ -108,7 +110,7 @@
 				<div class="space-y-4">
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-3">
-							<PlanBadge 
+							<PlanBadge
 								planType={currentPlan}
 								status={subscription?.status}
 								size="md"
@@ -123,7 +125,7 @@
 								{/if}
 							</div>
 						</div>
-						
+
 						{#if currentPlan !== 'premium'}
 							{#if currentPlan === 'free'}
 								<CheckoutButton
@@ -141,10 +143,10 @@
 
 					<!-- Subscription Details -->
 					{#if subscription}
-						<div class="grid grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg">
+						<div class="grid grid-cols-2 gap-4 rounded-lg bg-slate-50 p-4 dark:bg-slate-900">
 							<div>
 								<p class="text-sm font-medium text-slate-900 dark:text-slate-100">Status</p>
-								<p class="text-sm text-slate-600 dark:text-slate-300 capitalize">
+								<p class="text-sm capitalize text-slate-600 dark:text-slate-300">
 									{subscription.status}
 								</p>
 							</div>
@@ -164,15 +166,15 @@
 
 				<!-- Daily Messages -->
 				<div class="space-y-4">
-					<h3 class="font-semibold flex items-center gap-2">
+					<h3 class="flex items-center gap-2 font-semibold">
 						<MessageCircle size={16} />
 						Daily Activity
 					</h3>
 					<DailyMessageUsage
 						messageCount={dailyMessageCount}
 						planType={currentPlan}
-						isThrottled={isThrottled}
-						throttleDelay={throttleDelay}
+						{isThrottled}
+						{throttleDelay}
 						size="md"
 					/>
 				</div>
@@ -181,20 +183,16 @@
 
 				<!-- Monthly Token Usage -->
 				<div class="space-y-4">
-					<h3 class="font-semibold flex items-center gap-2">
+					<h3 class="flex items-center gap-2 font-semibold">
 						<Zap size={16} />
 						Monthly Token Usage
 					</h3>
-					<div class="p-4 bg-slate-50 dark:bg-slate-900 rounded-lg">
-						<MonthlyTokenUsage
-							usageLimits={usageLimits}
-							size="md"
-							showNumbers={true}
-							showPeriod={true}
-						/>
+					<div class="rounded-lg bg-slate-50 p-4 dark:bg-slate-900">
+						<MonthlyTokenUsage {usageLimits} size="md" showNumbers={true} showPeriod={true} />
 						{#if usageLimits && !usageLimits.is_unlimited}
 							<div class="mt-3 text-xs text-slate-500 dark:text-slate-400">
-								Token usage is tracked for billing and administrative purposes. Daily message limits are used for user throttling.
+								Token usage is tracked for billing and administrative purposes. Daily message limits
+								are used for user throttling.
 							</div>
 						{/if}
 					</div>
@@ -204,7 +202,7 @@
 
 				<!-- Credits -->
 				<div class="space-y-4">
-					<h3 class="font-semibold flex items-center gap-2">
+					<h3 class="flex items-center gap-2 font-semibold">
 						<Zap size={16} />
 						Credits
 					</h3>
@@ -216,15 +214,15 @@
 					<Separator />
 					<div class="space-y-4">
 						<h3 class="font-semibold">Plan Features</h3>
-						<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+						<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
 							<!-- Daily Messages -->
 							<div class="flex items-start gap-2">
-								<MessageCircle size={14} class="text-blue-500 mt-0.5" />
+								<MessageCircle size={14} class="mt-0.5 text-blue-500" />
 								<div>
 									<span class="text-sm font-medium">
 										{currentPlan === 'free' ? '20' : currentPlan === 'basic' ? '100' : '200'} messages/day
 									</span>
-									<span class="text-xs text-slate-500 dark:text-slate-400 block">
+									<span class="block text-xs text-slate-500 dark:text-slate-400">
 										{currentPlan === 'free' ? 'Hard limit' : 'Soft limit'}
 									</span>
 								</div>
@@ -232,12 +230,12 @@
 
 							<!-- Included Credits -->
 							<div class="flex items-start gap-2">
-								<Zap size={14} class="text-yellow-500 mt-0.5" />
+								<Zap size={14} class="mt-0.5 text-yellow-500" />
 								<div>
 									<span class="text-sm font-medium">
 										{currentPlan === 'free' ? '25' : currentPlan === 'basic' ? '250' : '800'} credits
 									</span>
-									<span class="text-xs text-slate-500 dark:text-slate-400 block">
+									<span class="block text-xs text-slate-500 dark:text-slate-400">
 										{currentPlan === 'free' ? 'One-time bonus' : 'Monthly allocation'}
 									</span>
 								</div>
@@ -245,12 +243,12 @@
 
 							<!-- Context Limit -->
 							<div class="flex items-start gap-2">
-								<Layers size={14} class="text-purple-500 mt-0.5" />
+								<Layers size={14} class="mt-0.5 text-purple-500" />
 								<div>
 									<span class="text-sm font-medium">
 										{currentPlan === 'free' ? '32k' : currentPlan === 'basic' ? '64k' : '200k'} context
 									</span>
-									<span class="text-xs text-slate-500 dark:text-slate-400 block">
+									<span class="block text-xs text-slate-500 dark:text-slate-400">
 										Token limit
 									</span>
 								</div>
@@ -259,12 +257,12 @@
 							<!-- Characters & Lorebooks -->
 							{#if currentPlan !== 'free'}
 								<div class="flex items-start gap-2">
-									<Shield size={14} class="text-green-500 mt-0.5" />
+									<Shield size={14} class="mt-0.5 text-green-500" />
 									<div>
 										<span class="text-sm font-medium">
 											{currentPlan === 'basic' ? '50 characters' : 'Unlimited characters'}
 										</span>
-										<span class="text-xs text-slate-500 dark:text-slate-400 block">
+										<span class="block text-xs text-slate-500 dark:text-slate-400">
 											Character slots
 										</span>
 									</div>
@@ -279,13 +277,13 @@
 					<Separator />
 					<div class="space-y-4">
 						<h3 class="font-semibold">Upgrade Options</h3>
-						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-							<div class="p-4 border rounded-lg">
-								<div class="flex items-center gap-2 mb-2">
+						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+							<div class="rounded-lg border p-4">
+								<div class="mb-2 flex items-center gap-2">
 									<PlanBadge planType="basic" size="sm" />
 									<span class="font-medium">Basic Plan</span>
 								</div>
-								<p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
+								<p class="mb-3 text-sm text-slate-600 dark:text-slate-300">
 									For serious character AI enthusiasts and creators
 								</p>
 								<CheckoutButton
@@ -294,13 +292,13 @@
 									buttonClass="w-full"
 								/>
 							</div>
-							
-							<div class="p-4 border rounded-lg">
-								<div class="flex items-center gap-2 mb-2">
+
+							<div class="rounded-lg border p-4">
+								<div class="mb-2 flex items-center gap-2">
 									<PlanBadge planType="premium" size="sm" />
 									<span class="font-medium">Premium Plan</span>
 								</div>
-								<p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
+								<p class="mb-3 text-sm text-slate-600 dark:text-slate-300">
 									Professional roleplay & storytelling platform
 								</p>
 								<CheckoutButton
@@ -326,9 +324,7 @@
 				<PlanBadge planType="free" size="md" />
 				<div>
 					<p class="font-semibold">Free Plan</p>
-					<p class="text-sm text-slate-600 dark:text-slate-300">
-						Payments are currently disabled
-					</p>
+					<p class="text-sm text-slate-600 dark:text-slate-300">Payments are currently disabled</p>
 				</div>
 			</div>
 		</CardContent>

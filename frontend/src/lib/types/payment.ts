@@ -101,7 +101,14 @@ export interface CreditReservation {
 // Subscription System Types
 // ============================================================================
 
-export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing' | 'unpaid' | 'incomplete' | 'expired';
+export type SubscriptionStatus =
+	| 'active'
+	| 'canceled'
+	| 'past_due'
+	| 'trialing'
+	| 'unpaid'
+	| 'incomplete'
+	| 'expired';
 
 export interface Subscription {
 	id: string;
@@ -373,7 +380,7 @@ export enum CreditError {
 	DuplicateTransaction = 'DUPLICATE_TRANSACTION',
 	UserNotFound = 'USER_NOT_FOUND',
 	SubscriptionInactive = 'SUBSCRIPTION_INACTIVE',
-	RateLimitExceeded = 'RATE_LIMIT_EXCEEDED',
+	RateLimitExceeded = 'RATE_LIMIT_EXCEEDED'
 }
 
 export interface PaymentError {
