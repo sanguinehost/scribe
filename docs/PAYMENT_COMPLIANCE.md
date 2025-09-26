@@ -216,11 +216,23 @@ Any changes to the payment system must be evaluated for SAQ-A impact:
 
 ### Automated Compliance Monitoring
 
-**Security Enhancements Implemented:**
-- ✅ **Pre-commit Hook**: `.pre-commit-card-scan.py` scans for cardholder data patterns before commits
-- ✅ **GitHub Actions**: Automated weekly compliance checks via `.github/workflows/pci-compliance-check.yml`
-- ✅ **Schema Validation**: Automated verification that database contains no cardholder data fields
-- ✅ **Architecture Checks**: Automated verification of Paddle-only payment processing
+**Enhanced Security Checks Implemented:**
+- ✅ **Pre-commit Hook**: Enhanced `.pre-commit-card-scan.py` with comprehensive pattern detection including:
+  - Credit card numbers and Base64-encoded data
+  - CVV/CVC patterns in JSON and forms
+  - Expiration dates in multiple formats
+  - Environment variables with card data
+  - URL parameters containing payment data
+  - Database migrations adding prohibited fields
+- ✅ **GitHub Actions**: Automated comprehensive security checks via `.github/workflows/pci-compliance-check.yml` including:
+  - Database schema safety verification
+  - Paddle reference fields validation
+  - Payment route authentication checks
+  - Webhook signature validation verification
+  - Environment variable configuration checks
+  - No payment data in URL parameters verification
+- ✅ **Security Audit**: Automated cargo-audit for vulnerability scanning
+- ✅ **Code Quality**: Clippy security lints for suspicious patterns
 
 **Usage:**
 ```bash

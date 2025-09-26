@@ -26,20 +26,50 @@ CARD_PATTERNS = [
     (r'\b(?:\d{4}[-\s]?){3}\d{4}\b', 'Credit card number pattern'),
     (r'\b\d{13,19}\b', 'Potential card number (13-19 digits)'),
 
+    # Base64 encoded card numbers (only when explicitly near card data keywords)
+    (r'(credit.?card|card.?number|cvv.?code).*[A-Za-z0-9+/]{16,24}={0,2}', 'Potential base64 encoded card data'),
+    (r'[A-Za-z0-9+/]{16,24}={0,2}.*(credit.?card|card.?number|cvv.?code)', 'Potential base64 encoded card data'),
+
     # CVV patterns
     (r'\bcvv\s*[:=]\s*\d{3,4}\b', 'CVV code pattern'),
     (r'\bcvc\s*[:=]\s*\d{3,4}\b', 'CVC code pattern'),
+    (r'"cvv":\s*"\d{3,4}"', 'JSON CVV pattern'),
+    (r'"cvc":\s*"\d{3,4}"', 'JSON CVC pattern'),
 
     # Expiration date patterns
     (r'\bexp\w*\s*[:=]\s*\d{2}[/\-]\d{2,4}', 'Expiration date pattern'),
     (r'\b\d{2}[/\-]\d{2,4}\s*exp', 'Expiration date pattern'),
+    (r'"expiry":\s*"\d{2}[/\-]\d{2,4}"', 'JSON expiry pattern'),
+    (r'"exp_month":\s*\d{1,2}', 'JSON expiry month pattern'),
+    (r'"exp_year":\s*\d{2,4}', 'JSON expiry year pattern'),
 
     # Common field names that suggest card data
     (r'card_number|cardNumber|creditCardNumber', 'Card number field'),
     (r'expiry_date|expiryDate|expiration_date', 'Expiry field'),
     (r'"cvv":|"cvc":|cvv_code|cvc_code', 'CVV/CVC field'),
+    (r'cardholder_name|cardholderName', 'Cardholder name field'),
 
-    # Avoid false positives for test patterns and documentation
+    # Environment variables or configuration with card data
+    (r'CARD_NUMBER|CREDIT_CARD|CVV_CODE', 'Card data in environment variable'),
+    (r'card.*=.*\d{13,19}', 'Card assignment pattern'),
+
+    # URL parameters or query strings with card data
+    (r'[?&]card_?number=\d+', 'Card number in URL parameter'),
+    (r'[?&]cvv=\d{3,4}', 'CVV in URL parameter'),
+    (r'[?&]expiry=\d{2}[/\-]\d{2,4}', 'Expiry in URL parameter'),
+
+    # Log patterns that might leak card data
+    (r'card.*\d{13,19}', 'Card data in log-like format'),
+    (r'payment.*\d{13,19}', 'Payment data with potential card number'),
+
+    # Form input names
+    (r'name=["\']card', 'Card data form input'),
+    (r'name=["\']cvv', 'CVV form input'),
+    (r'name=["\']exp', 'Expiry form input'),
+
+    # Database column names
+    (r'ALTER TABLE.*ADD.*card', 'Card column in database migration'),
+    (r'CREATE TABLE.*card_number', 'Card number in table creation'),
 ]
 
 # Patterns to ignore (legitimate test data or documentation references)
@@ -47,6 +77,7 @@ IGNORE_PATTERNS = [
     # Test card numbers (approved for sandbox testing)
     r'4242\s*4242\s*4242\s*4242',  # Common test card number
     r'4000\s*0566\s*5566\s*5556',  # Visa debit test card
+    r'4532-1234-5678-9012',  # Privacy detection test card
 
     # Test and documentation references
     r'test.*card',  # Test card references
@@ -55,6 +86,49 @@ IGNORE_PATTERNS = [
     r'transaction.*id',  # Transaction ID patterns
     r'\.pre-commit-card-scan\.py',  # This script itself
     r'pci-compliance-check\.yml',  # GitHub workflow file
+
+    # Common non-card patterns that look like card numbers
+    r'port.*\d{13,19}',  # Port numbers
+    r'timestamp.*\d{13,19}',  # Unix timestamps
+    r'id.*\d{13,19}',  # Generic IDs
+    r'uuid.*\d{13,19}',  # UUIDs with numbers
+    r'version.*\d{13,19}',  # Version numbers
+    r'migration.*\d{13,19}',  # Migration timestamps
+
+    # Base64 patterns that are not card data
+    r'jwt.*[A-Za-z0-9+/]+=*',  # JWT tokens
+    r'bearer.*[A-Za-z0-9+/]+=*',  # Bearer tokens
+    r'authorization.*[A-Za-z0-9+/]+=*',  # Auth headers
+    r'token.*[A-Za-z0-9+/]+=*',  # Generic tokens
+    r'secret.*[A-Za-z0-9+/]+=*',  # Encoded secrets (not card data)
+
+    # Legitimate expiry patterns (non-payment)
+    r'cache.*exp',  # Cache expiry
+    r'session.*exp',  # Session expiry
+    r'jwt.*exp',  # JWT expiry
+
+    # Character and UI card patterns (not payment cards)
+    r'character.*card',  # Character card references
+    r'charactercard',  # Character card types
+    r'card.*component',  # UI card components
+    r'ui/card',  # UI card imports
+    r'CardHeader|CardTitle|CardDescription|CardContent',  # UI card components
+    r'ParsedCharacterCard',  # Character card parsing
+    r'CharacterCardV[23]',  # Character card versions
+    r'LorebookCard|LorebookEntryCard',  # Lorebook UI cards
+
+    # Legitimate payment system architecture (not card data)
+    r'payment.*service',  # Payment service classes
+    r'payment.*route',  # Payment API routes
+    r'credit.*service',  # Credit service classes
+    r'credit.*store',  # Credit stores/state management
+    r'subscription.*service',  # Subscription services
+    r'models::payment',  # Payment models
+    r'services::payment',  # Payment services
+    r'paddle.*transaction',  # Paddle transaction references
+    r'CreditService|CreditBalance|CreditTransaction',  # Credit-related types
+    r'payment.*feature',  # Payment feature flags
+    r'enable.*payment',  # Payment feature enablement
 
     # UUID patterns (not card numbers)
     r'00000000-0000-0000-0000-000000000000',  # NULL UUID pattern
@@ -86,6 +160,8 @@ IGNORE_PATTERNS = [
     r'privacy.*examples',  # Privacy detection examples
     r'sensitive_content.*example',  # Example content for testing
     r'4532-1234-5678-9012',  # Specific privacy detection test card
+    r'security\.rs.*credit_card',  # Security detection patterns in security.rs
+    r'llm/llamacpp/security\.rs',  # LLM security pattern definitions
 
     # Build and compiled files (timestamped data, not card numbers)
     r'"version":"[0-9]{13}"',  # Version timestamps
