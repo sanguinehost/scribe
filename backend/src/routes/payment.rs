@@ -53,7 +53,7 @@ pub struct SubscriptionResponse {
 }
 
 #[cfg(feature = "payment")]
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct UsageLimitsResponse {
     pub tokens_used_total: i32,
     pub period_start: chrono::DateTime<chrono::Utc>,
@@ -234,6 +234,13 @@ pub async fn get_subscription(
     // Get plan features if subscription exists
     let plan_features = if let Some(ref sub) = subscription {
         let plan_type = sub.plan_type.clone();
+        tracing::info!(
+            "📋 Subscription found for user {}: plan_type='{}', status='{}', id='{}'",
+            user.id,
+            plan_type,
+            sub.status,
+            sub.id
+        );
         let subscription_service_clone = subscription_service.clone();
         conn.interact(move |conn| {
             subscription_service_clone.get_plan_features_sync(conn, &plan_type)
@@ -242,6 +249,7 @@ pub async fn get_subscription(
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
     } else {
+        tracing::info!("❌ No subscription found for user {}", user.id);
         // Default to free plan features
         let subscription_service_clone = subscription_service.clone();
         conn.interact(move |conn| subscription_service_clone.get_plan_features_sync(conn, "free"))
@@ -334,11 +342,20 @@ pub async fn get_subscription(
         None
     };
 
-    Ok(Json(SubscriptionResponse {
-        subscription,
-        plan_features,
-        usage_limits,
-    }))
+    let response = SubscriptionResponse {
+        subscription: subscription.clone(),
+        plan_features: plan_features.clone(),
+        usage_limits: usage_limits.clone(),
+    };
+
+    tracing::info!(
+        "🔄 Sending subscription response for user {}: subscription_exists={}, plan_type={:?}",
+        user.id,
+        response.subscription.is_some(),
+        response.subscription.as_ref().map(|s| &s.plan_type)
+    );
+
+    Ok(Json(response))
 }
 
 /// Get available subscription plans
@@ -601,6 +618,26 @@ pub async fn verify_transaction(
         loggable_user_id(user.id)
     );
 
+    // Validate transaction ID format - reject obvious placeholders
+    if transaction_id.is_empty()
+        || transaction_id == "{transaction_id}"
+        || transaction_id == "undefined"
+        || transaction_id == "null"
+        || transaction_id.len() < 10
+    // Paddle transaction IDs are typically much longer
+    {
+        tracing::warn!(
+            "🚫 Invalid transaction ID format: '{}' for user {}",
+            transaction_id,
+            loggable_user_id(user.id)
+        );
+        return Ok(Json(serde_json::json!({
+            "success": false,
+            "message": "Invalid transaction ID format",
+            "error": "Transaction ID appears to be a placeholder or invalid format"
+        })));
+    }
+
     // First, check if we have the transaction in our database
     let conn = app_state
         .pool
@@ -674,13 +711,14 @@ pub async fn verify_transaction(
             {
                 let price_id = item.get("price_id").and_then(|v| v.as_str()).unwrap_or("");
                 match price_id {
-                    "pri_01k4qbyetvn495nzv9nkqhxz02" => "pro",
-                    price if price.contains("pro") => "pro",
-                    price if price.contains("enterprise") => "enterprise",
-                    _ => "pro",
+                    "pri_01k4qbyetvn495nzv9nkqhxz02" => "basic", // Basic monthly
+                    "pri_01k5ejs7h9zmw4d888r3pjjqna" => "basic", // Basic yearly
+                    "pri_01k5ej7wzvpcj6j65vcbpam6t4" => "premium", // Premium monthly
+                    "pri_01k5ejva0cwqzbtgzd2c9qk0d4" => "premium", // Premium yearly
+                    _ => "free",                                 // Default fallback
                 }
             } else {
-                "pro"
+                "free"
             };
 
             let subscription_service = crate::services::payment::SubscriptionService::new(
@@ -810,10 +848,11 @@ pub async fn verify_transaction(
 
             // Map price_id to plan type
             let plan_type = match price_id {
-                "pri_01k4qbyetvn495nzv9nkqhxz02" => "pro", // Actual Paddle price ID for pro plan
-                price if price.contains("pro") => "pro",
-                price if price.contains("enterprise") => "enterprise",
-                _ => "pro", // Default to pro plan
+                "pri_01k4qbyetvn495nzv9nkqhxz02" => "basic", // Basic monthly
+                "pri_01k5ejs7h9zmw4d888r3pjjqna" => "basic", // Basic yearly
+                "pri_01k5ej7wzvpcj6j65vcbpam6t4" => "premium", // Premium monthly
+                "pri_01k5ejva0cwqzbtgzd2c9qk0d4" => "premium", // Premium yearly
+                _ => "free",                                 // Default fallback
             };
 
             // Set trial days if this is a trial transaction
@@ -963,6 +1002,39 @@ pub async fn verify_transaction(
             }
         }
         Err(e) => {
+            let error_str = e.to_string();
+
+            // Check if this is a 404 error from Paddle (transaction not found)
+            if error_str.contains("404") {
+                tracing::warn!(
+                    "🔍 Transaction {} not found in Paddle API (404) for user {}",
+                    transaction_id,
+                    loggable_user_id(user.id)
+                );
+
+                return Ok(Json(serde_json::json!({
+                    "success": false,
+                    "message": "Transaction not found",
+                    "error": "External service error: Paddle API error: 404 Not Found - Transaction does not exist or is not accessible"
+                })));
+            }
+
+            // Check if this is an authentication/authorization error
+            if error_str.contains("401") || error_str.contains("403") {
+                tracing::error!(
+                    "🚫 Paddle API authentication/authorization error for transaction {}: {}",
+                    transaction_id,
+                    e
+                );
+
+                return Ok(Json(serde_json::json!({
+                    "success": false,
+                    "message": "Payment service authentication error",
+                    "error": "External service error: Unable to authenticate with payment processor"
+                })));
+            }
+
+            // Generic error logging and response
             tracing::error!("🎯 Failed to verify transaction {}: {}", transaction_id, e);
 
             // Still return a response but indicate verification failed
@@ -1663,10 +1735,19 @@ async fn process_transaction_completed(
 
     // Map price_id to plan type (based on database plan_features table)
     let plan_type = match price_data {
-        "pri_01k4qbyetvn495nzv9nkqhxz02" => "pro", // Actual Paddle price ID for pro plan
-        price_id if price_id.contains("pro") => "pro",
+        // Basic plan price IDs
+        "pri_01k4qbyetvn495nzv9nkqhxz02" => "basic", // Basic monthly
+        "pri_01k5ejs7h9zmw4d888r3pjjqna" => "basic", // Basic yearly
+
+        // Premium plan price IDs
+        "pri_01k5ej7wzvpcj6j65vcbpam6t4" => "premium", // Premium monthly
+        "pri_01k5ejva0cwqzbtgzd2c9qk0d4" => "premium", // Premium yearly
+
+        // Fallback patterns
+        price_id if price_id.contains("basic") => "basic",
+        price_id if price_id.contains("premium") => "premium",
         price_id if price_id.contains("enterprise") => "enterprise",
-        _ => "pro", // Default to pro plan instead of non-existent premium
+        _ => "free", // Default to free plan for unknown price IDs
     };
 
     tracing::info!(

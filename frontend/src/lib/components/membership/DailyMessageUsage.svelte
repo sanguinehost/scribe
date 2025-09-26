@@ -13,11 +13,24 @@
 	const dailyLimits: Record<PlanType, { limit: number; type: 'hard' | 'soft' }> = {
 		free: { limit: 20, type: 'hard' },
 		basic: { limit: 100, type: 'soft' },
-		premium: { limit: 200, type: 'soft' }
+		premium: { limit: 200, type: 'soft' },
+		pro: { limit: 200, type: 'soft' } // Legacy mapping to premium
 	};
 
 	// Computed properties with safety checks
-	$: currentLimit = dailyLimits[planType] || dailyLimits.free;
+	$: normalizedPlanType = planType === 'pro' ? 'premium' : planType; // Handle 'pro' -> 'premium' mapping
+	$: currentLimit = dailyLimits[normalizedPlanType] || dailyLimits.free;
+
+	// Debug logging to understand what's happening
+	$: {
+		console.log('🎯 DailyMessageUsage Debug:', {
+			originalPlanType: planType,
+			normalizedPlanType,
+			messageCount,
+			currentLimit,
+			dailyLimitsKeys: Object.keys(dailyLimits)
+		});
+	}
 	$: usagePercentage = currentLimit ? Math.min(100, (messageCount / currentLimit.limit) * 100) : 0;
 	$: isNearLimit = usagePercentage >= 80;
 	$: isAtLimit = usagePercentage >= 100;

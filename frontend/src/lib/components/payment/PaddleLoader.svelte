@@ -97,9 +97,56 @@
 												'width: 100%; min-width: 312px; background-color: transparent; border: none;' // For inline mode if needed
 										}
 									},
-									eventCallback: (_event: { name: string; data: unknown }) => {
+									eventCallback: (event: { name: string; data: unknown }) => {
 										// Log Paddle events for debugging
-										console.log('Paddle event:', _event.name, _event.data);
+										console.log('Paddle event:', event.name, event.data);
+
+										// Handle checkout completion
+										if (event.name === 'checkout.completed') {
+											console.log('🎉 Checkout completed successfully:', event.data);
+
+											// Extract transaction ID from event data
+											const eventData = event.data as Record<string, unknown>; // Paddle event data structure is dynamic
+											const transaction = eventData?.transaction as
+												| Record<string, unknown>
+												| undefined;
+											const transactionId = transaction?.id || eventData?.transaction_id;
+
+											if (transactionId) {
+												console.log('✅ Transaction ID captured:', transactionId);
+
+												// Check if we're already on the payment success page to prevent redirect loops
+												const currentPath = window.location.pathname;
+												const currentSearch = window.location.search;
+
+												if (
+													currentPath === '/pay' &&
+													currentSearch.includes(`_ptxn=${transactionId}`)
+												) {
+													console.log('🔄 Already on payment success page, skipping redirect');
+													return;
+												}
+
+												// Use a small delay and replace to prevent conflicts with Paddle's own redirects
+												setTimeout(() => {
+													console.log('🔀 Redirecting to payment success page...');
+													window.location.replace(
+														`${window.location.origin}/pay?_ptxn=${transactionId}`
+													);
+												}, 500);
+											} else {
+												console.error(
+													'❌ No transaction ID found in checkout.completed event:',
+													event.data
+												);
+												// Only redirect if not already on the payment page
+												if (window.location.pathname !== '/pay') {
+													setTimeout(() => {
+														window.location.replace(`${window.location.origin}/pay`);
+													}, 500);
+												}
+											}
+										}
 									}
 								});
 

@@ -79,11 +79,39 @@
 				'API access',
 				'Priority queue & beta features'
 			]
+		},
+		pro: {
+			name: 'Premium',
+			description: 'Professional roleplay & storytelling platform',
+			monthly: {
+				price: 25,
+				priceId: 'pri_01k5ej7wzvpcj6j65vcbpam6t4',
+				display: '$25/month'
+			},
+			yearly: {
+				price: 250,
+				priceId: 'pri_01k5ejva0cwqzbtgzd2c9qk0d4',
+				display: '$250/year',
+				monthlyEquivalent: '$20.83/month',
+				savings: 'Save $50 per year'
+			},
+			features: [
+				'200 daily messages (soft limit)',
+				'800 included credits/month',
+				'Unlimited characters & lorebooks',
+				'API access',
+				'Priority queue & beta features'
+			]
 		}
 	};
 
 	// Get current plan details - handle free plan which isn't purchasable
-	$: currentPlan = selectedPlan === 'free' ? null : plans[selectedPlan];
+	$: currentPlan =
+		selectedPlan === 'free' || selectedPlan === 'pro'
+			? selectedPlan === 'pro'
+				? plans.premium
+				: null
+			: plans[selectedPlan];
 	$: currentPrice = currentPlan
 		? selectedBilling === 'monthly'
 			? currentPlan.monthly
@@ -168,7 +196,8 @@
 					locale: navigator.language?.substring(0, 2) || 'en',
 					variant: 'one-page', // Simpler one-page checkout
 					allowLogout: false, // Don't show logout option
-					successUrl: `${window.location.origin}/pay?_ptxn={transaction_id}` // Return URL after success
+					// Add success URL as backup (event callback is primary)
+					successUrl: `${window.location.origin}/pay`
 				},
 				// Custom data for tracking and analytics
 				customData: {

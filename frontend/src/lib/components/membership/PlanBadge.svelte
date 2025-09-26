@@ -29,7 +29,8 @@
 			basic:
 				'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 ring-1 ring-blue-600/20',
 			premium:
-				'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 ring-1 ring-purple-600/20'
+				'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 ring-1 ring-purple-600/20',
+			pro: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 ring-1 ring-purple-600/20' // Legacy mapping to premium
 		};
 
 		return `${baseClass} ${sizeClasses[_size]} ${planClasses[plan]}`;
@@ -43,7 +44,8 @@
 		const planNames = {
 			free: 'Free',
 			basic: 'Basic',
-			premium: 'Premium'
+			premium: 'Premium',
+			pro: 'Premium' // Legacy mapping to premium
 		};
 
 		// Handle undefined or invalid plan types

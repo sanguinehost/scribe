@@ -8,12 +8,19 @@
 	let status: string | null = null;
 	let loading = true;
 	let error: string | null = null;
+	let processingTransaction = false; // Prevent duplicate processing
 
 	onMount(() => {
 		// Check if payments are enabled
 		if (!PUBLIC_ENABLE_PAYMENTS || PUBLIC_ENABLE_PAYMENTS !== 'true') {
 			error = 'Payments are not enabled in this environment';
 			loading = false;
+			return;
+		}
+
+		// Prevent duplicate processing if already processing
+		if (processingTransaction) {
+			console.log('🔄 Already processing transaction, ignoring duplicate mount');
 			return;
 		}
 
@@ -32,16 +39,32 @@
 		console.log('Extracted transaction ID:', transactionId);
 		console.log('Extracted status:', status);
 
-		if (transactionId) {
-			// Transaction completion detected
-			// Don't set loading to false here - let handleTransactionCompletion manage it
+		// Check if this is a placeholder transaction ID that wasn't properly replaced
+		const isPlaceholderTransactionId =
+			transactionId === '{transaction_id}' ||
+			transactionId === 'undefined' ||
+			transactionId === 'null';
+
+		if (transactionId && !isPlaceholderTransactionId) {
+			// Check if we've already processed this transaction
+			const processedKey = `payment_processed_${transactionId}`;
+			if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(processedKey)) {
+				console.log('🔄 Transaction already processed, redirecting to main app...');
+				loading = false;
+				setTimeout(() => {
+					_goto('/');
+				}, 1000);
+				return;
+			}
+
+			// Valid transaction completion detected
+			processingTransaction = true;
 			handleTransactionCompletion();
 		} else {
-			// No transaction ID - redirect to main app
-			loading = false;
-			setTimeout(() => {
-				_goto('/');
-			}, 3000);
+			// No valid transaction ID - check subscription status directly
+			console.log('No valid transaction ID found, checking subscription status directly...');
+			processingTransaction = true;
+			handleNoTransactionId();
 		}
 	});
 
@@ -109,6 +132,16 @@
 					console.log('User data refreshed with new subscription status');
 				}
 
+				// Force refresh subscription store to update sidebar immediately
+				const { subscriptionStore } = await import('$lib/stores/subscription.svelte');
+				await subscriptionStore.refresh(true); // Force refresh bypasses cache
+				console.log('Subscription store force refreshed after payment success');
+
+				// Mark transaction as processed to prevent duplicate processing
+				if (typeof sessionStorage !== 'undefined' && transactionId) {
+					sessionStorage.setItem(`payment_processed_${transactionId}`, 'true');
+				}
+
 				// Show success message
 				error = null;
 				loading = false;
@@ -133,7 +166,14 @@
 					(subscription.status === 'active' || subscription.status === 'trialing')
 				) {
 					console.log(`Subscription is ${subscription.status} despite verification failure`);
+
+					// Mark transaction as processed
+					if (typeof sessionStorage !== 'undefined' && transactionId) {
+						sessionStorage.setItem(`payment_processed_${transactionId}`, 'true');
+					}
+
 					error = null;
+					loading = false;
 
 					// Redirect to main app
 					setTimeout(() => {
@@ -151,6 +191,54 @@
 			error =
 				'Unable to verify payment status. Please refresh the page or contact support if the issue persists.';
 			loading = false;
+		}
+	}
+
+	async function handleNoTransactionId() {
+		try {
+			loading = true;
+			error = null;
+
+			// Import necessary modules
+			const { subscriptionStore } = await import('$lib/stores/subscription.svelte');
+
+			// Check if user has a subscription now (maybe payment completed successfully but we missed the transaction ID)
+			console.log('Checking current subscription status...');
+			await subscriptionStore.refresh();
+
+			const subscription = subscriptionStore.subscription;
+			if (
+				subscription &&
+				(subscription.status === 'active' || subscription.status === 'trialing')
+			) {
+				console.log(`Found ${subscription.status} subscription, payment was likely successful`);
+
+				// Show success message
+				loading = false;
+				error = null;
+
+				// Redirect to main app after a short delay
+				setTimeout(() => {
+					_goto('/');
+				}, 2000);
+			} else {
+				// No active subscription - probably no payment was made or it failed
+				console.log('No active subscription found');
+				loading = false;
+
+				// Redirect to main app after a delay
+				setTimeout(() => {
+					_goto('/');
+				}, 3000);
+			}
+		} catch (err) {
+			console.error('Error checking subscription status:', err);
+			loading = false;
+
+			// Redirect to main app anyway
+			setTimeout(() => {
+				_goto('/');
+			}, 3000);
 		}
 	}
 

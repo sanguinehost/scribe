@@ -1138,7 +1138,7 @@ export type SubscriptionStatus =
 	| 'trialing'
 	| 'unpaid'
 	| 'incomplete';
-export type PlanType = 'free' | 'basic' | 'premium';
+export type PlanType = 'free' | 'basic' | 'premium' | 'pro'; // Added 'pro' for legacy compatibility
 
 export interface Subscription {
 	id: string;

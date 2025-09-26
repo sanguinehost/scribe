@@ -48,7 +48,14 @@ export const subscriptionStore = {
 
 	get currentPlan(): PlanType {
 		if (_subscription?.plan_type) {
-			return _subscription.plan_type as PlanType;
+			// Handle 'pro' -> 'premium' mapping for legacy subscriptions
+			const planType = _subscription.plan_type === 'pro' ? 'premium' : _subscription.plan_type;
+			console.log('🔧 Plan Type Mapping:', {
+				originalPlanType: _subscription.plan_type,
+				mappedPlanType: planType,
+				subscriptionId: _subscription.id
+			});
+			return planType as PlanType;
 		}
 		return 'free' as PlanType;
 	},
@@ -126,11 +133,45 @@ export const subscriptionStore = {
 			const result = await _apiClient.getSubscription();
 
 			if (result.isOk()) {
+				console.log('🔍 Raw Subscription API Response:', {
+					subscription: result.value.subscription,
+					plan_features: result.value.plan_features,
+					usage_limits: result.value.usage_limits
+				});
+
+				// Log specific details about plan type mapping
+				if (result.value.subscription) {
+					console.log('🧩 Subscription Details:', {
+						id: result.value.subscription.id,
+						plan_type: result.value.subscription.plan_type,
+						status: result.value.subscription.status,
+						paddle_subscription_id: result.value.subscription.paddle_subscription_id
+					});
+				}
+
+				if (result.value.plan_features) {
+					console.log('🎭 Plan Features Details:', {
+						plan_type: result.value.plan_features.plan_type,
+						display_name: result.value.plan_features.display_name,
+						description: result.value.plan_features.description
+					});
+				}
+
 				_subscription = result.value.subscription || null;
 				_planFeatures = result.value.plan_features || null;
 				_usageLimits = result.value.usage_limits || null;
 				_lastFetch = now;
+
+				console.log('📊 Subscription Store After Update:', {
+					rawPlanType: _subscription?.plan_type,
+					normalizedCurrentPlan: subscriptionStore.currentPlan,
+					status: _subscription?.status,
+					isSubscribed: _subscription?.status === 'active' || _subscription?.status === 'trialing',
+					planDisplayName: subscriptionStore.getPlanDisplayName(),
+					dailyMessageCount: _usageLimits?.daily_message_count
+				});
 			} else {
+				console.error('❌ Subscription API Error:', result.error);
 				_error = result.error.message || 'Failed to fetch subscription data';
 			}
 		} catch (error) {
@@ -203,20 +244,35 @@ export const subscriptionStore = {
 	 */
 	getPlanDisplayName(): string {
 		if (_planFeatures?.display_name) {
+			console.log('📛 Using plan features display name:', _planFeatures.display_name);
 			return _planFeatures.display_name;
 		}
 
 		// Fallback based on plan type
-		switch (subscriptionStore.currentPlan) {
-			case 'free':
-				return 'Free';
-			case 'basic':
-				return 'Basic';
-			case 'premium':
-				return 'Premium';
-			default:
-				return 'Free';
-		}
+		const currentPlan = subscriptionStore.currentPlan;
+		const displayName = (() => {
+			switch (currentPlan) {
+				case 'free':
+					return 'Free';
+				case 'basic':
+					return 'Basic';
+				case 'premium':
+					return 'Premium';
+				// Handle legacy 'pro' plan type (shouldn't happen after currentPlan mapping but just in case)
+				case 'pro':
+					return 'Premium';
+				default:
+					return 'Free';
+			}
+		})();
+
+		console.log('📛 Using fallback display name:', {
+			currentPlan,
+			displayName,
+			planFeatures: _planFeatures
+		});
+
+		return displayName;
 	},
 
 	/**

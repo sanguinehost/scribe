@@ -104,6 +104,17 @@
 							/>
 						</div>
 
+						<!-- Debug logging for sidebar user nav -->
+						{#if typeof window !== 'undefined'}
+							{@const _ = console.log('🔍 Sidebar User Nav Debug:', {
+								currentPlan: subscriptionStore.currentPlan,
+								planDisplayName: subscriptionStore.getPlanDisplayName(),
+								dailyMessageCount: subscriptionStore.dailyMessageCount,
+								subscription: subscriptionStore.subscription,
+								planFeatures: subscriptionStore.planFeatures
+							})}
+						{/if}
+
 						<!-- Upgrade button for free users or when at daily limit -->
 						{#if (subscriptionStore.currentPlan as unknown) === 'free' || (subscriptionStore.usageLimits?.daily_message_count && subscriptionStore.usageLimits.daily_message_count >= 20 && (subscriptionStore.currentPlan as unknown) === 'free')}
 							<div class="mt-2">
