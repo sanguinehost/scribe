@@ -140,25 +140,53 @@
 				);
 			}
 
-			// Open Paddle checkout with simplified format (matching documentation)
-			console.log('🚀 Opening Paddle checkout with simplified format:', {
+			// Open Paddle checkout with full configuration (now that environment is set correctly)
+			console.log('🚀 Opening Paddle checkout with configuration:', {
 				priceId: priceId,
 				plan: selectedPlan,
-				billing: selectedBilling
+				billing: selectedBilling,
+				theme: theme,
+				environment: PUBLIC_PADDLE_CLIENT_SIDE_TOKEN?.startsWith('test_') ? 'sandbox' : 'production'
 			});
 
 			window.Paddle.Checkout.open({
+				// Items to purchase
 				items: [
 					{
 						priceId: priceId,
 						quantity: 1
 					}
-				]
+				],
+				// UI settings for better UX
+				settings: {
+					displayMode: 'overlay', // Overlay mode for branded checkout
+					theme: theme, // Match app theme
+					locale: navigator.language?.substring(0, 2) || 'en',
+					variant: 'one-page', // Simpler one-page checkout
+					allowLogout: false, // Don't show logout option
+					successUrl: `${window.location.origin}/pay?_ptxn={transaction_id}` // Return URL after success
+				},
+				// Custom data for tracking and analytics
+				customData: {
+					plan: selectedPlan,
+					billing: selectedBilling,
+					source: 'checkout_overlay',
+					version: '2.0'
+				}
 			});
 		} catch (_error) {
 			const errorMessage =
 				_error instanceof Error ? _error.message : 'Payment initialization failed';
-			console.error('❌ Checkout error:', errorMessage);
+			console.error('❌ Checkout error details:', {
+				error: _error,
+				message: errorMessage,
+				priceId: currentPrice?.priceId,
+				plan: selectedPlan,
+				billing: selectedBilling,
+				paddleLoaded: !!window.Paddle,
+				paddleCheckout: !!window.Paddle?.Checkout,
+				token: PUBLIC_PADDLE_CLIENT_SIDE_TOKEN?.substring(0, 8) + '...'
+			});
 			checkoutError = errorMessage;
 			checkoutLoading = false;
 		}

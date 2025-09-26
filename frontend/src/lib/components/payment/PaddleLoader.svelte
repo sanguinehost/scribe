@@ -48,6 +48,31 @@
 					const checkPaddle = () => {
 						if (window.Paddle && window.Paddle.Initialize) {
 							try {
+								// Detect environment from token prefix
+								const isTestToken = PUBLIC_PADDLE_CLIENT_SIDE_TOKEN?.startsWith('test_');
+								const environment = isTestToken ? 'sandbox' : 'production';
+
+								console.log('🔧 Paddle Environment Detection:', {
+									token: PUBLIC_PADDLE_CLIENT_SIDE_TOKEN?.substring(0, 8) + '...',
+									isTestToken,
+									environment
+								});
+
+								// CRITICAL: Set environment BEFORE Initialize for sandbox tokens
+								if (isTestToken) {
+									console.log('🧪 Setting Paddle environment to sandbox');
+									// Define proper type for Paddle with Environment
+									interface PaddleWithEnvironment {
+										Initialize: (config: unknown) => void;
+										Environment?: {
+											set: (environment: 'sandbox' | 'production') => void;
+										};
+										Checkout?: unknown;
+									}
+									const paddleEnv = window.Paddle as PaddleWithEnvironment;
+									paddleEnv.Environment?.set('sandbox');
+								}
+
 								// Detect user's theme preference
 								const isDarkMode =
 									window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -55,6 +80,8 @@
 
 								// Detect user's locale (fallback to 'en')
 								const locale = navigator.language?.substring(0, 2) || 'en';
+
+								console.log('🎨 Paddle UI Configuration:', { theme, locale });
 
 								// Initialize Paddle with proper configuration
 								window.Paddle.Initialize({
@@ -76,8 +103,10 @@
 									}
 								});
 
+								console.log('✅ Paddle initialized successfully in', environment, 'environment');
 								resolve();
 							} catch (initError) {
+								console.error('❌ Paddle initialization error:', initError);
 								reject(new Error(`Paddle initialization failed: ${initError}`));
 							}
 						} else {
