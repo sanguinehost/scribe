@@ -107,9 +107,15 @@
 		dispatch('checkout-start', { planType: selectedPlan, billing: selectedBilling });
 
 		try {
-			// Check if Paddle is loaded
+			// Check if Paddle is loaded and initialized
 			if (!window.Paddle) {
 				throw new Error('Payment system not ready. Please refresh the page and try again.');
+			}
+
+			if (!window.Paddle.Checkout || typeof window.Paddle.Checkout.open !== 'function') {
+				throw new Error(
+					'Payment system not properly initialized. Please refresh the page and try again.'
+				);
 			}
 
 			// Get price ID based on plan and billing period
@@ -134,30 +140,20 @@
 				);
 			}
 
-			// Open Paddle checkout overlay with proper settings
+			// Open Paddle checkout with simplified format (matching documentation)
+			console.log('🚀 Opening Paddle checkout with simplified format:', {
+				priceId: priceId,
+				plan: selectedPlan,
+				billing: selectedBilling
+			});
+
 			window.Paddle.Checkout.open({
-				// Use items array (modern approach)
 				items: [
 					{
 						priceId: priceId,
 						quantity: 1
 					}
-				],
-				// Checkout display settings
-				settings: {
-					displayMode: 'overlay', // Overlay mode for branded checkout
-					theme: theme, // Match app theme
-					locale: navigator.language?.substring(0, 2) || 'en',
-					variant: 'one-page', // Simpler one-page checkout
-					allowLogout: false, // Don't show logout option
-					successUrl: `${window.location.origin}/pay?_ptxn={transaction_id}` // Return URL after success
-				},
-				// Custom data for tracking
-				customData: {
-					plan: selectedPlan,
-					billing: selectedBilling,
-					source: 'checkout_overlay'
-				}
+				]
 			});
 		} catch (_error) {
 			const errorMessage =

@@ -42,45 +42,70 @@
 				document.head.appendChild(script);
 			});
 
-			// Initialize Paddle with token and checkout settings
-			// Environment is auto-detected from token prefix (test_ for sandbox, live_ for production)
-			if (
-				(window as unknown as { Paddle?: { Initialize: (...args: unknown[]) => unknown } }).Paddle
-					?.Initialize
-			) {
-				// Detect user's theme preference
-				const isDarkMode =
-					window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-				const theme = isDarkMode ? 'dark' : 'light';
+			// Wait for window.Paddle to be available with polling mechanism
+			const initializePaddle = () => {
+				return new Promise<void>((resolve, reject) => {
+					const checkPaddle = () => {
+						if (window.Paddle && window.Paddle.Initialize) {
+							try {
+								// Detect user's theme preference
+								const isDarkMode =
+									window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+								const theme = isDarkMode ? 'dark' : 'light';
 
-				// Detect user's locale (fallback to 'en')
-				const locale = navigator.language?.substring(0, 2) || 'en';
+								// Detect user's locale (fallback to 'en')
+								const locale = navigator.language?.substring(0, 2) || 'en';
 
-				(
-					window as unknown as { Paddle?: { Initialize: (...args: unknown[]) => unknown } }
-				).Paddle?.Initialize({
-					token: PUBLIC_PADDLE_CLIENT_SIDE_TOKEN,
-					checkout: {
-						settings: {
-							displayMode: 'overlay', // Default to overlay mode
-							theme: theme,
-							locale: locale,
-							variant: 'one-page', // Use simpler one-page checkout
-							allowLogout: false, // Don't allow logout in checkout
-							frameStyle:
-								'width: 100%; min-width: 312px; background-color: transparent; border: none;' // For inline mode if needed
+								// Initialize Paddle with proper configuration
+								window.Paddle.Initialize({
+									token: PUBLIC_PADDLE_CLIENT_SIDE_TOKEN,
+									checkout: {
+										settings: {
+											displayMode: 'overlay', // Default to overlay mode
+											theme: theme,
+											locale: locale,
+											variant: 'one-page', // Use simpler one-page checkout
+											allowLogout: false, // Don't allow logout in checkout
+											frameStyle:
+												'width: 100%; min-width: 312px; background-color: transparent; border: none;' // For inline mode if needed
+										}
+									},
+									eventCallback: (_event: { name: string; data: unknown }) => {
+										// Log Paddle events for debugging
+										console.log('Paddle event:', _event.name, _event.data);
+									}
+								});
+
+								resolve();
+							} catch (initError) {
+								reject(new Error(`Paddle initialization failed: ${initError}`));
+							}
+						} else {
+							// Paddle not ready yet, try again in 100ms
+							setTimeout(checkPaddle, 100);
 						}
-					},
-					eventCallback: (_event: { name: string; data: unknown }) => {
-						// Log Paddle events for debugging
-						console.log('Paddle event:', _event.name, _event.data);
-					}
+					};
+
+					// Start checking for Paddle
+					checkPaddle();
+
+					// Add timeout to prevent infinite waiting (10 seconds)
+					setTimeout(() => {
+						reject(
+							new Error(
+								'Paddle initialization timeout: window.Paddle not available after 10 seconds'
+							)
+						);
+					}, 10000);
 				});
-			}
+			};
+
+			// Initialize Paddle and only set success flag after initialization completes
+			await initializePaddle();
 
 			paddleLoaded = true;
 			console.log(
-				`Paddle.js loaded successfully with token: ${PUBLIC_PADDLE_CLIENT_SIDE_TOKEN.substring(0, 8)}...`
+				`Paddle.js initialized successfully with token: ${PUBLIC_PADDLE_CLIENT_SIDE_TOKEN.substring(0, 8)}...`
 			);
 		} catch (_error) {
 			console.error('Failed to load Paddle.js:', _error);
