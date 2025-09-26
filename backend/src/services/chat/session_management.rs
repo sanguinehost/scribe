@@ -492,7 +492,7 @@ fn validate_lorebook_ownership(
 }
 
 /// Fetches lorebooks associated with a character
-
+///
 /// Associates lorebooks with the chat session
 /// Associates explicitly provided lorebooks with the chat session.
 /// Character-derived lorebooks are handled implicitly by the frontend/listing logic

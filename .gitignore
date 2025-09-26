@@ -61,5 +61,5 @@ uploads/
 .internal-certs
 
 # Downloaded LLM models (GGUF files)
-models/
+/models/
 .vercel
